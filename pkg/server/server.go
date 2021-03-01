@@ -2,6 +2,7 @@ package server
 
 import (
 	"archive/zip"
+	"crypto/sha1"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,11 +12,14 @@ import (
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
-	"crypto/sha1"
+
+	"github.com/replicate/modelserver/pkg/global"
 )
 
 type Server struct {
-	db *DB
+	db         *DB
+	cloudbuild *CloudBuild
+	ai *AIPlatform
 }
 
 func NewServer() (*Server, error) {
@@ -31,12 +35,22 @@ func (s *Server) Start() error {
 	}
 	defer s.db.Close()
 
+	s.cloudbuild, err = NewCloudBuild()
+	if err != nil {
+		return fmt.Errorf("Failed to connect to CloudBuild: %w", err)
+	}
+
+	s.ai, err = NewAIPlatform()
+	if err != nil {
+		return fmt.Errorf("Failed to connect to AI Platform: %w", err)
+	}
+
 	router := mux.NewRouter()
 	router.Path("/upload").
 		Methods("POST").
 		HandlerFunc(s.ReceiveFile)
 	fmt.Println("Starting")
-	return http.ListenAndServe(":8080", router)
+	return http.ListenAndServe(fmt.Sprintf(":%d", global.Port), router)
 }
 
 func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +65,7 @@ func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) ReceiveModel(r *http.Request) (string, error) {
-	 // max 5GB models
+	// max 5GB models
 	if err := r.ParseMultipartForm(5 << 30); err != nil {
 		return "", fmt.Errorf("Failed to parse request: %w", err)
 	}
@@ -69,9 +83,13 @@ func (s *Server) ReceiveModel(r *http.Request) (string, error) {
 		return "", fmt.Errorf("Failed to read zip file: %w", err)
 	}
 
-	dir, err := os.MkdirTemp("/tmp", "unzip")
+	parentDir, err := os.MkdirTemp("/tmp", "unzip")
 	if err != nil {
 		return "", fmt.Errorf("Failed to make tempdir: %w", err)
+	}
+	dir := filepath.Join(parentDir, topLevelSourceDir)
+	if err := os.Mkdir(dir, 0755); err != nil {
+		return "", fmt.Errorf("Failed to make source dir: %w", err)
 	}
 	if err := Unzip(reader, dir); err != nil {
 		return "", fmt.Errorf("Failed to unzip: %w", err)
@@ -88,8 +106,12 @@ func (s *Server) ReceiveModel(r *http.Request) (string, error) {
 
 	dockerTag := "us-central1-docker.pkg.dev/replicate/andreas-scratch/" + config.Name + ":" + hash
 
-	if err := DockerBuild(dir, dockerTag, config.Dockerfile.Cpu); err != nil {
+	if err := s.cloudbuild.Submit(dir, hash, dockerTag, config.Dockerfile.Cpu); err != nil {
 		return "", fmt.Errorf("Failed to build Docker image: %w", err)
+	}
+
+	if err := s.ai.Deploy(dockerTag, hash); err != nil {
+		return "", err
 	}
 
 	// TODO: test model

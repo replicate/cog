@@ -7,6 +7,7 @@ import (
 const Version = "0.0.1"
 
 var (
+	Port             int
 	Verbose          = false
 	TokenSource      oauth2.TokenSource
 	GCSBucket        = "andreas-adhoc"

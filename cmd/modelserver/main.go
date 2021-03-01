@@ -13,6 +13,6 @@ func main() {
 	}
 
 	if err = cmd.Execute(); err != nil {
-		log.Fatal("%s", err)
+		log.Fatalf("%s", err)
 	}
 }
