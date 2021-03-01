@@ -6,8 +6,11 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/oauth2"
 	"google.golang.org/api/ml/v1"
 	"google.golang.org/api/option"
+
+	"github.com/replicate/modelserver/pkg/global"
 )
 
 type AIPlatform struct {
@@ -17,7 +20,7 @@ type AIPlatform struct {
 func NewAIPlatform() (*AIPlatform, error) {
 	ai := new(AIPlatform)
 	var err error
-	ai.service, err = ml.NewService(context.Background(), option.WithEndpoint("https://us-central1-ml.googleapis.com"))
+	ai.service, err = ml.NewService(context.Background(), option.WithEndpoint("https://us-central1-ml.googleapis.com"), option.WithHTTPClient(oauth2.NewClient(context.Background(), global.TokenSource)))
 	if err != nil {
 		return nil, fmt.Errorf("Failed to initialize AI Platform service: %w", err)
 	}
