@@ -3,5 +3,6 @@ CREATE TABLE models (
     name                VARCHAR(128),
     hash                CHAR(40),
     gcs_path            TEXT,
-    docker_image        TEXT
+    cpu_image        TEXT,
+    gpu_image        TEXT
 );

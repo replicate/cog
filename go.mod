@@ -12,8 +12,10 @@ require (
 	github.com/rs/zerolog v1.20.0 // indirect
 	github.com/sirupsen/logrus v1.7.0
 	github.com/spf13/cobra v1.1.3
+	github.com/stretchr/testify v1.7.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20210220000619-9bb904979d93 // indirect
 	google.golang.org/api v0.40.0 // indirect
 	google.golang.org/genproto v0.0.0-20210222152913-aa3ee6e6a81c // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
+	gotest.tools/gotestsum v0.6.0 // indirect
 )

@@ -29,3 +29,7 @@ save-db-password:
 	gcloud secrets describe modelserver-db-password || gcloud secrets create modelserver-db-password --replication-policy="automatic"
 	gcloud secrets versions add modelserver-db-password --data-file="db-password.txt"
 	rm db-password.txt
+
+.PHONY: test
+test:
+	go run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)

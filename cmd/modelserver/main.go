@@ -9,7 +9,7 @@ import (
 func main() {
 	cmd, err := cli.NewRootCommand()
 	if err != nil {
-		log.Fatal("%s", err)
+		log.Fatalf("%f", err)
 	}
 
 	if err = cmd.Execute(); err != nil {

@@ -28,7 +28,7 @@ func NewAIPlatform() (*AIPlatform, error) {
 	return ai, nil
 }
 
-func (ai *AIPlatform) Deploy(dockerTag string, version string) error {
+func (ai *AIPlatform) Deploy(dockerTag string, version string) (string, error) {
 	log.Info("Creating AI Platform version")
 
 	op, err := ai.service.Projects.Models.Versions.Create(
@@ -50,15 +50,16 @@ func (ai *AIPlatform) Deploy(dockerTag string, version string) error {
 		},
 	).Do()
 	if err != nil {
-		return fmt.Errorf("Failed to create model version: %w", err)
+		return "", fmt.Errorf("Failed to create model version: %w", err)
 	}
 
 	log.Info("Waiting for AI Platform version to become available")
 	if err := ai.waitForVersionOp(context.Background(), op); err != nil {
-		return err
+		return "", err
 	}
 
-	return nil
+	aiPlatformEndpoint := "TODO"
+	return aiPlatformEndpoint, nil
 }
 
 func (ai *AIPlatform) waitForVersionOp(ctx context.Context, op *ml.GoogleLongrunning__Operation) error {
