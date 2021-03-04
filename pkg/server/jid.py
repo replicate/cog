@@ -46,7 +46,6 @@ class Model(ABC):
         def ping():
             return "PONG"
 
-
         app.run(host="0.0.0.0", port=5000)
 
     def create_response(self, result):

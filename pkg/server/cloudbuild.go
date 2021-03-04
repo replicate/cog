@@ -66,9 +66,7 @@ func (c *CloudBuild) Submit(directory string, hash string, imageTag string, dock
 	}
 	defer obj.Delete(c.ctx)
 	gcsPath := obj.ObjectName()
-	imageTagLatest := latestTag(imageTag)
-
-	build := makeBuild(global.GCSBucket, gcsPath, imageTag, imageTagLatest, dockerfilePath)
+	build := makeBuild(global.GCSBucket, gcsPath, imageTag, dockerfilePath)
 
 	op, err := c.cb.Projects.Builds.Create(global.GCPProject, build).Do()
 	if err != nil {
@@ -94,7 +92,7 @@ func (c *CloudBuild) Submit(directory string, hash string, imageTag string, dock
 		return fmt.Errorf("Build failed")
 	}
 
-	log.Infof("Successfully pushed to %s and %s", imageTag, imageTagLatest)
+	log.Infof("Successfully pushed to %s", imageTag)
 
 	return nil
 }
@@ -134,7 +132,7 @@ func (c *CloudBuild) uploadToGcs(tarPath string) (obj *storage.ObjectHandle, err
 	return obj, nil
 }
 
-func makeBuild(gcsBucket string, gcsPath string, imageTag string, imageTagLatest string, dockerfilePath string) *cloudbuild.Build {
+func makeBuild(gcsBucket string, gcsPath string, imageTag string, dockerfilePath string) *cloudbuild.Build {
 	return &cloudbuild.Build{
 		Source: &cloudbuild.Source{
 			StorageSource: &cloudbuild.StorageSource{
@@ -142,33 +140,14 @@ func makeBuild(gcsBucket string, gcsPath string, imageTag string, imageTagLatest
 				Object: gcsPath,
 			},
 		},
-		Images: []string{imageTag, imageTagLatest},
+		Images: []string{imageTag},
 		Steps: []*cloudbuild.BuildStep{
-			{
-				Name:       "gcr.io/cloud-builders/docker",
-				Entrypoint: "bash",
-				Args: []string{
-					"-c", fmt.Sprintf("docker pull %s || exit 0", imageTagLatest),
-				},
-			},
 			{
 				Name: "gcr.io/cloud-builders/docker",
 				Args: []string{
 					"build",
 					"-t", imageTag,
 					"-f", dockerfilePath,
-					"--cache-from", imageTagLatest,
-					".",
-				},
-				Dir: topLevelSourceDir,
-			},
-			{
-				Name: "gcr.io/cloud-builders/docker",
-				Args: []string{
-					"build",
-					"-t", imageTagLatest,
-					"-f", dockerfilePath,
-					"--cache-from", imageTag,
 					".",
 				},
 				Dir: topLevelSourceDir,
@@ -187,8 +166,4 @@ func getBuildMetadata(op *cloudbuild.Operation) (*cloudbuild.BuildOperationMetad
 		return nil, err
 	}
 	return &metadata, nil
-}
-
-func latestTag(imageTag string) string {
-	return tagRe.ReplaceAllString(imageTag, "$1:latest")
 }

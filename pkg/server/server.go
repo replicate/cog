@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/dchest/uniuri"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 
@@ -151,7 +152,7 @@ func (s *Server) ReceiveModel(r *http.Request) (*ModelSuccessResponse, error) {
 		return nil, fmt.Errorf("Failed to upload to storage: %w", err)
 	}
 
-	cpuImageTag, gpuImageTag, err := s.buildDockerImages(dir, hash, config)
+	cpuImageTag, gpuImageTag, err := s.buildDockerImages(dir, config)
 	if err != nil {
 		return nil, err
 	}
@@ -174,9 +175,11 @@ func (s *Server) ReceiveModel(r *http.Request) (*ModelSuccessResponse, error) {
 	return &ModelSuccessResponse{cpuImageTag, gpuImageTag, aiPlatformEndpoint}, nil
 }
 
-func (s *Server) buildDockerImages(dir string, hash string, config *Config) (cpuImageTag string, gpuImageTag string, err error) {
+func (s *Server) buildDockerImages(dir string, config *Config) (cpuImageTag string, gpuImageTag string, err error) {
 	for _, arch := range config.Environment.Architectures {
-		dockerTag := "us-central1-docker.pkg.dev/replicate/andreas-scratch/" + config.Name + ":" + hash + "-" + arch
+		// TODO: use content-addressable hash
+		hash := uniuri.NewLenChars(40, []byte("abcdef0123456789"))
+		dockerTag := "us-central1-docker.pkg.dev/replicate/andreas-scratch/" + config.Name + ":" + hash
 
 		switch arch {
 		case "gpu":

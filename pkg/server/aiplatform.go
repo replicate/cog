@@ -41,7 +41,6 @@ func (ai *AIPlatform) Deploy(dockerTag string, version string) (string, error) {
 				Ports: []*ml.GoogleCloudMlV1__ContainerPort{{
 					ContainerPort: 5000,
 				}},
-				Args: []string{"bash", "-c", "cd /code && python -c 'from infer import Model; Model().start_server()'"},
 			},
 			Routes: &ml.GoogleCloudMlV1__RouteMap{
 				Health:  "/ping",
