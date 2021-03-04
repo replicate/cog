@@ -12,9 +12,6 @@ const codeDir = "/code"
 //go:embed jid.py
 var jidLibrary []byte
 
-//go:embed jid-run
-var jidRun []byte
-
 type DockerfileGenerator struct {
 	Config *Config
 	Arch   string
@@ -50,6 +47,8 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 		pythonRequirements,
 		pipInstalls,
 		g.installJid(),
+		g.copyCode(),
+		g.command(),
 	}), "\n"), nil
 }
 
@@ -99,11 +98,9 @@ func (g *DockerfileGenerator) installPython() (string, error) {
 
 func (g *DockerfileGenerator) installJid() string {
 	jidLibB64 := base64.StdEncoding.EncodeToString(jidLibrary)
-	jidRunB64 := base64.StdEncoding.EncodeToString(jidRun)
 	return fmt.Sprintf(`RUN pip install flask
 RUN curl -L https://github.com/mikefarah/yq/releases/download/v4.6.1/yq_linux_amd64.tar.gz | tar -xzO > /usr/bin/yq
-RUN echo %s | base64 --decode > /usr/local/lib/python%s/dist-packages/jid.py
-RUN echo %s | base64 --decode > /usr/bin/jid-run && chmod +x /usr/bin/jid-run`, jidLibB64, g.Config.Environment.PythonVersion, jidRunB64)
+RUN echo %s | base64 --decode > /usr/local/lib/python%s/dist-packages/jid.py`, jidLibB64, g.Config.Environment.PythonVersion)
 }
 
 func (g *DockerfileGenerator) pythonRequirements() (string, error) {
@@ -122,6 +119,20 @@ func (g *DockerfileGenerator) pipInstalls() (string, error) {
 	}
 
 	return "RUN pip install " + strings.Join(packages, " "), nil
+}
+
+func (g *DockerfileGenerator) copyCode() string {
+	return `COPY . /code
+WORKDIR /code`
+}
+
+func (g *DockerfileGenerator) command() string {
+	// TODO: handle infer scripts in subdirectories
+	name := g.Config.Model
+	parts := strings.Split(name, ".py:")
+	module := parts[0]
+	class := parts[1]
+	return `CMD ["python", "-c", "from ` + module + ` import ` + class + `; ` + class + `().start_server()"]`
 }
 
 func filterEmpty(list []string) []string {
