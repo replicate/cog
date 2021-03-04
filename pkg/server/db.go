@@ -44,7 +44,7 @@ func NewDB() (*DB, error) {
 func (db *DB) InsertModel(name string, hash string, gcsPath string, cpuImage string, gpuImage string) error {
 	sqlStatement := `
 INSERT INTO models (name, hash, gcs_path, cpu_image, gpu_image)
-VALUES ($1, $2, $3, $4)`
+VALUES ($1, $2, $3, $4, $5)`
 	if _, err := db.db.Exec(sqlStatement, name, hash, gcsPath, cpuImage, gpuImage); err != nil {
 		return err
 	}
