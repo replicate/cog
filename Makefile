@@ -21,7 +21,7 @@ clean:
 .PHONY: deploy
 deploy: clean
 	gcloud builds submit --tag "$(DOCKER_TAG)"
-	gcloud run deploy modelserver --region us-central1 --image "$(DOCKER_TAG)" --platform managed --allow-unauthenticated --args=server --service-account=modelstorage@replicate.iam.gserviceaccount.com --timeout=10min
+	gcloud run deploy modelserver --region us-central1 --image "$(DOCKER_TAG)" --platform managed --allow-unauthenticated --args=server --service-account=modelstorage@replicate.iam.gserviceaccount.com --timeout=15m
 
 .PHONY: save-db-password
 save-db-password:
