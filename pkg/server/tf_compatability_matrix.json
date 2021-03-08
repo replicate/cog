@@ -1,0 +1,295 @@
+[
+  {
+    "TF": "2.4.0",
+    "TFCPUPackage": "tensorflow==2.4.0",
+    "TFGPUPackage": "tensorflow==2.4.0",
+    "CUDA": "11.0",
+    "CuDNN": "8.0",
+    "Pythons": [
+      "3.6",
+      "3.7",
+      "3.8"
+    ]
+  },
+  {
+    "TF": "2.3.0",
+    "TFCPUPackage": "tensorflow==2.3.0",
+    "TFGPUPackage": "tensorflow==2.3.0",
+    "CUDA": "10.1",
+    "CuDNN": "7.6",
+    "Pythons": [
+      "3.5",
+      "3.6",
+      "3.7",
+      "3.8"
+    ]
+  },
+  {
+    "TF": "2.2.0",
+    "TFCPUPackage": "tensorflow==2.2.0",
+    "TFGPUPackage": "tensorflow==2.2.0",
+    "CUDA": "10.1",
+    "CuDNN": "7.6",
+    "Pythons": [
+      "3.5",
+      "3.6",
+      "3.7",
+      "3.8"
+    ]
+  },
+  {
+    "TF": "2.1.0",
+    "TFCPUPackage": "tensorflow==2.1.0",
+    "TFGPUPackage": "tensorflow==2.1.0",
+    "CUDA": "10.1",
+    "CuDNN": "7.6",
+    "Pythons": [
+      "2.7",
+      "3.5",
+      "3.6",
+      "3.7"
+    ]
+  },
+  {
+    "TF": "2.0.0",
+    "TFCPUPackage": "tensorflow==2.0.0",
+    "TFGPUPackage": "tensorflow==2.0.0",
+    "CUDA": "10.0",
+    "CuDNN": "7.4",
+    "Pythons": [
+      "2.7",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6",
+      "3.7"
+    ]
+  },
+  {
+    "TF": "1.15.0",
+    "TFCPUPackage": "tensorflow==1.15.0",
+    "TFGPUPackage": "tensorflow_gpu==1.15.0",
+    "CUDA": "10.0",
+    "CuDNN": "7.4",
+    "Pythons": [
+      "2.7",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6",
+      "3.7"
+    ]
+  },
+  {
+    "TF": "1.14.0",
+    "TFCPUPackage": "tensorflow==1.14.0",
+    "TFGPUPackage": "tensorflow_gpu==1.14.0",
+    "CUDA": "10.0",
+    "CuDNN": "7.4",
+    "Pythons": [
+      "2.7",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6",
+      "3.7"
+    ]
+  },
+  {
+    "TF": "1.13.1",
+    "TFCPUPackage": "tensorflow==1.13.1",
+    "TFGPUPackage": "tensorflow_gpu==1.13.1",
+    "CUDA": "10.0",
+    "CuDNN": "7.4",
+    "Pythons": [
+      "2.7",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6",
+      "3.7"
+    ]
+  },
+  {
+    "TF": "1.12.0",
+    "TFCPUPackage": "tensorflow==1.12.0",
+    "TFGPUPackage": "tensorflow_gpu==1.12.0",
+    "CUDA": "9",
+    "CuDNN": "7",
+    "Pythons": [
+      "2.7",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6"
+    ]
+  },
+  {
+    "TF": "1.11.0",
+    "TFCPUPackage": "tensorflow==1.11.0",
+    "TFGPUPackage": "tensorflow_gpu==1.11.0",
+    "CUDA": "9",
+    "CuDNN": "7",
+    "Pythons": [
+      "2.7",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6"
+    ]
+  },
+  {
+    "TF": "1.10.0",
+    "TFCPUPackage": "tensorflow==1.10.0",
+    "TFGPUPackage": "tensorflow_gpu==1.10.0",
+    "CUDA": "9",
+    "CuDNN": "7",
+    "Pythons": [
+      "2.7",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6"
+    ]
+  },
+  {
+    "TF": "1.9.0",
+    "TFCPUPackage": "tensorflow==1.9.0",
+    "TFGPUPackage": "tensorflow_gpu==1.9.0",
+    "CUDA": "9",
+    "CuDNN": "7",
+    "Pythons": [
+      "2.7",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6"
+    ]
+  },
+  {
+    "TF": "1.8.0",
+    "TFCPUPackage": "tensorflow==1.8.0",
+    "TFGPUPackage": "tensorflow_gpu==1.8.0",
+    "CUDA": "9",
+    "CuDNN": "7",
+    "Pythons": [
+      "2.7",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6"
+    ]
+  },
+  {
+    "TF": "1.7.0",
+    "TFCPUPackage": "tensorflow==1.7.0",
+    "TFGPUPackage": "tensorflow_gpu==1.7.0",
+    "CUDA": "9",
+    "CuDNN": "7",
+    "Pythons": [
+      "2.7",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6"
+    ]
+  },
+  {
+    "TF": "1.6.0",
+    "TFCPUPackage": "tensorflow==1.6.0",
+    "TFGPUPackage": "tensorflow_gpu==1.6.0",
+    "CUDA": "9",
+    "CuDNN": "7",
+    "Pythons": [
+      "2.7",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6"
+    ]
+  },
+  {
+    "TF": "1.5.0",
+    "TFCPUPackage": "tensorflow==1.5.0",
+    "TFGPUPackage": "tensorflow_gpu==1.5.0",
+    "CUDA": "9",
+    "CuDNN": "7",
+    "Pythons": [
+      "2.7",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6"
+    ]
+  },
+  {
+    "TF": "1.4.0",
+    "TFCPUPackage": "tensorflow==1.4.0",
+    "TFGPUPackage": "tensorflow_gpu==1.4.0",
+    "CUDA": "8",
+    "CuDNN": "6",
+    "Pythons": [
+      "2.7",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6"
+    ]
+  },
+  {
+    "TF": "1.3.0",
+    "TFCPUPackage": "tensorflow==1.3.0",
+    "TFGPUPackage": "tensorflow_gpu==1.3.0",
+    "CUDA": "8",
+    "CuDNN": "6",
+    "Pythons": [
+      "2.7",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6"
+    ]
+  },
+  {
+    "TF": "1.2.0",
+    "TFCPUPackage": "tensorflow==1.2.0",
+    "TFGPUPackage": "tensorflow_gpu==1.2.0",
+    "CUDA": "8",
+    "CuDNN": "5.1",
+    "Pythons": [
+      "2.7",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6"
+    ]
+  },
+  {
+    "TF": "1.1.0",
+    "TFCPUPackage": "tensorflow==1.1.0",
+    "TFGPUPackage": "tensorflow_gpu==1.1.0",
+    "CUDA": "8",
+    "CuDNN": "5.1",
+    "Pythons": [
+      "2.7",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6"
+    ]
+  },
+  {
+    "TF": "1.0.0",
+    "TFCPUPackage": "tensorflow==1.0.0",
+    "TFGPUPackage": "tensorflow_gpu==1.0.0",
+    "CUDA": "8",
+    "CuDNN": "5.1",
+    "Pythons": [
+      "2.7",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6"
+    ]
+  }
+]

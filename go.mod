@@ -6,6 +6,8 @@ require (
 	cloud.google.com/go v0.78.0 // indirect
 	cloud.google.com/go/storage v1.12.0 // indirect
 	github.com/GoogleCloudPlatform/cloudsql-proxy v1.20.0
+	github.com/anaskhan96/soup v1.2.4 // indirect
+	github.com/dave/jennifer v1.4.1
 	github.com/dchest/uniuri v0.0.0-20200228104902-7aecb25e1fe5 // indirect
 	github.com/gorilla/mux v1.8.0
 	github.com/mholt/archiver/v3 v3.3.3-0.20201013044347-a9434fffa1d1 // indirect

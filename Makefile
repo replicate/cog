@@ -23,6 +23,10 @@ deploy: clean
 	gcloud builds submit --tag "$(DOCKER_TAG)"
 	gcloud run deploy modelserver --region us-central1 --image "$(DOCKER_TAG)" --platform managed --allow-unauthenticated --args=server --service-account=modelstorage@replicate.iam.gserviceaccount.com --timeout=15m
 
+.PHONY: generate
+generate:
+	go generate ./...
+
 .PHONY: save-db-password
 save-db-password:
 	# before running this, write the password to db-password.txt
