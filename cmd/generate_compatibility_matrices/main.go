@@ -18,10 +18,11 @@ import (
 func main() {
 	tfOutputPath := flag.String("tf-output", "", "Tensorflow output path")
 	torchOutputPath := flag.String("torch-output", "", "PyTorch output path")
+	cudaImagesOutputPath := flag.String("cuda-images-output", "", "CUDA base images output path")
 	flag.Parse()
 
-	if *tfOutputPath == "" && *torchOutputPath == "" {
-		log.Fatal("at least one of -tf-output and -torch-output must be provided")
+	if *tfOutputPath == "" && *torchOutputPath == "" && *cudaImagesOutputPath == "" {
+		log.Fatal("at least one of -tf-output, -torch-output, -cuda-images-output must be provided")
 	}
 
 	if *tfOutputPath != "" {
@@ -32,6 +33,11 @@ func main() {
 	if *torchOutputPath != "" {
 		if err := writeTorchCompatibilityMatrix(*torchOutputPath); err != nil {
 			log.Fatalf("Failed to write PyTorch compatibility matrix: %s", err)
+		}
+	}
+	if *cudaImagesOutputPath != "" {
+		if err := writeCUDABaseImageTags(*cudaImagesOutputPath); err != nil {
+			log.Fatalf("Failed to write CUDA base images: %s", err)
 		}
 	}
 }
@@ -57,8 +63,8 @@ func writeTFCompatibilityMatrix(outputPath string) error {
 		if err != nil {
 			return err
 		}
-		cuDNN := server.CuDNN(cells[4].Text())
-		cuda := server.CUDA(cells[5].Text())
+		cuDNN := cells[4].Text()
+		cuda := cells[5].Text()
 
 		compat := server.TFCompatibility{
 			TF:           packageVersion,
@@ -115,6 +121,41 @@ func writeTorchCompatibilityMatrix(outputPath string) error {
 	return nil
 }
 
+func writeCUDABaseImageTags(outputPath string) error {
+	log.Infof("Writing CUDA base images to %s...", outputPath)
+	url := "https://hub.docker.com/v2/repositories/nvidia/cuda/tags/?page_size=1000&name=devel-ubuntu&ordering=last_updated"
+	resp, err := soup.Get(url)
+	if err != nil {
+		return fmt.Errorf("Failed to download %s: %w", url, err)
+	}
+	var results struct {
+		Results []struct {
+			Name string `json:"name"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(resp), &results); err != nil {
+		return fmt.Errorf("Failed parse CUDA images json: %w", err)
+	}
+
+	tags := []string{}
+	for _, result := range results.Results {
+		tag := result.Name
+		if strings.Contains(tag, "-cudnn") && !strings.HasSuffix(tag, "-rc") {
+			tags = append(tags, tag)
+		}
+	}
+
+	data, err := json.MarshalIndent(tags, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func fetchCurrentTorchVersions(compats []server.TorchCompatibility) ([]server.TorchCompatibility, error) {
 	url := "https://pytorch.org/assets/quick-start-module.js"
 
@@ -149,9 +190,9 @@ func fetchCurrentTorchVersions(compats []server.TorchCompatibility) ([]server.To
 		if strings.HasPrefix(key, "stable,pip,linux") && strings.HasSuffix(key, ",python") {
 			parts := strings.Split(key, ",")
 			cudaRaw := parts[3]
-			var cuda *server.CUDA
+			var cuda *string
 			if strings.HasPrefix(cudaRaw, "cuda") {
-				c := server.CUDA(cudaRaw[4:])
+				c := cudaRaw[4:]
 				cuda = &c // can't take pointer directly
 			} else if cudaRaw != "accnone" {
 				continue // rocm, etc.
@@ -166,11 +207,12 @@ func fetchCurrentTorchVersions(compats []server.TorchCompatibility) ([]server.To
 	return compats, nil
 }
 
-func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *server.CUDA) (*server.TorchCompatibility, error) {
+func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *string) (*server.TorchCompatibility, error) {
 	// e.g. "pip install torch==1.8.0+cpu torchvision==0.9.0+cpu torchaudio==0.8.0 -f https://download.pytorch.org/whl/torch_stable.html"
 
 	libVersions := map[string]string{}
 
+	s = strings.TrimSpace(s)
 	s = strings.Split(s, "pip install ")[1]
 	parts := strings.Split(s, " -f ")
 	libs := strings.Split(parts[0], " ")
@@ -203,7 +245,7 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 	torchaudio, _ := libVersions["torchaudio"]
 
 	// TODO(andreas): maybe scrape this from https://pytorch.org/get-started/locally/
-	pythons := []server.Python{"3.6", "3.7", "3.8", "3.9"}
+	pythons := []string{"3.6", "3.7", "3.8", "3.9"}
 
 	return &server.TorchCompatibility{
 		Torch:       torch,
@@ -253,10 +295,9 @@ func parsePreviousTorchVersionsCode(code string, compats []server.TorchCompatibi
 			continue
 		}
 		rawArch := heading[2:]
-		var cuda *server.CUDA
+		var cuda *string
 		if strings.HasPrefix(rawArch, "CUDA") {
-			_, cudaVersion := split2(rawArch, " ")
-			c := server.CUDA(cudaVersion)
+			_, c := split2(rawArch, " ")
 			cuda = &c // can't take pointer directly
 		} else if rawArch != "CPU only" {
 			return nil, fmt.Errorf("Invalid arch: %s", rawArch)
@@ -270,8 +311,8 @@ func parsePreviousTorchVersionsCode(code string, compats []server.TorchCompatibi
 	return compats, nil
 }
 
-func parsePythonVersionsCell(val string) ([]server.Python, error) {
-	versions := []server.Python{}
+func parsePythonVersionsCell(val string) ([]string, error) {
+	versions := []string{}
 	parts := strings.Split(val, ",")
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
@@ -293,14 +334,14 @@ func parsePythonVersionsCell(val string) ([]server.Python, error) {
 				versions = append(versions, newVersion(startMajor, minor))
 			}
 		} else {
-			versions = append(versions, server.Python(part))
+			versions = append(versions, part)
 		}
 	}
 	return versions, nil
 }
 
-func newVersion(major int, minor int) server.Python {
-	return server.Python(fmt.Sprintf("%d.%d", major, minor))
+func newVersion(major int, minor int) string {
+	return fmt.Sprintf("%d.%d", major, minor)
 }
 
 func splitPythonVersion(version string) (major int, minor int, err error) {
