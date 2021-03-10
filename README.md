@@ -16,7 +16,7 @@ This deploys the service to Cloud Run.
 curl -X POST https://modelserver-idzklgqdsa-uc.a.run.app/upload -F "file=@model-directory.zip"
 ```
 
-where `model-directory.zip` is a zip folder of a model directory in the exact same format as https://github.com/replicate/modelserver-example (this is a temporary constraint).
+where `model-directory.zip` is a zip folder of a model directory with `yid.yaml` in it. [There are some example repository.](https://github.com/replicate/example-models)
 
 This does the following:
 * Builds a Docker image and pushes it to Artifact store with Cloud Build
