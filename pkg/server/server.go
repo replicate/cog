@@ -143,6 +143,10 @@ func (s *Server) ReceiveModel(r *http.Request) (*ModelSuccessResponse, error) {
 	}
 	log.Infof("Received model %s", config.Name)
 
+	if err := config.ValidateAndCompleteConfig(); err != nil {
+		return nil, err
+	}
+
 	gcsPath := config.Name + "/" + hash + ".zip"
 	log.Infof("Uploading to gs://%s/%s", global.GCSBucket, gcsPath)
 	if _, err := file.Seek(0, io.SeekStart); err != nil {

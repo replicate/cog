@@ -99,7 +99,6 @@ func (g *DockerfileGenerator) installPython() (string, error) {
 func (g *DockerfileGenerator) installJid() string {
 	jidLibB64 := base64.StdEncoding.EncodeToString(jidLibrary)
 	return fmt.Sprintf(`RUN pip install flask
-RUN curl -L https://github.com/mikefarah/yq/releases/download/v4.6.1/yq_linux_amd64.tar.gz | tar -xzO > /usr/bin/yq
 RUN echo %s | base64 --decode > /usr/local/lib/python%s/dist-packages/jid.py`, jidLibB64, g.Config.Environment.PythonVersion)
 }
 
@@ -113,12 +112,22 @@ RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt`, reqs), ni
 }
 
 func (g *DockerfileGenerator) pipInstalls() (string, error) {
-	packages := g.Config.Environment.PythonPackages
+	packages, indexURLs, err := g.Config.PythonPackagesForArch(g.Arch)
+	if err != nil {
+		return "", err
+	}
 	if len(packages) == 0 {
 		return "", nil
 	}
 
-	return "RUN pip install " + strings.Join(packages, " "), nil
+	findLinks := ""
+	if len(indexURLs) > 0 {
+		for _, indexURL := range indexURLs {
+			findLinks += "-f " + indexURL + " "
+		}
+	}
+
+	return "RUN pip install " + findLinks + strings.Join(packages, " "), nil
 }
 
 func (g *DockerfileGenerator) copyCode() string {

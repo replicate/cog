@@ -94,7 +94,7 @@
     "Torch": "1.7.1+cpu",
     "Torchvision": "0.8.2+cpu",
     "Torchaudio": "0.7.2",
-    "IndexURL": "https://download.pytorch.org/whl/torch_stable.html\n",
+    "IndexURL": "https://download.pytorch.org/whl/torch_stable.html",
     "CUDA": null,
     "Pythons": [
       "3.6",
@@ -159,7 +159,7 @@
     "Torch": "1.7.0+cpu",
     "Torchvision": "0.8.0+cpu",
     "Torchaudio": "0.7.0",
-    "IndexURL": "https://download.pytorch.org/whl/torch_stable.html\n",
+    "IndexURL": "https://download.pytorch.org/whl/torch_stable.html",
     "CUDA": null,
     "Pythons": [
       "3.6",
@@ -211,7 +211,7 @@
     "Torch": "1.6.0+cpu",
     "Torchvision": "0.7.0+cpu",
     "Torchaudio": "",
-    "IndexURL": "https://download.pytorch.org/whl/torch_stable.html\n",
+    "IndexURL": "https://download.pytorch.org/whl/torch_stable.html",
     "CUDA": null,
     "Pythons": [
       "3.6",
@@ -263,7 +263,7 @@
     "Torch": "1.5.1+cpu",
     "Torchvision": "0.6.1+cpu",
     "Torchaudio": "",
-    "IndexURL": "https://download.pytorch.org/whl/torch_stable.html\n",
+    "IndexURL": "https://download.pytorch.org/whl/torch_stable.html",
     "CUDA": null,
     "Pythons": [
       "3.6",
@@ -315,7 +315,7 @@
     "Torch": "1.5.0+cpu",
     "Torchvision": "0.6.0+cpu",
     "Torchaudio": "",
-    "IndexURL": "https://download.pytorch.org/whl/torch_stable.html\n",
+    "IndexURL": "https://download.pytorch.org/whl/torch_stable.html",
     "CUDA": null,
     "Pythons": [
       "3.6",
@@ -354,7 +354,7 @@
     "Torch": "1.4.0+cpu",
     "Torchvision": "0.5.0+cpu",
     "Torchaudio": "",
-    "IndexURL": "https://download.pytorch.org/whl/torch_stable.html\n",
+    "IndexURL": "https://download.pytorch.org/whl/torch_stable.html",
     "CUDA": null,
     "Pythons": [
       "3.6",
@@ -393,7 +393,7 @@
     "Torch": "1.2.0+cpu",
     "Torchvision": "0.4.0+cpu",
     "Torchaudio": "",
-    "IndexURL": "https://download.pytorch.org/whl/torch_stable.html\n",
+    "IndexURL": "https://download.pytorch.org/whl/torch_stable.html",
     "CUDA": null,
     "Pythons": [
       "3.6",
