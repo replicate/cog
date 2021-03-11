@@ -195,7 +195,7 @@ func (s *Server) buildDockerImages(dir string, config *Config) (cpuImageTag stri
 		generator := &DockerfileGenerator{config, arch}
 		dockerfileContents, err := generator.Generate()
 		if err != nil {
-			return "", "", fmt.Errorf("Failed to generate Dockerfile for %s", arch)
+			return "", "", fmt.Errorf("Failed to generate Dockerfile for %s: %w", arch, err)
 		}
 		dockerfileName := "Dockerfile." + arch
 		dockerfilePath := filepath.Join(dir, dockerfileName)

@@ -303,12 +303,22 @@ func parsePreviousTorchVersionsCode(code string, compats []server.TorchCompatibi
 			return nil, fmt.Errorf("Invalid arch: %s", rawArch)
 		}
 		compat, err := parseTorchInstallString(install, supportedLibrarySet, cuda)
+
+		fixTorchCompatibility(compat)
+
 		if err != nil {
 			return nil, err
 		}
 		compats = append(compats, *compat)
 	}
 	return compats, nil
+}
+
+// torchvision==0.8.0 should actually be 0.8.1, this is a bug on the website
+func fixTorchCompatibility(compat *server.TorchCompatibility) {
+	if strings.HasPrefix(compat.Torchvision, "0.8.0") {
+		compat.Torchvision = strings.Replace(compat.Torchvision, "0.8.0", "0.8.1", -1)
+	}
 }
 
 func parsePythonVersionsCell(val string) ([]string, error) {

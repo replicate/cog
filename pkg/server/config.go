@@ -12,6 +12,7 @@ import (
 // TODO(andreas): support dockerfiles
 // TODO(andreas): custom cpu/gpu installs
 // TODO(andreas): validate python_requirements
+// TODO(andreas): suggest valid torchvision versions (e.g. if the user wants to use 0.8.0, suggest 0.8.1)
 
 type Environment struct {
 	PythonVersion      string   `yaml:"python_version"`
