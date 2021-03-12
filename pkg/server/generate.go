@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+
+	"github.com/replicate/modelserver/pkg/model"
 )
 
 const codeDir = "/code"
@@ -13,7 +15,7 @@ const codeDir = "/code"
 var jidLibrary []byte
 
 type DockerfileGenerator struct {
-	Config *Config
+	Config *model.Config
 	Arch   string
 }
 

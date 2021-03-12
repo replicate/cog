@@ -2,26 +2,26 @@
 
 Work-in-progress service for model storage and serving.
 
-## Deploy
+## Run server
 
 ```
-make deploy
+go run ./cmd/modelserver/main.go server --port 8080
 ```
 
-This deploys the service to Cloud Run.
+The modelserver requires Go 1.16.
 
 ## Usage
 
 ```
-curl -X POST https://modelserver-idzklgqdsa-uc.a.run.app/upload -F "file=@model-directory.zip"
+curl -X POST localhost:8080/upload -F "file=@model-directory.zip"
 ```
 
-where `model-directory.zip` is a zip folder of a model directory with `yid.yaml` in it. [There are some example repository.](https://github.com/replicate/example-models)
+where `model-directory.zip` is a zip folder of a model directory with `jid.yaml` in it. [There are some example repository.](https://github.com/replicate/example-models)
 
 This does the following:
-* Builds a Docker image and pushes it to Artifact store with Cloud Build
-* Uploads the zip directory to GCS
-* Deploys a prediction endpoint to AI Platform
-* Inserts a record into a Cloud SQL postgres database
-
-Logs are available here: https://console.cloud.google.com/run/detail/us-central1/modelserver/logs?project=replicate
+* Computes a content-addressable ID
+* Validates and completes config (e.g. sets correct CUDA version for PyTorch)
+* Saves the model to storage (local files)
+* Builds and pushes Docker images to registry
+* Tests that the model works by running the Docker image locally and performing an inference
+* Inserts model metadata into database (local files)

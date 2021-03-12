@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/modelserver/pkg/global"
+	log "github.com/sirupsen/logrus"
 )
 
 func NewRootCommand() (*cobra.Command, error) {
@@ -18,6 +19,8 @@ func NewRootCommand() (*cobra.Command, error) {
 	rootCmd.AddCommand(
 		newServerCommand(),
 	)
+
+	log.SetLevel(log.DebugLevel)
 
 	return &rootCmd, nil
 }
