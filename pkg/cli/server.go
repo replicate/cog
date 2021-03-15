@@ -1,52 +1,37 @@
 package cli
 
 import (
-	"os"
-	"strconv"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
 
+	"github.com/replicate/modelserver/pkg/database"
+	"github.com/replicate/modelserver/pkg/docker"
 	"github.com/replicate/modelserver/pkg/global"
-	"github.com/replicate/modelserver/pkg/secrets"
 	"github.com/replicate/modelserver/pkg/server"
+	"github.com/replicate/modelserver/pkg/serving"
+	"github.com/replicate/modelserver/pkg/storage"
 )
 
 func newServerCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "server",
+		Use:   "server",
 		Short: "Start server",
-		RunE: startServer,
-		Args: cobra.NoArgs,
+		RunE:  startServer,
+		Args:  cobra.NoArgs,
 	}
 
-	cmd.Flags().String("access-token", "", "GCP access token (optional)")
-	cmd.Flags().StringVar(&global.CloudSQLPassword, "cloud-sql-password", "", "Cloud SQL password")
 	cmd.Flags().IntVar(&global.Port, "port", 0, "Server port")
 
 	return cmd
 }
 
 func startServer(cmd *cobra.Command, args []string) error {
-	accessToken, err := cmd.Flags().GetString("access-token")
-	if err != nil {
-		return err
-	}
-
-	if accessToken == "" {
-		global.TokenSource = google.ComputeTokenSource("default")
-	} else {
-		token := oauth2.Token{AccessToken: accessToken}
-		global.TokenSource = oauth2.StaticTokenSource(&token)
-	}
-	if global.CloudSQLPassword == "" {
-		global.CloudSQLPassword, err = secrets.FetchSecret("projects/replicate/secrets/modelserver-db-password/versions/latest")
-		if err != nil {
-			return err
-		}
-	}
+	var err error
 	if global.Port == 0 {
 		portEnv := os.Getenv("PORT")
 		if portEnv == "" {
@@ -58,9 +43,33 @@ func startServer(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	s, err := server.NewServer()
+	log.Debugf("Preparing to start server on port %d", global.Port)
+
+	// TODO(andreas): make this configurable
+	dataDir := ".modelserver"
+	storageDir := filepath.Join(dataDir, "storage")
+	if err := os.MkdirAll(storageDir, 0755); err != nil {
+		return fmt.Errorf("Failed to create %s: %w", storageDir, err)
+	}
+	databaseDir := filepath.Join(dataDir, "database")
+	if err := os.MkdirAll(databaseDir, 0755); err != nil {
+		return fmt.Errorf("Failed to create %s: %w", databaseDir, err)
+	}
+	registry := "us-central1-docker.pkg.dev/replicate/andreas-scratch"
+
+	db, err := database.NewLocalFileDatabase(databaseDir)
 	if err != nil {
 		return err
 	}
+	dockerImageBuilder := docker.NewLocalImageBuilder(registry)
+	servingPlatform, err := serving.NewLocalDockerPlatform()
+	if err != nil {
+		return err
+	}
+	store, err := storage.NewLocalStorage(storageDir)
+	if err != nil {
+		return err
+	}
+	s := server.NewServer(db, dockerImageBuilder, servingPlatform, store)
 	return s.Start()
 }

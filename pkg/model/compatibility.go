@@ -1,4 +1,4 @@
-package server
+package model
 
 import (
 	_ "embed"
@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	log "github.com/sirupsen/logrus"
+
+	"github.com/replicate/modelserver/pkg/version"
 )
 
 type TFCompatibility struct {
@@ -26,8 +28,8 @@ func (compat *TFCompatibility) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, c); err != nil {
 		return err
 	}
-	cuda := MustVersion(c.CUDA)
-	cuDNN := MustVersion(c.CuDNN)
+	cuda := version.MustVersion(c.CUDA)
+	cuDNN := version.MustVersion(c.CuDNN)
 	compat.TF = c.TF
 	compat.TFCPUPackage = c.TFCPUPackage
 	compat.TFGPUPackage = c.TFGPUPackage
@@ -113,26 +115,26 @@ func init() {
 	}
 }
 
-func cudasFromTorch(version string) ([]string, error) {
+func cudasFromTorch(ver string) ([]string, error) {
 	cudas := []string{}
 	for _, compat := range TorchCompatibilityMatrix {
-		if version == compat.TorchVersion() && compat.CUDA != nil {
+		if ver == compat.TorchVersion() && compat.CUDA != nil {
 			cudas = append(cudas, *compat.CUDA)
 		}
 	}
 	if len(cudas) == 0 {
-		return nil, fmt.Errorf("torch==%s doesn't have any compatible CUDA versions", version)
+		return nil, fmt.Errorf("torch==%s doesn't have any compatible CUDA versions", ver)
 	}
 	return cudas, nil
 }
 
-func cudaFromTF(version string) (cuda string, cuDNN string, err error) {
+func cudaFromTF(ver string) (cuda string, cuDNN string, err error) {
 	for _, compat := range TFCompatibilityMatrix {
-		if version == compat.TF {
+		if ver == compat.TF {
 			return compat.CUDA, compat.CuDNN, nil
 		}
 	}
-	return "", "", fmt.Errorf("tensorflow==%s doesn't have any compatible CUDA versions", version)
+	return "", "", fmt.Errorf("tensorflow==%s doesn't have any compatible CUDA versions", ver)
 }
 
 func compatibleCuDNNsForCUDA(cuda string) []string {
@@ -176,7 +178,7 @@ func latestCuDNNForCUDA(cuda string) string {
 		}
 	}
 	sort.Slice(cuDNNs, func(i, j int) bool {
-		return MustVersion(cuDNNs[i]).Greater(MustVersion(cuDNNs[j]))
+		return version.MustVersion(cuDNNs[i]).Greater(version.MustVersion(cuDNNs[j]))
 	})
 	return cuDNNs[0]
 }
@@ -202,11 +204,11 @@ func latestTF() TFCompatibility {
 
 func versionGreater(a string, b string) (bool, error) {
 	// TODO(andreas): use library
-	aVer, err := NewVersion(a)
+	aVer, err := version.NewVersion(a)
 	if err != nil {
 		return false, err
 	}
-	bVer, err := NewVersion(b)
+	bVer, err := version.NewVersion(b)
 	if err != nil {
 		return false, err
 	}
@@ -222,56 +224,56 @@ func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
 	return "", fmt.Errorf("No matching base image for CUDA %s and CuDNN %s", cuda, cuDNN)
 }
 
-func tfCPUPackage(version string) (name string, cpuVersion string, err error) {
+func tfCPUPackage(ver string) (name string, cpuVersion string, err error) {
 	for _, compat := range TFCompatibilityMatrix {
-		if compat.TF == version {
+		if compat.TF == ver {
 			return splitPythonPackage(compat.TFCPUPackage)
 		}
 	}
-	return "", "", fmt.Errorf("No matching tensorflow CPU package for version %s", version)
+	return "", "", fmt.Errorf("No matching tensorflow CPU package for version %s", ver)
 }
 
-func tfGPUPackage(version string, cuda string) (name string, cpuVersion string, err error) {
+func tfGPUPackage(ver string, cuda string) (name string, cpuVersion string, err error) {
 	for _, compat := range TFCompatibilityMatrix {
-		if compat.TF == version && compat.CUDA == cuda {
+		if compat.TF == ver && compat.CUDA == cuda {
 			return splitPythonPackage(compat.TFGPUPackage)
 		}
 	}
-	return "", "", fmt.Errorf("No matching tensorflow GPU package for version %s and CUDA %s", version, cuda)
+	return "", "", fmt.Errorf("No matching tensorflow GPU package for version %s and CUDA %s", ver, cuda)
 }
 
-func torchCPUPackage(version string) (name string, cpuVersion string, indexURL string, err error) {
+func torchCPUPackage(ver string) (name string, cpuVersion string, indexURL string, err error) {
 	for _, compat := range TorchCompatibilityMatrix {
-		if compat.TorchVersion() == version && compat.CUDA == nil {
+		if compat.TorchVersion() == ver && compat.CUDA == nil {
 			return "torch", compat.Torch, compat.IndexURL, nil
 		}
 	}
-	return "", "", "", fmt.Errorf("No matching Torch CPU package for version %s", version)
+	return "", "", "", fmt.Errorf("No matching Torch CPU package for version %s", ver)
 }
 
-func torchGPUPackage(version string, cuda string) (name string, cpuVersion string, indexURL string, err error) {
+func torchGPUPackage(ver string, cuda string) (name string, cpuVersion string, indexURL string, err error) {
 	for _, compat := range TorchCompatibilityMatrix {
-		if compat.TorchVersion() == version && compat.CUDA != nil && *compat.CUDA == cuda {
+		if compat.TorchVersion() == ver && compat.CUDA != nil && *compat.CUDA == cuda {
 			return "torch", compat.Torch, compat.IndexURL, nil
 		}
 	}
-	return "", "", "", fmt.Errorf("No matching torch GPU package for version %s and CUDA %s", version, cuda)
+	return "", "", "", fmt.Errorf("No matching torch GPU package for version %s and CUDA %s", ver, cuda)
 }
 
-func torchvisionCPUPackage(version string) (name string, cpuVersion string, indexURL string, err error) {
+func torchvisionCPUPackage(ver string) (name string, cpuVersion string, indexURL string, err error) {
 	for _, compat := range TorchCompatibilityMatrix {
-		if compat.TorchvisionVersion() == version && compat.CUDA == nil {
+		if compat.TorchvisionVersion() == ver && compat.CUDA == nil {
 			return "torchvision", compat.Torchvision, compat.IndexURL, nil
 		}
 	}
-	return "", "", "", fmt.Errorf("No matching torchvision CPU package for version %s", version)
+	return "", "", "", fmt.Errorf("No matching torchvision CPU package for version %s", ver)
 }
 
-func torchvisionGPUPackage(version string, cuda string) (name string, cpuVersion string, indexURL string, err error) {
+func torchvisionGPUPackage(ver string, cuda string) (name string, cpuVersion string, indexURL string, err error) {
 	for _, compat := range TorchCompatibilityMatrix {
-		if compat.TorchvisionVersion() == version && *compat.CUDA == cuda {
+		if compat.TorchvisionVersion() == ver && *compat.CUDA == cuda {
 			return "torchvision", compat.Torchvision, compat.IndexURL, nil
 		}
 	}
-	return "", "", "", fmt.Errorf("No matching torchvision GPU package for version %s and CUDA %s", version, cuda)
+	return "", "", "", fmt.Errorf("No matching torchvision GPU package for version %s and CUDA %s", ver, cuda)
 }

@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"crypto/sha1"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,48 +12,39 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/dchest/uniuri"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/replicate/modelserver/pkg/database"
+	"github.com/replicate/modelserver/pkg/docker"
 	"github.com/replicate/modelserver/pkg/global"
+	"github.com/replicate/modelserver/pkg/model"
+	"github.com/replicate/modelserver/pkg/serving"
+	"github.com/replicate/modelserver/pkg/storage"
 )
 
+// TODO(andreas): decouple saving zip files from image building into two separate API calls?
+// TODO(andreas): separate targets for different CUDA versions? how does that change the yaml design?
+
+const topLevelSourceDir = "source"
+
 type Server struct {
-	db         *DB
-	cloudbuild *CloudBuild
-	ai         *AIPlatform
-	storage    *Storage
+	db                 database.Database
+	dockerImageBuilder docker.ImageBuilder
+	servingPlatform    serving.Platform
+	store              storage.Storage
 }
 
-func NewServer() (*Server, error) {
-	s := new(Server)
-	return s, nil
+func NewServer(db database.Database, dockerImageBuilder docker.ImageBuilder, servingPlatform serving.Platform, store storage.Storage) *Server {
+	return &Server{
+		db:                 db,
+		dockerImageBuilder: dockerImageBuilder,
+		servingPlatform:    servingPlatform,
+		store:              store,
+	}
 }
 
 func (s *Server) Start() error {
-	var err error
-	s.db, err = NewDB()
-	if err != nil {
-		return err
-	}
-	defer s.db.Close()
-
-	s.cloudbuild, err = NewCloudBuild()
-	if err != nil {
-		return fmt.Errorf("Failed to connect to CloudBuild: %w", err)
-	}
-
-	s.ai, err = NewAIPlatform()
-	if err != nil {
-		return fmt.Errorf("Failed to connect to AI Platform: %w", err)
-	}
-
-	s.storage, err = NewStorage()
-	if err != nil {
-		return fmt.Errorf("Failed to connect to GCS: %w", err)
-	}
-
 	router := mux.NewRouter()
 	router.Path("/upload").
 		Methods("POST").
@@ -65,43 +57,39 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {
-	response, err := s.ReceiveModel(r)
+	mod, err := s.ReceiveModel(r)
 	if err != nil {
 		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, "Pushed CPU model %s, GPU model %s", response.CPUImageTag, response.GPUImageTag)
+	w.Header().Set("Content-Type", "application/json")
+
+	if err := json.NewEncoder(w).Encode(mod); err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 }
 
 func (s *Server) SendModelPackage(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	username := vars["username"]
-	modelName := vars["model_name"]
-	modelHash := vars["model_hash"]
-	log.Infof("Received download request for %s/%s:%s", username, modelName, modelHash)
-	filename := fmt.Sprintf("%s_%s_%s.zip", username, modelName, modelHash)
+	id := vars["id"]
+	log.Infof("Received download request for %s", id)
 	modTime := time.Now() // TODO
-	gcsPath := fmt.Sprintf("%s/%s/%s.zip", username, modelName, modelHash)
-	content, err := s.storage.Download(gcsPath)
+	content, err := s.store.Download(id)
 	if err != nil {
 		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	log.Infof("Downloaded %d bytes", len(content))
-	http.ServeContent(w, r, filename, modTime, bytes.NewReader(content))
+	http.ServeContent(w, r, id+".zip", modTime, bytes.NewReader(content))
 }
 
-type ModelSuccessResponse struct {
-	CPUImageTag        string
-	GPUImageTag        string
-	AIPlatformEndpoint string
-}
-
-func (s *Server) ReceiveModel(r *http.Request) (*ModelSuccessResponse, error) {
-	queryVars := r.URL.Query()
+func (s *Server) ReceiveModel(r *http.Request) (*model.Model, error) {
+	//queryVars := r.URL.Query()
 
 	// max 5GB models
 	if err := r.ParseMultipartForm(5 << 30); err != nil {
@@ -114,7 +102,7 @@ func (s *Server) ReceiveModel(r *http.Request) (*ModelSuccessResponse, error) {
 	if _, err := io.Copy(hasher, file); err != nil {
 		return nil, fmt.Errorf("Failed to compute hash: %w", err)
 	}
-	hash := fmt.Sprintf("%x", hasher.Sum(nil))
+	id := fmt.Sprintf("%x", hasher.Sum(nil))
 
 	reader, err := zip.NewReader(file, header.Size)
 	if err != nil {
@@ -137,7 +125,7 @@ func (s *Server) ReceiveModel(r *http.Request) (*ModelSuccessResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Failed to read config yaml: %w", err)
 	}
-	config, err := ConfigFromYAML(configRaw)
+	config, err := model.ConfigFromYAML(configRaw)
 	if err != nil {
 		return nil, err
 	}
@@ -147,66 +135,86 @@ func (s *Server) ReceiveModel(r *http.Request) (*ModelSuccessResponse, error) {
 		return nil, err
 	}
 
-	gcsPath := config.Name + "/" + hash + ".zip"
-	log.Infof("Uploading to gs://%s/%s", global.GCSBucket, gcsPath)
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("Failed to rewind file: %w", err)
 	}
-	if err := s.storage.Upload(file, gcsPath); err != nil {
+	if err := s.store.Upload(file, id); err != nil {
 		return nil, fmt.Errorf("Failed to upload to storage: %w", err)
 	}
 
-	cpuImageTag, gpuImageTag, err := s.buildDockerImages(dir, config)
+	artifacts, err := s.buildDockerImages(dir, config)
 	if err != nil {
 		return nil, err
 	}
-
-	aiPlatformEndpoint := ""
-	if queryVars.Get("deploy") == "true" {
-		aiPlatformEndpoint, err = s.ai.Deploy(cpuImageTag, hash)
-		if err != nil {
-			return nil, err
-		}
+	mod := &model.Model{
+		ID:        id,
+		Name:      config.Name,
+		Artifacts: artifacts,
+		Config:    config,
 	}
 
-	// TODO: test model
+	if err := s.testModel(mod); err != nil {
+		return nil, err
+	}
 
 	log.Info("Inserting into database")
-	if err := s.db.InsertModel(config.Name, hash, gcsPath, cpuImageTag, gpuImageTag); err != nil {
+	if err := s.db.InsertModel(mod); err != nil {
 		return nil, fmt.Errorf("Failed to insert into database: %w", err)
 	}
 
-	return &ModelSuccessResponse{cpuImageTag, gpuImageTag, aiPlatformEndpoint}, nil
+	return mod, nil
 }
 
-func (s *Server) buildDockerImages(dir string, config *Config) (cpuImageTag string, gpuImageTag string, err error) {
+func (s *Server) testModel(mod *model.Model) error {
+	log.Debug("Testing model")
+	deployment, err := s.servingPlatform.Deploy(mod, model.TargetDockerCPU)
+	if err != nil {
+		return err
+	}
+	defer deployment.Undeploy()
+
+	input := &serving.Example{}
+	result, err := deployment.RunInference(input)
+	if err != nil {
+		return err
+	}
+	log.Infof("Inference result length: %d", len(result.Values["output"]))
+
+	return nil
+}
+
+func (s *Server) buildDockerImages(dir string, config *model.Config) ([]*model.Artifact, error) {
+	// TODO(andreas): parallelize
+	artifacts := []*model.Artifact{}
 	for _, arch := range config.Environment.Architectures {
-		// TODO: use content-addressable hash
-		hash := uniuri.NewLenChars(40, []byte("abcdef0123456789"))
-		dockerTag := "us-central1-docker.pkg.dev/replicate/andreas-scratch/" + config.Name + ":" + hash
-
-		switch arch {
-		case "gpu":
-			gpuImageTag = dockerTag
-		case "cpu":
-			cpuImageTag = dockerTag
-		}
-
 		generator := &DockerfileGenerator{config, arch}
 		dockerfileContents, err := generator.Generate()
 		if err != nil {
-			return "", "", fmt.Errorf("Failed to generate Dockerfile for %s: %w", arch, err)
+			return nil, fmt.Errorf("Failed to generate Dockerfile for %s: %w", arch, err)
 		}
-		dockerfileName := "Dockerfile." + arch
-		dockerfilePath := filepath.Join(dir, dockerfileName)
+		// TODO(andreas): pipe dockerfile contents to builder
+		relDockerfilePath := "Dockerfile." + arch
+		dockerfilePath := filepath.Join(dir, relDockerfilePath)
 		if err := os.WriteFile(dockerfilePath, []byte(dockerfileContents), 0644); err != nil {
-			return "", "", fmt.Errorf("Failed to write Dockerfile for %s", arch)
+			return nil, fmt.Errorf("Failed to write Dockerfile for %s", arch)
 		}
 
-		if err := s.cloudbuild.Submit(dir, hash, dockerTag, dockerfileName); err != nil {
-			return "", "", fmt.Errorf("Failed to build Docker image: %w", err)
+		tag, err := s.dockerImageBuilder.BuildAndPush(dir, relDockerfilePath, config.Name)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to build Docker image: %w", err)
 		}
+		var target model.Target
+		switch arch {
+		case "cpu":
+			target = model.TargetDockerCPU
+		case "gpu":
+			target = model.TargetDockerGPU
+		}
+		artifacts = append(artifacts, &model.Artifact{
+			Target: target,
+			URI:    tag,
+		})
 
 	}
-	return cpuImageTag, gpuImageTag, nil
+	return artifacts, nil
 }
