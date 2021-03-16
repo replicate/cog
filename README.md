@@ -5,7 +5,7 @@ Work-in-progress service for model storage and serving.
 ## Run server
 
 ```
-go run ./cmd/modelserver/main.go server --port 8080
+go run ./cmd/modelserver/main.go server --port=8080 --docker-registry=us-central1-docker.pkg.dev/replicate/andreas-scratch
 ```
 
 The modelserver requires Go 1.16.

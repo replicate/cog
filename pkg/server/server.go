@@ -17,7 +17,6 @@ import (
 
 	"github.com/replicate/modelserver/pkg/database"
 	"github.com/replicate/modelserver/pkg/docker"
-	"github.com/replicate/modelserver/pkg/global"
 	"github.com/replicate/modelserver/pkg/model"
 	"github.com/replicate/modelserver/pkg/serving"
 	"github.com/replicate/modelserver/pkg/storage"
@@ -29,14 +28,16 @@ import (
 const topLevelSourceDir = "source"
 
 type Server struct {
+	port               int
 	db                 database.Database
 	dockerImageBuilder docker.ImageBuilder
 	servingPlatform    serving.Platform
 	store              storage.Storage
 }
 
-func NewServer(db database.Database, dockerImageBuilder docker.ImageBuilder, servingPlatform serving.Platform, store storage.Storage) *Server {
+func NewServer(port int, db database.Database, dockerImageBuilder docker.ImageBuilder, servingPlatform serving.Platform, store storage.Storage) *Server {
 	return &Server{
+		port:               port,
 		db:                 db,
 		dockerImageBuilder: dockerImageBuilder,
 		servingPlatform:    servingPlatform,
@@ -53,7 +54,7 @@ func (s *Server) Start() error {
 		Methods("GET").
 		HandlerFunc(s.SendModelPackage)
 	fmt.Println("Starting")
-	return http.ListenAndServe(fmt.Sprintf(":%d", global.Port), router)
+	return http.ListenAndServe(fmt.Sprintf(":%d", s.port), router)
 }
 
 func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {

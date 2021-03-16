@@ -11,7 +11,6 @@ import (
 
 	"github.com/replicate/modelserver/pkg/database"
 	"github.com/replicate/modelserver/pkg/docker"
-	"github.com/replicate/modelserver/pkg/global"
 	"github.com/replicate/modelserver/pkg/server"
 	"github.com/replicate/modelserver/pkg/serving"
 	"github.com/replicate/modelserver/pkg/storage"
@@ -25,25 +24,34 @@ func newServerCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 	}
 
-	cmd.Flags().IntVar(&global.Port, "port", 0, "Server port")
+	cmd.Flags().Int("port", 0, "Server port")
+	cmd.Flags().String("docker-registry", "", "Docker registry to push images to")
+	cmd.MarkFlagRequired("docker-registry")
 
 	return cmd
 }
 
 func startServer(cmd *cobra.Command, args []string) error {
-	var err error
-	if global.Port == 0 {
+	port, err := cmd.Flags().GetInt("port")
+	if err != nil {
+		return err
+	}
+	if port == 0 {
 		portEnv := os.Getenv("PORT")
 		if portEnv == "" {
 			return fmt.Errorf("--port flag or PORT env must be defined")
 		}
-		global.Port, err = strconv.Atoi(portEnv)
+		port, err = strconv.Atoi(portEnv)
 		if err != nil {
 			return fmt.Errorf("Failed to convert PORT %s to integer", portEnv)
 		}
 	}
+	dockerRegistry, err := cmd.Flags().GetString("docker-registry")
+	if err != nil {
+		return err
+	}
 
-	log.Debugf("Preparing to start server on port %d", global.Port)
+	log.Debugf("Preparing to start server on port %d", port)
 
 	// TODO(andreas): make this configurable
 	dataDir := ".modelserver"
@@ -55,13 +63,12 @@ func startServer(cmd *cobra.Command, args []string) error {
 	if err := os.MkdirAll(databaseDir, 0755); err != nil {
 		return fmt.Errorf("Failed to create %s: %w", databaseDir, err)
 	}
-	registry := "us-central1-docker.pkg.dev/replicate/andreas-scratch"
 
 	db, err := database.NewLocalFileDatabase(databaseDir)
 	if err != nil {
 		return err
 	}
-	dockerImageBuilder := docker.NewLocalImageBuilder(registry)
+	dockerImageBuilder := docker.NewLocalImageBuilder(dockerRegistry)
 	servingPlatform, err := serving.NewLocalDockerPlatform()
 	if err != nil {
 		return err
@@ -70,6 +77,6 @@ func startServer(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	s := server.NewServer(db, dockerImageBuilder, servingPlatform, store)
+	s := server.NewServer(port, db, dockerImageBuilder, servingPlatform, store)
 	return s.Start()
 }
