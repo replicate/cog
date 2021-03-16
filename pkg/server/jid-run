@@ -7,7 +7,7 @@ model_id=$1
 curl $JID_SERVER/models/$model_id > model.zip
 unzip model.zip
 cd model
-model_script=$(cat jid.yaml | yq -r .model)
+model_script=$(cat cog.yaml | yq -r .model)
 model_module=${model_script%.py.:*}
 model_class=${model_script#*:}
 python -c "from $model_module import $model_class; $model_class.start_server()"

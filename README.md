@@ -22,7 +22,7 @@ Example:
 $ curl -X POST localhost:8080/v1/packages/upload -F "file=@model-directory.zip"
 ```
 
-where `model-directory.zip` is a zip folder of a model directory with `jid.yaml` in it. [There are some example repository.](https://github.com/replicate/example-models)
+where `model-directory.zip` is a zip folder of a model directory with `cog.yaml` in it. [There are some example repository.](https://github.com/replicate/example-models)
 
 This does the following:
 * Computes a content-addressable ID
@@ -77,8 +77,8 @@ Example:
 $ curl localhost:8080/v1/packages/c43b98b37776656e6b3dac3ea3270660ffc21ca7.zip > my-package.zip
 $ unzip my-package.zip
 Archive:  my-package.zip
+  inflating: cog.yaml
   inflating: infer.py
-  inflating: jid.yaml
 ```
 
 ### GET `/v1/packages/`

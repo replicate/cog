@@ -168,9 +168,9 @@ func (s *Server) ReceiveModel(r *http.Request) (*model.Model, error) {
 		return nil, fmt.Errorf("Failed to unzip: %w", err)
 	}
 
-	configRaw, err := os.ReadFile(filepath.Join(dir, "jid.yaml"))
+	configRaw, err := os.ReadFile(filepath.Join(dir, "cog.yaml"))
 	if err != nil {
-		return nil, fmt.Errorf("Failed to read config yaml: %w", err)
+		return nil, fmt.Errorf("Failed to read cog.yaml: %w", err)
 	}
 	config, err := model.ConfigFromYAML(configRaw)
 	if err != nil {
