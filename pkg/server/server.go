@@ -197,6 +197,7 @@ func (s *Server) ReceiveModel(r *http.Request) (*model.Model, error) {
 	}
 
 	if err := s.testModel(mod); err != nil {
+		// TODO(andreas): return other response than 500 if validation fails
 		return nil, err
 	}
 
@@ -216,12 +217,20 @@ func (s *Server) testModel(mod *model.Model) error {
 	}
 	defer deployment.Undeploy()
 
-	input := &serving.Example{}
-	result, err := deployment.RunInference(input)
-	if err != nil {
-		return err
+	for _, example := range mod.Config.Examples {
+		input := &serving.Example{
+			Values: example.Input,
+		}
+		result, err := deployment.RunInference(input)
+		if err != nil {
+			return err
+		}
+		output := result.Values["output"]
+		log.Infof("Inference result length: %d", len(output))
+		if output != example.Output {
+			return fmt.Errorf("Output %s doesn't match expected: %s", output, example.Output)
+		}
 	}
-	log.Infof("Inference result length: %d", len(result.Values["output"]))
 
 	return nil
 }

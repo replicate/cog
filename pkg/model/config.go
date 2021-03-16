@@ -24,10 +24,16 @@ type Environment struct {
 	CuDNN              string   `yaml:"cudnn"`
 }
 
+type Example struct {
+	Input  map[string]string
+	Output string
+}
+
 type Config struct {
 	Name        string       `yaml:"name"`
 	Environment *Environment `yaml:"environment"`
 	Model       string       `yaml:"model"`
+	Examples    []*Example   `yaml:"examples"`
 }
 
 func DefaultConfig() *Config {

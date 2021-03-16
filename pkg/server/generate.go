@@ -11,8 +11,8 @@ import (
 
 const codeDir = "/code"
 
-//go:embed jid.py
-var jidLibrary []byte
+//go:embed cog.py
+var cogLibrary []byte
 
 type DockerfileGenerator struct {
 	Config *model.Config
@@ -48,7 +48,7 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 		installPython,
 		pythonRequirements,
 		pipInstalls,
-		g.installJid(),
+		g.installCog(),
 		g.copyCode(),
 		g.command(),
 	}), "\n"), nil
@@ -98,10 +98,10 @@ func (g *DockerfileGenerator) installPython() (string, error) {
 	&& ln -s /usr/bin/pip%s /usr/bin/pip`, py, pyMajor, py, pyMajor), nil
 }
 
-func (g *DockerfileGenerator) installJid() string {
-	jidLibB64 := base64.StdEncoding.EncodeToString(jidLibrary)
+func (g *DockerfileGenerator) installCog() string {
+	cogLibB64 := base64.StdEncoding.EncodeToString(cogLibrary)
 	return fmt.Sprintf(`RUN pip install flask
-RUN echo %s | base64 --decode > /usr/local/lib/python%s/dist-packages/jid.py`, jidLibB64, g.Config.Environment.PythonVersion)
+RUN echo %s | base64 --decode > /usr/local/lib/python%s/dist-packages/cog.py`, cogLibB64, g.Config.Environment.PythonVersion)
 }
 
 func (g *DockerfileGenerator) pythonRequirements() (string, error) {

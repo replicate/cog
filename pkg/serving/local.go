@@ -117,8 +117,11 @@ func (d *LocalDockerDeployment) Undeploy() error {
 }
 
 func (d *LocalDockerDeployment) RunInference(input *Example) (*Result, error) {
-	// TODO(andreas): handle inputs and different output types
-	resp, err := http.PostForm(fmt.Sprintf("http://localhost:%d/infer", d.port), url.Values{})
+	form := url.Values{}
+	for key, val := range input.Values {
+		form.Set(key, val)
+	}
+	resp, err := http.PostForm(fmt.Sprintf("http://localhost:%d/infer", d.port), form)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to run inference: %w", err)
 	}
