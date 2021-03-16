@@ -47,12 +47,18 @@ func NewServer(port int, db database.Database, dockerImageBuilder docker.ImageBu
 
 func (s *Server) Start() error {
 	router := mux.NewRouter()
-	router.Path("/upload").
+	router.Path("/v1/packages/upload").
 		Methods("POST").
 		HandlerFunc(s.ReceiveFile)
-	router.Path("/models/{username}/{model_name}/{model_hash}.zip").
+	router.Path("/v1/packages/{id}.zip").
 		Methods("GET").
 		HandlerFunc(s.SendModelPackage)
+	router.Path("/v1/packages/{id}").
+		Methods("GET").
+		HandlerFunc(s.SendModelMetadata)
+	router.Path("/v1/packages/").
+		Methods("GET").
+		HandlerFunc(s.SendAllModelsMetadata)
 	fmt.Println("Starting")
 	return http.ListenAndServe(fmt.Sprintf(":%d", s.port), router)
 }
@@ -87,6 +93,46 @@ func (s *Server) SendModelPackage(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Infof("Downloaded %d bytes", len(content))
 	http.ServeContent(w, r, id+".zip", modTime, bytes.NewReader(content))
+}
+
+func (s *Server) SendModelMetadata(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+	log.Infof("Received get request for %s", id)
+
+	mod, err := s.db.GetModelByID(id)
+	if err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+
+	if err := json.NewEncoder(w).Encode(mod); err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+}
+
+func (s *Server) SendAllModelsMetadata(w http.ResponseWriter, r *http.Request) {
+	log.Info("Received list request")
+
+	models, err := s.db.ListModels()
+	if err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+
+	if err := json.NewEncoder(w).Encode(models); err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 }
 
 func (s *Server) ReceiveModel(r *http.Request) (*model.Model, error) {
