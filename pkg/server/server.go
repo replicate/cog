@@ -1,7 +1,6 @@
 package server
 
 import (
-	"archive/zip"
 	"bytes"
 	"crypto/sha1"
 	"encoding/json"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/mholt/archiver/v3"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/replicate/modelserver/pkg/database"
@@ -151,11 +151,6 @@ func (s *Server) ReceiveModel(r *http.Request) (*model.Model, error) {
 	}
 	id := fmt.Sprintf("%x", hasher.Sum(nil))
 
-	reader, err := zip.NewReader(file, header.Size)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to read zip file: %w", err)
-	}
-
 	parentDir, err := os.MkdirTemp("/tmp", "unzip")
 	if err != nil {
 		return nil, fmt.Errorf("Failed to make tempdir: %w", err)
@@ -164,7 +159,8 @@ func (s *Server) ReceiveModel(r *http.Request) (*model.Model, error) {
 	if err := os.Mkdir(dir, 0755); err != nil {
 		return nil, fmt.Errorf("Failed to make source dir: %w", err)
 	}
-	if err := Unzip(reader, dir); err != nil {
+	z := archiver.Zip{}
+	if err := z.ReaderUnarchive(file, header.Size, dir); err != nil {
 		return nil, fmt.Errorf("Failed to unzip: %w", err)
 	}
 
