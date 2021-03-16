@@ -44,7 +44,7 @@ func (b *LocalImageBuilder) build(dir string, dockerfilePath string) (tag string
 		"--build-arg", "BUILDKIT_INLINE_CACHE=1",
 	)
 	cmd.Dir = dir
-	cmd.Env = []string{"DOCKER_BUILDKIT=1"}
+	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
 
 	tagChan, err := pipeToWithDockerTag(cmd.StderrPipe, log.Debug)
 	if err != nil {
@@ -69,6 +69,7 @@ func (b *LocalImageBuilder) tag(tag string, fullImageTag string) error {
 	log.Debugf("Tagging %s as %s", tag, fullImageTag)
 
 	cmd := exec.Command("docker", "tag", tag, fullImageTag)
+	cmd.Env = os.Environ()
 	if _, err := cmd.Output(); err != nil {
 		ee := err.(*exec.ExitError)
 		stderr := string(ee.Stderr)
