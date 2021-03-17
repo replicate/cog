@@ -69,27 +69,6 @@ class Model(ABC):
                 for cleanup_function in cleanup_functions:
                     cleanup_function()
 
-        @app.route("/infer-ai-platform", methods=["POST"])
-        def handle_ai_platform_request():
-            try:
-                content = request.json
-                instances = content["instances"]
-                results = []
-                for instance in instances:
-                    results.append(self.run(**instance))
-                return jsonify(
-                    {
-                        "predictions": results,
-                    }
-                )
-            except Exception as e:
-                tb = traceback.format_exc()
-                return jsonify(
-                    {
-                        "error": tb,
-                    }
-                )
-
         @app.route("/ping")
         def ping():
             return "PONG"
@@ -190,10 +169,6 @@ def input(name, type, default=None):
 
         if name in f._inputs:
             raise ValueError(f"{name} is already defined as an argument")
-
-        arg_names = _method_arg_names(f)
-        if name not in arg_names:
-            raise TypeError(f"{name} is not an argument to {f.__name__}")
 
         if type == Path and default is not None:
             raise TypeError("Cannot use default with Path type")

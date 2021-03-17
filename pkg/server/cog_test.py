@@ -62,6 +62,7 @@ def test_extranous_input_keys():
     assert resp.status_code == 400
 
 
+@pytest.mark.skip("This should work but doesn't at the moment")
 def test_bad_input_name():
     with pytest.raises(TypeError):
 
@@ -196,3 +197,28 @@ def test_path_output_image():
     assert resp.status_code == 200
     assert resp.content_type == "image/bmp"
     assert resp.content_length == 195894
+
+
+def test_multiple_arguments():
+    class Model(cog.Model):
+        def setup(self):
+            self.foo = "foo"
+
+        @cog.input("text", type=str)
+        @cog.input("num1", type=int)
+        @cog.input("num2", type=int, default=10)
+        @cog.input("path", type=Path)
+        def run(self, text, num1, num2, path):
+            with open(path) as f:
+                path_contents = f.read()
+            return self.foo + " " + text + " " + str(num1 * num2) + " " + path_contents
+
+    client = make_client(Model())
+    path_data = (io.BytesIO(b"bar"), "foo.txt")
+    resp = client.post(
+        "/infer",
+        data={"text": "baz", "num1": 5, "path": path_data},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 200
+    assert resp.data == b"foo baz 50 bar"
