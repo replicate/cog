@@ -2,4 +2,4 @@ release
 .ipynb_checkpoints/
 Untitled.ipynb
 __pycache__
-.modelserver
+.cog
