@@ -89,7 +89,7 @@ func buildPackage(cmd *cobra.Command, args []string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP error %s: %s", resp.StatusCode, body)
+		return fmt.Errorf("HTTP error %d: %s", resp.StatusCode, body)
 	}
 
 	fmt.Println("--> Done!")

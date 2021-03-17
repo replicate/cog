@@ -12,7 +12,7 @@ import (
 	"github.com/anaskhan96/soup"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/replicate/cog/pkg/server"
+	"github.com/replicate/cog/pkg/model"
 )
 
 func main() {
@@ -55,7 +55,7 @@ func writeTFCompatibilityMatrix(outputPath string) error {
 	table := gpuHeading.FindNextElementSibling()
 	rows := table.FindAll("tr")
 
-	compats := []server.TFCompatibility{}
+	compats := []model.TFCompatibility{}
 	for _, row := range rows[1:] {
 		cells := row.FindAll("td")
 		gpuPackage, packageVersion := split2(cells[0].Text(), "-")
@@ -66,7 +66,7 @@ func writeTFCompatibilityMatrix(outputPath string) error {
 		cuDNN := cells[4].Text()
 		cuda := cells[5].Text()
 
-		compat := server.TFCompatibility{
+		compat := model.TFCompatibility{
 			TF:           packageVersion,
 			TFCPUPackage: "tensorflow==" + packageVersion,
 			TFGPUPackage: gpuPackage + "==" + packageVersion,
@@ -95,7 +95,7 @@ func writeTFCompatibilityMatrix(outputPath string) error {
 func writeTorchCompatibilityMatrix(outputPath string) error {
 	log.Infof("Writing PyTorch compatibility matrix to %s...", outputPath)
 
-	compats := []server.TorchCompatibility{}
+	compats := []model.TorchCompatibility{}
 	var err error
 	compats, err = fetchCurrentTorchVersions(compats)
 	if err != nil {
@@ -156,7 +156,7 @@ func writeCUDABaseImageTags(outputPath string) error {
 	return nil
 }
 
-func fetchCurrentTorchVersions(compats []server.TorchCompatibility) ([]server.TorchCompatibility, error) {
+func fetchCurrentTorchVersions(compats []model.TorchCompatibility) ([]model.TorchCompatibility, error) {
 	url := "https://pytorch.org/assets/quick-start-module.js"
 
 	resp, err := soup.Get(url)
@@ -207,7 +207,7 @@ func fetchCurrentTorchVersions(compats []server.TorchCompatibility) ([]server.To
 	return compats, nil
 }
 
-func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *string) (*server.TorchCompatibility, error) {
+func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *string) (*model.TorchCompatibility, error) {
 	// e.g. "pip install torch==1.8.0+cpu torchvision==0.9.0+cpu torchaudio==0.8.0 -f https://download.pytorch.org/whl/torch_stable.html"
 
 	libVersions := map[string]string{}
@@ -247,7 +247,7 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 	// TODO(andreas): maybe scrape this from https://pytorch.org/get-started/locally/
 	pythons := []string{"3.6", "3.7", "3.8", "3.9"}
 
-	return &server.TorchCompatibility{
+	return &model.TorchCompatibility{
 		Torch:       torch,
 		Torchvision: torchvision,
 		Torchaudio:  torchaudio,
@@ -257,7 +257,7 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 	}, nil
 }
 
-func fetchPreviousTorchVersions(compats []server.TorchCompatibility) ([]server.TorchCompatibility, error) {
+func fetchPreviousTorchVersions(compats []model.TorchCompatibility) ([]model.TorchCompatibility, error) {
 	url := "https://pytorch.org/get-started/previous-versions/"
 	resp, err := soup.Get(url)
 	if err != nil {
@@ -278,7 +278,7 @@ func fetchPreviousTorchVersions(compats []server.TorchCompatibility) ([]server.T
 	return compats, nil
 }
 
-func parsePreviousTorchVersionsCode(code string, compats []server.TorchCompatibility) ([]server.TorchCompatibility, error) {
+func parsePreviousTorchVersionsCode(code string, compats []model.TorchCompatibility) ([]model.TorchCompatibility, error) {
 	// e.g.
 	// # CUDA 10.1
 	// pip install torch==1.5.0+cu101 torchvision==0.6.0+cu101 -f https://download.pytorch.org/whl/torch_stable.html
@@ -315,7 +315,7 @@ func parsePreviousTorchVersionsCode(code string, compats []server.TorchCompatibi
 }
 
 // torchvision==0.8.0 should actually be 0.8.1, this is a bug on the website
-func fixTorchCompatibility(compat *server.TorchCompatibility) {
+func fixTorchCompatibility(compat *model.TorchCompatibility) {
 	if strings.HasPrefix(compat.Torchvision, "0.8.0") {
 		compat.Torchvision = strings.Replace(compat.Torchvision, "0.8.0", "0.8.1", -1)
 	}
