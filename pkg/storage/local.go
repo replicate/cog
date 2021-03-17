@@ -59,5 +59,5 @@ func (s *LocalStorage) Download(id string) ([]byte, error) {
 }
 
 func (s *LocalStorage) pathForID(id string) string {
-	return filepath.Join(s.rootDir, id + ".zip")
+	return filepath.Join(s.rootDir, id+".zip")
 }

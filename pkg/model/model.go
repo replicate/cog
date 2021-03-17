@@ -8,10 +8,10 @@ const (
 )
 
 type Model struct {
-	ID         string
-	Name       string
-	Artifacts  []*Artifact
-	Config     *Config
+	ID        string
+	Name      string
+	Artifacts []*Artifact
+	Config    *Config
 }
 
 type Artifact struct {

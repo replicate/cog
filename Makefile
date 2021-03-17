@@ -7,7 +7,7 @@ GOARCH := $(shell go env GOARCH)
 BINARY := $(RELEASE_DIR)/$(GOOS)/$(GOARCH)/cog
 INSTALL_PATH := /usr/local/bin/cog
 MAIN := cmd/cog/cog.go
-LDFLAGS := -ldflags "-X github.com/replicate/replicate/go/pkg/global.Version=$(VERSION) -w"
+LDFLAGS := -ldflags "-X github.com/replicate/cog/pkg/global.Version=$(VERSION) -w"
 
 .PHONY: build
 build: clean
@@ -29,3 +29,7 @@ test:
 .PHONY: install
 install: build
 	go install $(MAIN)
+
+.PHONY: fmt
+fmt:
+	go run golang.org/x/tools/cmd/goimports --local github.com/replicate/cog -w -d .

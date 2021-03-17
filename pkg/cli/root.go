@@ -3,8 +3,9 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/global"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/replicate/cog/pkg/global"
 )
 
 func NewRootCommand() (*cobra.Command, error) {
