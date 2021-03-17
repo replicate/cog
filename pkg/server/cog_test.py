@@ -222,3 +222,43 @@ def test_multiple_arguments():
     )
     assert resp.status_code == 200
     assert resp.data == b"foo baz 50 bar"
+
+
+def test_help():
+    class Model(cog.Model):
+        def setup(self):
+            self.foo = "foo"
+
+        @cog.input("text", type=str, help="Some text")
+        @cog.input("num1", type=int, help="First number")
+        @cog.input("num2", type=int, default=10, help="Second number")
+        @cog.input("path", type=Path, help="A file path")
+        def run(self, text, num1, num2, path):
+            with open(path) as f:
+                path_contents = f.read()
+            return self.foo + " " + text + " " + str(num1 * num2) + " " + path_contents
+
+    client = make_client(Model())
+    resp = client.get("/help")
+    assert resp.status_code == 200
+    assert resp.json == {
+        "arguments": {
+            "text": {
+                "type": "str",
+                "help": "Some text",
+            },
+            "num1": {
+                "type": "int",
+                "help": "First number",
+            },
+            "num2": {
+                "type": "int",
+                "help": "Second number",
+                "default": 10,
+            },
+            "path": {
+                "type": "Path",
+                "help": "A file path",
+            },
+        }
+    }

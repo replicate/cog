@@ -73,6 +73,22 @@ class Model(ABC):
         def ping():
             return "PONG"
 
+        @app.route("/help")
+        def help():
+            args = {}
+            if hasattr(self.run, "_inputs"):
+                input_specs = self.run._inputs
+                for name, spec in input_specs.items():
+                    arg = {
+                        "type": _type_name(spec.type),
+                    }
+                    if spec.help:
+                        arg["help"] = spec.help
+                    if spec.default:
+                        arg["default"] = spec.default
+                    args[name] = arg
+            return jsonify({"arguments": args})
+
         return app
 
     def start_server(self):
@@ -151,11 +167,12 @@ class Model(ABC):
 
 @dataclass
 class InputSpec:
-    type: type
+    type: Type
     default: Optional[Any] = None
+    help: Optional[str] = None
 
 
-def input(name, type, default=None):
+def input(name, type, default=None, help=None):
     if type not in _VALID_INPUT_TYPES:
         type_name = _type_name(type)
         type_list = ", ".join([_type_name(t) for t in _VALID_INPUT_TYPES])
@@ -173,7 +190,7 @@ def input(name, type, default=None):
         if type == Path and default is not None:
             raise TypeError("Cannot use default with Path type")
 
-        f._inputs[name] = InputSpec(type=type, default=default)
+        f._inputs[name] = InputSpec(type=type, default=default, help=help)
 
         @functools.wraps(f)
         def wraps(self, **kwargs):
@@ -187,11 +204,13 @@ def input(name, type, default=None):
 
 
 def _type_name(type: Type) -> str:
-    if hasattr(type, "__name__"):
-        type_name = type.__name__
-    else:
-        type_name = str(type)
-    return type_name
+    if type == str:
+        return "str"
+    if type == int:
+        return "int"
+    if type == Path:
+        return "Path"
+    return str(type)
 
 
 def _method_arg_names(f) -> List[str]:
