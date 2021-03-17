@@ -29,10 +29,10 @@ Work-in-progress service for model storage and serving.
 ### Run server
 
 ```
-go run ./cmd/modelserver/main.go server --port=8080 --docker-registry=us-central1-docker.pkg.dev/replicate/andreas-scratch
+go run ./cmd/cog/main.go server --port=8080 --docker-registry=us-central1-docker.pkg.dev/replicate/andreas-scratch
 ```
 
-The modelserver requires Go 1.16.
+`cog` requires Go 1.16.
 
 ### API
 

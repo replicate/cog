@@ -1,7 +1,7 @@
 package database
 
 import (
-	"github.com/replicate/modelserver/pkg/model"
+	"github.com/replicate/cog/pkg/model"
 )
 
 type Database interface {

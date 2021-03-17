@@ -8,7 +8,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/replicate/modelserver/pkg/files"
+	"github.com/replicate/cog/pkg/files"
 )
 
 type LocalStorage struct {

@@ -17,10 +17,10 @@ import (
 
 	"strconv"
 
-	"github.com/replicate/modelserver/pkg/docker"
-	"github.com/replicate/modelserver/pkg/global"
-	"github.com/replicate/modelserver/pkg/model"
-	"github.com/replicate/modelserver/pkg/shell"
+	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/shell"
 )
 
 type LocalDockerPlatform struct {

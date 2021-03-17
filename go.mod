@@ -1,4 +1,4 @@
-module github.com/replicate/modelserver
+module github.com/replicate/cog
 
 go 1.16
 

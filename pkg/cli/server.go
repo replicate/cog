@@ -9,11 +9,11 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/modelserver/pkg/database"
-	"github.com/replicate/modelserver/pkg/docker"
-	"github.com/replicate/modelserver/pkg/server"
-	"github.com/replicate/modelserver/pkg/serving"
-	"github.com/replicate/modelserver/pkg/storage"
+	"github.com/replicate/cog/pkg/database"
+	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/server"
+	"github.com/replicate/cog/pkg/serving"
+	"github.com/replicate/cog/pkg/storage"
 )
 
 func newServerCommand() *cobra.Command {
@@ -54,7 +54,7 @@ func startServer(cmd *cobra.Command, args []string) error {
 	log.Debugf("Preparing to start server on port %d", port)
 
 	// TODO(andreas): make this configurable
-	dataDir := ".modelserver"
+	dataDir := ".cog"
 	storageDir := filepath.Join(dataDir, "storage")
 	if err := os.MkdirAll(storageDir, 0755); err != nil {
 		return fmt.Errorf("Failed to create %s: %w", storageDir, err)

@@ -9,7 +9,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/replicate/modelserver/pkg/shell"
+	"github.com/replicate/cog/pkg/shell"
 )
 
 type LocalImageBuilder struct {

@@ -12,7 +12,7 @@ import (
 	"github.com/anaskhan96/soup"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/replicate/modelserver/pkg/server"
+	"github.com/replicate/cog/pkg/server"
 )
 
 func main() {

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/replicate/modelserver/pkg/cli"
+	"github.com/replicate/cog/pkg/cli"
 
 	log "github.com/sirupsen/logrus"
 )

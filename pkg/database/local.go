@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/replicate/modelserver/pkg/files"
-	"github.com/replicate/modelserver/pkg/model"
+	"github.com/replicate/cog/pkg/files"
+	"github.com/replicate/cog/pkg/model"
 )
 
 type LocalFileDatabase struct {

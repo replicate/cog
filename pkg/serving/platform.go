@@ -1,7 +1,7 @@
 package serving
 
 import (
-	"github.com/replicate/modelserver/pkg/model"
+	"github.com/replicate/cog/pkg/model"
 )
 
 type Platform interface {

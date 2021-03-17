@@ -9,7 +9,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/replicate/modelserver/pkg/version"
+	"github.com/replicate/cog/pkg/version"
 )
 
 type TFCompatibility struct {

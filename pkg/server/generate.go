@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/replicate/modelserver/pkg/model"
+	"github.com/replicate/cog/pkg/model"
 )
 
 const codeDir = "/code"

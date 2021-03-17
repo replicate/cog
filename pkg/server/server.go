@@ -16,11 +16,11 @@ import (
 	"github.com/mholt/archiver/v3"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/replicate/modelserver/pkg/database"
-	"github.com/replicate/modelserver/pkg/docker"
-	"github.com/replicate/modelserver/pkg/model"
-	"github.com/replicate/modelserver/pkg/serving"
-	"github.com/replicate/modelserver/pkg/storage"
+	"github.com/replicate/cog/pkg/database"
+	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/serving"
+	"github.com/replicate/cog/pkg/storage"
 )
 
 // TODO(andreas): decouple saving zip files from image building into two separate API calls?
