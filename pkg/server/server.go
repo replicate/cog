@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -196,7 +197,7 @@ func (s *Server) ReceiveModel(r *http.Request) (*model.Model, error) {
 		Config:    config,
 	}
 
-	if err := s.testModel(mod); err != nil {
+	if err := s.testModel(mod, dir); err != nil {
 		// TODO(andreas): return other response than 500 if validation fails
 		return nil, err
 	}
@@ -209,7 +210,7 @@ func (s *Server) ReceiveModel(r *http.Request) (*model.Model, error) {
 	return mod, nil
 }
 
-func (s *Server) testModel(mod *model.Model) error {
+func (s *Server) testModel(mod *model.Model, dir string) error {
 	log.Debug("Testing model")
 	deployment, err := s.servingPlatform.Deploy(mod, model.TargetDockerCPU)
 	if err != nil {
@@ -217,7 +218,16 @@ func (s *Server) testModel(mod *model.Model) error {
 	}
 	defer deployment.Undeploy()
 
+	help, err := deployment.Help()
+	if err != nil {
+		return err
+	}
+
 	for _, example := range mod.Config.Examples {
+		if err := validateServingExampleInput(help, example.Input); err != nil {
+			return fmt.Errorf("Example input doesn't match run arguments: %w", err)
+		}
+
 		input := &serving.Example{
 			Values: example.Input,
 		}
@@ -269,4 +279,32 @@ func (s *Server) buildDockerImages(dir string, config *model.Config) ([]*model.A
 
 	}
 	return artifacts, nil
+}
+
+func validateServingExampleInput(help *serving.HelpResponse, input map[string]string) error {
+	// TODO(andreas): validate types
+	missingNames := []string{}
+	extraneousNames := []string{}
+
+	for name, arg := range help.Arguments {
+		if _, ok := input[name]; !ok && arg.Default == nil {
+			missingNames = append(missingNames, name)
+		}
+	}
+	for name := range input {
+		if _, ok := help.Arguments[name]; !ok {
+			extraneousNames = append(extraneousNames, name)
+		}
+	}
+	errParts := []string{}
+	if len(missingNames) > 0 {
+		errParts = append(errParts, "Missing arguments: "+strings.Join(missingNames, ", "))
+	}
+	if len(extraneousNames) > 0 {
+		errParts = append(errParts, "Extraneous arguments: "+strings.Join(extraneousNames, ", "))
+	}
+	if len(errParts) > 0 {
+		return fmt.Errorf(strings.Join(errParts, "; "))
+	}
+	return nil
 }

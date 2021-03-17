@@ -1,8 +1,32 @@
-# Model server
+# Cog: ML model packaging
+
+## Install
+
+```
+make install
+```
+
+This installs the `cog` binary to `/usr/local/bin/cog`.
+
+## Client
+
+Build an image in a directory containing cog.yaml:
+
+```
+cog build
+```
+
+Run an inference:
+
+```
+cog infer andreas/fastgan:f7763bbb8d30499f3c71e7bf2b7cd16fef895ec7 -o image.png
+```
+
+## Server
 
 Work-in-progress service for model storage and serving.
 
-## Run server
+### Run server
 
 ```
 go run ./cmd/modelserver/main.go server --port=8080 --docker-registry=us-central1-docker.pkg.dev/replicate/andreas-scratch
@@ -10,9 +34,9 @@ go run ./cmd/modelserver/main.go server --port=8080 --docker-registry=us-central
 
 The modelserver requires Go 1.16.
 
-## API
+### API
 
-### POST `/v1/packages/upload`
+#### POST `/v1/packages/upload`
 
 Upload a new package.
 
@@ -32,7 +56,7 @@ This does the following:
 * Tests that the model works by running the Docker image locally and performing an inference
 * Inserts model metadata into database (local files)
 
-### GET `/v1/packages/<id>`
+#### GET `/v1/packages/<id>`
 
 Fetch package metadata.
 
@@ -67,7 +91,7 @@ $ curl localhost:8080/v1/packages/c43b98b37776656e6b3dac3ea3270660ffc21ca7 | jq 
 }
 ```
 
-### GET `/v1/packages/<id>.zip`
+#### GET `/v1/packages/<id>.zip`
 
 Download the model package zip.
 
@@ -81,7 +105,7 @@ Archive:  my-package.zip
   inflating: infer.py
 ```
 
-### GET `/v1/packages/`
+#### GET `/v1/packages/`
 
 List all packages.
 

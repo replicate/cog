@@ -17,6 +17,8 @@ func NewRootCommand() (*cobra.Command, error) {
 	setPersistentFlags(&rootCmd)
 
 	rootCmd.AddCommand(
+		newBuildCommand(),
+		newInferCommand(),
 		newServerCommand(),
 	)
 
