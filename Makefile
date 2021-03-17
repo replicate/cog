@@ -6,7 +6,7 @@ GOOS := $(shell go env GOOS)
 GOARCH := $(shell go env GOARCH)
 BINARY := $(RELEASE_DIR)/$(GOOS)/$(GOARCH)/cog
 INSTALL_PATH := /usr/local/bin/cog
-MAIN := cmd/cog/main.go
+MAIN := cmd/cog/cog.go
 LDFLAGS := -ldflags "-X github.com/replicate/replicate/go/pkg/global.Version=$(VERSION) -w"
 
 .PHONY: build
@@ -28,4 +28,4 @@ test:
 
 .PHONY: install
 install: build
-	sudo cp $(BINARY) $(INSTALL_PATH)
+	go install $(MAIN)

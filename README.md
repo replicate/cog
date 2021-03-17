@@ -6,7 +6,7 @@
 make install
 ```
 
-This installs the `cog` binary to `/usr/local/bin/cog`.
+This installs the `cog` binary to `$GOPATH/bin/cog`.
 
 ## Client
 
