@@ -1,48 +1,88 @@
 package cli
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net"
+	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
 
+	"github.com/replicate/cog/pkg/client"
 	"github.com/spf13/cobra"
 )
 
-var output string
+var outPath string
 
 func newInferCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "infer <id>",
 		Short: "Run a single inference against a Cog package",
-		RunE:  runInference,
+		RunE:  cmdInfer,
 		Args:  cobra.MinimumNArgs(1),
 	}
-	cmd.Flags().StringVarP(&output, "output", "o", "", "output path")
+	cmd.Flags().StringVarP(&outPath, "output", "o", "", "output path")
 	return cmd
 }
 
-func runInference(cmd *cobra.Command, args []string) error {
-	fmt.Println("--> Booting model")
-	out, err := exec.Command("docker", "run", "-p", "5000:5000", "-d", "us-central1-docker.pkg.dev/replicate/andreas-scratch/"+args[0]).Output()
+func cmdInfer(cmd *cobra.Command, args []string) error {
+	packageId := args[0]
+
+	serverUrl := "http://localhost:8080"
+	client := client.NewClient(serverUrl)
+	pkg, err := client.GetPackage(packageId)
 	if err != nil {
 		return err
 	}
+
+	artifact := pkg.Artifacts[0]
+
+	fmt.Println("--> Running Docker image", artifact.URI)
+	out, err := exec.Command("docker", "run", "-p", "5000:5000", "-d", artifact.URI).CombinedOutput()
+	if err != nil {
+		fmt.Println(string(out))
+		return err
+	}
 	containerID := strings.TrimSpace(string(out))
-	defer exec.Command("docker", "kill", containerID).Output()
+	defer exec.Command("docker", "kill", containerID).CombinedOutput()
 
 	waitForPort("localhost:5000")
 	time.Sleep(3 * time.Second)
 
 	fmt.Println("--> Running inference")
-	out, err = exec.Command("curl", "--output", output, "-X", "POST", "localhost:5000/infer").Output()
+
+	resp, err := http.Post("http://localhost:5000/infer", "plain/text", bytes.NewBuffer([]byte{}))
 	if err != nil {
-		fmt.Println(out)
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := ioutil.ReadAll(resp.Body)
+		return fmt.Errorf("Status %d: %s", resp.StatusCode, body)
+	}
+
+	// TODO check content type so we don't barf binary data to stdout
+
+	outFile := os.Stdout
+	if outPath != "" {
+		outFile, err = os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE, 0755)
+		if err != nil {
+			return err
+		}
+	}
+
+	if _, err := io.Copy(outFile, resp.Body); err != nil {
 		return err
 	}
 
-	fmt.Println("--> Written output to " + output)
+	if outPath != "" {
+		fmt.Println("--> Written output to " + outPath)
+
+	}
 	return nil
 }
 

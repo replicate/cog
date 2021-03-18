@@ -1,9 +1,10 @@
 package cli
 
 import (
-	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/mholt/archiver/v3"
+	"github.com/replicate/cog/pkg/model"
 	"github.com/schollz/progressbar/v3"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -82,20 +84,19 @@ func buildPackage(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	body := &bytes.Buffer{}
-	if _, err = body.ReadFrom(resp.Body); err != nil {
-		return err
-	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		body, _ := ioutil.ReadAll(resp.Body)
 		return fmt.Errorf("HTTP error %d: %s", resp.StatusCode, body)
 	}
+	pkg := &model.Model{}
+	if err := json.NewDecoder(resp.Body).Decode(pkg); err != nil {
+		return err
+	}
 
-	fmt.Println("--> Done!")
-	fmt.Println(body)
-
-	return err
+	fmt.Println("--> Built", pkg.ID)
+	return nil
 }
 
 func uploadFile(req *http.Request, key, filename string, file io.ReadCloser, body io.WriteCloser) error {
