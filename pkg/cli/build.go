@@ -18,6 +18,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var buildHost string
+
 func newBuildCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "build",
@@ -26,17 +28,12 @@ func newBuildCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 	}
 
-	cmd.Flags().StringP("build-host", "b", "127.0.0.1:8080", "address to the build host")
+	cmd.Flags().StringVarP(&buildHost, "build-host", "b", "127.0.0.1:8080", "address to the build host")
 
 	return cmd
 }
 
 func buildPackage(cmd *cobra.Command, args []string) error {
-	buildHost, err := cmd.Flags().GetString("build-host")
-	if err != nil {
-		return err
-	}
-
 	projectDir, err := os.Getwd()
 	if err != nil {
 		return err
@@ -52,7 +49,7 @@ func buildPackage(cmd *cobra.Command, args []string) error {
 
 	client := &http.Client{}
 
-	req, err := http.NewRequest(http.MethodPost, "http://" + buildHost + "/v1/packages/upload", bodyReader)
+	req, err := http.NewRequest(http.MethodPost, "http://"+buildHost+"/v1/packages/upload", bodyReader)
 	if err != nil {
 		return err
 	}
