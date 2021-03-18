@@ -3,8 +3,8 @@ package cli
 import (
 	"fmt"
 
-	"github.com/spf13/cobra"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/global"
 )
@@ -20,6 +20,7 @@ func NewRootCommand() (*cobra.Command, error) {
 
 	rootCmd.AddCommand(
 		newBuildCommand(),
+		newDebugCommand(),
 		newInferCommand(),
 		newServerCommand(),
 	)
