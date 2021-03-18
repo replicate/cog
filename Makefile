@@ -27,7 +27,7 @@ test:
 	go run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
 
 .PHONY: install
-install: build
+install:
 	go install $(MAIN)
 
 .PHONY: fmt
