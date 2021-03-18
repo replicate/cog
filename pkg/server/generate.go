@@ -75,7 +75,7 @@ func (g *DockerfileGenerator) gpuBaseImage() (string, error) {
 }
 
 func (g *DockerfileGenerator) aptInstalls() (string, error) {
-	packages := append(g.Config.Environment.SystemPackages, "curl")
+	packages := append(g.Config.Environment.SystemPackages, "curl", "build-essential")
 	return "RUN apt-get update && apt-get install -y " +
 		strings.Join(packages, " ") +
 		" && rm -rf /var/lib/apt/lists/*", nil
@@ -91,11 +91,11 @@ func (g *DockerfileGenerator) installPython() (string, error) {
 	&& apt-get install -y --no-install-recommends software-properties-common \
 	&& add-apt-repository -y ppa:deadsnakes/ppa \
 	&& apt-get update \
-	&& apt-get install -y --no-install-recommends python%s python%s-pip \
+	&& apt-get install -y --no-install-recommends python%s python%s-dev python%s-pip \
 	&& apt-get purge -y --auto-remove software-properties-common \
 	&& rm -rf /var/lib/apt/lists/* \
 	&& ln -s /usr/bin/python%s /usr/bin/python \
-	&& ln -s /usr/bin/pip%s /usr/bin/pip`, py, pyMajor, py, pyMajor), nil
+	&& ln -s /usr/bin/pip%s /usr/bin/pip`, py, py, pyMajor, py, pyMajor), nil
 }
 
 func (g *DockerfileGenerator) installCog() string {

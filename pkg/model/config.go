@@ -187,7 +187,11 @@ func (c *Config) pythonPackageForArch(pkg string, arch string) (actualPackage st
 			}
 		}
 	}
-	return fmt.Sprintf("%s==%s", name, version), indexURL, nil
+	pkgWithVersion := name
+	if version != "" {
+		pkgWithVersion += "==" + version
+	}
+	return pkgWithVersion, indexURL, nil
 }
 
 func (c *Config) validateAndCompleteCUDA() error {
@@ -287,6 +291,10 @@ The following packages are missing pinned versions: %s`, strings.Join(packagesWi
 }
 
 func splitPythonPackage(pkg string) (name string, version string, err error) {
+	if strings.HasPrefix(pkg, "git+") {
+		return name, "", nil
+	}
+
 	if !strings.Contains(pkg, "==") {
 		return "", "", fmt.Errorf("Package %s is not in the format 'name==version'", pkg)
 	}
