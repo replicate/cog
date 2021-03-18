@@ -10,23 +10,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var output string
+
 func newInferCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "infer <package>",
+		Use:   "infer <id>",
 		Short: "Run a single inference against a Cog package",
 		RunE:  runInference,
 		Args:  cobra.MinimumNArgs(1),
 	}
-	cmd.Flags().StringP("output", "o", "", "output path")
+	cmd.Flags().StringVarP(&output, "output", "o", "", "output path")
 	return cmd
 }
 
 func runInference(cmd *cobra.Command, args []string) error {
-	output, err := cmd.Flags().GetString("output")
-	if err != nil {
-		return err
-	}
-
 	fmt.Println("--> Booting model")
 	out, err := exec.Command("docker", "run", "-p", "5000:5000", "-d", "us-central1-docker.pkg.dev/replicate/andreas-scratch/"+args[0]).Output()
 	if err != nil {

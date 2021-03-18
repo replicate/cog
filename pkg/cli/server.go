@@ -16,6 +16,11 @@ import (
 	"github.com/replicate/cog/pkg/storage"
 )
 
+var (
+	port           int
+	dockerRegistry string
+)
+
 func newServerCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "server",
@@ -24,18 +29,15 @@ func newServerCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 	}
 
-	cmd.Flags().Int("port", 0, "Server port")
-	cmd.Flags().String("docker-registry", "", "Docker registry to push images to")
+	cmd.Flags().IntVar(&port, "port", 0, "Server port")
+	cmd.Flags().StringVar(&dockerRegistry, "docker-registry", "", "Docker registry to push images to")
 	cmd.MarkFlagRequired("docker-registry")
 
 	return cmd
 }
 
 func startServer(cmd *cobra.Command, args []string) error {
-	port, err := cmd.Flags().GetInt("port")
-	if err != nil {
-		return err
-	}
+	var err error
 	if port == 0 {
 		portEnv := os.Getenv("PORT")
 		if portEnv == "" {
@@ -45,10 +47,6 @@ func startServer(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("Failed to convert PORT %s to integer", portEnv)
 		}
-	}
-	dockerRegistry, err := cmd.Flags().GetString("docker-registry")
-	if err != nil {
-		return err
 	}
 
 	log.Debugf("Preparing to start server on port %d", port)
