@@ -33,3 +33,11 @@ install: build
 .PHONY: fmt
 fmt:
 	go run golang.org/x/tools/cmd/goimports --local github.com/replicate/cog -w -d .
+
+.PHONY: lint
+lint:
+	go run github.com/golangci/golangci-lint/cmd/golangci-lint run ./...
+
+.PHONY: mod-tidy
+mod-tidy:
+	go mod tidy
