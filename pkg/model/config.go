@@ -15,13 +15,15 @@ import (
 // TODO(andreas): suggest valid torchvision versions (e.g. if the user wants to use 0.8.0, suggest 0.8.1)
 
 type Environment struct {
-	PythonVersion      string   `yaml:"python_version"`
-	PythonRequirements string   `yaml:"python_requirements"`
-	PythonPackages     []string `yaml:"python_packages"`
-	SystemPackages     []string `yaml:"system_packages"`
-	Architectures      []string `yaml:"architectures"`
-	CUDA               string   `yaml:"cuda"`
-	CuDNN              string   `yaml:"cudnn"`
+	PythonVersion        string   `yaml:"python_version"`
+	PythonRequirements   string   `yaml:"python_requirements"`
+	PythonExtraIndexURLs []string `yaml:"python_extra_index_urls"`
+	PythonFindLinks      []string `yaml:"python_find_links"`
+	PythonPackages       []string `yaml:"python_packages"`
+	SystemPackages       []string `yaml:"system_packages"`
+	Architectures        []string `yaml:"architectures"`
+	CUDA                 string   `yaml:"cuda"`
+	CuDNN                string   `yaml:"cudnn"`
 }
 
 type Example struct {

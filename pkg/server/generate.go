@@ -123,13 +123,18 @@ func (g *DockerfileGenerator) pipInstalls() (string, error) {
 	}
 
 	findLinks := ""
-	if len(indexURLs) > 0 {
-		for _, indexURL := range indexURLs {
-			findLinks += "-f " + indexURL + " "
-		}
+	for _, indexURL := range indexURLs {
+		findLinks += "-f " + indexURL + " "
+	}
+	for _, indexURL := range g.Config.Environment.PythonFindLinks {
+		findLinks += "-f " + indexURL + " "
+	}
+	extraIndexURLs := ""
+	for _, indexURL := range g.Config.Environment.PythonExtraIndexURLs {
+		extraIndexURLs += "--extra-index-url=" + indexURL
 	}
 
-	return "RUN pip install " + findLinks + strings.Join(packages, " "), nil
+	return "RUN pip install " + findLinks + " " + extraIndexURLs + " " + strings.Join(packages, " "), nil
 }
 
 func (g *DockerfileGenerator) copyCode() string {
