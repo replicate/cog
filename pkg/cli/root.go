@@ -1,8 +1,9 @@
 package cli
 
 import (
-	"github.com/spf13/cobra"
+	"fmt"
 
+	"github.com/spf13/cobra"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/replicate/cog/pkg/global"
@@ -12,7 +13,7 @@ func NewRootCommand() (*cobra.Command, error) {
 	rootCmd := cobra.Command{
 		Use:     "cog",
 		Short:   "",
-		Version: global.Version,
+		Version: fmt.Sprintf("%s (built %s)", global.Version, global.BuildTime),
 		// This stops errors being printed because we print them in cmd/keepsake/main.go
 	}
 	setPersistentFlags(&rootCmd)

@@ -7,7 +7,8 @@ GOARCH := $(shell go env GOARCH)
 BINARY := $(RELEASE_DIR)/$(GOOS)/$(GOARCH)/cog
 INSTALL_PATH := /usr/local/bin/cog
 MAIN := cmd/cog/cog.go
-LDFLAGS := -ldflags "-X github.com/replicate/cog/pkg/global.Version=$(VERSION) -w"
+BUILD_TIME := $(shell date +%Y-%m-%dT%H:%M:%S%z)
+LDFLAGS := -ldflags "-X github.com/replicate/cog/pkg/global.Version=$(VERSION) -X github.com/replicate/cog/pkg/global.BuildTime=$(BUILD_TIME) -w"
 
 .PHONY: build
 build: clean
@@ -28,7 +29,7 @@ test:
 
 .PHONY: install
 install:
-	go install $(MAIN)
+	go install $(LDFLAGS) $(MAIN)
 
 .PHONY: fmt
 fmt:

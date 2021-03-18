@@ -4,7 +4,8 @@ import (
 	"time"
 )
 
-const Version = "0.0.1"
+var Version = "0.0.1"
+var BuildTime = "none"
 
 var (
 	Verbose        = false
