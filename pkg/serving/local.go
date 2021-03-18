@@ -8,14 +8,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	log "github.com/sirupsen/logrus"
-
-	"strconv"
 
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
@@ -100,7 +100,7 @@ func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target) (Dep
 		return nil, fmt.Errorf("Failed to start Docker container for image %s: %w", imageTag, err)
 	}
 
-	if err := shell.WaitForHTTPOK(fmt.Sprintf("http://localhost:%d/ping", hostPort), global.StartupTimeout); err != nil {
+	if err := p.waitForContainerReady(hostPort, containerID); err != nil {
 		return nil, err
 	}
 
@@ -109,6 +109,39 @@ func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target) (Dep
 		client:      p.client,
 		port:        hostPort,
 	}, nil
+}
+
+func (p *LocalDockerPlatform) waitForContainerReady(hostPort int, containerID string) error {
+	url := fmt.Sprintf("http://localhost:%d/ping", hostPort)
+
+	start := time.Now()
+	log.Debugf("Waiting for %s to become accessible", url)
+	for {
+		now := time.Now()
+		if now.Sub(start) > global.StartupTimeout {
+			return fmt.Errorf("Timed out")
+		}
+
+		time.Sleep(100 * time.Millisecond)
+
+		cont, err := p.client.ContainerInspect(context.Background(), containerID)
+		if err != nil {
+			return fmt.Errorf("Failed to get container status: %w", err)
+		}
+		if cont.State != nil && (cont.State.Status == "exited" || cont.State.Status == "dead") {
+			return fmt.Errorf("Container exited unexpectedly")
+		}
+
+		resp, err := http.Get(url)
+		if err != nil {
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			continue
+		}
+		log.Debugf("Got successful response from %s", url)
+		return nil
+	}
 }
 
 func (d *LocalDockerDeployment) Undeploy() error {
