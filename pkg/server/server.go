@@ -142,7 +142,6 @@ func (s *Server) SendAllModelsMetadata(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-
 func (s *Server) DeletePackage(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
@@ -270,7 +269,7 @@ func (s *Server) testModel(mod *model.Model, dir string, streamLogger *logger.St
 		}
 		output := result.Values["output"]
 		streamLogger.WriteLogLine(fmt.Sprintf("Inference result length: %d", len(output)))
-		if output != example.Output {
+		if example.Output != "" && output != example.Output {
 			return nil, fmt.Errorf("Output %s doesn't match expected: %s", output, example.Output)
 		}
 	}
