@@ -15,27 +15,27 @@ import (
 // TODO(andreas): suggest valid torchvision versions (e.g. if the user wants to use 0.8.0, suggest 0.8.1)
 
 type Environment struct {
-	PythonVersion        string   `json:"python_version",yaml:"python_version"`
-	PythonRequirements   string   `json:"python_requirements",yaml:"python_requirements"`
-	PythonExtraIndexURLs []string `json:"python_extra_index_urls",yaml:"python_extra_index_urls"`
-	PythonFindLinks      []string `json:"python_find_links",yaml:"python_find_links"`
-	PythonPackages       []string `json:"python_packages",yaml:"python_packages"`
-	SystemPackages       []string `json:"system_packages",yaml:"system_packages"`
-	Architectures        []string `json:"architectures",yaml:"architectures"`
-	CUDA                 string   `json:"cuda",yaml:"cuda"`
-	CuDNN                string   `json:"cudnn",yaml:"cudnn"`
+	PythonVersion        string   `json:"python_version" yaml:"python_version"`
+	PythonRequirements   string   `json:"python_requirements" yaml:"python_requirements"`
+	PythonExtraIndexURLs []string `json:"python_extra_index_urls" yaml:"python_extra_index_urls"`
+	PythonFindLinks      []string `json:"python_find_links" yaml:"python_find_links"`
+	PythonPackages       []string `json:"python_packages" yaml:"python_packages"`
+	SystemPackages       []string `json:"system_packages" yaml:"system_packages"`
+	Architectures        []string `json:"architectures" yaml:"architectures"`
+	CUDA                 string   `json:"cuda" yaml:"cuda"`
+	CuDNN                string   `json:"cudnn" yaml:"cudnn"`
 }
 
 type Example struct {
-	Input  map[string]string `json:"input",yaml:"input"`
-	Output string            `json:"output",yaml:"output"`
+	Input  map[string]string `json:"input" yaml:"input"`
+	Output string            `json:"output" yaml:"output"`
 }
 
 type Config struct {
-	Name        string       `json:"name",yaml:"name"`
-	Environment *Environment `json:"environment",yaml:"environment"`
-	Model       string       `json:"model",yaml:"model"`
-	Examples    []*Example   `json:"examples",yaml:"examples"`
+	Name        string       `json:"name" yaml:"name"`
+	Environment *Environment `json:"environment" yaml:"environment"`
+	Model       string       `json:"model" yaml:"model"`
+	Examples    []*Example   `json:"examples" yaml:"examples"`
 }
 
 func DefaultConfig() *Config {

@@ -147,6 +147,9 @@ func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger
 		return nil, fmt.Errorf("Failed to parse request: %w", err)
 	}
 	file, header, err := r.FormFile("file")
+	if err != nil {
+		return nil, fmt.Errorf("Failed to read input file: %w", err)
+	}
 	defer file.Close()
 
 	streamLogger.WriteStatus("Received model")
