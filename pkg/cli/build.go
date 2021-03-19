@@ -1,10 +1,10 @@
 package cli
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -12,10 +12,12 @@ import (
 	"strings"
 
 	"github.com/mholt/archiver/v3"
-	"github.com/replicate/cog/pkg/model"
 	"github.com/schollz/progressbar/v3"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
+	"github.com/replicate/cog/pkg/logger"
+	"github.com/replicate/cog/pkg/model"
 )
 
 var buildHost string
@@ -90,16 +92,37 @@ func buildPackage(cmd *cobra.Command, args []string) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
-		return fmt.Errorf("HTTP error %d: %s", resp.StatusCode, body)
-	}
-	pkg := &model.Model{}
-	if err := json.NewDecoder(resp.Body).Decode(pkg); err != nil {
-		return err
+	var mod *model.Model
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			log.Warn(err)
+		}
+		msg := new(logger.Message)
+		if err := json.Unmarshal(line, msg); err != nil {
+			log.Warn("Failed to parse log message: %s", err)
+			continue
+		}
+		switch msg.Type {
+		case logger.MessageTypeError:
+			return fmt.Errorf("Error: %s", msg.Text)
+		case logger.MessageTypeLogLine:
+			log.Debug(msg.Text)
+		case logger.MessageTypeStatus:
+			fmt.Println("--> " + msg.Text)
+		case logger.MessageTypeModel:
+			mod = msg.Model
+		}
 	}
 
-	fmt.Println("--> Built", pkg.ID)
+	if mod == nil {
+		return fmt.Errorf("Failed to build model")
+	}
+	fmt.Println("--> Built", mod.ID)
 	return nil
 }
 

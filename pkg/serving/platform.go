@@ -5,7 +5,7 @@ import (
 )
 
 type Platform interface {
-	Deploy(mod *model.Model, target model.Target) (Deployment, error)
+	Deploy(mod *model.Model, target model.Target, logWriter func(string)) (Deployment, error)
 }
 
 type Deployment interface {

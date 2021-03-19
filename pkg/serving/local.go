@@ -15,7 +15,6 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
@@ -43,16 +42,18 @@ func NewLocalDockerPlatform() (*LocalDockerPlatform, error) {
 	}, nil
 }
 
-func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target) (Deployment, error) {
+func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target, logWriter func(string)) (Deployment, error) {
+	// TODO(andreas): output container logs
+
 	artifact, ok := mod.ArtifactFor(target)
 	if !ok {
 		return nil, fmt.Errorf("Model has no %s target", target)
 	}
 	imageTag := artifact.URI
 
-	log.Debugf("Deploying %s for %s", artifact.URI, artifact.Target)
+	logWriter(fmt.Sprintf("Deploying container for target %s", artifact.Target))
 
-	if err := docker.Pull(imageTag); err != nil {
+	if err := docker.Pull(imageTag, logWriter); err != nil {
 		return nil, fmt.Errorf("Failed to pull image %s: %w", imageTag, err)
 	}
 
@@ -100,7 +101,7 @@ func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target) (Dep
 		return nil, fmt.Errorf("Failed to start Docker container for image %s: %w", imageTag, err)
 	}
 
-	if err := p.waitForContainerReady(hostPort, containerID); err != nil {
+	if err := p.waitForContainerReady(hostPort, containerID, logWriter); err != nil {
 		return nil, err
 	}
 
@@ -111,11 +112,11 @@ func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target) (Dep
 	}, nil
 }
 
-func (p *LocalDockerPlatform) waitForContainerReady(hostPort int, containerID string) error {
+func (p *LocalDockerPlatform) waitForContainerReady(hostPort int, containerID string, logWriter func(string)) error {
 	url := fmt.Sprintf("http://localhost:%d/ping", hostPort)
 
 	start := time.Now()
-	log.Debugf("Waiting for %s to become accessible", url)
+	logWriter("Waiting for model container to become accessible")
 	for {
 		now := time.Now()
 		if now.Sub(start) > global.StartupTimeout {
@@ -139,7 +140,7 @@ func (p *LocalDockerPlatform) waitForContainerReady(hostPort int, containerID st
 		if resp.StatusCode != http.StatusOK {
 			continue
 		}
-		log.Debugf("Got successful response from %s", url)
+		logWriter("Got successful ping response from container")
 		return nil
 	}
 }

@@ -7,11 +7,11 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func Pull(tag string) error {
+func Pull(tag string, logWriter func(string)) error {
 	log.Info("Downloading image...")
 	cmd := exec.Command("docker", "pull", tag)
 
-	stderrDone, err := pipeToWithDockerChecks(cmd.StderrPipe, log.Debug)
+	stderrDone, err := pipeToWithDockerChecks(cmd.StderrPipe, logWriter)
 	if err != nil {
 		return err
 	}

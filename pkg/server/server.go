@@ -21,6 +21,7 @@ import (
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/serving"
 	"github.com/replicate/cog/pkg/storage"
+	"github.com/replicate/cog/pkg/logger"
 )
 
 // TODO(andreas): decouple saving zip files from image building into two separate API calls?
@@ -65,20 +66,15 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {
-	mod, err := s.ReceiveModel(r)
+	log.Infof("Received build request")
+	streamLogger := logger.NewStreamLogger(w)
+	mod, err := s.ReceiveModel(r, streamLogger)
 	if err != nil {
+		streamLogger.WriteError(err)
 		log.Error(err)
-		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-
-	if err := json.NewEncoder(w).Encode(mod); err != nil {
-		log.Error(err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
+	streamLogger.WriteModel(mod)
 }
 
 func (s *Server) SendModelPackage(w http.ResponseWriter, r *http.Request) {
@@ -136,7 +132,7 @@ func (s *Server) SendAllModelsMetadata(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) ReceiveModel(r *http.Request) (*model.Model, error) {
+func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger) (*model.Model, error) {
 	//queryVars := r.URL.Query()
 
 	// max 5GB models
@@ -145,6 +141,8 @@ func (s *Server) ReceiveModel(r *http.Request) (*model.Model, error) {
 	}
 	file, header, err := r.FormFile("file")
 	defer file.Close()
+
+	streamLogger.WriteStatus("Received model")
 
 	hasher := sha1.New()
 	if _, err := io.Copy(hasher, file); err != nil {
@@ -173,7 +171,6 @@ func (s *Server) ReceiveModel(r *http.Request) (*model.Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Infof("Received model %s", config.Name)
 
 	if err := config.ValidateAndCompleteConfig(); err != nil {
 		return nil, err
@@ -186,7 +183,7 @@ func (s *Server) ReceiveModel(r *http.Request) (*model.Model, error) {
 		return nil, fmt.Errorf("Failed to upload to storage: %w", err)
 	}
 
-	artifacts, err := s.buildDockerImages(dir, config)
+	artifacts, err := s.buildDockerImages(dir, config, streamLogger)
 	if err != nil {
 		return nil, err
 	}
@@ -197,12 +194,12 @@ func (s *Server) ReceiveModel(r *http.Request) (*model.Model, error) {
 		Config:    config,
 	}
 
-	if err := s.testModel(mod, dir); err != nil {
+	if err := s.testModel(mod, dir, streamLogger); err != nil {
 		// TODO(andreas): return other response than 500 if validation fails
 		return nil, err
 	}
 
-	log.Info("Inserting into database")
+	streamLogger.WriteStatus("Inserting into database")
 	if err := s.db.InsertModel(mod); err != nil {
 		return nil, fmt.Errorf("Failed to insert into database: %w", err)
 	}
@@ -210,9 +207,9 @@ func (s *Server) ReceiveModel(r *http.Request) (*model.Model, error) {
 	return mod, nil
 }
 
-func (s *Server) testModel(mod *model.Model, dir string) error {
-	log.Debug("Testing model")
-	deployment, err := s.servingPlatform.Deploy(mod, model.TargetDockerCPU)
+func (s *Server) testModel(mod *model.Model, dir string, streamLogger *logger.StreamLogger) error {
+	streamLogger.WriteStatus("Testing model")
+	deployment, err := s.servingPlatform.Deploy(mod, model.TargetDockerCPU, streamLogger.WriteLogLine)
 	if err != nil {
 		return err
 	}
@@ -236,7 +233,7 @@ func (s *Server) testModel(mod *model.Model, dir string) error {
 			return err
 		}
 		output := result.Values["output"]
-		log.Infof("Inference result length: %d", len(output))
+		streamLogger.WriteLogLine(fmt.Sprintf("Inference result length: %d", len(output)))
 		if output != example.Output {
 			return fmt.Errorf("Output %s doesn't match expected: %s", output, example.Output)
 		}
@@ -245,10 +242,13 @@ func (s *Server) testModel(mod *model.Model, dir string) error {
 	return nil
 }
 
-func (s *Server) buildDockerImages(dir string, config *model.Config) ([]*model.Artifact, error) {
+func (s *Server) buildDockerImages(dir string, config *model.Config, streamLogger *logger.StreamLogger) ([]*model.Artifact, error) {
 	// TODO(andreas): parallelize
 	artifacts := []*model.Artifact{}
 	for _, arch := range config.Environment.Architectures {
+
+		streamLogger.WriteStatus("Building %s image", arch)
+
 		generator := &DockerfileGenerator{config, arch}
 		dockerfileContents, err := generator.Generate()
 		if err != nil {
@@ -261,7 +261,7 @@ func (s *Server) buildDockerImages(dir string, config *model.Config) ([]*model.A
 			return nil, fmt.Errorf("Failed to write Dockerfile for %s", arch)
 		}
 
-		tag, err := s.dockerImageBuilder.BuildAndPush(dir, relDockerfilePath, config.Name)
+		tag, err := s.dockerImageBuilder.BuildAndPush(dir, relDockerfilePath, config.Name, streamLogger.WriteLogLine)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to build Docker image: %w", err)
 		}
