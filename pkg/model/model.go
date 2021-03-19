@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 type Target string
 
 const (
@@ -13,6 +15,7 @@ type Model struct {
 	Artifacts    []*Artifact             `json:"artifacts"`
 	Config       *Config                 `json:"config"`
 	RunArguments map[string]*RunArgument `json:"run_arguments"`
+	Created      time.Time               `json:"created"`
 }
 
 type Artifact struct {

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -18,10 +19,10 @@ import (
 
 	"github.com/replicate/cog/pkg/database"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/serving"
 	"github.com/replicate/cog/pkg/storage"
-	"github.com/replicate/cog/pkg/logger"
 )
 
 // TODO(andreas): decouple saving zip files from image building into two separate API calls?
@@ -122,6 +123,12 @@ func (s *Server) SendAllModelsMetadata(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+
+	// sort descending
+	sort.Slice(models, func(i, j int) bool {
+		return models[i].Created.After(models[j].Created)
+	})
+
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
 
@@ -192,6 +199,7 @@ func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger
 		Name:      config.Name,
 		Artifacts: artifacts,
 		Config:    config,
+		Created:   time.Now(),
 	}
 
 	runArgs, err := s.testModel(mod, dir, streamLogger)
