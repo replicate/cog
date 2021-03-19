@@ -42,9 +42,9 @@ func listPackages(cmd *cobra.Command, args []string) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tID\tCREATED")
+	fmt.Fprintln(w, "ID\tNAME\tCREATED")
 	for _, mod := range models {
-		fmt.Fprintf(w, "%s\t%s\t%s\n", mod.Name, mod.ID, timeago.English.Format(mod.Created))
+		fmt.Fprintf(w, "%s\t%s\t%s\n", mod.ID, mod.Name, timeago.English.Format(mod.Created))
 	}
 	w.Flush()
 
