@@ -75,8 +75,8 @@ func (g *DockerfileGenerator) gpuBaseImage() (string, error) {
 }
 
 func (g *DockerfileGenerator) aptInstalls() (string, error) {
-	packages := append(g.Config.Environment.SystemPackages, "curl", "build-essential")
-	return "RUN apt-get update && apt-get install -y " +
+	packages := g.Config.Environment.SystemPackages
+	return "RUN apt-get update -qq && apt-get install -qy " +
 		strings.Join(packages, " ") +
 		" && rm -rf /var/lib/apt/lists/*", nil
 }
@@ -85,23 +85,41 @@ func (g *DockerfileGenerator) installPython() (string, error) {
 	// TODO: check that python version is valid
 
 	py := g.Config.Environment.PythonVersion
-	pyMajor := strings.Split(py, ".")[0]
 
-	return fmt.Sprintf(`RUN apt-get update \
-	&& apt-get install -y --no-install-recommends software-properties-common \
-	&& add-apt-repository -y ppa:deadsnakes/ppa \
-	&& apt-get update \
-	&& apt-get install -y --no-install-recommends python%s python%s-dev python%s-pip \
-	&& apt-get purge -y --auto-remove software-properties-common \
-	&& rm -rf /var/lib/apt/lists/* \
-	&& ln -s /usr/bin/python%s /usr/bin/python \
-	&& ln -s /usr/bin/pip%s /usr/bin/pip`, py, py, pyMajor, py, pyMajor), nil
+	return fmt.Sprintf(`
+ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
+RUN apt-get update -q && apt-get install -qy --no-install-recommends \
+        make \
+        build-essential \
+        libssl-dev \
+        zlib1g-dev \
+        libbz2-dev \
+        libreadline-dev \
+        libsqlite3-dev \
+        wget \
+        curl \
+        llvm \
+        libncurses5-dev \
+        libncursesw5-dev \
+        xz-utils \
+        tk-dev \
+        libffi-dev \
+        liblzma-dev \
+        python-openssl \
+        git \
+        ca-certificates \
+        && rm -rf /var/lib/apt/lists/*
+RUN curl https://pyenv.run | bash && \
+	git clone https://github.com/momo-lab/pyenv-install-latest.git "$(pyenv root)"/plugins/pyenv-install-latest && \
+	pyenv install-latest "%s" && \
+	pyenv global $(pyenv install-latest --print "%s")`, py, py), nil
 }
 
 func (g *DockerfileGenerator) installCog() string {
 	cogLibB64 := base64.StdEncoding.EncodeToString(cogLibrary)
 	return fmt.Sprintf(`RUN pip install flask
-RUN echo %s | base64 --decode > /usr/local/lib/python%s/dist-packages/cog.py`, cogLibB64, g.Config.Environment.PythonVersion)
+ENV PYTHONPATH=/usr/local/lib/cog
+RUN mkdir -p /usr/local/lib/cog && echo %s | base64 --decode > /usr/local/lib/cog/cog.py`, cogLibB64)
 }
 
 func (g *DockerfileGenerator) pythonRequirements() (string, error) {
