@@ -24,6 +24,7 @@ func NewRootCommand() (*cobra.Command, error) {
 		newInferCommand(),
 		newServerCommand(),
 		newListCommand(),
+		newShowCommand(),
 	)
 
 	log.SetLevel(log.DebugLevel)
