@@ -100,11 +100,15 @@ func buildPackage(cmd *cobra.Command, args []string) error {
 			if err == io.EOF {
 				break
 			}
+			if err == io.ErrUnexpectedEOF {
+				log.Warn("Unexpected EOF")
+				break
+			}
 			log.Warn(err)
 		}
 		msg := new(logger.Message)
 		if err := json.Unmarshal(line, msg); err != nil {
-			log.Warn("Failed to parse log message: %s", err)
+			log.Warnf("Failed to parse log message: %s", err)
 			continue
 		}
 		switch msg.Type {
