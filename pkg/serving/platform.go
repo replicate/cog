@@ -22,20 +22,6 @@ type Result struct {
 	Values map[string]string
 }
 
-type ArgumentType string
-
-const (
-	ArgumentTypeString ArgumentType = "str"
-	ArgumentTypeInt    ArgumentType = "int"
-	ArgumentTypePath   ArgumentType = "Path"
-)
-
-type ArgumentHelp struct {
-	Type    ArgumentType `json:"type"`
-	Default *string      `json:"default"`
-	Help    *string      `json:"help"`
-}
-
 type HelpResponse struct {
-	Arguments map[string]*ArgumentHelp `json:"arguments"`
+	Arguments map[string]*model.RunArgument `json:"arguments"`
 }

@@ -8,15 +8,30 @@ const (
 )
 
 type Model struct {
-	ID        string
-	Name      string
-	Artifacts []*Artifact
-	Config    *Config
+	ID           string                  `json:"id"`
+	Name         string                  `json:"name"`
+	Artifacts    []*Artifact             `json:"artifacts"`
+	Config       *Config                 `json:"config"`
+	RunArguments map[string]*RunArgument `json:"run_arguments"`
 }
 
 type Artifact struct {
-	Target Target
-	URI    string
+	Target Target `json:"target"`
+	URI    string `json:"uri"`
+}
+
+type ArgumentType string
+
+const (
+	ArgumentTypeString ArgumentType = "str"
+	ArgumentTypeInt    ArgumentType = "int"
+	ArgumentTypePath   ArgumentType = "Path"
+)
+
+type RunArgument struct {
+	Type    ArgumentType `json:"type"`
+	Default *string      `json:"default"`
+	Help    *string      `json:"help"`
 }
 
 func (m *Model) ArtifactFor(target Target) (artifact *Artifact, ok bool) {

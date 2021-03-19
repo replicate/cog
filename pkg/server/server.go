@@ -194,10 +194,12 @@ func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger
 		Config:    config,
 	}
 
-	if err := s.testModel(mod, dir, streamLogger); err != nil {
+	runArgs, err := s.testModel(mod, dir, streamLogger)
+	if err != nil {
 		// TODO(andreas): return other response than 500 if validation fails
 		return nil, err
 	}
+	mod.RunArguments = runArgs
 
 	streamLogger.WriteStatus("Inserting into database")
 	if err := s.db.InsertModel(mod); err != nil {
@@ -207,22 +209,22 @@ func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger
 	return mod, nil
 }
 
-func (s *Server) testModel(mod *model.Model, dir string, streamLogger *logger.StreamLogger) error {
+func (s *Server) testModel(mod *model.Model, dir string, streamLogger *logger.StreamLogger) (map[string]*model.RunArgument, error) {
 	streamLogger.WriteStatus("Testing model")
 	deployment, err := s.servingPlatform.Deploy(mod, model.TargetDockerCPU, streamLogger.WriteLogLine)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer deployment.Undeploy()
 
 	help, err := deployment.Help()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	for _, example := range mod.Config.Examples {
 		if err := validateServingExampleInput(help, example.Input); err != nil {
-			return fmt.Errorf("Example input doesn't match run arguments: %w", err)
+			return nil, fmt.Errorf("Example input doesn't match run arguments: %w", err)
 		}
 
 		input := &serving.Example{
@@ -230,16 +232,16 @@ func (s *Server) testModel(mod *model.Model, dir string, streamLogger *logger.St
 		}
 		result, err := deployment.RunInference(input)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		output := result.Values["output"]
 		streamLogger.WriteLogLine(fmt.Sprintf("Inference result length: %d", len(output)))
 		if output != example.Output {
-			return fmt.Errorf("Output %s doesn't match expected: %s", output, example.Output)
+			return nil, fmt.Errorf("Output %s doesn't match expected: %s", output, example.Output)
 		}
 	}
 
-	return nil
+	return help.Arguments, nil
 }
 
 func (s *Server) buildDockerImages(dir string, config *model.Config, streamLogger *logger.StreamLogger) ([]*model.Artifact, error) {
