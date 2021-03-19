@@ -20,22 +20,22 @@ func NewLocalImageBuilder(registry string) *LocalImageBuilder {
 	return &LocalImageBuilder{registry: registry}
 }
 
-func (b *LocalImageBuilder) BuildAndPush(dir string, dockerfilePath string, name string) (fullImageTag string, err error) {
-	tag, err := b.build(dir, dockerfilePath)
+func (b *LocalImageBuilder) BuildAndPush(dir string, dockerfilePath string, name string, logWriter func(string)) (fullImageTag string, err error) {
+	tag, err := b.build(dir, dockerfilePath, logWriter)
 	if err != nil {
 		return "", err
 	}
 	fullImageTag = fmt.Sprintf("%s/%s:%s", b.registry, name, tag)
-	if err := b.tag(tag, fullImageTag); err != nil {
+	if err := b.tag(tag, fullImageTag, logWriter); err != nil {
 		return "", err
 	}
-	if err := b.push(fullImageTag); err != nil {
+	if err := b.push(fullImageTag, logWriter); err != nil {
 		return "", err
 	}
 	return fullImageTag, nil
 }
 
-func (b *LocalImageBuilder) build(dir string, dockerfilePath string) (tag string, err error) {
+func (b *LocalImageBuilder) build(dir string, dockerfilePath string, logWriter func(string)) (tag string, err error) {
 	log.Debugf("Building in %s", dir)
 
 	cmd := exec.Command(
@@ -46,7 +46,7 @@ func (b *LocalImageBuilder) build(dir string, dockerfilePath string) (tag string
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
 
-	tagChan, err := pipeToWithDockerTag(cmd.StderrPipe, log.Debug)
+	tagChan, err := pipeToWithDockerTag(cmd.StderrPipe, logWriter)
 	if err != nil {
 		return "", err
 	}
@@ -60,12 +60,12 @@ func (b *LocalImageBuilder) build(dir string, dockerfilePath string) (tag string
 		return "", err
 	}
 
-	log.Debugf("Successfully built %s", dockerTag)
+	logWriter(fmt.Sprintf("Successfully built %s", dockerTag))
 
 	return dockerTag, err
 }
 
-func (b *LocalImageBuilder) tag(tag string, fullImageTag string) error {
+func (b *LocalImageBuilder) tag(tag string, fullImageTag string, logWriter func(string)) error {
 	log.Debugf("Tagging %s as %s", tag, fullImageTag)
 
 	cmd := exec.Command("docker", "tag", tag, fullImageTag)
@@ -78,15 +78,15 @@ func (b *LocalImageBuilder) tag(tag string, fullImageTag string) error {
 	return nil
 }
 
-func (b *LocalImageBuilder) push(tag string) error {
-	log.Debugf("Pushing %s", tag)
+func (b *LocalImageBuilder) push(tag string, logWriter func(string)) error {
+	logWriter(fmt.Sprintf("Pushing %s to registry", tag))
 
 	args := []string{"push", tag}
 	cmd := exec.Command("docker", args...)
 	cmd.Env = os.Environ()
 
 	log.Debug("Pushing model to Registry...")
-	stderrDone, err := pipeToWithDockerChecks(cmd.StderrPipe, log.Debug)
+	stderrDone, err := pipeToWithDockerChecks(cmd.StderrPipe, logWriter)
 	if err != nil {
 		return err
 	}
@@ -99,7 +99,7 @@ func (b *LocalImageBuilder) push(tag string) error {
 	return nil
 }
 
-func pipeToWithDockerTag(pf shell.PipeFunc, lf shell.LogFunc) (tagChan chan string, err error) {
+func pipeToWithDockerTag(pf shell.PipeFunc, lf func(string)) (tagChan chan string, err error) {
 	// TODO: this is a hack, use Docker Go API instead
 
 	// awkward logic: scan docker build output for the string
@@ -140,7 +140,7 @@ func pipeToWithDockerTag(pf shell.PipeFunc, lf shell.LogFunc) (tagChan chan stri
 	return tagChan, nil
 }
 
-func pipeToWithDockerChecks(pf shell.PipeFunc, lf shell.LogFunc) (done chan struct{}, err error) {
+func pipeToWithDockerChecks(pf shell.PipeFunc, lf func(string)) (done chan struct{}, err error) {
 	return shell.PipeTo(pf, func(args ...interface{}) {
 		line := args[0].(string)
 		if strings.Contains(line, "Cannot connect to the Docker daemon") {
