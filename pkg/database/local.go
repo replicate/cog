@@ -41,7 +41,7 @@ func (db *LocalFileDatabase) InsertModel(mod *model.Model) error {
 	if err != nil {
 		return fmt.Errorf("Failed to marshall model: %w", err)
 	}
-	path := filepath.Join(db.rootDir, mod.ID+".json")
+	path := db.packagePath(mod.ID)
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("Failed to write metadata file %s: %w", path, err)
 	}
@@ -70,7 +70,7 @@ func (db *LocalFileDatabase) ListModels() ([]*model.Model, error) {
 
 // GetModelByID returns a model or nil if the model doesn't exist
 func (db *LocalFileDatabase) GetModelByID(id string) (*model.Model, error) {
-	path := filepath.Join(db.rootDir, id+".json")
+	path := db.packagePath(id)
 	exists, err := files.FileExists(path)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to determine if %s exists: %w", path, err)
@@ -85,6 +85,14 @@ func (db *LocalFileDatabase) GetModelByID(id string) (*model.Model, error) {
 	return mod, nil
 }
 
+func (db *LocalFileDatabase) DeleteModel(id string) error {
+	path := db.packagePath(id)
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("Failed to delete %s: %w", path, err)
+	}
+	return nil
+}
+
 func (db *LocalFileDatabase) readModel(path string) (*model.Model, error) {
 	contents, err := os.ReadFile(path)
 	if err != nil {
@@ -95,4 +103,8 @@ func (db *LocalFileDatabase) readModel(path string) (*model.Model, error) {
 		return nil, fmt.Errorf("Failed to parse %s: %w", path, err)
 	}
 	return mod, nil
+}
+
+func (db *LocalFileDatabase) packagePath(id string) string {
+	return filepath.Join(db.rootDir, id+".json")
 }

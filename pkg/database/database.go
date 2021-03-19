@@ -8,4 +8,5 @@ type Database interface {
 	InsertModel(mod *model.Model) error
 	ListModels() ([]*model.Model, error)
 	GetModelByID(id string) (*model.Model, error)
+	DeleteModel(id string) error
 }

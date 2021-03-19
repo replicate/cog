@@ -118,7 +118,7 @@ func showPackage(cmd *cobra.Command, args []string) error {
 	}
 	if len(env.SystemPackages) > 0 {
 		fmt.Println("System packages:")
-		for _, pkg := range env.PythonPackages {
+		for _, pkg := range env.SystemPackages {
 			fmt.Println("* " + pkg)
 		}
 		fmt.Println()

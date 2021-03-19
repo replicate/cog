@@ -58,6 +58,14 @@ func (s *LocalStorage) Download(id string) ([]byte, error) {
 	return contents, nil
 }
 
+func (s *LocalStorage) Delete(id string) error {
+	path := s.pathForID(id)
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("Failed to delete %s: %w", path, err)
+	}
+	return nil
+}
+
 func (s *LocalStorage) pathForID(id string) string {
 	return filepath.Join(s.rootDir, id+".zip")
 }

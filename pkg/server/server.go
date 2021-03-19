@@ -62,6 +62,9 @@ func (s *Server) Start() error {
 	router.Path("/v1/packages/").
 		Methods("GET").
 		HandlerFunc(s.SendAllModelsMetadata)
+	router.Path("/v1/packages/{id}").
+		Methods("DELETE").
+		HandlerFunc(s.DeletePackage)
 	fmt.Println("Starting")
 	return http.ListenAndServe(fmt.Sprintf(":%d", s.port), router)
 }
@@ -137,6 +140,26 @@ func (s *Server) SendAllModelsMetadata(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+}
+
+
+func (s *Server) DeletePackage(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+	log.Infof("Received delete request for %s", id)
+
+	if err := s.store.Delete(id); err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if err := s.db.DeleteModel(id); err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Deleted " + id))
 }
 
 func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger) (*model.Model, error) {
