@@ -12,8 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/replicate/cog/pkg/client"
 	"github.com/spf13/cobra"
+
+	"github.com/replicate/cog/pkg/client"
 )
 
 var outPath string

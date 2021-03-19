@@ -1,10 +1,10 @@
 package cli
 
 import (
-	"os"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -15,10 +15,10 @@ import (
 
 func newListCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "list",
+		Use:   "list",
 		Short: "List Cog packages",
-		RunE: listPackages,
-		Args: cobra.NoArgs,
+		RunE:  listPackages,
+		Args:  cobra.NoArgs,
 	}
 
 	cmd.Flags().StringVarP(&buildHost, "build-host", "H", "127.0.0.1:8080", "address to the build host")

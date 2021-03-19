@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/replicate/cog/pkg/model"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/replicate/cog/pkg/model"
 )
 
 type MessageType string

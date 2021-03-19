@@ -9,8 +9,8 @@ type Platform interface {
 }
 
 type Deployment interface {
-	RunInference(input *Example) (*Result, error)
-	Help() (*HelpResponse, error)
+	RunInference(input *Example, logWriter func(string)) (*Result, error)
+	Help(logWriter func(string)) (*HelpResponse, error)
 	Undeploy() error
 }
 

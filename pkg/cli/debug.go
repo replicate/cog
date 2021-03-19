@@ -6,9 +6,10 @@ import (
 	"os"
 	"path"
 
+	"github.com/spf13/cobra"
+
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/server"
-	"github.com/spf13/cobra"
 )
 
 func newDebugCommand() *cobra.Command {

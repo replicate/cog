@@ -102,6 +102,11 @@ func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target, logW
 	}
 
 	if err := p.waitForContainerReady(hostPort, containerID, logWriter); err != nil {
+		logs, err2 := getContainerLogs(p.client, containerID)
+		if err2 != nil {
+			return nil, err2
+		}
+		logWriter(logs)
 		return nil, err
 	}
 
@@ -152,18 +157,28 @@ func (d *LocalDockerDeployment) Undeploy() error {
 	return nil
 }
 
-func (d *LocalDockerDeployment) RunInference(input *Example) (*Result, error) {
+func (d *LocalDockerDeployment) RunInference(input *Example, logWriter func(string)) (*Result, error) {
 	form := url.Values{}
 	for key, val := range input.Values {
 		form.Set(key, val)
 	}
 	resp, err := http.PostForm(fmt.Sprintf("http://localhost:%d/infer", d.port), form)
 	if err != nil {
+		logs, err2 := getContainerLogs(d.client, d.containerID)
+		if err2 != nil {
+			return nil, err2
+		}
+		logWriter(logs)
 		return nil, fmt.Errorf("Failed to run inference: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		logs, err2 := getContainerLogs(d.client, d.containerID)
+		if err2 != nil {
+			return nil, err2
+		}
+		logWriter(logs)
 		return nil, fmt.Errorf("/infer call returned status %d", resp.StatusCode)
 	}
 
@@ -180,21 +195,52 @@ func (d *LocalDockerDeployment) RunInference(input *Example) (*Result, error) {
 	return result, nil
 }
 
-func (d *LocalDockerDeployment) Help() (*HelpResponse, error) {
+func (d *LocalDockerDeployment) Help(logWriter func(string)) (*HelpResponse, error) {
 	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/help", d.port))
 	if err != nil {
+		logs, err2 := getContainerLogs(d.client, d.containerID)
+		if err2 != nil {
+			return nil, err2
+		}
+		logWriter(logs)
 		return nil, fmt.Errorf("Failed to GET /help: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		logs, err2 := getContainerLogs(d.client, d.containerID)
+		if err2 != nil {
+			return nil, err2
+		}
+		logWriter(logs)
 		return nil, fmt.Errorf("/help call returned status %d", resp.StatusCode)
 	}
 
 	help := new(HelpResponse)
 	if err := json.NewDecoder(resp.Body).Decode(help); err != nil {
+		logs, err2 := getContainerLogs(d.client, d.containerID)
+		if err2 != nil {
+			return nil, err2
+		}
+		logWriter(logs)
 		return nil, fmt.Errorf("Failed to parse /help body: %w", err)
 	}
 
 	return help, nil
+}
+
+func getContainerLogs(c *client.Client, containerID string) (string, error) {
+	opts := types.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+	}
+	reader, err := c.ContainerLogs(context.Background(), containerID, opts)
+	if err != nil {
+		return "", err
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }

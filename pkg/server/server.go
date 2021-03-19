@@ -225,7 +225,7 @@ func (s *Server) testModel(mod *model.Model, dir string, streamLogger *logger.St
 	}
 	defer deployment.Undeploy()
 
-	help, err := deployment.Help()
+	help, err := deployment.Help(streamLogger.WriteLogLine)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +238,7 @@ func (s *Server) testModel(mod *model.Model, dir string, streamLogger *logger.St
 		input := &serving.Example{
 			Values: example.Input,
 		}
-		result, err := deployment.RunInference(input)
+		result, err := deployment.RunInference(input, streamLogger.WriteLogLine)
 		if err != nil {
 			return nil, err
 		}
