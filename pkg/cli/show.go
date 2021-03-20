@@ -21,15 +21,13 @@ func newShowCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 	}
 
-	cmd.Flags().StringVarP(&buildHost, "build-host", "H", "127.0.0.1:8080", "address to the build host")
-
 	return cmd
 }
 
 func showPackage(cmd *cobra.Command, args []string) error {
 	id := args[0]
 
-	resp, err := http.Get("http://" + buildHost + "/v1/packages/" + id)
+	resp, err := http.Get(remoteHost() + "/v1/packages/" + id)
 	if err != nil {
 		return err
 	}

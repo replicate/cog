@@ -50,6 +50,12 @@ func NewServer(port int, db database.Database, dockerImageBuilder docker.ImageBu
 
 func (s *Server) Start() error {
 	router := mux.NewRouter()
+	router.Path("/ping").
+		Methods("GET").
+		HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			log.Info("Received ping request")
+			w.Write([]byte("pong"))
+		})
 	router.Path("/v1/packages/upload").
 		Methods("POST").
 		HandlerFunc(s.ReceiveFile)

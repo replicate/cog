@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/settings"
 )
 
 func NewRootCommand() (*cobra.Command, error) {
@@ -26,6 +27,7 @@ func NewRootCommand() (*cobra.Command, error) {
 		newListCommand(),
 		newShowCommand(),
 		newDeleteCommand(),
+		newRemoteCommand(),
 	)
 
 	log.SetLevel(log.DebugLevel)
@@ -36,4 +38,12 @@ func NewRootCommand() (*cobra.Command, error) {
 func setPersistentFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().BoolVarP(&global.Verbose, "verbose", "v", false, "Verbose output")
 
+}
+
+func remoteHost() string {
+	userSettings, err := settings.LoadUserSettings()
+	if err != nil {
+		log.Fatalf("Failed to load user settings: %w", err)
+	}
+	return userSettings.Remote
 }

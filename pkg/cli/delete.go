@@ -17,8 +17,6 @@ func newDeleteCommand() *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 	}
 
-	cmd.Flags().StringVarP(&buildHost, "build-host", "H", "127.0.0.1:8080", "address to the build host")
-
 	return cmd
 }
 
@@ -27,7 +25,7 @@ func Delete(cmd *cobra.Command, args []string) error {
 
 	client := new(http.Client)
 	for _, id := range args {
-		url := "http://"+buildHost+"/v1/packages/"+id
+		url := remoteHost() + "/v1/packages/" + id
 		req, err := http.NewRequest("DELETE", url, nil)
 		if err != nil {
 			return fmt.Errorf("Failed to make HTTP DELETE request: %w", err)

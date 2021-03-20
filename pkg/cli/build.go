@@ -20,8 +20,6 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
-var buildHost string
-
 func newBuildCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "build",
@@ -29,8 +27,6 @@ func newBuildCommand() *cobra.Command {
 		RunE:  buildPackage,
 		Args:  cobra.NoArgs,
 	}
-
-	cmd.Flags().StringVarP(&buildHost, "build-host", "H", "127.0.0.1:8080", "address to the build host")
 
 	return cmd
 }
@@ -51,7 +47,7 @@ func buildPackage(cmd *cobra.Command, args []string) error {
 
 	client := &http.Client{}
 
-	req, err := http.NewRequest(http.MethodPost, "http://"+buildHost+"/v1/packages/upload", bodyReader)
+	req, err := http.NewRequest(http.MethodPost, remoteHost()+"/v1/packages/upload", bodyReader)
 	if err != nil {
 		return err
 	}
