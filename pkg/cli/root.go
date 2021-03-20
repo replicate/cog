@@ -28,6 +28,7 @@ func NewRootCommand() (*cobra.Command, error) {
 		newShowCommand(),
 		newDeleteCommand(),
 		newRemoteCommand(),
+		newDownloadCommand(),
 	)
 
 	log.SetLevel(log.DebugLevel)
