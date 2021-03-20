@@ -19,6 +19,7 @@ func newShowCommand() *cobra.Command {
 		Short: "Inspect a Cog package",
 		RunE:  showPackage,
 		Args:  cobra.ExactArgs(1),
+		SuggestFor: []string{"inspect"},
 	}
 
 	return cmd

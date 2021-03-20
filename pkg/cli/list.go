@@ -19,6 +19,7 @@ func newListCommand() *cobra.Command {
 		Short: "List Cog packages",
 		RunE:  listPackages,
 		Args:  cobra.NoArgs,
+		Aliases: []string{"ls"},
 	}
 
 	return cmd
