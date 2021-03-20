@@ -32,6 +32,9 @@ func showPackage(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("Package ID doesn't exist: %s", id)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("Show endpoint returned status %d", resp.StatusCode)
 	}

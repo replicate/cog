@@ -53,10 +53,6 @@ func downloadPackage(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("%s already exists", downloadOutputDir)
 	}
 
-	if err := os.MkdirAll(downloadOutputDir, 0755); err != nil {
-		return fmt.Errorf("Failed to create %s: %w", downloadOutputDir, err)
-	}
-
 	req, err := http.NewRequest("GET", remoteHost()+"/v1/packages/"+id+".zip", nil)
 	if err != nil {
 		return fmt.Errorf("Failed to create HTTP request: %w", err)
@@ -64,6 +60,13 @@ func downloadPackage(cmd *cobra.Command, args []string) (err error) {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("Failed to perform HTTP request: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("Package ID doesn't exist: %s", id)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Package zip endpoint returned status %d", resp.StatusCode)
 	}
 
 	bar := progressbar.DefaultBytes(
@@ -77,9 +80,8 @@ func downloadPackage(cmd *cobra.Command, args []string) (err error) {
 	}
 	reader := bytes.NewReader(buff.Bytes())
 
-	// TODO(andreas): handle missing ID
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Package zip endpoint returned status %d", resp.StatusCode)
+	if err := os.MkdirAll(downloadOutputDir, 0755); err != nil {
+		return fmt.Errorf("Failed to create %s: %w", downloadOutputDir, err)
 	}
 
 	zip := archiver.NewZip()

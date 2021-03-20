@@ -92,6 +92,18 @@ func (s *Server) SendModelPackage(w http.ResponseWriter, r *http.Request) {
 	id := vars["id"]
 	log.Infof("Received download request for %s", id)
 	modTime := time.Now() // TODO
+
+	mod, err := s.db.GetModelByID(id)
+	if err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if mod == nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
 	content, err := s.store.Download(id)
 	if err != nil {
 		log.Error(err)
