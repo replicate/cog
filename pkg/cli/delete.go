@@ -1,11 +1,11 @@
 package cli
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 
-	"fmt"
-
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -33,6 +33,10 @@ func Delete(cmd *cobra.Command, args []string) error {
 		resp, err := client.Do(req)
 		if err != nil {
 			return fmt.Errorf("HTTP DELETE request failed: %w", err)
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			log.Warnf("Package ID doesn't exist: %s", id)
+			continue
 		}
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("HTTP DELETE request returned code %d", resp.StatusCode)

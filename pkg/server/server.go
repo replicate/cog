@@ -169,6 +169,17 @@ func (s *Server) DeletePackage(w http.ResponseWriter, r *http.Request) {
 	id := vars["id"]
 	log.Infof("Received delete request for %s", id)
 
+	mod, err := s.db.GetModelByID(id)
+	if err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if mod == nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
 	if err := s.store.Delete(id); err != nil {
 		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
