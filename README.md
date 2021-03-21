@@ -1,4 +1,4 @@
-# Cog: ML model packaging
+# Cog: Machine learning model packaging
 
 - **Store models in a central location.** Never again will you have to hunt for the right model file on S3 and figure out the right code to load it. Cog models are in one place with a content-addressable ID.
 - **Package everything that a model needs to run.** Code, weights, pre/post-processing, data types, Python dependencies, system dependencies, CUDA version, etc etc. No more dependency hell.
@@ -93,6 +93,11 @@ You can see more details about the package:
 In this output is the Docker image. You can run this anywhere a Docker image runs to deploy your model.
 
 
+## Writing your own model
+
+No docs yet -- sorry! It should be pretty self-explanatory from the examples.
+
+
 ## Server API
 
 ### POST `/v1/packages/upload`
@@ -105,7 +110,7 @@ Example:
 $ curl -X POST localhost:8080/v1/packages/upload -F "file=@package.zip"
 ```
 
-where `package.zip` is a zip folder of a directory with `cog.yaml` in it. [There are some example repository.](https://github.com/replicate/example-models)
+where `package.zip` is a zip folder of a directory with `cog.yaml` in it.
 
 This does the following:
 * Computes a content-addressable ID
@@ -152,7 +157,7 @@ $ curl localhost:8080/v1/packages/c43b98b37776656e6b3dac3ea3270660ffc21ca7 | jq 
 
 ### GET `/v1/packages/<id>.zip`
 
-Download the model package zip.
+Download the package.
 
 Example:
 
