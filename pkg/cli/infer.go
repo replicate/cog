@@ -40,8 +40,7 @@ func newInferCommand() *cobra.Command {
 func cmdInfer(cmd *cobra.Command, args []string) error {
 	packageId := args[0]
 
-	serverUrl := "http://localhost:8080"
-	client := client.NewClient(serverUrl)
+	client := client.NewClient(remoteHost())
 	fmt.Println("--> Loading package", packageId)
 	pkg, err := client.GetPackage(packageId)
 	if err != nil {
