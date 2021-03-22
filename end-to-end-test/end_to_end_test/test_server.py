@@ -48,7 +48,8 @@ def cog_server_port_dir():
     subprocess.Popen(["cog", "remote", "set", old_remote]).communicate()
 
 
-def test_build_show_list_download(cog_server_port_dir, tmpdir_factory):
+def test_build_show_list_download_infer(cog_server_port_dir, tmpdir_factory):
+    cog_port, cog_dir = cog_server_port_dir
     project_dir = tmpdir_factory.mktemp("project")
     with open(project_dir / "infer.py", "w") as f:
         f.write(
@@ -105,11 +106,22 @@ environment:
     assert lines[1].startswith(f"{package_id}  andreas/hello-world")
 
     download_dir = tmpdir_factory.mktemp("download") / "my-dir"
-    subprocess.Popen(["cog", "download", "--output-dir", download_dir, package_id], stdout=subprocess.PIPE).communicate()
+    subprocess.Popen(
+        ["cog", "download", "--output-dir", download_dir, package_id],
+        stdout=subprocess.PIPE,
+    ).communicate()
     paths = sorted(glob(str(download_dir / "*.*")))
     filenames = [os.path.basename(f) for f in paths]
     assert filenames == ["cog.yaml", "infer.py"]
 
+    output_dir = tmpdir_factory.mktemp("output")
+    out_path = output_dir / "out.txt"
+    subprocess.Popen(
+        ["cog", "infer", "-o", out_path, "-i", "text=baz", package_id],
+        stdout=subprocess.PIPE,
+    ).communicate()
+    with out_path.open() as f:
+        assert f.read() == "foobaz"
 
 
 def find_free_port():
