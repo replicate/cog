@@ -76,6 +76,9 @@ func (g *DockerfileGenerator) gpuBaseImage() (string, error) {
 
 func (g *DockerfileGenerator) aptInstalls() (string, error) {
 	packages := g.Config.Environment.SystemPackages
+	if len(packages) == 0 {
+		return "", nil
+	}
 	return "RUN apt-get update -qq && apt-get install -qy " +
 		strings.Join(packages, " ") +
 		" && rm -rf /var/lib/apt/lists/*", nil
@@ -89,26 +92,26 @@ func (g *DockerfileGenerator) installPython() (string, error) {
 	return fmt.Sprintf(`
 ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
 RUN apt-get update -q && apt-get install -qy --no-install-recommends \
-        make \
-        build-essential \
-        libssl-dev \
-        zlib1g-dev \
-        libbz2-dev \
-        libreadline-dev \
-        libsqlite3-dev \
-        wget \
-        curl \
-        llvm \
-        libncurses5-dev \
-        libncursesw5-dev \
-        xz-utils \
-        tk-dev \
-        libffi-dev \
-        liblzma-dev \
-        python-openssl \
-        git \
-        ca-certificates \
-        && rm -rf /var/lib/apt/lists/*
+	make \
+	build-essential \
+	libssl-dev \
+	zlib1g-dev \
+	libbz2-dev \
+	libreadline-dev \
+	libsqlite3-dev \
+	wget \
+	curl \
+	llvm \
+	libncurses5-dev \
+	libncursesw5-dev \
+	xz-utils \
+	tk-dev \
+	libffi-dev \
+	liblzma-dev \
+	python-openssl \
+	git \
+	ca-certificates \
+	&& rm -rf /var/lib/apt/lists/*
 RUN curl https://pyenv.run | bash && \
 	git clone https://github.com/momo-lab/pyenv-install-latest.git "$(pyenv root)"/plugins/pyenv-install-latest && \
 	pyenv install-latest "%s" && \

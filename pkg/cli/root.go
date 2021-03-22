@@ -44,7 +44,7 @@ func setPersistentFlags(cmd *cobra.Command) {
 func remoteHost() string {
 	userSettings, err := settings.LoadUserSettings()
 	if err != nil {
-		log.Fatalf("Failed to load user settings: %w", err)
+		log.Fatalf("Failed to load user settings: %s", err)
 	}
 	return userSettings.Remote
 }
