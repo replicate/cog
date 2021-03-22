@@ -23,7 +23,8 @@ import (
 )
 
 type LocalDockerPlatform struct {
-	client *client.Client
+	client            *client.Client
+	imagesArePullable bool
 }
 
 type LocalDockerDeployment struct {
@@ -32,13 +33,14 @@ type LocalDockerDeployment struct {
 	port        int
 }
 
-func NewLocalDockerPlatform() (*LocalDockerPlatform, error) {
+func NewLocalDockerPlatform(imagesArePullable bool) (*LocalDockerPlatform, error) {
 	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("Failed to connect to Docker client: %w", err)
 	}
 	return &LocalDockerPlatform{
-		client: dockerClient,
+		client:            dockerClient,
+		imagesArePullable: imagesArePullable,
 	}, nil
 }
 
@@ -53,8 +55,10 @@ func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target, logW
 
 	logWriter(fmt.Sprintf("Deploying container for target %s", artifact.Target))
 
-	if err := docker.Pull(imageTag, logWriter); err != nil {
-		return nil, fmt.Errorf("Failed to pull image %s: %w", imageTag, err)
+	if p.imagesArePullable {
+		if err := docker.Pull(imageTag, logWriter); err != nil {
+			return nil, fmt.Errorf("Failed to pull image %s: %w", imageTag, err)
+		}
 	}
 
 	ctx := context.Background()

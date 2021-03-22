@@ -41,7 +41,7 @@ func buildPackage(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("cog.yaml does not exist in %s. Are you in the right directory?", projectDir)
 	}
 
-	fmt.Println("--> Uploading", projectDir)
+	log.Infof("--> Uploading %s", projectDir)
 
 	bodyReader, bodyWriter := io.Pipe()
 
@@ -78,8 +78,7 @@ func buildPackage(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println()
-		fmt.Println("--> Building package...")
+		log.Info("--> Building package...")
 	}()
 
 	resp, err := client.Do(req)
@@ -113,7 +112,7 @@ func buildPackage(cmd *cobra.Command, args []string) error {
 		case logger.MessageTypeLogLine:
 			log.Debug(msg.Text)
 		case logger.MessageTypeStatus:
-			fmt.Println("--> " + msg.Text)
+			log.Info("--> " + msg.Text)
 		case logger.MessageTypeModel:
 			mod = msg.Model
 		}
@@ -122,7 +121,7 @@ func buildPackage(cmd *cobra.Command, args []string) error {
 	if mod == nil {
 		return fmt.Errorf("Failed to build model")
 	}
-	fmt.Println("--> Built", mod.ID)
+	fmt.Printf("Successfully built %s\n", mod.ID)
 	return nil
 }
 
