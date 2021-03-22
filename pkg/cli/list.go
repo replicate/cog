@@ -15,10 +15,10 @@ import (
 
 func newListCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List Cog packages",
-		RunE:  listPackages,
-		Args:  cobra.NoArgs,
+		Use:     "list",
+		Short:   "List Cog packages",
+		RunE:    listPackages,
+		Args:    cobra.NoArgs,
 		Aliases: []string{"ls"},
 	}
 

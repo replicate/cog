@@ -31,8 +31,6 @@ func newServerCommand() *cobra.Command {
 
 	cmd.Flags().IntVar(&port, "port", 0, "Server port")
 	cmd.Flags().StringVar(&dockerRegistry, "docker-registry", "", "Docker registry to push images to")
-	cmd.MarkFlagRequired("docker-registry")
-
 	return cmd
 }
 
@@ -66,8 +64,11 @@ func startServer(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if dockerRegistry == "" {
+		log.Warn("Running without docker registry. Please add --docker-registry to be able to push images")
+	}
 	dockerImageBuilder := docker.NewLocalImageBuilder(dockerRegistry)
-	servingPlatform, err := serving.NewLocalDockerPlatform()
+	servingPlatform, err := serving.NewLocalDockerPlatform(dockerRegistry != "")
 	if err != nil {
 		return err
 	}

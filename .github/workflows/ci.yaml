@@ -9,8 +9,8 @@ on:
   pull_request:
 
 jobs:
-  test-go:
-    name: "Test (Go)"
+  test:
+    name: "Test"
     strategy:
       fail-fast: false
       matrix:
@@ -33,5 +33,41 @@ jobs:
             ${{ runner.os }}-go-${{ secrets.CACHE_VERSION }}-
       - name: "Build"
         run: make build
+      - name: Test
+        run: make test
+
+  # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
+  test-end-to-end:
+    name: "Test (end to end)"
+    runs-on: ubuntu-20.04
+    defaults:
+      run:
+        shell: bash
+        working-directory: end-to-end-test
+    steps:
+      - uses: actions/checkout@master
+      - uses: actions/setup-go@v2
+        with:
+          go-version: 1.16
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - uses: actions/cache@v2
+        with:
+          path: ~/go/pkg/mod
+          key: go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            go-${{ secrets.CACHE_VERSION }}-
+      - uses: actions/cache@v2
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('**/end-to-end-test/requirements.txt') }}
+          restore-keys: |
+            pip-${{ secrets.CACHE_VERSION }}-
+      - name: Install
+        run: |
+          (cd ../ && make install)
+          pip install -r requirements.txt
       - name: Test
         run: make test

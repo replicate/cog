@@ -15,10 +15,10 @@ import (
 
 func newShowCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "show <id>",
-		Short: "Inspect a Cog package",
-		RunE:  showPackage,
-		Args:  cobra.ExactArgs(1),
+		Use:        "show <id>",
+		Short:      "Inspect a Cog package",
+		RunE:       showPackage,
+		Args:       cobra.ExactArgs(1),
 		SuggestFor: []string{"inspect"},
 	}
 

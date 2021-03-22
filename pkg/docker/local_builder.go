@@ -12,11 +12,16 @@ import (
 	"github.com/replicate/cog/pkg/shell"
 )
 
+const noRegistry = "no_registry"
+
 type LocalImageBuilder struct {
 	registry string
 }
 
 func NewLocalImageBuilder(registry string) *LocalImageBuilder {
+	if registry == "" {
+		registry = noRegistry
+	}
 	return &LocalImageBuilder{registry: registry}
 }
 
@@ -29,8 +34,10 @@ func (b *LocalImageBuilder) BuildAndPush(dir string, dockerfilePath string, name
 	if err := b.tag(tag, fullImageTag, logWriter); err != nil {
 		return "", err
 	}
-	if err := b.push(fullImageTag, logWriter); err != nil {
-		return "", err
+	if b.registry != noRegistry {
+		if err := b.push(fullImageTag, logWriter); err != nil {
+			return "", err
+		}
 	}
 	return fullImageTag, nil
 }

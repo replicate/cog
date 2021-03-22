@@ -2,11 +2,9 @@ package cli
 
 import (
 	"fmt"
-
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
-
 	"net/http"
+
+	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/settings"
 )
@@ -63,6 +61,6 @@ func setRemote(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("Failed to save settings: %w", err)
 	}
 
-	log.Infof("Updated remote: %s", remote)
+	fmt.Printf("Updated remote: %s\n", remote)
 	return nil
 }
