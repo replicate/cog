@@ -6,6 +6,7 @@ import (
 )
 
 func Exists(tag string, logWriter func(string)) bool {
+	// TODO(andreas): error handling
 	cmd := exec.Command("docker", "inspect", "--type=image", tag)
 	cmd.Env = os.Environ()
 

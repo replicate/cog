@@ -55,14 +55,17 @@ def test_build_show_list_download_infer(cog_server_port_dir, tmpdir_factory):
         f.write(
             """
 import cog
+from pathlib import Path
 
 class Model(cog.Model):
     def setup(self):
         self.foo = "foo"
 
     @cog.input("text", type=str)
-    def run(self, text):
-        return self.foo + text
+    @cog.input("path", type=Path)
+    def run(self, text, path):
+        with open(path) as f:
+            return self.foo + text + f.read()
         """
         )
     with open(project_dir / "cog.yaml", "w") as f:
@@ -73,15 +76,20 @@ model: infer.py:Model
 examples:
   - input:
       text: "foo"
-    output: "foofoo"
+      path: "@myfile.txt"
+    output: "foofoobaz"
   - input:
       text: "bar"
-    output: "foobar"
+      path: "@myfile.txt"
+    output: "foobarbaz"
 environment:
   architectures:
     - cpu
         """
         )
+
+    with open(project_dir / "myfile.txt", "w") as f:
+        f.write("baz")
 
     out, _ = subprocess.Popen(
         ["cog", "build"],
@@ -112,16 +120,20 @@ environment:
     ).communicate()
     paths = sorted(glob(str(download_dir / "*.*")))
     filenames = [os.path.basename(f) for f in paths]
-    assert filenames == ["cog.yaml", "infer.py"]
+    assert filenames == ["cog.yaml", "infer.py", "myfile.txt"]
 
     output_dir = tmpdir_factory.mktemp("output")
+    input_path = output_dir / "input.txt"
+    with input_path.open("w") as f:
+        f.write("input")
+
     out_path = output_dir / "out.txt"
     subprocess.Popen(
-        ["cog", "infer", "-o", out_path, "-i", "text=baz", package_id],
+        ["cog", "infer", "-o", out_path, "-i", "text=baz", "-i", f"path=@{input_path}", package_id],
         stdout=subprocess.PIPE,
     ).communicate()
     with out_path.open() as f:
-        assert f.read() == "foobaz"
+        assert f.read() == "foobazinput"
 
 
 def find_free_port():

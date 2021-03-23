@@ -292,18 +292,20 @@ func (s *Server) testModel(mod *model.Model, dir string, streamLogger *logger.St
 		if err := validateServingExampleInput(help, example.Input); err != nil {
 			return nil, fmt.Errorf("Example input doesn't match run arguments: %w", err)
 		}
+		input := serving.NewExampleWithBaseDir(example.Input, dir)
 
-		input := &serving.Example{
-			Values: example.Input,
-		}
 		result, err := deployment.RunInference(input, streamLogger.WriteLogLine)
 		if err != nil {
 			return nil, err
 		}
 		output := result.Values["output"]
-		streamLogger.WriteLogLine(fmt.Sprintf("Inference result length: %d", len(output)))
-		if example.Output != "" && output != example.Output {
-			return nil, fmt.Errorf("Output %s doesn't match expected: %s", output, example.Output)
+		outputBytes, err := io.ReadAll(output.Buffer)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to read output: %w", err)
+		}
+		streamLogger.WriteLogLine(fmt.Sprintf("Inference result length: %d, mime type: %s", len(outputBytes), output.MimeType))
+		if example.Output != "" && string(outputBytes) != example.Output {
+			return nil, fmt.Errorf("Output %s doesn't match expected: %s", outputBytes, example.Output)
 		}
 	}
 
