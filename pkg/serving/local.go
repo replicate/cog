@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
-	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -23,8 +26,7 @@ import (
 )
 
 type LocalDockerPlatform struct {
-	client            *client.Client
-	imagesArePullable bool
+	client *client.Client
 }
 
 type LocalDockerDeployment struct {
@@ -33,14 +35,13 @@ type LocalDockerDeployment struct {
 	port        int
 }
 
-func NewLocalDockerPlatform(imagesArePullable bool) (*LocalDockerPlatform, error) {
+func NewLocalDockerPlatform() (*LocalDockerPlatform, error) {
 	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("Failed to connect to Docker client: %w", err)
 	}
 	return &LocalDockerPlatform{
-		client:            dockerClient,
-		imagesArePullable: imagesArePullable,
+		client: dockerClient,
 	}, nil
 }
 
@@ -55,7 +56,7 @@ func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target, logW
 
 	logWriter(fmt.Sprintf("Deploying container for target %s", artifact.Target))
 
-	if p.imagesArePullable {
+	if !docker.Exists(imageTag, logWriter) {
 		if err := docker.Pull(imageTag, logWriter); err != nil {
 			return nil, fmt.Errorf("Failed to pull image %s: %w", imageTag, err)
 		}
@@ -162,18 +163,55 @@ func (d *LocalDockerDeployment) Undeploy() error {
 }
 
 func (d *LocalDockerDeployment) RunInference(input *Example, logWriter func(string)) (*Result, error) {
-	form := url.Values{}
+	bodyBuffer := new(bytes.Buffer)
+
+	mwriter := multipart.NewWriter(bodyBuffer)
 	for key, val := range input.Values {
-		form.Set(key, val)
+		if val.File != nil {
+			w, err := mwriter.CreateFormFile(key, filepath.Base(*val.File))
+			if err != nil {
+				return nil, err
+			}
+			file, err := os.Open(*val.File)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := io.Copy(w, file); err != nil {
+				return nil, err
+			}
+			if err := file.Close(); err != nil {
+				return nil, err
+			}
+		} else {
+			w, err := mwriter.CreateFormField(key)
+			if err != nil {
+				return nil, err
+			}
+			if _, err = w.Write([]byte(*val.String)); err != nil {
+				return nil, err
+			}
+		}
 	}
-	resp, err := http.PostForm(fmt.Sprintf("http://localhost:%d/infer", d.port), form)
+	if err := mwriter.Close(); err != nil {
+		return nil, fmt.Errorf("Failed to close form mime writer: %w", err)
+	}
+	url := fmt.Sprintf("http://localhost:%d/infer", d.port)
+	req, err := http.NewRequest(http.MethodPost, url, bodyBuffer)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create HTTP request to %s: %w", url, err)
+	}
+	req.Header.Set("Content-Type", mwriter.FormDataContentType())
+	req.Close = true
+
+	httpClient := &http.Client{}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		logs, err2 := getContainerLogs(d.client, d.containerID)
 		if err2 != nil {
 			return nil, err2
 		}
 		logWriter(logs)
-		return nil, fmt.Errorf("Failed to run inference: %w", err)
+		return nil, fmt.Errorf("Failed to POST HTTP request to %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 
@@ -186,14 +224,21 @@ func (d *LocalDockerDeployment) RunInference(input *Example, logWriter func(stri
 		return nil, fmt.Errorf("/infer call returned status %d", resp.StatusCode)
 	}
 
+	contentType := resp.Header.Get("Content-Type")
+	mimeType := strings.Split(contentType, ";")[0]
+
 	buf := new(bytes.Buffer)
 	if _, err := io.Copy(buf, resp.Body); err != nil {
 		return nil, fmt.Errorf("Failed to read response: %w", err)
 	}
 
 	result := &Result{
-		Values: map[string]string{
-			"output": buf.String(),
+		Values: map[string]ResultValue{
+			// TODO(andreas): support multiple outputs?
+			"output": {
+				Buffer:   buf,
+				MimeType: mimeType,
+			},
 		},
 	}
 	return result, nil

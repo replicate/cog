@@ -3,21 +3,20 @@ package cli
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime"
 	"mime/multipart"
 	"net/http"
 	"os"
-	"os/exec"
 	"path"
 	"strings"
 	"time"
 
-	"github.com/schollz/progressbar/v3"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/client"
+	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/serving"
 )
 
 var (
@@ -47,64 +46,49 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	artifact := pkg.Artifacts[0]
-
-	fmt.Println("--> Pulling and running Docker image", artifact.URI)
-	out, err := exec.Command("docker", "run", "-p", "5000:5000", "-d", artifact.URI).CombinedOutput()
-	if err != nil {
-		fmt.Println(string(out))
-		return err
-	}
-	containerID := strings.TrimSpace(string(out))
-	defer exec.Command("docker", "kill", containerID).CombinedOutput()
-
-	fmt.Println("--> Waiting for model to load")
-	// TODO timeout
-	waitForHTTP("http://localhost:5000")
-
-	fmt.Println("--> Running inference")
-
-	bodyReader, bodyWriter := io.Pipe()
-	httpClient := &http.Client{}
-	req, err := http.NewRequest(http.MethodPost, "http://localhost:5000/infer", bodyReader)
+	servingPlatform, err := serving.NewLocalDockerPlatform()
 	if err != nil {
 		return err
 	}
-	bar := progressbar.DefaultBytes(
-		-1,
-		"uploading",
-	)
-
-	go func() {
-		// TODO: check input files exist before loading model
-		err := writeInputs(req, inputs, io.MultiWriter(bodyWriter, bar))
-		if err != nil {
-			log.Fatal(err)
-		}
-		// MultiWriter is a Writer not a WriteCloser, but zipWriter is a WriteCloser, so we need to Close it ourselves
-		if err = bodyWriter.Close(); err != nil {
-			log.Fatal(err)
+	logWriter := func(s string) { log.Debug(s) }
+	deployment, err := servingPlatform.Deploy(pkg, model.TargetDockerCPU, logWriter)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := deployment.Undeploy(); err != nil {
+			log.Warnf("Failed to kill Docker container: %s", err)
 		}
 	}()
 
-	resp, err := httpClient.Do(req)
+	keyVals := map[string]string{}
+	for _, input := range inputs {
+		var name, value string
+
+		// Default input name is "input"
+		if !strings.Contains(input, "=") {
+			name = "input"
+			value = input
+		} else {
+			split := strings.SplitN(input, "=", 2)
+			name = split[0]
+			value = split[1]
+		}
+		keyVals[name] = value
+	}
+	example := serving.NewExample(keyVals)
+	result, err := deployment.RunInference(example, logWriter)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
-		return fmt.Errorf("Status %d: %s", resp.StatusCode, body)
-	}
+	// TODO(andreas): support multiple outputs?
+	output := result.Values["output"]
 
 	// TODO check content type so we don't barf binary data to stdout
 
-	contentType := resp.Header.Get("Content-Type")
-	mimeType := strings.Split(contentType, ";")[0]
-
-	if mimeType != "plain/text" && outPath == "" {
+	if output.MimeType != "plain/text" && outPath == "" {
 		outPath = "output"
-		extension, _ := mime.ExtensionsByType(mimeType)
+		extension, _ := mime.ExtensionsByType(output.MimeType)
 		if len(extension) > 0 {
 			outPath += extension[0]
 		}
@@ -118,7 +102,7 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if _, err := io.Copy(outFile, resp.Body); err != nil {
+	if _, err := io.Copy(outFile, output.Buffer); err != nil {
 		return err
 	}
 
