@@ -25,6 +25,7 @@ generate:
 
 .PHONY: test
 test:
+	go get gotest.tools/gotestsum
 	go run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
 
 .PHONY: install
