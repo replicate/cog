@@ -1,16 +1,14 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 	"github.com/xeonx/timeago"
 
-	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/client"
 )
 
 func newShowCommand() *cobra.Command {
@@ -21,32 +19,28 @@ func newShowCommand() *cobra.Command {
 		Args:       cobra.ExactArgs(1),
 		SuggestFor: []string{"inspect"},
 	}
+	addRepoFlag(cmd)
 
 	return cmd
 }
 
 func showPackage(cmd *cobra.Command, args []string) error {
-	id := args[0]
-
-	resp, err := http.Get(remoteHost() + "/v1/packages/" + id)
+	repo, err := getRepo()
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("Package ID doesn't exist: %s", id)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Show endpoint returned status %d", resp.StatusCode)
-	}
 
-	mod := new(model.Model)
-	if err := json.NewDecoder(resp.Body).Decode(mod); err != nil {
-		return fmt.Errorf("Failed to decode response: %w", err)
+	id := args[0]
+
+	cli := client.NewClient()
+	mod, err := cli.GetPackage(repo, id)
+	if err != nil {
+		return err
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "ID:\t"+mod.ID)
-	fmt.Fprintln(w, "Name:\t"+mod.Name)
+	fmt.Fprintf(w, "Repo:\t%s/%s\n", repo.User, repo.Name)
 	fmt.Fprintln(w, "Created:\t"+timeago.English.Format(mod.Created))
 	w.Flush()
 

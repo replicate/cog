@@ -36,8 +36,18 @@ func NewLocalStorage(rootDir string) (*LocalStorage, error) {
 	return db, nil
 }
 
-func (s *LocalStorage) Upload(reader io.Reader, id string) error {
-	path := s.pathForID(id)
+func (s *LocalStorage) Upload(user string, name string, id string, reader io.Reader) error {
+	path := s.pathForID(user, name, id)
+	dir := filepath.Dir(path)
+	exists, err := files.FileExists(path)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("Failed to create directory %s: %w", dir, err)
+		}
+	}
 	log.Debugf("Saving to %s", path)
 	file, err := os.Create(path)
 	if err != nil {
@@ -49,8 +59,8 @@ func (s *LocalStorage) Upload(reader io.Reader, id string) error {
 	return nil
 }
 
-func (s *LocalStorage) Download(id string) ([]byte, error) {
-	path := s.pathForID(id)
+func (s *LocalStorage) Download(user string, name string, id string) ([]byte, error) {
+	path := s.pathForID(user, name, id)
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to read %s: %w", path, err)
@@ -58,14 +68,14 @@ func (s *LocalStorage) Download(id string) ([]byte, error) {
 	return contents, nil
 }
 
-func (s *LocalStorage) Delete(id string) error {
-	path := s.pathForID(id)
+func (s *LocalStorage) Delete(user string, name string, id string) error {
+	path := s.pathForID(user, name, id)
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("Failed to delete %s: %w", path, err)
 	}
 	return nil
 }
 
-func (s *LocalStorage) pathForID(id string) string {
-	return filepath.Join(s.rootDir, id+".zip")
+func (s *LocalStorage) pathForID(user string, name string, id string) string {
+	return filepath.Join(s.rootDir, user, name, id+".zip")
 }

@@ -11,7 +11,6 @@ const (
 
 type Model struct {
 	ID           string                  `json:"id"`
-	Name         string                  `json:"name"`
 	Artifacts    []*Artifact             `json:"artifacts"`
 	Config       *Config                 `json:"config"`
 	RunArguments map[string]*RunArgument `json:"run_arguments"`

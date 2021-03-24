@@ -1,6 +1,7 @@
+import random
+import string
 from glob import glob
 import os
-from os.path import basename
 import tempfile
 import socket
 from contextlib import closing
@@ -25,31 +26,19 @@ def cog_server_port_dir():
         )
         assert resp.text == "pong"
 
-        out, err = subprocess.Popen(
-            ["cog", "remote"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        ).communicate()
-        old_remote = out.decode().strip()
-
-        out, err = subprocess.Popen(
-            ["cog", "remote", "set", "http://localhost:" + port],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        ).communicate()
-        assert out.decode() == f"Updated remote: http://localhost:{port}\n"
-        assert err == b""
-
         yield port, cog_dir
 
     os.chdir(old_cwd)
     server_proc.kill()
 
-    subprocess.Popen(["cog", "remote", "set", old_remote]).communicate()
-
 
 def test_build_show_list_download_infer(cog_server_port_dir, tmpdir_factory):
     cog_port, cog_dir = cog_server_port_dir
+
+    user = "".join(random.choice(string.ascii_lowercase) for i in range(10))
+    repo_name = "".join(random.choice(string.ascii_lowercase) for i in range(10))
+    repo = f"localhost:{cog_port}/{user}/{repo_name}"
+
     project_dir = tmpdir_factory.mktemp("project")
     with open(project_dir / "infer.py", "w") as f:
         f.write(
@@ -88,6 +77,13 @@ environment:
         """
         )
 
+    out, _ = subprocess.Popen(
+        ["cog", "repo", "set", f"localhost:{cog_port}/{user}/{repo_name}"],
+        stdout=subprocess.PIPE,
+        cwd=project_dir,
+    ).communicate()
+    assert out.decode() == f"Updated repo: localhost:{cog_port}/{user}/{repo_name}\n"
+
     with open(project_dir / "myfile.txt", "w") as f:
         f.write("baz")
 
@@ -103,19 +99,25 @@ environment:
     package_id = out.decode().strip().split("Successfully built ")[1]
 
     out, _ = subprocess.Popen(
-        ["cog", "show", package_id], stdout=subprocess.PIPE
+        ["cog", "-r", repo, "show", package_id], stdout=subprocess.PIPE
     ).communicate()
     lines = out.decode().splitlines()
     assert lines[0] == f"ID:       {package_id}"
-    assert lines[1] == "Name:     andreas/hello-world"
+    assert lines[1] == f"Repo:     {user}/{repo_name}"
 
-    out, _ = subprocess.Popen(["cog", "ls"], stdout=subprocess.PIPE).communicate()
+    # show without -r
+    out, _ = subprocess.Popen(
+        ["cog", "show", package_id],
+        stdout=subprocess.PIPE,
+        cwd=project_dir,
+    ).communicate()
     lines = out.decode().splitlines()
-    assert lines[1].startswith(f"{package_id}  andreas/hello-world")
+    assert lines[0] == f"ID:       {package_id}"
+    assert lines[1] == f"Repo:     {user}/{repo_name}"
 
     download_dir = tmpdir_factory.mktemp("download") / "my-dir"
     subprocess.Popen(
-        ["cog", "download", "--output-dir", download_dir, package_id],
+        ["cog", "-r", repo, "download", "--output-dir", download_dir, package_id],
         stdout=subprocess.PIPE,
     ).communicate()
     paths = sorted(glob(str(download_dir / "*.*")))
@@ -129,7 +131,19 @@ environment:
 
     out_path = output_dir / "out.txt"
     subprocess.Popen(
-        ["cog", "infer", "-o", out_path, "-i", "text=baz", "-i", f"path=@{input_path}", package_id],
+        [
+            "cog",
+            "-r",
+            repo,
+            "infer",
+            "-o",
+            out_path,
+            "-i",
+            "text=baz",
+            "-i",
+            f"path=@{input_path}",
+            package_id,
+        ],
         stdout=subprocess.PIPE,
     ).communicate()
     with out_path.open() as f:

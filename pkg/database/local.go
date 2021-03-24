@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/replicate/cog/pkg/files"
 	"github.com/replicate/cog/pkg/model"
@@ -36,41 +35,31 @@ func NewLocalFileDatabase(rootDir string) (*LocalFileDatabase, error) {
 	return db, nil
 }
 
-func (db *LocalFileDatabase) InsertModel(mod *model.Model) error {
+func (db *LocalFileDatabase) InsertModel(user string, name string, id string, mod *model.Model) error {
 	data, err := json.Marshal(mod)
 	if err != nil {
 		return fmt.Errorf("Failed to marshall model: %w", err)
 	}
-	path := db.packagePath(mod.ID)
+	path := db.packagePath(user, name, id)
+	dir := filepath.Dir(path)
+	exists, err := files.FileExists(path)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("Failed to create directory %s: %w", dir, err)
+		}
+	}
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("Failed to write metadata file %s: %w", path, err)
 	}
 	return nil
 }
 
-func (db *LocalFileDatabase) ListModels() ([]*model.Model, error) {
-	entries, err := os.ReadDir(db.rootDir)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to scan %s: %w", db.rootDir, err)
-	}
-	models := []*model.Model{}
-	for _, entry := range entries {
-		filename := entry.Name()
-		if strings.HasSuffix(filename, ".json") {
-			path := filepath.Join(db.rootDir, filename)
-			mod, err := db.readModel(path)
-			if err != nil {
-				return nil, err
-			}
-			models = append(models, mod)
-		}
-	}
-	return models, nil
-}
-
-// GetModelByID returns a model or nil if the model doesn't exist
-func (db *LocalFileDatabase) GetModelByID(id string) (*model.Model, error) {
-	path := db.packagePath(id)
+// GetModel returns a model or nil if the model doesn't exist
+func (db *LocalFileDatabase) GetModel(user string, name string, id string) (*model.Model, error) {
+	path := db.packagePath(user, name, id)
 	exists, err := files.FileExists(path)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to determine if %s exists: %w", path, err)
@@ -85,8 +74,8 @@ func (db *LocalFileDatabase) GetModelByID(id string) (*model.Model, error) {
 	return mod, nil
 }
 
-func (db *LocalFileDatabase) DeleteModel(id string) error {
-	path := db.packagePath(id)
+func (db *LocalFileDatabase) DeleteModel(user string, name string, id string) error {
+	path := db.packagePath(user, name, id)
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("Failed to delete %s: %w", path, err)
 	}
@@ -105,6 +94,6 @@ func (db *LocalFileDatabase) readModel(path string) (*model.Model, error) {
 	return mod, nil
 }
 
-func (db *LocalFileDatabase) packagePath(id string) string {
-	return filepath.Join(db.rootDir, id+".json")
+func (db *LocalFileDatabase) packagePath(user string, name string, id string) string {
+	return filepath.Join(db.rootDir, user, name, id+".json")
 }

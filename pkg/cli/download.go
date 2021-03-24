@@ -1,18 +1,14 @@
 package cli
 
 import (
-	"bytes"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 
-	"github.com/mholt/archiver/v3"
 	"github.com/mitchellh/go-homedir"
-	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 
+	"github.com/replicate/cog/pkg/client"
 	"github.com/replicate/cog/pkg/files"
 )
 
@@ -25,7 +21,7 @@ func newDownloadCommand() *cobra.Command {
 		RunE:  downloadPackage,
 		Args:  cobra.ExactArgs(1),
 	}
-
+	addRepoFlag(cmd)
 	cmd.Flags().StringVarP(&downloadOutputDir, "output-dir", "o", "", "Output directory")
 	cmd.MarkFlagRequired("output-dir")
 
@@ -33,6 +29,11 @@ func newDownloadCommand() *cobra.Command {
 }
 
 func downloadPackage(cmd *cobra.Command, args []string) (err error) {
+	repo, err := getRepo()
+	if err != nil {
+		return err
+	}
+
 	id := args[0]
 
 	downloadOutputDir, err = homedir.Expand(downloadOutputDir)
@@ -53,40 +54,13 @@ func downloadPackage(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("%s already exists", downloadOutputDir)
 	}
 
-	req, err := http.NewRequest("GET", remoteHost()+"/v1/packages/"+id+".zip", nil)
-	if err != nil {
-		return fmt.Errorf("Failed to create HTTP request: %w", err)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("Failed to perform HTTP request: %w", err)
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("Package ID doesn't exist: %s", id)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Package zip endpoint returned status %d", resp.StatusCode)
-	}
-
-	bar := progressbar.DefaultBytes(
-		resp.ContentLength,
-		"Downloading",
-	)
-	buff := bytes.NewBuffer([]byte{})
-	size, err := io.Copy(io.MultiWriter(buff, bar), resp.Body)
-	if err != nil {
-		return err
-	}
-	reader := bytes.NewReader(buff.Bytes())
-
 	if err := os.MkdirAll(downloadOutputDir, 0755); err != nil {
 		return fmt.Errorf("Failed to create %s: %w", downloadOutputDir, err)
 	}
 
-	zip := archiver.NewZip()
-	if err := zip.ReaderUnarchive(reader, size, downloadOutputDir); err != nil {
-		return fmt.Errorf("Failed to unzip into %s: %w", downloadOutputDir, err)
+	cli := client.NewClient()
+	if err := cli.DownloadPackage(repo, id, downloadOutputDir); err != nil {
+		return err
 	}
 
 	fmt.Printf("Downloaded package %s into %s\n", id, downloadOutputDir)

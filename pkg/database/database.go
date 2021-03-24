@@ -5,8 +5,7 @@ import (
 )
 
 type Database interface {
-	InsertModel(mod *model.Model) error
-	ListModels() ([]*model.Model, error)
-	GetModelByID(id string) (*model.Model, error)
-	DeleteModel(id string) error
+	InsertModel(user string, name string, id string, mod *model.Model) error
+	GetModel(user string, name string, id string) (*model.Model, error)
+	DeleteModel(user string, name string, id string) error
 }

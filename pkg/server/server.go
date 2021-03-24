@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -19,6 +18,7 @@ import (
 
 	"github.com/replicate/cog/pkg/database"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/serving"
@@ -56,19 +56,16 @@ func (s *Server) Start() error {
 			log.Info("Received ping request")
 			w.Write([]byte("pong"))
 		})
-	router.Path("/v1/packages/upload").
-		Methods("POST").
-		HandlerFunc(s.ReceiveFile)
-	router.Path("/v1/packages/{id}.zip").
+	router.Path("/v1/repos/{user}/{name}/packages/{id}.zip").
 		Methods("GET").
 		HandlerFunc(s.SendModelPackage)
-	router.Path("/v1/packages/{id}").
+	router.Path("/v1/repos/{user}/{name}/packages/").
+		Methods("PUT").
+		HandlerFunc(s.ReceiveFile)
+	router.Path("/v1/repos/{user}/{name}/packages/{id}").
 		Methods("GET").
 		HandlerFunc(s.SendModelMetadata)
-	router.Path("/v1/packages/").
-		Methods("GET").
-		HandlerFunc(s.SendAllModelsMetadata)
-	router.Path("/v1/packages/{id}").
+	router.Path("/v1/repos/{user}/{name}/packages/{id}").
 		Methods("DELETE").
 		HandlerFunc(s.DeletePackage)
 	fmt.Println("Starting")
@@ -76,9 +73,11 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {
+	user, name, _ := getRepoVars(r)
+
 	log.Infof("Received build request")
 	streamLogger := logger.NewStreamLogger(w)
-	mod, err := s.ReceiveModel(r, streamLogger)
+	mod, err := s.ReceiveModel(r, streamLogger, user, name)
 	if err != nil {
 		streamLogger.WriteError(err)
 		log.Error(err)
@@ -88,12 +87,11 @@ func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) SendModelPackage(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	id := vars["id"]
-	log.Infof("Received download request for %s", id)
+	user, name, id := getRepoVars(r)
+	log.Infof("Received download request for %s/%s/%s", user, name, id)
 	modTime := time.Now() // TODO
 
-	mod, err := s.db.GetModelByID(id)
+	mod, err := s.db.GetModel(user, name, id)
 	if err != nil {
 		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -104,7 +102,7 @@ func (s *Server) SendModelPackage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	content, err := s.store.Download(id)
+	content, err := s.store.Download(user, name, id)
 	if err != nil {
 		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -115,11 +113,10 @@ func (s *Server) SendModelPackage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) SendModelMetadata(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	id := vars["id"]
-	log.Infof("Received get request for %s", id)
+	user, name, id := getRepoVars(r)
+	log.Infof("Received get request for %s/%s/%s", user, name, id)
 
-	mod, err := s.db.GetModelByID(id)
+	mod, err := s.db.GetModel(user, name, id)
 	if err != nil {
 		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -139,37 +136,11 @@ func (s *Server) SendModelMetadata(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) SendAllModelsMetadata(w http.ResponseWriter, r *http.Request) {
-	log.Info("Received list request")
-
-	models, err := s.db.ListModels()
-	if err != nil {
-		log.Error(err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	// sort descending
-	sort.Slice(models, func(i, j int) bool {
-		return models[i].Created.After(models[j].Created)
-	})
-
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-
-	if err := json.NewEncoder(w).Encode(models); err != nil {
-		log.Error(err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-}
-
 func (s *Server) DeletePackage(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	id := vars["id"]
-	log.Infof("Received delete request for %s", id)
+	user, name, id := getRepoVars(r)
+	log.Infof("Received delete request for %s/%s/%s", user, name, id)
 
-	mod, err := s.db.GetModelByID(id)
+	mod, err := s.db.GetModel(user, name, id)
 	if err != nil {
 		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -180,12 +151,12 @@ func (s *Server) DeletePackage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.store.Delete(id); err != nil {
+	if err := s.store.Delete(user, name, id); err != nil {
 		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	if err := s.db.DeleteModel(id); err != nil {
+	if err := s.db.DeleteModel(user, name, id); err != nil {
 		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -194,9 +165,7 @@ func (s *Server) DeletePackage(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Deleted " + id))
 }
 
-func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger) (*model.Model, error) {
-	//queryVars := r.URL.Query()
-
+func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger, user string, name string) (*model.Model, error) {
 	// max 5GB models
 	if err := r.ParseMultipartForm(5 << 30); err != nil {
 		return nil, fmt.Errorf("Failed to parse request: %w", err)
@@ -228,9 +197,9 @@ func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger
 		return nil, fmt.Errorf("Failed to unzip: %w", err)
 	}
 
-	configRaw, err := os.ReadFile(filepath.Join(dir, "cog.yaml"))
+	configRaw, err := os.ReadFile(filepath.Join(dir, global.ConfigFilename))
 	if err != nil {
-		return nil, fmt.Errorf("Failed to read cog.yaml: %w", err)
+		return nil, fmt.Errorf("Failed to read %s: %w", global.ConfigFilename, err)
 	}
 	config, err := model.ConfigFromYAML(configRaw)
 	if err != nil {
@@ -244,17 +213,16 @@ func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("Failed to rewind file: %w", err)
 	}
-	if err := s.store.Upload(file, id); err != nil {
+	if err := s.store.Upload(user, name, id, file); err != nil {
 		return nil, fmt.Errorf("Failed to upload to storage: %w", err)
 	}
 
-	artifacts, err := s.buildDockerImages(dir, config, streamLogger)
+	artifacts, err := s.buildDockerImages(dir, config, name, streamLogger)
 	if err != nil {
 		return nil, err
 	}
 	mod := &model.Model{
 		ID:        id,
-		Name:      config.Name,
 		Artifacts: artifacts,
 		Config:    config,
 		Created:   time.Now(),
@@ -268,7 +236,7 @@ func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger
 	mod.RunArguments = runArgs
 
 	streamLogger.WriteStatus("Inserting into database")
-	if err := s.db.InsertModel(mod); err != nil {
+	if err := s.db.InsertModel(user, name, id, mod); err != nil {
 		return nil, fmt.Errorf("Failed to insert into database: %w", err)
 	}
 
@@ -312,7 +280,8 @@ func (s *Server) testModel(mod *model.Model, dir string, streamLogger *logger.St
 	return help.Arguments, nil
 }
 
-func (s *Server) buildDockerImages(dir string, config *model.Config, streamLogger *logger.StreamLogger) ([]*model.Artifact, error) {
+// TODO(andreas): include user in docker image name?
+func (s *Server) buildDockerImages(dir string, config *model.Config, name string, streamLogger *logger.StreamLogger) ([]*model.Artifact, error) {
 	// TODO(andreas): parallelize
 	artifacts := []*model.Artifact{}
 	for _, arch := range config.Environment.Architectures {
@@ -331,7 +300,7 @@ func (s *Server) buildDockerImages(dir string, config *model.Config, streamLogge
 			return nil, fmt.Errorf("Failed to write Dockerfile for %s", arch)
 		}
 
-		tag, err := s.dockerImageBuilder.BuildAndPush(dir, relDockerfilePath, config.Name, streamLogger.WriteLogLine)
+		tag, err := s.dockerImageBuilder.BuildAndPush(dir, relDockerfilePath, name, streamLogger.WriteLogLine)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to build Docker image: %w", err)
 		}
@@ -377,4 +346,9 @@ func validateServingExampleInput(help *serving.HelpResponse, input map[string]st
 		return fmt.Errorf(strings.Join(errParts, "; "))
 	}
 	return nil
+}
+
+func getRepoVars(r *http.Request) (user string, name string, id string) {
+	vars := mux.Vars(r)
+	return vars["user"], vars["name"], vars["id"]
 }
