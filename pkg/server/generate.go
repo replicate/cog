@@ -165,6 +165,7 @@ WORKDIR /code`
 
 func (g *DockerfileGenerator) command() string {
 	// TODO: handle infer scripts in subdirectories
+	// TODO: check this actually exists
 	name := g.Config.Model
 	parts := strings.Split(name, ".py:")
 	module := parts[0]
