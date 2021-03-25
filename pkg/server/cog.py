@@ -100,6 +100,7 @@ class Model(ABC):
             return send_file(str(result))
         elif isinstance(result, str):
             return result
+        return jsonify(result)
 
     def validate_and_convert_inputs(
         self, raw_inputs: Dict[str, Any], cleanup_functions: List[Callable]
