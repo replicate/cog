@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TylerBrock/colorjson"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
@@ -91,9 +93,25 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 	// TODO(andreas): support multiple outputs?
 	output := result.Values["output"]
 
-	// TODO check content type so we don't barf binary data to stdout
-
-	if output.MimeType != "plain/text" && outPath == "" {
+	// Write to stdout
+	if outPath == "" {
+		// Is it something we can sensibly write to stdout?
+		if output.MimeType == "plain/text" {
+			_, err := io.Copy(os.Stdout, output.Buffer)
+			return err
+		} else if output.MimeType == "application/json" {
+			var obj map[string]interface{}
+			dec := json.NewDecoder(output.Buffer)
+			if err := dec.Decode(&obj); err != nil {
+				return err
+			}
+			f := colorjson.NewFormatter()
+			f.Indent = 2
+			s, _ := f.Marshal(obj)
+			fmt.Println(string(s))
+			return nil
+		}
+		// Otherwise, fall back to writing file
 		outPath = "output"
 		extension, _ := mime.ExtensionsByType(output.MimeType)
 		if len(extension) > 0 {
@@ -101,22 +119,17 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	outFile := os.Stdout
-	if outPath != "" {
-		outFile, err = os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE, 0755)
-		if err != nil {
-			return err
-		}
+	// Write to file
+	outFile, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE, 0755)
+	if err != nil {
+		return err
 	}
 
 	if _, err := io.Copy(outFile, output.Buffer); err != nil {
 		return err
 	}
 
-	if outPath != "" {
-		fmt.Println("--> Written output to " + outPath)
-
-	}
+	fmt.Println("--> Written output to " + outPath)
 	return nil
 }
 
