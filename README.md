@@ -40,7 +40,7 @@ model: "model.py:JazzSoloComposerModel"
 3. Build and push the model:
 
 ```
-$ cog repo set http://10.1.2.3:8000
+$ cog repo set http://10.1.2.3:8000/andreas/my-model
 $ cog build
 ...
 --> Built and pushed b6a2f8a2d2ff
@@ -86,6 +86,10 @@ You can see more details about the package:
 
     cog show b31f9f72d8f14f0eacc5452e85b05c957b9a8ed9
 
+You can also list the packages for this repo:
+
+    cog list
+
 In this output is the Docker image. You can run this anywhere a Docker image runs to deploy your model.
 
 
@@ -116,7 +120,7 @@ This does the following:
 * Tests that the model works by running the Docker image locally and performing an inference
 * Inserts model metadata into database (local files)
 
-### GET `/v1/packages/<user>/<name>`
+### GET `/v1/packages/<user>/<name>/<id>`
 
 Fetch package metadata.
 
@@ -147,6 +151,24 @@ $ curl localhost:8080/v1/packages/andreas/my-model/c43b98b37776656e6b3dac3ea3270
     "Model": "infer.py:Model"
   }
 }
+```
+
+### GET `/v1/packages/<user>/<name>`
+
+List all packages' metadata.
+
+Example:
+
+```
+$ curl localhost:8080/v1/packages/andreas/my-model/ | jq .
+[
+  {
+    "ID": "c43b98b37776656e6b3dac3ea3270660ffc21ca7",
+    "Artifacts": [
+      {
+        "Target": "docker-cpu",
+  [...]
+]
 ```
 
 ### GET `/v1/packages/<user>/<name>/<id>.zip`

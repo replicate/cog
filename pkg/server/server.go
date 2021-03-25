@@ -51,22 +51,25 @@ func NewServer(port int, db database.Database, dockerImageBuilder docker.ImageBu
 func (s *Server) Start() error {
 	router := mux.NewRouter()
 	router.Path("/ping").
-		Methods("GET").
+		Methods(http.MethodGet).
 		HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			log.Info("Received ping request")
 			w.Write([]byte("pong"))
 		})
 	router.Path("/v1/repos/{user}/{name}/packages/{id}.zip").
-		Methods("GET").
+		Methods(http.MethodGet).
 		HandlerFunc(s.SendModelPackage)
 	router.Path("/v1/repos/{user}/{name}/packages/").
-		Methods("PUT").
+		Methods(http.MethodPut).
 		HandlerFunc(s.ReceiveFile)
+	router.Path("/v1/repos/{user}/{name}/packages/").
+		Methods(http.MethodGet).
+		HandlerFunc(s.ListPackages)
 	router.Path("/v1/repos/{user}/{name}/packages/{id}").
-		Methods("GET").
+		Methods(http.MethodGet).
 		HandlerFunc(s.SendModelMetadata)
 	router.Path("/v1/repos/{user}/{name}/packages/{id}").
-		Methods("DELETE").
+		Methods(http.MethodDelete).
 		HandlerFunc(s.DeletePackage)
 	fmt.Println("Starting")
 	return http.ListenAndServe(fmt.Sprintf(":%d", s.port), router)
@@ -130,6 +133,26 @@ func (s *Server) SendModelMetadata(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(mod); err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+}
+
+func (s *Server) ListPackages(w http.ResponseWriter, r *http.Request) {
+	user, name, _ := getRepoVars(r)
+	log.Infof("Received list request for %s%s", user, name)
+
+	models, err := s.db.ListModels(user, name)
+	if err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+
+	if err := json.NewEncoder(w).Encode(models); err != nil {
 		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return

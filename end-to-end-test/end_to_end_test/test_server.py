@@ -115,6 +115,10 @@ environment:
     assert lines[0] == f"ID:       {package_id}"
     assert lines[1] == f"Repo:     {user}/{repo_name}"
 
+    out, _ = subprocess.Popen(["cog", "-r", repo, "ls"], stdout=subprocess.PIPE).communicate()
+    lines = out.decode().splitlines()
+    assert lines[1].startswith(f"{package_id}  ")
+
     download_dir = tmpdir_factory.mktemp("download") / "my-dir"
     subprocess.Popen(
         ["cog", "-r", repo, "download", "--output-dir", download_dir, package_id],

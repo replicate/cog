@@ -35,6 +35,7 @@ func NewRootCommand() (*cobra.Command, error) {
 		newShowCommand(),
 		newRepoCommand(),
 		newDownloadCommand(),
+		newListCommand(),
 	)
 
 	log.SetLevel(log.DebugLevel)

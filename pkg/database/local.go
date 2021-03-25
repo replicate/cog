@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"strings"
+
 	"github.com/replicate/cog/pkg/files"
 	"github.com/replicate/cog/pkg/model"
 )
@@ -82,6 +84,27 @@ func (db *LocalFileDatabase) DeleteModel(user string, name string, id string) er
 	return nil
 }
 
+func (db *LocalFileDatabase) ListModels(user string, name string) ([]*model.Model, error) {
+	repoDir := db.repoDir(user, name)
+	entries, err := os.ReadDir(repoDir)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to scan %s: %w", db.rootDir, err)
+	}
+	models := []*model.Model{}
+	for _, entry := range entries {
+		filename := entry.Name()
+		if strings.HasSuffix(filename, ".json") {
+			path := filepath.Join(repoDir, filename)
+			mod, err := db.readModel(path)
+			if err != nil {
+				return nil, err
+			}
+			models = append(models, mod)
+		}
+	}
+	return models, nil
+}
+
 func (db *LocalFileDatabase) readModel(path string) (*model.Model, error) {
 	contents, err := os.ReadFile(path)
 	if err != nil {
@@ -95,5 +118,9 @@ func (db *LocalFileDatabase) readModel(path string) (*model.Model, error) {
 }
 
 func (db *LocalFileDatabase) packagePath(user string, name string, id string) string {
-	return filepath.Join(db.rootDir, user, name, id+".json")
+	return filepath.Join(db.repoDir(user, name), id+".json")
+}
+
+func (db *LocalFileDatabase) repoDir(user string, name string) string {
+	return filepath.Join(db.rootDir, user, name)
 }
