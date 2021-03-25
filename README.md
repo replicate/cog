@@ -40,7 +40,7 @@ model: "model.py:JazzSoloComposerModel"
 3. Build and push the model:
 
 ```
-$ cog remote set http://10.1.2.3:8000
+$ cog repo set http://10.1.2.3:8000
 $ cog build
 ...
 --> Built and pushed b6a2f8a2d2ff
@@ -82,13 +82,9 @@ When that has finished, you can run inferences on the built model from any machi
 
     cog infer b31f9f72d8f14f0eacc5452e85b05c957b9a8ed9 -i @hotdog.jpg
 
-You can list packages to see the built package:
-
-    cog list
-
 You can see more details about the package:
 
-    cog show b31f9f72d8f14f0eacc5452e85b05c957b9a8ed9 
+    cog show b31f9f72d8f14f0eacc5452e85b05c957b9a8ed9
 
 In this output is the Docker image. You can run this anywhere a Docker image runs to deploy your model.
 
@@ -100,14 +96,14 @@ No docs yet -- sorry! It should be pretty self-explanatory from the examples.
 
 ## Server API
 
-### POST `/v1/packages/upload`
+### PUT `/v1/packages/<user>/<name>/`
 
 Upload a new package.
 
 Example:
 
 ```
-$ curl -X POST localhost:8080/v1/packages/upload -F "file=@package.zip"
+$ curl -X PUT localhost:8080/v1/packages/andreas/my-model/ -F "file=@package.zip"
 ```
 
 where `package.zip` is a zip folder of a directory with `cog.yaml` in it.
@@ -120,17 +116,16 @@ This does the following:
 * Tests that the model works by running the Docker image locally and performing an inference
 * Inserts model metadata into database (local files)
 
-### GET `/v1/packages/<id>`
+### GET `/v1/packages/<user>/<name>`
 
 Fetch package metadata.
 
 Example:
 
 ```
-$ curl localhost:8080/v1/packages/c43b98b37776656e6b3dac3ea3270660ffc21ca7 | jq .
+$ curl localhost:8080/v1/packages/andreas/my-model/c43b98b37776656e6b3dac3ea3270660ffc21ca7 | jq .
 {
   "ID": "c43b98b37776656e6b3dac3ea3270660ffc21ca7",
-  "Name": "andreas/scratch",
   "Artifacts": [
     {
       "Target": "docker-cpu",
@@ -138,7 +133,6 @@ $ curl localhost:8080/v1/packages/c43b98b37776656e6b3dac3ea3270660ffc21ca7 | jq 
     }
   ],
   "Config": {
-    "Name": "andreas/scratch",
     "Environment": {
       "PythonVersion": "3.8",
       "PythonRequirements": "",
@@ -155,36 +149,16 @@ $ curl localhost:8080/v1/packages/c43b98b37776656e6b3dac3ea3270660ffc21ca7 | jq 
 }
 ```
 
-### GET `/v1/packages/<id>.zip`
+### GET `/v1/packages/<user>/<name>/<id>.zip`
 
 Download the package.
 
 Example:
 
 ```
-$ curl localhost:8080/v1/packages/c43b98b37776656e6b3dac3ea3270660ffc21ca7.zip > my-package.zip
+$ curl localhost:8080/v1/packages/andreas/my-model/c43b98b37776656e6b3dac3ea3270660ffc21ca7.zip > my-package.zip
 $ unzip my-package.zip
 Archive:  my-package.zip
   inflating: cog.yaml
   inflating: infer.py
-```
-
-### GET `/v1/packages/`
-
-List all packages.
-
-Example:
-
-```
-$ curl localhost:8080/v1/packages/ | jq .
-[
-  {
-    "ID": "af3ff5288247833f5f9d8d9f6ecd5fe2b586f6aa",
-    "Name": "andreas/fastgan",
-    "Artifacts": [
-      {
-        "Target": "docker-cpu",
-        "URI": "us-central1-docker.pkg.dev/replicate/andreas-scratch/andreas/fastgan:a034b8a9bf46"
-      },
-[...]
 ```

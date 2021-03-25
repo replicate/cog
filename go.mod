@@ -12,6 +12,7 @@ require (
 	github.com/docker/go-units v0.4.0 // indirect
 	github.com/golang/protobuf v1.4.3 // indirect
 	github.com/google/go-cmp v0.5.4 // indirect
+	github.com/gopherdata/gophernotes v0.7.2 // indirect
 	github.com/gorilla/mux v1.8.0
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mholt/archiver/v3 v3.5.0
@@ -23,6 +24,8 @@ require (
 	github.com/onsi/gomega v1.4.3 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.0.1 // indirect
+	github.com/pebbe/zmq4 v0.0.0-20170917105202-90d69e412a09 // indirect
+	github.com/satori/go.uuid v1.2.1-0.20180103174451-36e9d2ebbde5 // indirect
 	github.com/schollz/progressbar/v3 v3.7.6
 	github.com/sirupsen/logrus v1.7.0
 	github.com/spf13/cobra v1.1.3

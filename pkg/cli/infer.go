@@ -31,17 +31,24 @@ func newInferCommand() *cobra.Command {
 		RunE:  cmdInfer,
 		Args:  cobra.MinimumNArgs(1),
 	}
+	addRepoFlag(cmd)
 	cmd.Flags().StringArrayVarP(&inputs, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
+
 	return cmd
 }
 
 func cmdInfer(cmd *cobra.Command, args []string) error {
+	repo, err := getRepo()
+	if err != nil {
+		return err
+	}
+
 	packageId := args[0]
 
-	client := client.NewClient(remoteHost())
+	client := client.NewClient()
 	fmt.Println("--> Loading package", packageId)
-	pkg, err := client.GetPackage(packageId)
+	pkg, err := client.GetPackage(repo, packageId)
 	if err != nil {
 		return err
 	}

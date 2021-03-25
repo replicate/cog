@@ -8,6 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/replicate/cog/pkg/files"
+	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/server"
 )
@@ -21,7 +23,7 @@ func newDebugCommand() *cobra.Command {
 
 	debug := &cobra.Command{
 		Use:    "debug",
-		Short:  "Generate a Dockerfile from cog.yaml",
+		Short:  "Generate a Dockerfile from " + global.ConfigFilename,
 		Hidden: true,
 	}
 
@@ -36,10 +38,14 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	configPath := path.Join(projectDir, "cog.yaml")
+	configPath := path.Join(projectDir, global.ConfigFilename)
 
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return fmt.Errorf("cog.yaml does not exist in %s. Are you in the right directory?", projectDir)
+	exists, err := files.FileExists(configPath)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("%s does not exist in %s. Are you in the right directory?", global.ConfigFilename, projectDir)
 	}
 
 	contents, err := ioutil.ReadFile(configPath)

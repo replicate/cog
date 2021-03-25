@@ -9,7 +9,6 @@ import (
 func TestValidateAndCompleteCUDAForAllTF(t *testing.T) {
 	for _, compat := range TFCompatibilityMatrix {
 		config := &Config{
-			Name: "foo",
 			Environment: &Environment{
 				PythonVersion: "3.8",
 				PythonPackages: []string{
@@ -29,7 +28,6 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 	// test that all torch versions fill out cuda
 	for _, compat := range TorchCompatibilityMatrix {
 		config := &Config{
-			Name: "foo",
 			Environment: &Environment{
 				PythonVersion: "3.8",
 				PythonPackages: []string{
@@ -55,7 +53,6 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 		{"1.5.1", "10.2", "8"},
 	} {
 		config := &Config{
-			Name: "foo",
 			Environment: &Environment{
 				PythonVersion: "3.8",
 				PythonPackages: []string{
@@ -72,7 +69,6 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 
 func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 	config := &Config{
-		Name: "foo",
 		Environment: &Environment{
 			PythonVersion: "3.8",
 			PythonPackages: []string{
@@ -104,7 +100,6 @@ func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 
 func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 	config := &Config{
-		Name: "foo",
 		Environment: &Environment{
 			PythonVersion: "3.8",
 			PythonPackages: []string{
@@ -136,7 +131,6 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 
 func TestPythonPackagesForArchTensorflowGPU(t *testing.T) {
 	config := &Config{
-		Name: "foo",
 		Environment: &Environment{
 			PythonVersion: "3.8",
 			PythonPackages: []string{
@@ -164,7 +158,6 @@ func TestPythonPackagesForArchTensorflowGPU(t *testing.T) {
 
 func TestCUDABaseImageTag(t *testing.T) {
 	config := &Config{
-		Name: "foo",
 		Environment: &Environment{
 			PythonVersion: "3.8",
 			PythonPackages: []string{

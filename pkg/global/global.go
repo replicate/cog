@@ -10,4 +10,5 @@ var BuildTime = "none"
 var (
 	Verbose        = false
 	StartupTimeout = 5 * time.Minute
+	ConfigFilename = "cog.yaml"
 )
