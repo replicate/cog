@@ -1,3 +1,5 @@
+import sys
+from contextlib import contextmanager
 import os
 import shutil
 import tempfile
@@ -12,7 +14,9 @@ from typing import Optional, Any, Type, List, Callable, Dict
 from flask import Flask, send_file, request, jsonify, abort
 from werkzeug.datastructures import FileStorage
 
-_VALID_INPUT_TYPES = frozenset([str, int, Path])
+# TODO(andreas): handle directory input
+_VALID_INPUT_TYPES = frozenset([str, int, float, bool, Path])
+_UNSPECIFIED = object()
 
 
 class InputValidationError(Exception):
@@ -67,7 +71,10 @@ class Model(ABC):
                 return self.create_response(result)
             finally:
                 for cleanup_function in cleanup_functions:
-                    cleanup_function()
+                    try:
+                        cleanup_function()
+                    except Exception as e:
+                        sys.stderr.write(f"Cleanup function caught error: {e}")
 
         @app.route("/ping")
         def ping():
@@ -84,8 +91,8 @@ class Model(ABC):
                     }
                     if spec.help:
                         arg["help"] = spec.help
-                    if spec.default:
-                        arg["default"] = spec.default
+                    if spec.default is not _UNSPECIFIED:
+                        arg["default"] = str(spec.default)  # TODO: don't string this
                     args[name] = arg
             return jsonify({"arguments": args})
 
@@ -138,6 +145,18 @@ class Model(ABC):
                             f"Could not convert {name}={val} to int"
                         )
 
+                elif input_spec.type == float:
+                    try:
+                        converted = float(val)
+                    except ValueError:
+                        raise InputValidationError(
+                            f"Could not convert {name}={val} to float"
+                        )
+
+                elif input_spec.type == bool:
+                    if val not in [True, False]:
+                        raise InputValidationError(f"{name}={val} is not a boolean")
+
                 elif input_spec.type == str:
                     if isinstance(val, FileStorage):
                         raise InputValidationError(
@@ -146,10 +165,12 @@ class Model(ABC):
                     converted = val
 
                 else:
-                    raise TypeError(f"Internal error: Input type {input_spec} is not a valid input type")
+                    raise TypeError(
+                        f"Internal error: Input type {input_spec} is not a valid input type"
+                    )
 
             else:
-                if input_spec.default is not None:
+                if input_spec.default is not _UNSPECIFIED:
                     converted = input_spec.default
                 else:
                     raise InputValidationError(f"Missing expected argument: {name}")
@@ -166,14 +187,27 @@ class Model(ABC):
         return inputs
 
 
+@contextmanager
+def unzip_to_tempdir(zip_path):
+    with tempfile.TemporaryDirectory() as tempdir:
+        shutil.unpack_archive(zip_path, tempdir, "zip")
+        yield tempdir
+
+
+def make_temp_path(filename):
+    # TODO(andreas): cleanup
+    tempdir = tempfile.mkdtemp()
+    return Path(os.path.join(tempdir, filename))
+
+
 @dataclass
 class InputSpec:
     type: Type
-    default: Optional[Any] = None
+    default: Any = _UNSPECIFIED
     help: Optional[str] = None
 
 
-def input(name, type, default=None, help=None):
+def input(name, type, default=_UNSPECIFIED, help=None):
     if type not in _VALID_INPUT_TYPES:
         type_name = _type_name(type)
         type_list = ", ".join([_type_name(t) for t in _VALID_INPUT_TYPES])
@@ -188,7 +222,7 @@ def input(name, type, default=None, help=None):
         if name in f._inputs:
             raise ValueError(f"{name} is already defined as an argument")
 
-        if type == Path and default is not None:
+        if type == Path and default is not _UNSPECIFIED and default is not None:
             raise TypeError("Cannot use default with Path type")
 
         f._inputs[name] = InputSpec(type=type, default=default, help=help)
@@ -209,6 +243,10 @@ def _type_name(type: Type) -> str:
         return "str"
     if type == int:
         return "int"
+    if type == float:
+        return "float"
+    if type == bool:
+        return "bool"
     if type == Path:
         return "Path"
     return str(type)

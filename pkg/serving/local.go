@@ -54,7 +54,7 @@ func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target, logW
 	}
 	imageTag := artifact.URI
 
-	logWriter(fmt.Sprintf("Deploying container for target %s", artifact.Target))
+	logWriter(fmt.Sprintf("Deploying container %s for target %s", imageTag, artifact.Target))
 
 	if !docker.Exists(imageTag, logWriter) {
 		if err := docker.Pull(imageTag, logWriter); err != nil {

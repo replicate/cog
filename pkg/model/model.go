@@ -27,6 +27,8 @@ type ArgumentType string
 const (
 	ArgumentTypeString ArgumentType = "str"
 	ArgumentTypeInt    ArgumentType = "int"
+	ArgumentTypeFloat  ArgumentType = "float"
+	ArgumentTypeBool   ArgumentType = "bool"
 	ArgumentTypePath   ArgumentType = "Path"
 )
 

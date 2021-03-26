@@ -303,12 +303,11 @@ func parsePreviousTorchVersionsCode(code string, compats []model.TorchCompatibil
 			return nil, fmt.Errorf("Invalid arch: %s", rawArch)
 		}
 		compat, err := parseTorchInstallString(install, supportedLibrarySet, cuda)
-
-		fixTorchCompatibility(compat)
-
 		if err != nil {
 			return nil, err
 		}
+		fixTorchCompatibility(compat)
+
 		compats = append(compats, *compat)
 	}
 	return compats, nil

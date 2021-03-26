@@ -1,5 +1,6 @@
 # pytest cog_test.py
 
+import shutil
 import tempfile
 import io
 import os
@@ -82,13 +83,16 @@ def test_good_int_input():
 
         @cog.input("num", type=int)
         def run(self, num):
-            num2 = num ** 2
+            num2 = num ** 3
             return self.foo + str(num2)
 
     client = make_client(Model())
     resp = client.post("/infer", data={"num": 3})
     assert resp.status_code == 200
-    assert resp.data == b"foo9"
+    assert resp.data == b"foo27"
+    resp = client.post("/infer", data={"num": -3})
+    assert resp.status_code == 200
+    assert resp.data == b"foo-27"
 
 
 def test_bad_int_input():
@@ -125,6 +129,43 @@ def test_default_int_input():
     assert resp.data == b"foo25"
 
 
+def test_good_float_input():
+    class Model(cog.Model):
+        def setup(self):
+            self.foo = "foo"
+
+        @cog.input("num", type=float)
+        def run(self, num):
+            num2 = num ** 3
+            return self.foo + str(num2)
+
+    client = make_client(Model())
+    resp = client.post("/infer", data={"num": 3})
+    assert resp.status_code == 200
+    assert resp.data == b"foo27.0"
+    resp = client.post("/infer", data={"num": 3.5})
+    assert resp.status_code == 200
+    assert resp.data == b"foo42.875"
+    resp = client.post("/infer", data={"num": -3.5})
+    assert resp.status_code == 200
+    assert resp.data == b"foo-42.875"
+
+
+def test_bad_float_input():
+    class Model(cog.Model):
+        def setup(self):
+            self.foo = "foo"
+
+        @cog.input("num", type=float)
+        def run(self, num):
+            num2 = num ** 2
+            return self.foo + str(num2)
+
+    client = make_client(Model())
+    resp = client.post("/infer", data={"num": "foo"})
+    assert resp.status_code == 400
+
+
 def test_good_path_input():
     class Model(cog.Model):
         def setup(self):
@@ -157,6 +198,30 @@ def test_bad_path_input():
     client = make_client(Model())
     resp = client.post("/infer", data={"path": "bar"})
     assert resp.status_code == 400
+
+
+def test_default_path_input():
+    class Model(cog.Model):
+        def setup(self):
+            self.foo = "foo"
+
+        @cog.input("path", type=Path, default=None)
+        def run(self, path):
+            if path is None:
+                return "noneee"
+            with open(path) as f:
+                return self.foo + " " + f.read() + " " + os.path.basename(path)
+
+    client = make_client(Model())
+    path_data = (io.BytesIO(b"bar"), "foo.txt")
+    resp = client.post(
+        "/infer", data={"path": path_data}, content_type="multipart/form-data"
+    )
+    assert resp.status_code == 200
+    assert resp.data == b"foo bar foo.txt"
+    resp = client.post("/infer", data={})
+    assert resp.status_code == 200
+    assert resp.data == b"noneee"
 
 
 def test_path_output_str():
@@ -262,3 +327,22 @@ def test_help():
             },
         }
     }
+
+
+def test_unzip_to_tempdir(tmpdir_factory):
+    input_dir = tmpdir_factory.mktemp("input")
+    with open(os.path.join(input_dir, "hello.txt"), "w") as f:
+        f.write("hello")
+    os.mkdir(os.path.join(input_dir, "mydir"))
+    with open(os.path.join(input_dir, "mydir", "world.txt"), "w") as f:
+        f.write("world")
+
+    zip_dir = tmpdir_factory.mktemp("zip")
+    zip_path = os.path.join(zip_dir, "my-archive.zip")
+
+    shutil.make_archive(zip_path.split(".zip")[0], "zip", input_dir)
+    with cog.unzip_to_tempdir(zip_path) as tempdir:
+        with open(os.path.join(tempdir, "hello.txt")) as f:
+            assert f.read() == "hello"
+        with open(os.path.join(tempdir, "mydir", "world.txt")) as f:
+            assert f.read() == "world"
