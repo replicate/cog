@@ -266,15 +266,15 @@ func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger
 	return mod, nil
 }
 
-func (s *Server) testModel(mod *model.Model, dir string, streamLogger *logger.StreamLogger) (map[string]*model.RunArgument, error) {
-	streamLogger.WriteStatus("Testing model")
-	deployment, err := s.servingPlatform.Deploy(mod, model.TargetDockerCPU, streamLogger.WriteLogLine)
+func (s *Server) testModel(mod *model.Model, dir string, logWriter logger.Logger) (map[string]*model.RunArgument, error) {
+	logWriter.WriteStatus("Testing model")
+	deployment, err := s.servingPlatform.Deploy(mod, model.TargetDockerCPU, logWriter)
 	if err != nil {
 		return nil, err
 	}
 	defer deployment.Undeploy()
 
-	help, err := deployment.Help(streamLogger.WriteLogLine)
+	help, err := deployment.Help(logWriter)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +285,7 @@ func (s *Server) testModel(mod *model.Model, dir string, streamLogger *logger.St
 		}
 		input := serving.NewExampleWithBaseDir(example.Input, dir)
 
-		result, err := deployment.RunInference(input, streamLogger.WriteLogLine)
+		result, err := deployment.RunInference(input, logWriter)
 		if err != nil {
 			return nil, err
 		}
@@ -294,7 +294,7 @@ func (s *Server) testModel(mod *model.Model, dir string, streamLogger *logger.St
 		if err != nil {
 			return nil, fmt.Errorf("Failed to read output: %w", err)
 		}
-		streamLogger.WriteLogLine(fmt.Sprintf("Inference result length: %d, mime type: %s", len(outputBytes), output.MimeType))
+		logWriter.WriteLogLine(fmt.Sprintf("Inference result length: %d, mime type: %s", len(outputBytes), output.MimeType))
 		if example.Output != "" && string(outputBytes) != example.Output {
 			return nil, fmt.Errorf("Output %s doesn't match expected: %s", outputBytes, example.Output)
 		}
@@ -304,14 +304,14 @@ func (s *Server) testModel(mod *model.Model, dir string, streamLogger *logger.St
 }
 
 // TODO(andreas): include user in docker image name?
-func (s *Server) buildDockerImages(dir string, config *model.Config, name string, streamLogger *logger.StreamLogger) ([]*model.Artifact, error) {
+func (s *Server) buildDockerImages(dir string, config *model.Config, name string, logWriter logger.Logger) ([]*model.Artifact, error) {
 	// TODO(andreas): parallelize
 	artifacts := []*model.Artifact{}
 	for _, arch := range config.Environment.Architectures {
 
-		streamLogger.WriteStatus("Building %s image", arch)
+		logWriter.WriteStatus("Building %s image", arch)
 
-		generator := &DockerfileGenerator{config, arch}
+		generator := &docker.DockerfileGenerator{Config: config, Arch: arch}
 		dockerfileContents, err := generator.Generate()
 		if err != nil {
 			return nil, fmt.Errorf("Failed to generate Dockerfile for %s: %w", arch, err)
@@ -323,7 +323,7 @@ func (s *Server) buildDockerImages(dir string, config *model.Config, name string
 			return nil, fmt.Errorf("Failed to write Dockerfile for %s", arch)
 		}
 
-		tag, err := s.dockerImageBuilder.BuildAndPush(dir, relDockerfilePath, name, streamLogger.WriteLogLine)
+		tag, err := s.dockerImageBuilder.BuildAndPush(dir, relDockerfilePath, name, logWriter)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to build Docker image: %w", err)
 		}

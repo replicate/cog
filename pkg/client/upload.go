@@ -87,6 +87,8 @@ func (c *Client) UploadPackage(repo *model.Repo, projectDir string) (*model.Mode
 		case logger.MessageTypeError:
 			return nil, fmt.Errorf("Error: %s", msg.Text)
 		case logger.MessageTypeLogLine:
+			log.Info(msg.Text)
+		case logger.MessageTypeDebugLine:
 			log.Debug(msg.Text)
 		case logger.MessageTypeStatus:
 			log.Info("--> " + msg.Text)

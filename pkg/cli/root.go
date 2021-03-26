@@ -24,6 +24,11 @@ func NewRootCommand() (*cobra.Command, error) {
 		Short:   "",
 		Version: fmt.Sprintf("%s (built %s)", global.Version, global.BuildTime),
 		// This stops errors being printed because we print them in cmd/keepsake/main.go
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			if global.Verbose {
+				log.SetLevel(log.DebugLevel)
+			}
+		},
 	}
 	setPersistentFlags(&rootCmd)
 
@@ -37,8 +42,6 @@ func NewRootCommand() (*cobra.Command, error) {
 		newDownloadCommand(),
 		newListCommand(),
 	)
-
-	log.SetLevel(log.DebugLevel)
 
 	return &rootCmd, nil
 }

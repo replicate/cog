@@ -8,10 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/files"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/model"
-	"github.com/replicate/cog/pkg/server"
 )
 
 func newDebugCommand() *cobra.Command {
@@ -58,7 +58,7 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	generator := &server.DockerfileGenerator{Config: config, Arch: "cpu"}
+	generator := &docker.DockerfileGenerator{Config: config, Arch: "cpu"}
 	out, err := generator.Generate()
 	if err != nil {
 		return err
