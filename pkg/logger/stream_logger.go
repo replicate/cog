@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/replicate/cog/pkg/console"
-
 	"github.com/replicate/cog/pkg/model"
 )
 
@@ -28,6 +28,7 @@ type Message struct {
 
 type StreamLogger struct {
 	writer http.ResponseWriter
+	mu     sync.Mutex
 }
 
 func NewStreamLogger(w http.ResponseWriter) *StreamLogger {
@@ -45,6 +46,8 @@ func (logger *StreamLogger) logText(messageType MessageType, text string) {
 
 func (logger *StreamLogger) write(data []byte) {
 	data = append(data, '\n')
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
 	if _, err := logger.writer.Write(data); err != nil {
 		console.Warn("HTTP response writer failed to write: %s", data)
 		return
