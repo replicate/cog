@@ -27,7 +27,9 @@ func NewRootCommand() (*cobra.Command, error) {
 			if global.Verbose {
 				console.SetLevel(console.DebugLevel)
 			}
+			cmd.SilenceUsage = true
 		},
+		SilenceErrors: true,
 	}
 	setPersistentFlags(&rootCmd)
 
