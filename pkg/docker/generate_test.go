@@ -1,4 +1,4 @@
-package server
+package docker
 
 import (
 	"encoding/base64"
@@ -12,13 +12,14 @@ import (
 
 func installCog() string {
 	cogLibB64 := base64.StdEncoding.EncodeToString(cogLibrary)
-	return fmt.Sprintf(`RUN pip install flask
+	return fmt.Sprintf(`RUN ### --> Installing Cog
+RUN pip install flask
 ENV PYTHONPATH=/usr/local/lib/cog
 RUN mkdir -p /usr/local/lib/cog && echo %s | base64 --decode > /usr/local/lib/cog/cog.py`, cogLibB64)
 }
 
 func installPython(version string) string {
-	return fmt.Sprintf(`
+	return fmt.Sprintf(`RUN ### --> Installing Python prerequisites
 ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
 RUN apt-get update -q && apt-get install -qy --no-install-recommends \
 	make \
@@ -41,6 +42,7 @@ RUN apt-get update -q && apt-get install -qy --no-install-recommends \
 	git \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
+RUN ### --> Installing Python 3.8
 RUN curl https://pyenv.run | bash && \
 	git clone https://github.com/momo-lab/pyenv-install-latest.git "$(pyenv root)"/plugins/pyenv-install-latest && \
 	pyenv install-latest "%s" && \
@@ -57,6 +59,7 @@ model: infer.py:Model
 	expectedCPU := `FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
 ` + installPython("3.8") + installCog() + `
+RUN ### --> Copying code
 COPY . /code
 WORKDIR /code
 CMD ["python", "-c", "from infer import Model; Model().start_server()"]`
@@ -64,6 +67,7 @@ CMD ["python", "-c", "from infer import Model; Model().start_server()"]`
 	expectedGPU := `FROM nvidia/cuda:11.0-devel-ubuntu20.04
 ENV DEBIAN_FRONTEND=noninteractive
 ` + installPython("3.8") + installCog() + `
+RUN ### --> Copying code
 COPY . /code
 WORKDIR /code
 CMD ["python", "-c", "from infer import Model; Model().start_server()"]`
@@ -98,22 +102,30 @@ model: infer.py:Model
 
 	expectedCPU := `FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
+RUN ### --> Installing system packages
 RUN apt-get update -qq && apt-get install -qy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-` + installPython("3.8") + `COPY my-requirements.txt /tmp/requirements.txt
+` + installPython("3.8") + `RUN ### --> Installing Python requirements
+COPY my-requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
+RUN ### --> Installing Python packages
 RUN pip install -f https://download.pytorch.org/whl/torch_stable.html   torch==1.5.1+cpu pandas==1.2.0.12
 ` + installCog() + `
+RUN ### --> Copying code
 COPY . /code
 WORKDIR /code
 CMD ["python", "-c", "from infer import Model; Model().start_server()"]`
 
 	expectedGPU := `FROM nvidia/cuda:11.0-devel-ubuntu20.04
 ENV DEBIAN_FRONTEND=noninteractive
+RUN ### --> Installing system packages
 RUN apt-get update -qq && apt-get install -qy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-` + installPython("3.8") + `COPY my-requirements.txt /tmp/requirements.txt
+` + installPython("3.8") + `RUN ### --> Installing Python requirements
+COPY my-requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
+RUN ### --> Installing Python packages
 RUN pip install   torch==1.5.1 pandas==1.2.0.12
 ` + installCog() + `
+RUN ### --> Copying code
 COPY . /code
 WORKDIR /code
 CMD ["python", "-c", "from infer import Model; Model().start_server()"]`

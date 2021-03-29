@@ -5,16 +5,17 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
 )
 
 type Platform interface {
-	Deploy(mod *model.Model, target model.Target, logWriter func(string)) (Deployment, error)
+	Deploy(mod *model.Model, target model.Target, logWriter logger.Logger) (Deployment, error)
 }
 
 type Deployment interface {
-	RunInference(input *Example, logWriter func(string)) (*Result, error)
-	Help(logWriter func(string)) (*HelpResponse, error)
+	RunInference(input *Example, logWriter logger.Logger) (*Result, error)
+	Help(logWriter logger.Logger) (*HelpResponse, error)
 	Undeploy() error
 }
 

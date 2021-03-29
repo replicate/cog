@@ -13,10 +13,11 @@ import (
 type MessageType string
 
 const (
-	MessageTypeLogLine MessageType = "log_line"
-	MessageTypeError   MessageType = "error"
-	MessageTypeStatus  MessageType = "status"
-	MessageTypeModel   MessageType = "model"
+	MessageTypeLogLine   MessageType = "log_line"
+	MessageTypeDebugLine MessageType = "debug_line"
+	MessageTypeError     MessageType = "error"
+	MessageTypeStatus    MessageType = "status"
+	MessageTypeModel     MessageType = "model"
 )
 
 type Message struct {
@@ -55,8 +56,12 @@ func (logger *StreamLogger) write(data []byte) {
 	}
 }
 
-func (logger *StreamLogger) WriteLogLine(line string) {
-	logger.logText(MessageTypeLogLine, line)
+func (logger *StreamLogger) WriteLogLine(line string, args ...interface{}) {
+	logger.logText(MessageTypeLogLine, fmt.Sprintf(line, args...))
+}
+
+func (logger *StreamLogger) WriteDebugLine(line string, args ...interface{}) {
+	logger.logText(MessageTypeDebugLine, fmt.Sprintf(line, args...))
 }
 
 func (logger *StreamLogger) WriteStatus(status string, args ...interface{}) {

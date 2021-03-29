@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/client"
+	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/serving"
 )
@@ -59,7 +60,7 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	logWriter := func(s string) { log.Debug(s) }
+	logWriter := logger.NewLogrusLogger()
 	deployment, err := servingPlatform.Deploy(pkg, model.TargetDockerCPU, logWriter)
 	if err != nil {
 		return err

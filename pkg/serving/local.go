@@ -21,6 +21,7 @@ import (
 
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/shell"
 )
@@ -45,7 +46,7 @@ func NewLocalDockerPlatform() (*LocalDockerPlatform, error) {
 	}, nil
 }
 
-func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target, logWriter func(string)) (Deployment, error) {
+func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target, logWriter logger.Logger) (Deployment, error) {
 	// TODO(andreas): output container logs
 
 	artifact, ok := mod.ArtifactFor(target)
@@ -54,7 +55,7 @@ func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target, logW
 	}
 	imageTag := artifact.URI
 
-	logWriter(fmt.Sprintf("Deploying container %s for target %s", imageTag, artifact.Target))
+	logWriter.WriteLogLine("Deploying container %s for target %s", imageTag, artifact.Target)
 
 	if !docker.Exists(imageTag, logWriter) {
 		if err := docker.Pull(imageTag, logWriter); err != nil {
@@ -106,27 +107,25 @@ func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target, logW
 		return nil, fmt.Errorf("Failed to start Docker container for image %s: %w", imageTag, err)
 	}
 
-	if err := p.waitForContainerReady(hostPort, containerID, logWriter); err != nil {
-		logs, err2 := getContainerLogs(p.client, containerID)
-		if err2 != nil {
-			return nil, err2
-		}
-		logWriter(logs)
-		return nil, err
-	}
-
-	return &LocalDockerDeployment{
+	deployment := &LocalDockerDeployment{
 		containerID: containerID,
 		client:      p.client,
 		port:        hostPort,
-	}, nil
+	}
+
+	if err := p.waitForContainerReady(hostPort, containerID, logWriter); err != nil {
+		deployment.writeContainerLogs(logWriter)
+		return nil, err
+	}
+
+	return deployment, nil
 }
 
-func (p *LocalDockerPlatform) waitForContainerReady(hostPort int, containerID string, logWriter func(string)) error {
+func (p *LocalDockerPlatform) waitForContainerReady(hostPort int, containerID string, logWriter logger.Logger) error {
 	url := fmt.Sprintf("http://localhost:%d/ping", hostPort)
 
 	start := time.Now()
-	logWriter("Waiting for model container to become accessible")
+	logWriter.WriteLogLine("Waiting for model container to become accessible")
 	for {
 		now := time.Now()
 		if now.Sub(start) > global.StartupTimeout {
@@ -150,7 +149,7 @@ func (p *LocalDockerPlatform) waitForContainerReady(hostPort int, containerID st
 		if resp.StatusCode != http.StatusOK {
 			continue
 		}
-		logWriter("Got successful ping response from container")
+		logWriter.WriteLogLine("Got successful ping response from container")
 		return nil
 	}
 }
@@ -162,7 +161,7 @@ func (d *LocalDockerDeployment) Undeploy() error {
 	return nil
 }
 
-func (d *LocalDockerDeployment) RunInference(input *Example, logWriter func(string)) (*Result, error) {
+func (d *LocalDockerDeployment) RunInference(input *Example, logWriter logger.Logger) (*Result, error) {
 	bodyBuffer := new(bytes.Buffer)
 
 	mwriter := multipart.NewWriter(bodyBuffer)
@@ -206,21 +205,13 @@ func (d *LocalDockerDeployment) RunInference(input *Example, logWriter func(stri
 	httpClient := &http.Client{}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		logs, err2 := getContainerLogs(d.client, d.containerID)
-		if err2 != nil {
-			return nil, err2
-		}
-		logWriter(logs)
+		d.writeContainerLogs(logWriter)
 		return nil, fmt.Errorf("Failed to POST HTTP request to %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		logs, err2 := getContainerLogs(d.client, d.containerID)
-		if err2 != nil {
-			return nil, err2
-		}
-		logWriter(logs)
+		d.writeContainerLogs(logWriter)
 		return nil, fmt.Errorf("/infer call returned status %d", resp.StatusCode)
 	}
 
@@ -244,38 +235,35 @@ func (d *LocalDockerDeployment) RunInference(input *Example, logWriter func(stri
 	return result, nil
 }
 
-func (d *LocalDockerDeployment) Help(logWriter func(string)) (*HelpResponse, error) {
+func (d *LocalDockerDeployment) Help(logWriter logger.Logger) (*HelpResponse, error) {
 	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/help", d.port))
 	if err != nil {
-		logs, err2 := getContainerLogs(d.client, d.containerID)
-		if err2 != nil {
-			return nil, err2
-		}
-		logWriter(logs)
+		d.writeContainerLogs(logWriter)
 		return nil, fmt.Errorf("Failed to GET /help: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		logs, err2 := getContainerLogs(d.client, d.containerID)
-		if err2 != nil {
-			return nil, err2
-		}
-		logWriter(logs)
+		d.writeContainerLogs(logWriter)
 		return nil, fmt.Errorf("/help call returned status %d", resp.StatusCode)
 	}
 
 	help := new(HelpResponse)
 	if err := json.NewDecoder(resp.Body).Decode(help); err != nil {
-		logs, err2 := getContainerLogs(d.client, d.containerID)
-		if err2 != nil {
-			return nil, err2
-		}
-		logWriter(logs)
+		d.writeContainerLogs(logWriter)
 		return nil, fmt.Errorf("Failed to parse /help body: %w", err)
 	}
 
 	return help, nil
+}
+
+func (d *LocalDockerDeployment) writeContainerLogs(logWriter logger.Logger) {
+	logs, err := getContainerLogs(d.client, d.containerID)
+	if err != nil {
+		logWriter.WriteError(err)
+	} else {
+		logWriter.WriteLogLine(logs)
+	}
 }
 
 func getContainerLogs(c *client.Client, containerID string) (string, error) {

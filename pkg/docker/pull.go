@@ -5,9 +5,11 @@ import (
 	"os/exec"
 
 	log "github.com/sirupsen/logrus"
+
+	"github.com/replicate/cog/pkg/logger"
 )
 
-func Pull(tag string, logWriter func(string)) error {
+func Pull(tag string, logWriter logger.Logger) error {
 	log.Info("Downloading image...")
 	cmd := exec.Command("docker", "pull", tag)
 
