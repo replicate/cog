@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/replicate/cog/pkg/console"
 )
 
 func NextFreePort(port int) (int, error) {
@@ -37,7 +37,7 @@ func WaitForPort(port int, timeout time.Duration) error {
 
 func WaitForHTTPOK(url string, timeout time.Duration) error {
 	start := time.Now()
-	log.Debugf("Waiting for %s to become accessible", url)
+	console.Debug("Waiting for %s to become accessible", url)
 	for {
 		now := time.Now()
 		if now.Sub(start) > timeout {
@@ -52,7 +52,7 @@ func WaitForHTTPOK(url string, timeout time.Duration) error {
 		if resp.StatusCode != http.StatusOK {
 			continue
 		}
-		log.Debugf("Got successful response from %s", url)
+		console.Debug("Got successful response from %s", url)
 		return nil
 	}
 }

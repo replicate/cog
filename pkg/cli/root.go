@@ -2,13 +2,12 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"os"
-
+	"github.com/replicate/cog/pkg/console"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/settings"
@@ -26,7 +25,7 @@ func NewRootCommand() (*cobra.Command, error) {
 		// This stops errors being printed because we print them in cmd/keepsake/main.go
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			if global.Verbose {
-				log.SetLevel(log.DebugLevel)
+				console.SetLevel(console.DebugLevel)
 			}
 		},
 	}

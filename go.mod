@@ -4,7 +4,7 @@ go 1.16
 
 require (
 	github.com/Microsoft/go-winio v0.4.16 // indirect
-	github.com/TylerBrock/colorjson v0.0.0-20200706003622-8a50f05110d2 // indirect
+	github.com/TylerBrock/colorjson v0.0.0-20200706003622-8a50f05110d2
 	github.com/anaskhan96/soup v1.2.4
 	github.com/containerd/containerd v1.4.4 // indirect
 	github.com/docker/distribution v2.7.1+incompatible // indirect
@@ -14,22 +14,21 @@ require (
 	github.com/fatih/color v1.10.0 // indirect
 	github.com/golang/protobuf v1.4.3 // indirect
 	github.com/google/go-cmp v0.5.4 // indirect
-	github.com/gopherdata/gophernotes v0.7.2 // indirect
 	github.com/gorilla/mux v1.8.0
+	github.com/hokaccha/go-prettyjson v0.0.0-20210113012101-fb4e108d2519 // indirect
 	github.com/kr/text v0.2.0 // indirect
+	github.com/logrusorgru/aurora v2.0.3+incompatible
+	github.com/mattn/go-isatty v0.0.12
 	github.com/mholt/archiver/v3 v3.5.0
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/moby/term v0.0.0-20201110203204-bea5bbe245bf // indirect
+	github.com/mitchellh/go-wordwrap v1.0.1
+	github.com/moby/term v0.0.0-20201110203204-bea5bbe245bf
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
-	github.com/onsi/ginkgo v1.8.0 // indirect
-	github.com/onsi/gomega v1.4.3 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.0.1 // indirect
-	github.com/pebbe/zmq4 v0.0.0-20170917105202-90d69e412a09 // indirect
-	github.com/satori/go.uuid v1.2.1-0.20180103174451-36e9d2ebbde5 // indirect
 	github.com/schollz/progressbar/v3 v3.7.6
-	github.com/sirupsen/logrus v1.7.0
+	github.com/sirupsen/logrus v1.7.0 // indirect
 	github.com/spf13/cobra v1.1.3
 	github.com/stretchr/testify v1.7.0
 	github.com/xeonx/timeago v1.0.0-rc4
@@ -40,11 +39,8 @@ require (
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	google.golang.org/genproto v0.0.0-20210222152913-aa3ee6e6a81c // indirect
 	google.golang.org/grpc v1.35.0 // indirect
-	gopkg.in/airbrake/gobrake.v2 v2.0.9 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
-	gopkg.in/gemnasium/logrus-airbrake-hook.v2 v2.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0
-	gotest.tools/gotestsum v1.6.2 // indirect
 	gotest.tools/v3 v3.0.3 // indirect
 )
 

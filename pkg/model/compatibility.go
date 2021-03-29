@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/replicate/cog/pkg/console"
 
 	"github.com/replicate/cog/pkg/version"
 )
@@ -105,13 +105,13 @@ var CUDABaseImages []CUDABaseImage
 
 func init() {
 	if err := json.Unmarshal(tfCompatibilityMatrixData, &TFCompatibilityMatrix); err != nil {
-		log.Fatalf("Failed to load embedded Tensorflow compatibility matrix: %s", err)
+		console.Fatal("Failed to load embedded Tensorflow compatibility matrix: %s", err)
 	}
 	if err := json.Unmarshal(torchCompatibilityMatrixData, &TorchCompatibilityMatrix); err != nil {
-		log.Fatalf("Failed to load embedded PyTorch compatibility matrix: %s", err)
+		console.Fatal("Failed to load embedded PyTorch compatibility matrix: %s", err)
 	}
 	if err := json.Unmarshal(cudaBaseImageTagsData, &CUDABaseImages); err != nil {
-		log.Fatalf("Failed to load embedded CUDA base images: %s", err)
+		console.Fatal("Failed to load embedded CUDA base images: %s", err)
 	}
 }
 

@@ -10,7 +10,8 @@ import (
 	"strings"
 
 	"github.com/anaskhan96/soup"
-	log "github.com/sirupsen/logrus"
+
+	"github.com/replicate/cog/pkg/console"
 
 	"github.com/replicate/cog/pkg/model"
 )
@@ -22,28 +23,28 @@ func main() {
 	flag.Parse()
 
 	if *tfOutputPath == "" && *torchOutputPath == "" && *cudaImagesOutputPath == "" {
-		log.Fatal("at least one of -tf-output, -torch-output, -cuda-images-output must be provided")
+		console.Fatal("at least one of -tf-output, -torch-output, -cuda-images-output must be provided")
 	}
 
 	if *tfOutputPath != "" {
 		if err := writeTFCompatibilityMatrix(*tfOutputPath); err != nil {
-			log.Fatalf("Failed to write Tensorflow compatibility matrix: %s", err)
+			console.Fatal("Failed to write Tensorflow compatibility matrix: %s", err)
 		}
 	}
 	if *torchOutputPath != "" {
 		if err := writeTorchCompatibilityMatrix(*torchOutputPath); err != nil {
-			log.Fatalf("Failed to write PyTorch compatibility matrix: %s", err)
+			console.Fatal("Failed to write PyTorch compatibility matrix: %s", err)
 		}
 	}
 	if *cudaImagesOutputPath != "" {
 		if err := writeCUDABaseImageTags(*cudaImagesOutputPath); err != nil {
-			log.Fatalf("Failed to write CUDA base images: %s", err)
+			console.Fatal("Failed to write CUDA base images: %s", err)
 		}
 	}
 }
 
 func writeTFCompatibilityMatrix(outputPath string) error {
-	log.Infof("Writing Tensorflow compatibility matrix to %s...", outputPath)
+	console.Info("Writing Tensorflow compatibility matrix to %s...", outputPath)
 
 	url := "https://www.tensorflow.org/install/source"
 	resp, err := soup.Get(url)
@@ -93,7 +94,7 @@ func writeTFCompatibilityMatrix(outputPath string) error {
 }
 
 func writeTorchCompatibilityMatrix(outputPath string) error {
-	log.Infof("Writing PyTorch compatibility matrix to %s...", outputPath)
+	console.Info("Writing PyTorch compatibility matrix to %s...", outputPath)
 
 	compats := []model.TorchCompatibility{}
 	var err error
@@ -122,7 +123,7 @@ func writeTorchCompatibilityMatrix(outputPath string) error {
 }
 
 func writeCUDABaseImageTags(outputPath string) error {
-	log.Infof("Writing CUDA base images to %s...", outputPath)
+	console.Info("Writing CUDA base images to %s...", outputPath)
 	url := "https://hub.docker.com/v2/repositories/nvidia/cuda/tags/?page_size=1000&name=devel-ubuntu&ordering=last_updated"
 	resp, err := soup.Get(url)
 	if err != nil {

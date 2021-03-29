@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/replicate/cog/pkg/console"
 
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/shell"
@@ -45,7 +45,7 @@ func (b *LocalImageBuilder) BuildAndPush(dir string, dockerfilePath string, name
 }
 
 func (b *LocalImageBuilder) build(dir string, dockerfilePath string, logWriter logger.Logger) (tag string, err error) {
-	log.Debugf("Building in %s", dir)
+	console.Debug("Building in %s", dir)
 
 	cmd := exec.Command(
 		"docker", "build", ".",
@@ -81,7 +81,7 @@ func (b *LocalImageBuilder) build(dir string, dockerfilePath string, logWriter l
 }
 
 func (b *LocalImageBuilder) tag(tag string, fullImageTag string, logWriter logger.Logger) error {
-	log.Debugf("Tagging %s as %s", tag, fullImageTag)
+	console.Debug("Tagging %s as %s", tag, fullImageTag)
 
 	cmd := exec.Command("docker", "tag", tag, fullImageTag)
 	cmd.Env = os.Environ()
@@ -100,7 +100,7 @@ func (b *LocalImageBuilder) push(tag string, logWriter logger.Logger) error {
 	cmd := exec.Command("docker", args...)
 	cmd.Env = os.Environ()
 
-	log.Debug("Pushing model to Registry...")
+	console.Debug("Pushing model to Registry...")
 	stderrDone, err := pipeToWithDockerChecks(cmd.StderrPipe, logWriter)
 	if err != nil {
 		return err
@@ -173,10 +173,10 @@ func pipeToWithDockerChecks(pf shell.PipeFunc, logWriter logger.Logger) (done ch
 	return shell.PipeTo(pf, func(args ...interface{}) {
 		line := args[0].(string)
 		if strings.Contains(line, "Cannot connect to the Docker daemon") {
-			log.Fatal("Docker does not appear to be running; please start Docker and try again")
+			console.Fatal("Docker does not appear to be running; please start Docker and try again")
 		}
 		if strings.Contains(line, "failed to dial gRPC: unable to upgrade to h2c, received 502") {
-			log.Fatal("Your Docker version appears to be out out date; please upgrade Docker to the latest version and try again")
+			console.Fatal("Your Docker version appears to be out out date; please upgrade Docker to the latest version and try again")
 		}
 		if logWriter != nil {
 			logWriter.WriteLogLine(line)

@@ -5,8 +5,9 @@ import (
 	"os"
 	"path"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
+	"github.com/replicate/cog/pkg/console"
 
 	"github.com/replicate/cog/pkg/client"
 	"github.com/replicate/cog/pkg/global"
@@ -39,7 +40,7 @@ func buildPackage(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%s does not exist in %s. Are you in the right directory?", global.ConfigFilename, projectDir)
 	}
 
-	log.Infof("--> Uploading %s", projectDir)
+	console.Info("Uploading %s to %s", projectDir, repo)
 
 	cli := client.NewClient()
 	mod, err := cli.UploadPackage(repo, projectDir)
