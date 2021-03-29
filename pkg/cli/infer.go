@@ -13,8 +13,9 @@ import (
 	"time"
 
 	"github.com/TylerBrock/colorjson"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
+	"github.com/replicate/cog/pkg/console"
 
 	"github.com/replicate/cog/pkg/client"
 	"github.com/replicate/cog/pkg/logger"
@@ -50,7 +51,7 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 	packageId := args[0]
 
 	client := client.NewClient()
-	fmt.Println("--> Loading package", packageId)
+	fmt.Println("Loading package", packageId)
 	pkg, err := client.GetPackage(repo, packageId)
 	if err != nil {
 		return err
@@ -60,14 +61,14 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	logWriter := logger.NewLogrusLogger()
+	logWriter := logger.NewConsoleLogger()
 	deployment, err := servingPlatform.Deploy(pkg, model.TargetDockerCPU, logWriter)
 	if err != nil {
 		return err
 	}
 	defer func() {
 		if err := deployment.Undeploy(); err != nil {
-			log.Warnf("Failed to kill Docker container: %s", err)
+			console.Warn("Failed to kill Docker container: %s", err)
 		}
 	}()
 
@@ -130,7 +131,7 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Println("--> Written output to " + outPath)
+	fmt.Println("Written output to " + outPath)
 	return nil
 }
 

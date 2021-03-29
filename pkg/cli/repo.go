@@ -5,8 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
+	"github.com/replicate/cog/pkg/console"
 
 	"github.com/replicate/cog/pkg/client"
 	"github.com/replicate/cog/pkg/files"
@@ -62,7 +63,7 @@ func setRepo(cmd *cobra.Command, args []string) error {
 	}
 	exists, err := files.FileExists(filepath.Join(cwd, global.ConfigFilename))
 	if !exists {
-		log.Warnf("%s does not exist in %s. Are you in the right directory?", global.ConfigFilename, cwd)
+		console.Warn("%s does not exist in %s. Are you in the right directory?", global.ConfigFilename, cwd)
 	}
 
 	cli := client.NewClient()

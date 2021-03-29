@@ -6,8 +6,9 @@ import (
 	"path/filepath"
 	"strconv"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
+	"github.com/replicate/cog/pkg/console"
 
 	"github.com/replicate/cog/pkg/database"
 	"github.com/replicate/cog/pkg/docker"
@@ -47,7 +48,7 @@ func startServer(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	log.Debugf("Preparing to start server on port %d", port)
+	console.Debug("Preparing to start server on port %d", port)
 
 	// TODO(andreas): make this configurable
 	dataDir := ".cog"
@@ -65,7 +66,7 @@ func startServer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if dockerRegistry == "" {
-		log.Warn("Running without docker registry. Please add --docker-registry to be able to push images")
+		console.Warn("Running without docker registry. Please add --docker-registry to be able to push images")
 	}
 	dockerImageBuilder := docker.NewLocalImageBuilder(dockerRegistry)
 	servingPlatform, err := serving.NewLocalDockerPlatform()

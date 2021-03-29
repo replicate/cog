@@ -11,7 +11,8 @@ import (
 
 	"github.com/mholt/archiver/v3"
 	"github.com/schollz/progressbar/v3"
-	log "github.com/sirupsen/logrus"
+
+	"github.com/replicate/cog/pkg/console"
 
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
@@ -42,19 +43,19 @@ func (c *Client) UploadPackage(repo *model.Repo, projectDir string) (*model.Mode
 		z := archiver.Zip{ImplicitTopLevelFolder: false}
 		err := z.WriterArchive([]string{projectDir}, io.MultiWriter(zipWriter, bar))
 		if err != nil {
-			log.Fatal(err)
+			console.Fatal(err.Error())
 		}
 		// MultiWriter is a Writer not a WriteCloser, but zipWriter is a WriteCloser, so we need to Close it ourselves
 		if err = zipWriter.Close(); err != nil {
-			log.Fatal(err)
+			console.Fatal(err.Error())
 		}
 	}()
 	go func() {
 		err := uploadFile(req, "file", "package.zip", zipReader, bodyWriter)
 		if err != nil {
-			log.Fatal(err)
+			console.Fatal(err.Error())
 		}
-		log.Info("--> Building package...")
+		console.Info("Building package...")
 	}()
 
 	resp, err := client.Do(req)
@@ -72,26 +73,26 @@ func (c *Client) UploadPackage(repo *model.Repo, projectDir string) (*model.Mode
 				break
 			}
 			if err == io.ErrUnexpectedEOF {
-				log.Warn("Unexpected EOF")
+				console.Warn("Unexpected EOF")
 				break
 			}
-			log.Warn(err)
+			console.Warn(err.Error())
 		}
 		msg := new(logger.Message)
 		if err := json.Unmarshal(line, msg); err != nil {
-			log.Debug(string(line))
-			log.Warnf("Failed to parse log message: %s", err)
+			console.Debug(string(line))
+			console.Warn("Failed to parse console message: %s", err)
 			continue
 		}
 		switch msg.Type {
 		case logger.MessageTypeError:
 			return nil, fmt.Errorf("Error: %s", msg.Text)
 		case logger.MessageTypeLogLine:
-			log.Info(msg.Text)
+			console.Info(msg.Text)
 		case logger.MessageTypeDebugLine:
-			log.Debug(msg.Text)
+			console.Debug(msg.Text)
 		case logger.MessageTypeStatus:
-			log.Info("--> " + msg.Text)
+			console.Info(msg.Text)
 		case logger.MessageTypeModel:
 			mod = msg.Model
 		}

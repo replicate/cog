@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
+
+	"github.com/replicate/cog/pkg/console"
 )
 
 // TODO(andreas): support conda packages
@@ -94,7 +95,7 @@ func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 		pkgName, version, err := splitPythonPackage(pkg)
 		if err != nil {
 			// this should be caught by validation earlier
-			log.Warnf("Python package %s is malformed.", pkg)
+			console.Warn("Python package %s is malformed.", pkg)
 			return "", false
 		}
 		if pkgName == name {
@@ -265,19 +266,19 @@ Compatible cuDNN version is: %s`,
 	if c.Environment.CUDA == "" {
 		if len(cudas) == 0 {
 			c.Environment.CUDA = defaultCUDA()
-			log.Infof("Setting CUDA to version %s", c.Environment.CUDA)
+			console.Info("Setting CUDA to version %s", c.Environment.CUDA)
 		} else {
 			c.Environment.CUDA = latestCUDAFrom(cudas)
-			log.Infof("Setting CUDA to version %s from torch/tensorflow version", c.Environment.CUDA)
+			console.Info("Setting CUDA to version %s from torch/tensorflow version", c.Environment.CUDA)
 		}
 	}
 	if c.Environment.CuDNN == "" {
 		if cuDNN == "" {
 			c.Environment.CuDNN = latestCuDNNForCUDA(c.Environment.CUDA)
-			log.Infof("Setting CuDNN to version %s", c.Environment.CuDNN)
+			console.Info("Setting CuDNN to version %s", c.Environment.CuDNN)
 		} else {
 			c.Environment.CuDNN = cuDNN
-			log.Infof("Setting CuDNN to version %s from torch/tensorflow version", c.Environment.CuDNN)
+			console.Info("Setting CuDNN to version %s from torch/tensorflow version", c.Environment.CuDNN)
 		}
 	}
 

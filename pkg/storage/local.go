@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/replicate/cog/pkg/console"
 
 	"github.com/replicate/cog/pkg/files"
 )
@@ -48,7 +48,7 @@ func (s *LocalStorage) Upload(user string, name string, id string, reader io.Rea
 			return fmt.Errorf("Failed to create directory %s: %w", dir, err)
 		}
 	}
-	log.Debugf("Saving to %s", path)
+	console.Debug("Saving to %s", path)
 	file, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("Failed to create %s: %w", path, err)

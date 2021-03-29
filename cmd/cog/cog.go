@@ -3,16 +3,16 @@ package main
 import (
 	"github.com/replicate/cog/pkg/cli"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/replicate/cog/pkg/console"
 )
 
 func main() {
 	cmd, err := cli.NewRootCommand()
 	if err != nil {
-		log.Fatalf("%f", err)
+		console.Fatal("%f", err)
 	}
 
 	if err = cmd.Execute(); err != nil {
-		log.Fatalf("%s", err)
+		console.Fatal("%s", err)
 	}
 }

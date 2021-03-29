@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/replicate/cog/pkg/console"
 
 	"github.com/replicate/cog/pkg/model"
 )
@@ -38,7 +38,7 @@ func (logger *StreamLogger) logText(messageType MessageType, text string) {
 	msg := Message{Type: messageType, Text: text}
 	data, err := json.Marshal(msg)
 	if err != nil {
-		log.Warnf("Failed to marshal log text: %s", text)
+		console.Warn("Failed to marshal console text: %s", text)
 	}
 	logger.write(data)
 }
@@ -46,13 +46,13 @@ func (logger *StreamLogger) logText(messageType MessageType, text string) {
 func (logger *StreamLogger) write(data []byte) {
 	data = append(data, '\n')
 	if _, err := logger.writer.Write(data); err != nil {
-		log.Warnf("HTTP response writer failed to write: %s", data)
+		console.Warn("HTTP response writer failed to write: %s", data)
 		return
 	}
 	if f, ok := logger.writer.(http.Flusher); ok {
 		f.Flush()
 	} else {
-		log.Warnf("HTTP response writer can not be flushed")
+		console.Warn("HTTP response writer can not be flushed")
 	}
 }
 
@@ -76,7 +76,7 @@ func (logger *StreamLogger) WriteModel(mod *model.Model) {
 	msg := Message{Type: MessageTypeModel, Model: mod}
 	data, err := json.Marshal(msg)
 	if err != nil {
-		log.Warnf("Failed to marshal model")
+		console.Warn("Failed to marshal model")
 	}
 	logger.write(data)
 }

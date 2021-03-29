@@ -1,7 +1,7 @@
 package logger
 
 import (
-	log "github.com/sirupsen/logrus"
+	"github.com/replicate/cog/pkg/console"
 
 	"github.com/replicate/cog/pkg/model"
 )
@@ -14,29 +14,29 @@ type Logger interface {
 	WriteModel(mod *model.Model)
 }
 
-type LogrusLogger struct {
+type ConsoleLogger struct {
 }
 
-func NewLogrusLogger() *LogrusLogger {
-	return new(LogrusLogger)
+func NewConsoleLogger() *ConsoleLogger {
+	return new(ConsoleLogger)
 }
 
-func (l *LogrusLogger) WriteLogLine(line string, args ...interface{}) {
-	log.Infof(line, args...)
+func (l *ConsoleLogger) WriteLogLine(line string, args ...interface{}) {
+	console.Info(line, args...)
 }
 
-func (l *LogrusLogger) WriteDebugLine(line string, args ...interface{}) {
-	log.Debugf(line, args...)
+func (l *ConsoleLogger) WriteDebugLine(line string, args ...interface{}) {
+	console.Debug(line, args...)
 }
 
-func (l *LogrusLogger) WriteStatus(status string, args ...interface{}) {
-	log.Infof(status, args...)
+func (l *ConsoleLogger) WriteStatus(status string, args ...interface{}) {
+	console.Info(status, args...)
 }
 
-func (l *LogrusLogger) WriteError(err error) {
-	log.Error(err.Error())
+func (l *ConsoleLogger) WriteError(err error) {
+	console.Error(err.Error())
 }
 
-func (l *LogrusLogger) WriteModel(mod *model.Model) {
-	log.Infof("%v", mod)
+func (l *ConsoleLogger) WriteModel(mod *model.Model) {
+	console.Info("%v", mod)
 }

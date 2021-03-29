@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/replicate/cog/pkg/console"
 
 	"github.com/replicate/cog/pkg/files"
 	"github.com/replicate/cog/pkg/model"
@@ -32,7 +32,7 @@ func LoadProjectSettings(projectRoot string) (*ProjectSettings, error) {
 	}
 	text, err := ioutil.ReadFile(settingsPath)
 	if err != nil {
-		log.Warnf("Failed to read %s: %s", settingsPath, err)
+		console.Warn("Failed to read %s: %s", settingsPath, err)
 		return settings, nil
 	}
 

@@ -14,7 +14,8 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/mholt/archiver/v3"
-	log "github.com/sirupsen/logrus"
+
+	"github.com/replicate/cog/pkg/console"
 
 	"github.com/replicate/cog/pkg/database"
 	"github.com/replicate/cog/pkg/docker"
@@ -53,7 +54,7 @@ func (s *Server) Start() error {
 	router.Path("/ping").
 		Methods(http.MethodGet).
 		HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			log.Info("Received ping request")
+			console.Info("Received ping request")
 			w.Write([]byte("pong"))
 		})
 	router.Path("/v1/repos/{user}/{name}/packages/{id}.zip").
@@ -78,12 +79,12 @@ func (s *Server) Start() error {
 func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {
 	user, name, _ := getRepoVars(r)
 
-	log.Infof("Received build request")
+	console.Info("Received build request")
 	streamLogger := logger.NewStreamLogger(w)
 	mod, err := s.ReceiveModel(r, streamLogger, user, name)
 	if err != nil {
 		streamLogger.WriteError(err)
-		log.Error(err)
+		console.Error(err.Error())
 		return
 	}
 	streamLogger.WriteModel(mod)
@@ -91,12 +92,12 @@ func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) SendModelPackage(w http.ResponseWriter, r *http.Request) {
 	user, name, id := getRepoVars(r)
-	log.Infof("Received download request for %s/%s/%s", user, name, id)
+	console.Info("Received download request for %s/%s/%s", user, name, id)
 	modTime := time.Now() // TODO
 
 	mod, err := s.db.GetModel(user, name, id)
 	if err != nil {
-		log.Error(err)
+		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -107,21 +108,21 @@ func (s *Server) SendModelPackage(w http.ResponseWriter, r *http.Request) {
 
 	content, err := s.store.Download(user, name, id)
 	if err != nil {
-		log.Error(err)
+		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	log.Infof("Downloaded %d bytes", len(content))
+	console.Info("Downloaded %d bytes", len(content))
 	http.ServeContent(w, r, id+".zip", modTime, bytes.NewReader(content))
 }
 
 func (s *Server) SendModelMetadata(w http.ResponseWriter, r *http.Request) {
 	user, name, id := getRepoVars(r)
-	log.Infof("Received get request for %s/%s/%s", user, name, id)
+	console.Info("Received get request for %s/%s/%s", user, name, id)
 
 	mod, err := s.db.GetModel(user, name, id)
 	if err != nil {
-		log.Error(err)
+		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -133,7 +134,7 @@ func (s *Server) SendModelMetadata(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(mod); err != nil {
-		log.Error(err)
+		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -141,11 +142,11 @@ func (s *Server) SendModelMetadata(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) ListPackages(w http.ResponseWriter, r *http.Request) {
 	user, name, _ := getRepoVars(r)
-	log.Infof("Received list request for %s%s", user, name)
+	console.Info("Received list request for %s%s", user, name)
 
 	models, err := s.db.ListModels(user, name)
 	if err != nil {
-		log.Error(err)
+		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -153,7 +154,7 @@ func (s *Server) ListPackages(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(models); err != nil {
-		log.Error(err)
+		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -161,11 +162,11 @@ func (s *Server) ListPackages(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) DeletePackage(w http.ResponseWriter, r *http.Request) {
 	user, name, id := getRepoVars(r)
-	log.Infof("Received delete request for %s/%s/%s", user, name, id)
+	console.Info("Received delete request for %s/%s/%s", user, name, id)
 
 	mod, err := s.db.GetModel(user, name, id)
 	if err != nil {
-		log.Error(err)
+		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -175,12 +176,12 @@ func (s *Server) DeletePackage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.store.Delete(user, name, id); err != nil {
-		log.Error(err)
+		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	if err := s.db.DeleteModel(user, name, id); err != nil {
-		log.Error(err)
+		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
