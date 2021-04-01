@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"text/tabwriter"
+	"time"
 
 	"github.com/montanaflynn/stats"
 	"github.com/spf13/cobra"
@@ -21,6 +22,7 @@ var benchmarkRuns int
 type BenchmarkResults struct {
 	SetupTimes []float64
 	RunTimes   []float64
+	BootTimes  []float64
 }
 
 func newBenchmarkCommand() *cobra.Command {
@@ -77,6 +79,8 @@ func benchmarkPackage(cmd *cobra.Command, args []string) error {
 
 	w = tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "STEP\tAVERAGE\tMIN\tMAX")
+	averageBoot, minBoot, maxBoot := benchmarkStats(results.BootTimes)
+	fmt.Fprintf(w, "Boot\t%.3f\t%.3f\t%.3f\n", averageBoot, minBoot, maxBoot)
 	averageSetup, minSetup, maxSetup := benchmarkStats(results.SetupTimes)
 	fmt.Fprintf(w, "Setup\t%.3f\t%.3f\t%.3f\n", averageSetup, minSetup, maxSetup)
 	averageRun, minRun, maxRun := benchmarkStats(results.RunTimes)
@@ -95,6 +99,7 @@ func runBenchmarkInference(pkg *model.Model, pkgDir string, results *BenchmarkRe
 	input := serving.NewExampleWithBaseDir(example.Input, pkgDir)
 
 	logWriter := logger.NewConsoleLogger()
+	bootStart := time.Now()
 	deployment, err := servingPlatform.Deploy(pkg, model.TargetDockerCPU, logWriter)
 	if err != nil {
 		return err
@@ -104,6 +109,8 @@ func runBenchmarkInference(pkg *model.Model, pkgDir string, results *BenchmarkRe
 			console.Warn("Failed to kill Docker container: %s", err)
 		}
 	}()
+	bootTime := time.Since(bootStart).Seconds()
+	results.BootTimes = append(results.BootTimes, bootTime)
 
 	for i := 0; i < runIterations; i++ {
 		result, err := deployment.RunInference(input, logWriter)
