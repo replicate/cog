@@ -13,7 +13,6 @@ require (
 	github.com/docker/go-units v0.4.0 // indirect
 	github.com/fatih/color v1.10.0 // indirect
 	github.com/golang/protobuf v1.4.3 // indirect
-	github.com/google/go-cmp v0.5.4 // indirect
 	github.com/gorilla/mux v1.8.0
 	github.com/hokaccha/go-prettyjson v0.0.0-20210113012101-fb4e108d2519 // indirect
 	github.com/kr/text v0.2.0 // indirect
@@ -23,6 +22,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/mitchellh/go-wordwrap v1.0.1
 	github.com/moby/term v0.0.0-20201110203204-bea5bbe245bf
+	github.com/montanaflynn/stats v0.6.5 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
@@ -41,6 +41,7 @@ require (
 	google.golang.org/grpc v1.35.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 	gopkg.in/yaml.v2 v2.4.0
+	gotest.tools/gotestsum v1.6.3 // indirect
 	gotest.tools/v3 v3.0.3 // indirect
 )
 

@@ -19,6 +19,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 
+	"github.com/replicate/cog/pkg/console"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/logger"
@@ -223,6 +224,23 @@ func (d *LocalDockerDeployment) RunInference(input *Example, logWriter logger.Lo
 		return nil, fmt.Errorf("Failed to read response: %w", err)
 	}
 
+	setupTime := -1.0
+	runTime := -1.0
+	setupTimeStr := resp.Header.Get("X-Setup-Time")
+	if setupTimeStr != "" {
+		setupTime, err = strconv.ParseFloat(setupTimeStr, 64)
+		if err != nil {
+			console.Error("Failed to parse setup time '%s' as float: %s", setupTimeStr, err)
+		}
+	}
+	runTimeStr := resp.Header.Get("X-Run-Time")
+	if runTimeStr != "" {
+		runTime, err = strconv.ParseFloat(runTimeStr, 64)
+		if err != nil {
+			console.Error("Failed to parse run time '%s' as float: %s", runTimeStr, err)
+		}
+	}
+
 	result := &Result{
 		Values: map[string]ResultValue{
 			// TODO(andreas): support multiple outputs?
@@ -231,6 +249,8 @@ func (d *LocalDockerDeployment) RunInference(input *Example, logWriter logger.Lo
 				MimeType: mimeType,
 			},
 		},
+		SetupTime: setupTime,
+		RunTime:   runTime,
 	}
 	return result, nil
 }

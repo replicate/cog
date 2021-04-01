@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"sort"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -35,6 +36,10 @@ func listPackages(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	sort.Slice(models, func(i, j int) bool {
+		return models[i].Created.After(models[j].Created)
+	})
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tCREATED")

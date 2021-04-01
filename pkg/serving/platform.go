@@ -62,7 +62,9 @@ type ResultValue struct {
 }
 
 type Result struct {
-	Values map[string]ResultValue
+	Values    map[string]ResultValue
+	SetupTime float64
+	RunTime   float64
 }
 
 type HelpResponse struct {
