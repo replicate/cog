@@ -102,9 +102,9 @@ model: infer.py:Model
 
 	expectedCPU := `FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
-RUN ### --> Installing system packages
+` + installPython("3.8") + `RUN ### --> Installing system packages
 RUN apt-get update -qq && apt-get install -qy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-` + installPython("3.8") + `RUN ### --> Installing Python requirements
+RUN ### --> Installing Python requirements
 COPY my-requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
 RUN ### --> Installing Python packages
@@ -117,9 +117,9 @@ CMD ["python", "-c", "from infer import Model; Model().start_server()"]`
 
 	expectedGPU := `FROM nvidia/cuda:11.0-devel-ubuntu20.04
 ENV DEBIAN_FRONTEND=noninteractive
-RUN ### --> Installing system packages
+` + installPython("3.8") + `RUN ### --> Installing system packages
 RUN apt-get update -qq && apt-get install -qy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-` + installPython("3.8") + `RUN ### --> Installing Python requirements
+RUN ### --> Installing Python requirements
 COPY my-requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
 RUN ### --> Installing Python packages
