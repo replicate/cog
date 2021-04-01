@@ -71,7 +71,7 @@ Then, hook up Cog to the server (replace "localhost" with your server's IP if it
 
     cog remote set http://localhost:8080
 
-Next, let's build a package. We have [some models you can play around with](https://github.com/replicate/example-models). Clone that repository (you'll need git-lfs) and then build a package out of a model:
+Next, let's build a package. We have [some models you can play around with](https://github.com/replicate/cog-examples). Clone that repository (you'll need git-lfs) and then build a package out of a model:
 
     cd example-models/inst-colorization/
     cog build
@@ -98,89 +98,9 @@ In this output is the Docker image. You can run this anywhere a Docker image run
 No docs yet -- sorry! It should be pretty self-explanatory from the examples.
 
 
-## Server API
+## Next steps
 
-### PUT `/v1/packages/<user>/<name>/`
-
-Upload a new package.
-
-Example:
-
-```
-$ curl -X PUT localhost:8080/v1/packages/andreas/my-model/ -F "file=@package.zip"
-```
-
-where `package.zip` is a zip folder of a directory with `cog.yaml` in it.
-
-This does the following:
-* Computes a content-addressable ID
-* Validates and completes config (e.g. sets correct CUDA version for PyTorch)
-* Saves the model to storage (local files)
-* Builds and pushes Docker images to registry
-* Tests that the model works by running the Docker image locally and performing an inference
-* Inserts model metadata into database (local files)
-
-### GET `/v1/packages/<user>/<name>/<id>`
-
-Fetch package metadata.
-
-Example:
-
-```
-$ curl localhost:8080/v1/packages/andreas/my-model/c43b98b37776656e6b3dac3ea3270660ffc21ca7 | jq .
-{
-  "ID": "c43b98b37776656e6b3dac3ea3270660ffc21ca7",
-  "Artifacts": [
-    {
-      "Target": "docker-cpu",
-      "URI": "us-central1-docker.pkg.dev/replicate/andreas-scratch/andreas/scratch:2c7492b7d3d6"
-    }
-  ],
-  "Config": {
-    "Environment": {
-      "PythonVersion": "3.8",
-      "PythonRequirements": "",
-      "PythonPackages": null,
-      "SystemPackages": null,
-      "Architectures": [
-        "cpu"
-      ],
-      "CUDA": "",
-      "CuDNN": ""
-    },
-    "Model": "infer.py:Model"
-  }
-}
-```
-
-### GET `/v1/packages/<user>/<name>`
-
-List all packages' metadata.
-
-Example:
-
-```
-$ curl localhost:8080/v1/packages/andreas/my-model/ | jq .
-[
-  {
-    "ID": "c43b98b37776656e6b3dac3ea3270660ffc21ca7",
-    "Artifacts": [
-      {
-        "Target": "docker-cpu",
-  [...]
-]
-```
-
-### GET `/v1/packages/<user>/<name>/<id>.zip`
-
-Download the package.
-
-Example:
-
-```
-$ curl localhost:8080/v1/packages/andreas/my-model/c43b98b37776656e6b3dac3ea3270660ffc21ca7.zip > my-package.zip
-$ unzip my-package.zip
-Archive:  my-package.zip
-  inflating: cog.yaml
-  inflating: infer.py
-```
+- [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
+- [Python reference](docs/python.md) to learn how the `cog.Model` interface works
+- [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's envrionment
+- [Server API documention](docs/server-api.md), if you want to integrate directly with the Cog server
