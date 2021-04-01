@@ -43,6 +43,7 @@ func NewRootCommand() (*cobra.Command, error) {
 		newDownloadCommand(),
 		newListCommand(),
 		newBenchmarkCommand(),
+		newDeleteCommand(),
 	)
 
 	return &rootCmd, nil
