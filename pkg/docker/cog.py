@@ -1,3 +1,4 @@
+import time
 import sys
 from contextlib import contextmanager
 import os
@@ -11,7 +12,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional, Any, Type, List, Callable, Dict
 
-from flask import Flask, send_file, request, jsonify, abort
+from flask import Flask, send_file, request, jsonify, abort, Response
 from werkzeug.datastructures import FileStorage
 
 # TODO(andreas): handle directory input
@@ -40,11 +41,15 @@ class Model(ABC):
         print(result)
 
     def make_app(self) -> Flask:
+        start_time = time.time()
         self.setup()
         app = Flask(__name__)
+        setup_time = time.time() - start_time
 
         @app.route("/infer", methods=["POST"])
         def handle_request():
+            start_time = time.time()
+
             cleanup_functions = []
             try:
                 raw_inputs = {}
@@ -68,7 +73,8 @@ class Model(ABC):
                     inputs = raw_inputs
 
                 result = self.run(**inputs)
-                return self.create_response(result)
+                run_time = time.time() - start_time
+                return self.create_response(result, setup_time, run_time)
             finally:
                 for cleanup_function in cleanup_functions:
                     try:
@@ -102,12 +108,16 @@ class Model(ABC):
         app = self.make_app()
         app.run(host="0.0.0.0", port=5000)
 
-    def create_response(self, result):
+    def create_response(self, result, setup_time, run_time):
         if isinstance(result, Path):
-            return send_file(str(result))
+            resp = send_file(str(result))
         elif isinstance(result, str):
-            return result
-        return jsonify(result)
+            resp = Response(result)
+        else:
+            resp = jsonify(result)
+        resp.headers["X-Setup-Time"] = setup_time
+        resp.headers["X-Run-Time"] = run_time
+        return resp
 
     def validate_and_convert_inputs(
         self, raw_inputs: Dict[str, Any], cleanup_functions: List[Callable]

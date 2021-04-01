@@ -1,5 +1,6 @@
 # pytest cog_test.py
 
+import time
 import shutil
 import tempfile
 import io
@@ -319,7 +320,7 @@ def test_help():
             "num2": {
                 "type": "int",
                 "help": "Second number",
-                "default": 10,
+                "default": "10",
             },
             "path": {
                 "type": "Path",
@@ -328,6 +329,34 @@ def test_help():
         }
     }
 
+
+def test_timing():
+    class ModelSlow(cog.Model):
+        def setup(self):
+            time.sleep(0.5)
+
+        def run(self):
+            time.sleep(0.5)
+            return ""
+
+    class ModelFast(cog.Model):
+        def setup(self):
+            pass
+
+        def run(self):
+            return ""
+
+    client = make_client(ModelSlow())
+    resp = client.post("/infer")
+    assert resp.status_code == 200
+    assert 0.5 < float(resp.headers["X-Setup-Time"]) < 1.0
+    assert 0.5 < float(resp.headers["X-Run-Time"]) < 1.0
+
+    client = make_client(ModelFast())
+    resp = client.post("/infer")
+    assert resp.status_code == 200
+    assert float(resp.headers["X-Setup-Time"]) < 0.5
+    assert float(resp.headers["X-Run-Time"]) < 0.5
 
 def test_unzip_to_tempdir(tmpdir_factory):
     input_dir = tmpdir_factory.mktemp("input")

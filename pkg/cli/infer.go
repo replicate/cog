@@ -62,6 +62,7 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	logWriter := logger.NewConsoleLogger()
+	// TODO(andreas): GPU inference
 	deployment, err := servingPlatform.Deploy(pkg, model.TargetDockerCPU, logWriter)
 	if err != nil {
 		return err

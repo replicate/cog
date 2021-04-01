@@ -42,6 +42,7 @@ func NewRootCommand() (*cobra.Command, error) {
 		newRepoCommand(),
 		newDownloadCommand(),
 		newListCommand(),
+		newBenchmarkCommand(),
 	)
 
 	return &rootCmd, nil
@@ -72,7 +73,7 @@ func getRepo() (*model.Repo, error) {
 		if projectSettings.Repo != nil {
 			return projectSettings.Repo, nil
 		}
-		return nil, fmt.Errorf("Either you must run cog repo set <repo> in the current directory, or specify --repo/-r")
+		return nil, fmt.Errorf("No repository specified. Either you must run `cog repo set <repo>` in the current directory, or pass --repo <repository> to the command")
 	}
 }
 

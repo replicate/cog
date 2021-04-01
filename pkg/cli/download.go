@@ -33,7 +33,6 @@ func downloadPackage(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return err
 	}
-
 	id := args[0]
 
 	downloadOutputDir, err = homedir.Expand(downloadOutputDir)
