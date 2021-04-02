@@ -12,8 +12,8 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
-func (c *Client) DownloadPackage(repo *model.Repo, id string, outputDir string) error {
-	url := fmt.Sprintf("http://%s/v1/repos/%s/%s/packages/%s.zip", repo.Host, repo.User, repo.Name, id)
+func (c *Client) DownloadModel(repo *model.Repo, id string, outputDir string) error {
+	url := fmt.Sprintf("http://%s/v1/repos/%s/%s/models/%s.zip", repo.Host, repo.User, repo.Name, id)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("Failed to create HTTP request: %w", err)
@@ -24,10 +24,10 @@ func (c *Client) DownloadPackage(repo *model.Repo, id string, outputDir string) 
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("Package ID doesn't exist: %s", id)
+		return fmt.Errorf("Model ID doesn't exist: %s", id)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Package zip endpoint returned status %d", resp.StatusCode)
+		return fmt.Errorf("Model zip endpoint returned status %d", resp.StatusCode)
 	}
 
 	bar := progressbar.DefaultBytes(

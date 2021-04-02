@@ -7,7 +7,7 @@ import (
 	"github.com/replicate/cog/pkg/console"
 )
 
-func (s *Server) ListPackages(w http.ResponseWriter, r *http.Request) {
+func (s *Server) ListModels(w http.ResponseWriter, r *http.Request) {
 	user, name, _ := getRepoVars(r)
 	console.Info("Received list request for %s%s", user, name)
 

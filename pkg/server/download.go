@@ -8,7 +8,7 @@ import (
 	"github.com/replicate/cog/pkg/console"
 )
 
-func (s *Server) SendModelPackage(w http.ResponseWriter, r *http.Request) {
+func (s *Server) DownloadModel(w http.ResponseWriter, r *http.Request) {
 	user, name, id := getRepoVars(r)
 	console.Info("Received download request for %s/%s/%s", user, name, id)
 	modTime := time.Now() // TODO

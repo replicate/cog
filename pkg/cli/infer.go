@@ -48,11 +48,11 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	packageId := args[0]
+	modelId := args[0]
 
 	client := client.NewClient()
-	fmt.Println("Loading package", packageId)
-	pkg, err := client.GetPackage(repo, packageId)
+	fmt.Println("Loading package", modelId)
+	mod, err := client.GetModel(repo, modelId)
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 	}
 	logWriter := logger.NewConsoleLogger()
 	// TODO(andreas): GPU inference
-	deployment, err := servingPlatform.Deploy(pkg, model.TargetDockerCPU, logWriter)
+	deployment, err := servingPlatform.Deploy(mod, model.TargetDockerCPU, logWriter)
 	if err != nil {
 		return err
 	}

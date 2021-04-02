@@ -42,7 +42,7 @@ func (db *LocalFileDatabase) InsertModel(user string, name string, id string, mo
 	if err != nil {
 		return fmt.Errorf("Failed to marshall model: %w", err)
 	}
-	path := db.packagePath(user, name, id)
+	path := db.modelPath(user, name, id)
 	dir := filepath.Dir(path)
 	exists, err := files.FileExists(path)
 	if err != nil {
@@ -61,7 +61,7 @@ func (db *LocalFileDatabase) InsertModel(user string, name string, id string, mo
 
 // GetModel returns a model or nil if the model doesn't exist
 func (db *LocalFileDatabase) GetModel(user string, name string, id string) (*model.Model, error) {
-	path := db.packagePath(user, name, id)
+	path := db.modelPath(user, name, id)
 	exists, err := files.FileExists(path)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to determine if %s exists: %w", path, err)
@@ -77,7 +77,7 @@ func (db *LocalFileDatabase) GetModel(user string, name string, id string) (*mod
 }
 
 func (db *LocalFileDatabase) DeleteModel(user string, name string, id string) error {
-	path := db.packagePath(user, name, id)
+	path := db.modelPath(user, name, id)
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("Failed to delete %s: %w", path, err)
 	}
@@ -117,7 +117,7 @@ func (db *LocalFileDatabase) readModel(path string) (*model.Model, error) {
 	return mod, nil
 }
 
-func (db *LocalFileDatabase) packagePath(user string, name string, id string) string {
+func (db *LocalFileDatabase) modelPath(user string, name string, id string) string {
 	return filepath.Join(db.repoDir(user, name), id+".json")
 }
 

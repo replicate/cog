@@ -11,25 +11,25 @@ import (
 func newDeleteCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "delete",
-		Short:   "Delete a package",
-		RunE:    deletePackage,
+		Short:   "Delete a model",
+		RunE:    deleteModel,
 		Args:    cobra.MinimumNArgs(1),
 		Aliases: []string{"rm"},
 	}
 	return cmd
 }
 
-func deletePackage(cmd *cobra.Command, args []string) error {
+func deleteModel(cmd *cobra.Command, args []string) error {
 	repo, err := getRepo()
 	if err != nil {
 		return err
 	}
 	cli := client.NewClient()
 	for _, id := range args {
-		if err := cli.DeletePackage(repo, id); err != nil {
+		if err := cli.DeleteModel(repo, id); err != nil {
 			return err
 		}
-		fmt.Printf("Deleted package %s:%s\n", repo, id)
+		fmt.Printf("Deleted model %s:%s\n", repo, id)
 	}
 	return nil
 }

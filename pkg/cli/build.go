@@ -16,8 +16,8 @@ import (
 func newBuildCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "build",
-		Short: "Build Cog package",
-		RunE:  buildPackage,
+		Short: "Build Cog model",
+		RunE:  buildModel,
 		Args:  cobra.NoArgs,
 	}
 	addRepoFlag(cmd)
@@ -25,7 +25,7 @@ func newBuildCommand() *cobra.Command {
 	return cmd
 }
 
-func buildPackage(cmd *cobra.Command, args []string) error {
+func buildModel(cmd *cobra.Command, args []string) error {
 	repo, err := getRepo()
 	if err != nil {
 		return err
@@ -43,7 +43,7 @@ func buildPackage(cmd *cobra.Command, args []string) error {
 	console.Info("Uploading %s to %s", projectDir, repo)
 
 	cli := client.NewClient()
-	mod, err := cli.UploadPackage(repo, projectDir)
+	mod, err := cli.UploadModel(repo, projectDir)
 	if err != nil {
 		return err
 	}

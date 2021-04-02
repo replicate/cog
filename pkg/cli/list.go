@@ -15,8 +15,8 @@ import (
 func newListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list",
-		Short:   "List Cog packages",
-		RunE:    listPackages,
+		Short:   "List Cog models",
+		RunE:    listModels,
 		Args:    cobra.NoArgs,
 		Aliases: []string{"ls"},
 	}
@@ -25,14 +25,14 @@ func newListCommand() *cobra.Command {
 	return cmd
 }
 
-func listPackages(cmd *cobra.Command, args []string) error {
+func listModels(cmd *cobra.Command, args []string) error {
 	repo, err := getRepo()
 	if err != nil {
 		return err
 	}
 
 	cli := client.NewClient()
-	models, err := cli.ListPackages(repo)
+	models, err := cli.ListModels(repo)
 	if err != nil {
 		return err
 	}

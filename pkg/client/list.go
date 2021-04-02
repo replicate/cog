@@ -8,8 +8,8 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
-func (c *Client) ListPackages(repo *model.Repo) ([]*model.Model, error) {
-	url := fmt.Sprintf("http://%s/v1/repos/%s/%s/packages/", repo.Host, repo.User, repo.Name)
+func (c *Client) ListModels(repo *model.Repo) ([]*model.Model, error) {
+	url := fmt.Sprintf("http://%s/v1/repos/%s/%s/models/", repo.Host, repo.User, repo.Name)
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err

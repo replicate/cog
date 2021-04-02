@@ -2,7 +2,7 @@
 
 - **Store models in a central location.** Never again will you have to hunt for the right model file on S3 and figure out the right code to load it. Cog models are in one place with a content-addressable ID.
 - **Package everything that a model needs to run.** Code, weights, pre/post-processing, data types, Python dependencies, system dependencies, CUDA version, etc etc. No more dependency hell.
-- **Let anyone ship models to production.** Cog packages can be deployed to anywhere that runs Docker images, without having to understand Dockerfiles, CUDA, and all that horrible stuff.
+- **Let anyone ship models to production.** Cog models can be deployed to anywhere that runs Docker images, without having to understand Dockerfiles, CUDA, and all that horrible stuff.
 
 
 ## How does it work?
@@ -48,9 +48,9 @@ $ cog build
 
 This has:
 
-- **Created a package**, a ZIP file containing your code + weights + environment definition, and assigned it a content-addressable SHA256 ID.
-- **Pushed this package up to a central registry** so it never gets lost and can be run by anyone.
-- **Built two Docker images** (one for CPU and one for GPU) that contains the package in a reproducible environment, with the correct versions of Python, your dependencies, CUDA, etc.
+- **Created a model**, a ZIP file containing your code + weights + environment definition, and assigned it a content-addressable SHA256 ID.
+- **Pushed this model up to a central registry** so it never gets lost and can be run by anyone.
+- **Built two Docker images** (one for CPU and one for GPU) that contains the model in a reproducible environment, with the correct versions of Python, your dependencies, CUDA, etc.
 
 ## Install
 
@@ -71,22 +71,22 @@ Then, hook up Cog to the server (replace "localhost" with your server's IP if it
 
     cog remote set http://localhost:8080
 
-Next, let's build a package. We have [some models you can play around with](https://github.com/replicate/cog-examples). Clone that repository (you'll need git-lfs) and then build a package out of a model:
+Next, let's build a model. We have [some models you can play around with](https://github.com/replicate/cog-examples). Clone that repository (you'll need git-lfs) and then build a model out of a model:
 
     cd example-models/inst-colorization/
     cog build
 
 This will take a few minutes. In the meantime take a look at `cog.yaml` and `infer.py` to see how it works.
 
-When that has finished, you can run inferences on the built model from any machine that is pointed at the server. Replace the ID with your package's ID, and the file with an image on your disk you want to colorize:
+When that has finished, you can run inferences on the built model from any machine that is pointed at the server. Replace the ID with your model's ID, and the file with an image on your disk you want to colorize:
 
     cog infer b31f9f72d8f14f0eacc5452e85b05c957b9a8ed9 -i @hotdog.jpg
 
-You can see more details about the package:
+You can see more details about the model:
 
     cog show b31f9f72d8f14f0eacc5452e85b05c957b9a8ed9
 
-You can also list the packages for this repo:
+You can also list the models for this repo:
 
     cog list
 

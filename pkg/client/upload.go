@@ -18,12 +18,12 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
-func (c *Client) UploadPackage(repo *model.Repo, projectDir string) (*model.Model, error) {
+func (c *Client) UploadModel(repo *model.Repo, projectDir string) (*model.Model, error) {
 	bodyReader, bodyWriter := io.Pipe()
 
 	client := &http.Client{}
 
-	url := fmt.Sprintf("http://%s/v1/repos/%s/%s/packages/", repo.Host, repo.User, repo.Name)
+	url := fmt.Sprintf("http://%s/v1/repos/%s/%s/models/", repo.Host, repo.User, repo.Name)
 	req, err := http.NewRequest(http.MethodPut, url, bodyReader)
 	if err != nil {
 		return nil, err
@@ -51,11 +51,11 @@ func (c *Client) UploadPackage(repo *model.Repo, projectDir string) (*model.Mode
 		}
 	}()
 	go func() {
-		err := uploadFile(req, "file", "package.zip", zipReader, bodyWriter)
+		err := uploadFile(req, "file", "model.zip", zipReader, bodyWriter)
 		if err != nil {
 			console.Fatal(err.Error())
 		}
-		console.Info("Building package...")
+		console.Info("Building model...")
 	}()
 
 	resp, err := client.Do(req)
