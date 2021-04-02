@@ -2,7 +2,7 @@
 
 The `cog.Model` class defines the standard interface to trained machine learning models. Subclasses of `cog.Model` must implement two functions: `setup()` and `run()`. For example,
 
-```
+```python
 import cog
 
 class HelloWorldModel(cog.Model):
@@ -32,7 +32,7 @@ If the output is a `pathlib.Path` object, that will be returned by the built-in 
 
 ## `@cog.input(name, type, default, help)`
 
-The `@cog.input()` annotation describe a single input to the `run()` function. The `name` must correspond to an argument name in `run()`.
+The `@cog.input()` annotation describes a single input to the `run()` function. The `name` must correspond to an argument name in `run()`.
 
 `type` can be one of:
 * `str`
