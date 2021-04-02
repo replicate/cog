@@ -76,11 +76,7 @@ class Model(ABC):
                 run_time = time.time() - start_time
                 return self.create_response(result, setup_time, run_time)
             finally:
-                for cleanup_function in cleanup_functions:
-                    try:
-                        cleanup_function()
-                    except Exception as e:
-                        sys.stderr.write(f"Cleanup function caught error: {e}")
+                self.run_cleanup_functions(cleanup_functions)
 
         @app.route("/ping")
         def ping():
@@ -195,6 +191,13 @@ class Model(ABC):
             )
 
         return inputs
+
+    def run_cleanup_functions(self, cleanup_functions):
+        for cleanup_function in cleanup_functions:
+            try:
+                cleanup_function()
+            except Exception as e:
+                sys.stderr.write(f"Cleanup function caught error: {e}")
 
 
 @contextmanager

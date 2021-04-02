@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/replicate/cog/pkg/console"
-
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/shell"
 )

@@ -20,20 +20,32 @@ const topLevelSourceDir = "source"
 
 type Server struct {
 	port               int
+	adapters           []*Adapter
+	dockerRegistry     string
 	db                 database.Database
 	dockerImageBuilder docker.ImageBuilder
 	servingPlatform    serving.Platform
 	store              storage.Storage
 }
 
-func NewServer(port int, db database.Database, dockerImageBuilder docker.ImageBuilder, servingPlatform serving.Platform, store storage.Storage) *Server {
+func NewServer(port int, adapterDirs []string, dockerRegistry string, db database.Database, dockerImageBuilder docker.ImageBuilder, servingPlatform serving.Platform, store storage.Storage) (*Server, error) {
+	adapters := []*Adapter{}
+	for _, adapterDir := range adapterDirs {
+		adapter, err := loadAdapter(adapterDir)
+		if err != nil {
+			return nil, err
+		}
+		adapters = append(adapters, adapter)
+	}
 	return &Server{
 		port:               port,
+		adapters:           adapters,
+		dockerRegistry:     dockerRegistry,
 		db:                 db,
 		dockerImageBuilder: dockerImageBuilder,
 		servingPlatform:    servingPlatform,
 		store:              store,
-	}
+	}, nil
 }
 
 func (s *Server) Start() error {

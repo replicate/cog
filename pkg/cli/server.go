@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/console"
-
 	"github.com/replicate/cog/pkg/database"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/server"
@@ -18,8 +17,9 @@ import (
 )
 
 var (
-	port           int
-	dockerRegistry string
+	serverPort           int
+	serverDockerRegistry string
+	serverAdapters       []string
 )
 
 func newServerCommand() *cobra.Command {
@@ -30,25 +30,26 @@ func newServerCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 	}
 
-	cmd.Flags().IntVar(&port, "port", 0, "Server port")
-	cmd.Flags().StringVar(&dockerRegistry, "docker-registry", "", "Docker registry to push images to")
+	cmd.Flags().IntVar(&serverPort, "port", 0, "Server port")
+	cmd.Flags().StringVar(&serverDockerRegistry, "docker-registry", "", "Docker registry to push images to")
+	cmd.Flags().StringArrayVar(&serverAdapters, "adapter", []string{}, "Build adapters. Each argument corresponds to a directory with a cog-adapter.yaml file")
 	return cmd
 }
 
 func startServer(cmd *cobra.Command, args []string) error {
 	var err error
-	if port == 0 {
+	if serverPort == 0 {
 		portEnv := os.Getenv("PORT")
 		if portEnv == "" {
 			return fmt.Errorf("--port flag or PORT env must be defined")
 		}
-		port, err = strconv.Atoi(portEnv)
+		serverPort, err = strconv.Atoi(portEnv)
 		if err != nil {
 			return fmt.Errorf("Failed to convert PORT %s to integer", portEnv)
 		}
 	}
 
-	console.Debug("Preparing to start server on port %d", port)
+	console.Debug("Preparing to start server on port %d", serverPort)
 
 	// TODO(andreas): make this configurable
 	dataDir := ".cog"
@@ -65,10 +66,10 @@ func startServer(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if dockerRegistry == "" {
+	if serverDockerRegistry == "" {
 		console.Warn("Running without docker registry. Please add --docker-registry to be able to push images")
 	}
-	dockerImageBuilder := docker.NewLocalImageBuilder(dockerRegistry)
+	dockerImageBuilder := docker.NewLocalImageBuilder(serverDockerRegistry)
 	servingPlatform, err := serving.NewLocalDockerPlatform()
 	if err != nil {
 		return err
@@ -77,6 +78,9 @@ func startServer(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	s := server.NewServer(port, db, dockerImageBuilder, servingPlatform, store)
+	s, err := server.NewServer(serverPort, serverAdapters, serverDockerRegistry, db, dockerImageBuilder, servingPlatform, store)
+	if err != nil {
+		return err
+	}
 	return s.Start()
 }

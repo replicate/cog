@@ -55,6 +55,15 @@ func ConfigFromYAML(contents []byte) (*Config, error) {
 	return config, nil
 }
 
+func (c *Config) ModelParts() (module string, class string) {
+	// TODO(andreas): error checking, handle subdirectories/submodules
+	name := c.Model
+	parts := strings.Split(name, ".py:")
+	module = parts[0]
+	class = parts[1]
+	return module, class
+}
+
 func (c *Config) HasGPU() bool {
 	for _, arch := range c.Environment.Architectures {
 		if arch == "gpu" {

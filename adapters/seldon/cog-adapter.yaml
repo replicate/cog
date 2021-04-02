@@ -1,0 +1,2 @@
+name: seldon-core
+script: adapter.py

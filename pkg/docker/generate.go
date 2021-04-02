@@ -178,10 +178,7 @@ WORKDIR /code`
 func (g *DockerfileGenerator) command() string {
 	// TODO: handle infer scripts in subdirectories
 	// TODO: check this actually exists
-	name := g.Config.Model
-	parts := strings.Split(name, ".py:")
-	module := parts[0]
-	class := parts[1]
+	module, class := g.Config.ModelParts()
 	return `CMD ["python", "-c", "from ` + module + ` import ` + class + `; ` + class + `().start_server()"]`
 }
 

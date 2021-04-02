@@ -47,7 +47,7 @@ func NewLocalDockerPlatform() (*LocalDockerPlatform, error) {
 	}, nil
 }
 
-func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target, logWriter logger.Logger) (Deployment, error) {
+func (p *LocalDockerPlatform) Deploy(mod *model.Model, target string, logWriter logger.Logger) (Deployment, error) {
 	// TODO(andreas): output container logs
 
 	artifact, ok := mod.ArtifactFor(target)
@@ -156,7 +156,8 @@ func (p *LocalDockerPlatform) waitForContainerReady(hostPort int, containerID st
 }
 
 func (d *LocalDockerDeployment) Undeploy() error {
-	if err := d.client.ContainerStop(context.Background(), d.containerID, nil); err != nil {
+	timeout := time.Duration(100 * time.Millisecond)
+	if err := d.client.ContainerStop(context.Background(), d.containerID, &timeout); err != nil {
 		return fmt.Errorf("Failed to stop Docker container %s: %w", d.containerID, err)
 	}
 	return nil

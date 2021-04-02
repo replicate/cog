@@ -2,8 +2,6 @@ package model
 
 import "time"
 
-type Target string
-
 const (
 	TargetDockerCPU = "docker-cpu"
 	TargetDockerGPU = "docker-gpu"
@@ -18,7 +16,7 @@ type Model struct {
 }
 
 type Artifact struct {
-	Target Target `json:"target"`
+	Target string `json:"target"`
 	URI    string `json:"uri"`
 }
 
@@ -38,7 +36,7 @@ type RunArgument struct {
 	Help    *string      `json:"help"`
 }
 
-func (m *Model) ArtifactFor(target Target) (artifact *Artifact, ok bool) {
+func (m *Model) ArtifactFor(target string) (artifact *Artifact, ok bool) {
 	for _, a := range m.Artifacts {
 		if a.Target == target {
 			return a, true

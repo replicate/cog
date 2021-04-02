@@ -104,6 +104,10 @@ func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger
 	}
 	mod.RunArguments = runArgs
 
+	if err := s.buildAdapterTargets(user, name, mod, dir, streamLogger); err != nil {
+		return nil, err
+	}
+
 	streamLogger.WriteStatus("Inserting into database")
 	if err := s.db.InsertModel(user, name, id, mod); err != nil {
 		return nil, fmt.Errorf("Failed to insert into database: %w", err)
@@ -173,7 +177,7 @@ func (s *Server) buildDockerImages(dir string, config *model.Config, name string
 		if err != nil {
 			return nil, fmt.Errorf("Failed to build Docker image: %w", err)
 		}
-		var target model.Target
+		var target string
 		switch arch {
 		case "cpu":
 			target = model.TargetDockerCPU
