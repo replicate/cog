@@ -122,6 +122,11 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Ignore @, to make it behave the same as -i
+	if strings.HasPrefix(outPath, "@") {
+		outPath = outPath[1:]
+	}
+
 	// Write to file
 	outFile, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE, 0755)
 	if err != nil {
