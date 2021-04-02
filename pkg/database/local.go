@@ -88,6 +88,9 @@ func (db *LocalFileDatabase) ListModels(user string, name string) ([]*model.Mode
 	repoDir := db.repoDir(user, name)
 	entries, err := os.ReadDir(repoDir)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return []*model.Model{}, nil
+		}
 		return nil, fmt.Errorf("Failed to scan %s: %w", db.rootDir, err)
 	}
 	models := []*model.Model{}
