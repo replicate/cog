@@ -38,11 +38,11 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 		return "", err
 	}
 	preamble := g.preamble()
-	aptInstalls, err := g.aptInstalls()
+	installPython, err := g.installPython()
 	if err != nil {
 		return "", err
 	}
-	installPython, err := g.installPython()
+	aptInstalls, err := g.aptInstalls()
 	if err != nil {
 		return "", err
 	}
@@ -57,8 +57,8 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 	return strings.Join(filterEmpty([]string{
 		"FROM " + baseImage,
 		preamble,
-		aptInstalls,
 		installPython,
+		aptInstalls,
 		pythonRequirements,
 		pipInstalls,
 		g.installCog(),
