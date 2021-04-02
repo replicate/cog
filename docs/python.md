@@ -26,7 +26,7 @@ Run a single inference. This is where you call the model that was loaded during 
 
 The `run()` function takes an arbitrary list of named arguments, where each argument name must correspond to a `@cog.input()` annotation.
 
-`run()` can output strings, numbers, `pathlib.Path` objects, or lists or dicts of those types. We are working on supporting other types of output, but for now we recommend base-64 encoding more complex outputs.
+`run()` can output strings, numbers, `pathlib.Path` objects, or lists or dicts of those types. We are working on support for other types of output, but for now we recommend using base-64 encoded strings or `pathlib.Path`s for more complex outputs.
 
 If the output is a `pathlib.Path` object, that will be returned by the built-in HTTP server as a file download.
 
@@ -41,7 +41,7 @@ The `@cog.input()` annotation describe a single input to the `run()` function. T
 * `bool`
 * `pathlib.Path`
 
-We are working on supporting other types of input, but for now we recommend using base-64 encoded strings for more complex inputs.
+We are working on support for other types of input, but for now we recommend using base-64 encoded strings or `pathlib.Path`s for more complex inputs.
 
 The `pathlib.Path` input type is used for file inputs.
 
