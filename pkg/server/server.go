@@ -59,7 +59,7 @@ func (s *Server) Start() error {
 	router.Path("/v1/repos/{user}/{name}/models/{id}").
 		Methods(http.MethodDelete).
 		HandlerFunc(s.DeleteModel)
-	fmt.Println("Starting")
+	console.Info("Server running on 0.0.0.0:%d", s.port)
 	return http.ListenAndServe(fmt.Sprintf(":%d", s.port), router)
 }
 
