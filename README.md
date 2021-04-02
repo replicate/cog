@@ -1,9 +1,16 @@
-# Cog: Machine learning model packaging
+# Cog: Standard machine learning models
 
-- **Store models in a central location.** Never again will you have to hunt for the right model file on S3 and figure out the right code to load it. Cog models are in one place with a content-addressable ID.
-- **Package everything that a model needs to run.** Code, weights, pre/post-processing, data types, Python dependencies, system dependencies, CUDA version, etc etc. No more dependency hell.
-- **Let anyone ship models to production.** Cog models can be deployed to anywhere that runs Docker images, without having to understand Dockerfiles, CUDA, and all that horrible stuff.
+Define your models in a standard format, store them in a central place, run them anywhere.
 
+- **Standard interface for a model.** Define all your models with Cog, in a standard format. It's not just the graph – it also includes code, pre-/post-processing, data types, Python dependencies, system dependencies, etc.
+- **Store models in a central place.** No more hunting for the right model file on S3. Cog models are in one place with a content-addressable ID.
+- **Run models anywhere**: Cog models run anywhere Docker runs: your laptop, Kubernetes, cloud platforms, batch processing pipelines, etc. And, you can use adapters to convert the models to on-device formats.
+
+Cog does a few things to make your life easier:
+
+- **Automatic Docker image.** Define your environment with a simple format, and Cog will generate CPU and GPU Docker images using best practices and efficient base images.
+- **Automatic HTTP service.** Cog will generate an HTTP service from the definition of your model, so you don't need to write a Flask server in the right way.
+- **No more CUDA hell.** Cog knows which CUDA/cuDNN/PyTorch/Tensorflow/Python combos are compatible and will pick the right versions for you.
 
 ## How does it work?
 
@@ -12,45 +19,75 @@
 ```python
 import cog
 
-class JazzSoloComposerModel(cog.Model):
-    """Generate melody and chords from partial lead sheets"""
-
+class ColorizationModel(cog.Model):
     def setup(self):
-        self.model = JazzSoloComposer.from_pretrained("./saved_model")
+        self.model = load_model("./weights.pth")
 
-    @cog.input("notes", type=str, help="Partial notes")
-    @cog.input("chords", type=str, help="Partial chords")
-    @cog.input("strategy", type=str, help="Either 'sample' or 'sequential'")
-    def run(self, notes, chords, strategy):
-        return self.model(notes, chords, strategy)
+    @cog.input("input", type=Path, help="Grayscale input image")
+    def run(self, input):
+        # ... pre-processing ...
+        output = self.model(processed_input)
+        # ... post-processing ...
+        return processed_output
 ```
 
 2. Define the environment it runs in with `cog.yaml`:
 
 ```yaml
+model: "model.py:ColorizationModel"
 environment:
   python_version: "3.8"
   python_requirements: "requirements.txt"
   system_packages:
-  - "ffmpeg"
-  - "libavcodec-dev"
-model: "model.py:JazzSoloComposerModel"
+   - libgl1-mesa-glx
+   - libglib2.0-0
 ```
 
-3. Build and push the model:
+3. Push it to a repository and build it:
 
 ```
-$ cog repo set http://10.1.2.3:8000/andreas/my-model
 $ cog build
-...
---> Built and pushed b6a2f8a2d2ff
+--> Uploading '.' to repository http://10.1.2.3/colorization... done
+--> Building CPU Docker image... done
+--> Building GPU Docker image... done
+--> Built model b6a2f8a2d2ff
 ```
 
 This has:
 
-- **Created a model**, a ZIP file containing your code + weights + environment definition, and assigned it a content-addressable SHA256 ID.
-- **Pushed this model up to a central registry** so it never gets lost and can be run by anyone.
-- **Built two Docker images** (one for CPU and one for GPU) that contains the model in a reproducible environment, with the correct versions of Python, your dependencies, CUDA, etc.
+- Created a ZIP file containing your code + weights + environment definition, and assigned it a content-addressable SHA256 ID.
+- Pushed this ZIP file up to a central repository so it never gets lost and can be run by anyone.
+- Built two Docker images (one for CPU and one for GPU) that contains the model in a reproducible environment, with the correct versions of Python, your dependencies, CUDA, etc.
+
+Now, anyone who has access to this repository inferences on this model:
+
+```
+$ cog infer b6a2f8a2d2ff -i @input.png -o @output.png
+--> Written output to output.png
+```
+
+It is also just a Docker image, so you can run it as an HTTP service wherever Docker runs:
+
+```
+$ cog show b6a2f8a2d2ff 
+...
+Docker image (GPU):  registry.hooli.net/colorization:b6a2f8a2d2ff-gpu
+Docker image (CPU):  registry.hooli.net/colorization:b6a2f8a2d2ff-cpu
+
+$ docker run -d -p 8000:8000 --gpus all registry.hooli.net/colorization:b6a2f8a2d2ff-gpu
+
+$ curl http://localhost:8000/infer -F input=@image.png
+```
+
+## Why are we building this?
+
+It's really hard for researchers to ship machine learning models to production. Dockerfiles, pre-/post-processing, API servers, CUDA versions. More often than not the researcher has to sit down with an engineer to get the damn thing deployed.
+
+By defining a standard model, all the complexity is wrapped up behind a standard interface. Other systems in your machine learning stack just need to support Cog models and they'll be able to run anything a researcher dreams up.
+
+At Spotify, we built a system like this for deploying audio deep learning models. We realized this was a repeating pattern: [Uber](https://eng.uber.com/michelangelo-pyml/), Coinbase, and others have built similar systems. So, we're making open source version.
+
+The hard part is defining a model interface that works for everyone. We're releasing this early so we can get feedback on the design. Hit us up if you're interested in using it or helping us build it. [We're on Discord](https://discord.gg/QmzJApGjyE) or email us at [team@replicate.ai](mailto:team@replicate.ai).
 
 ## Install
 
@@ -60,47 +97,10 @@ No binaries yet! You'll need Go 1.16, then run:
 
 This installs the `cog` binary to `$GOPATH/bin/cog`.
 
-
-## Getting started
-
-First step is to start a server. You'll need to point it at a Docker registry to store the Docker images:
-
-    cog server --port=8080 --docker-registry=us-central1-docker.pkg.dev/replicate/andreas-scratch
-
-Then, hook up Cog to the server (replace "localhost" with your server's IP if it is remote):
-
-    cog remote set http://localhost:8080
-
-Next, let's build a model. We have [some models you can play around with](https://github.com/replicate/cog-examples). Clone that repository (you'll need git-lfs) and then build a model out of a model:
-
-    cd example-models/inst-colorization/
-    cog build
-
-This will take a few minutes. In the meantime take a look at `cog.yaml` and `infer.py` to see how it works.
-
-When that has finished, you can run inferences on the built model from any machine that is pointed at the server. Replace the ID with your model's ID, and the file with an image on your disk you want to colorize:
-
-    cog infer b31f9f72d8f14f0eacc5452e85b05c957b9a8ed9 -i @hotdog.jpg
-
-You can see more details about the model:
-
-    cog show b31f9f72d8f14f0eacc5452e85b05c957b9a8ed9
-
-You can also list the models for this repo:
-
-    cog list
-
-In this output is the Docker image. You can run this anywhere a Docker image runs to deploy your model.
-
-
-## Writing your own model
-
-No docs yet -- sorry! It should be pretty self-explanatory from the examples.
-
-
 ## Next steps
 
+- [Get started with an example model](docs/getting-started.md)
 - [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
 - [Python reference](docs/python.md) to learn how the `cog.Model` interface works
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's envrionment
-- [Server API documention](docs/server-api.md), if you want to integrate directly with the Cog server
+- [Server documention](docs/server.md), if you want to integrate directly with the Cog server
