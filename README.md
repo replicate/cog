@@ -2,7 +2,7 @@
 
 Define your models in a standard format, store them in a central place, run them anywhere.
 
-- **Standard interface for a model.** Define all your models with Cog, in a standard format. It's not just the graph – it also includes code, pre-/post-processing, data types, Python dependencies, system dependencies, etc.
+- **Standard interface for a model.** Define all your models with Cog, in a standard format. It's not just the graph – it also includes code, pre-/post-processing, data types, Python dependencies, system dependencies – everything.
 - **Store models in a central place.** No more hunting for the right model file on S3. Cog models are in one place with a content-addressable ID.
 - **Run models anywhere**: Cog models run anywhere Docker runs: your laptop, Kubernetes, cloud platforms, batch processing pipelines, etc. And, you can use adapters to convert the models to on-device formats.
 
