@@ -28,8 +28,8 @@ type BenchmarkResults struct {
 func newBenchmarkCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "benchmark",
-		Short: "Measure setup and runtime of package, using the first example from config",
-		RunE:  benchmarkPackage,
+		Short: "Measure setup and runtime of model, using the first example from config",
+		RunE:  benchmarkModel,
 		Args:  cobra.ExactArgs(1),
 	}
 
@@ -39,7 +39,7 @@ func newBenchmarkCommand() *cobra.Command {
 	return cmd
 }
 
-func benchmarkPackage(cmd *cobra.Command, args []string) error {
+func benchmarkModel(cmd *cobra.Command, args []string) error {
 	repo, err := getRepo()
 	if err != nil {
 		return err
@@ -49,26 +49,26 @@ func benchmarkPackage(cmd *cobra.Command, args []string) error {
 	cli := client.NewClient()
 	console.Info("Starting benchmark of %s:%s", repo, id)
 
-	pkg, err := cli.GetPackage(repo, id)
+	mod, err := cli.GetModel(repo, id)
 	if err != nil {
 		return err
 	}
-	if len(pkg.Config.Examples) == 0 {
-		return fmt.Errorf("Package has no examples, cannot run benchmark")
+	if len(mod.Config.Examples) == 0 {
+		return fmt.Errorf("Model has no examples, cannot run benchmark")
 	}
 
-	pkgDir, err := os.MkdirTemp("/tmp", "benchmark")
+	modelDir, err := os.MkdirTemp("/tmp", "benchmark")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(pkgDir)
-	if err := cli.DownloadPackage(repo, id, pkgDir); err != nil {
+	defer os.RemoveAll(modelDir)
+	if err := cli.DownloadModel(repo, id, modelDir); err != nil {
 		return err
 	}
 	results := new(BenchmarkResults)
 	for i := 0; i < benchmarkSetups; i++ {
 		console.Info("Running setup iteration %d", i+1)
-		if err := runBenchmarkInference(pkg, pkgDir, results, benchmarkRuns); err != nil {
+		if err := runBenchmarkInference(mod, modelDir, results, benchmarkRuns); err != nil {
 			return err
 		}
 	}
@@ -89,18 +89,18 @@ func benchmarkPackage(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runBenchmarkInference(pkg *model.Model, pkgDir string, results *BenchmarkResults, runIterations int) error {
+func runBenchmarkInference(mod *model.Model, modelDir string, results *BenchmarkResults, runIterations int) error {
 	servingPlatform, err := serving.NewLocalDockerPlatform()
 	if err != nil {
 		return err
 	}
 
-	example := pkg.Config.Examples[0]
-	input := serving.NewExampleWithBaseDir(example.Input, pkgDir)
+	example := mod.Config.Examples[0]
+	input := serving.NewExampleWithBaseDir(example.Input, modelDir)
 
 	logWriter := logger.NewConsoleLogger()
 	bootStart := time.Now()
-	deployment, err := servingPlatform.Deploy(pkg, model.TargetDockerCPU, logWriter)
+	deployment, err := servingPlatform.Deploy(mod, model.TargetDockerCPU, logWriter)
 	if err != nil {
 		return err
 	}

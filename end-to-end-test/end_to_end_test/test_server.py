@@ -96,32 +96,32 @@ environment:
     assert out.decode().startswith("Successfully built "), (
         out.decode() + " doesn't start with 'Successfully built'"
     )
-    package_id = out.decode().strip().split("Successfully built ")[1]
+    model_id = out.decode().strip().split("Successfully built ")[1]
 
     out, _ = subprocess.Popen(
-        ["cog", "-r", repo, "show", package_id], stdout=subprocess.PIPE
+        ["cog", "-r", repo, "show", model_id], stdout=subprocess.PIPE
     ).communicate()
     lines = out.decode().splitlines()
-    assert lines[0] == f"ID:       {package_id}"
+    assert lines[0] == f"ID:       {model_id}"
     assert lines[1] == f"Repo:     {user}/{repo_name}"
 
     # show without -r
     out, _ = subprocess.Popen(
-        ["cog", "show", package_id],
+        ["cog", "show", model_id],
         stdout=subprocess.PIPE,
         cwd=project_dir,
     ).communicate()
     lines = out.decode().splitlines()
-    assert lines[0] == f"ID:       {package_id}"
+    assert lines[0] == f"ID:       {model_id}"
     assert lines[1] == f"Repo:     {user}/{repo_name}"
 
     out, _ = subprocess.Popen(["cog", "-r", repo, "ls"], stdout=subprocess.PIPE).communicate()
     lines = out.decode().splitlines()
-    assert lines[1].startswith(f"{package_id}  ")
+    assert lines[1].startswith(f"{model_id}  ")
 
     download_dir = tmpdir_factory.mktemp("download") / "my-dir"
     subprocess.Popen(
-        ["cog", "-r", repo, "download", "--output-dir", download_dir, package_id],
+        ["cog", "-r", repo, "download", "--output-dir", download_dir, model_id],
         stdout=subprocess.PIPE,
     ).communicate()
     paths = sorted(glob(str(download_dir / "*.*")))
@@ -146,7 +146,7 @@ environment:
             "text=baz",
             "-i",
             f"path=@{input_path}",
-            package_id,
+            model_id,
         ],
         stdout=subprocess.PIPE,
     ).communicate()

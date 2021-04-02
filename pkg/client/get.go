@@ -9,9 +9,8 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
-// The URL says "package" but the code says "Model", sob
-func (c *Client) GetPackage(repo *model.Repo, id string) (*model.Model, error) {
-	url := fmt.Sprintf("http://%s/v1/repos/%s/%s/packages/%s", repo.Host, repo.User, repo.Name, id)
+func (c *Client) GetModel(repo *model.Repo, id string) (*model.Model, error) {
+	url := fmt.Sprintf("http://%s/v1/repos/%s/%s/models/%s", repo.Host, repo.User, repo.Name, id)
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err

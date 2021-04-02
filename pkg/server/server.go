@@ -44,21 +44,21 @@ func (s *Server) Start() error {
 			console.Info("Received ping request")
 			w.Write([]byte("pong"))
 		})
-	router.Path("/v1/repos/{user}/{name}/packages/{id}.zip").
+	router.Path("/v1/repos/{user}/{name}/models/{id}.zip").
 		Methods(http.MethodGet).
-		HandlerFunc(s.SendModelPackage)
-	router.Path("/v1/repos/{user}/{name}/packages/").
+		HandlerFunc(s.DownloadModel)
+	router.Path("/v1/repos/{user}/{name}/models/").
 		Methods(http.MethodPut).
 		HandlerFunc(s.ReceiveFile)
-	router.Path("/v1/repos/{user}/{name}/packages/").
+	router.Path("/v1/repos/{user}/{name}/models/").
 		Methods(http.MethodGet).
-		HandlerFunc(s.ListPackages)
-	router.Path("/v1/repos/{user}/{name}/packages/{id}").
+		HandlerFunc(s.ListModels)
+	router.Path("/v1/repos/{user}/{name}/models/{id}").
 		Methods(http.MethodGet).
 		HandlerFunc(s.SendModelMetadata)
-	router.Path("/v1/repos/{user}/{name}/packages/{id}").
+	router.Path("/v1/repos/{user}/{name}/models/{id}").
 		Methods(http.MethodDelete).
-		HandlerFunc(s.DeletePackage)
+		HandlerFunc(s.DeleteModel)
 	fmt.Println("Starting")
 	return http.ListenAndServe(fmt.Sprintf(":%d", s.port), router)
 }

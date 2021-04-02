@@ -14,8 +14,8 @@ import (
 func newShowCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:        "show <id>",
-		Short:      "Inspect a Cog package",
-		RunE:       showPackage,
+		Short:      "Inspect a Cog model",
+		RunE:       showModel,
 		Args:       cobra.ExactArgs(1),
 		SuggestFor: []string{"inspect"},
 	}
@@ -24,7 +24,7 @@ func newShowCommand() *cobra.Command {
 	return cmd
 }
 
-func showPackage(cmd *cobra.Command, args []string) error {
+func showModel(cmd *cobra.Command, args []string) error {
 	repo, err := getRepo()
 	if err != nil {
 		return err
@@ -33,7 +33,7 @@ func showPackage(cmd *cobra.Command, args []string) error {
 	id := args[0]
 
 	cli := client.NewClient()
-	mod, err := cli.GetPackage(repo, id)
+	mod, err := cli.GetModel(repo, id)
 	if err != nil {
 		return err
 	}
