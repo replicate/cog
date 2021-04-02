@@ -59,10 +59,12 @@ This has:
 - Pushed this ZIP file up to a central repository so it never gets lost and can be run by anyone.
 - Built two Docker images (one for CPU and one for GPU) that contains the model in a reproducible environment, with the correct versions of Python, your dependencies, CUDA, etc.
 
-Now, anyone who has access to this repository inferences on this model:
+Now, anyone who has access to this repository can run inferences on this model:
 
 ```
 $ cog infer b6a2f8a2d2ff -i @input.png -o @output.png
+--> Pulling GPU Docker image for b6a2f8a2d2ff... done
+--> Running inference... done
 --> Written output to output.png
 ```
 
