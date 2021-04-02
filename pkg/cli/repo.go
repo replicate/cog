@@ -48,6 +48,9 @@ func showRepo(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if projectSettings.Repo == nil {
+		return fmt.Errorf("Repository not set. Run 'cog repo set <repo>' to set it for this directory.")
+	}
 	fmt.Println(projectSettings.Repo.String())
 	return nil
 }

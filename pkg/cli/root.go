@@ -74,7 +74,7 @@ func getRepo() (*model.Repo, error) {
 		if projectSettings.Repo != nil {
 			return projectSettings.Repo, nil
 		}
-		return nil, fmt.Errorf("No repository specified. Either you must run `cog repo set <repo>` in the current directory, or pass --repo <repository> to the command")
+		return nil, fmt.Errorf("No repository specified. You need to either run `cog repo set <repo>` to set a repo for the current directory, or pass --repo <repository> to the command")
 	}
 }
 
