@@ -302,7 +302,7 @@ The following packages are missing pinned versions: %s`, strings.Join(packagesWi
 
 func splitPythonPackage(pkg string) (name string, version string, err error) {
 	if strings.HasPrefix(pkg, "git+") {
-		return name, "", nil
+		return pkg, "", nil
 	}
 
 	if !strings.Contains(pkg, "==") {
