@@ -216,9 +216,14 @@ def unzip_to_tempdir(zip_path):
 
 
 def make_temp_path(filename):
+    temp_dir = make_temp_dir()
+    return Path(os.path.join(temp_dir, filename))
+
+
+def make_temp_dir():
     # TODO(andreas): cleanup
-    tempdir = tempfile.mkdtemp()
-    return Path(os.path.join(tempdir, filename))
+    temp_dir = tempfile.mkdtemp()
+    return temp_dir
 
 
 @dataclass
