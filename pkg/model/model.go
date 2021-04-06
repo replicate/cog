@@ -2,8 +2,6 @@ package model
 
 import "time"
 
-type Target string
-
 const (
 	TargetDockerCPU = "docker-cpu"
 	TargetDockerGPU = "docker-gpu"
@@ -18,7 +16,7 @@ type Model struct {
 }
 
 type Artifact struct {
-	Target Target `json:"target"`
+	Target string `json:"target"`
 	URI    string `json:"uri"`
 }
 

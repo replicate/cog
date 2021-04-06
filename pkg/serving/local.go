@@ -47,7 +47,7 @@ func NewLocalDockerPlatform() (*LocalDockerPlatform, error) {
 	}, nil
 }
 
-func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target, logWriter logger.Logger) (Deployment, error) {
+func (p *LocalDockerPlatform) Deploy(mod *model.Model, target string, logWriter logger.Logger) (Deployment, error) {
 	// TODO(andreas): output container logs
 
 	artifact, ok := mod.ArtifactFor(target)
