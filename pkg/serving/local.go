@@ -282,7 +282,7 @@ func (d *LocalDockerDeployment) writeContainerLogs(logWriter logger.Logger) {
 	if err != nil {
 		logWriter.WriteError(err)
 	} else {
-		logWriter.Infof(logs)
+		logWriter.Info(logs)
 	}
 }
 

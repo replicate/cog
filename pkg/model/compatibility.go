@@ -258,12 +258,40 @@ func torchCPUPackage(ver string) (name string, cpuVersion string, indexURL strin
 }
 
 func torchGPUPackage(ver string, cuda string) (name string, cpuVersion string, indexURL string, err error) {
+	// find the torch package that has the requested torch version and the latest cuda version
+	// that is at most as high as the requested cuda version
+	var latest *TorchCompatibility
 	for _, compat := range TorchCompatibilityMatrix {
-		if compat.TorchVersion() == ver && compat.CUDA != nil && *compat.CUDA == cuda {
-			return "torch", compat.Torch, compat.IndexURL, nil
+		compat := compat
+		if compat.TorchVersion() != ver || compat.CUDA == nil {
+			continue
+		}
+		greater, err := versionGreater(*compat.CUDA, cuda)
+		if err != nil {
+			panic(fmt.Sprintf("Invalid CUDA version: %s", err))
+		}
+
+		if greater {
+			continue
+		}
+		if latest == nil {
+			latest = &compat
+		} else {
+			greater, err := versionGreater(*compat.CUDA, *latest.CUDA)
+			if err != nil {
+				// should never happen
+				panic(fmt.Sprintf("Invalid CUDA version: %s", err))
+			}
+			if greater {
+				latest = &compat
+			}
 		}
 	}
-	return "", "", "", fmt.Errorf("No matching torch GPU package for version %s and CUDA %s", ver, cuda)
+	if latest == nil {
+		return "", "", "", fmt.Errorf("No torch GPU package for version %s that's lower or equal to CUDA %s", ver, cuda)
+	}
+
+	return "torch", latest.Torch, latest.IndexURL, nil
 }
 
 func torchvisionCPUPackage(ver string) (name string, cpuVersion string, indexURL string, err error) {
@@ -276,10 +304,38 @@ func torchvisionCPUPackage(ver string) (name string, cpuVersion string, indexURL
 }
 
 func torchvisionGPUPackage(ver string, cuda string) (name string, cpuVersion string, indexURL string, err error) {
+	// find the torchvision package that has the requested
+	// torchvision version and the latest cuda version that is at
+	// most as high as the requested cuda version
+	var latest *TorchCompatibility
 	for _, compat := range TorchCompatibilityMatrix {
-		if compat.TorchvisionVersion() == ver && *compat.CUDA == cuda {
-			return "torchvision", compat.Torchvision, compat.IndexURL, nil
+		compat := compat
+		if compat.TorchvisionVersion() != ver || compat.CUDA == nil {
+			continue
+		}
+		greater, err := versionGreater(*compat.CUDA, cuda)
+		if err != nil {
+			panic(fmt.Sprintf("Invalid CUDA version: %s", err))
+		}
+		if greater {
+			continue
+		}
+		if latest == nil {
+			latest = &compat
+		} else {
+			greater, err := versionGreater(*compat.CUDA, *latest.CUDA)
+			if err != nil {
+				// should never happen
+				panic(fmt.Sprintf("Invalid CUDA version: %s", err))
+			}
+			if greater {
+				latest = &compat
+			}
 		}
 	}
-	return "", "", "", fmt.Errorf("No matching torchvision GPU package for version %s and CUDA %s", ver, cuda)
+	if latest == nil {
+		return "", "", "", fmt.Errorf("No torchvision GPU package for version %s that's lower or equal to CUDA %s", ver, cuda)
+	}
+
+	return "torchvision", latest.Torchvision, latest.IndexURL, nil
 }

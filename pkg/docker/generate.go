@@ -41,7 +41,6 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	preamble := g.preamble()
 	installPython, err := g.installPython()
 	if err != nil {
 		return "", err
@@ -60,7 +59,7 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 	}
 	return strings.Join(filterEmpty([]string{
 		"FROM " + baseImage,
-		preamble,
+		g.preamble(),
 		installPython,
 		aptInstalls,
 		pythonRequirements,
@@ -86,7 +85,8 @@ func (g *DockerfileGenerator) baseImage() (string, error) {
 
 func (g *DockerfileGenerator) preamble() string {
 	// TODO: other stuff
-	return "ENV DEBIAN_FRONTEND=noninteractive"
+	return `ENV DEBIAN_FRONTEND=noninteractive
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu`
 }
 
 func (g *DockerfileGenerator) aptInstalls() (string, error) {

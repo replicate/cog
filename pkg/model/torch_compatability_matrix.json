@@ -78,19 +78,6 @@
     ]
   },
   {
-    "Torch": "1.7.1+cu101",
-    "Torchvision": "0.8.2+cu101",
-    "Torchaudio": "0.7.2",
-    "IndexURL": "https://download.pytorch.org/whl/torch_stable.html",
-    "CUDA": "10.0",
-    "Pythons": [
-      "3.6",
-      "3.7",
-      "3.8",
-      "3.9"
-    ]
-  },
-  {
     "Torch": "1.7.1+cu92",
     "Torchvision": "0.8.2+cu92",
     "Torchaudio": "0.7.2",

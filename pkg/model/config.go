@@ -224,64 +224,43 @@ Compatible CuDNN versions are: %s`, c.Environment.CUDA, c.Environment.CuDNN, str
 	if err != nil {
 		return err
 	}
-	var cudas []string
-	var cuDNN string
+	// The pre-compiled TensorFlow binaries requires specific CUDA/CuDNN versions to be
+	// installed, but Torch bundles their own CUDA/CuDNN libraries.
 
-	if torchVersion != "" && tfVersion != "" {
-		// both torch and tensorflow are used
-		if sliceContains(torchCUDAs, tfCUDA) {
-			cudas = []string{tfCUDA}
-		} else {
-			return fmt.Errorf(`Incompatible CUDA versions for the specified tensorflow and torch versions.
-tensorflow==%s works with CUDA %s; torch==%s works with CUDA %s"`,
-				tfVersion, tfCUDA,
-				torchVersion, strings.Join(torchCUDAs, ","))
-		}
-		if c.Environment.CUDA != "" && !sliceContains(cudas, c.Environment.CUDA) {
-			return fmt.Errorf(`The specified CUDA version %s is not compatible with tensorflow==%s and torch==%s.
-Compatible CUDA versions are: %s`,
-				c.Environment.CUDA, tfVersion, torchVersion, strings.Join(cudas, ","))
-		}
-	} else if torchVersion != "" {
-		// only torch is set
-		cudas = torchCUDAs
-		if c.Environment.CUDA != "" && !sliceContains(cudas, c.Environment.CUDA) {
-			return fmt.Errorf(`The specified CUDA version %s is not compatible with torch==%s.
-Compatible CUDA versions are: %s`,
-				c.Environment.CUDA, torchVersion, strings.Join(cudas, ","))
-		}
-	} else if tfVersion != "" {
-		// only tensorflow is set
-		cudas = []string{tfCUDA}
-		if c.Environment.CUDA != "" && !sliceContains(cudas, c.Environment.CUDA) {
+	if tfVersion != "" {
+		if c.Environment.CUDA == "" {
+			console.Infof("Setting CUDA to version %s from Tensorflow version", tfCUDA)
+			c.Environment.CUDA = tfCUDA
+		} else if tfCUDA != c.Environment.CUDA {
 			return fmt.Errorf(`The specified CUDA version %s is not compatible with tensorflow==%s.
-Compatible CUDA versions are: %s`,
-				c.Environment.CUDA, tfVersion, strings.Join(cudas, ","))
+Compatible CUDA version is: %s`,
+				c.Environment.CUDA, tfVersion, tfCUDA)
 		}
-		if c.Environment.CuDNN != "" && c.Environment.CuDNN != tfCuDNN {
+		if c.Environment.CuDNN == "" {
+			console.Infof("Setting CuDNN to version %s from Tensorflow version", tfCuDNN)
+			c.Environment.CuDNN = tfCuDNN
+		} else if tfCuDNN != c.Environment.CuDNN {
 			return fmt.Errorf(`The specified cuDNN version %s is not compatible with tensorflow==%s.
 Compatible cuDNN version is: %s`,
 				c.Environment.CuDNN, tfVersion, tfCuDNN)
 		}
-		cuDNN = tfCuDNN
-	}
-
-	if c.Environment.CUDA == "" {
-		if len(cudas) == 0 {
+	} else if torchVersion != "" {
+		if c.Environment.CUDA == "" {
+			c.Environment.CUDA = latestCUDAFrom(torchCUDAs)
+			console.Infof("Setting CUDA to version %s from Torch version", c.Environment.CUDA)
+		}
+		if c.Environment.CuDNN == "" {
+			c.Environment.CuDNN = latestCuDNNForCUDA(c.Environment.CUDA)
+			console.Infof("Setting CuDNN to version %s", c.Environment.CUDA)
+		}
+	} else {
+		if c.Environment.CUDA == "" {
 			c.Environment.CUDA = defaultCUDA()
 			console.Infof("Setting CUDA to version %s", c.Environment.CUDA)
-		} else {
-			c.Environment.CUDA = latestCUDAFrom(cudas)
-			console.Infof("Setting CUDA to version %s from torch/tensorflow version", c.Environment.CUDA)
 		}
-	}
-	if c.Environment.CuDNN == "" {
-		if cuDNN == "" {
+		if c.Environment.CuDNN == "" {
 			c.Environment.CuDNN = latestCuDNNForCUDA(c.Environment.CUDA)
-			console.Infof("Setting CuDNN to version %s", c.Environment.CuDNN)
-		} else {
-			c.Environment.CuDNN = cuDNN
-			console.Infof("Setting CuDNN to version %s from torch/tensorflow version", c.Environment.CuDNN)
+			console.Infof("Setting CuDNN to version %s", c.Environment.CUDA)
 		}
 	}
 
