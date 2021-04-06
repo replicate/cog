@@ -1,5 +1,7 @@
 package docker
 
+// TODO(andreas): allow files to be edited without re-running the subsequent post_install scripts (hard!)
+
 import (
 	_ "embed"
 	"encoding/base64"
@@ -22,6 +24,8 @@ const (
 	SectionInstallingPythonPackages      = "Installing Python packages"
 	SectionInstallingCog                 = "Installing Cog"
 	SectionCopyingCode                   = "Copying code"
+	SectionPreInstall                    = "Running pre-install script"
+	SectionPostInstall                   = "Running post-install script"
 )
 
 //go:embed cog.py
@@ -62,7 +66,10 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 		pythonRequirements,
 		pipInstalls,
 		g.installCog(),
+		g.preInstall(),
 		g.copyCode(),
+		g.workdir(),
+		g.postInstall(),
 		g.command(),
 	}), "\n"), nil
 }
@@ -171,8 +178,7 @@ func (g *DockerfileGenerator) pipInstalls() (string, error) {
 }
 
 func (g *DockerfileGenerator) copyCode() string {
-	return g.sectionLabel(SectionCopyingCode) + `COPY . /code
-WORKDIR /code`
+	return g.sectionLabel(SectionCopyingCode) + `COPY . /code`
 }
 
 func (g *DockerfileGenerator) command() string {
@@ -183,6 +189,32 @@ func (g *DockerfileGenerator) command() string {
 	module := parts[0]
 	class := parts[1]
 	return `CMD ["python", "-c", "from ` + module + ` import ` + class + `; ` + class + `().start_server()"]`
+}
+
+func (g *DockerfileGenerator) workdir() string {
+	wd := "/code"
+	if g.Config.Environment.Workdir != "" {
+		wd += "/" + g.Config.Environment.Workdir
+	}
+	return "WORKDIR " + wd
+}
+
+func (g *DockerfileGenerator) preInstall() string {
+	lines := []string{}
+	for _, run := range g.Config.Environment.PreInstall {
+		run = strings.TrimSpace(run)
+		lines = append(lines, g.sectionLabel(SectionPreInstall+" "+run)+"RUN "+run)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (g *DockerfileGenerator) postInstall() string {
+	lines := []string{}
+	for _, run := range g.Config.Environment.PostInstall {
+		run = strings.TrimSpace(run)
+		lines = append(lines, g.sectionLabel(SectionPostInstall+" "+run)+"RUN "+run)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (g *DockerfileGenerator) sectionLabel(label string) string {
