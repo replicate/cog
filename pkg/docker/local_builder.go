@@ -51,12 +51,13 @@ func (b *LocalImageBuilder) build(dir string, dockerfilePath string, logWriter l
 		"docker", "build", ".",
 		"--progress", "plain",
 		"-f", dockerfilePath,
-		"--build-arg", "BUILDKIT_INLINE_CACHE=1",
+		// "--build-arg", "BUILDKIT_INLINE_CACHE=1",
 	)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
+	// TODO(andreas): follow https://github.com/moby/buildkit/issues/1436, hopefully buildkit will be able to use GPUs soon
+	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=0")
 
-	lastLogsChan, tagChan, err := buildPipe(cmd.StderrPipe, logWriter)
+	lastLogsChan, tagChan, err := buildPipe(cmd.StdoutPipe, logWriter)
 	if err != nil {
 		return "", err
 	}
@@ -124,8 +125,6 @@ func buildPipe(pf shell.PipeFunc, logWriter logger.Logger) (lastLogsChan chan []
 	// we look for "LABEL" first. obviously this requires
 	// all LABELs to be at the end of the build script.
 
-	hasSeenLabel := false
-	label := " : LABEL"
 	successPrefix := "Successfully built "
 	sectionPrefix := "RUN " + SectionPrefix
 	buildkitRegex := regexp.MustCompile("^#[0-9]+ writing image sha256:([0-9a-f]{12}).+$")
@@ -141,6 +140,7 @@ func buildPipe(pf shell.PipeFunc, logWriter logger.Logger) (lastLogsChan chan []
 	go func() {
 		currentSection := SectionStartingBuild
 		currentLogLines := []string{}
+
 		for scanner.Scan() {
 			line := scanner.Text()
 			logWriter.Debug(line)
@@ -152,11 +152,8 @@ func buildPipe(pf shell.PipeFunc, logWriter logger.Logger) (lastLogsChan chan []
 			} else {
 				currentLogLines = append(currentLogLines, line)
 			}
-			if hasSeenLabel && strings.HasPrefix(line, successPrefix) {
+			if strings.HasPrefix(line, successPrefix) {
 				tagChan <- strings.TrimSpace(strings.TrimPrefix(line, successPrefix))
-			}
-			if !hasSeenLabel && strings.Contains(line, label) {
-				hasSeenLabel = true
 			}
 			match := buildkitRegex.FindStringSubmatch(line)
 			if len(match) == 2 {
