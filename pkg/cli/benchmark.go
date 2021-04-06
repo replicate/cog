@@ -18,6 +18,7 @@ import (
 
 var benchmarkSetups int
 var benchmarkRuns int
+var benchmarkTarget string
 
 type BenchmarkResults struct {
 	SetupTimes []float64
@@ -35,6 +36,7 @@ func newBenchmarkCommand() *cobra.Command {
 
 	cmd.Flags().IntVarP(&benchmarkSetups, "setup-iterations", "s", 3, "Number of setup iterations")
 	cmd.Flags().IntVarP(&benchmarkRuns, "run-iterations", "r", 3, "Number of run iterations per setup iteration")
+	cmd.Flags().StringVarP(&benchmarkTarget, "target", "t", "docker-cpu", "Target to benchmark (e.g. docker-cpu, docker-gpu)")
 
 	return cmd
 }
@@ -100,7 +102,7 @@ func runBenchmarkInference(mod *model.Model, modelDir string, results *Benchmark
 
 	logWriter := logger.NewConsoleLogger()
 	bootStart := time.Now()
-	deployment, err := servingPlatform.Deploy(mod, model.TargetDockerCPU, logWriter)
+	deployment, err := servingPlatform.Deploy(mod, benchmarkTarget, logWriter)
 	if err != nil {
 		return err
 	}
