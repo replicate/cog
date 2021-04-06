@@ -12,6 +12,11 @@ import (
 	"github.com/replicate/cog/pkg/version"
 )
 
+// TODO(andreas): check tf/py versions. tf 1.5.0 didn't install on py 3.8
+// TODO(andreas): support more tf versions. No matching tensorflow CPU package for version 1.15.4, etc.
+// TODO(andreas): allow user to install versions that aren't compatible
+// TODO(andreas): allow user to install tf cpu package on gpu
+
 type TFCompatibility struct {
 	TF           string
 	TFCPUPackage string
@@ -105,13 +110,13 @@ var CUDABaseImages []CUDABaseImage
 
 func init() {
 	if err := json.Unmarshal(tfCompatibilityMatrixData, &TFCompatibilityMatrix); err != nil {
-		console.Fatal("Failed to load embedded Tensorflow compatibility matrix: %s", err)
+		console.Fatalf("Failed to load embedded Tensorflow compatibility matrix: %s", err)
 	}
 	if err := json.Unmarshal(torchCompatibilityMatrixData, &TorchCompatibilityMatrix); err != nil {
-		console.Fatal("Failed to load embedded PyTorch compatibility matrix: %s", err)
+		console.Fatalf("Failed to load embedded PyTorch compatibility matrix: %s", err)
 	}
 	if err := json.Unmarshal(cudaBaseImageTagsData, &CUDABaseImages); err != nil {
-		console.Fatal("Failed to load embedded CUDA base images: %s", err)
+		console.Fatalf("Failed to load embedded CUDA base images: %s", err)
 	}
 }
 
@@ -186,10 +191,11 @@ func latestCuDNNForCUDA(cuda string) string {
 func latestTF() TFCompatibility {
 	var latest *TFCompatibility
 	for _, compat := range TFCompatibilityMatrix {
+		compat := compat
 		if latest == nil {
 			latest = &compat
 		} else {
-			greater, err := versionGreater(latest.TF, compat.TF)
+			greater, err := versionGreater(compat.TF, latest.TF)
 			if err != nil {
 				// should never happen
 				panic(fmt.Sprintf("Invalid tensorflow version: %s", err))

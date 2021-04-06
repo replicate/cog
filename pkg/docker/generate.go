@@ -79,7 +79,7 @@ func (g *DockerfileGenerator) baseImage() (string, error) {
 	case "cpu":
 		return "ubuntu:20.04", nil
 	case "gpu":
-		return g.gpuBaseImage()
+		return g.Config.CUDABaseImageTag()
 	}
 	return "", fmt.Errorf("Invalid architecture: %s", g.Arch)
 }
@@ -87,11 +87,6 @@ func (g *DockerfileGenerator) baseImage() (string, error) {
 func (g *DockerfileGenerator) preamble() string {
 	// TODO: other stuff
 	return "ENV DEBIAN_FRONTEND=noninteractive"
-}
-
-func (g *DockerfileGenerator) gpuBaseImage() (string, error) {
-	// TODO: return correct ubuntu version for tf / torch
-	return "nvidia/cuda:11.0-devel-ubuntu20.04", nil
 }
 
 func (g *DockerfileGenerator) aptInstalls() (string, error) {
