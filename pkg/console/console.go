@@ -23,28 +23,54 @@ type Console struct {
 }
 
 // Debug level message
-func (c *Console) Debug(msg string, v ...interface{}) {
-	c.log(DebugLevel, msg, v...)
+func (c *Console) Debug(msg string) {
+	c.log(DebugLevel, msg)
 }
 
 // Info level message
-func (c *Console) Info(msg string, v ...interface{}) {
-	c.log(InfoLevel, msg, v...)
+func (c *Console) Info(msg string) {
+	c.log(InfoLevel, msg)
 }
 
 // Warn level message
-func (c *Console) Warn(msg string, v ...interface{}) {
-	c.log(WarnLevel, msg, v...)
+func (c *Console) Warn(msg string) {
+	c.log(WarnLevel, msg)
 }
 
 // Error level message
-func (c *Console) Error(msg string, v ...interface{}) {
-	c.log(ErrorLevel, msg, v...)
+func (c *Console) Error(msg string) {
+	c.log(ErrorLevel, msg)
 }
 
 // Fatal level message, followed by exit
-func (c *Console) Fatal(msg string, v ...interface{}) {
-	c.log(FatalLevel, msg, v...)
+func (c *Console) Fatal(msg string) {
+	c.log(FatalLevel, msg)
+	os.Exit(1)
+}
+
+// Debug level message
+func (c *Console) Debugf(msg string, v ...interface{}) {
+	c.log(DebugLevel, fmt.Sprintf(msg, v...))
+}
+
+// Info level message
+func (c *Console) Infof(msg string, v ...interface{}) {
+	c.log(InfoLevel, fmt.Sprintf(msg, v...))
+}
+
+// Warn level message
+func (c *Console) Warnf(msg string, v ...interface{}) {
+	c.log(WarnLevel, fmt.Sprintf(msg, v...))
+}
+
+// Error level message
+func (c *Console) Errorf(msg string, v ...interface{}) {
+	c.log(ErrorLevel, fmt.Sprintf(msg, v...))
+}
+
+// Fatal level message, followed by exit
+func (c *Console) Fatalf(msg string, v ...interface{}) {
+	c.log(FatalLevel, fmt.Sprintf(msg, v...))
 	os.Exit(1)
 }
 
@@ -75,7 +101,7 @@ func (c *Console) DebugOutput(line string) {
 	fmt.Fprintln(os.Stderr, line)
 }
 
-func (c *Console) log(level Level, msg string, v ...interface{}) {
+func (c *Console) log(level Level, msg string) {
 	if level < c.Level {
 		return
 	}
@@ -83,12 +109,12 @@ func (c *Console) log(level Level, msg string, v ...interface{}) {
 	prompt := "═══╡ "
 	continuationPrompt := "   │ "
 
-	formattedMsg := fmt.Sprintf(msg, v...)
+	formattedMsg := msg
 
 	// Word wrap
 	width, err := GetWidth()
 	if err != nil {
-		Debug("error getting width of terminal: %s", err)
+		Debugf("error getting width of terminal: %s", err)
 	} else if width > 30 {
 		// Only do word wrapping for terminals 30 chars or wider. Anything smaller and the terminal
 		// is probably resized really small for some reason, and when the user resizes it to be big

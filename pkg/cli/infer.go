@@ -69,7 +69,7 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 	}
 	defer func() {
 		if err := deployment.Undeploy(); err != nil {
-			console.Warn("Failed to kill Docker container: %s", err)
+			console.Warnf("Failed to kill Docker container: %s", err)
 		}
 	}()
 

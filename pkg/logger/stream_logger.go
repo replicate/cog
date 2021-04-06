@@ -39,7 +39,7 @@ func (logger *StreamLogger) logText(messageType MessageType, text string) {
 	msg := Message{Type: messageType, Text: text}
 	data, err := json.Marshal(msg)
 	if err != nil {
-		console.Warn("Failed to marshal console text: %s", text)
+		console.Warnf("Failed to marshal console text: %s", text)
 	}
 	logger.write(data)
 }
@@ -49,7 +49,7 @@ func (logger *StreamLogger) write(data []byte) {
 	logger.mu.Lock()
 	defer logger.mu.Unlock()
 	if _, err := logger.writer.Write(data); err != nil {
-		console.Warn("HTTP response writer failed to write: %s", data)
+		console.Warnf("HTTP response writer failed to write: %s", data)
 		return
 	}
 	if f, ok := logger.writer.(http.Flusher); ok {
@@ -59,11 +59,19 @@ func (logger *StreamLogger) write(data []byte) {
 	}
 }
 
-func (logger *StreamLogger) WriteLogLine(line string, args ...interface{}) {
+func (logger *StreamLogger) Info(line string) {
+	logger.logText(MessageTypeLogLine, line)
+}
+
+func (logger *StreamLogger) Debug(line string) {
+	logger.logText(MessageTypeDebugLine, line)
+}
+
+func (logger *StreamLogger) Infof(line string, args ...interface{}) {
 	logger.logText(MessageTypeLogLine, fmt.Sprintf(line, args...))
 }
 
-func (logger *StreamLogger) WriteDebugLine(line string, args ...interface{}) {
+func (logger *StreamLogger) Debugf(line string, args ...interface{}) {
 	logger.logText(MessageTypeDebugLine, fmt.Sprintf(line, args...))
 }
 

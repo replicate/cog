@@ -47,7 +47,7 @@ func benchmarkModel(cmd *cobra.Command, args []string) error {
 	id := args[0]
 
 	cli := client.NewClient()
-	console.Info("Starting benchmark of %s:%s", repo, id)
+	console.Infof("Starting benchmark of %s:%s", repo, id)
 
 	mod, err := cli.GetModel(repo, id)
 	if err != nil {
@@ -67,7 +67,7 @@ func benchmarkModel(cmd *cobra.Command, args []string) error {
 	}
 	results := new(BenchmarkResults)
 	for i := 0; i < benchmarkSetups; i++ {
-		console.Info("Running setup iteration %d", i+1)
+		console.Infof("Running setup iteration %d", i+1)
 		if err := runBenchmarkInference(mod, modelDir, results, benchmarkRuns); err != nil {
 			return err
 		}
@@ -106,7 +106,7 @@ func runBenchmarkInference(mod *model.Model, modelDir string, results *Benchmark
 	}
 	defer func() {
 		if err := deployment.Undeploy(); err != nil {
-			console.Warn("Failed to kill Docker container: %s", err)
+			console.Warnf("Failed to kill Docker container: %s", err)
 		}
 	}()
 	bootTime := time.Since(bootStart).Seconds()

@@ -140,7 +140,7 @@ func (s *Server) testModel(mod *model.Model, dir string, logWriter logger.Logger
 		if err != nil {
 			return nil, fmt.Errorf("Failed to read output: %w", err)
 		}
-		logWriter.WriteLogLine(fmt.Sprintf("Inference result length: %d, mime type: %s", len(outputBytes), output.MimeType))
+		logWriter.Infof(fmt.Sprintf("Inference result length: %d, mime type: %s", len(outputBytes), output.MimeType))
 		if example.Output != "" && strings.TrimSpace(string(outputBytes)) != example.Output {
 			return nil, fmt.Errorf("Output %s doesn't match expected: %s", outputBytes, example.Output)
 		}

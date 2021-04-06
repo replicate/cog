@@ -40,7 +40,7 @@ func buildModel(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%s does not exist in %s. Are you in the right directory?", global.ConfigFilename, projectDir)
 	}
 
-	console.Info("Uploading %s to %s", projectDir, repo)
+	console.Infof("Uploading %s to %s", projectDir, repo)
 
 	cli := client.NewClient()
 	mod, err := cli.UploadModel(repo, projectDir)

@@ -65,7 +65,7 @@ func (i Interactive) Read() (string, error) {
 
 		if i.Options != nil {
 			if !slices.ContainsString(i.Options, text) {
-				Warn("%s is not a valid option", text)
+				Warnf("%s is not a valid option", text)
 				continue
 			}
 		}

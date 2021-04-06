@@ -7,8 +7,10 @@ import (
 )
 
 type Logger interface {
-	WriteLogLine(line string, args ...interface{})
-	WriteDebugLine(line string, args ...interface{})
+	Info(line string)
+	Debug(line string)
+	Infof(line string, args ...interface{})
+	Debugf(line string, args ...interface{})
 	WriteStatus(status string, args ...interface{})
 	WriteError(err error)
 	WriteModel(mod *model.Model)
@@ -21,16 +23,24 @@ func NewConsoleLogger() *ConsoleLogger {
 	return new(ConsoleLogger)
 }
 
-func (l *ConsoleLogger) WriteLogLine(line string, args ...interface{}) {
-	console.Info(line, args...)
+func (l *ConsoleLogger) Info(line string) {
+	console.Info(line)
 }
 
-func (l *ConsoleLogger) WriteDebugLine(line string, args ...interface{}) {
-	console.Debug(line, args...)
+func (l *ConsoleLogger) Debug(line string) {
+	console.Debug(line)
+}
+
+func (l *ConsoleLogger) Infof(line string, args ...interface{}) {
+	console.Infof(line, args...)
+}
+
+func (l *ConsoleLogger) Debugf(line string, args ...interface{}) {
+	console.Debugf(line, args...)
 }
 
 func (l *ConsoleLogger) WriteStatus(status string, args ...interface{}) {
-	console.Info(status, args...)
+	console.Infof(status, args...)
 }
 
 func (l *ConsoleLogger) WriteError(err error) {
@@ -38,5 +48,5 @@ func (l *ConsoleLogger) WriteError(err error) {
 }
 
 func (l *ConsoleLogger) WriteModel(mod *model.Model) {
-	console.Info("%v", mod)
+	console.Infof("%v", mod)
 }

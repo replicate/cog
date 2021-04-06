@@ -48,7 +48,7 @@ func startServer(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	console.Debug("Preparing to start server on port %d", port)
+	console.Debugf("Preparing to start server on port %d", port)
 
 	// TODO(andreas): make this configurable
 	dataDir := ".cog"

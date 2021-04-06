@@ -24,28 +24,53 @@ func SetColor(color bool) {
 }
 
 // Debug level message.
-func Debug(msg string, v ...interface{}) {
-	ConsoleInstance.Debug(msg, v...)
+func Debug(msg string) {
+	ConsoleInstance.Debug(msg)
 }
 
 // Info level message.
-func Info(msg string, v ...interface{}) {
-	ConsoleInstance.Info(msg, v...)
+func Info(msg string) {
+	ConsoleInstance.Info(msg)
 }
 
 // Warn level message.
-func Warn(msg string, v ...interface{}) {
-	ConsoleInstance.Warn(msg, v...)
+func Warn(msg string) {
+	ConsoleInstance.Warn(msg)
 }
 
 // Error level message.
-func Error(msg string, v ...interface{}) {
-	ConsoleInstance.Error(msg, v...)
+func Error(msg string) {
+	ConsoleInstance.Error(msg)
 }
 
 // Fatal level message.
-func Fatal(msg string, v ...interface{}) {
-	ConsoleInstance.Fatal(msg, v...)
+func Fatal(msg string) {
+	ConsoleInstance.Fatal(msg)
+}
+
+// Debug level message.
+func Debugf(msg string, v ...interface{}) {
+	ConsoleInstance.Debugf(msg, v...)
+}
+
+// Info level message.
+func Infof(msg string, v ...interface{}) {
+	ConsoleInstance.Infof(msg, v...)
+}
+
+// Warn level message.
+func Warnf(msg string, v ...interface{}) {
+	ConsoleInstance.Warnf(msg, v...)
+}
+
+// Error level message.
+func Errorf(msg string, v ...interface{}) {
+	ConsoleInstance.Errorf(msg, v...)
+}
+
+// Fatal level message.
+func Fatalf(msg string, v ...interface{}) {
+	ConsoleInstance.Fatalf(msg, v...)
 }
 
 // Output a line to stdout. Useful for printing primary output of a command, or the output of a subcommand.

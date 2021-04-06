@@ -45,7 +45,7 @@ func (b *LocalImageBuilder) BuildAndPush(dir string, dockerfilePath string, name
 }
 
 func (b *LocalImageBuilder) build(dir string, dockerfilePath string, logWriter logger.Logger) (tag string, err error) {
-	console.Debug("Building in %s", dir)
+	console.Debugf("Building in %s", dir)
 
 	cmd := exec.Command(
 		"docker", "build", ".",
@@ -68,20 +68,20 @@ func (b *LocalImageBuilder) build(dir string, dockerfilePath string, logWriter l
 	if err = cmd.Wait(); err != nil {
 		lastLogs := <-lastLogsChan
 		for _, logLine := range lastLogs {
-			logWriter.WriteLogLine(logLine)
+			logWriter.Info(logLine)
 		}
 		return "", err
 	}
 
 	dockerTag := <-tagChan
 
-	logWriter.WriteLogLine("Successfully built %s", dockerTag)
+	logWriter.Infof("Successfully built %s", dockerTag)
 
 	return dockerTag, err
 }
 
 func (b *LocalImageBuilder) tag(tag string, fullImageTag string, logWriter logger.Logger) error {
-	console.Debug("Tagging %s as %s", tag, fullImageTag)
+	console.Debugf("Tagging %s as %s", tag, fullImageTag)
 
 	cmd := exec.Command("docker", "tag", tag, fullImageTag)
 	cmd.Env = os.Environ()
@@ -94,7 +94,7 @@ func (b *LocalImageBuilder) tag(tag string, fullImageTag string, logWriter logge
 }
 
 func (b *LocalImageBuilder) push(tag string, logWriter logger.Logger) error {
-	logWriter.WriteLogLine("Pushing %s to registry", tag)
+	logWriter.Infof("Pushing %s to registry", tag)
 
 	args := []string{"push", tag}
 	cmd := exec.Command("docker", args...)
@@ -143,12 +143,12 @@ func buildPipe(pf shell.PipeFunc, logWriter logger.Logger) (lastLogsChan chan []
 		currentLogLines := []string{}
 		for scanner.Scan() {
 			line := scanner.Text()
-			logWriter.WriteDebugLine(line)
+			logWriter.Debug(line)
 
 			if strings.Contains(line, sectionPrefix) {
 				currentSection = strings.SplitN(line, sectionPrefix, 2)[1]
 				currentLogLines = []string{}
-				logWriter.WriteLogLine(fmt.Sprintf("  * %s", currentSection))
+				logWriter.Infof("  * %s", currentSection)
 			} else {
 				currentLogLines = append(currentLogLines, line)
 			}
@@ -179,7 +179,7 @@ func pipeToWithDockerChecks(pf shell.PipeFunc, logWriter logger.Logger) (done ch
 			console.Fatal("Your Docker version appears to be out out date; please upgrade Docker to the latest version and try again")
 		}
 		if logWriter != nil {
-			logWriter.WriteLogLine(line)
+			logWriter.Info(line)
 		}
 	})
 }

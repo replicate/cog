@@ -37,7 +37,7 @@ func WaitForPort(port int, timeout time.Duration) error {
 
 func WaitForHTTPOK(url string, timeout time.Duration) error {
 	start := time.Now()
-	console.Debug("Waiting for %s to become accessible", url)
+	console.Debugf("Waiting for %s to become accessible", url)
 	for {
 		now := time.Now()
 		if now.Sub(start) > timeout {
@@ -52,7 +52,7 @@ func WaitForHTTPOK(url string, timeout time.Duration) error {
 		if resp.StatusCode != http.StatusOK {
 			continue
 		}
-		console.Debug("Got successful response from %s", url)
+		console.Debugf("Got successful response from %s", url)
 		return nil
 	}
 }

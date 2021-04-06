@@ -66,7 +66,7 @@ func setRepo(cmd *cobra.Command, args []string) error {
 	}
 	exists, err := files.FileExists(filepath.Join(cwd, global.ConfigFilename))
 	if !exists {
-		console.Warn("%s does not exist in %s. Are you in the right directory?", global.ConfigFilename, cwd)
+		console.Warnf("%s does not exist in %s. Are you in the right directory?", global.ConfigFilename, cwd)
 	}
 
 	cli := client.NewClient()

@@ -9,10 +9,10 @@ import (
 func main() {
 	cmd, err := cli.NewRootCommand()
 	if err != nil {
-		console.Fatal("%f", err)
+		console.Fatalf("%f", err)
 	}
 
 	if err = cmd.Execute(); err != nil {
-		console.Fatal("%s", err)
+		console.Fatalf("%s", err)
 	}
 }
