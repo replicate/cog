@@ -35,10 +35,12 @@ const (
 type RunArgument struct {
 	Type    ArgumentType `json:"type"`
 	Default *string      `json:"default"`
+	Min     *string      `json:"min"`
+	Max     *string      `json:"max"`
 	Help    *string      `json:"help"`
 }
 
-func (m *Model) ArtifactFor(target Target) (artifact *Artifact, ok bool) {
+func (m *Model) ArtifactFor(target string) (artifact *Artifact, ok bool) {
 	for _, a := range m.Artifacts {
 		if a.Target == target {
 			return a, true

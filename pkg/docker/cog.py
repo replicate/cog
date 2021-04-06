@@ -11,6 +11,7 @@ import traceback
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional, Any, Type, List, Callable, Dict
+from numbers import Number
 
 from flask import Flask, send_file, request, jsonify, abort, Response
 from werkzeug.datastructures import FileStorage
@@ -99,6 +100,10 @@ class Model(ABC):
                         arg["help"] = spec.help
                     if spec.default is not _UNSPECIFIED:
                         arg["default"] = str(spec.default)  # TODO: don't string this
+                    if spec.min is not None:
+                        arg["min"] = str(spec.min)  # TODO: don't string this
+                    if spec.max is not None:
+                        arg["max"] = str(spec.max)  # TODO: don't string this
                     args[name] = arg
             return jsonify({"arguments": args})
 
@@ -179,6 +184,12 @@ class Model(ABC):
                         f"Internal error: Input type {input_spec} is not a valid input type"
                     )
 
+                if _is_numeric_type(input_spec.type):
+                    if input_spec.max is not None and converted > input_spec.max:
+                        raise InputValidationError(f"Value {converted} is greater than the max value {input_spec.max}")
+                    if input_spec.min is not None and converted < input_spec.min:
+                        raise InputValidationError(f"Value {converted} is less than the min value {input_spec.min}")
+
             else:
                 if input_spec.default is not _UNSPECIFIED:
                     converted = input_spec.default
@@ -214,16 +225,20 @@ def make_temp_path(filename):
 class InputSpec:
     type: Type
     default: Any = _UNSPECIFIED
+    min: Optional[Number] = None
+    max: Optional[Number] = None
     help: Optional[str] = None
 
 
-def input(name, type, default=_UNSPECIFIED, help=None):
+def input(name, type, default=_UNSPECIFIED, min=None, max=None, help=None):
+    type_name = _type_name(type)
     if type not in _VALID_INPUT_TYPES:
-        type_name = _type_name(type)
         type_list = ", ".join([_type_name(t) for t in _VALID_INPUT_TYPES])
         raise ValueError(
             f"{type_name} is not a valid input type. Valid types are: {type_list}"
         )
+    if (min is not None or max is not None) and not _is_numeric_type(type):
+        raise ValueError(f"Non-numeric type {type_name} cannot have min and max values")
 
     def wrapper(f):
         if not hasattr(f, "_inputs"):
@@ -235,7 +250,9 @@ def input(name, type, default=_UNSPECIFIED, help=None):
         if type == Path and default is not _UNSPECIFIED and default is not None:
             raise TypeError("Cannot use default with Path type")
 
-        f._inputs[name] = InputSpec(type=type, default=default, help=help)
+        f._inputs[name] = InputSpec(
+            type=type, default=default, min=min, max=max, help=help
+        )
 
         @functools.wraps(f)
         def wraps(self, **kwargs):
@@ -248,18 +265,22 @@ def input(name, type, default=_UNSPECIFIED, help=None):
     return wrapper
 
 
-def _type_name(type: Type) -> str:
-    if type == str:
+def _type_name(typ: Type) -> str:
+    if typ == str:
         return "str"
-    if type == int:
+    if typ == int:
         return "int"
-    if type == float:
+    if typ == float:
         return "float"
-    if type == bool:
+    if typ == bool:
         return "bool"
-    if type == Path:
+    if typ == Path:
         return "Path"
-    return str(type)
+    return str(typ)
+
+
+def _is_numeric_type(typ: Type) -> bool:
+    return typ in (int, float)
 
 
 def _method_arg_names(f) -> List[str]:
