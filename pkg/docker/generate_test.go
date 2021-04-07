@@ -55,17 +55,20 @@ func TestGenerateEmpty(t *testing.T) {
 model: infer.py:Model
 `))
 	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndCompleteConfig())
 
 	expectedCPU := `FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
 ` + installPython("3.8") + installCog() + `
 RUN ### --> Copying code
 COPY . /code
 WORKDIR /code
 CMD ["python", "-c", "from infer import Model; Model().start_server()"]`
 
-	expectedGPU := `FROM nvidia/cuda:11.0-devel-ubuntu20.04
+	expectedGPU := `FROM nvidia/cuda:11.0-cudnn8-devel-ubuntu16.04
 ENV DEBIAN_FRONTEND=noninteractive
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
 ` + installPython("3.8") + installCog() + `
 RUN ### --> Copying code
 COPY . /code
@@ -96,12 +99,11 @@ environment:
 model: infer.py:Model
 `))
 	require.NoError(t, err)
-
-	err = conf.ValidateAndCompleteConfig()
-	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndCompleteConfig())
 
 	expectedCPU := `FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
 ` + installPython("3.8") + `RUN ### --> Installing system packages
 RUN apt-get update -qq && apt-get install -qy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 RUN ### --> Installing Python requirements
@@ -115,8 +117,9 @@ COPY . /code
 WORKDIR /code
 CMD ["python", "-c", "from infer import Model; Model().start_server()"]`
 
-	expectedGPU := `FROM nvidia/cuda:11.0-devel-ubuntu20.04
+	expectedGPU := `FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
 ENV DEBIAN_FRONTEND=noninteractive
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
 ` + installPython("3.8") + `RUN ### --> Installing system packages
 RUN apt-get update -qq && apt-get install -qy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 RUN ### --> Installing Python requirements

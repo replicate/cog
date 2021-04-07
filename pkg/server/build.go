@@ -114,7 +114,16 @@ func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger
 
 func (s *Server) testModel(mod *model.Model, dir string, logWriter logger.Logger) (map[string]*model.RunArgument, error) {
 	logWriter.WriteStatus("Testing model")
-	deployment, err := s.servingPlatform.Deploy(mod, model.TargetDockerCPU, logWriter)
+	target := model.TargetDockerCPU
+	if _, ok := mod.ArtifactFor(model.TargetDockerCPU); !ok {
+		if _, ok := mod.ArtifactFor(model.TargetDockerGPU); ok {
+			target = model.TargetDockerGPU
+		} else {
+			return nil, fmt.Errorf("Model has neither CPU or GPU target")
+		}
+	}
+
+	deployment, err := s.servingPlatform.Deploy(mod, target, logWriter)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +149,7 @@ func (s *Server) testModel(mod *model.Model, dir string, logWriter logger.Logger
 		if err != nil {
 			return nil, fmt.Errorf("Failed to read output: %w", err)
 		}
-		logWriter.WriteLogLine(fmt.Sprintf("Inference result length: %d, mime type: %s", len(outputBytes), output.MimeType))
+		logWriter.Infof(fmt.Sprintf("Inference result length: %d, mime type: %s", len(outputBytes), output.MimeType))
 		if example.Output != "" && strings.TrimSpace(string(outputBytes)) != example.Output {
 			return nil, fmt.Errorf("Output %s doesn't match expected: %s", outputBytes, example.Output)
 		}
@@ -173,7 +182,7 @@ func (s *Server) buildDockerImages(dir string, config *model.Config, name string
 		if err != nil {
 			return nil, fmt.Errorf("Failed to build Docker image: %w", err)
 		}
-		var target model.Target
+		var target string
 		switch arch {
 		case "cpu":
 			target = model.TargetDockerCPU

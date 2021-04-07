@@ -26,6 +26,7 @@ func newDebugCommand() *cobra.Command {
 		Short:  "Generate a Dockerfile from " + global.ConfigFilename,
 		Hidden: true,
 	}
+	cmd.Flags().StringP("arch", "a", "cpu", "Architecture (cpu/gpu)")
 
 	cmd.AddCommand(debug)
 
@@ -57,8 +58,15 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := config.ValidateAndCompleteConfig(); err != nil {
+		return err
+	}
 
-	generator := &docker.DockerfileGenerator{Config: config, Arch: "cpu"}
+	arch, err := cmd.Flags().GetString("arch")
+	if err != nil {
+		return err
+	}
+	generator := &docker.DockerfileGenerator{Config: config, Arch: arch}
 	out, err := generator.Generate()
 	if err != nil {
 		return err

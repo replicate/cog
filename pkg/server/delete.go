@@ -8,7 +8,7 @@ import (
 
 func (s *Server) DeleteModel(w http.ResponseWriter, r *http.Request) {
 	user, name, id := getRepoVars(r)
-	console.Info("Received delete request for %s/%s/%s", user, name, id)
+	console.Infof("Received delete request for %s/%s/%s", user, name, id)
 
 	mod, err := s.db.GetModel(user, name, id)
 	if err != nil {

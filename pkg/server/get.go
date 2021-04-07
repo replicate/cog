@@ -9,7 +9,7 @@ import (
 
 func (s *Server) SendModelMetadata(w http.ResponseWriter, r *http.Request) {
 	user, name, id := getRepoVars(r)
-	console.Info("Received get request for %s/%s/%s", user, name, id)
+	console.Infof("Received get request for %s/%s/%s", user, name, id)
 
 	mod, err := s.db.GetModel(user, name, id)
 	if err != nil {

@@ -47,7 +47,7 @@ func NewLocalDockerPlatform() (*LocalDockerPlatform, error) {
 	}, nil
 }
 
-func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target, logWriter logger.Logger) (Deployment, error) {
+func (p *LocalDockerPlatform) Deploy(mod *model.Model, target string, logWriter logger.Logger) (Deployment, error) {
 	// TODO(andreas): output container logs
 
 	artifact, ok := mod.ArtifactFor(target)
@@ -56,7 +56,7 @@ func (p *LocalDockerPlatform) Deploy(mod *model.Model, target model.Target, logW
 	}
 	imageTag := artifact.URI
 
-	logWriter.WriteLogLine("Deploying container %s for target %s", imageTag, artifact.Target)
+	logWriter.Infof("Deploying container %s for target %s", imageTag, artifact.Target)
 
 	if !docker.Exists(imageTag, logWriter) {
 		if err := docker.Pull(imageTag, logWriter); err != nil {
@@ -126,7 +126,7 @@ func (p *LocalDockerPlatform) waitForContainerReady(hostPort int, containerID st
 	url := fmt.Sprintf("http://localhost:%d/ping", hostPort)
 
 	start := time.Now()
-	logWriter.WriteLogLine("Waiting for model container to become accessible")
+	logWriter.Infof("Waiting for model container to become accessible")
 	for {
 		now := time.Now()
 		if now.Sub(start) > global.StartupTimeout {
@@ -150,7 +150,7 @@ func (p *LocalDockerPlatform) waitForContainerReady(hostPort int, containerID st
 		if resp.StatusCode != http.StatusOK {
 			continue
 		}
-		logWriter.WriteLogLine("Got successful ping response from container")
+		logWriter.Infof("Got successful ping response from container")
 		return nil
 	}
 }
@@ -230,14 +230,14 @@ func (d *LocalDockerDeployment) RunInference(input *Example, logWriter logger.Lo
 	if setupTimeStr != "" {
 		setupTime, err = strconv.ParseFloat(setupTimeStr, 64)
 		if err != nil {
-			console.Error("Failed to parse setup time '%s' as float: %s", setupTimeStr, err)
+			console.Errorf("Failed to parse setup time '%s' as float: %s", setupTimeStr, err)
 		}
 	}
 	runTimeStr := resp.Header.Get("X-Run-Time")
 	if runTimeStr != "" {
 		runTime, err = strconv.ParseFloat(runTimeStr, 64)
 		if err != nil {
-			console.Error("Failed to parse run time '%s' as float: %s", runTimeStr, err)
+			console.Errorf("Failed to parse run time '%s' as float: %s", runTimeStr, err)
 		}
 	}
 
@@ -282,7 +282,7 @@ func (d *LocalDockerDeployment) writeContainerLogs(logWriter logger.Logger) {
 	if err != nil {
 		logWriter.WriteError(err)
 	} else {
-		logWriter.WriteLogLine(logs)
+		logWriter.Info(logs)
 	}
 }
 

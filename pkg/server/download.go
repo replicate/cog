@@ -10,7 +10,7 @@ import (
 
 func (s *Server) DownloadModel(w http.ResponseWriter, r *http.Request) {
 	user, name, id := getRepoVars(r)
-	console.Info("Received download request for %s/%s/%s", user, name, id)
+	console.Infof("Received download request for %s/%s/%s", user, name, id)
 	modTime := time.Now() // TODO
 
 	mod, err := s.db.GetModel(user, name, id)
@@ -30,6 +30,6 @@ func (s *Server) DownloadModel(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	console.Info("Downloaded %d bytes", len(content))
+	console.Infof("Downloaded %d bytes", len(content))
 	http.ServeContent(w, r, id+".zip", modTime, bytes.NewReader(content))
 }

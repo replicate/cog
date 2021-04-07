@@ -18,6 +18,7 @@ import (
 
 var benchmarkSetups int
 var benchmarkRuns int
+var benchmarkTarget string
 
 type BenchmarkResults struct {
 	SetupTimes []float64
@@ -35,6 +36,7 @@ func newBenchmarkCommand() *cobra.Command {
 
 	cmd.Flags().IntVarP(&benchmarkSetups, "setup-iterations", "s", 3, "Number of setup iterations")
 	cmd.Flags().IntVarP(&benchmarkRuns, "run-iterations", "r", 3, "Number of run iterations per setup iteration")
+	cmd.Flags().StringVarP(&benchmarkTarget, "target", "t", "docker-cpu", "Target to benchmark (e.g. docker-cpu, docker-gpu)")
 
 	return cmd
 }
@@ -47,7 +49,7 @@ func benchmarkModel(cmd *cobra.Command, args []string) error {
 	id := args[0]
 
 	cli := client.NewClient()
-	console.Info("Starting benchmark of %s:%s", repo, id)
+	console.Infof("Starting benchmark of %s:%s", repo, id)
 
 	mod, err := cli.GetModel(repo, id)
 	if err != nil {
@@ -67,7 +69,7 @@ func benchmarkModel(cmd *cobra.Command, args []string) error {
 	}
 	results := new(BenchmarkResults)
 	for i := 0; i < benchmarkSetups; i++ {
-		console.Info("Running setup iteration %d", i+1)
+		console.Infof("Running setup iteration %d", i+1)
 		if err := runBenchmarkInference(mod, modelDir, results, benchmarkRuns); err != nil {
 			return err
 		}
@@ -100,13 +102,13 @@ func runBenchmarkInference(mod *model.Model, modelDir string, results *Benchmark
 
 	logWriter := logger.NewConsoleLogger()
 	bootStart := time.Now()
-	deployment, err := servingPlatform.Deploy(mod, model.TargetDockerCPU, logWriter)
+	deployment, err := servingPlatform.Deploy(mod, benchmarkTarget, logWriter)
 	if err != nil {
 		return err
 	}
 	defer func() {
 		if err := deployment.Undeploy(); err != nil {
-			console.Warn("Failed to kill Docker container: %s", err)
+			console.Warnf("Failed to kill Docker container: %s", err)
 		}
 	}()
 	bootTime := time.Since(bootStart).Seconds()

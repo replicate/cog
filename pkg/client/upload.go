@@ -81,7 +81,7 @@ func (c *Client) UploadModel(repo *model.Repo, projectDir string) (*model.Model,
 		msg := new(logger.Message)
 		if err := json.Unmarshal(line, msg); err != nil {
 			console.Debug(string(line))
-			console.Warn("Failed to parse console message: %s", err)
+			console.Warnf("Failed to parse console message: %s", err)
 			continue
 		}
 		switch msg.Type {

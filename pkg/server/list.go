@@ -9,7 +9,7 @@ import (
 
 func (s *Server) ListModels(w http.ResponseWriter, r *http.Request) {
 	user, name, _ := getRepoVars(r)
-	console.Info("Received list request for %s%s", user, name)
+	console.Infof("Received list request for %s%s", user, name)
 
 	models, err := s.db.ListModels(user, name)
 	if err != nil {

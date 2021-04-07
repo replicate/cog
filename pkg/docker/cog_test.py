@@ -167,6 +167,29 @@ def test_bad_float_input():
     assert resp.status_code == 400
 
 
+def test_min_max():
+    class Model(cog.Model):
+        def setup(self):
+            pass
+
+        @cog.input("num1", type=float, min=3, max=10.5)
+        @cog.input("num2", type=float, min=-4)
+        @cog.input("num3", type=int, max=-4)
+        def run(self, num1, num2, num3):
+            return num1 + num2 + num3
+
+    client = make_client(Model())
+    resp = client.post("/infer", data={"num1": 3, "num2": -4, "num3":-4})
+    assert resp.status_code == 200
+    assert resp.data == b"-5.0\n"
+    resp = client.post("/infer", data={"num1": 2, "num2": -4, "num3":-4})
+    assert resp.status_code == 400
+    resp = client.post("/infer", data={"num1": 3, "num2": -4.1, "num3":-4})
+    assert resp.status_code == 400
+    resp = client.post("/infer", data={"num1": 3, "num2": -4, "num3":-3})
+    assert resp.status_code == 400
+
+
 def test_good_path_input():
     class Model(cog.Model):
         def setup(self):

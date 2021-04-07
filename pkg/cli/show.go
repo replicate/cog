@@ -55,6 +55,12 @@ func showModel(cmd *cobra.Command, args []string) error {
 			if arg.Help != nil {
 				help = *arg.Help
 			}
+			if arg.Min != nil {
+				typeStr += ", min: " + *arg.Min
+			}
+			if arg.Max != nil {
+				typeStr += ", max: " + *arg.Max
+			}
 			if arg.Default != nil {
 				typeStr += ", default: " + *arg.Default
 			}

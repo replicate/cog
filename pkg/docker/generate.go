@@ -1,5 +1,7 @@
 package docker
 
+// TODO(andreas): allow files to be edited without re-running the subsequent post_install scripts (hard!)
+
 import (
 	_ "embed"
 	"encoding/base64"
@@ -22,6 +24,8 @@ const (
 	SectionInstallingPythonPackages      = "Installing Python packages"
 	SectionInstallingCog                 = "Installing Cog"
 	SectionCopyingCode                   = "Copying code"
+	SectionPreInstall                    = "Running pre-install script"
+	SectionPostInstall                   = "Running post-install script"
 )
 
 //go:embed cog.py
@@ -37,7 +41,6 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	preamble := g.preamble()
 	installPython, err := g.installPython()
 	if err != nil {
 		return "", err
@@ -56,13 +59,16 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 	}
 	return strings.Join(filterEmpty([]string{
 		"FROM " + baseImage,
-		preamble,
+		g.preamble(),
 		installPython,
 		aptInstalls,
 		pythonRequirements,
 		pipInstalls,
 		g.installCog(),
+		g.preInstall(),
 		g.copyCode(),
+		g.workdir(),
+		g.postInstall(),
 		g.command(),
 	}), "\n"), nil
 }
@@ -72,19 +78,15 @@ func (g *DockerfileGenerator) baseImage() (string, error) {
 	case "cpu":
 		return "ubuntu:20.04", nil
 	case "gpu":
-		return g.gpuBaseImage()
+		return g.Config.CUDABaseImageTag()
 	}
 	return "", fmt.Errorf("Invalid architecture: %s", g.Arch)
 }
 
 func (g *DockerfileGenerator) preamble() string {
 	// TODO: other stuff
-	return "ENV DEBIAN_FRONTEND=noninteractive"
-}
-
-func (g *DockerfileGenerator) gpuBaseImage() (string, error) {
-	// TODO: return correct ubuntu version for tf / torch
-	return "nvidia/cuda:11.0-devel-ubuntu20.04", nil
+	return `ENV DEBIAN_FRONTEND=noninteractive
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu`
 }
 
 func (g *DockerfileGenerator) aptInstalls() (string, error) {
@@ -171,8 +173,7 @@ func (g *DockerfileGenerator) pipInstalls() (string, error) {
 }
 
 func (g *DockerfileGenerator) copyCode() string {
-	return g.sectionLabel(SectionCopyingCode) + `COPY . /code
-WORKDIR /code`
+	return g.sectionLabel(SectionCopyingCode) + `COPY . /code`
 }
 
 func (g *DockerfileGenerator) command() string {
@@ -183,6 +184,32 @@ func (g *DockerfileGenerator) command() string {
 	module := parts[0]
 	class := parts[1]
 	return `CMD ["python", "-c", "from ` + module + ` import ` + class + `; ` + class + `().start_server()"]`
+}
+
+func (g *DockerfileGenerator) workdir() string {
+	wd := "/code"
+	if g.Config.Environment.Workdir != "" {
+		wd += "/" + g.Config.Environment.Workdir
+	}
+	return "WORKDIR " + wd
+}
+
+func (g *DockerfileGenerator) preInstall() string {
+	lines := []string{}
+	for _, run := range g.Config.Environment.PreInstall {
+		run = strings.TrimSpace(run)
+		lines = append(lines, g.sectionLabel(SectionPreInstall+" "+run)+"RUN "+run)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (g *DockerfileGenerator) postInstall() string {
+	lines := []string{}
+	for _, run := range g.Config.Environment.PostInstall {
+		run = strings.TrimSpace(run)
+		lines = append(lines, g.sectionLabel(SectionPostInstall+" "+run)+"RUN "+run)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (g *DockerfileGenerator) sectionLabel(label string) string {

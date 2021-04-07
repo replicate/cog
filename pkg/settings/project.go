@@ -32,7 +32,7 @@ func LoadProjectSettings(projectRoot string) (*ProjectSettings, error) {
 	}
 	text, err := ioutil.ReadFile(settingsPath)
 	if err != nil {
-		console.Warn("Failed to read %s: %s", settingsPath, err)
+		console.Warnf("Failed to read %s: %s", settingsPath, err)
 		return settings, nil
 	}
 
