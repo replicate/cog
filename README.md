@@ -85,9 +85,9 @@ $ curl http://localhost:8000/infer -F input=@image.png
 
 It's really hard for researchers to ship machine learning models to production. Dockerfiles, pre-/post-processing, API servers, CUDA versions. More often than not the researcher has to sit down with an engineer to get the damn thing deployed.
 
-By defining a standard model, all the complexity is wrapped up behind a standard interface. Other systems in your machine learning stack just need to support Cog models and they'll be able to run anything a researcher dreams up.
+By defining a standard model, all that complexity is wrapped up behind a standard interface. Other systems in your machine learning stack just need to support Cog models and they'll be able to run anything a researcher dreams up.
 
-At Spotify, we built a system like this for deploying audio deep learning models. We realized this was a repeating pattern: [Uber](https://eng.uber.com/michelangelo-pyml/), Coinbase, and others have built similar systems. So, we're making open source version.
+At Spotify, we built a system like this for deploying audio deep learning models. We realized this was a repeating pattern: [Uber](https://eng.uber.com/michelangelo-pyml/), Coinbase, and others have built similar systems. So, we're making an open source version.
 
 The hard part is defining a model interface that works for everyone. We're releasing this early so we can get feedback on the design. Hit us up if you're interested in using it or helping us build it. [We're on Discord](https://discord.gg/QmzJApGjyE) or email us at [team@replicate.ai](mailto:team@replicate.ai).
 
