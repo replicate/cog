@@ -17,7 +17,7 @@ type LocalFileDatabase struct {
 }
 
 func NewLocalFileDatabase(rootDir string) (*LocalFileDatabase, error) {
-	exists, err := files.FileExists(rootDir)
+	exists, err := files.Exists(rootDir)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +44,7 @@ func (db *LocalFileDatabase) InsertModel(user string, name string, id string, mo
 	}
 	path := db.modelPath(user, name, id)
 	dir := filepath.Dir(path)
-	exists, err := files.FileExists(path)
+	exists, err := files.Exists(path)
 	if err != nil {
 		return err
 	}
@@ -62,7 +62,7 @@ func (db *LocalFileDatabase) InsertModel(user string, name string, id string, mo
 // GetModel returns a model or nil if the model doesn't exist
 func (db *LocalFileDatabase) GetModel(user string, name string, id string) (*model.Model, error) {
 	path := db.modelPath(user, name, id)
-	exists, err := files.FileExists(path)
+	exists, err := files.Exists(path)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to determine if %s exists: %w", path, err)
 	}

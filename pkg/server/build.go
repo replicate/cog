@@ -34,7 +34,7 @@ func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {
 	streamLogger.WriteModel(mod)
 }
 
-func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger, user string, name string) (*model.Model, error) {
+func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user string, name string) (*model.Model, error) {
 	// max 5GB models
 	if err := r.ParseMultipartForm(5 << 30); err != nil {
 		return nil, fmt.Errorf("Failed to parse request: %w", err)
@@ -45,7 +45,7 @@ func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger
 	}
 	defer file.Close()
 
-	streamLogger.WriteStatus("Received model")
+	logWriter.WriteStatus("Received model")
 
 	hasher := sha1.New()
 	if _, err := io.Copy(hasher, file); err != nil {
@@ -86,7 +86,7 @@ func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger
 		return nil, fmt.Errorf("Failed to upload to storage: %w", err)
 	}
 
-	artifacts, err := s.buildDockerImages(dir, config, name, streamLogger)
+	artifacts, err := s.buildDockerImages(dir, config, name, logWriter)
 	if err != nil {
 		return nil, err
 	}
@@ -97,16 +97,20 @@ func (s *Server) ReceiveModel(r *http.Request, streamLogger *logger.StreamLogger
 		Created:   time.Now(),
 	}
 
-	runArgs, err := s.testModel(mod, dir, streamLogger)
+	runArgs, err := s.testModel(mod, dir, logWriter)
 	if err != nil {
 		// TODO(andreas): return other response than 500 if validation fails
 		return nil, err
 	}
 	mod.RunArguments = runArgs
 
-	streamLogger.WriteStatus("Inserting into database")
+	logWriter.WriteStatus("Inserting into database")
 	if err := s.db.InsertModel(user, name, id, mod); err != nil {
 		return nil, fmt.Errorf("Failed to insert into database: %w", err)
+	}
+
+	if err := s.runWebHooks(user, name, mod, dir, logWriter); err != nil {
+		return nil, err
 	}
 
 	return mod, nil

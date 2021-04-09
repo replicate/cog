@@ -20,6 +20,7 @@ import (
 var (
 	port           int
 	dockerRegistry string
+	buildWebHooks  []string
 )
 
 func newServerCommand() *cobra.Command {
@@ -32,6 +33,7 @@ func newServerCommand() *cobra.Command {
 
 	cmd.Flags().IntVar(&port, "port", 0, "Server port")
 	cmd.Flags().StringVar(&dockerRegistry, "docker-registry", "", "Docker registry to push images to")
+	cmd.Flags().StringArrayVar(&buildWebHooks, "web-hook", []string{}, "Web hooks that are posted to after build. Format: <url>@<secret>")
 	return cmd
 }
 
@@ -77,6 +79,9 @@ func startServer(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	s := server.NewServer(port, db, dockerImageBuilder, servingPlatform, store)
+	s, err := server.NewServer(port, buildWebHooks, db, dockerImageBuilder, servingPlatform, store)
+	if err != nil {
+		return err
+	}
 	return s.Start()
 }

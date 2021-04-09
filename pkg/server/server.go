@@ -20,20 +20,30 @@ const topLevelSourceDir = "source"
 
 type Server struct {
 	port               int
+	webHooks           []*WebHook
 	db                 database.Database
 	dockerImageBuilder docker.ImageBuilder
 	servingPlatform    serving.Platform
 	store              storage.Storage
 }
 
-func NewServer(port int, db database.Database, dockerImageBuilder docker.ImageBuilder, servingPlatform serving.Platform, store storage.Storage) *Server {
+func NewServer(port int, rawWebHooks []string, db database.Database, dockerImageBuilder docker.ImageBuilder, servingPlatform serving.Platform, store storage.Storage) (*Server, error) {
+	webHooks := []*WebHook{}
+	for _, rawWebHook := range rawWebHooks {
+		webHook, err := newWebHook(rawWebHook)
+		if err != nil {
+			return nil, err
+		}
+		webHooks = append(webHooks, webHook)
+	}
 	return &Server{
 		port:               port,
+		webHooks:           webHooks,
 		db:                 db,
 		dockerImageBuilder: dockerImageBuilder,
 		servingPlatform:    servingPlatform,
 		store:              store,
-	}
+	}, nil
 }
 
 func (s *Server) Start() error {

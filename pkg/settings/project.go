@@ -23,7 +23,7 @@ func LoadProjectSettings(projectRoot string) (*ProjectSettings, error) {
 	}
 
 	settingsPath := projectSettingsPath(projectRoot)
-	exists, err := files.FileExists(settingsPath)
+	exists, err := files.Exists(settingsPath)
 	if err != nil {
 		return nil, err
 	}
