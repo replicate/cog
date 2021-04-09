@@ -15,7 +15,7 @@ import (
 
 var repoFlag string
 
-var repoRegex = regexp.MustCompile("^(?:([^/]*)/)(?:([-_a-zA-Z0-9]+)/)([-_a-zA-Z0-9]+)$")
+var repoRegex = regexp.MustCompile("^(?:([^/]*)/)?(?:([-_a-zA-Z0-9]+)/)([-_a-zA-Z0-9]+)$")
 
 func NewRootCommand() (*cobra.Command, error) {
 	rootCmd := cobra.Command{

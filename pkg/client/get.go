@@ -10,7 +10,10 @@ import (
 )
 
 func (c *Client) GetModel(repo *model.Repo, id string) (*model.Model, error) {
-	url := fmt.Sprintf("http://%s/v1/repos/%s/%s/models/%s", repo.Host, repo.User, repo.Name, id)
+	url, err := c.getURL(repo, "v1/repos/%s/%s/models/%s", repo.User, repo.Name, id)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err

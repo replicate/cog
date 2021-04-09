@@ -22,8 +22,10 @@ func (c *Client) UploadModel(repo *model.Repo, projectDir string) (*model.Model,
 	bodyReader, bodyWriter := io.Pipe()
 
 	client := &http.Client{}
-
-	url := fmt.Sprintf("http://%s/v1/repos/%s/%s/models/", repo.Host, repo.User, repo.Name)
+	url, err := c.getURL(repo, "v1/repos/%s/%s/models/", repo.User, repo.Name)
+	if err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequest(http.MethodPut, url, bodyReader)
 	if err != nil {
 		return nil, err

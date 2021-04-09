@@ -9,7 +9,10 @@ import (
 )
 
 func (c *Client) ListModels(repo *model.Repo) ([]*model.Model, error) {
-	url := fmt.Sprintf("http://%s/v1/repos/%s/%s/models/", repo.Host, repo.User, repo.Name)
+	url, err := c.getURL(repo, "v1/repos/%s/%s/models/", repo.User, repo.Name)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
