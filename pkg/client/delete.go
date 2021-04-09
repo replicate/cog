@@ -21,6 +21,9 @@ func (c *Client) DeleteModel(repo *model.Repo, id string) error {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("Model not found: %s", id)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("Server returned status %d", resp.StatusCode)
 	}

@@ -18,6 +18,9 @@ func (c *Client) ListModels(repo *model.Repo) ([]*model.Model, error) {
 		return nil, err
 	}
 
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("Repository not found: %s", repo.String())
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("List endpoint returned status %d", resp.StatusCode)
 	}

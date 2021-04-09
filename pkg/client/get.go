@@ -19,6 +19,9 @@ func (c *Client) GetModel(repo *model.Repo, id string) (*model.Model, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("Model not found: %s:%s", repo.String(), id)
+	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("Server returned status %d: %s", resp.StatusCode, body)
