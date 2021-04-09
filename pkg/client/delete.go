@@ -8,7 +8,10 @@ import (
 )
 
 func (c *Client) DeleteModel(repo *model.Repo, id string) error {
-	url := fmt.Sprintf("http://%s/v1/repos/%s/%s/models/%s", repo.Host, repo.User, repo.Name, id)
+	url, err := c.getURL(repo, "v1/repos/%s/%s/models/%s", repo.User, repo.Name, id)
+	if err != nil {
+		return err
+	}
 	req, err := http.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
 		return err

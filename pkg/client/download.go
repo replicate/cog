@@ -13,7 +13,10 @@ import (
 )
 
 func (c *Client) DownloadModel(repo *model.Repo, id string, outputDir string) error {
-	url := fmt.Sprintf("http://%s/v1/repos/%s/%s/models/%s.zip", repo.Host, repo.User, repo.Name, id)
+	url, err := c.getURL(repo, "v1/repos/%s/%s/models/%s.zip", repo.User, repo.Name, id)
+	if err != nil {
+		return err
+	}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("Failed to create HTTP request: %w", err)
