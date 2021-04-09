@@ -16,7 +16,7 @@ type LocalStorage struct {
 }
 
 func NewLocalStorage(rootDir string) (*LocalStorage, error) {
-	exists, err := files.FileExists(rootDir)
+	exists, err := files.Exists(rootDir)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +39,7 @@ func NewLocalStorage(rootDir string) (*LocalStorage, error) {
 func (s *LocalStorage) Upload(user string, name string, id string, reader io.Reader) error {
 	path := s.pathForID(user, name, id)
 	dir := filepath.Dir(path)
-	exists, err := files.FileExists(path)
+	exists, err := files.Exists(path)
 	if err != nil {
 		return err
 	}

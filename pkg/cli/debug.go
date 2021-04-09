@@ -41,7 +41,7 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 
 	configPath := path.Join(projectDir, global.ConfigFilename)
 
-	exists, err := files.FileExists(configPath)
+	exists, err := files.Exists(configPath)
 	if err != nil {
 		return err
 	}

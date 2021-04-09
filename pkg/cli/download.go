@@ -45,7 +45,7 @@ func downloadModel(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	// TODO(andreas): allow to checkout to existing directories, with warning prompt
-	exists, err := files.FileExists(downloadOutputDir)
+	exists, err := files.Exists(downloadOutputDir)
 	if err != nil {
 		return err
 	}
