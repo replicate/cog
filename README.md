@@ -89,7 +89,7 @@ By defining a standard model, all that complexity is wrapped up behind a standar
 
 At Spotify, we built a system like this for deploying audio deep learning models. We realized this was a repeating pattern: [Uber](https://eng.uber.com/michelangelo-pyml/), Coinbase, and others have built similar systems. So, we're making an open source version.
 
-The hard part is defining a model interface that works for everyone. We're releasing this early so we can get feedback on the design. Hit us up if you're interested in using it or helping us build it. [We're on Discord](https://discord.gg/QmzJApGjyE) or email us at [team@replicate.ai](mailto:team@replicate.ai).
+The hard part is defining a model interface that works for everyone. We're releasing this early so we can get feedback on the design and find collaborators. Hit us up if you're interested in using it or want to collaborate with us. [We're on Discord](https://discord.gg/QmzJApGjyE) or email us at [team@replicate.ai](mailto:team@replicate.ai).
 
 ## Install
 
