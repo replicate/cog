@@ -22,9 +22,9 @@ func (c *Client) getURL(repo *model.Repo, path string, args ...interface{}) (str
 	if repo.Host != "" {
 		host = repo.Host
 	} else {
-		host = os.Getenv("COG_SERVER")
+		host = os.Getenv("COG_INTERNAL_DEFAULT_SERVER")
 		if host == "" {
-			return "", fmt.Errorf("Repo is missing host and COG_SERVER is not set")
+			return "", fmt.Errorf("Repo is missing host. It should be in the format 'host/user/repository'")
 		}
 	}
 	return fmt.Sprintf("http://%s/%s", host, path), nil
