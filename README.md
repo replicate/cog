@@ -18,10 +18,11 @@ Cog does a few things to make your life easier:
 
 ```python
 import cog
+import torch
 
 class ColorizationModel(cog.Model):
     def setup(self):
-        self.model = load_model("./weights.pth")
+        self.model = torch.load("./weights.pth")
 
     @cog.input("input", type=Path, help="Grayscale input image")
     def run(self, input):
