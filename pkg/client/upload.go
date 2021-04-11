@@ -9,19 +9,29 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/mholt/archiver/v3"
 	"github.com/schollz/progressbar/v3"
 
 	"github.com/replicate/cog/pkg/console"
-
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/zip"
 )
 
 func (c *Client) UploadModel(repo *model.Repo, projectDir string) (*model.Model, error) {
-	bodyReader, bodyWriter := io.Pipe()
+	hashes, err := c.getRepoCacheHashes(repo)
+	if err != nil {
+		return nil, err
+	}
 
-	client := &http.Client{}
+	bodyReader, bodyWriter := io.Pipe()
+	client := &http.Client{
+		Transport: &http.Transport{
+			// we need to disable keepalive. there's a bug i (andreas) haven't
+			// been able to get to the bottom of, where keep-alive requests
+			// are missing content-type
+			DisableKeepAlives: true,
+		},
+	}
 	url, err := c.getURL(repo, "v1/repos/%s/%s/models/", repo.User, repo.Name)
 	if err != nil {
 		return nil, err
@@ -42,8 +52,8 @@ func (c *Client) UploadModel(repo *model.Repo, projectDir string) (*model.Model,
 	go func() {
 		// archiver requires final slash, so normalize path to have trailing slash
 		projectDir := strings.TrimSuffix(projectDir, "/") + "/"
-		z := archiver.Zip{ImplicitTopLevelFolder: false}
-		err := z.WriterArchive([]string{projectDir}, io.MultiWriter(zipWriter, bar))
+		z := zip.NewCachingZip()
+		err := z.WriterArchive(projectDir, io.MultiWriter(zipWriter, bar), hashes)
 		if err != nil {
 			console.Fatal(err.Error())
 		}
@@ -106,6 +116,30 @@ func (c *Client) UploadModel(repo *model.Repo, projectDir string) (*model.Model,
 	return mod, nil
 }
 
+func (c *Client) getRepoCacheHashes(repo *model.Repo) ([]string, error) {
+	url, err := c.getURL(repo, "v1/repos/%s/%s/cache-hashes/", repo.User, repo.Name)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return []string{}, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Server returned status %d: %s", resp.StatusCode, body)
+	}
+	hashes := []string{}
+	if err := json.NewDecoder(resp.Body).Decode(&hashes); err != nil {
+		return nil, err
+	}
+	return hashes, nil
+}
+
 func uploadFile(req *http.Request, key, filename string, file io.ReadCloser, body io.WriteCloser) error {
 	mwriter := multipart.NewWriter(body)
 	req.Header.Add("Content-Type", mwriter.FormDataContentType())
@@ -115,7 +149,6 @@ func uploadFile(req *http.Request, key, filename string, file io.ReadCloser, bod
 	if err != nil {
 		return err
 	}
-
 	if _, err := io.Copy(w, file); err != nil {
 		return err
 	}
