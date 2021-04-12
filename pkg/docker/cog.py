@@ -58,8 +58,8 @@ class Model(ABC):
                     raw_inputs[key] = val
                 for key, val in request.files.items():
                     if key in raw_inputs:
-                        return abort(
-                            400, f"Duplicated argument name in form and files: {key}"
+                        return _abort400(
+                            f"Duplicated argument name in form and files: {key}"
                         )
                     raw_inputs[key] = val
 
@@ -69,7 +69,7 @@ class Model(ABC):
                             raw_inputs, cleanup_functions
                         )
                     except InputValidationError as e:
-                        return abort(400, str(e))
+                        return _abort400(str(e))
                 else:
                     inputs = raw_inputs
 
@@ -186,9 +186,13 @@ class Model(ABC):
 
                 if _is_numeric_type(input_spec.type):
                     if input_spec.max is not None and converted > input_spec.max:
-                        raise InputValidationError(f"Value {converted} is greater than the max value {input_spec.max}")
+                        raise InputValidationError(
+                            f"Value {converted} is greater than the max value {input_spec.max}"
+                        )
                     if input_spec.min is not None and converted < input_spec.min:
-                        raise InputValidationError(f"Value {converted} is less than the min value {input_spec.min}")
+                        raise InputValidationError(
+                            f"Value {converted} is less than the min value {input_spec.min}"
+                        )
 
             else:
                 if input_spec.default is not _UNSPECIFIED:
@@ -290,3 +294,9 @@ def _is_numeric_type(typ: Type) -> bool:
 
 def _method_arg_names(f) -> List[str]:
     return inspect.getfullargspec(f)[0][1:]  # 0 is self
+
+
+def _abort400(message):
+    resp = jsonify({"message": message})
+    resp.status_code = 400
+    return resp
