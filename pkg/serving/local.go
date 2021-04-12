@@ -212,6 +212,19 @@ func (d *LocalDockerDeployment) RunInference(input *Example, logWriter logger.Lo
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusBadRequest {
+		body := struct {
+			Message string `json:"message"`
+		}{}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			return nil, fmt.Errorf("/infer call return status 400, and the response body failed to decode: %w", err)
+		}
+		if body.Message == "" {
+			return nil, fmt.Errorf("Bad request")
+		}
+		return nil, fmt.Errorf("Bad request: %s", body.Message)
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		d.writeContainerLogs(logWriter)
 		return nil, fmt.Errorf("/infer call returned status %d", resp.StatusCode)
