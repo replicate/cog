@@ -14,6 +14,7 @@ import (
 )
 
 var repoFlag string
+var projectDirFlag string
 
 var repoRegex = regexp.MustCompile("^(?:([^/]*)/)?(?:([-_a-zA-Z0-9]+)/)([-_a-zA-Z0-9]+)$")
 
@@ -88,4 +89,15 @@ func parseRepo(repoString string) (*model.Repo, error) {
 		User: matches[2],
 		Name: matches[3],
 	}, nil
+}
+
+func addProjectDirFlag(cmd *cobra.Command) {
+	cmd.Flags().StringVarP(&projectDirFlag, "project-dir", "D", "", "Projet directory, defaults to current working directory")
+}
+
+func getProjectDir() (string, error) {
+	if projectDirFlag == "" {
+		return os.Getwd()
+	}
+	return projectDirFlag, nil
 }

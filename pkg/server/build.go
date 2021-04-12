@@ -10,14 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mholt/archiver/v3"
-
 	"github.com/replicate/cog/pkg/console"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/serving"
+	"github.com/replicate/cog/pkg/zip"
+	"encoding/json"
 )
 
 func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {
@@ -61,8 +61,12 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 	if err := os.Mkdir(dir, 0755); err != nil {
 		return nil, fmt.Errorf("Failed to make source dir: %w", err)
 	}
-	z := archiver.Zip{}
-	if err := z.ReaderUnarchive(file, header.Size, dir); err != nil {
+	zipCache, err := zip.NewRepoCache(user, name)
+	if err != nil {
+		return nil, err
+	}
+	z := zip.NewCachingZip()
+	if err := z.ReaderUnarchive(file, header.Size, dir, zipCache); err != nil {
 		return nil, fmt.Errorf("Failed to unzip: %w", err)
 	}
 
@@ -200,6 +204,33 @@ func (s *Server) buildDockerImages(dir string, config *model.Config, name string
 
 	}
 	return artifacts, nil
+}
+
+func (s *Server) GetCacheHashes(w http.ResponseWriter, r *http.Request) {
+	user, name, _ := getRepoVars(r)
+	console.Infof("Received cache-hashes request for %s/%s", user, name)
+
+	zipCache, err := zip.NewRepoCache(user, name)
+	if err != nil {
+		console.Error(err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	hashes, err := zipCache.GetHashes()
+	if err != nil {
+		console.Error(err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+
+	if err := json.NewEncoder(w).Encode(hashes); err != nil {
+		console.Error(err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 }
 
 func validateServingExampleInput(help *serving.HelpResponse, input map[string]string) error {

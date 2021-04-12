@@ -69,6 +69,9 @@ func (s *Server) Start() error {
 	router.Path("/v1/repos/{user}/{name}/models/{id}").
 		Methods(http.MethodDelete).
 		HandlerFunc(s.DeleteModel)
+	router.Path("/v1/repos/{user}/{name}/cache-hashes/").
+		Methods(http.MethodGet).
+		HandlerFunc(s.GetCacheHashes)
 	console.Infof("Server running on 0.0.0.0:%d", s.port)
 	return http.ListenAndServe(fmt.Sprintf(":%d", s.port), router)
 }

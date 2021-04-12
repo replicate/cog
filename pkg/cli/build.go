@@ -21,6 +21,7 @@ func newBuildCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 	}
 	addRepoFlag(cmd)
+	addProjectDirFlag(cmd)
 
 	return cmd
 }
@@ -31,7 +32,7 @@ func buildModel(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	projectDir, err := os.Getwd()
+	projectDir, err := getProjectDir()
 	if err != nil {
 		return err
 	}
