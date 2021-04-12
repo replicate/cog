@@ -24,11 +24,13 @@ func (z *CachingZip) ReaderUnarchive(source io.Reader, size int64, destination s
 		prefixBuf := make([]byte, len(cachePrefix))
 		file, err := os.Open(fpath)
 		if err != nil {
-			return fmt.Errorf("Failed to open %s: %v", fpath, err)
+			return fmt.Errorf("Failed to open in zip %s: %v", fpath, err)
 		}
 		defer file.Close()
 		if _, err := file.Read(prefixBuf); err != nil {
-			return fmt.Errorf("Failed to read %s: %v", fpath, err)
+			if err != io.EOF {
+				return fmt.Errorf("Failed to read in zip %s: %v", fpath, err)
+			}
 		}
 		if string(prefixBuf) == cachePrefix {
 			hashBuf := make([]byte, hashLength)
