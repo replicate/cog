@@ -3,9 +3,9 @@ package zip
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
-	"fmt"
 )
 
 func getFileHash(path string) (string, error) {

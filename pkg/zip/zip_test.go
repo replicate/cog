@@ -47,7 +47,7 @@ func TestCachingZip(t *testing.T) {
 	out, err := os.Create(outPath)
 	require.NoError(t, err)
 
-	err = z.WriterArchive(dataDir + "/", out, []string{})
+	err = z.WriterArchive(dataDir+"/", out, []string{})
 	require.NoError(t, err)
 	require.NoError(t, out.Close())
 
@@ -67,7 +67,7 @@ func TestCachingZip(t *testing.T) {
 	require.NoError(t, err)
 	stat, err := file.Stat()
 	require.NoError(t, err)
-	err = z.ReaderUnarchive(file, stat.Size(), unzipDir2 + "/", fs)
+	err = z.ReaderUnarchive(file, stat.Size(), unzipDir2+"/", fs)
 	require.NoError(t, err)
 	requireUnzippedCorrectly(t, unzipDir2, "foo", "bar", "baz")
 
@@ -87,7 +87,7 @@ func TestCachingZip(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "anotherdir/baz.txt"), []byte("changed-baz"), 0644))
 
-	err = z.WriterArchive(dataDir + "/", out2, hashes)
+	err = z.WriterArchive(dataDir+"/", out2, hashes)
 
 	err = new(archiver.Zip).Unarchive(outPath2, unzipDir3)
 	require.NoError(t, err)
@@ -100,7 +100,7 @@ func TestCachingZip(t *testing.T) {
 	require.NoError(t, err)
 	stat, err = file.Stat()
 	require.NoError(t, err)
-	err = z.ReaderUnarchive(file, stat.Size(), unzipDir4 + "/", fs)
+	err = z.ReaderUnarchive(file, stat.Size(), unzipDir4+"/", fs)
 	require.NoError(t, err)
 	requireUnzippedCorrectly(t, unzipDir4, "foo", "bar", "changed-baz")
 

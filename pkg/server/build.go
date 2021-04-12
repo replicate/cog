@@ -1,7 +1,10 @@
 package server
 
 import (
+	"bytes"
 	"crypto/sha1"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mholt/archiver/v3"
+
 	"github.com/replicate/cog/pkg/console"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
@@ -17,7 +22,6 @@ import (
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/serving"
 	"github.com/replicate/cog/pkg/zip"
-	"encoding/json"
 )
 
 func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {
@@ -39,19 +43,13 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 	if err := r.ParseMultipartForm(5 << 30); err != nil {
 		return nil, fmt.Errorf("Failed to parse request: %w", err)
 	}
-	file, header, err := r.FormFile("file")
+	inputFile, header, err := r.FormFile("file")
 	if err != nil {
 		return nil, fmt.Errorf("Failed to read input file: %w", err)
 	}
-	defer file.Close()
+	defer inputFile.Close()
 
 	logWriter.WriteStatus("Received model")
-
-	hasher := sha1.New()
-	if _, err := io.Copy(hasher, file); err != nil {
-		return nil, fmt.Errorf("Failed to compute hash: %w", err)
-	}
-	id := fmt.Sprintf("%x", hasher.Sum(nil))
 
 	parentDir, err := os.MkdirTemp("/tmp", "unzip")
 	if err != nil {
@@ -66,8 +64,12 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 		return nil, err
 	}
 	z := zip.NewCachingZip()
-	if err := z.ReaderUnarchive(file, header.Size, dir, zipCache); err != nil {
+	if err := z.ReaderUnarchive(inputFile, header.Size, dir, zipCache); err != nil {
 		return nil, fmt.Errorf("Failed to unzip: %w", err)
+	}
+	id, err := computeID(dir)
+	if err != nil {
+		return nil, err
 	}
 
 	configRaw, err := os.ReadFile(filepath.Join(dir, global.ConfigFilename))
@@ -83,9 +85,13 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 		return nil, err
 	}
 
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return nil, fmt.Errorf("Failed to rewind file: %w", err)
+	// make zip file for storage
+	file := new(bytes.Buffer)
+	z2 := &archiver.Zip{ImplicitTopLevelFolder: false}
+	if err := z2.WriterArchive([]string{dir + "/"}, file); err != nil {
+		return nil, fmt.Errorf("Failed to zip directory: %w", err)
 	}
+
 	if err := s.store.Upload(user, name, id, file); err != nil {
 		return nil, fmt.Errorf("Failed to upload to storage: %w", err)
 	}
@@ -259,4 +265,28 @@ func validateServingExampleInput(help *serving.HelpResponse, input map[string]st
 		return fmt.Errorf(strings.Join(errParts, "; "))
 	}
 	return nil
+}
+
+func computeID(dir string) (string, error) {
+	hasher := sha1.New()
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			return fmt.Errorf("Failed to open %s: %w", path, err)
+		}
+		if _, err := io.Copy(hasher, file); err != nil {
+			return fmt.Errorf("Failed to read %s: %w", path, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
