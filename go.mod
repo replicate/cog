@@ -42,7 +42,7 @@ require (
 	google.golang.org/grpc v1.35.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 	gopkg.in/yaml.v2 v2.4.0
-	gotest.tools/gotestsum v1.6.3 // indirect
+	gotest.tools/gotestsum v1.6.4 // indirect
 	gotest.tools/v3 v3.0.3 // indirect
 )
 

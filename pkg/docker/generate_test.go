@@ -13,7 +13,7 @@ import (
 func installCog() string {
 	cogLibB64 := base64.StdEncoding.EncodeToString(cogLibrary)
 	return fmt.Sprintf(`RUN ### --> Installing Cog
-RUN pip install flask
+RUN pip install flask requests redis
 ENV PYTHONPATH=/usr/local/lib/cog
 RUN mkdir -p /usr/local/lib/cog && echo %s | base64 --decode > /usr/local/lib/cog/cog.py`, cogLibB64)
 }
@@ -59,21 +59,37 @@ model: infer.py:Model
 
 	expectedCPU := `FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
 ` + installPython("3.8") + installCog() + `
 RUN ### --> Copying code
 COPY . /code
+
+RUN echo '#!/usr/bin/env python\nimport cog\nfrom infer import Model\ncog.HTTPServer(Model()).start_server()' > /code/cog-http-server
+RUN chmod +x /code/cog-http-server
+RUN echo '#!/usr/bin/env python\nimport cog\nfrom infer import Model\ncog.AIPlatformPredictionServer(Model()).start_server()' > /code/cog-ai-platform-prediction-server
+RUN chmod +x /code/cog-ai-platform-prediction-server
+RUN echo '#!/usr/bin/env python\nimport sys\nimport cog\nfrom infer import Model\ncog.RedisQueueWorker(Model(), redis_host=sys.argv[1], redis_port=sys.argv[2], input_queue=sys.argv[3], upload_url=sys.argv[4]).start()' > /code/cog-redis-queue-worker
+RUN chmod +x /code/cog-redis-queue-worker
 WORKDIR /code
-CMD ["python", "-c", "from infer import Model; Model().start_server()"]`
+CMD /code/cog-http-server`
 
 	expectedGPU := `FROM nvidia/cuda:11.0-cudnn8-devel-ubuntu16.04
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
 ` + installPython("3.8") + installCog() + `
 RUN ### --> Copying code
 COPY . /code
+
+RUN echo '#!/usr/bin/env python\nimport cog\nfrom infer import Model\ncog.HTTPServer(Model()).start_server()' > /code/cog-http-server
+RUN chmod +x /code/cog-http-server
+RUN echo '#!/usr/bin/env python\nimport cog\nfrom infer import Model\ncog.AIPlatformPredictionServer(Model()).start_server()' > /code/cog-ai-platform-prediction-server
+RUN chmod +x /code/cog-ai-platform-prediction-server
+RUN echo '#!/usr/bin/env python\nimport sys\nimport cog\nfrom infer import Model\ncog.RedisQueueWorker(Model(), redis_host=sys.argv[1], redis_port=sys.argv[2], input_queue=sys.argv[3], upload_url=sys.argv[4]).start()' > /code/cog-redis-queue-worker
+RUN chmod +x /code/cog-redis-queue-worker
 WORKDIR /code
-CMD ["python", "-c", "from infer import Model; Model().start_server()"]`
+CMD /code/cog-http-server`
 
 	gen := DockerfileGenerator{conf, "cpu"}
 	actualCPU, err := gen.Generate()
@@ -103,6 +119,7 @@ model: infer.py:Model
 
 	expectedCPU := `FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
 ` + installPython("3.8") + `RUN ### --> Installing system packages
 RUN apt-get update -qq && apt-get install -qy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
@@ -114,11 +131,19 @@ RUN pip install -f https://download.pytorch.org/whl/torch_stable.html   torch==1
 ` + installCog() + `
 RUN ### --> Copying code
 COPY . /code
+
+RUN echo '#!/usr/bin/env python\nimport cog\nfrom infer import Model\ncog.HTTPServer(Model()).start_server()' > /code/cog-http-server
+RUN chmod +x /code/cog-http-server
+RUN echo '#!/usr/bin/env python\nimport cog\nfrom infer import Model\ncog.AIPlatformPredictionServer(Model()).start_server()' > /code/cog-ai-platform-prediction-server
+RUN chmod +x /code/cog-ai-platform-prediction-server
+RUN echo '#!/usr/bin/env python\nimport sys\nimport cog\nfrom infer import Model\ncog.RedisQueueWorker(Model(), redis_host=sys.argv[1], redis_port=sys.argv[2], input_queue=sys.argv[3], upload_url=sys.argv[4]).start()' > /code/cog-redis-queue-worker
+RUN chmod +x /code/cog-redis-queue-worker
 WORKDIR /code
-CMD ["python", "-c", "from infer import Model; Model().start_server()"]`
+CMD /code/cog-http-server`
 
 	expectedGPU := `FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
 ` + installPython("3.8") + `RUN ### --> Installing system packages
 RUN apt-get update -qq && apt-get install -qy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
@@ -130,8 +155,15 @@ RUN pip install   torch==1.5.1 pandas==1.2.0.12
 ` + installCog() + `
 RUN ### --> Copying code
 COPY . /code
+
+RUN echo '#!/usr/bin/env python\nimport cog\nfrom infer import Model\ncog.HTTPServer(Model()).start_server()' > /code/cog-http-server
+RUN chmod +x /code/cog-http-server
+RUN echo '#!/usr/bin/env python\nimport cog\nfrom infer import Model\ncog.AIPlatformPredictionServer(Model()).start_server()' > /code/cog-ai-platform-prediction-server
+RUN chmod +x /code/cog-ai-platform-prediction-server
+RUN echo '#!/usr/bin/env python\nimport sys\nimport cog\nfrom infer import Model\ncog.RedisQueueWorker(Model(), redis_host=sys.argv[1], redis_port=sys.argv[2], input_queue=sys.argv[3], upload_url=sys.argv[4]).start()' > /code/cog-redis-queue-worker
+RUN chmod +x /code/cog-redis-queue-worker
 WORKDIR /code
-CMD ["python", "-c", "from infer import Model; Model().start_server()"]`
+CMD /code/cog-http-server`
 
 	gen := DockerfileGenerator{conf, "cpu"}
 	actualCPU, err := gen.Generate()

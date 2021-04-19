@@ -67,6 +67,7 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 		g.installCog(),
 		g.preInstall(),
 		g.copyCode(),
+		g.installHelperScripts(),
 		g.workdir(),
 		g.postInstall(),
 		g.command(),
@@ -86,6 +87,7 @@ func (g *DockerfileGenerator) baseImage() (string, error) {
 func (g *DockerfileGenerator) preamble() string {
 	// TODO: other stuff
 	return `ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu`
 }
 
@@ -134,9 +136,49 @@ RUN apt-get update -q && apt-get install -qy --no-install-recommends \
 
 func (g *DockerfileGenerator) installCog() string {
 	cogLibB64 := base64.StdEncoding.EncodeToString(cogLibrary)
-	return g.sectionLabel(SectionInstallingCog) + fmt.Sprintf(`RUN pip install flask
+	return g.sectionLabel(SectionInstallingCog) +
+		fmt.Sprintf(`RUN pip install flask requests redis
 ENV PYTHONPATH=/usr/local/lib/cog
 RUN mkdir -p /usr/local/lib/cog && echo %s | base64 --decode > /usr/local/lib/cog/cog.py`, cogLibB64)
+}
+
+func (g *DockerfileGenerator) installHelperScripts() string {
+	return g.serverHelperScript("HTTPServer", "cog-http-server") +
+		g.serverHelperScript("AIPlatformPredictionServer", "cog-ai-platform-prediction-server") +
+		g.queueWorkerHelperScript()
+}
+
+func (g *DockerfileGenerator) serverHelperScript(serverClass string, filename string) string {
+	scriptPath := "/code/" + filename
+	name := g.Config.Model
+	parts := strings.Split(name, ".py:")
+	module := parts[0]
+	class := parts[1]
+	script := `#!/usr/bin/env python
+import cog
+from ` + module + ` import ` + class + `
+cog.` + serverClass + `(` + class + `()).start_server()`
+	scriptString := strings.ReplaceAll(script, "\n", "\\n")
+	return `
+RUN echo '` + scriptString + `' > ` + scriptPath + `
+RUN chmod +x ` + scriptPath
+}
+
+func (g *DockerfileGenerator) queueWorkerHelperScript() string {
+	scriptPath := "/code/cog-redis-queue-worker"
+	name := g.Config.Model
+	parts := strings.Split(name, ".py:")
+	module := parts[0]
+	class := parts[1]
+	script := `#!/usr/bin/env python
+import sys
+import cog
+from ` + module + ` import ` + class + `
+cog.RedisQueueWorker(` + class + `(), redis_host=sys.argv[1], redis_port=sys.argv[2], input_queue=sys.argv[3], upload_url=sys.argv[4]).start()`
+	scriptString := strings.ReplaceAll(script, "\n", "\\n")
+	return `
+RUN echo '` + scriptString + `' > ` + scriptPath + `
+RUN chmod +x ` + scriptPath
 }
 
 func (g *DockerfileGenerator) pythonRequirements() (string, error) {
@@ -179,11 +221,7 @@ func (g *DockerfileGenerator) copyCode() string {
 func (g *DockerfileGenerator) command() string {
 	// TODO: handle infer scripts in subdirectories
 	// TODO: check this actually exists
-	name := g.Config.Model
-	parts := strings.Split(name, ".py:")
-	module := parts[0]
-	class := parts[1]
-	return `CMD ["python", "-c", "from ` + module + ` import ` + class + `; ` + class + `().start_server()"]`
+	return `CMD /code/cog-http-server`
 }
 
 func (g *DockerfileGenerator) workdir() string {
