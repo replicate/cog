@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/mholt/archiver/v3"
@@ -148,7 +149,7 @@ func (s *Server) buildDockerImages(dir string, config *model.Config, name string
 	for _, arch := range config.Environment.Architectures {
 		logWriter.WriteStatus("Building %s image", arch)
 
-		generator := &docker.DockerfileGenerator{Config: config, Arch: arch}
+		generator := &docker.DockerfileGenerator{Config: config, Arch: arch, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH}
 		dockerfileContents, err := generator.Generate()
 		if err != nil {
 			return nil, fmt.Errorf("Failed to generate Dockerfile for %s: %w", arch, err)

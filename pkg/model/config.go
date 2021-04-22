@@ -138,11 +138,11 @@ func (c *Config) ValidateAndCompleteConfig() error {
 	return nil
 }
 
-func (c *Config) PythonPackagesForArch(arch string) (packages []string, indexURLs []string, err error) {
+func (c *Config) PythonPackagesForArch(arch string, goos string, goarch string) (packages []string, indexURLs []string, err error) {
 	packages = []string{}
 	indexURLSet := map[string]bool{}
 	for _, pkg := range c.Environment.PythonPackages {
-		archPkg, indexURL, err := c.pythonPackageForArch(pkg, arch)
+		archPkg, indexURL, err := c.pythonPackageForArch(pkg, arch, goos, goarch)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -158,7 +158,7 @@ func (c *Config) PythonPackagesForArch(arch string) (packages []string, indexURL
 	return packages, indexURLs, nil
 }
 
-func (c *Config) pythonPackageForArch(pkg string, arch string) (actualPackage string, indexURL string, err error) {
+func (c *Config) pythonPackageForArch(pkg string, arch string, goos string, goarch string) (actualPackage string, indexURL string, err error) {
 	name, version, err := splitPythonPackage(pkg)
 	if err != nil {
 		return "", "", err
@@ -177,7 +177,7 @@ func (c *Config) pythonPackageForArch(pkg string, arch string) (actualPackage st
 		}
 	} else if name == "torch" {
 		if arch == "cpu" {
-			name, version, indexURL, err = torchCPUPackage(version)
+			name, version, indexURL, err = torchCPUPackage(version, goos, goarch)
 			if err != nil {
 				return "", "", err
 			}
@@ -189,7 +189,7 @@ func (c *Config) pythonPackageForArch(pkg string, arch string) (actualPackage st
 		}
 	} else if name == "torchvision" {
 		if arch == "cpu" {
-			name, version, indexURL, err = torchvisionCPUPackage(version)
+			name, version, indexURL, err = torchvisionCPUPackage(version, goos, goarch)
 			if err != nil {
 				return "", "", err
 			}

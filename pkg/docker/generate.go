@@ -34,6 +34,10 @@ var cogLibrary []byte
 type DockerfileGenerator struct {
 	Config *model.Config
 	Arch   string
+
+	// these are here to make this type testable
+	GOOS   string
+	GOARCH string
 }
 
 func (g *DockerfileGenerator) Generate() (string, error) {
@@ -52,6 +56,7 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 	pythonRequirements, err := g.pythonRequirements()
 	if err != nil {
 		return "", err
+
 	}
 	pipInstalls, err := g.pipInstalls()
 	if err != nil {
@@ -198,7 +203,7 @@ RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt`, reqs), ni
 }
 
 func (g *DockerfileGenerator) pipInstalls() (string, error) {
-	packages, indexURLs, err := g.Config.PythonPackagesForArch(g.Arch)
+	packages, indexURLs, err := g.Config.PythonPackagesForArch(g.Arch, g.GOOS, g.GOARCH)
 	if err != nil {
 		return "", err
 	}
