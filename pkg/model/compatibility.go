@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -251,9 +252,10 @@ func tfGPUPackage(ver string, cuda string) (name string, cpuVersion string, err 
 func torchCPUPackage(ver string) (name string, cpuVersion string, indexURL string, err error) {
 	for _, compat := range TorchCompatibilityMatrix {
 		if compat.TorchVersion() == ver && compat.CUDA == nil {
-			return "torch", compat.Torch, compat.IndexURL, nil
+			return "torch", torchStripCPUSuffixForM1(compat.Torch), compat.IndexURL, nil
 		}
 	}
+
 	return "", "", "", fmt.Errorf("No matching Torch CPU package for version %s", ver)
 }
 
@@ -297,7 +299,7 @@ func torchGPUPackage(ver string, cuda string) (name string, cpuVersion string, i
 func torchvisionCPUPackage(ver string) (name string, cpuVersion string, indexURL string, err error) {
 	for _, compat := range TorchCompatibilityMatrix {
 		if compat.TorchvisionVersion() == ver && compat.CUDA == nil {
-			return "torchvision", compat.Torchvision, compat.IndexURL, nil
+			return "torchvision", torchStripCPUSuffixForM1(compat.Torchvision), compat.IndexURL, nil
 		}
 	}
 	return "", "", "", fmt.Errorf("No matching torchvision CPU package for version %s", ver)
@@ -338,4 +340,14 @@ func torchvisionGPUPackage(ver string, cuda string) (name string, cpuVersion str
 	}
 
 	return "torchvision", latest.Torchvision, latest.IndexURL, nil
+}
+
+// aarch64 packages don't have +cpu suffix: https://download.pytorch.org/whl/torch_stable.html
+// TODO(andreas): clean up this hack by actually parsing the torch_stable.html list in the generator
+func torchStripCPUSuffixForM1(version string) string {
+	// TODO(andreas): clean up this hack
+	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
+		return strings.ReplaceAll(version, "+cpu", "")
+	}
+	return version
 }

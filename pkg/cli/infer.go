@@ -63,7 +63,11 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 	}
 	logWriter := logger.NewConsoleLogger()
 	// TODO(andreas): GPU inference
-	deployment, err := servingPlatform.Deploy(mod, model.TargetDockerCPU, logWriter)
+	artifact, ok := mod.ArtifactFor(model.TargetDockerCPU)
+	if !ok {
+		return fmt.Errorf("Target %s is not defined for model", model.TargetDockerCPU)
+	}
+	deployment, err := servingPlatform.Deploy(artifact.URI, logWriter)
 	if err != nil {
 		return err
 	}

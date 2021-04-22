@@ -36,6 +36,7 @@ func NewRootCommand() (*cobra.Command, error) {
 
 	rootCmd.AddCommand(
 		newBuildCommand(),
+		newTestCommand(),
 		newDebugCommand(),
 		newInferCommand(),
 		newServerCommand(),

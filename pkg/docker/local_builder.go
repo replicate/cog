@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/replicate/cog/pkg/console"
-
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/shell"
 )
@@ -27,25 +27,15 @@ func NewLocalImageBuilder(registry string) *LocalImageBuilder {
 	return &LocalImageBuilder{registry: registry}
 }
 
-func (b *LocalImageBuilder) BuildAndPush(dir string, dockerfilePath string, name string, logWriter logger.Logger) (fullImageTag string, err error) {
-	tag, err := b.build(dir, dockerfilePath, logWriter)
-	if err != nil {
-		return "", err
-	}
-	fullImageTag = fmt.Sprintf("%s/%s:%s", b.registry, name, tag)
-	if err := b.tag(tag, fullImageTag, logWriter); err != nil {
-		return "", err
-	}
-	if b.registry != noRegistry {
-		if err := b.push(fullImageTag, logWriter); err != nil {
-			return "", err
-		}
-	}
-	return fullImageTag, nil
-}
-
-func (b *LocalImageBuilder) build(dir string, dockerfilePath string, logWriter logger.Logger) (tag string, err error) {
+func (b *LocalImageBuilder) Build(dir string, dockerfileContents string, name string, logWriter logger.Logger) (tag string, err error) {
 	console.Debugf("Building in %s", dir)
+
+	// TODO(andreas): pipe dockerfile contents to builder
+	relDockerfilePath := "Dockerfile"
+	dockerfilePath := filepath.Join(dir, relDockerfilePath)
+	if err := os.WriteFile(dockerfilePath, []byte(dockerfileContents), 0644); err != nil {
+		return "", fmt.Errorf("Failed to write Dockerfile")
+	}
 
 	cmd := exec.Command(
 		"docker", "build", ".",
@@ -76,25 +66,41 @@ func (b *LocalImageBuilder) build(dir string, dockerfilePath string, logWriter l
 
 	dockerTag := <-tagChan
 
+	if err != nil {
+		return "", err
+	}
+
 	logWriter.Infof("Successfully built %s", dockerTag)
 
-	return dockerTag, err
+	tag = dockerTag
+	if name != "" {
+		tag = fmt.Sprintf("%s/%s:%s", b.registry, name, dockerTag)
+		if err := b.tag(dockerTag, tag, logWriter); err != nil {
+			return "", err
+		}
+	}
+
+	return tag, nil
 }
 
-func (b *LocalImageBuilder) tag(tag string, fullImageTag string, logWriter logger.Logger) error {
-	console.Debugf("Tagging %s as %s", tag, fullImageTag)
+func (b *LocalImageBuilder) tag(dockerTag string, tag string, logWriter logger.Logger) error {
+	console.Debugf("Tagging %s as %s", dockerTag, tag)
 
-	cmd := exec.Command("docker", "tag", tag, fullImageTag)
+	cmd := exec.Command("docker", "tag", dockerTag, tag)
 	cmd.Env = os.Environ()
 	if _, err := cmd.Output(); err != nil {
 		ee := err.(*exec.ExitError)
 		stderr := string(ee.Stderr)
-		return fmt.Errorf("Failed to tag %s as %s, got error: %s", tag, fullImageTag, stderr)
+		return fmt.Errorf("Failed to tag %s as %s, got error: %s", dockerTag, tag, stderr)
 	}
 	return nil
 }
 
-func (b *LocalImageBuilder) push(tag string, logWriter logger.Logger) error {
+func (b *LocalImageBuilder) Push(tag string, logWriter logger.Logger) error {
+	if b.registry == noRegistry {
+		return nil
+	}
+
 	logWriter.Infof("Pushing %s to registry", tag)
 
 	args := []string{"push", tag}
