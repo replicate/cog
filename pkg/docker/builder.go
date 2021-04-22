@@ -5,5 +5,6 @@ import (
 )
 
 type ImageBuilder interface {
-	BuildAndPush(dir string, dockerfilePath string, name string, logWriter logger.Logger) (fullImageTag string, err error)
+	Build(dir string, dockerfileContents string, name string, logWriter logger.Logger) (tag string, err error)
+	Push(tag string, logWriter logger.Logger) error
 }

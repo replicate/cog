@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/mholt/archiver/v3"
@@ -107,12 +106,28 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 		Created:   time.Now(),
 	}
 
-	runArgs, err := s.testModel(mod, dir, logWriter)
+	testTarget := model.TargetDockerCPU
+	if _, ok := mod.ArtifactFor(model.TargetDockerCPU); !ok {
+		if _, ok := mod.ArtifactFor(model.TargetDockerGPU); ok {
+			testTarget = model.TargetDockerGPU
+		} else {
+			return nil, fmt.Errorf("Model has neither CPU or GPU target")
+		}
+	}
+	testArtifact, ok := mod.ArtifactFor(testTarget)
+	if !ok {
+		return nil, fmt.Errorf("Model has no %s target", testTarget)
+	}
+	runArgs, err := serving.TestModel(s.servingPlatform, testArtifact.URI, mod.Config, dir, logWriter)
 	if err != nil {
 		// TODO(andreas): return other response than 500 if validation fails
 		return nil, err
 	}
 	mod.RunArguments = runArgs
+
+	if err := s.pushDockerImages(dir, mod, logWriter); err != nil {
+		return nil, err
+	}
 
 	logWriter.WriteStatus("Inserting into database")
 	if err := s.db.InsertModel(user, name, id, mod); err != nil {
@@ -126,77 +141,11 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 	return mod, nil
 }
 
-func (s *Server) testModel(mod *model.Model, dir string, logWriter logger.Logger) (map[string]*model.RunArgument, error) {
-	logWriter.WriteStatus("Testing model")
-	target := model.TargetDockerCPU
-	if _, ok := mod.ArtifactFor(model.TargetDockerCPU); !ok {
-		if _, ok := mod.ArtifactFor(model.TargetDockerGPU); ok {
-			target = model.TargetDockerGPU
-		} else {
-			return nil, fmt.Errorf("Model has neither CPU or GPU target")
-		}
-	}
-
-	deployment, err := s.servingPlatform.Deploy(mod, target, logWriter)
-	if err != nil {
-		return nil, err
-	}
-	defer deployment.Undeploy()
-
-	help, err := deployment.Help(logWriter)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, example := range mod.Config.Examples {
-		if err := validateServingExampleInput(help, example.Input); err != nil {
-			return nil, fmt.Errorf("Example input doesn't match run arguments: %w", err)
-		}
-		var expectedOutput []byte = nil
-		outputIsFile := false
-		if example.Output != "" {
-			if strings.HasPrefix(example.Output, "@") {
-				outputIsFile = true
-				expectedOutput, err = os.ReadFile(filepath.Join(dir, example.Output[1:]))
-				if err != nil {
-					return nil, fmt.Errorf("Failed to read example output file %s: %w", example.Output[1:], err)
-				}
-			} else {
-				expectedOutput = []byte(example.Output)
-			}
-		}
-
-		input := serving.NewExampleWithBaseDir(example.Input, dir)
-
-		result, err := deployment.RunInference(input, logWriter)
-		if err != nil {
-			return nil, err
-		}
-		output := result.Values["output"]
-		outputBytes, err := io.ReadAll(output.Buffer)
-		if err != nil {
-			return nil, fmt.Errorf("Failed to read output: %w", err)
-		}
-		logWriter.Infof(fmt.Sprintf("Inference result length: %d, mime type: %s", len(outputBytes), output.MimeType))
-		if expectedOutput != nil {
-			if outputIsFile && !bytes.Equal(expectedOutput, outputBytes) {
-				return nil, fmt.Errorf("Output file contents doesn't match expected %s", example.Output[1:])
-			} else if !outputIsFile && strings.TrimSpace(string(outputBytes)) != strings.TrimSpace(example.Output) {
-				// TODO(andreas): are there cases where space is significant?
-				return nil, fmt.Errorf("Output %s doesn't match expected: %s", string(outputBytes), example.Output)
-			}
-		}
-	}
-
-	return help.Arguments, nil
-}
-
 // TODO(andreas): include user in docker image name?
 func (s *Server) buildDockerImages(dir string, config *model.Config, name string, logWriter logger.Logger) ([]*model.Artifact, error) {
 	// TODO(andreas): parallelize
 	artifacts := []*model.Artifact{}
 	for _, arch := range config.Environment.Architectures {
-
 		logWriter.WriteStatus("Building %s image", arch)
 
 		generator := &docker.DockerfileGenerator{Config: config, Arch: arch}
@@ -204,14 +153,7 @@ func (s *Server) buildDockerImages(dir string, config *model.Config, name string
 		if err != nil {
 			return nil, fmt.Errorf("Failed to generate Dockerfile for %s: %w", arch, err)
 		}
-		// TODO(andreas): pipe dockerfile contents to builder
-		relDockerfilePath := "Dockerfile." + arch
-		dockerfilePath := filepath.Join(dir, relDockerfilePath)
-		if err := os.WriteFile(dockerfilePath, []byte(dockerfileContents), 0644); err != nil {
-			return nil, fmt.Errorf("Failed to write Dockerfile for %s", arch)
-		}
-
-		tag, err := s.dockerImageBuilder.BuildAndPush(dir, relDockerfilePath, name, logWriter)
+		tag, err := s.dockerImageBuilder.Build(dir, dockerfileContents, name, logWriter)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to build Docker image: %w", err)
 		}
@@ -229,6 +171,15 @@ func (s *Server) buildDockerImages(dir string, config *model.Config, name string
 
 	}
 	return artifacts, nil
+}
+
+func (s *Server) pushDockerImages(dir string, model *model.Model, logWriter logger.Logger) error {
+	for _, artifact := range model.Artifacts {
+		if err := s.dockerImageBuilder.Push(artifact.URI, logWriter); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Server) GetCacheHashes(w http.ResponseWriter, r *http.Request) {
@@ -256,34 +207,6 @@ func (s *Server) GetCacheHashes(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-}
-
-func validateServingExampleInput(help *serving.HelpResponse, input map[string]string) error {
-	// TODO(andreas): validate types
-	missingNames := []string{}
-	extraneousNames := []string{}
-
-	for name, arg := range help.Arguments {
-		if _, ok := input[name]; !ok && arg.Default == nil {
-			missingNames = append(missingNames, name)
-		}
-	}
-	for name := range input {
-		if _, ok := help.Arguments[name]; !ok {
-			extraneousNames = append(extraneousNames, name)
-		}
-	}
-	errParts := []string{}
-	if len(missingNames) > 0 {
-		errParts = append(errParts, "Missing arguments: "+strings.Join(missingNames, ", "))
-	}
-	if len(extraneousNames) > 0 {
-		errParts = append(errParts, "Extraneous arguments: "+strings.Join(extraneousNames, ", "))
-	}
-	if len(errParts) > 0 {
-		return fmt.Errorf(strings.Join(errParts, "; "))
-	}
-	return nil
 }
 
 func computeID(dir string) (string, error) {

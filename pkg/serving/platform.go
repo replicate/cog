@@ -10,7 +10,7 @@ import (
 )
 
 type Platform interface {
-	Deploy(mod *model.Model, target string, logWriter logger.Logger) (Deployment, error)
+	Deploy(imageTag string, logWriter logger.Logger) (Deployment, error)
 }
 
 type Deployment interface {

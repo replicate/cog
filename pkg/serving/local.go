@@ -23,7 +23,6 @@ import (
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/logger"
-	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/shell"
 )
 
@@ -47,16 +46,10 @@ func NewLocalDockerPlatform() (*LocalDockerPlatform, error) {
 	}, nil
 }
 
-func (p *LocalDockerPlatform) Deploy(mod *model.Model, target string, logWriter logger.Logger) (Deployment, error) {
+func (p *LocalDockerPlatform) Deploy(imageTag string, logWriter logger.Logger) (Deployment, error) {
 	// TODO(andreas): output container logs
 
-	artifact, ok := mod.ArtifactFor(target)
-	if !ok {
-		return nil, fmt.Errorf("Model has no %s target", target)
-	}
-	imageTag := artifact.URI
-
-	logWriter.Infof("Deploying container %s for target %s", imageTag, artifact.Target)
+	logWriter.Infof("Deploying container %s", imageTag)
 
 	if !docker.Exists(imageTag, logWriter) {
 		if err := docker.Pull(imageTag, logWriter); err != nil {

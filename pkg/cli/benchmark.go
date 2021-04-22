@@ -102,7 +102,11 @@ func runBenchmarkInference(mod *model.Model, modelDir string, results *Benchmark
 
 	logWriter := logger.NewConsoleLogger()
 	bootStart := time.Now()
-	deployment, err := servingPlatform.Deploy(mod, benchmarkTarget, logWriter)
+	artifact, ok := mod.ArtifactFor(benchmarkTarget)
+	if !ok {
+		return fmt.Errorf("Target %s is not defined for model", benchmarkTarget)
+	}
+	deployment, err := servingPlatform.Deploy(artifact.URI, logWriter)
 	if err != nil {
 		return err
 	}
