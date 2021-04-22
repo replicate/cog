@@ -22,7 +22,6 @@ type Environment struct {
 	PythonFindLinks      []string `json:"python_find_links" yaml:"python_find_links"`
 	PythonPackages       []string `json:"python_packages" yaml:"python_packages"`
 	SystemPackages       []string `json:"system_packages" yaml:"system_packages"`
-	Workdir              string   `json:"workdir" yaml:"workdir"`
 	PreInstall           []string `json:"pre_install" yaml:"pre_install"`
 	PostInstall          []string `json:"post_install" yaml:"post_install"`
 	Architectures        []string `json:"architectures" yaml:"architectures"`
@@ -39,6 +38,7 @@ type Config struct {
 	Environment *Environment `json:"environment" yaml:"environment"`
 	Model       string       `json:"model" yaml:"model"`
 	Examples    []*Example   `json:"examples" yaml:"examples"`
+	Workdir     string       `json:"workdir" yaml:"workdir"`
 }
 
 func DefaultConfig() *Config {

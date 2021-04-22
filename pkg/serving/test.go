@@ -35,7 +35,7 @@ func TestModel(servingPlatform Platform, imageTag string, config *model.Config, 
 		if example.Output != "" {
 			if strings.HasPrefix(example.Output, "@") {
 				outputIsFile = true
-				expectedOutput, err = os.ReadFile(filepath.Join(dir, example.Output[1:]))
+				expectedOutput, err = os.ReadFile(filepath.Join(dir, config.Environment.Workdir, example.Output[1:]))
 				if err != nil {
 					return nil, fmt.Errorf("Failed to read example output file %s: %w", example.Output[1:], err)
 				}
@@ -44,7 +44,7 @@ func TestModel(servingPlatform Platform, imageTag string, config *model.Config, 
 			}
 		}
 
-		input := NewExampleWithBaseDir(example.Input, dir)
+		input := NewExampleWithBaseDir(example.Input, filepath.Join(dir, config.Environment.Workdir))
 
 		result, err := deployment.RunInference(input, logWriter)
 		if err != nil {
