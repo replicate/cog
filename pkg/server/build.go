@@ -179,12 +179,11 @@ func (s *Server) testModel(mod *model.Model, dir string, logWriter logger.Logger
 		}
 		logWriter.Infof(fmt.Sprintf("Inference result length: %d, mime type: %s", len(outputBytes), output.MimeType))
 		if expectedOutput != nil {
-			if !bytes.Equal(expectedOutput, outputBytes) {
-				if outputIsFile {
-					return nil, fmt.Errorf("Output file contents doesn't match expected %s", example.Output[1:])
-				} else {
-					return nil, fmt.Errorf("Output %s doesn't match expected: %s", string(outputBytes), example.Output)
-				}
+			if outputIsFile && !bytes.Equal(expectedOutput, outputBytes) {
+				return nil, fmt.Errorf("Output file contents doesn't match expected %s", example.Output[1:])
+			} else if !outputIsFile && strings.TrimSpace(string(outputBytes)) != strings.TrimSpace(example.Output) {
+				// TODO(andreas): are there cases where space is significant?
+				return nil, fmt.Errorf("Output %s doesn't match expected: %s", string(outputBytes), example.Output)
 			}
 		}
 	}

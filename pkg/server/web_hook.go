@@ -39,6 +39,14 @@ func (wh *WebHook) run(user string, name string, mod *model.Model, dir string, l
 	}
 	modelJSONBase64 := base64.StdEncoding.EncodeToString(modelJSON)
 	modelPath := fmt.Sprintf("/v1/repos/%s/%s/models/%s", user, name, mod.ID)
+	dockerImageCPU := ""
+	if artifact, ok := mod.ArtifactFor(model.TargetDockerCPU); ok {
+		dockerImageCPU = artifact.URI
+	}
+	dockerImageGPU := ""
+	if artifact, ok := mod.ArtifactFor(model.TargetDockerGPU); ok {
+		dockerImageGPU = artifact.URI
+	}
 
 	logWriter.Infof("Posting model to %s", wh.url.Host)
 
@@ -46,6 +54,8 @@ func (wh *WebHook) run(user string, name string, mod *model.Model, dir string, l
 		"model_id":          {mod.ID},
 		"model_path":        {modelPath},
 		"model_json_base64": {modelJSONBase64},
+		"docker_image_cpu":  {dockerImageCPU},
+		"docker_image_gpu":  {dockerImageGPU},
 		"user":              {user},
 		"repo_name":         {name},
 		"secret":            {wh.secret},
