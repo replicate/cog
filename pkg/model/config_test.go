@@ -85,7 +85,7 @@ func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 	require.Equal(t, "10.1", config.Environment.CUDA)
 	require.Equal(t, "8", config.Environment.CuDNN)
 
-	packages, indexURLs, err := config.PythonPackagesForArch("gpu")
+	packages, indexURLs, err := config.PythonPackagesForArch("gpu", "", "")
 	require.NoError(t, err)
 	expectedPackages := []string{
 		"torch==1.7.1+cu101",
@@ -116,7 +116,7 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 	require.Equal(t, "10.1", config.Environment.CUDA)
 	require.Equal(t, "8", config.Environment.CuDNN)
 
-	packages, indexURLs, err := config.PythonPackagesForArch("gpu")
+	packages, indexURLs, err := config.PythonPackagesForArch("gpu", "", "")
 	require.NoError(t, err)
 	expectedPackages := []string{
 		"torch==1.7.1+cu101",
@@ -145,7 +145,7 @@ func TestPythonPackagesForArchTensorflowGPU(t *testing.T) {
 	require.Equal(t, "10.0", config.Environment.CUDA)
 	require.Equal(t, "7", config.Environment.CuDNN)
 
-	packages, indexURLs, err := config.PythonPackagesForArch("gpu")
+	packages, indexURLs, err := config.PythonPackagesForArch("gpu", "", "")
 	require.NoError(t, err)
 	expectedPackages := []string{
 		"tensorflow_gpu==1.15.0",

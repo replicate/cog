@@ -34,6 +34,10 @@ var cogLibrary []byte
 type DockerfileGenerator struct {
 	Config *model.Config
 	Arch   string
+
+	// these are here to make this type testable
+	GOOS   string
+	GOARCH string
 }
 
 func (g *DockerfileGenerator) Generate() (string, error) {
@@ -52,6 +56,7 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 	pythonRequirements, err := g.pythonRequirements()
 	if err != nil {
 		return "", err
+
 	}
 	pipInstalls, err := g.pipInstalls()
 	if err != nil {
@@ -149,13 +154,17 @@ func (g *DockerfileGenerator) installHelperScripts() string {
 }
 
 func (g *DockerfileGenerator) serverHelperScript(serverClass string, filename string) string {
-	scriptPath := "/code/" + filename
+	scriptPath := "/usr/bin/" + filename
 	name := g.Config.Model
 	parts := strings.Split(name, ".py:")
 	module := parts[0]
 	class := parts[1]
 	script := `#!/usr/bin/env python
+import sys
 import cog
+import os
+os.chdir("` + g.getWorkdir() + `")
+sys.path.append("` + g.getWorkdir() + `")
 from ` + module + ` import ` + class + `
 cog.` + serverClass + `(` + class + `()).start_server()`
 	scriptString := strings.ReplaceAll(script, "\n", "\\n")
@@ -165,7 +174,7 @@ RUN chmod +x ` + scriptPath
 }
 
 func (g *DockerfileGenerator) queueWorkerHelperScript() string {
-	scriptPath := "/code/cog-redis-queue-worker"
+	scriptPath := "/usr/bin/cog-redis-queue-worker"
 	name := g.Config.Model
 	parts := strings.Split(name, ".py:")
 	module := parts[0]
@@ -173,6 +182,9 @@ func (g *DockerfileGenerator) queueWorkerHelperScript() string {
 	script := `#!/usr/bin/env python
 import sys
 import cog
+import os
+os.chdir("` + g.getWorkdir() + `")
+sys.path.append("` + g.getWorkdir() + `")
 from ` + module + ` import ` + class + `
 cog.RedisQueueWorker(` + class + `(), redis_host=sys.argv[1], redis_port=sys.argv[2], input_queue=sys.argv[3], upload_url=sys.argv[4]).start()`
 	scriptString := strings.ReplaceAll(script, "\n", "\\n")
@@ -191,7 +203,7 @@ RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt`, reqs), ni
 }
 
 func (g *DockerfileGenerator) pipInstalls() (string, error) {
-	packages, indexURLs, err := g.Config.PythonPackagesForArch(g.Arch)
+	packages, indexURLs, err := g.Config.PythonPackagesForArch(g.Arch, g.GOOS, g.GOARCH)
 	if err != nil {
 		return "", err
 	}
@@ -221,15 +233,19 @@ func (g *DockerfileGenerator) copyCode() string {
 func (g *DockerfileGenerator) command() string {
 	// TODO: handle infer scripts in subdirectories
 	// TODO: check this actually exists
-	return `CMD /code/cog-http-server`
+	return `CMD /usr/bin/cog-http-server`
 }
 
 func (g *DockerfileGenerator) workdir() string {
+	return "WORKDIR " + g.getWorkdir()
+}
+
+func (g *DockerfileGenerator) getWorkdir() string {
 	wd := "/code"
-	if g.Config.Environment.Workdir != "" {
-		wd += "/" + g.Config.Environment.Workdir
+	if g.Config.Workdir != "" {
+		wd += "/" + g.Config.Workdir
 	}
-	return "WORKDIR " + wd
+	return wd
 }
 
 func (g *DockerfileGenerator) preInstall() string {

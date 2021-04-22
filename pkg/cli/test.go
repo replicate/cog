@@ -2,8 +2,9 @@ package cli
 
 import (
 	"fmt"
-	"path/filepath"
 	"os"
+	"path/filepath"
+	"runtime"
 
 	"github.com/spf13/cobra"
 
@@ -64,7 +65,7 @@ func Test(cmd *cobra.Command, args []string) error {
 	if _, ok := archMap[arch]; !ok {
 		return fmt.Errorf("Architecture %s is not defined for model", arch)
 	}
-	generator := &docker.DockerfileGenerator{Config: config, Arch: arch}
+	generator := &docker.DockerfileGenerator{Config: config, Arch: arch, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH}
 	dockerfileContents, err := generator.Generate()
 	if err != nil {
 		return fmt.Errorf("Failed to generate Dockerfile for %s: %w", arch, err)

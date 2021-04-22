@@ -4,7 +4,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"runtime"
 	"sort"
 	"strings"
 
@@ -249,10 +248,10 @@ func tfGPUPackage(ver string, cuda string) (name string, cpuVersion string, err 
 	return "", "", fmt.Errorf("No matching tensorflow GPU package for version %s and CUDA %s", ver, cuda)
 }
 
-func torchCPUPackage(ver string) (name string, cpuVersion string, indexURL string, err error) {
+func torchCPUPackage(ver string, goos string, goarch string) (name string, cpuVersion string, indexURL string, err error) {
 	for _, compat := range TorchCompatibilityMatrix {
 		if compat.TorchVersion() == ver && compat.CUDA == nil {
-			return "torch", torchStripCPUSuffixForM1(compat.Torch), compat.IndexURL, nil
+			return "torch", torchStripCPUSuffixForM1(compat.Torch, goos, goarch), compat.IndexURL, nil
 		}
 	}
 
@@ -296,10 +295,10 @@ func torchGPUPackage(ver string, cuda string) (name string, cpuVersion string, i
 	return "torch", latest.Torch, latest.IndexURL, nil
 }
 
-func torchvisionCPUPackage(ver string) (name string, cpuVersion string, indexURL string, err error) {
+func torchvisionCPUPackage(ver string, goos string, goarch string) (name string, cpuVersion string, indexURL string, err error) {
 	for _, compat := range TorchCompatibilityMatrix {
 		if compat.TorchvisionVersion() == ver && compat.CUDA == nil {
-			return "torchvision", torchStripCPUSuffixForM1(compat.Torchvision), compat.IndexURL, nil
+			return "torchvision", torchStripCPUSuffixForM1(compat.Torchvision, goos, goarch), compat.IndexURL, nil
 		}
 	}
 	return "", "", "", fmt.Errorf("No matching torchvision CPU package for version %s", ver)
@@ -344,9 +343,9 @@ func torchvisionGPUPackage(ver string, cuda string) (name string, cpuVersion str
 
 // aarch64 packages don't have +cpu suffix: https://download.pytorch.org/whl/torch_stable.html
 // TODO(andreas): clean up this hack by actually parsing the torch_stable.html list in the generator
-func torchStripCPUSuffixForM1(version string) string {
+func torchStripCPUSuffixForM1(version string, goos string, goarch string) string {
 	// TODO(andreas): clean up this hack
-	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
+	if goos == "darwin" && goarch == "arm64" {
 		return strings.ReplaceAll(version, "+cpu", "")
 	}
 	return version
