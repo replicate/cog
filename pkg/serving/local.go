@@ -205,6 +205,11 @@ func (d *LocalDockerDeployment) RunInference(input *Example, logWriter logger.Lo
 	}
 	defer resp.Body.Close()
 
+	memoryUsage, err := d.getMemoryUsage()
+	if err != nil {
+		return nil, err
+	}
+
 	if resp.StatusCode == http.StatusBadRequest {
 		body := struct {
 			Message string `json:"message"`
@@ -256,10 +261,28 @@ func (d *LocalDockerDeployment) RunInference(input *Example, logWriter logger.Lo
 				MimeType: mimeType,
 			},
 		},
-		SetupTime: setupTime,
-		RunTime:   runTime,
+		SetupTime:   setupTime,
+		RunTime:     runTime,
+		MemoryUsage: memoryUsage,
 	}
 	return result, nil
+}
+
+func (d *LocalDockerDeployment) getMemoryUsage() (uint64, error) {
+
+	statsReader, err := d.client.ContainerStatsOneShot(context.Background(), d.containerID)
+	if err != nil {
+		return 0, fmt.Errorf("Failed to get container stats: %w", err)
+	}
+	statsBody, err := io.ReadAll(statsReader.Body)
+	if err != nil {
+		return 0, fmt.Errorf("Failed to read container stats: %w", err)
+	}
+	stats := new(types.Stats)
+	if err := json.Unmarshal(statsBody, stats); err != nil {
+		return 0, err
+	}
+	return stats.MemoryStats.MaxUsage, nil
 }
 
 func (d *LocalDockerDeployment) Help(logWriter logger.Logger) (*HelpResponse, error) {

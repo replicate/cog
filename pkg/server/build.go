@@ -119,12 +119,13 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 	if !ok {
 		return nil, fmt.Errorf("Model has no %s target", testTarget)
 	}
-	runArgs, err := serving.TestModel(s.servingPlatform, testArtifact.URI, mod.Config, dir, logWriter)
+	runArgs, modelStats, err := serving.TestModel(s.servingPlatform, testArtifact.URI, mod.Config, dir, logWriter)
 	if err != nil {
 		// TODO(andreas): return other response than 500 if validation fails
 		return nil, err
 	}
 	mod.RunArguments = runArgs
+	mod.Stats = modelStats
 
 	if err := s.pushDockerImages(dir, mod, logWriter); err != nil {
 		return nil, err

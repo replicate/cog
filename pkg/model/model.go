@@ -13,6 +13,14 @@ type Model struct {
 	Config       *Config                 `json:"config"`
 	RunArguments map[string]*RunArgument `json:"run_arguments"`
 	Created      time.Time               `json:"created"`
+	Stats        *Stats                  `json:"stats"`
+}
+
+type Stats struct {
+	BootTime    float64 `json:"boot_time"`
+	SetupTime   float64 `json:"setup_time"`
+	RunTime     float64 `json:"run_time"`
+	MemoryUsage uint64  `json:"memory_usage"`
 }
 
 type Artifact struct {
