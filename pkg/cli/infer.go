@@ -5,12 +5,8 @@ import (
 	"fmt"
 	"io"
 	"mime"
-	"mime/multipart"
-	"net/http"
 	"os"
-	"path"
 	"strings"
-	"time"
 
 	"github.com/TylerBrock/colorjson"
 	"github.com/mitchellh/go-homedir"
@@ -149,65 +145,4 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("Written output to " + outPath)
 	return nil
-}
-
-func waitForHTTP(url string) {
-	client := http.Client{
-		Timeout: 1 * time.Second,
-	}
-	for {
-		resp, err := client.Get(url + "/ping")
-		if err == nil && resp.StatusCode == http.StatusOK {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-
-func writeInputs(req *http.Request, inputs []string, body io.Writer) error {
-	mwriter := multipart.NewWriter(body)
-	req.Header.Add("Content-Type", mwriter.FormDataContentType())
-	defer mwriter.Close()
-
-	for _, input := range inputs {
-		var name, value string
-
-		// Default input name is "input"
-		if !strings.Contains(input, "=") {
-			name = "input"
-			value = input
-		} else {
-			split := strings.SplitN(input, "=", 2)
-			name = split[0]
-			value = split[1]
-		}
-
-		// Treat inputs prefixed with @ as a path to a file
-		if strings.HasPrefix(value, "@") {
-			filepath := value[1:]
-			w, err := mwriter.CreateFormFile(name, path.Base(filepath))
-			if err != nil {
-				return err
-			}
-
-			file, err := os.Open(filepath)
-			if err != nil {
-				return err
-			}
-			if _, err := io.Copy(w, file); err != nil {
-				return err
-			}
-		} else {
-			w, err := mwriter.CreateFormField(name)
-			if err != nil {
-				return err
-			}
-			if _, err = w.Write([]byte(value)); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Call before defer to capture error
-	return mwriter.Close()
 }
