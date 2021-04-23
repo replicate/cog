@@ -9,9 +9,13 @@ import (
 	"path/filepath"
 
 	"github.com/mholt/archiver/v3"
+	gitignore "github.com/sabhiram/go-gitignore"
 
 	"github.com/replicate/cog/pkg/console"
+	"github.com/replicate/cog/pkg/files"
 )
+
+var defaultIgnore = []string{".cog", ".git", ".mypy_cache"}
 
 func (z *CachingZip) WriterArchive(source string, destination io.Writer, cachedHashes []string) error {
 	cachedHashSet := map[string]bool{}
@@ -29,6 +33,11 @@ func (z *CachingZip) WriterArchive(source string, destination io.Writer, cachedH
 		return fmt.Errorf("%s: stat: %v", source, err)
 	}
 
+	ignore, err := loadIgnoreFile(source)
+	if err != nil {
+		return err
+	}
+
 	return filepath.Walk(source, func(fpath string, info os.FileInfo, err error) error {
 		handleErr := func(err error) error {
 			if z.zip.ContinueOnError {
@@ -42,6 +51,10 @@ func (z *CachingZip) WriterArchive(source string, destination io.Writer, cachedH
 		}
 		if info == nil {
 			return handleErr(fmt.Errorf("%s: no file info", fpath))
+		}
+
+		if ignore.MatchesPath(fpath) {
+			return nil
 		}
 
 		// build the name to be used within the archive
@@ -100,4 +113,22 @@ func makeNameInArchive(sourceInfo os.FileInfo, source, baseDir, fpath string) (s
 		name = path.Join(filepath.ToSlash(dir), name)
 	}
 	return path.Join(baseDir, name), nil // prepend the base directory
+}
+
+func loadIgnoreFile(dir string) (*gitignore.GitIgnore, error) {
+	var ignore *gitignore.GitIgnore
+	ignoreFilePath := filepath.Join(dir, ".cogignore")
+	exists, err := files.Exists(ignoreFilePath)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		ignore, err = gitignore.CompileIgnoreFileAndLines(ignoreFilePath, defaultIgnore...)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		ignore = gitignore.CompileIgnoreLines(defaultIgnore...)
+	}
+	return ignore, nil
 }
