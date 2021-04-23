@@ -37,6 +37,8 @@ func (b *LocalImageBuilder) Build(dir string, dockerfileContents string, name st
 		return "", fmt.Errorf("Failed to write Dockerfile")
 	}
 
+	// shelling out to docker build because it's easier to get logs this way
+	// than when using the sdk
 	cmd := exec.Command(
 		"docker", "build", ".",
 		"--progress", "plain",

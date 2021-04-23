@@ -7,28 +7,38 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/montanaflynn/stats"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
 )
 
-func TestModel(servingPlatform Platform, imageTag string, config *model.Config, dir string, logWriter logger.Logger) (map[string]*model.RunArgument, error) {
+func TestModel(servingPlatform Platform, imageTag string, config *model.Config, dir string, logWriter logger.Logger) (map[string]*model.RunArgument, *model.Stats, error) {
 	logWriter.WriteStatus("Testing model")
 
+	modelStats := new(model.Stats)
+
+	bootStart := time.Now()
 	deployment, err := servingPlatform.Deploy(imageTag, logWriter)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer deployment.Undeploy()
 
+	modelStats.BootTime = time.Since(bootStart).Seconds()
+
 	help, err := deployment.Help(logWriter)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
+	setupTimes := []float64{}
+	runTimes := []float64{}
+	memoryUsages := []float64{}
 	for _, example := range config.Examples {
 		if err := validateServingExampleInput(help, example.Input); err != nil {
-			return nil, fmt.Errorf("Example input doesn't match run arguments: %w", err)
+			return nil, nil, fmt.Errorf("Example input doesn't match run arguments: %w", err)
 		}
 		var expectedOutput []byte = nil
 		outputIsFile := false
@@ -37,7 +47,7 @@ func TestModel(servingPlatform Platform, imageTag string, config *model.Config, 
 				outputIsFile = true
 				expectedOutput, err = os.ReadFile(filepath.Join(dir, config.Workdir, example.Output[1:]))
 				if err != nil {
-					return nil, fmt.Errorf("Failed to read example output file %s: %w", example.Output[1:], err)
+					return nil, nil, fmt.Errorf("Failed to read example output file %s: %w", example.Output[1:], err)
 				}
 			} else {
 				expectedOutput = []byte(example.Output)
@@ -48,25 +58,49 @@ func TestModel(servingPlatform Platform, imageTag string, config *model.Config, 
 
 		result, err := deployment.RunInference(input, logWriter)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		output := result.Values["output"]
 		outputBytes, err := io.ReadAll(output.Buffer)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to read output: %w", err)
+			return nil, nil, fmt.Errorf("Failed to read output: %w", err)
 		}
 		logWriter.Infof(fmt.Sprintf("Inference result length: %d, mime type: %s", len(outputBytes), output.MimeType))
 		if expectedOutput != nil {
 			if outputIsFile && !bytes.Equal(expectedOutput, outputBytes) {
-				return nil, fmt.Errorf("Output file contents doesn't match expected %s", example.Output[1:])
+				return nil, nil, fmt.Errorf("Output file contents doesn't match expected %s", example.Output[1:])
 			} else if !outputIsFile && strings.TrimSpace(string(outputBytes)) != strings.TrimSpace(example.Output) {
 				// TODO(andreas): are there cases where space is significant?
-				return nil, fmt.Errorf("Output %s doesn't match expected: %s", string(outputBytes), example.Output)
+				return nil, nil, fmt.Errorf("Output %s doesn't match expected: %s", string(outputBytes), example.Output)
 			}
 		}
+
+		setupTimes = append(setupTimes, result.SetupTime)
+		runTimes = append(runTimes, result.RunTime)
+		memoryUsages = append(memoryUsages, float64(result.MemoryUsage))
 	}
 
-	return help.Arguments, nil
+	if len(setupTimes) > 0 {
+		modelStats.SetupTime, err = stats.Mean(setupTimes)
+		if err != nil {
+			return nil, nil, err
+		}
+		modelStats.RunTime, err = stats.Mean(setupTimes)
+		if err != nil {
+			return nil, nil, err
+		}
+		memoryUsage, err := stats.Max(memoryUsages)
+		if err != nil {
+			return nil, nil, err
+		}
+		modelStats.MemoryUsage = uint64(memoryUsage)
+	} else {
+		modelStats.SetupTime = 0
+		modelStats.RunTime = 0
+		modelStats.MemoryUsage = 0
+	}
+
+	return help.Arguments, modelStats, nil
 }
 
 func validateServingExampleInput(help *HelpResponse, input map[string]string) error {

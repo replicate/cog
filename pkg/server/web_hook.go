@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/replicate/cog/pkg/logger"
@@ -56,6 +57,7 @@ func (wh *WebHook) run(user string, name string, mod *model.Model, dir string, l
 		"model_json_base64": {modelJSONBase64},
 		"docker_image_cpu":  {dockerImageCPU},
 		"docker_image_gpu":  {dockerImageGPU},
+		"memory_usage":      {strconv.FormatUint(mod.Stats.MemoryUsage, 10)},
 		"user":              {user},
 		"repo_name":         {name},
 		"secret":            {wh.secret},
