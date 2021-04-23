@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mitchellh/go-homedir"
+	"github.com/replicate/cog/pkg/console"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
 )
@@ -34,6 +36,14 @@ func NewExample(keyVals map[string]string) *Example {
 		val := val
 		if strings.HasPrefix(val, "@") {
 			val = val[1:]
+			expandedVal, err := homedir.Expand(val)
+			if err != nil {
+				// FIXME: handle this better?
+				console.Warnf("Error expanding homedir: %s", err)
+			} else {
+				val = expandedVal
+			}
+
 			values[key] = ExampleValue{File: &val}
 		} else {
 			values[key] = ExampleValue{String: &val}
