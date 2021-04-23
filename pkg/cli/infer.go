@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/TylerBrock/colorjson"
+	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/console"
@@ -129,6 +130,11 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 	// Ignore @, to make it behave the same as -i
 	if strings.HasPrefix(outPath, "@") {
 		outPath = outPath[1:]
+	}
+
+	outPath, err := homedir.Expand(outPath)
+	if err != nil {
+		return err
 	}
 
 	// Write to file
