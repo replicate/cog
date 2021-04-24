@@ -49,8 +49,6 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 	}
 	defer inputFile.Close()
 
-	logWriter.WriteStatus("Received model")
-
 	parentDir, err := os.MkdirTemp("/tmp", "unzip")
 	if err != nil {
 		return nil, fmt.Errorf("Failed to make tempdir: %w", err)
@@ -71,6 +69,7 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 	if err != nil {
 		return nil, err
 	}
+	logWriter.Infof("Received model %s", id)
 
 	configRaw, err := os.ReadFile(filepath.Join(dir, global.ConfigFilename))
 	if err != nil {

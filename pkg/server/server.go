@@ -3,7 +3,9 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"os"
 
+	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 
 	"github.com/replicate/cog/pkg/console"
@@ -48,10 +50,14 @@ func NewServer(port int, rawWebHooks []string, db database.Database, dockerImage
 
 func (s *Server) Start() error {
 	router := mux.NewRouter()
+	router.Path("/").
+		Methods(http.MethodGet).
+		HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte("OK"))
+		})
 	router.Path("/ping").
 		Methods(http.MethodGet).
 		HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			console.Info("Received ping request")
 			w.Write([]byte("pong"))
 		})
 	router.Path("/v1/repos/{user}/{name}/models/{id}.zip").
@@ -73,7 +79,10 @@ func (s *Server) Start() error {
 		Methods(http.MethodGet).
 		HandlerFunc(s.GetCacheHashes)
 	console.Infof("Server running on 0.0.0.0:%d", s.port)
-	return http.ListenAndServe(fmt.Sprintf(":%d", s.port), router)
+
+	loggedRouter := handlers.LoggingHandler(os.Stdout, router)
+
+	return http.ListenAndServe(fmt.Sprintf(":%d", s.port), loggedRouter)
 }
 
 func getRepoVars(r *http.Request) (user string, name string, id string) {
