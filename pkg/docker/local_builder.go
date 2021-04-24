@@ -76,7 +76,7 @@ func (b *LocalImageBuilder) Build(dir string, dockerfileContents string, name st
 
 	tag = dockerTag
 	if name != "" {
-		tag = fmt.Sprintf("%s/%s:%s", b.registry, name, dockerTag)
+		tag = fmt.Sprintf("%s/%s:%s", b.registry, strings.ToLower(name), dockerTag)
 		if err := b.tag(dockerTag, tag, logWriter); err != nil {
 			return "", err
 		}
