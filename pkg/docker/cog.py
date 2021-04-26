@@ -1,3 +1,5 @@
+import string
+import random
 import signal
 import requests
 from io import BytesIO
@@ -229,6 +231,9 @@ class RedisQueueWorker:
         self.input_queue = input_queue
         self.upload_url = upload_url
         self.redis_db = redis_db
+        # TODO: respect max_processing_time in message handling
+        self.max_processing_time = 10 * 60  # timeout after 10 minutes
+        self.redis_consumer_id = random_string()
         self.redis = redis.Redis(
             host=self.redis_host, port=self.redis_port, db=self.redis_db
         )
@@ -241,28 +246,64 @@ class RedisQueueWorker:
         self.should_exit = True
         sys.stderr.write("Caught SIGTERM, exiting...\n")
 
+    # TODO(andreas): test this
+    def receive_message(self):
+        # first, try to autoclaim old messages from pending queue
+        _, raw_messages = self.redis.execute_command(
+            "XAUTOCLAIM",
+            self.input_queue,
+            self.input_queue,
+            self.redis_consumer_id,
+            str(self.max_processing_time * 1000),
+            "0-0",
+            "COUNT",
+            1,
+        )
+        # format: [[b'1619393873567-0', [b'mykey', b'myval']]]
+        if raw_messages and raw_messages[0] is not None:
+            key, raw_message = raw_messages[0]
+            assert raw_message[0] == b"value"
+            return key.decode(), raw_message[1].decode()
+
+        # if no old messages exist, get message from main queue
+        raw_messages = self.redis.xreadgroup(
+            groupname=self.input_queue,
+            consumername=self.redis_consumer_id,
+            streams={self.input_queue: ">"},
+            count=1,
+            block=1000,
+        )
+        if not raw_messages:
+            return None, None
+
+        # format: [[b'mystream', [(b'1619395583065-0', {b'mykey': b'myval6'})]]]
+        key, raw_message = raw_messages[0][1][0]
+        return key.decode(), raw_message[b"value"].decode()
+
     def start(self):
         signal.signal(signal.SIGTERM, self.signal_exit)
         self.model.setup()
+        sys.stderr.write(f"Waiting for message on {self.input_queue}\n")
         while not self.should_exit:
             try:
-                sys.stderr.write(f"Waiting for message on {self.input_queue}\n")
-                _, raw_message = self.redis.blpop([self.input_queue])
-                message = json.loads(raw_message)
-                message_id = message["id"]
+                message_id, message_json = self.receive_message()
+                if message_json is None:
+                    # tight loop in order to respect self.should_exit
+                    continue
+
+                message = json.loads(message_json)
+                infer_id = message["id"]
                 response_queue = message["response_queue"]
-                sys.stderr.write(
-                    f"Received message {message_id} on {self.input_queue}\n"
-                )
+                sys.stderr.write(f"Received message {infer_id} on {self.input_queue}\n")
                 cleanup_functions = []
                 try:
-                    self.handle_message(
-                        message_id, response_queue, message, cleanup_functions
-                    )
+                    self.handle_message(response_queue, message, cleanup_functions)
+                    self.redis.xack(self.input_queue, self.input_queue, message_id)
                 except Exception as e:
                     tb = traceback.format_exc()
                     sys.stderr.write(f"Failed to handle message: {tb}\n")
                     self.push_error(response_queue, e)
+                    self.redis.xack(self.input_queue, self.input_queue, message_id)
                 finally:
                     for cleanup_function in cleanup_functions:
                         try:
@@ -273,7 +314,7 @@ class RedisQueueWorker:
                 tb = traceback.format_exc()
                 sys.stderr.write(f"Failed to handle message: {tb}\n")
 
-    def handle_message(self, message_id, response_queue, message, cleanup_functions):
+    def handle_message(self, response_queue, message, cleanup_functions):
         inputs = {}
         raw_inputs = message["inputs"]
         for k, v in raw_inputs.items():
@@ -516,3 +557,7 @@ def _abort400(message):
     resp = jsonify({"message": message})
     resp.status_code = 400
     return resp
+
+
+def random_string(length=20):
+    return "".join(random.choices(string.ascii_uppercase + string.digits, k=length))
