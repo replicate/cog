@@ -1,6 +1,6 @@
 release
 .ipynb_checkpoints/
-Untitled.ipynb
+Untitled*.ipynb
 __pycache__
 .cog
 dist
