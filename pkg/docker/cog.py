@@ -1,5 +1,3 @@
-import string
-import random
 import signal
 import requests
 from io import BytesIO
@@ -222,6 +220,7 @@ class RedisQueueWorker:
         redis_host: str,
         redis_port: int,
         input_queue: str,
+        consumer_id: str,
         upload_url: str,
         redis_db: int = 0,
     ):
@@ -229,11 +228,11 @@ class RedisQueueWorker:
         self.redis_host = redis_host
         self.redis_port = redis_port
         self.input_queue = input_queue
+        self.consumer_id = consumer_id
         self.upload_url = upload_url
         self.redis_db = redis_db
         # TODO: respect max_processing_time in message handling
         self.max_processing_time = 10 * 60  # timeout after 10 minutes
-        self.redis_consumer_id = random_string()
         self.redis = redis.Redis(
             host=self.redis_host, port=self.redis_port, db=self.redis_db
         )
@@ -253,7 +252,7 @@ class RedisQueueWorker:
             "XAUTOCLAIM",
             self.input_queue,
             self.input_queue,
-            self.redis_consumer_id,
+            self.consumer_id,
             str(self.max_processing_time * 1000),
             "0-0",
             "COUNT",
@@ -268,7 +267,7 @@ class RedisQueueWorker:
         # if no old messages exist, get message from main queue
         raw_messages = self.redis.xreadgroup(
             groupname=self.input_queue,
-            consumername=self.redis_consumer_id,
+            consumername=self.consumer_id,
             streams={self.input_queue: ">"},
             count=1,
             block=1000,
@@ -299,11 +298,13 @@ class RedisQueueWorker:
                 try:
                     self.handle_message(response_queue, message, cleanup_functions)
                     self.redis.xack(self.input_queue, self.input_queue, message_id)
+                    self.redis.xdel(self.input_queue, message_id)  # xdel to be able to get stream size
                 except Exception as e:
                     tb = traceback.format_exc()
                     sys.stderr.write(f"Failed to handle message: {tb}\n")
                     self.push_error(response_queue, e)
                     self.redis.xack(self.input_queue, self.input_queue, message_id)
+                    self.redis.xdel(self.input_queue, message_id)
                 finally:
                     for cleanup_function in cleanup_functions:
                         try:
@@ -557,7 +558,3 @@ def _abort400(message):
     resp = jsonify({"message": message})
     resp.status_code = 400
     return resp
-
-
-def random_string(length=20):
-    return "".join(random.choices(string.ascii_uppercase + string.digits, k=length))
