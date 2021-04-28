@@ -21,6 +21,7 @@ type Stats struct {
 	SetupTime   float64 `json:"setup_time"`
 	RunTime     float64 `json:"run_time"`
 	MemoryUsage uint64  `json:"memory_usage"`
+	CPUUsage    float64 `json:"cpu_usage"`
 }
 
 type Artifact struct {

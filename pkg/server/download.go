@@ -10,7 +10,6 @@ import (
 
 func (s *Server) DownloadModel(w http.ResponseWriter, r *http.Request) {
 	user, name, id := getRepoVars(r)
-	console.Infof("Received download request for %s/%s/%s", user, name, id)
 	modTime := time.Now() // TODO
 
 	mod, err := s.db.GetModel(user, name, id)

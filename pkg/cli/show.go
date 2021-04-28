@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -21,10 +22,16 @@ func newShowCommand() *cobra.Command {
 	}
 	addRepoFlag(cmd)
 
+	cmd.Flags().Bool("json", false, "JSON output")
+
 	return cmd
 }
 
 func showModel(cmd *cobra.Command, args []string) error {
+	jsonOutput, err  := cmd.Flags().GetBool("json")
+	if err != nil {
+		return err
+	}
 	repo, err := getRepo()
 	if err != nil {
 		return err
@@ -36,6 +43,15 @@ func showModel(cmd *cobra.Command, args []string) error {
 	mod, err := cli.GetModel(repo, id)
 	if err != nil {
 		return err
+	}
+
+	if jsonOutput {
+		data, err := json.MarshalIndent(mod, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)

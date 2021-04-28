@@ -16,7 +16,7 @@ import (
 var repoFlag string
 var projectDirFlag string
 
-var repoRegex = regexp.MustCompile("^(?:([^/]*)/)?(?:([-_a-zA-Z0-9]+)/)([-_a-zA-Z0-9]+)$")
+var repoRegex = regexp.MustCompile("^(?:(https?://[^/]*)/)?(?:([-_a-zA-Z0-9]+)/)([-_a-zA-Z0-9]+)$")
 
 func NewRootCommand() (*cobra.Command, error) {
 	rootCmd := cobra.Command{
@@ -46,6 +46,7 @@ func NewRootCommand() (*cobra.Command, error) {
 		newListCommand(),
 		newBenchmarkCommand(),
 		newDeleteCommand(),
+		newLoginCommand(),
 	)
 
 	return &rootCmd, nil
@@ -83,7 +84,7 @@ func getRepo() (*model.Repo, error) {
 func parseRepo(repoString string) (*model.Repo, error) {
 	matches := repoRegex.FindStringSubmatch(repoString)
 	if len(matches) == 0 {
-		return nil, fmt.Errorf("Repo '%s' doesn't match <host>/<user>/<name>", repoString)
+		return nil, fmt.Errorf("Repo '%s' doesn't match [http[s]://<host>/]<user>/<name>", repoString)
 	}
 	return &model.Repo{
 		Host: matches[1],

@@ -70,7 +70,7 @@ func setRepo(cmd *cobra.Command, args []string) error {
 	}
 
 	cli := client.NewClient()
-	if err := cli.Ping(repo); err != nil {
+	if err := cli.CheckRead(repo); err != nil {
 		return err
 	}
 

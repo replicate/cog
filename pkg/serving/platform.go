@@ -72,10 +72,11 @@ type ResultValue struct {
 }
 
 type Result struct {
-	Values      map[string]ResultValue
-	SetupTime   float64
-	RunTime     float64
-	MemoryUsage uint64
+	Values          map[string]ResultValue
+	SetupTime       float64
+	RunTime         float64
+	UsedMemoryBytes uint64
+	UsedCPUSecs     float64
 }
 
 type HelpResponse struct {

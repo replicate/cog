@@ -37,7 +37,7 @@ def test_build_show_list_download_infer(cog_server_port_dir, tmpdir_factory):
 
     user = "".join(random.choice(string.ascii_lowercase) for i in range(10))
     repo_name = "".join(random.choice(string.ascii_lowercase) for i in range(10))
-    repo = f"localhost:{cog_port}/{user}/{repo_name}"
+    repo = f"http://localhost:{cog_port}/{user}/{repo_name}"
 
     project_dir = tmpdir_factory.mktemp("project")
     with open(project_dir / "infer.py", "w") as f:
@@ -78,11 +78,11 @@ environment:
         )
 
     out, _ = subprocess.Popen(
-        ["cog", "repo", "set", f"localhost:{cog_port}/{user}/{repo_name}"],
+        ["cog", "repo", "set", f"http://localhost:{cog_port}/{user}/{repo_name}"],
         stdout=subprocess.PIPE,
         cwd=project_dir,
     ).communicate()
-    assert out.decode() == f"Updated repo: localhost:{cog_port}/{user}/{repo_name}\n"
+    assert out.decode() == f"Updated repo: http://localhost:{cog_port}/{user}/{repo_name}\n"
 
     with open(project_dir / "myfile.txt", "w") as f:
         f.write("baz")

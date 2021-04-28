@@ -9,15 +9,15 @@ import (
 )
 
 func (c *Client) ListModels(repo *model.Repo) ([]*model.Model, error) {
-	url, err := c.getURL(repo, "v1/repos/%s/%s/models/", repo.User, repo.Name)
+	url := newURL(repo, "v1/repos/%s/%s/models/", repo.User, repo.Name)
+	req, err := c.newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.Get(url)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
-
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("Repository not found: %s", repo.String())
 	}

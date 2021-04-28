@@ -13,13 +13,13 @@ import (
 )
 
 func (c *Client) DownloadModel(repo *model.Repo, id string, outputDir string) error {
-	url, err := c.getURL(repo, "v1/repos/%s/%s/models/%s.zip", repo.User, repo.Name, id)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequest("GET", url, nil)
+	url := newURL(repo, "v1/repos/%s/%s/models/%s.zip", repo.User, repo.Name, id)
+	req, err := c.newRequest("GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("Failed to create HTTP request: %w", err)
+	}
+	if err := c.addAuthHeader(req, repo); err != nil {
+		return err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

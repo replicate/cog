@@ -4,11 +4,11 @@ import (
 	"time"
 )
 
-var Version = "0.0.1"
-var BuildTime = "none"
-
 var (
-	Verbose        = false
-	StartupTimeout = 5 * time.Minute
-	ConfigFilename = "cog.yaml"
+	Version          = "0.0.1"
+	BuildTime        = "none"
+	Verbose          = false
+	StartupTimeout   = 5 * time.Minute
+	ConfigFilename   = "cog.yaml"
+	CogServerAddress = "http://cog.replicate.ai" // TODO(andreas): https
 )

@@ -8,11 +8,12 @@ import (
 )
 
 func (c *Client) Ping(repo *model.Repo) error {
-	url, err := c.getURL(repo, "ping")
+	url := newURL(repo, "ping")
+	req, err := c.newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
-	resp, err := http.Get(url)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
