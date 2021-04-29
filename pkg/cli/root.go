@@ -5,6 +5,7 @@ import (
 	"os"
 	"regexp"
 
+	"github.com/pkg/profile"
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/console"
@@ -27,6 +28,9 @@ func NewRootCommand() (*cobra.Command, error) {
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			if global.Verbose {
 				console.SetLevel(console.DebugLevel)
+			}
+			if global.ProfilingEnabled {
+				global.Profiler = profile.Start(profile.MemProfile)
 			}
 			cmd.SilenceUsage = true
 		},
@@ -54,7 +58,8 @@ func NewRootCommand() (*cobra.Command, error) {
 
 func setPersistentFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().BoolVarP(&global.Verbose, "verbose", "v", false, "Verbose output")
-
+	cmd.PersistentFlags().BoolVar(&global.ProfilingEnabled, "profile", false, "Enable profiling")
+	cmd.PersistentFlags().MarkHidden("profile")
 }
 
 func addRepoFlag(cmd *cobra.Command) {
