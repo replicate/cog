@@ -79,22 +79,6 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 		return nil, err
 	}
 
-	z2 := &archiver.Zip{ImplicitTopLevelFolder: false}
-	zipTempDir, err := os.MkdirTemp("/tmp" ,"zip")
-	if err != nil {
-		return nil, fmt.Errorf("Failed to make tempdir: %w", err)
-	}
-	zipOutputPath := filepath.Join(zipTempDir, "out.zip")
-	if err := z2.Archive([]string{dir + "/"}, zipOutputPath); err != nil {
-		return nil, fmt.Errorf("Failed to zip directory: %w", err)
-	}
-
-	file, err := os.Open(zipOutputPath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
 	artifacts, err := s.buildDockerImages(dir, config, name, logWriter)
 	if err != nil {
 		return nil, err
@@ -122,6 +106,23 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 		// TODO(andreas): return other response than 500 if validation fails
 		return nil, err
 	}
+
+	z2 := &archiver.Zip{ImplicitTopLevelFolder: false}
+	zipTempDir, err := os.MkdirTemp("/tmp", "zip")
+	if err != nil {
+		return nil, fmt.Errorf("Failed to make tempdir: %w", err)
+	}
+	zipOutputPath := filepath.Join(zipTempDir, "out.zip")
+	if err := z2.Archive([]string{dir + "/"}, zipOutputPath); err != nil {
+		return nil, fmt.Errorf("Failed to zip directory: %w", err)
+	}
+
+	file, err := os.Open(zipOutputPath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
 	id, err := computeID(dir)
 	if err != nil {
 		return nil, err
@@ -224,6 +225,10 @@ func computeID(dir string) (string, error) {
 			return err
 		}
 		if !d.Type().IsRegular() {
+			return nil
+		}
+		// TODO(andreas): test that non-deterministic output examples don't change ID
+		if d.Name() == serving.ExampleOutputDir {
 			return nil
 		}
 		file, err := os.Open(path)
