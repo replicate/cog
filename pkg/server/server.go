@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"net/http/pprof"
 	"os"
 
 	"github.com/gorilla/handlers"
@@ -11,6 +12,7 @@ import (
 	"github.com/replicate/cog/pkg/console"
 	"github.com/replicate/cog/pkg/database"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/serving"
 	"github.com/replicate/cog/pkg/storage"
 )
@@ -90,6 +92,18 @@ func (s *Server) Start() error {
 	router.Path("/v1/repos/{user}/{name}/check-read").
 		Methods(http.MethodGet).
 		HandlerFunc(s.checkReadAccess(nil))
+
+	if global.ProfilingEnabled {
+		router.HandleFunc("/debug/pprof/", pprof.Index)
+		router.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		router.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		router.HandleFunc("/debug/pprof/profile-mem", profileMemory)
+		router.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		router.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		router.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+		router.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+	}
+
 	console.Infof("Server running on 0.0.0.0:%d", s.port)
 
 	loggedRouter := handlers.LoggingHandler(os.Stdout, router)

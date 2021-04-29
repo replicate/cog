@@ -5,7 +5,6 @@ import (
 	"os"
 	"regexp"
 
-	"github.com/pkg/profile"
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/console"
@@ -28,9 +27,6 @@ func NewRootCommand() (*cobra.Command, error) {
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			if global.Verbose {
 				console.SetLevel(console.DebugLevel)
-			}
-			if global.ProfilingEnabled {
-				global.Profiler = profile.Start(profile.MemProfile)
 			}
 			cmd.SilenceUsage = true
 		},
