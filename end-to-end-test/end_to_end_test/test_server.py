@@ -1,3 +1,4 @@
+import json
 import random
 import string
 from glob import glob
@@ -71,6 +72,9 @@ examples:
       text: "bar"
       path: "@myfile.txt"
     output: "foobarbaz"
+  - input:
+      text: "qux"
+      path: "@myfile.txt"
 environment:
   architectures:
     - cpu
@@ -82,7 +86,10 @@ environment:
         stdout=subprocess.PIPE,
         cwd=project_dir,
     ).communicate()
-    assert out.decode() == f"Updated repo: http://localhost:{cog_port}/{user}/{repo_name}\n"
+    assert (
+        out.decode()
+        == f"Updated repo: http://localhost:{cog_port}/{user}/{repo_name}\n"
+    )
 
     with open(project_dir / "myfile.txt", "w") as f:
         f.write("baz")
@@ -105,6 +112,14 @@ environment:
     assert lines[0] == f"ID:       {model_id}"
     assert lines[1] == f"Repo:     {user}/{repo_name}"
 
+    out, _ = subprocess.Popen(
+        ["cog", "-r", repo, "show", "--json", model_id], stdout=subprocess.PIPE
+    ).communicate()
+    out = json.loads(out)
+    assert (
+        out["config"]["examples"][2]["output"] == "@cog-example-output/output.02.txt"
+    )
+
     # show without -r
     out, _ = subprocess.Popen(
         ["cog", "show", model_id],
@@ -115,7 +130,9 @@ environment:
     assert lines[0] == f"ID:       {model_id}"
     assert lines[1] == f"Repo:     {user}/{repo_name}"
 
-    out, _ = subprocess.Popen(["cog", "-r", repo, "ls"], stdout=subprocess.PIPE).communicate()
+    out, _ = subprocess.Popen(
+        ["cog", "-r", repo, "ls"], stdout=subprocess.PIPE
+    ).communicate()
     lines = out.decode().splitlines()
     assert lines[1].startswith(f"{model_id}  ")
 
@@ -127,6 +144,9 @@ environment:
     paths = sorted(glob(str(download_dir / "*.*")))
     filenames = [os.path.basename(f) for f in paths]
     assert filenames == ["cog.yaml", "infer.py", "myfile.txt"]
+
+    with open(download_dir / "cog-example-output/output.02.txt") as f:
+        assert f.read() == "fooquxbaz"
 
     output_dir = tmpdir_factory.mktemp("output")
     input_path = output_dir / "input.txt"

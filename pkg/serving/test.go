@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"mime"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,13 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
+// TODO(andreas): put this somewhere else since it's used by server?
+const ExampleOutputDir = "cog-example-output"
+
+// TestModel runs the example inputs and checks the example
+// outputs. If examples inputs are defined but example outputs aren't,
+// defined, the resulting outputs are written to exampleOutputDir and
+// the config object is updated to point to those outputs.
 func TestModel(servingPlatform Platform, imageTag string, config *model.Config, dir string, logWriter logger.Logger) (map[string]*model.RunArgument, *model.Stats, error) {
 	logWriter.WriteStatus("Testing model")
 
@@ -37,11 +45,11 @@ func TestModel(servingPlatform Platform, imageTag string, config *model.Config, 
 	runTimes := []float64{}
 	memoryUsages := []float64{}
 	cpuUsages := []float64{}
-	for _, example := range config.Examples {
+	for index, example := range config.Examples {
 		if err := validateServingExampleInput(help, example.Input); err != nil {
 			return nil, nil, fmt.Errorf("Example input doesn't match run arguments: %w", err)
 		}
-		var expectedOutput []byte = nil
+		var expectedOutput []byte
 		outputIsFile := false
 		if example.Output != "" {
 			if strings.HasPrefix(example.Output, "@") {
@@ -70,7 +78,22 @@ func TestModel(servingPlatform Platform, imageTag string, config *model.Config, 
 			return nil, nil, fmt.Errorf("Failed to read output: %w", err)
 		}
 		logWriter.Infof(fmt.Sprintf("Inference result length: %d, mime type: %s", len(outputBytes), output.MimeType))
-		if expectedOutput != nil {
+		if expectedOutput == nil {
+			filename := fmt.Sprintf("output.%02d", index)
+			if ext := extensionByType(output.MimeType); ext != "" {
+				filename += ext
+			}
+			outputPath := filepath.Join(ExampleOutputDir, filename)
+			example.Output = "@" + outputPath
+
+			if err := os.MkdirAll(filepath.Join(dir, ExampleOutputDir), 0755); err != nil {
+				return nil, nil, fmt.Errorf("Failed to make output dir: %w", err)
+			}
+
+			if err := os.WriteFile(filepath.Join(dir, outputPath), outputBytes, 0644); err != nil {
+				return nil, nil, fmt.Errorf("Failed to write output: %w", err)
+			}
+		} else {
 			if outputIsFile && !bytes.Equal(expectedOutput, outputBytes) {
 				return nil, nil, fmt.Errorf("Output file contents doesn't match expected %s", example.Output[1:])
 			} else if !outputIsFile && strings.TrimSpace(string(outputBytes)) != strings.TrimSpace(example.Output) {
@@ -140,4 +163,17 @@ func validateServingExampleInput(help *HelpResponse, input map[string]string) er
 		return fmt.Errorf(strings.Join(errParts, "; "))
 	}
 	return nil
+}
+
+func extensionByType(mimeType string) string {
+	switch mimeType {
+	case "text/plain":
+		return ".txt"
+	default:
+		extensions, _ := mime.ExtensionsByType(mimeType)
+		if extensions == nil || len(extensions) == 0 {
+			return ""
+		}
+		return extensions[0]
+	}
 }

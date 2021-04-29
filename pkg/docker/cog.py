@@ -123,7 +123,7 @@ class HTTPServer:
         if isinstance(result, Path):
             resp = send_file(str(result))
         elif isinstance(result, str):
-            resp = Response(result)
+            resp = Response(result, mimetype="text/plain")
         else:
             resp = jsonify(result)
         resp.headers["X-Setup-Time"] = setup_time
