@@ -64,11 +64,7 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 	if err := z.ReaderUnarchive(inputFile, header.Size, dir, zipCache); err != nil {
 		return nil, fmt.Errorf("Failed to unzip: %w", err)
 	}
-	id, err := computeID(dir)
-	if err != nil {
-		return nil, err
-	}
-	logWriter.Infof("Received model %s", id)
+	logWriter.Infof("Received model")
 
 	configRaw, err := os.ReadFile(filepath.Join(dir, global.ConfigFilename))
 	if err != nil {
@@ -99,16 +95,11 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 	}
 	defer file.Close()
 
-	if err := s.store.Upload(user, name, id, file); err != nil {
-		return nil, fmt.Errorf("Failed to upload to storage: %w", err)
-	}
-
 	artifacts, err := s.buildDockerImages(dir, config, name, logWriter)
 	if err != nil {
 		return nil, err
 	}
 	mod := &model.Model{
-		ID:        id,
 		Artifacts: artifacts,
 		Config:    config,
 		Created:   time.Now(),
@@ -131,6 +122,14 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 		// TODO(andreas): return other response than 500 if validation fails
 		return nil, err
 	}
+	id, err := computeID(dir)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.store.Upload(user, name, id, file); err != nil {
+		return nil, fmt.Errorf("Failed to upload to storage: %w", err)
+	}
+	mod.ID = id
 	mod.RunArguments = runArgs
 	mod.Stats = modelStats
 
