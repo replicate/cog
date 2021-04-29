@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
@@ -39,8 +38,8 @@ func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user string, name string) (*model.Model, error) {
-	// max 5GB models
-	if err := r.ParseMultipartForm(5 << 30); err != nil {
+	// keep 128MB in memory while parsing the input
+	if err := r.ParseMultipartForm(128 << 20); err != nil {
 		return nil, fmt.Errorf("Failed to parse request: %w", err)
 	}
 	inputFile, header, err := r.FormFile("file")
@@ -84,12 +83,21 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 		return nil, err
 	}
 
-	// make zip file for storage
-	file := new(bytes.Buffer)
 	z2 := &archiver.Zip{ImplicitTopLevelFolder: false}
-	if err := z2.WriterArchive([]string{dir + "/"}, file); err != nil {
+	zipTempDir, err := os.MkdirTemp("/tmp" ,"zip")
+	if err != nil {
+		return nil, fmt.Errorf("Failed to make tempdir: %w", err)
+	}
+	zipOutputPath := filepath.Join(zipTempDir, "out.zip")
+	if err := z2.Archive([]string{dir + "/"}, zipOutputPath); err != nil {
 		return nil, fmt.Errorf("Failed to zip directory: %w", err)
 	}
+
+	file, err := os.Open(zipOutputPath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
 
 	if err := s.store.Upload(user, name, id, file); err != nil {
 		return nil, fmt.Errorf("Failed to upload to storage: %w", err)
@@ -223,6 +231,7 @@ func computeID(dir string) (string, error) {
 		if err != nil {
 			return fmt.Errorf("Failed to open %s: %w", path, err)
 		}
+		defer file.Close()
 		if _, err := io.Copy(hasher, file); err != nil {
 			return fmt.Errorf("Failed to read %s: %w", path, err)
 		}
