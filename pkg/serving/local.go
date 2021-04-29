@@ -205,7 +205,7 @@ func (d *LocalDockerDeployment) RunInference(input *Example, logWriter logger.Lo
 	}
 	defer resp.Body.Close()
 
-	memoryUsage, err := d.getMemoryUsage()
+	usedMemoryBytes, usedCPUSecs, err := d.getResourceUsage()
 	if err != nil {
 		return nil, err
 	}
@@ -261,28 +261,31 @@ func (d *LocalDockerDeployment) RunInference(input *Example, logWriter logger.Lo
 				MimeType: mimeType,
 			},
 		},
-		SetupTime:   setupTime,
-		RunTime:     runTime,
-		MemoryUsage: memoryUsage,
+		SetupTime:       setupTime,
+		RunTime:         runTime,
+		UsedMemoryBytes: usedMemoryBytes,
+		UsedCPUSecs:     usedCPUSecs,
 	}
 	return result, nil
 }
 
-func (d *LocalDockerDeployment) getMemoryUsage() (uint64, error) {
-
+func (d *LocalDockerDeployment) getResourceUsage() (memoryBytes uint64, cpuSecs float64, err error) {
 	statsReader, err := d.client.ContainerStatsOneShot(context.Background(), d.containerID)
 	if err != nil {
-		return 0, fmt.Errorf("Failed to get container stats: %w", err)
+		return 0, 0, fmt.Errorf("Failed to get container stats: %w", err)
 	}
 	statsBody, err := io.ReadAll(statsReader.Body)
 	if err != nil {
-		return 0, fmt.Errorf("Failed to read container stats: %w", err)
+		return 0, 0, fmt.Errorf("Failed to read container stats: %w", err)
 	}
 	stats := new(types.Stats)
 	if err := json.Unmarshal(statsBody, stats); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	return stats.MemoryStats.MaxUsage, nil
+	cpuNanos := stats.CPUStats.CPUUsage.TotalUsage
+	cpuSecs = float64(cpuNanos) / 1e9
+
+	return stats.MemoryStats.MaxUsage, cpuSecs, nil
 }
 
 func (d *LocalDockerDeployment) Help(logWriter logger.Logger) (*HelpResponse, error) {

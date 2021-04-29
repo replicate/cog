@@ -29,14 +29,12 @@ func (c *Client) UploadModel(repo *model.Repo, projectDir string) (*model.Model,
 			// we need to disable keepalive. there's a bug i (andreas) haven't
 			// been able to get to the bottom of, where keep-alive requests
 			// are missing content-type
+			// TODO(andreas): this still breaks from time to time
 			DisableKeepAlives: true,
 		},
 	}
-	url, err := c.getURL(repo, "v1/repos/%s/%s/models/", repo.User, repo.Name)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequest(http.MethodPut, url, bodyReader)
+	url := newURL(repo, "v1/repos/%s/%s/models/", repo.User, repo.Name)
+	req, err := c.newRequest(http.MethodPut, url, bodyReader)
 	if err != nil {
 		return nil, err
 	}
@@ -117,11 +115,12 @@ func (c *Client) UploadModel(repo *model.Repo, projectDir string) (*model.Model,
 }
 
 func (c *Client) getRepoCacheHashes(repo *model.Repo) ([]string, error) {
-	url, err := c.getURL(repo, "v1/repos/%s/%s/cache-hashes/", repo.User, repo.Name)
+	url := newURL(repo, "v1/repos/%s/%s/cache-hashes/", repo.User, repo.Name)
+	req, err := c.newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.Get(url)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

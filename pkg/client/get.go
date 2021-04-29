@@ -10,11 +10,12 @@ import (
 )
 
 func (c *Client) GetModel(repo *model.Repo, id string) (*model.Model, error) {
-	url, err := c.getURL(repo, "v1/repos/%s/%s/models/%s", repo.User, repo.Name, id)
+	url := newURL(repo, "v1/repos/%s/%s/models/%s", repo.User, repo.Name, id)
+	req, err := c.newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.Get(url)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

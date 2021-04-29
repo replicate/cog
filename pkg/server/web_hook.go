@@ -58,6 +58,7 @@ func (wh *WebHook) run(user string, name string, mod *model.Model, dir string, l
 		"docker_image_cpu":  {dockerImageCPU},
 		"docker_image_gpu":  {dockerImageGPU},
 		"memory_usage":      {strconv.FormatUint(mod.Stats.MemoryUsage, 10)},
+		"cpu_usage":         {fmt.Sprintf("%.2f", mod.Stats.CPUUsage)},
 		"user":              {user},
 		"repo_name":         {name},
 		"secret":            {wh.secret},

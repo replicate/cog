@@ -36,6 +36,7 @@ func TestModel(servingPlatform Platform, imageTag string, config *model.Config, 
 	setupTimes := []float64{}
 	runTimes := []float64{}
 	memoryUsages := []float64{}
+	cpuUsages := []float64{}
 	for _, example := range config.Examples {
 		if err := validateServingExampleInput(help, example.Input); err != nil {
 			return nil, nil, fmt.Errorf("Example input doesn't match run arguments: %w", err)
@@ -60,6 +61,9 @@ func TestModel(servingPlatform Platform, imageTag string, config *model.Config, 
 		if err != nil {
 			return nil, nil, err
 		}
+		logWriter.Debugf("Memory usage (bytes): %d", result.UsedMemoryBytes)
+		logWriter.Debugf("CPU usage (seconds):  %.1f", result.UsedCPUSecs)
+
 		output := result.Values["output"]
 		outputBytes, err := io.ReadAll(output.Buffer)
 		if err != nil {
@@ -77,7 +81,8 @@ func TestModel(servingPlatform Platform, imageTag string, config *model.Config, 
 
 		setupTimes = append(setupTimes, result.SetupTime)
 		runTimes = append(runTimes, result.RunTime)
-		memoryUsages = append(memoryUsages, float64(result.MemoryUsage))
+		memoryUsages = append(memoryUsages, float64(result.UsedMemoryBytes))
+		cpuUsages = append(cpuUsages, result.UsedCPUSecs)
 	}
 
 	if len(setupTimes) > 0 {
@@ -94,10 +99,16 @@ func TestModel(servingPlatform Platform, imageTag string, config *model.Config, 
 			return nil, nil, err
 		}
 		modelStats.MemoryUsage = uint64(memoryUsage)
+		cpuUsage, err := stats.Max(cpuUsages)
+		if err != nil {
+			return nil, nil, err
+		}
+		modelStats.CPUUsage = cpuUsage
 	} else {
 		modelStats.SetupTime = 0
 		modelStats.RunTime = 0
 		modelStats.MemoryUsage = 0
+		modelStats.CPUUsage = 0
 	}
 
 	return help.Arguments, modelStats, nil

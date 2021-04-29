@@ -22,11 +22,17 @@ func newListCommand() *cobra.Command {
 	}
 	addRepoFlag(cmd)
 
+	cmd.Flags().BoolP("quiet", "q", false, "Quite output, only display IDs")
+
 	return cmd
 }
 
 func listModels(cmd *cobra.Command, args []string) error {
 	repo, err := getRepo()
+	if err != nil {
+		return err
+	}
+	quiet, err := cmd.Flags().GetBool("quiet")
 	if err != nil {
 		return err
 	}
@@ -41,12 +47,18 @@ func listModels(cmd *cobra.Command, args []string) error {
 		return models[i].Created.After(models[j].Created)
 	})
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tCREATED")
-	for _, mod := range models {
-		fmt.Fprintf(w, "%s\t%s\n", mod.ID, timeago.English.Format(mod.Created))
+	if quiet {
+		for _, mod := range models {
+			fmt.Println(mod.ID)
+		}
+	} else {
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "ID\tCREATED")
+		for _, mod := range models {
+			fmt.Fprintf(w, "%s\t%s\n", mod.ID, timeago.English.Format(mod.Created))
+		}
+		w.Flush()
 	}
-	w.Flush()
 
 	return nil
 }
