@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -76,6 +77,9 @@ func showModel(cmd *cobra.Command, args []string) error {
 			}
 			if arg.Max != nil {
 				typeStr += ", max: " + *arg.Max
+			}
+			if arg.Options != nil {
+				typeStr += ", options: {" + strings.Join(*arg.Options, ", ") + "}"
 			}
 			if arg.Default != nil {
 				typeStr += ", default: " + *arg.Default
