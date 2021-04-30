@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ahmetb/dlog"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
@@ -331,7 +332,8 @@ func getContainerLogs(c *client.Client, containerID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	data, err := io.ReadAll(reader)
+	logReader := dlog.NewReader(reader)
+	data, err := io.ReadAll(logReader)
 	if err != nil {
 		return "", err
 	}
