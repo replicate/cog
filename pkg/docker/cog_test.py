@@ -15,7 +15,7 @@ import cog
 
 
 def make_client(model) -> FlaskClient:
-    app = model.make_app()
+    app = cog.HTTPServer(model).make_app()
     app.config["TESTING"] = True
     with app.test_client() as client:
         return client
@@ -167,6 +167,44 @@ def test_bad_float_input():
     assert resp.status_code == 400
 
 
+def test_good_bool_input():
+    class Model(cog.Model):
+        def setup(self):
+            self.foo = "foo"
+
+        @cog.input("flag", type=bool)
+        def run(self, flag):
+            if flag:
+                return self.foo + "yes"
+            else:
+                return self.foo + "no"
+
+    client = make_client(Model())
+    resp = client.post("/infer", data={"flag": True})
+    assert resp.status_code == 200
+    assert resp.data == b"fooyes"
+    resp = client.post("/infer", data={"flag": False})
+    assert resp.status_code == 200
+    assert resp.data == b"foono"
+
+
+def test_bad_float_input():
+    class Model(cog.Model):
+        def setup(self):
+            self.foo = "foo"
+
+        @cog.input("flag", type=bool)
+        def run(self, flag):
+            if flag:
+                return self.foo + "yes"
+            else:
+                return self.foo + "no"
+
+    client = make_client(Model())
+    resp = client.post("/infer", data={"flag": "foo"})
+    assert resp.status_code == 400
+
+
 def test_min_max():
     class Model(cog.Model):
         def setup(self):
@@ -179,14 +217,79 @@ def test_min_max():
             return num1 + num2 + num3
 
     client = make_client(Model())
-    resp = client.post("/infer", data={"num1": 3, "num2": -4, "num3":-4})
+    resp = client.post("/infer", data={"num1": 3, "num2": -4, "num3": -4})
     assert resp.status_code == 200
     assert resp.data == b"-5.0\n"
-    resp = client.post("/infer", data={"num1": 2, "num2": -4, "num3":-4})
+    resp = client.post("/infer", data={"num1": 2, "num2": -4, "num3": -4})
     assert resp.status_code == 400
-    resp = client.post("/infer", data={"num1": 3, "num2": -4.1, "num3":-4})
+    resp = client.post("/infer", data={"num1": 3, "num2": -4.1, "num3": -4})
     assert resp.status_code == 400
-    resp = client.post("/infer", data={"num1": 3, "num2": -4, "num3":-3})
+    resp = client.post("/infer", data={"num1": 3, "num2": -4, "num3": -3})
+    assert resp.status_code == 400
+
+
+def test_good_options():
+    class Model(cog.Model):
+        def setup(self):
+            pass
+
+        @cog.input("text", type=str, options=["foo", "bar"])
+        @cog.input("num", type=int, options=[1, 2, 3])
+        def run(self, text, num):
+            return text + ("a" * num)
+
+    client = make_client(Model())
+    resp = client.post("/infer", data={"text": "foo", "num": 2})
+    assert resp.status_code == 200
+    assert resp.data == b"fooaa"
+
+
+def test_bad_options_type():
+    with pytest.raises(ValueError):
+
+        class Model(cog.Model):
+            def setup(self):
+                pass
+
+            @cog.input("text", type=str, options=[])
+            def run(self, text):
+                return text
+
+    with pytest.raises(ValueError):
+
+        class Model(cog.Model):
+            def setup(self):
+                pass
+
+            @cog.input("text", type=str, options=["foo"])
+            def run(self, text):
+                return text
+
+    with pytest.raises(ValueError):
+
+        class Model(cog.Model):
+            def setup(self):
+                pass
+
+            @cog.input("text", type=Path, options=["foo"])
+            def run(self, text):
+                return text
+
+
+def test_bad_options():
+    class Model(cog.Model):
+        def setup(self):
+            pass
+
+        @cog.input("text", type=str, options=["foo", "bar"])
+        @cog.input("num", type=int, options=[1, 2, 3])
+        def run(self, text, num):
+            return text + ("a" * num)
+
+    client = make_client(Model())
+    resp = client.post("/infer", data={"text": "baz", "num": 2})
+    assert resp.status_code == 400
+    resp = client.post("/infer", data={"text": "bar", "num": 4})
     assert resp.status_code == 400
 
 
@@ -380,6 +483,7 @@ def test_timing():
     assert resp.status_code == 200
     assert float(resp.headers["X-Setup-Time"]) < 0.5
     assert float(resp.headers["X-Run-Time"]) < 0.5
+
 
 def test_unzip_to_tempdir(tmpdir_factory):
     input_dir = tmpdir_factory.mktemp("input")

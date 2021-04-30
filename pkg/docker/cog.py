@@ -99,7 +99,7 @@ class HTTPServer:
             if hasattr(self.model.run, "_inputs"):
                 input_specs = self.model.run._inputs
                 for name, spec in input_specs.items():
-                    arg = {
+                    arg: Dict[str, Any] = {
                         "type": _type_name(spec.type),
                     }
                     if spec.help:
@@ -110,6 +110,8 @@ class HTTPServer:
                         arg["min"] = str(spec.min)  # TODO: don't string this
                     if spec.max is not None:
                         arg["max"] = str(spec.max)  # TODO: don't string this
+                    if spec.options is not None:
+                        arg["options"] = [str(o) for o in spec.options]
                     args[name] = arg
             return jsonify({"arguments": args})
 
@@ -451,8 +453,9 @@ def validate_and_convert_inputs(
                     )
 
             elif input_spec.type == bool:
-                if val not in [True, False]:
+                if val.lower() not in ["true", "false"]:
                     raise InputValidationError(f"{name}={val} is not a boolean")
+                converted = val.lower() == "true"
 
             elif input_spec.type == str:
                 if isinstance(val, FileStorage):
@@ -474,6 +477,13 @@ def validate_and_convert_inputs(
                 if input_spec.min is not None and converted < input_spec.min:
                     raise InputValidationError(
                         f"Value {converted} is less than the min value {input_spec.min}"
+                    )
+
+            if input_spec.options is not None:
+                if converted not in input_spec.options:
+                    valid_str = ", ".join([str(o) for o in input_spec.options])
+                    raise InputValidationError(
+                        f"Value {converted} is not an option. Valid options are: {valid_str}"
                     )
 
         else:
@@ -518,10 +528,13 @@ class InputSpec:
     default: Any = _UNSPECIFIED
     min: Optional[Number] = None
     max: Optional[Number] = None
+    options: Optional[List[Any]] = None
     help: Optional[str] = None
 
 
-def input(name, type, default=_UNSPECIFIED, min=None, max=None, help=None):
+def input(
+    name, type, default=_UNSPECIFIED, min=None, max=None, options=None, help=None
+):
     type_name = _type_name(type)
     if type not in _VALID_INPUT_TYPES:
         type_list = ", ".join([_type_name(t) for t in _VALID_INPUT_TYPES])
@@ -530,6 +543,12 @@ def input(name, type, default=_UNSPECIFIED, min=None, max=None, help=None):
         )
     if (min is not None or max is not None) and not _is_numeric_type(type):
         raise ValueError(f"Non-numeric type {type_name} cannot have min and max values")
+
+    if options is not None and type == Path:
+        raise ValueError(f"File type cannot have options")
+
+    if options is not None and len(options) < 2:
+        raise ValueError(f"Options list must have at least two items")
 
     def wrapper(f):
         if not hasattr(f, "_inputs"):
@@ -542,7 +561,7 @@ def input(name, type, default=_UNSPECIFIED, min=None, max=None, help=None):
             raise TypeError("Cannot use default with Path type")
 
         f._inputs[name] = InputSpec(
-            type=type, default=default, min=min, max=max, help=help
+            type=type, default=default, min=min, max=max, options=options, help=help
         )
 
         @functools.wraps(f)

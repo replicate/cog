@@ -44,6 +44,7 @@ type RunArgument struct {
 	Default *string      `json:"default"`
 	Min     *string      `json:"min"`
 	Max     *string      `json:"max"`
+	Options *[]string    `json:"options"`
 	Help    *string      `json:"help"`
 }
 
