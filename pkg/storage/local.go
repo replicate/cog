@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"archive/zip"
 	"fmt"
 	"io"
 	"os"
@@ -63,14 +64,44 @@ func (s *LocalStorage) Download(user string, name string, id string) ([]byte, er
 	path := s.pathForID(user, name, id)
 	contents, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, NotFound
+		}
 		return nil, fmt.Errorf("Failed to read %s: %w", path, err)
 	}
 	return contents, nil
 }
 
+func (s *LocalStorage) DownloadFile(user string, name string, id string, path string) ([]byte, error) {
+	zipPath := s.pathForID(user, name, id)
+	reader, err := zip.OpenReader(zipPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, NotFound
+		}
+	}
+	for _, file := range reader.File {
+		if file.Name == path {
+			r, err := file.Open()
+			if err != nil {
+				return nil, fmt.Errorf("Failed to open %s in zip file: %w", path, err)
+			}
+			contents, err := io.ReadAll(r)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to read %s in zip file: %w", path, err)
+			}
+			return contents, nil
+		}
+	}
+	return nil, NotFound
+}
+
 func (s *LocalStorage) Delete(user string, name string, id string) error {
 	path := s.pathForID(user, name, id)
 	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return NotFound
+		}
 		return fmt.Errorf("Failed to delete %s: %w", path, err)
 	}
 	return nil
