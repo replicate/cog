@@ -59,8 +59,7 @@ class Model(cog.Model):
         """
         )
     with open(project_dir / "cog.yaml", "w") as f:
-        f.write(
-            """
+        cog_yaml = """
 name: andreas/hello-world
 model: infer.py:Model
 examples:
@@ -79,7 +78,7 @@ environment:
   architectures:
     - cpu
         """
-        )
+        f.write(cog_yaml)
 
     out, _ = subprocess.Popen(
         ["cog", "repo", "set", f"http://localhost:{cog_port}/{user}/{repo_name}"],
@@ -116,9 +115,7 @@ environment:
         ["cog", "-r", repo, "show", "--json", model_id], stdout=subprocess.PIPE
     ).communicate()
     out = json.loads(out)
-    assert (
-        out["config"]["examples"][2]["output"] == "@cog-example-output/output.02.txt"
-    )
+    assert out["config"]["examples"][2]["output"] == "@cog-example-output/output.02.txt"
 
     # show without -r
     out, _ = subprocess.Popen(
@@ -152,6 +149,10 @@ environment:
     input_path = output_dir / "input.txt"
     with input_path.open("w") as f:
         f.write("input")
+
+    files_endpoint = f"http://localhost:{cog_port}/v1/repos/{user}/{repo_name}/models/{model_id}/files"
+    assert requests.get(f"{files_endpoint}/cog.yaml").text == cog_yaml
+    assert requests.get(f"{files_endpoint}/cog-example-output/output.02.txt").text == "fooquxbaz"
 
     out_path = output_dir / "out.txt"
     subprocess.Popen(

@@ -68,6 +68,9 @@ func (s *Server) Start() error {
 	router.Path("/v1/repos/{user}/{name}/models/{id}.zip").
 		Methods(http.MethodGet).
 		HandlerFunc(s.checkReadAccess(s.DownloadModel))
+	router.Path("/v1/repos/{user}/{name}/models/{id}/files/{path:.+}").
+		Methods(http.MethodGet).
+		HandlerFunc(s.checkReadAccess(s.DownloadFile))
 	router.Path("/v1/repos/{user}/{name}/models/").
 		Methods(http.MethodPut).
 		HandlerFunc(s.checkWriteAccess(s.ReceiveFile))
