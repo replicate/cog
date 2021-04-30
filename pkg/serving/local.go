@@ -153,6 +153,9 @@ func (d *LocalDockerDeployment) Undeploy() error {
 	if err := d.client.ContainerStop(context.Background(), d.containerID, &timeout); err != nil {
 		return fmt.Errorf("Failed to stop Docker container %s: %w", d.containerID, err)
 	}
+	if err := d.client.ContainerRemove(context.Background(), d.containerID, types.ContainerRemoveOptions{}); err != nil {
+		return fmt.Errorf("Failed to remove Docker container %s: %w", d.containerID, err)
+	}
 	return nil
 }
 
