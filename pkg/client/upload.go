@@ -63,9 +63,8 @@ func (c *Client) UploadModel(repo *model.Repo, projectDir string) (*model.Model,
 	go func() {
 		err := uploadFile(req, "file", "model.zip", zipReader, bodyWriter)
 		if err != nil {
-			console.Fatal(err.Error())
+			console.Error(err.Error())
 		}
-		console.Info("Building model...")
 	}()
 
 	resp, err := client.Do(req)
@@ -73,6 +72,16 @@ func (c *Client) UploadModel(repo *model.Repo, projectDir string) (*model.Model,
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("Repository does not exist: %s", repo.String())
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("You are not authorized to write to repository %s. Did you run cog login?", repo.String())
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Server returned HTTP status %d", resp.StatusCode)
+	}
 
 	var mod *model.Model
 	reader := bufio.NewReader(resp.Body)
