@@ -11,5 +11,5 @@ var (
 	ProfilingEnabled = false
 	StartupTimeout   = 5 * time.Minute
 	ConfigFilename   = "cog.yaml"
-	CogServerAddress = "http://cog.replicate.ai" // TODO(andreas): https
+	CogServerAddress = "https://cog.replicate.ai"
 )
