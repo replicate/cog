@@ -63,7 +63,7 @@ func TestModel(servingPlatform Platform, imageTag string, config *model.Config, 
 			}
 		}
 
-		input := NewExampleWithBaseDir(example.Input, filepath.Join(dir, config.Workdir))
+		input := NewExampleWithBaseDir(example.Input, dir)
 
 		result, err := deployment.RunInference(input, logWriter)
 		if err != nil {
