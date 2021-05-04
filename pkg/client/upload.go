@@ -92,8 +92,11 @@ func (c *Client) UploadModel(repo *model.Repo, projectDir string) (*model.Model,
 				break
 			}
 			if err == io.ErrUnexpectedEOF {
-				console.Warn("Unexpected EOF")
-				break
+				return nil, fmt.Errorf("Unexpected EOF")
+			}
+			// TODO(andreas): how to catch this error without comparing strings?
+			if strings.Contains(err.Error(), "stream error") && strings.Contains(err.Error(), "INTERNAL_ERROR") {
+				return nil, fmt.Errorf("Lost contact with server. Please try again")
 			}
 			console.Warn(err.Error())
 		}
