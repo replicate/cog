@@ -18,9 +18,6 @@ func (c *Client) DownloadModel(repo *model.Repo, id string, outputDir string) er
 	if err != nil {
 		return fmt.Errorf("Failed to create HTTP request: %w", err)
 	}
-	if err := c.addAuthHeader(req, repo); err != nil {
-		return err
-	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("Failed to perform HTTP request: %w", err)
