@@ -7,9 +7,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/replicate/cog/pkg/console"
+	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/shell"
 )
@@ -28,6 +30,8 @@ func NewLocalImageBuilder(registry string) *LocalImageBuilder {
 }
 
 func (b *LocalImageBuilder) Build(dir string, dockerfileContents string, name string, logWriter logger.Logger) (tag string, err error) {
+	buildRequiresGPU := false // TODO(andreas)
+
 	console.Debugf("Building in %s", dir)
 
 	// TODO(andreas): pipe dockerfile contents to builder
@@ -37,19 +41,27 @@ func (b *LocalImageBuilder) Build(dir string, dockerfileContents string, name st
 		return "", fmt.Errorf("Failed to write Dockerfile")
 	}
 
-	// shelling out to docker build because it's easier to get logs this way
-	// than when using the sdk
-	cmd := exec.Command(
-		"docker", "build", ".",
-		"--progress", "plain",
-		"-f", dockerfilePath,
-		// "--build-arg", "BUILDKIT_INLINE_CACHE=1",
-	)
-	cmd.Dir = dir
-	// TODO(andreas): follow https://github.com/moby/buildkit/issues/1436, hopefully buildkit will be able to use GPUs soon
-	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=0")
+	var cmd *exec.Cmd
+	var outputPipe shell.PipeFunc
+	if global.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
+		cmd, outputPipe = b.buildxCommand(dir, dockerfilePath, logWriter)
+		if err != nil {
+			return "", err
+		}
+	} else if buildRequiresGPU {
+		// TODO(andreas): follow https://github.com/moby/buildkit/issues/1436, hopefully buildkit will be able to use GPUs soon
+		cmd, outputPipe = b.legacyCommand(dir, dockerfilePath, logWriter)
+		if err != nil {
+			return "", err
+		}
+	} else {
+		cmd, outputPipe = b.buildKitCommand(dir, dockerfilePath, logWriter)
+		if err != nil {
+			return "", err
+		}
+	}
 
-	lastLogsChan, tagChan, err := buildPipe(cmd.StdoutPipe, logWriter)
+	lastLogsChan, tagChan, err := buildPipe(outputPipe, logWriter)
 	if err != nil {
 		return "", err
 	}
@@ -65,14 +77,13 @@ func (b *LocalImageBuilder) Build(dir string, dockerfileContents string, name st
 		}
 		return "", err
 	}
-
 	dockerTag := <-tagChan
+
+	logWriter.Infof("Successfully built %s", dockerTag)
 
 	if err != nil {
 		return "", err
 	}
-
-	logWriter.Infof("Successfully built %s", dockerTag)
 
 	tag = dockerTag
 	if name != "" {
@@ -83,6 +94,57 @@ func (b *LocalImageBuilder) Build(dir string, dockerfileContents string, name st
 	}
 
 	return tag, nil
+}
+
+func (b *LocalImageBuilder) legacyCommand(dir string, dockerfilePath string, logWriter logger.Logger) (*exec.Cmd, shell.PipeFunc) {
+	// shelling out to docker build because it's easier to get logs this way
+	// than when using the sdk
+	cmd := exec.Command(
+		"docker", "build", ".",
+		"--progress", "plain",
+		"-f", dockerfilePath,
+	)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=0")
+
+	console.Debug("Using legacy builder")
+
+	return cmd, cmd.StdoutPipe
+}
+
+func (b *LocalImageBuilder) buildKitCommand(dir string, dockerfilePath string, logWriter logger.Logger) (*exec.Cmd, shell.PipeFunc) {
+	// shelling out to docker build because it's easier to get logs this way
+	// than when using the sdk
+	cmd := exec.Command(
+		"docker", "build", ".",
+		"--progress", "plain",
+		"-f", dockerfilePath,
+		"--build-arg", "BUILDKIT_INLINE_CACHE=1",
+	)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
+
+	console.Debug("Using BuildKit")
+
+	return cmd, cmd.StderrPipe
+}
+
+func (b *LocalImageBuilder) buildxCommand(dir string, dockerfilePath string, logWriter logger.Logger) (*exec.Cmd, shell.PipeFunc) {
+	// shelling out to docker build because it's easier to get logs this way
+	// than when using the sdk
+	cmd := exec.Command(
+		"docker", "buildx", "build", ".",
+		"--progress", "plain",
+		"-f", dockerfilePath,
+		"--build-arg", "BUILDKIT_INLINE_CACHE=1",
+		"--platform", "linux/amd64",
+	)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
+
+	console.Debug("Using Buildx")
+
+	return cmd, cmd.StderrPipe
 }
 
 func (b *LocalImageBuilder) tag(dockerTag string, tag string, logWriter logger.Logger) error {
