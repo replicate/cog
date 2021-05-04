@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -66,7 +67,7 @@ func (p *LocalDockerPlatform) Deploy(imageTag string, logWriter logger.Logger) (
 	}
 	*/
 
-	hostPort, err := shell.NextFreePort(5000)
+	hostPort, err := shell.NextFreePort(5000 + rand.Intn(1000))
 	if err != nil {
 		return nil, err
 	}
@@ -193,6 +194,12 @@ func (d *LocalDockerDeployment) RunInference(input *Example, logWriter logger.Lo
 	if err := mwriter.Close(); err != nil {
 		return nil, fmt.Errorf("Failed to close form mime writer: %w", err)
 	}
+
+	_, usedCPUSecsStart, err := d.getResourceUsage()
+	if err != nil {
+		return nil, err
+	}
+
 	url := fmt.Sprintf("http://localhost:%d/infer", d.port)
 	req, err := http.NewRequest(http.MethodPost, url, bodyBuffer)
 	if err != nil {
@@ -209,10 +216,11 @@ func (d *LocalDockerDeployment) RunInference(input *Example, logWriter logger.Lo
 	}
 	defer resp.Body.Close()
 
-	usedMemoryBytes, usedCPUSecs, err := d.getResourceUsage()
+	usedMemoryBytes, usedCPUSecsEnd, err := d.getResourceUsage()
 	if err != nil {
 		return nil, err
 	}
+	usedCPUSecs := usedCPUSecsEnd - usedCPUSecsStart
 
 	if resp.StatusCode == http.StatusBadRequest {
 		body := struct {
