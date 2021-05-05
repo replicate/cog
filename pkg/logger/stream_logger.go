@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -27,12 +28,13 @@ type Message struct {
 }
 
 type StreamLogger struct {
+	ctx    context.Context
 	writer http.ResponseWriter
 	mu     sync.Mutex
 }
 
-func NewStreamLogger(w http.ResponseWriter) *StreamLogger {
-	return &StreamLogger{writer: w}
+func NewStreamLogger(ctx context.Context, w http.ResponseWriter) *StreamLogger {
+	return &StreamLogger{ctx: ctx, writer: w}
 }
 
 func (logger *StreamLogger) logText(messageType MessageType, text string) {
@@ -45,6 +47,13 @@ func (logger *StreamLogger) logText(messageType MessageType, text string) {
 }
 
 func (logger *StreamLogger) write(data []byte) {
+	// don't write if the request has been cancelled
+	select {
+	case <-logger.ctx.Done():
+		return
+	default:
+	}
+
 	data = append(data, '\n')
 	logger.mu.Lock()
 	defer logger.mu.Unlock()

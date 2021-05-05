@@ -1,6 +1,7 @@
 package serving
 
 import (
+	"context"
 	"io"
 	"path/filepath"
 	"strings"
@@ -12,12 +13,12 @@ import (
 )
 
 type Platform interface {
-	Deploy(imageTag string, logWriter logger.Logger) (Deployment, error)
+	Deploy(ctx context.Context, imageTag string, useGPU bool, logWriter logger.Logger) (Deployment, error)
 }
 
 type Deployment interface {
-	RunInference(input *Example, logWriter logger.Logger) (*Result, error)
-	Help(logWriter logger.Logger) (*HelpResponse, error)
+	RunInference(ctx context.Context, input *Example, logWriter logger.Logger) (*Result, error)
+	Help(ctx context.Context, logWriter logger.Logger) (*HelpResponse, error)
 	Undeploy() error
 }
 
