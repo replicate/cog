@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/replicate/cog/pkg/console"
+	"github.com/replicate/cog/pkg/global"
 
 	"github.com/replicate/cog/pkg/version"
 )
@@ -345,7 +346,7 @@ func torchvisionGPUPackage(ver string, cuda string) (name string, cpuVersion str
 // TODO(andreas): clean up this hack by actually parsing the torch_stable.html list in the generator
 func torchStripCPUSuffixForM1(version string, goos string, goarch string) string {
 	// TODO(andreas): clean up this hack
-	if goos == "darwin" && goarch == "arm64" {
+	if global.IsM1Mac(goos, goarch) {
 		return strings.ReplaceAll(version, "+cpu", "")
 	}
 	return version
