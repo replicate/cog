@@ -20,19 +20,19 @@ import (
 // TODO(andreas): decouple saving zip files from image building into two separate API calls?
 // TODO(andreas): separate targets for different CUDA versions? how does that change the yaml design?
 
-const topLevelSourceDir = "source"
+const (
+	topLevelSourceDir = "source"
+)
 
 type Server struct {
-	port               int
-	webHooks           []*WebHook
-	authDelegate       string
-	db                 database.Database
-	dockerImageBuilder docker.ImageBuilder
-	servingPlatform    serving.Platform
-	store              storage.Storage
+	webHooks     []*WebHook
+	authDelegate string
+	db           database.Database
+	store        storage.Storage
+	buildQueue   *BuildQueue
 }
 
-func NewServer(port int, rawWebHooks []string, authDelegate string, db database.Database, dockerImageBuilder docker.ImageBuilder, servingPlatform serving.Platform, store storage.Storage) (*Server, error) {
+func NewServer(cpuConcurrency int, gpuConcurrency int, rawWebHooks []string, authDelegate string, db database.Database, dockerImageBuilder docker.ImageBuilder, servingPlatform serving.Platform, store storage.Storage) (*Server, error) {
 	webHooks := []*WebHook{}
 	for _, rawWebHook := range rawWebHooks {
 		webHook, err := newWebHook(rawWebHook)
@@ -41,18 +41,19 @@ func NewServer(port int, rawWebHooks []string, authDelegate string, db database.
 		}
 		webHooks = append(webHooks, webHook)
 	}
+	buildQueue := NewBuildQueue(servingPlatform, dockerImageBuilder, cpuConcurrency, gpuConcurrency)
 	return &Server{
-		port:               port,
-		webHooks:           webHooks,
-		authDelegate:       authDelegate,
-		db:                 db,
-		dockerImageBuilder: dockerImageBuilder,
-		servingPlatform:    servingPlatform,
-		store:              store,
+		webHooks:     webHooks,
+		authDelegate: authDelegate,
+		db:           db,
+		store:        store,
+		buildQueue:   buildQueue,
 	}, nil
 }
 
-func (s *Server) Start() error {
+func (s *Server) Start(port int) error {
+	s.buildQueue.Start()
+
 	router := mux.NewRouter()
 
 	router.Path("/").
@@ -105,13 +106,14 @@ func (s *Server) Start() error {
 		router.HandleFunc("/debug/pprof/trace", pprof.Trace)
 		router.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
 		router.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+		router.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
 	}
 
-	console.Infof("Server running on 0.0.0.0:%d", s.port)
+	console.Infof("Server running on 0.0.0.0:%d", port)
 
 	loggedRouter := handlers.LoggingHandler(os.Stdout, router)
 
-	return http.ListenAndServe(fmt.Sprintf(":%d", s.port), loggedRouter)
+	return http.ListenAndServe(fmt.Sprintf(":%d", port), loggedRouter)
 }
 
 func getRepoVars(r *http.Request) (user string, name string, id string) {

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -60,11 +61,12 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 	}
 	logWriter := logger.NewConsoleLogger()
 	// TODO(andreas): GPU inference
+	useGPU := false
 	artifact, ok := mod.ArtifactFor(model.TargetDockerCPU)
 	if !ok {
 		return fmt.Errorf("Target %s is not defined for model", model.TargetDockerCPU)
 	}
-	deployment, err := servingPlatform.Deploy(artifact.URI, logWriter)
+	deployment, err := servingPlatform.Deploy(context.Background(), artifact.URI, useGPU, logWriter)
 	if err != nil {
 		return err
 	}
@@ -90,7 +92,7 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 		keyVals[name] = value
 	}
 	example := serving.NewExample(keyVals)
-	result, err := deployment.RunInference(example, logWriter)
+	result, err := deployment.RunInference(context.Background(), example, logWriter)
 	if err != nil {
 		return err
 	}

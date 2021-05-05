@@ -2,7 +2,9 @@ package docker
 
 import (
 	"bufio"
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,55 +31,58 @@ func NewLocalImageBuilder(registry string) *LocalImageBuilder {
 	return &LocalImageBuilder{registry: registry}
 }
 
-func (b *LocalImageBuilder) Build(dir string, dockerfileContents string, name string, logWriter logger.Logger) (tag string, err error) {
-	buildRequiresGPU := false // TODO(andreas)
-
+func (b *LocalImageBuilder) Build(ctx context.Context, dir string, dockerfileContents string, name string, useGPU bool, logWriter logger.Logger) (tag string, err error) {
 	console.Debugf("Building in %s", dir)
 
 	// TODO(andreas): pipe dockerfile contents to builder
 	relDockerfilePath := "Dockerfile"
-	dockerfilePath := filepath.Join(dir, relDockerfilePath)
+	dockerfileDir, err := os.MkdirTemp("/tmp", "dockerfile")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(dockerfileDir)
+
+	dockerfilePath := filepath.Join(dockerfileDir, relDockerfilePath)
 	if err := os.WriteFile(dockerfilePath, []byte(dockerfileContents), 0644); err != nil {
 		return "", fmt.Errorf("Failed to write Dockerfile")
 	}
 
 	var cmd *exec.Cmd
-	var outputPipe shell.PipeFunc
+	var outputPipeFn shell.PipeFunc
 	if global.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
-		cmd, outputPipe = b.buildxCommand(dir, dockerfilePath, logWriter)
+		cmd, outputPipeFn = b.buildxCommand(ctx, dir, dockerfilePath, logWriter)
 		if err != nil {
 			return "", err
 		}
-	} else if buildRequiresGPU {
+	} else if useGPU {
 		// TODO(andreas): follow https://github.com/moby/buildkit/issues/1436, hopefully buildkit will be able to use GPUs soon
-		cmd, outputPipe = b.legacyCommand(dir, dockerfilePath, logWriter)
+		cmd, outputPipeFn = b.legacyCommand(ctx, dir, dockerfilePath, logWriter)
 		if err != nil {
 			return "", err
 		}
 	} else {
-		cmd, outputPipe = b.buildKitCommand(dir, dockerfilePath, logWriter)
+		cmd, outputPipeFn = b.buildKitCommand(ctx, dir, dockerfilePath, logWriter)
 		if err != nil {
 			return "", err
 		}
 	}
 
-	lastLogsChan, tagChan, err := buildPipe(outputPipe, logWriter)
+	outputPipe, err := outputPipeFn()
 	if err != nil {
 		return "", err
 	}
-
 	if err := cmd.Start(); err != nil {
 		return "", err
 	}
 
+	lastLogs, dockerTag := buildPipe(outputPipe, logWriter)
+
 	if err = cmd.Wait(); err != nil {
-		lastLogs := <-lastLogsChan
 		for _, logLine := range lastLogs {
 			logWriter.Info(logLine)
 		}
 		return "", err
 	}
-	dockerTag := <-tagChan
 
 	logWriter.Infof("Successfully built %s", dockerTag)
 
@@ -96,10 +101,11 @@ func (b *LocalImageBuilder) Build(dir string, dockerfileContents string, name st
 	return tag, nil
 }
 
-func (b *LocalImageBuilder) legacyCommand(dir string, dockerfilePath string, logWriter logger.Logger) (*exec.Cmd, shell.PipeFunc) {
+func (b *LocalImageBuilder) legacyCommand(ctx context.Context, dir string, dockerfilePath string, logWriter logger.Logger) (*exec.Cmd, shell.PipeFunc) {
 	// shelling out to docker build because it's easier to get logs this way
 	// than when using the sdk
-	cmd := exec.Command(
+	cmd := exec.CommandContext(
+		ctx,
 		"docker", "build", ".",
 		"--progress", "plain",
 		"-f", dockerfilePath,
@@ -112,10 +118,11 @@ func (b *LocalImageBuilder) legacyCommand(dir string, dockerfilePath string, log
 	return cmd, cmd.StdoutPipe
 }
 
-func (b *LocalImageBuilder) buildKitCommand(dir string, dockerfilePath string, logWriter logger.Logger) (*exec.Cmd, shell.PipeFunc) {
+func (b *LocalImageBuilder) buildKitCommand(ctx context.Context, dir string, dockerfilePath string, logWriter logger.Logger) (*exec.Cmd, shell.PipeFunc) {
 	// shelling out to docker build because it's easier to get logs this way
 	// than when using the sdk
-	cmd := exec.Command(
+	cmd := exec.CommandContext(
+		ctx,
 		"docker", "build", ".",
 		"--progress", "plain",
 		"-f", dockerfilePath,
@@ -129,10 +136,11 @@ func (b *LocalImageBuilder) buildKitCommand(dir string, dockerfilePath string, l
 	return cmd, cmd.StderrPipe
 }
 
-func (b *LocalImageBuilder) buildxCommand(dir string, dockerfilePath string, logWriter logger.Logger) (*exec.Cmd, shell.PipeFunc) {
+func (b *LocalImageBuilder) buildxCommand(ctx context.Context, dir string, dockerfilePath string, logWriter logger.Logger) (*exec.Cmd, shell.PipeFunc) {
 	// shelling out to docker build because it's easier to get logs this way
 	// than when using the sdk
-	cmd := exec.Command(
+	cmd := exec.CommandContext(
+		ctx,
 		"docker", "buildx", "build", ".",
 		"--progress", "plain",
 		"-f", dockerfilePath,
@@ -160,7 +168,7 @@ func (b *LocalImageBuilder) tag(dockerTag string, tag string, logWriter logger.L
 	return nil
 }
 
-func (b *LocalImageBuilder) Push(tag string, logWriter logger.Logger) error {
+func (b *LocalImageBuilder) Push(ctx context.Context, tag string, logWriter logger.Logger) error {
 	if b.registry == noRegistry {
 		return nil
 	}
@@ -168,7 +176,7 @@ func (b *LocalImageBuilder) Push(tag string, logWriter logger.Logger) error {
 	logWriter.Infof("Pushing %s to registry", tag)
 
 	args := []string{"push", tag}
-	cmd := exec.Command("docker", args...)
+	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Env = os.Environ()
 
 	console.Debug("Pushing model to Registry...")
@@ -185,7 +193,7 @@ func (b *LocalImageBuilder) Push(tag string, logWriter logger.Logger) error {
 	return nil
 }
 
-func buildPipe(pf shell.PipeFunc, logWriter logger.Logger) (lastLogsChan chan []string, tagChan chan string, err error) {
+func buildPipe(pipe io.ReadCloser, logWriter logger.Logger) (lastLogs []string, tag string) {
 	// TODO: this is a hack, use Docker Go API instead
 
 	// awkward logic: scan docker build output for the string
@@ -198,42 +206,33 @@ func buildPipe(pf shell.PipeFunc, logWriter logger.Logger) (lastLogsChan chan []
 	successPrefix := "Successfully built "
 	sectionPrefix := "RUN " + SectionPrefix
 	buildkitRegex := regexp.MustCompile("^#[0-9]+ writing image sha256:([0-9a-f]{12}).+$")
-	tagChan = make(chan string)
 
-	lastLogsChan = make(chan []string)
-
-	pipe, err := pf()
-	if err != nil {
-		return nil, nil, err
-	}
 	scanner := bufio.NewScanner(pipe)
-	go func() {
-		currentSection := SectionStartingBuild
-		currentLogLines := []string{}
+	currentSection := SectionStartingBuild
+	currentLogLines := []string{}
 
-		for scanner.Scan() {
-			line := scanner.Text()
-			logWriter.Debug(line)
+	for scanner.Scan() {
+		line := scanner.Text()
+		logWriter.Debug(line)
 
-			if strings.Contains(line, sectionPrefix) {
-				currentSection = strings.SplitN(line, sectionPrefix, 2)[1]
-				currentLogLines = []string{}
-				logWriter.Infof("  * %s", currentSection)
-			} else {
-				currentLogLines = append(currentLogLines, line)
-			}
-			if strings.HasPrefix(line, successPrefix) {
-				tagChan <- strings.TrimSpace(strings.TrimPrefix(line, successPrefix))
-			}
-			match := buildkitRegex.FindStringSubmatch(line)
-			if len(match) == 2 {
-				tagChan <- match[1]
-			}
+		if strings.Contains(line, sectionPrefix) {
+			currentSection = strings.SplitN(line, sectionPrefix, 2)[1]
+			currentLogLines = []string{}
+			logWriter.Infof("  * %s", currentSection)
+		} else {
+			currentLogLines = append(currentLogLines, line)
 		}
-		lastLogsChan <- currentLogLines
-	}()
+		if strings.HasPrefix(line, successPrefix) {
+			tag = strings.TrimSpace(strings.TrimPrefix(line, successPrefix))
+		}
+		match := buildkitRegex.FindStringSubmatch(line)
+		if len(match) == 2 {
+			tag = match[1]
+		}
+	}
+	lastLogs = currentLogLines
 
-	return lastLogsChan, tagChan, nil
+	return lastLogs, tag
 }
 
 func pipeToWithDockerChecks(pf shell.PipeFunc, logWriter logger.Logger) (done chan struct{}, err error) {

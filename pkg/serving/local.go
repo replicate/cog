@@ -48,7 +48,7 @@ func NewLocalDockerPlatform() (*LocalDockerPlatform, error) {
 	}, nil
 }
 
-func (p *LocalDockerPlatform) Deploy(imageTag string, logWriter logger.Logger) (Deployment, error) {
+func (p *LocalDockerPlatform) Deploy(ctx context.Context, imageTag string, useGPU bool, logWriter logger.Logger) (Deployment, error) {
 	// TODO(andreas): output container logs
 
 	logWriter.Infof("Deploying container %s", imageTag)
@@ -59,7 +59,6 @@ func (p *LocalDockerPlatform) Deploy(imageTag string, logWriter logger.Logger) (
 		}
 	}
 
-	ctx := context.Background()
 	/* requires auth, therefore we just shell out for now
 	_, err := p.client.ImagePull(ctx, imageTag, types.ImagePullOptions{})
 	if err != nil {
@@ -89,8 +88,20 @@ func (p *LocalDockerPlatform) Deploy(imageTag string, logWriter logger.Logger) (
 			nat.Port(fmt.Sprintf("%d/tcp", jidPort)): struct{}{},
 		},
 	}
+	var deviceRequests []container.DeviceRequest
+	if useGPU {
+		// using all gpus
+		// TODO(andreas): make it possible to use a single gpu on a multi-gpu instance
+		deviceRequests = []container.DeviceRequest{{
+			Count:        -1, // -1 == all
+			Capabilities: [][]string{{"gpu"}},
+		}}
+	}
 	hostConfig := &container.HostConfig{
 		PortBindings: portBindings,
+		Resources: container.Resources{
+			DeviceRequests: deviceRequests,
+		},
 	}
 	resp, err := p.client.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
 	if err != nil {
@@ -98,30 +109,29 @@ func (p *LocalDockerPlatform) Deploy(imageTag string, logWriter logger.Logger) (
 	}
 
 	containerID := resp.ID
-
-	if err := p.client.ContainerStart(ctx, containerID, types.ContainerStartOptions{}); err != nil {
-		return nil, fmt.Errorf("Failed to start Docker container for image %s: %w", imageTag, err)
-	}
-
 	deployment := &LocalDockerDeployment{
 		containerID: containerID,
 		client:      p.client,
 		port:        hostPort,
 	}
 
-	if err := p.waitForContainerReady(hostPort, containerID, logWriter); err != nil {
+	if err := p.client.ContainerStart(ctx, containerID, types.ContainerStartOptions{}); err != nil {
+		return deployment, fmt.Errorf("Failed to start Docker container for image %s: %w", imageTag, err)
+	}
+
+	if err := p.waitForContainerReady(ctx, hostPort, containerID, logWriter); err != nil {
 		deployment.writeContainerLogs(logWriter)
-		return nil, err
+		return deployment, err
 	}
 
 	return deployment, nil
 }
 
-func (p *LocalDockerPlatform) waitForContainerReady(hostPort int, containerID string, logWriter logger.Logger) error {
+func (p *LocalDockerPlatform) waitForContainerReady(ctx context.Context, hostPort int, containerID string, logWriter logger.Logger) error {
 	url := fmt.Sprintf("http://localhost:%d/ping", hostPort)
 
 	start := time.Now()
-	logWriter.Infof("Waiting for model container to become accessible")
+	logWriter.Info("Waiting for model container to become accessible")
 	for {
 		now := time.Now()
 		if now.Sub(start) > global.StartupTimeout {
@@ -130,7 +140,7 @@ func (p *LocalDockerPlatform) waitForContainerReady(hostPort int, containerID st
 
 		time.Sleep(100 * time.Millisecond)
 
-		cont, err := p.client.ContainerInspect(context.Background(), containerID)
+		cont, err := p.client.ContainerInspect(ctx, containerID)
 		if err != nil {
 			return fmt.Errorf("Failed to get container status: %w", err)
 		}
@@ -145,7 +155,7 @@ func (p *LocalDockerPlatform) waitForContainerReady(hostPort int, containerID st
 		if resp.StatusCode != http.StatusOK {
 			continue
 		}
-		logWriter.Infof("Got successful ping response from container")
+		logWriter.Info("Got successful ping response from container")
 		return nil
 	}
 }
@@ -161,7 +171,7 @@ func (d *LocalDockerDeployment) Undeploy() error {
 	return nil
 }
 
-func (d *LocalDockerDeployment) RunInference(input *Example, logWriter logger.Logger) (*Result, error) {
+func (d *LocalDockerDeployment) RunInference(ctx context.Context, input *Example, logWriter logger.Logger) (*Result, error) {
 	bodyBuffer := new(bytes.Buffer)
 
 	mwriter := multipart.NewWriter(bodyBuffer)
@@ -201,7 +211,7 @@ func (d *LocalDockerDeployment) RunInference(input *Example, logWriter logger.Lo
 	}
 
 	url := fmt.Sprintf("http://localhost:%d/infer", d.port)
-	req, err := http.NewRequest(http.MethodPost, url, bodyBuffer)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bodyBuffer)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create HTTP request to %s: %w", url, err)
 	}
@@ -300,8 +310,12 @@ func (d *LocalDockerDeployment) getResourceUsage() (memoryBytes uint64, cpuSecs 
 	return stats.MemoryStats.MaxUsage, cpuSecs, nil
 }
 
-func (d *LocalDockerDeployment) Help(logWriter logger.Logger) (*HelpResponse, error) {
-	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/help", d.port))
+func (d *LocalDockerDeployment) Help(ctx context.Context, logWriter logger.Logger) (*HelpResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://localhost:%d/help", d.port), nil)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create GET request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		d.writeContainerLogs(logWriter)
 		return nil, fmt.Errorf("Failed to GET /help: %w", err)

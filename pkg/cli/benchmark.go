@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -106,7 +107,7 @@ func runBenchmarkInference(mod *model.Model, modelDir string, results *Benchmark
 	if !ok {
 		return fmt.Errorf("Target %s is not defined for model", benchmarkTarget)
 	}
-	deployment, err := servingPlatform.Deploy(artifact.URI, logWriter)
+	deployment, err := servingPlatform.Deploy(context.Background(), artifact.URI, benchmarkTarget == "docker-gpu", logWriter)
 	if err != nil {
 		return err
 	}
@@ -119,7 +120,7 @@ func runBenchmarkInference(mod *model.Model, modelDir string, results *Benchmark
 	results.BootTimes = append(results.BootTimes, bootTime)
 
 	for i := 0; i < runIterations; i++ {
-		result, err := deployment.RunInference(input, logWriter)
+		result, err := deployment.RunInference(context.Background(), input, logWriter)
 		if err != nil {
 			return err
 		}

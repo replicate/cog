@@ -2,6 +2,7 @@ package serving
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"mime"
@@ -22,21 +23,25 @@ const ExampleOutputDir = "cog-example-output"
 // outputs. If examples inputs are defined but example outputs aren't,
 // defined, the resulting outputs are written to exampleOutputDir and
 // the config object is updated to point to those outputs.
-func TestModel(servingPlatform Platform, imageTag string, config *model.Config, dir string, logWriter logger.Logger) (map[string]*model.RunArgument, *model.Stats, error) {
+func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, config *model.Config, dir string, useGPU bool, logWriter logger.Logger) (map[string]*model.RunArgument, *model.Stats, error) {
 	logWriter.WriteStatus("Testing model")
 
 	modelStats := new(model.Stats)
 
 	bootStart := time.Now()
-	deployment, err := servingPlatform.Deploy(imageTag, logWriter)
+	deployment, err := servingPlatform.Deploy(ctx, imageTag, useGPU, logWriter)
+	defer func() {
+		if deployment != nil {
+			deployment.Undeploy()
+		}
+	}()
 	if err != nil {
 		return nil, nil, err
 	}
-	defer deployment.Undeploy()
 
-	modelStats.BootTime = time.Since(bootStart).Seconds()
+	modelStats.SetBootTime(time.Since(bootStart).Seconds(), useGPU)
 
-	help, err := deployment.Help(logWriter)
+	help, err := deployment.Help(ctx, logWriter)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -65,7 +70,7 @@ func TestModel(servingPlatform Platform, imageTag string, config *model.Config, 
 
 		input := NewExampleWithBaseDir(example.Input, dir)
 
-		result, err := deployment.RunInference(input, logWriter)
+		result, err := deployment.RunInference(ctx, input, logWriter)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -77,7 +82,7 @@ func TestModel(servingPlatform Platform, imageTag string, config *model.Config, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("Failed to read output: %w", err)
 		}
-		logWriter.Infof(fmt.Sprintf("Inference result length: %d, mime type: %s", len(outputBytes), output.MimeType))
+		logWriter.Infof("Inference result length: %d, mime type: %s", len(outputBytes), output.MimeType)
 		if expectedOutput == nil {
 			filename := fmt.Sprintf("output.%02d", index)
 			if ext := extensionByType(output.MimeType); ext != "" {
@@ -109,29 +114,26 @@ func TestModel(servingPlatform Platform, imageTag string, config *model.Config, 
 	}
 
 	if len(setupTimes) > 0 {
-		modelStats.SetupTime, err = stats.Mean(setupTimes)
+		setupTime, err := stats.Mean(setupTimes)
 		if err != nil {
 			return nil, nil, err
 		}
-		modelStats.RunTime, err = stats.Mean(setupTimes)
+		modelStats.SetSetupTime(setupTime, useGPU)
+		runTime, err := stats.Mean(runTimes)
 		if err != nil {
 			return nil, nil, err
 		}
+		modelStats.SetRunTime(runTime, useGPU)
 		memoryUsage, err := stats.Max(memoryUsages)
 		if err != nil {
 			return nil, nil, err
 		}
-		modelStats.MemoryUsage = uint64(memoryUsage)
+		modelStats.SetMemoryUsage(uint64(memoryUsage), useGPU)
 		cpuUsage, err := stats.Max(cpuUsages)
 		if err != nil {
 			return nil, nil, err
 		}
-		modelStats.CPUUsage = cpuUsage
-	} else {
-		modelStats.SetupTime = 0
-		modelStats.RunTime = 0
-		modelStats.MemoryUsage = 0
-		modelStats.CPUUsage = 0
+		modelStats.SetCPUUsage(cpuUsage, useGPU)
 	}
 
 	return help.Arguments, modelStats, nil

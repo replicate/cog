@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -75,12 +76,13 @@ func Test(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	tag, err := dockerImageBuilder.Build(projectDir, dockerfileContents, "", logWriter)
+	buildUseGPU := config.Environment.BuildRequiresGPU && arch == "gpu"
+	tag, err := dockerImageBuilder.Build(context.Background(), projectDir, dockerfileContents, "", buildUseGPU, logWriter)
 	if err != nil {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
 	}
 
-	if _, _, err := serving.TestModel(servingPlatform, tag, config, projectDir, logWriter); err != nil {
+	if _, _, err := serving.TestModel(context.Background(), servingPlatform, tag, config, projectDir, arch == "gpu", logWriter); err != nil {
 		return err
 	}
 
