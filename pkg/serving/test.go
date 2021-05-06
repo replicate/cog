@@ -19,13 +19,24 @@ import (
 // TODO(andreas): put this somewhere else since it's used by server?
 const ExampleOutputDir = "cog-example-output"
 
+type TestResult struct {
+	RunArgs  map[string]*model.RunArgument
+	Examples []*model.Example
+	// map of paths (e.g. "cog-example-output/output.01.png") to contents
+	NewExampleOutputs map[string][]byte
+	Stats             *model.Stats
+}
+
 // TestModel runs the example inputs and checks the example
 // outputs. If examples inputs are defined but example outputs aren't,
 // defined, the resulting outputs are written to exampleOutputDir and
 // the config object is updated to point to those outputs.
-func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, config *model.Config, dir string, useGPU bool, logWriter logger.Logger) (map[string]*model.RunArgument, *model.Stats, error) {
+func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, config *model.Config, dir string, useGPU bool, logWriter logger.Logger) (*TestResult, error) {
 	logWriter.WriteStatus("Testing model")
 
+	// copy examples to avoid race conditions when building in parallel
+	examples := copyExamples(config.Examples)
+	newExampleOutputs := make(map[string][]byte)
 	modelStats := new(model.Stats)
 
 	bootStart := time.Now()
@@ -36,23 +47,23 @@ func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, c
 		}
 	}()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	modelStats.SetBootTime(time.Since(bootStart).Seconds(), useGPU)
 
 	help, err := deployment.Help(ctx, logWriter)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	setupTimes := []float64{}
 	runTimes := []float64{}
 	memoryUsages := []float64{}
 	cpuUsages := []float64{}
-	for index, example := range config.Examples {
+	for index, example := range examples {
 		if err := validateServingExampleInput(help, example.Input); err != nil {
-			return nil, nil, fmt.Errorf("Example input doesn't match run arguments: %w", err)
+			return nil, fmt.Errorf("Example input doesn't match run arguments: %w", err)
 		}
 		var expectedOutput []byte
 		outputIsFile := false
@@ -61,7 +72,7 @@ func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, c
 				outputIsFile = true
 				expectedOutput, err = os.ReadFile(filepath.Join(dir, config.Workdir, example.Output[1:]))
 				if err != nil {
-					return nil, nil, fmt.Errorf("Failed to read example output file %s: %w", example.Output[1:], err)
+					return nil, fmt.Errorf("Failed to read example output file %s: %w", example.Output[1:], err)
 				}
 			} else {
 				expectedOutput = []byte(example.Output)
@@ -72,7 +83,7 @@ func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, c
 
 		result, err := deployment.RunInference(ctx, input, logWriter)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		logWriter.Debugf("Memory usage (bytes): %d", result.UsedMemoryBytes)
 		logWriter.Debugf("CPU usage (seconds):  %.1f", result.UsedCPUSecs)
@@ -80,7 +91,7 @@ func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, c
 		output := result.Values["output"]
 		outputBytes, err := io.ReadAll(output.Buffer)
 		if err != nil {
-			return nil, nil, fmt.Errorf("Failed to read output: %w", err)
+			return nil, fmt.Errorf("Failed to read output: %w", err)
 		}
 		logWriter.Infof("Inference result length: %d, mime type: %s", len(outputBytes), output.MimeType)
 		if expectedOutput == nil {
@@ -90,20 +101,13 @@ func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, c
 			}
 			outputPath := filepath.Join(ExampleOutputDir, filename)
 			example.Output = "@" + outputPath
-
-			if err := os.MkdirAll(filepath.Join(dir, ExampleOutputDir), 0755); err != nil {
-				return nil, nil, fmt.Errorf("Failed to make output dir: %w", err)
-			}
-
-			if err := os.WriteFile(filepath.Join(dir, outputPath), outputBytes, 0644); err != nil {
-				return nil, nil, fmt.Errorf("Failed to write output: %w", err)
-			}
+			newExampleOutputs[outputPath] = outputBytes
 		} else {
 			if outputIsFile && !bytes.Equal(expectedOutput, outputBytes) {
-				return nil, nil, fmt.Errorf("Output file contents doesn't match expected %s", example.Output[1:])
+				return nil, fmt.Errorf("Output file contents doesn't match expected %s", example.Output[1:])
 			} else if !outputIsFile && strings.TrimSpace(string(outputBytes)) != strings.TrimSpace(example.Output) {
 				// TODO(andreas): are there cases where space is significant?
-				return nil, nil, fmt.Errorf("Output %s doesn't match expected: %s", string(outputBytes), example.Output)
+				return nil, fmt.Errorf("Output %s doesn't match expected: %s", string(outputBytes), example.Output)
 			}
 		}
 
@@ -116,27 +120,32 @@ func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, c
 	if len(setupTimes) > 0 {
 		setupTime, err := stats.Mean(setupTimes)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		modelStats.SetSetupTime(setupTime, useGPU)
 		runTime, err := stats.Mean(runTimes)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		modelStats.SetRunTime(runTime, useGPU)
 		memoryUsage, err := stats.Max(memoryUsages)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		modelStats.SetMemoryUsage(uint64(memoryUsage), useGPU)
 		cpuUsage, err := stats.Max(cpuUsages)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		modelStats.SetCPUUsage(cpuUsage, useGPU)
 	}
 
-	return help.Arguments, modelStats, nil
+	return &TestResult{
+		RunArgs:           help.Arguments,
+		Examples:          examples,
+		NewExampleOutputs: newExampleOutputs,
+		Stats:             modelStats,
+	}, nil
 }
 
 func validateServingExampleInput(help *HelpResponse, input map[string]string) error {
@@ -314,4 +323,19 @@ func extensionByType(mimeType string) string {
 		}
 		return extensions[0]
 	}
+}
+
+func copyExamples(examples []*model.Example) []*model.Example {
+	copy := []*model.Example{}
+	for _, ex := range examples {
+		inputCopy := map[string]string{}
+		for k, v := range ex.Input {
+			inputCopy[k] = v
+		}
+		copy = append(copy, &model.Example{
+			Input:  inputCopy,
+			Output: ex.Output,
+		})
+	}
+	return copy
 }
