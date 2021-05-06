@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -26,6 +28,7 @@ type BuildQueue struct {
 	servingPlatform    serving.Platform
 	dockerImageBuilder docker.ImageBuilder
 	jobChans           map[string]chan *BuildJob
+	archSemaphores     map[string]chan struct{}
 	outputChans        map[string]chan *JobOutput
 	cancelChans        map[string]chan struct{}
 }
@@ -49,8 +52,7 @@ type JobOutput struct {
 
 type JobResult struct {
 	Artifact   *model.Artifact
-	RunArgs    map[string]*model.RunArgument
-	ModelStats *model.Stats
+	TestResult *serving.TestResult
 	Error      error
 	Arch       string
 }
@@ -66,8 +68,12 @@ func NewBuildQueue(servingPlatform serving.Platform, dockerImageBuilder docker.I
 		servingPlatform:    servingPlatform,
 		dockerImageBuilder: dockerImageBuilder,
 		jobChans: map[string]chan *BuildJob{
-			"cpu": make(chan *BuildJob, cpuConcurrency),
-			"gpu": make(chan *BuildJob, gpuConcurrency),
+			"cpu": make(chan *BuildJob),
+			"gpu": make(chan *BuildJob),
+		},
+		archSemaphores: map[string]chan struct{}{
+			"cpu": make(chan struct{}, cpuConcurrency),
+			"gpu": make(chan struct{}, gpuConcurrency),
 		},
 		outputChans: make(map[string]chan *JobOutput),
 		cancelChans: make(map[string]chan struct{}),
@@ -75,15 +81,20 @@ func NewBuildQueue(servingPlatform serving.Platform, dockerImageBuilder docker.I
 }
 
 func (q *BuildQueue) Start() {
-	for _, arch := range []string{"cpu", "gpu"} {
-		arch := arch
-		go func() {
-			for {
+	go func() {
+		for {
+			for _, arch := range []string{"cpu", "gpu"} {
+				arch := arch
 				job := <-q.jobChans[arch]
-				q.handleJob(job)
+				go func() {
+					sem := q.archSemaphores[arch]
+					sem <- struct{}{}
+					defer func() { <-sem }()
+					q.handleJob(job)
+				}()
 			}
-		}()
-	}
+		}
+	}()
 }
 
 // Build pushes per-arch BuildJobs onto the build queue's job channels
@@ -101,6 +112,7 @@ func (q *BuildQueue) Build(ctx context.Context, dir string, name string, id stri
 		q.outputChans[messageID] = outputChan
 		cancelChan := make(chan struct{})
 		q.cancelChans[messageID] = cancelChan
+
 		q.jobChans[arch] <- &BuildJob{
 			messageID: messageID,
 			dir:       dir,
@@ -170,6 +182,10 @@ func (q *BuildQueue) Build(ctx context.Context, dir string, name string, id stri
 		results = append(results, result)
 	}
 
+	if err := saveExamples(results, dir, config); err != nil {
+		return nil, err
+	}
+
 	return mergeBuildResults(results), nil
 }
 
@@ -193,7 +209,7 @@ func (q *BuildQueue) handleJob(job *BuildJob) {
 		return
 	}
 
-	runArgs, modelStats, err := serving.TestModel(ctx, q.servingPlatform, artifact.URI, job.config, job.dir, job.arch == "gpu", logWriter)
+	testResult, err := serving.TestModel(ctx, q.servingPlatform, artifact.URI, job.config, job.dir, job.arch == "gpu", logWriter)
 	if err != nil {
 		// TODO(andreas): return other response than 500 if validation fails
 		outChan <- &JobOutput{JobResult: &JobResult{Error: err}}
@@ -207,8 +223,7 @@ func (q *BuildQueue) handleJob(job *BuildJob) {
 
 	outChan <- &JobOutput{JobResult: &JobResult{
 		Artifact:   artifact,
-		RunArgs:    runArgs,
-		ModelStats: modelStats,
+		TestResult: testResult,
 		Arch:       job.arch,
 	}}
 }
@@ -240,27 +255,48 @@ func (q *BuildQueue) buildDockerImage(ctx context.Context, job *BuildJob, logWri
 func mergeBuildResults(results []*JobResult) *BuildResult {
 	result := &BuildResult{
 		Artifacts:  []*model.Artifact{},
-		RunArgs:    results[0].RunArgs,
+		RunArgs:    results[0].TestResult.RunArgs,
 		ModelStats: new(model.Stats),
 	}
 	for _, res := range results {
 		result.Artifacts = append(result.Artifacts, res.Artifact)
+		stats := res.TestResult.Stats
 		switch res.Arch {
 		case "cpu":
-			result.ModelStats.BootTimeCPU = res.ModelStats.BootTimeCPU
-			result.ModelStats.SetupTimeCPU = res.ModelStats.SetupTimeCPU
-			result.ModelStats.RunTimeCPU = res.ModelStats.RunTimeCPU
-			result.ModelStats.MemoryUsageCPU = res.ModelStats.MemoryUsageCPU
-			result.ModelStats.CPUUsageCPU = res.ModelStats.CPUUsageCPU
+			result.ModelStats.BootTimeCPU = stats.BootTimeCPU
+			result.ModelStats.SetupTimeCPU = stats.SetupTimeCPU
+			result.ModelStats.RunTimeCPU = stats.RunTimeCPU
+			result.ModelStats.MemoryUsageCPU = stats.MemoryUsageCPU
+			result.ModelStats.CPUUsageCPU = stats.CPUUsageCPU
 		case "gpu":
-			result.ModelStats.BootTimeGPU = res.ModelStats.BootTimeGPU
-			result.ModelStats.SetupTimeGPU = res.ModelStats.SetupTimeGPU
-			result.ModelStats.RunTimeGPU = res.ModelStats.RunTimeGPU
-			result.ModelStats.MemoryUsageGPU = res.ModelStats.MemoryUsageGPU
-			result.ModelStats.CPUUsageGPU = res.ModelStats.CPUUsageGPU
+			result.ModelStats.BootTimeGPU = stats.BootTimeGPU
+			result.ModelStats.SetupTimeGPU = stats.SetupTimeGPU
+			result.ModelStats.RunTimeGPU = stats.RunTimeGPU
+			result.ModelStats.MemoryUsageGPU = stats.MemoryUsageGPU
+			result.ModelStats.CPUUsageGPU = stats.CPUUsageGPU
 		}
 	}
 	return result
+}
+
+func saveExamples(results []*JobResult, dir string, config *model.Config) error {
+	// get the examples from the first result
+	result := results[0].TestResult
+
+	if len(result.NewExampleOutputs) > 0 {
+		config.Examples = result.Examples
+
+		for outputPath, outputBytes := range result.NewExampleOutputs {
+			exampleDir := filepath.Dir(outputPath)
+			if err := os.MkdirAll(filepath.Join(dir, exampleDir), 0755); err != nil {
+				return fmt.Errorf("Failed to make output dir: %w", err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, outputPath), outputBytes, 0644); err != nil {
+				return fmt.Errorf("Failed to write output: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 type QueueLogger struct {
