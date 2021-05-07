@@ -21,11 +21,11 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 
-	"github.com/replicate/cog/pkg/console"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/logger"
-	"github.com/replicate/cog/pkg/shell"
+	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/shell"
 )
 
 type LocalDockerPlatform struct {

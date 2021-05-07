@@ -10,9 +10,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/files"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/util/files"
 )
 
 func newDebugCommand() *cobra.Command {

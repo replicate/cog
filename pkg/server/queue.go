@@ -9,7 +9,7 @@ import (
 
 	"github.com/segmentio/ksuid"
 
-	"github.com/replicate/cog/pkg/console"
+	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"

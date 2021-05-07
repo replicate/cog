@@ -13,7 +13,7 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/console"
+	"github.com/replicate/cog/pkg/util/console"
 
 	"github.com/replicate/cog/pkg/client"
 	"github.com/replicate/cog/pkg/logger"

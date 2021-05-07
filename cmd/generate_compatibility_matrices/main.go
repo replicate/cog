@@ -11,7 +11,7 @@ import (
 
 	"github.com/anaskhan96/soup"
 
-	"github.com/replicate/cog/pkg/console"
+	"github.com/replicate/cog/pkg/util/console"
 
 	"github.com/replicate/cog/pkg/model"
 )

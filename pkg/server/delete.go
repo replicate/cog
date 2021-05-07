@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"github.com/replicate/cog/pkg/console"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 func (s *Server) DeleteModel(w http.ResponseWriter, r *http.Request) {

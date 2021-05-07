@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/replicate/cog/pkg/console"
 	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 func (s *Server) SendModelMetadata(w http.ResponseWriter, r *http.Request) {

@@ -12,10 +12,10 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/replicate/cog/pkg/console"
-	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/logger"
-	"github.com/replicate/cog/pkg/shell"
+	"github.com/replicate/cog/pkg/util"
+	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/shell"
 )
 
 const noRegistry = "no_registry"
@@ -49,7 +49,7 @@ func (b *LocalImageBuilder) Build(ctx context.Context, dir string, dockerfileCon
 
 	var cmd *exec.Cmd
 	var outputPipeFn shell.PipeFunc
-	if global.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
+	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
 		cmd, outputPipeFn = b.buildxCommand(ctx, dir, dockerfilePath, logWriter)
 		if err != nil {
 			return "", err

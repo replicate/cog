@@ -11,10 +11,10 @@ import (
 
 	"github.com/schollz/progressbar/v3"
 
-	"github.com/replicate/cog/pkg/console"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
-	"github.com/replicate/cog/pkg/zip"
+	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/zip"
 )
 
 func (c *Client) UploadModel(repo *model.Repo, projectDir string) (*model.Model, error) {

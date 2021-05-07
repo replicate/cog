@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/replicate/cog/pkg/cli"
-	"github.com/replicate/cog/pkg/console"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 func main() {
