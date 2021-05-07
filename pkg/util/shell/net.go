@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/replicate/cog/pkg/console"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 func NextFreePort(port int) (int, error) {

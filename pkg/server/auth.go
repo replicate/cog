@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/replicate/cog/pkg/console"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 func (s *Server) GetDisplayTokenURL(w http.ResponseWriter, r *http.Request) {

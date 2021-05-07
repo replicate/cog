@@ -7,10 +7,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/replicate/cog/pkg/console"
-	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/util"
+	"github.com/replicate/cog/pkg/util/console"
 
-	"github.com/replicate/cog/pkg/version"
+	"github.com/replicate/cog/pkg/util/version"
 )
 
 // TODO(andreas): check tf/py versions. tf 1.5.0 didn't install on py 3.8
@@ -346,7 +346,7 @@ func torchvisionGPUPackage(ver string, cuda string) (name string, cpuVersion str
 // TODO(andreas): clean up this hack by actually parsing the torch_stable.html list in the generator
 func torchStripCPUSuffixForM1(version string, goos string, goarch string) string {
 	// TODO(andreas): clean up this hack
-	if global.IsM1Mac(goos, goarch) {
+	if util.IsM1Mac(goos, goarch) {
 		return strings.ReplaceAll(version, "+cpu", "")
 	}
 	return version

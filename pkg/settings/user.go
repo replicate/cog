@@ -8,7 +8,7 @@ import (
 	"path"
 	"runtime"
 
-	"github.com/replicate/cog/pkg/files"
+	"github.com/replicate/cog/pkg/util/files"
 )
 
 type AuthInfo struct {

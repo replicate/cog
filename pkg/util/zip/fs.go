@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/replicate/cog/pkg/files"
+	"github.com/replicate/cog/pkg/util/files"
 )
 
 // TODO(andreas): garbage collection

@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/client"
-	"github.com/replicate/cog/pkg/files"
+	"github.com/replicate/cog/pkg/util/files"
 )
 
 var downloadOutputDir string

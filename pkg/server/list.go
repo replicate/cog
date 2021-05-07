@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/replicate/cog/pkg/console"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 func (s *Server) ListModels(w http.ResponseWriter, r *http.Request) {

@@ -11,8 +11,8 @@ import (
 	"github.com/mholt/archiver/v3"
 	gitignore "github.com/sabhiram/go-gitignore"
 
-	"github.com/replicate/cog/pkg/console"
-	"github.com/replicate/cog/pkg/files"
+	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/files"
 )
 
 var defaultIgnore = []string{".cog", ".git", ".mypy_cache"}

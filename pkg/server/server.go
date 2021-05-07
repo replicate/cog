@@ -9,7 +9,7 @@ import (
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 
-	"github.com/replicate/cog/pkg/console"
+	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/database"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"

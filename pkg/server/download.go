@@ -8,7 +8,7 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/replicate/cog/pkg/console"
+	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/storage"
 )
 

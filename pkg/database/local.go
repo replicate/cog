@@ -11,10 +11,10 @@ import (
 
 	"github.com/hpcloud/tail"
 
-	"github.com/replicate/cog/pkg/console"
-	"github.com/replicate/cog/pkg/files"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/files"
 )
 
 type LocalFileDatabase struct {

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/replicate/cog/pkg/console"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 type BuildLogger struct {

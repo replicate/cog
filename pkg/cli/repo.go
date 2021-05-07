@@ -7,11 +7,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/console"
 	"github.com/replicate/cog/pkg/client"
-	"github.com/replicate/cog/pkg/files"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/settings"
+	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/files"
 )
 
 func newRepoCommand() *cobra.Command {
