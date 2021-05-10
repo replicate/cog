@@ -77,9 +77,9 @@ $ cog show b6a2f8a2d2ff
 Docker image (GPU):  registry.hooli.net/colorization:b6a2f8a2d2ff-gpu
 Docker image (CPU):  registry.hooli.net/colorization:b6a2f8a2d2ff-cpu
 
-$ docker run -d -p 8000:8000 --gpus all registry.hooli.net/colorization:b6a2f8a2d2ff-gpu
+$ docker run -d -p 5000:5000 --gpus all registry.hooli.net/colorization:b6a2f8a2d2ff-gpu
 
-$ curl http://localhost:8000/infer -F input=@image.png
+$ curl http://localhost:5000/infer -X POST -F input=@image.png
 ```
 
 ## Why are we building this?
