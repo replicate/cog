@@ -153,6 +153,21 @@ func (ui *nonInteractiveUI) Table(tbl *Table, opts ...Option) {
 	table.Render()
 }
 
+// HorizontalRule implements UI
+func (ui *nonInteractiveUI) HorizontalRule() {
+	fmt.Fprintln(color.Output, strings.Repeat("─", 10))
+}
+
+// ProcessHandover implements UI
+func (ui *nonInteractiveUI) ProcessHandover(command string) {
+	fmt.Fprintf(color.Output, "%s %s\n", strings.Repeat("─", 10), command)
+}
+
+// Close implements UI
+func (ui *nonInteractiveUI) Close() error {
+	return nil
+}
+
 type nonInteractiveStatus struct {
 	mu *sync.Mutex
 }
@@ -213,13 +228,17 @@ func (f *nonInteractiveStepGroup) Wait() {
 }
 
 type nonInteractiveStep struct {
-	mu   *sync.Mutex
-	wg   *sync.WaitGroup
-	done bool
+	mu         *sync.Mutex
+	wg         *sync.WaitGroup
+	termBuffer *bytes.Buffer
+	done       bool
 }
 
 func (f *nonInteractiveStep) TermOutput() io.Writer {
-	return &stripAnsiWriter{Next: color.Output}
+	if f.termBuffer == nil {
+		f.termBuffer = new(bytes.Buffer)
+	}
+	return &stripAnsiWriter{Next: f.termBuffer}
 }
 
 func (f *nonInteractiveStep) Update(str string, args ...interface{}) {
@@ -246,6 +265,10 @@ func (f *nonInteractiveStep) Done() {
 }
 
 func (f *nonInteractiveStep) Abort() {
+	if _, err := io.Copy(color.Output, f.termBuffer); err != nil {
+		fmt.Fprintf(color.Output, "Error printing buffered terminal output: %s\n", err)
+	}
+
 	f.Done()
 }
 
