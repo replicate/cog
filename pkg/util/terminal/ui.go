@@ -62,6 +62,15 @@ type UI interface {
 	// body. No other output mechanism (Output, Input, Status, etc.) may be
 	// called until the StepGroup is complete.
 	StepGroup() StepGroup
+
+	Close() error
+
+	// HorizontalRule draws a horizontal line across the terminal
+	HorizontalRule()
+
+	// ProcessHandover draws a horizontal line across the terminal with some text
+	// to indicate the output from another process is to follow
+	ProcessHandover(command string)
 }
 
 // StepGroup is a group of steps (that may be concurrent).
@@ -194,12 +203,12 @@ func WithWriter(w io.Writer) Option {
 }
 
 var (
-	colorHeader      = color.New(color.Bold)
-	colorInfo        = color.New()
-	colorError       = color.New(color.FgRed)
-	colorErrorBold   = color.New(color.FgRed, color.Bold)
-	colorSuccess     = color.New(color.FgGreen)
-	colorSuccessBold = color.New(color.FgGreen, color.Bold)
-	colorWarning     = color.New(color.FgYellow)
-	colorWarningBold = color.New(color.FgYellow, color.Bold)
+	// colorHeader      = color.New(color.Bold)
+	colorInfo = color.New()
+	// colorError       = color.New(color.FgRed)
+	// colorErrorBold   = color.New(color.FgRed, color.Bold)
+	colorSuccess = color.New(color.FgGreen)
+	// colorSuccessBold = color.New(color.FgGreen, color.Bold)
+	// colorWarning     = color.New(color.FgYellow)
+	// colorWarningBold = color.New(color.FgYellow, color.Bold)
 )

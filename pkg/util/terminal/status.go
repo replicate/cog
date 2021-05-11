@@ -1,16 +1,8 @@
 package terminal
 
 import (
-	"context"
-	"fmt"
 	"os"
 	"strings"
-	"sync"
-	"time"
-
-	"github.com/fatih/color"
-	"github.com/hashicorp/waypoint-plugin-sdk/internal/pkg/spinner"
-	"github.com/morikuni/aec"
 )
 
 const (
@@ -35,12 +27,6 @@ var textStatus = map[string]string{
 	StatusTimeout: "<>",
 }
 
-var colorStatus = map[string][]aec.ANSI{
-	StatusOK:    {aec.GreenF},
-	StatusError: {aec.RedF},
-	StatusWarn:  {aec.YellowF},
-}
-
 // Status is used to provide an updating status to the user. The status
 // usually has some animated element along with it such as a spinner.
 type Status interface {
@@ -58,13 +44,6 @@ type Status interface {
 	Close() error
 }
 
-// spinnerStatus implements Status and uses a spinner to show updates.
-type spinnerStatus struct {
-	mu      sync.Mutex
-	spinner *spinner.Spinner
-	running bool
-}
-
 var statusIcons map[string]string
 
 const envForceEmoji = "WAYPOINT_FORCE_EMOJI"
@@ -74,85 +53,5 @@ func init() {
 		statusIcons = emojiStatus
 	} else {
 		statusIcons = textStatus
-	}
-}
-
-func newSpinnerStatus(ctx context.Context) *spinnerStatus {
-	return &spinnerStatus{
-		spinner: spinner.New(
-			ctx,
-			spinner.CharSets[11],
-			time.Second/6,
-			spinner.WithColor("bold"),
-		),
-	}
-}
-
-func (s *spinnerStatus) Update(msg string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.spinner.Suffix = " " + msg
-
-	if !s.running {
-		s.spinner.Start()
-		s.running = true
-	}
-}
-
-func (s *spinnerStatus) Step(status, msg string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.spinner.Stop()
-	s.running = false
-
-	pad := ""
-
-	statusIcon := emojiStatus[status]
-	if statusIcon == "" {
-		statusIcon = status
-	} else if status == StatusWarn {
-		pad = " "
-	}
-
-	fmt.Fprintf(color.Output, "%s%s %s\n", statusIcon, pad, msg)
-}
-
-func (s *spinnerStatus) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.running {
-		s.running = false
-		s.spinner.Suffix = ""
-	}
-
-	s.spinner.Stop()
-
-	return nil
-}
-
-func (s *spinnerStatus) Pause() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	wasRunning := s.running
-
-	if s.running {
-		s.running = false
-		s.spinner.Stop()
-	}
-
-	return wasRunning
-}
-
-func (s *spinnerStatus) Start() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if !s.running {
-		s.running = true
-		s.spinner.Start()
 	}
 }

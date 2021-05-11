@@ -191,3 +191,21 @@ func (ui *glintUI) Table(tbl *Table, opts ...Option) {
 
 	ui.d.Append(glint.Finalize(glint.Text(buf.String())))
 }
+
+// HorizontalRule implements UI
+func (ui *glintUI) HorizontalRule() {
+	ui.d.Append(glint.Finalize(glint.Layout(
+		glint.TextFunc(func(rows, cols uint) string { return strings.Repeat("─", int(cols)) }),
+	).Row()))
+	ui.Output("\n")
+}
+
+// ProcessHandover implements UI
+func (ui *glintUI) ProcessHandover(command string) {
+	ui.d.Append(glint.Finalize(glint.Layout(
+		glint.Layout(glint.Text(strings.Repeat("─", 5))).MarginRight(2),
+		glint.Layout(glint.Text(command)).MarginRight(2),
+		glint.TextFunc(func(rows, cols uint) string { return strings.Repeat("─", int(cols)) }),
+	).Row()))
+	ui.Output("\n")
+}

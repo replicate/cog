@@ -133,6 +133,11 @@ func (f *glintStep) Done() {
 		f.status.Step(StatusOK, f.msg)
 	}
 
+	// Hide terminal when done
+	if f.term != nil {
+		f.term = nil
+	}
+
 	// Unset the waitgroup
 	f.wg.Done()
 }
