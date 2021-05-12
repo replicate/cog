@@ -40,18 +40,16 @@ environment:
   python_version: "3.8"
   python_requirements: "requirements.txt"
   system_packages:
-   - libgl1-mesa-glx
-   - libglib2.0-0
+    - libgl1-mesa-glx
+    - libglib2.0-0
 ```
 
 3. Push it to a repository and build it:
 
 ```
-$ cog build
+$ cog push
 --> Uploading '.' to repository http://10.1.2.3/colorization... done
---> Building CPU Docker image... done
---> Building GPU Docker image... done
---> Built model b6a2f8a2d2ff
+--> Created version b6a2f8a2d2ff
 ```
 
 This has:
@@ -72,7 +70,7 @@ $ cog infer b6a2f8a2d2ff -i @input.png -o @output.png
 It is also just a Docker image, so you can run it as an HTTP service wherever Docker runs:
 
 ```
-$ cog show b6a2f8a2d2ff 
+$ cog show b6a2f8a2d2ff
 ...
 Docker image (GPU):  registry.hooli.net/colorization:b6a2f8a2d2ff-gpu
 Docker image (CPU):  registry.hooli.net/colorization:b6a2f8a2d2ff-cpu
