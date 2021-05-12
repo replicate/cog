@@ -185,7 +185,7 @@ func (q *BuildQueue) handleJob(job *BuildJob) {
 		return
 	}
 
-	testResult, err := serving.TestModel(ctx, q.servingPlatform, imageURI, job.config, job.dir, job.arch == "gpu", logWriter)
+	testResult, err := serving.TestModel(ctx, q.servingPlatform, imageURI, job.config.Examples, job.dir, job.arch == "gpu", logWriter)
 	if err != nil {
 		// TODO(andreas): return other response than 500 if validation fails
 		outChan <- &JobOutput{error: err}
