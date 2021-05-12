@@ -29,12 +29,12 @@ type TestResult struct {
 // TestModel runs the example inputs and checks the example
 // outputs. If examples inputs are defined but example outputs aren't,
 // defined, the resulting outputs are written to exampleOutputDir and
-// the config object is updated to point to those outputs.
-func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, config *model.Config, dir string, useGPU bool, logWriter logger.Logger) (*TestResult, error) {
+// the examples object is updated to point to those outputs.
+func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, examples []*model.Example, dir string, useGPU bool, logWriter logger.Logger) (*TestResult, error) {
 	logWriter.WriteStatus("Testing model")
 
 	// copy examples to avoid race conditions when building in parallel
-	examples := copyExamples(config.Examples)
+	examples = copyExamples(examples)
 	newExampleOutputs := make(map[string][]byte)
 	modelStats := new(model.Stats)
 
@@ -61,21 +61,12 @@ func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, c
 	memoryUsages := []float64{}
 	cpuUsages := []float64{}
 	for index, example := range examples {
-		if err := validateServingExampleInput(help, example.Input); err != nil {
+		if err := validateServingExampleInput(help.Arguments, example.Input); err != nil {
 			return nil, fmt.Errorf("Example input doesn't match run arguments: %w", err)
 		}
-		var expectedOutput []byte
-		outputIsFile := false
-		if example.Output != "" {
-			if strings.HasPrefix(example.Output, "@") {
-				outputIsFile = true
-				expectedOutput, err = os.ReadFile(filepath.Join(dir, config.Workdir, example.Output[1:]))
-				if err != nil {
-					return nil, fmt.Errorf("Failed to read example output file %s: %w", example.Output[1:], err)
-				}
-			} else {
-				expectedOutput = []byte(example.Output)
-			}
+		expectedOutput, outputIsFile, err := outputBytesFromExample(example.Output, dir)
+		if err != nil {
+			return nil, err
 		}
 
 		input := NewExampleWithBaseDir(example.Input, dir)
@@ -94,19 +85,10 @@ func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, c
 		}
 		logWriter.Infof("Inference result length: %d, mime type: %s", len(outputBytes), output.MimeType)
 		if expectedOutput == nil {
-			filename := fmt.Sprintf("output.%02d", index)
-			if ext := extensionByType(output.MimeType); ext != "" {
-				filename += ext
-			}
-			outputPath := filepath.Join(ExampleOutputDir, filename)
-			example.Output = "@" + outputPath
-			newExampleOutputs[outputPath] = outputBytes
+			updateExampleOutput(example, newExampleOutputs, outputBytes, output.MimeType, index)
 		} else {
-			if outputIsFile && !bytes.Equal(expectedOutput, outputBytes) {
-				return nil, fmt.Errorf("Output file contents doesn't match expected %s", example.Output[1:])
-			} else if !outputIsFile && strings.TrimSpace(string(outputBytes)) != strings.TrimSpace(example.Output) {
-				// TODO(andreas): are there cases where space is significant?
-				return nil, fmt.Errorf("Output %s doesn't match expected: %s", string(outputBytes), example.Output)
+			if err := verifyCorrectOutput(expectedOutput, outputBytes, outputIsFile); err != nil {
+				return nil, fmt.Errorf("Example %d: %s", index, err)
 			}
 		}
 
@@ -117,26 +99,9 @@ func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, c
 	}
 
 	if len(setupTimes) > 0 {
-		setupTime, err := stats.Mean(setupTimes)
-		if err != nil {
+		if err := setAggregateStats(modelStats, setupTimes, runTimes, memoryUsages, cpuUsages); err != nil {
 			return nil, err
 		}
-		modelStats.SetupTime = setupTime
-		runTime, err := stats.Mean(runTimes)
-		if err != nil {
-			return nil, err
-		}
-		modelStats.RunTime = runTime
-		memoryUsage, err := stats.Max(memoryUsages)
-		if err != nil {
-			return nil, err
-		}
-		modelStats.MemoryUsage = uint64(memoryUsage)
-		cpuUsage, err := stats.Max(cpuUsages)
-		if err != nil {
-			return nil, err
-		}
-		modelStats.CPUUsage = cpuUsage
 	}
 
 	return &TestResult{
@@ -147,18 +112,18 @@ func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, c
 	}, nil
 }
 
-func validateServingExampleInput(help *HelpResponse, input map[string]string) error {
+func validateServingExampleInput(args map[string]*model.RunArgument, input map[string]string) error {
 	// TODO(andreas): validate types
 	missingNames := []string{}
 	extraneousNames := []string{}
 
-	for name, arg := range help.Arguments {
+	for name, arg := range args {
 		if _, ok := input[name]; !ok && arg.Default == nil {
 			missingNames = append(missingNames, name)
 		}
 	}
 	for name := range input {
-		if _, ok := help.Arguments[name]; !ok {
+		if _, ok := args[name]; !ok {
 			extraneousNames = append(extraneousNames, name)
 		}
 	}
@@ -337,4 +302,68 @@ func copyExamples(examples []*model.Example) []*model.Example {
 		})
 	}
 	return copy
+}
+
+func outputBytesFromExample(exampleOutput string, dir string) (outputBytes []byte, outputIsFile bool, err error) {
+	if exampleOutput != "" {
+		if strings.HasPrefix(exampleOutput, "@") {
+			outputBytes, err = os.ReadFile(filepath.Join(dir, exampleOutput[1:]))
+			if err != nil {
+				return nil, false, fmt.Errorf("Failed to read example output file %s: %w", exampleOutput[1:], err)
+			}
+			return outputBytes, true, nil
+		} else {
+			return []byte(exampleOutput), false, nil
+		}
+	}
+	return nil, false, nil
+}
+
+func setAggregateStats(modelStats *model.Stats, setupTimes []float64, runTimes []float64, memoryUsages []float64, cpuUsages []float64) error {
+	setupTime, err := stats.Mean(setupTimes)
+	if err != nil {
+		return err
+	}
+	modelStats.SetupTime = setupTime
+
+	runTime, err := stats.Mean(runTimes)
+	if err != nil {
+		return err
+	}
+	modelStats.RunTime = runTime
+
+	memoryUsage, err := stats.Max(memoryUsages)
+	if err != nil {
+		return err
+	}
+	modelStats.MemoryUsage = uint64(memoryUsage)
+
+	cpuUsage, err := stats.Max(cpuUsages)
+	if err != nil {
+		return err
+	}
+	modelStats.CPUUsage = cpuUsage
+
+	return nil
+}
+
+func updateExampleOutput(example *model.Example, newExampleOutputs map[string][]byte, outputBytes []byte, mimeType string, index int) {
+	filename := fmt.Sprintf("output.%02d", index)
+	if ext := extensionByType(mimeType); ext != "" {
+		filename += ext
+	}
+	outputPath := filepath.Join(ExampleOutputDir, filename)
+	example.Output = "@" + outputPath
+	newExampleOutputs[outputPath] = outputBytes
+}
+
+func verifyCorrectOutput(expectedOutput []byte, outputBytes []byte, outputIsFile bool) error {
+	if outputIsFile && !bytes.Equal(expectedOutput, outputBytes) {
+		return fmt.Errorf("Output file contents doesn't match expected")
+	} else if !outputIsFile && strings.TrimSpace(string(outputBytes)) != strings.TrimSpace(string(expectedOutput)) {
+		// TODO(andreas): are there cases where space is significant?
+		// TODO(andreas): truncate? diff?
+		return fmt.Errorf("Output %s doesn't match expected: %s", string(outputBytes), string(expectedOutput))
+	}
+	return nil
 }

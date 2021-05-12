@@ -82,7 +82,7 @@ func Test(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
 	}
 
-	if _, err := serving.TestModel(context.Background(), servingPlatform, tag, config, projectDir, arch == "gpu", logWriter); err != nil {
+	if _, err := serving.TestModel(context.Background(), servingPlatform, tag, config.Examples, projectDir, arch == "gpu", logWriter); err != nil {
 		return err
 	}
 
