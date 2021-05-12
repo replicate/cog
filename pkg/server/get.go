@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/replicate/cog/pkg/console"
+	"github.com/replicate/cog/pkg/model"
 )
 
 func (s *Server) SendModelMetadata(w http.ResponseWriter, r *http.Request) {
@@ -21,10 +22,26 @@ func (s *Server) SendModelMetadata(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
+	images := []*model.Image{}
+	for _, arch := range mod.Config.Environment.Architectures {
+		image, err := s.db.GetImage(user, name, id, arch)
+		if err != nil {
+			console.Error(err.Error())
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		images = append(images, image)
+	}
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
 
-	if err := json.NewEncoder(w).Encode(mod); err != nil {
+	body := struct {
+		Model  *model.Model   `json:"model"`
+		Images []*model.Image `json:"images"`
+	}{}
+	body.Model = mod
+	body.Images = images
+	if err := json.NewEncoder(w).Encode(body); err != nil {
 		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return

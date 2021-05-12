@@ -1,14 +1,19 @@
 package database
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-
 	"strings"
+	"time"
 
+	"github.com/hpcloud/tail"
+
+	"github.com/replicate/cog/pkg/console"
 	"github.com/replicate/cog/pkg/files"
+	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
 )
 
@@ -38,23 +43,23 @@ func NewLocalFileDatabase(rootDir string) (*LocalFileDatabase, error) {
 }
 
 func (db *LocalFileDatabase) InsertModel(user string, name string, id string, mod *model.Model) error {
-	data, err := json.Marshal(mod)
-	if err != nil {
-		return fmt.Errorf("Failed to marshall model: %w", err)
-	}
 	path := db.modelPath(user, name, id)
-	dir := filepath.Dir(path)
 	exists, err := files.Exists(path)
 	if err != nil {
 		return err
 	}
 	if !exists {
+		dir := filepath.Dir(path)
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("Failed to create directory %s: %w", dir, err)
 		}
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	file, err := os.Create(path)
+	if err != nil {
 		return fmt.Errorf("Failed to write metadata file %s: %w", path, err)
+	}
+	if json.NewEncoder(file).Encode(mod); err != nil {
+		return fmt.Errorf("Failed to marshall model: %w", err)
 	}
 	return nil
 }
@@ -108,20 +113,170 @@ func (db *LocalFileDatabase) ListModels(user string, name string) ([]*model.Mode
 	return models, nil
 }
 
-func (db *LocalFileDatabase) readModel(path string) (*model.Model, error) {
-	contents, err := os.ReadFile(path)
+func (db *LocalFileDatabase) InsertImage(user string, name string, id string, arch string, image *model.Image) error {
+	path := db.imagePath(user, name, id, arch)
+	exists, err := files.Exists(path)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to read %s: %w", path, err)
+		return err
+	}
+	if !exists {
+		dir := filepath.Dir(path)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("Failed to create directory %s: %w", dir, err)
+		}
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("Failed to write metadata file %s: %w", path, err)
+	}
+	if err := json.NewEncoder(file).Encode(image); err != nil {
+		return fmt.Errorf("Failed to marshall model: %w", err)
+	}
+	return nil
+}
+
+// GetImage returns an image or nil if it doesn't exist
+func (db *LocalFileDatabase) GetImage(user, name, id, arch string) (*model.Image, error) {
+	path := db.imagePath(user, name, id, arch)
+	exists, err := files.Exists(path)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, nil
+	}
+	image, err := db.readImage(path)
+	if err != nil {
+		return nil, err
+	}
+	return image, nil
+}
+
+func (db *LocalFileDatabase) AddBuildLogLine(user, name, buildID, line string, level logger.Level, timestampNano int64) error {
+	entry := &LogEntry{
+		Level:     level,
+		Line:      line,
+		Timestamp: timestampNano,
+	}
+	return db.addBuildLogEntry(user, name, buildID, entry)
+}
+
+func (db *LocalFileDatabase) FinalizeBuildLog(user, name, buildID string) error {
+	entry := &LogEntry{
+		Done:      true,
+		Timestamp: time.Now().UTC().UnixNano(),
+	}
+	return db.addBuildLogEntry(user, name, buildID, entry)
+}
+
+func (db *LocalFileDatabase) addBuildLogEntry(user, name, buildID string, entry *LogEntry) error {
+	path := db.logPath(user, name, buildID)
+	exists, err := files.Exists(path)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return err
+		}
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if err := json.NewEncoder(f).Encode(&entry); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (db *LocalFileDatabase) GetBuildLogs(user, name, buildID string, follow bool) (chan *LogEntry, error) {
+	logChan := make(chan *LogEntry)
+	path := db.logPath(user, name, buildID)
+	exists, err := files.Exists(path)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, fmt.Errorf("Build does not exist: %s", buildID)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to open build log: %w", err)
+	}
+	go func() {
+		defer f.Close()
+		defer close(logChan)
+		if follow {
+			t, err := tail.TailFile(path, tail.Config{Follow: true})
+			if err != nil {
+				console.Errorf("Failed to tail file: %v", err)
+				return
+			}
+			for line := range t.Lines {
+				entry := new(LogEntry)
+				if err := json.Unmarshal([]byte(line.Text), entry); err != nil {
+					console.Warnf("Failed to decode log entry: %v", err)
+				}
+				if entry.Done {
+					return
+				}
+				logChan <- entry
+			}
+		} else {
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				entry := new(LogEntry)
+				if err := json.Unmarshal(scanner.Bytes(), entry); err != nil {
+					console.Warnf("Failed to decode log entry: %v", err)
+				}
+				if entry.Done {
+					return
+				}
+				logChan <- entry
+			}
+		}
+	}()
+	return logChan, nil
+}
+
+func (db *LocalFileDatabase) readModel(path string) (*model.Model, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to open %s: %w", path, err)
 	}
 	mod := new(model.Model)
-	if err := json.Unmarshal(contents, mod); err != nil {
+	if err := json.NewDecoder(file).Decode(mod); err != nil {
 		return nil, fmt.Errorf("Failed to parse %s: %w", path, err)
 	}
 	return mod, nil
 }
 
+func (db *LocalFileDatabase) readImage(path string) (*model.Image, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to read %s: %w", path, err)
+	}
+	image := new(model.Image)
+	if err := json.NewDecoder(file).Decode(image); err != nil {
+		return nil, fmt.Errorf("Failed to parse %s: %w", path, err)
+	}
+	return image, nil
+}
+
 func (db *LocalFileDatabase) modelPath(user string, name string, id string) string {
+	// TODO(andreas): make this user/name/versions/id.json
 	return filepath.Join(db.repoDir(user, name), id+".json")
+}
+
+func (db *LocalFileDatabase) logPath(user string, name string, buildID string) string {
+	return filepath.Join(db.repoDir(user, name), "builds", buildID+".txt")
+}
+
+func (db *LocalFileDatabase) imagePath(user string, name string, id string, arch string) string {
+	return filepath.Join(db.repoDir(user, name), "versions", id, "images", arch+".json")
 }
 
 func (db *LocalFileDatabase) repoDir(user string, name string) string {

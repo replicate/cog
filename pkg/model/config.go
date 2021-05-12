@@ -68,6 +68,15 @@ func (c *Config) HasGPU() bool {
 	return false
 }
 
+func (c *Config) HasCPU() bool {
+	for _, arch := range c.Environment.Architectures {
+		if arch == "cpu" {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Config) CUDABaseImageTag() (string, error) {
 	return CUDABaseImageFor(c.Environment.CUDA, c.Environment.CuDNN)
 }

@@ -1,3 +1,4 @@
+import time
 import json
 import random
 import string
@@ -44,8 +45,9 @@ def test_build_show_list_download_infer(cog_server_port_dir, tmpdir_factory):
     with open(project_dir / "infer.py", "w") as f:
         f.write(
             """
-import cog
+import time
 from pathlib import Path
+import cog
 
 class Model(cog.Model):
     def setup(self):
@@ -54,6 +56,7 @@ class Model(cog.Model):
     @cog.input("text", type=str)
     @cog.input("path", type=Path)
     def run(self, text, path):
+        time.sleep(1)
         with open(path) as f:
             return self.foo + text + f.read()
         """
@@ -94,15 +97,15 @@ environment:
         f.write("baz")
 
     out, _ = subprocess.Popen(
-        ["cog", "build"],
+        ["cog", "push"],
         cwd=project_dir,
         stdout=subprocess.PIPE,
     ).communicate()
 
-    assert out.decode().startswith("Successfully built "), (
-        out.decode() + " doesn't start with 'Successfully built'"
+    assert out.decode().startswith("Successfully uploaded model version "), (
+        out.decode() + " doesn't start with 'Successfully uploaded model version'"
     )
-    model_id = out.decode().strip().split("Successfully built ")[1]
+    model_id = out.decode().strip().split("Successfully uploaded model version ")[1]
 
     out, _ = subprocess.Popen(
         ["cog", "-r", repo, "show", model_id], stdout=subprocess.PIPE
@@ -111,11 +114,17 @@ environment:
     assert lines[0] == f"ID:       {model_id}"
     assert lines[1] == f"Repo:     {user}/{repo_name}"
 
-    out, _ = subprocess.Popen(
-        ["cog", "-r", repo, "show", "--json", model_id], stdout=subprocess.PIPE
-    ).communicate()
-    out = json.loads(out)
-    assert out["config"]["examples"][2]["output"] == "@cog-example-output/output.02.txt"
+    def show_model():
+        out, _ = subprocess.Popen(
+            ["cog", "-r", repo, "show", "--json", model_id], stdout=subprocess.PIPE
+        ).communicate()
+        return json.loads(out)
+
+    out = show_model()
+    subprocess.Popen(["cog", "-r", repo, "build", "log", "-f", out["model"]["build_ids"]["cpu"]]).communicate()
+
+    out = show_model()
+    assert out["model"]["config"]["examples"][2]["output"] == "@cog-example-output/output.02.txt"
 
     # show without -r
     out, _ = subprocess.Popen(

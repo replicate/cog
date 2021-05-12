@@ -20,10 +20,9 @@ import (
 const ExampleOutputDir = "cog-example-output"
 
 type TestResult struct {
-	RunArgs  map[string]*model.RunArgument
-	Examples []*model.Example
-	// map of paths (e.g. "cog-example-output/output.01.png") to contents
-	NewExampleOutputs map[string][]byte
+	RunArgs           map[string]*model.RunArgument
+	Examples          []*model.Example
+	NewExampleOutputs map[string][]byte // map of paths (e.g. "cog-example-output/output.01.png") to contents
 	Stats             *model.Stats
 }
 
@@ -50,7 +49,7 @@ func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, c
 		return nil, err
 	}
 
-	modelStats.SetBootTime(time.Since(bootStart).Seconds(), useGPU)
+	modelStats.BootTime = time.Since(bootStart).Seconds()
 
 	help, err := deployment.Help(ctx, logWriter)
 	if err != nil {
@@ -122,22 +121,22 @@ func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, c
 		if err != nil {
 			return nil, err
 		}
-		modelStats.SetSetupTime(setupTime, useGPU)
+		modelStats.SetupTime = setupTime
 		runTime, err := stats.Mean(runTimes)
 		if err != nil {
 			return nil, err
 		}
-		modelStats.SetRunTime(runTime, useGPU)
+		modelStats.RunTime = runTime
 		memoryUsage, err := stats.Max(memoryUsages)
 		if err != nil {
 			return nil, err
 		}
-		modelStats.SetMemoryUsage(uint64(memoryUsage), useGPU)
+		modelStats.MemoryUsage = uint64(memoryUsage)
 		cpuUsage, err := stats.Max(cpuUsages)
 		if err != nil {
 			return nil, err
 		}
-		modelStats.SetCPUUsage(cpuUsage, useGPU)
+		modelStats.CPUUsage = cpuUsage
 	}
 
 	return &TestResult{

@@ -11,6 +11,7 @@ import (
 	"github.com/xeonx/timeago"
 
 	"github.com/replicate/cog/pkg/client"
+	"github.com/replicate/cog/pkg/model"
 )
 
 func newShowCommand() *cobra.Command {
@@ -29,7 +30,7 @@ func newShowCommand() *cobra.Command {
 }
 
 func showModel(cmd *cobra.Command, args []string) error {
-	jsonOutput, err  := cmd.Flags().GetBool("json")
+	jsonOutput, err := cmd.Flags().GetBool("json")
 	if err != nil {
 		return err
 	}
@@ -41,20 +42,35 @@ func showModel(cmd *cobra.Command, args []string) error {
 	id := args[0]
 
 	cli := client.NewClient()
-	mod, err := cli.GetModel(repo, id)
+	mod, images, err := cli.GetModel(repo, id)
 	if err != nil {
 		return err
 	}
 
 	if jsonOutput {
-		data, err := json.MarshalIndent(mod, "", "  ")
-		if err != nil {
-			return err
-		}
-		fmt.Println(string(data))
-		return nil
+		return showModelJSON(mod, images)
+	}
+	return showModelTable(repo, mod, images)
+}
+
+func showModelJSON(mod *model.Model, images []*model.Image) error {
+	output := struct{
+		Model *model.Model `json:"model"`
+		Images []*model.Image `json:"images"`
+	}{
+		Model: mod,
+		Images: images,
 	}
 
+	data, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
+func showModelTable(repo *model.Repo, mod *model.Model, images []*model.Image) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "ID:\t"+mod.ID)
 	fmt.Fprintf(w, "Repo:\t%s/%s\n", repo.User, repo.Name)
@@ -64,9 +80,9 @@ func showModel(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	fmt.Println("Inference arguments:")
-	if len(mod.RunArguments) > 0 {
+	if len(images) > 0 && images[0] != nil && images[0].RunArguments != nil && len(images[0].RunArguments) > 0 {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		for name, arg := range mod.RunArguments {
+		for name, arg := range images[0].RunArguments {
 			typeStr := string(arg.Type)
 			help := ""
 			if arg.Help != nil {
@@ -92,15 +108,25 @@ func showModel(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println()
 
-	fmt.Println("Artifacts:")
-	if len(mod.Artifacts) > 0 {
+	fmt.Println("Images:")
+	if len(mod.Config.Environment.Architectures) == 0 {
+		fmt.Println("  [No images]")
+	} else {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		for _, artifact := range mod.Artifacts {
-			fmt.Fprintf(w, "* %s:\t%s\n", artifact.Target, artifact.URI)
+		for _, arch := range mod.Config.Environment.Architectures {
+			image := model.ImageForArch(images, arch)
+			var message string
+			switch {
+			case image == nil:
+				message = fmt.Sprintf("Building... See the status with 'cog build log %s'", mod.BuildIDs[arch])
+			case image.BuildFailed:
+				message = fmt.Sprintf("Build failed. See the build logs with 'cog build log %s'", mod.BuildIDs[arch])
+			default:
+				message = image.URI
+			}
+			fmt.Fprintf(w, "%s:\t%s\n", strings.ToUpper(arch), message)
 		}
 		w.Flush()
-	} else {
-		fmt.Println("  [No artifacts]")
 	}
 	fmt.Println()
 

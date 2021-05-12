@@ -82,13 +82,8 @@ func (p *LocalDockerPlatform) Deploy(ctx context.Context, imageTag string, useGP
 	}
 	portBindings := nat.PortMap{containerPort: []nat.PortBinding{hostBinding}}
 
-	containerConfig := &container.Config{
-		Image: imageTag,
-		ExposedPorts: nat.PortSet{
-			nat.Port(fmt.Sprintf("%d/tcp", jidPort)): struct{}{},
-		},
-	}
 	var deviceRequests []container.DeviceRequest
+	env := []string{}
 	if useGPU {
 		// using all gpus
 		// TODO(andreas): make it possible to use a single gpu on a multi-gpu instance
@@ -96,6 +91,14 @@ func (p *LocalDockerPlatform) Deploy(ctx context.Context, imageTag string, useGP
 			Count:        -1, // -1 == all
 			Capabilities: [][]string{{"gpu"}},
 		}}
+		env = []string{"LD_LIBRARY_PATH=/usr/local/nvidia/lib64:/usr/local/nvidia/bin"}
+	}
+	containerConfig := &container.Config{
+		Image: imageTag,
+		ExposedPorts: nat.PortSet{
+			nat.Port(fmt.Sprintf("%d/tcp", jidPort)): struct{}{},
+		},
+		Env: env,
 	}
 	hostConfig := &container.HostConfig{
 		PortBindings: portBindings,

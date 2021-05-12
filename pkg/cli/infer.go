@@ -22,8 +22,9 @@ import (
 )
 
 var (
-	inputs  []string
-	outPath string
+	inputs    []string
+	outPath   string
+	inferArch string
 )
 
 func newInferCommand() *cobra.Command {
@@ -36,6 +37,7 @@ func newInferCommand() *cobra.Command {
 	addRepoFlag(cmd)
 	cmd.Flags().StringArrayVarP(&inputs, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
+	cmd.Flags().StringVarP(&inferArch, "arch", "a", "cpu", "Architecture to run inference on (cpu/gpu)")
 
 	return cmd
 }
@@ -46,13 +48,17 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	modelId := args[0]
+	id := args[0]
 
 	client := client.NewClient()
-	fmt.Println("Loading package", modelId)
-	mod, err := client.GetModel(repo, modelId)
+	fmt.Println("Loading package", id)
+	_, images, err := client.GetModel(repo, id)
 	if err != nil {
 		return err
+	}
+	image := model.ImageForArch(images, benchmarkArch)
+	if image == nil {
+		return fmt.Errorf("No %s image has been built for %s:%s", benchmarkArch, repo.String(), id)
 	}
 
 	servingPlatform, err := serving.NewLocalDockerPlatform()
@@ -62,11 +68,7 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 	logWriter := logger.NewConsoleLogger()
 	// TODO(andreas): GPU inference
 	useGPU := false
-	artifact, ok := mod.ArtifactFor(model.TargetDockerCPU)
-	if !ok {
-		return fmt.Errorf("Target %s is not defined for model", model.TargetDockerCPU)
-	}
-	deployment, err := servingPlatform.Deploy(context.Background(), artifact.URI, useGPU, logWriter)
+	deployment, err := servingPlatform.Deploy(context.Background(), image.URI, useGPU, logWriter)
 	if err != nil {
 		return err
 	}

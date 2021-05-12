@@ -17,12 +17,14 @@ import (
 )
 
 var (
-	port           int
-	dockerRegistry string
-	buildWebHooks  []string
-	authDelegate   string
-	cpuConcurrency int
-	gpuConcurrency int
+	port                  int
+	dockerRegistry        string
+	postUploadHooks       []string
+	postBuildPrimaryHooks []string
+	postBuildHooks        []string
+	authDelegate          string
+	cpuConcurrency        int
+	gpuConcurrency        int
 )
 
 func newServerCommand() *cobra.Command {
@@ -33,9 +35,13 @@ func newServerCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 	}
 
-	cmd.Flags().IntVar(&port, "port", 0, "Server port")
+	// TODO(andreas): more detailed documentation on the web hooks and their exact semantics
+
+	cmd.Flags().IntVar(&port, "port", 8080, "Server port")
 	cmd.Flags().StringVar(&dockerRegistry, "docker-registry", "", "Docker registry to push images to")
-	cmd.Flags().StringArrayVar(&buildWebHooks, "web-hook", []string{}, "Web hooks that are posted to after build. Format: <url>@<secret>")
+	cmd.Flags().StringArrayVar(&postUploadHooks, "post-upload-hook", []string{}, "Web hooks that are posted to after the model has been uploaded. Format: <url>@<secret>")
+	cmd.Flags().StringArrayVar(&postBuildPrimaryHooks, "post-build-primary-hook", []string{}, "Web hooks that are posted to after the CPU image (or GPU image if no CPU image exists) has been built. Format: <url>@<secret>")
+	cmd.Flags().StringArrayVar(&postBuildHooks, "post-build-hook", []string{}, "Web hooks that are posted to after an image has been built. Format: <url>@<secret>")
 	cmd.Flags().StringVar(&authDelegate, "auth-delegate", "", "Address to service that handles authentication logic")
 	cmd.Flags().IntVar(&cpuConcurrency, "cpu-concurrency", 4, "Number of concurrent CPU builds")
 	cmd.Flags().IntVar(&gpuConcurrency, "gpu-concurrency", 1, "Number of concurrent GPU builds")
@@ -84,7 +90,7 @@ func startServer(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	s, err := server.NewServer(cpuConcurrency, gpuConcurrency, buildWebHooks, authDelegate, db, dockerImageBuilder, servingPlatform, store)
+	s, err := server.NewServer(cpuConcurrency, gpuConcurrency, postUploadHooks, postBuildHooks, postBuildPrimaryHooks, authDelegate, db, dockerImageBuilder, servingPlatform, store)
 	if err != nil {
 		return err
 	}

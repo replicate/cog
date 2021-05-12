@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
@@ -12,8 +13,10 @@ import (
 	"time"
 
 	"github.com/mholt/archiver/v3"
+	"github.com/segmentio/ksuid"
 
 	"github.com/replicate/cog/pkg/console"
+	"github.com/replicate/cog/pkg/database"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
@@ -40,7 +43,6 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(dir)
 	logWriter.Infof("Received model")
 
 	id, err := ComputeID(dir)
@@ -51,45 +53,126 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 	if err != nil {
 		return nil, err
 	}
-	logWriter.Infof("Received model %s", id)
-	result, err := s.buildQueue.Build(r.Context(), dir, name, id, config, logWriter)
-	if err != nil {
-		return nil, err
-	}
 	mod := &model.Model{
-		Artifacts:    result.Artifacts,
-		Config:       config,
-		Created:      time.Now(),
-		ID:           id,
-		RunArguments: result.RunArgs,
-		Stats:        result.ModelStats,
+		Config:   config,
+		Created:  time.Now(),
+		ID:       id,
+		BuildIDs: make(map[string]string),
 	}
-
 	zipOutputPath, err := s.ZipToTempPath(dir)
 	if err != nil {
 		return nil, err
 	}
-
 	file, err := os.Open(zipOutputPath)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
-
 	if err := s.store.Upload(user, name, id, file); err != nil {
 		return nil, fmt.Errorf("Failed to upload to storage: %w", err)
 	}
-
+	if err := s.runHooks(s.postUploadHooks, user, name, id, mod, nil, dir, logWriter); err != nil {
+		return nil, err
+	}
+	for _, arch := range config.Environment.Architectures {
+		isPrimary := arch == "cpu" || (!config.HasCPU() && arch == "gpu")
+		buildID := ksuid.New().String()
+		mod.BuildIDs[arch] = buildID
+		arch := arch
+		go func() {
+			defer os.RemoveAll(dir)
+			s.buildImage(buildID, dir, user, name, id, mod, arch, isPrimary)
+		}()
+	}
 	logWriter.WriteStatus("Inserting into database")
 	if err := s.db.InsertModel(user, name, id, mod); err != nil {
 		return nil, fmt.Errorf("Failed to insert into database: %w", err)
 	}
+	return mod, nil
+}
 
-	if err := s.runWebHooks(user, name, mod, dir, logWriter); err != nil {
-		return nil, err
+func (s *Server) buildImage(buildID, dir, user, name, id string, mod *model.Model, arch string, isPrimary bool) {
+	logWriter := database.NewBuildLogger(user, name, buildID, s.db)
+	handleError := func(err error) {
+		logWriter.WriteError(err)
+		s.db.InsertImage(user, name, id, arch, &model.Image{Arch: arch, BuildFailed: true})
 	}
 
-	return mod, nil
+	defer func() {
+		if err := s.db.FinalizeBuildLog(user, name, buildID); err != nil {
+			console.Errorf("Failed to finalize build log: %v", err)
+		}
+	}()
+
+	// TODO(andreas): make it possible to cancel the build
+	result, err := s.buildQueue.Build(context.Background(), dir, name, id, arch, mod.Config, logWriter)
+	if err != nil {
+		handleError(err)
+		return
+	}
+
+	// only upload the zip and run post-build hooks on primary arch
+	if isPrimary {
+		if err := s.saveExamples(result, dir, mod.Config); err != nil {
+			handleError(err)
+			return
+		}
+		zipOutputPath, err := s.ZipToTempPath(dir)
+		if err != nil {
+			handleError(err)
+			return
+		}
+		file, err := os.Open(zipOutputPath)
+		if err != nil {
+			handleError(err)
+			return
+		}
+		defer file.Close()
+
+		logWriter.Debug("Re-saving model with updated examples")
+		if err := s.store.Upload(user, name, id, file); err != nil {
+			handleError(err)
+			return
+		}
+		if err := s.db.InsertModel(user, name, id, mod); err != nil {
+			handleError(err)
+			return
+		}
+
+		if err := s.runHooks(s.postBuildPrimaryHooks, user, name, id, mod, result.image, dir, logWriter); err != nil {
+			handleError(err)
+			return
+		}
+	}
+	if err := s.runHooks(s.postBuildHooks, user, name, id, nil, result.image, dir, logWriter); err != nil {
+		handleError(err)
+		return
+	}
+
+	if err := s.db.InsertImage(user, name, id, arch, result.image); err != nil {
+		handleError(err)
+		return
+	}
+	logWriter.Infof("Successfully built image %s", result.image.URI)
+}
+
+func (s *Server) saveExamples(result *BuildResult, dir string, config *model.Config) error {
+	// get the examples from the first result
+	testResult := result.testResult
+
+	if len(testResult.NewExampleOutputs) > 0 {
+		config.Examples = testResult.Examples
+
+		for outputPath, outputBytes := range testResult.NewExampleOutputs {
+			exampleDir := filepath.Dir(outputPath)
+			if err := os.MkdirAll(filepath.Join(dir, exampleDir), 0755); err != nil {
+				return fmt.Errorf("Failed to make output dir: %w", err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, outputPath), outputBytes, 0644); err != nil {
+				return fmt.Errorf("Failed to write output: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Server) ReadConfig(dir string) (*model.Config, error) {
@@ -205,4 +288,31 @@ func ComputeID(dir string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func (s *Server) SendBuildLogs(w http.ResponseWriter, r *http.Request) {
+	user, name, buildID := getRepoVars(r)
+
+	follow := r.URL.Query().Get("follow") == "true"
+	logChan, err := s.db.GetBuildLogs(user, name, buildID, follow)
+	if err != nil {
+		console.Error(err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+	encoder := json.NewEncoder(w)
+	for entry := range logChan {
+		select {
+		case <-r.Context().Done():
+			return
+		default:
+		}
+		if err := encoder.Encode(entry); err != nil {
+			console.Error(err.Error())
+		}
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		} else {
+			console.Warn("HTTP response writer can not be flushed")
+		}
+	}
 }
