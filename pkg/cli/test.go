@@ -20,7 +20,7 @@ import (
 func newTestCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "test",
-		Short: "Test the model locally",
+		Short: "Build and test a model's examples on local machine",
 		RunE:  Test,
 		Args:  cobra.NoArgs,
 	}
@@ -82,7 +82,7 @@ func Test(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
 	}
 
-	if _, err := serving.TestModel(context.Background(), servingPlatform, tag, config.Examples, projectDir, arch == "gpu", logWriter); err != nil {
+	if _, err := serving.TestVersion(context.Background(), servingPlatform, tag, config.Examples, projectDir, arch == "gpu", logWriter); err != nil {
 		return err
 	}
 

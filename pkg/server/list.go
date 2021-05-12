@@ -7,11 +7,11 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-func (s *Server) ListModels(w http.ResponseWriter, r *http.Request) {
+func (s *Server) ListVersions(w http.ResponseWriter, r *http.Request) {
 	user, name, _ := getRepoVars(r)
 	console.Infof("Received list request for %s%s", user, name)
 
-	models, err := s.db.ListModels(user, name)
+	versions, err := s.db.ListVersions(user, name)
 	if err != nil {
 		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
@@ -20,7 +20,7 @@ func (s *Server) ListModels(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
 
-	if err := json.NewEncoder(w).Encode(models); err != nil {
+	if err := json.NewEncoder(w).Encode(versions); err != nil {
 		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return

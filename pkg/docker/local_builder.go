@@ -173,13 +173,12 @@ func (b *LocalImageBuilder) Push(ctx context.Context, tag string, logWriter logg
 		return nil
 	}
 
-	logWriter.Infof("Pushing %s to registry", tag)
+	logWriter.Debugf("Pushing %s to registry", tag)
 
 	args := []string{"push", tag}
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Env = os.Environ()
 
-	console.Debug("Pushing model to Registry...")
 	stderrDone, err := pipeToWithDockerChecks(cmd.StderrPipe, logWriter)
 	if err != nil {
 		return err

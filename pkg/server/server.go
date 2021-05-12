@@ -9,12 +9,12 @@ import (
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 
-	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/database"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/serving"
 	"github.com/replicate/cog/pkg/storage"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 // TODO(andreas): decouple saving zip files from image building into two separate API calls?
@@ -74,24 +74,24 @@ func (s *Server) Start(port int) error {
 		HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("pong"))
 		})
-	router.Path("/v1/repos/{user}/{name}/models/{id}.zip").
+	router.Path("/v1/repos/{user}/{name}/versions/{id}.zip").
 		Methods(http.MethodGet).
-		HandlerFunc(s.checkReadAccess(s.DownloadModel))
-	router.Path("/v1/repos/{user}/{name}/models/{id}/files/{path:.+}").
+		HandlerFunc(s.checkReadAccess(s.DownloadVersion))
+	router.Path("/v1/repos/{user}/{name}/versions/{id}/files/{path:.+}").
 		Methods(http.MethodGet).
 		HandlerFunc(s.checkReadAccess(s.DownloadFile))
-	router.Path("/v1/repos/{user}/{name}/models/").
+	router.Path("/v1/repos/{user}/{name}/versions/").
 		Methods(http.MethodPut).
 		HandlerFunc(s.checkWriteAccess(s.ReceiveFile))
-	router.Path("/v1/repos/{user}/{name}/models/").
+	router.Path("/v1/repos/{user}/{name}/versions/").
 		Methods(http.MethodGet).
-		HandlerFunc(s.checkReadAccess(s.ListModels))
-	router.Path("/v1/repos/{user}/{name}/models/{id}").
+		HandlerFunc(s.checkReadAccess(s.ListVersions))
+	router.Path("/v1/repos/{user}/{name}/versions/{id}").
 		Methods(http.MethodGet).
-		HandlerFunc(s.checkReadAccess(s.SendModelMetadata))
-	router.Path("/v1/repos/{user}/{name}/models/{id}").
+		HandlerFunc(s.checkReadAccess(s.SendVersionMetadata))
+	router.Path("/v1/repos/{user}/{name}/versions/{id}").
 		Methods(http.MethodDelete).
-		HandlerFunc(s.checkWriteAccess(s.DeleteModel))
+		HandlerFunc(s.checkWriteAccess(s.DeleteVersion))
 	router.Path("/v1/repos/{user}/{name}/cache-hashes/").
 		Methods(http.MethodGet).
 		HandlerFunc(s.checkReadAccess(s.GetCacheHashes))

@@ -102,49 +102,49 @@ environment:
         stdout=subprocess.PIPE,
     ).communicate()
 
-    assert out.decode().startswith("Successfully uploaded model version "), (
-        out.decode() + " doesn't start with 'Successfully uploaded model version'"
+    assert out.decode().startswith("Successfully uploaded version "), (
+        out.decode() + " doesn't start with 'Successfully uploaded version'"
     )
-    model_id = out.decode().strip().split("Successfully uploaded model version ")[1]
+    version_id = out.decode().strip().split("Successfully uploaded version ")[1]
 
     out, _ = subprocess.Popen(
-        ["cog", "-r", repo, "show", model_id], stdout=subprocess.PIPE
+        ["cog", "-r", repo, "show", version_id], stdout=subprocess.PIPE
     ).communicate()
     lines = out.decode().splitlines()
-    assert lines[0] == f"ID:       {model_id}"
+    assert lines[0] == f"ID:       {version_id}"
     assert lines[1] == f"Repo:     {user}/{repo_name}"
 
-    def show_model():
+    def show_version():
         out, _ = subprocess.Popen(
-            ["cog", "-r", repo, "show", "--json", model_id], stdout=subprocess.PIPE
+            ["cog", "-r", repo, "show", "--json", version_id], stdout=subprocess.PIPE
         ).communicate()
         return json.loads(out)
 
-    out = show_model()
-    subprocess.Popen(["cog", "-r", repo, "build", "log", "-f", out["model"]["build_ids"]["cpu"]]).communicate()
+    out = show_version()
+    subprocess.Popen(["cog", "-r", repo, "build", "log", "-f", out["version"]["build_ids"]["cpu"]]).communicate()
 
-    out = show_model()
-    assert out["model"]["config"]["examples"][2]["output"] == "@cog-example-output/output.02.txt"
+    out = show_version()
+    assert out["version"]["config"]["examples"][2]["output"] == "@cog-example-output/output.02.txt"
 
     # show without -r
     out, _ = subprocess.Popen(
-        ["cog", "show", model_id],
+        ["cog", "show", version_id],
         stdout=subprocess.PIPE,
         cwd=project_dir,
     ).communicate()
     lines = out.decode().splitlines()
-    assert lines[0] == f"ID:       {model_id}"
+    assert lines[0] == f"ID:       {version_id}"
     assert lines[1] == f"Repo:     {user}/{repo_name}"
 
     out, _ = subprocess.Popen(
         ["cog", "-r", repo, "ls"], stdout=subprocess.PIPE
     ).communicate()
     lines = out.decode().splitlines()
-    assert lines[1].startswith(f"{model_id}  ")
+    assert lines[1].startswith(f"{version_id}  ")
 
     download_dir = tmpdir_factory.mktemp("download") / "my-dir"
     subprocess.Popen(
-        ["cog", "-r", repo, "download", "--output-dir", download_dir, model_id],
+        ["cog", "-r", repo, "download", "--output-dir", download_dir, version_id],
         stdout=subprocess.PIPE,
     ).communicate()
     paths = sorted(glob(str(download_dir / "*.*")))
@@ -159,7 +159,7 @@ environment:
     with input_path.open("w") as f:
         f.write("input")
 
-    files_endpoint = f"http://localhost:{cog_port}/v1/repos/{user}/{repo_name}/models/{model_id}/files"
+    files_endpoint = f"http://localhost:{cog_port}/v1/repos/{user}/{repo_name}/versions/{version_id}/files"
     assert requests.get(f"{files_endpoint}/cog.yaml").text == cog_yaml
     assert requests.get(f"{files_endpoint}/cog-example-output/output.02.txt").text == "fooquxbaz"
 
@@ -176,7 +176,7 @@ environment:
             "text=baz",
             "-i",
             f"path=@{input_path}",
-            model_id,
+            version_id,
         ],
         stdout=subprocess.PIPE,
     ).communicate()

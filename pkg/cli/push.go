@@ -15,8 +15,8 @@ import (
 func newPushCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "push",
-		Short: "Push Cog model",
-		RunE:  pushModel,
+		Short: "Push version",
+		RunE:  push,
 		Args:  cobra.NoArgs,
 	}
 	addRepoFlag(cmd)
@@ -25,7 +25,7 @@ func newPushCommand() *cobra.Command {
 	return cmd
 }
 
-func pushModel(cmd *cobra.Command, args []string) error {
+func push(cmd *cobra.Command, args []string) error {
 	repo, err := getRepo()
 	if err != nil {
 		return err
@@ -43,11 +43,11 @@ func pushModel(cmd *cobra.Command, args []string) error {
 	console.Infof("Uploading %s to %s", projectDir, repo)
 
 	cli := client.NewClient()
-	mod, err := cli.UploadModel(repo, projectDir)
+	version, err := cli.UploadVersion(repo, projectDir)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Successfully uploaded model version %s\n", mod.ID)
+	fmt.Printf("Successfully uploaded version %s\n", version.ID)
 	return nil
 }

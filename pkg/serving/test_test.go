@@ -15,7 +15,7 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
-func TestTestModel(t *testing.T) {
+func TestTestVersion(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
@@ -84,7 +84,7 @@ func TestTestModel(t *testing.T) {
 		},
 	}
 
-	result, err := TestModel(context.Background(), servingPlatform, "", examples, tmpDir, false, logWriter)
+	result, err := TestVersion(context.Background(), servingPlatform, "", examples, tmpDir, false, logWriter)
 	require.NoError(t, err)
 
 	expectedExamples := []*model.Example{

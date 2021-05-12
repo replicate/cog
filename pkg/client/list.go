@@ -8,8 +8,8 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
-func (c *Client) ListModels(repo *model.Repo) ([]*model.Model, error) {
-	url := newURL(repo, "v1/repos/%s/%s/models/", repo.User, repo.Name)
+func (c *Client) ListVersions(repo *model.Repo) ([]*model.Version, error) {
+	url := newURL(repo, "v1/repos/%s/%s/versions/", repo.User, repo.Name)
 	req, err := c.newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -25,10 +25,10 @@ func (c *Client) ListModels(repo *model.Repo) ([]*model.Model, error) {
 		return nil, fmt.Errorf("List endpoint returned status %d", resp.StatusCode)
 	}
 
-	models := []*model.Model{}
-	if err := json.NewDecoder(resp.Body).Decode(&models); err != nil {
+	versions := []*model.Version{}
+	if err := json.NewDecoder(resp.Body).Decode(&versions); err != nil {
 		return nil, fmt.Errorf("Failed to decode response: %w", err)
 	}
 
-	return models, nil
+	return versions, nil
 }

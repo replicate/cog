@@ -17,7 +17,7 @@ import (
 	"github.com/replicate/cog/pkg/util/zip"
 )
 
-func (c *Client) UploadModel(repo *model.Repo, projectDir string) (*model.Model, error) {
+func (c *Client) UploadVersion(repo *model.Repo, projectDir string) (*model.Version, error) {
 	hashes, err := c.getRepoCacheHashes(repo)
 	if err != nil {
 		return nil, err
@@ -33,7 +33,7 @@ func (c *Client) UploadModel(repo *model.Repo, projectDir string) (*model.Model,
 			DisableKeepAlives: true,
 		},
 	}
-	url := newURL(repo, "v1/repos/%s/%s/models/", repo.User, repo.Name)
+	url := newURL(repo, "v1/repos/%s/%s/versions/", repo.User, repo.Name)
 	req, err := c.newRequest(http.MethodPut, url, bodyReader)
 	if err != nil {
 		return nil, err
@@ -61,7 +61,7 @@ func (c *Client) UploadModel(repo *model.Repo, projectDir string) (*model.Model,
 		}
 	}()
 	go func() {
-		err := uploadFile(req, "file", "model.zip", zipReader, bodyWriter)
+		err := uploadFile(req, "file", "version.zip", zipReader, bodyWriter)
 		if err != nil {
 			console.Error(err.Error())
 		}
@@ -83,7 +83,7 @@ func (c *Client) UploadModel(repo *model.Repo, projectDir string) (*model.Model,
 		return nil, fmt.Errorf("Server returned HTTP status %d", resp.StatusCode)
 	}
 
-	var mod *model.Model
+	var version *model.Version
 	reader := bufio.NewReader(resp.Body)
 	for {
 		line, err := reader.ReadBytes('\n')
@@ -115,15 +115,15 @@ func (c *Client) UploadModel(repo *model.Repo, projectDir string) (*model.Model,
 			console.Debug(msg.Text)
 		case logger.MessageTypeStatus:
 			console.Info(msg.Text)
-		case logger.MessageTypeModel:
-			mod = msg.Model
+		case logger.MessageTypeVersion:
+			version = msg.Version
 		}
 	}
 
-	if mod == nil {
-		return nil, fmt.Errorf("Failed to build model")
+	if version == nil {
+		return nil, fmt.Errorf("Failed to build version")
 	}
-	return mod, nil
+	return version, nil
 }
 
 func (c *Client) getRepoCacheHashes(repo *model.Repo) ([]string, error) {

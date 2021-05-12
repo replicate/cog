@@ -17,19 +17,19 @@ import (
 func newShowCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:        "show <id>",
-		Short:      "Inspect a Cog model",
-		RunE:       showModel,
+		Short:      "Show detailed information about a version",
+		RunE:       show,
 		Args:       cobra.ExactArgs(1),
 		SuggestFor: []string{"inspect"},
 	}
 	addRepoFlag(cmd)
 
-	cmd.Flags().Bool("json", false, "JSON output")
+	cmd.Flags().Bool("json", false, "Print information as JSON")
 
 	return cmd
 }
 
-func showModel(cmd *cobra.Command, args []string) error {
+func show(cmd *cobra.Command, args []string) error {
 	jsonOutput, err := cmd.Flags().GetBool("json")
 	if err != nil {
 		return err
@@ -42,23 +42,23 @@ func showModel(cmd *cobra.Command, args []string) error {
 	id := args[0]
 
 	cli := client.NewClient()
-	mod, images, err := cli.GetModel(repo, id)
+	version, images, err := cli.GetVersion(repo, id)
 	if err != nil {
 		return err
 	}
 
 	if jsonOutput {
-		return showModelJSON(mod, images)
+		return showJSON(version, images)
 	}
-	return showModelTable(repo, mod, images)
+	return showTable(repo, version, images)
 }
 
-func showModelJSON(mod *model.Model, images []*model.Image) error {
-	output := struct{
-		Model *model.Model `json:"model"`
+func showJSON(version *model.Version, images []*model.Image) error {
+	output := struct {
+		Model  *model.Version `json:"version"`
 		Images []*model.Image `json:"images"`
 	}{
-		Model: mod,
+		Model:  version,
 		Images: images,
 	}
 
@@ -70,11 +70,11 @@ func showModelJSON(mod *model.Model, images []*model.Image) error {
 	return nil
 }
 
-func showModelTable(repo *model.Repo, mod *model.Model, images []*model.Image) error {
+func showTable(repo *model.Repo, version *model.Version, images []*model.Image) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID:\t"+mod.ID)
+	fmt.Fprintln(w, "ID:\t"+version.ID)
 	fmt.Fprintf(w, "Repo:\t%s/%s\n", repo.User, repo.Name)
-	fmt.Fprintln(w, "Created:\t"+timeago.English.Format(mod.Created))
+	fmt.Fprintln(w, "Created:\t"+timeago.English.Format(version.Created))
 	w.Flush()
 
 	fmt.Println()
@@ -109,18 +109,18 @@ func showModelTable(repo *model.Repo, mod *model.Model, images []*model.Image) e
 	fmt.Println()
 
 	fmt.Println("Images:")
-	if len(mod.Config.Environment.Architectures) == 0 {
+	if len(version.Config.Environment.Architectures) == 0 {
 		fmt.Println("  [No images]")
 	} else {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		for _, arch := range mod.Config.Environment.Architectures {
+		for _, arch := range version.Config.Environment.Architectures {
 			image := model.ImageForArch(images, arch)
 			var message string
 			switch {
 			case image == nil:
-				message = fmt.Sprintf("Building... See the status with 'cog build log %s'", mod.BuildIDs[arch])
+				message = fmt.Sprintf("Building... See the status with 'cog build log %s'", version.BuildIDs[arch])
 			case image.BuildFailed:
-				message = fmt.Sprintf("Build failed. See the build logs with 'cog build log %s'", mod.BuildIDs[arch])
+				message = fmt.Sprintf("Build failed. See the build logs with 'cog build log %s'", version.BuildIDs[arch])
 			default:
 				message = image.URI
 			}
@@ -130,7 +130,7 @@ func showModelTable(repo *model.Repo, mod *model.Model, images []*model.Image) e
 	}
 	fmt.Println()
 
-	env := mod.Config.Environment
+	env := version.Config.Environment
 	fmt.Println("Python version: " + env.PythonVersion)
 	fmt.Println()
 	if env.CUDA != "" {

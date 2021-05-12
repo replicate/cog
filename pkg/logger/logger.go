@@ -24,7 +24,7 @@ type Logger interface {
 	Debugf(line string, args ...interface{})
 	WriteStatus(status string, args ...interface{})
 	WriteError(err error)
-	WriteModel(mod *model.Model)
+	WriteVersion(version *model.Version)
 }
 
 type ConsoleLogger struct {
@@ -59,6 +59,6 @@ func (l *ConsoleLogger) WriteError(err error) {
 	console.Error(l.prefix + err.Error())
 }
 
-func (l *ConsoleLogger) WriteModel(mod *model.Model) {
-	console.Infof(l.prefix+"%v", mod)
+func (l *ConsoleLogger) WriteVersion(version *model.Version) {
+	console.Infof(l.prefix+"%v", version)
 }

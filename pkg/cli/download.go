@@ -17,8 +17,8 @@ var downloadOutputDir string
 func newDownloadCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "download <id>",
-		Short: "Download a model",
-		RunE:  downloadModel,
+		Short: "Download a version",
+		RunE:  download,
 		Args:  cobra.ExactArgs(1),
 	}
 	addRepoFlag(cmd)
@@ -28,7 +28,7 @@ func newDownloadCommand() *cobra.Command {
 	return cmd
 }
 
-func downloadModel(cmd *cobra.Command, args []string) (err error) {
+func download(cmd *cobra.Command, args []string) (err error) {
 	repo, err := getRepo()
 	if err != nil {
 		return err
@@ -58,10 +58,10 @@ func downloadModel(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	cli := client.NewClient()
-	if err := cli.DownloadModel(repo, id, downloadOutputDir); err != nil {
+	if err := cli.DownloadVersion(repo, id, downloadOutputDir); err != nil {
 		return err
 	}
 
-	fmt.Printf("Downloaded model %s into %s\n", id, downloadOutputDir)
+	fmt.Printf("Downloaded files from version %s into %s\n", id, downloadOutputDir)
 	return nil
 }

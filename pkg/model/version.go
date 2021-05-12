@@ -7,7 +7,7 @@ const (
 	TargetDockerGPU = "docker-gpu"
 )
 
-type Model struct {
+type Version struct {
 	ID       string            `json:"id"`
 	Config   *Config           `json:"config"`
 	Created  time.Time         `json:"created"`

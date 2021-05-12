@@ -8,22 +8,22 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-func (s *Server) SendModelMetadata(w http.ResponseWriter, r *http.Request) {
+func (s *Server) SendVersionMetadata(w http.ResponseWriter, r *http.Request) {
 	user, name, id := getRepoVars(r)
 	console.Infof("Received get request for %s/%s/%s", user, name, id)
 
-	mod, err := s.db.GetModel(user, name, id)
+	version, err := s.db.GetVersion(user, name, id)
 	if err != nil {
 		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	if mod == nil {
+	if version == nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 	images := []*model.Image{}
-	for _, arch := range mod.Config.Environment.Architectures {
+	for _, arch := range version.Config.Environment.Architectures {
 		image, err := s.db.GetImage(user, name, id, arch)
 		if err != nil {
 			console.Error(err.Error())
@@ -36,10 +36,10 @@ func (s *Server) SendModelMetadata(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	body := struct {
-		Model  *model.Model   `json:"model"`
-		Images []*model.Image `json:"images"`
+		Version *model.Version `json:"version"`
+		Images  []*model.Image `json:"images"`
 	}{}
-	body.Model = mod
+	body.Version = version
 	body.Images = images
 	if err := json.NewEncoder(w).Encode(body); err != nil {
 		console.Error(err.Error())

@@ -14,8 +14,8 @@ from PIL import Image
 import cog
 
 
-def make_client(model) -> FlaskClient:
-    app = cog.HTTPServer(model).make_app()
+def make_client(version) -> FlaskClient:
+    app = cog.HTTPServer(version).make_app()
     app.config["TESTING"] = True
     with app.test_client() as client:
         return client

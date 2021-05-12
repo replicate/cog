@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 
 	"github.com/mholt/archiver/v3"
@@ -12,8 +13,8 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
-func (c *Client) DownloadModel(repo *model.Repo, id string, outputDir string) error {
-	url := newURL(repo, "v1/repos/%s/%s/models/%s.zip", repo.User, repo.Name, id)
+func (c *Client) DownloadVersion(repo *model.Repo, id string, outputDir string) error {
+	url := newURL(repo, "v1/repos/%s/%s/versions/%s.zip", repo.User, repo.Name, id)
 	req, err := c.newRequest("GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("Failed to create HTTP request: %w", err)
@@ -24,10 +25,14 @@ func (c *Client) DownloadModel(repo *model.Repo, id string, outputDir string) er
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("Model ID doesn't exist: %s", id)
+		return fmt.Errorf("Version does not exist: %s", id)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Model zip endpoint returned status %d", resp.StatusCode)
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("Error downloading version data (status %d): %s", resp.StatusCode, err)
+		}
+		return fmt.Errorf("Error downloading version data (status %d): %s", resp.StatusCode, body)
 	}
 
 	bar := progressbar.DefaultBytes(

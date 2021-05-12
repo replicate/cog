@@ -6,34 +6,35 @@ The Cog server stores models and builds Docker images. It can be started by runn
 
 The client and server communicated using an HTTP API.
 
-### PUT `/v1/repos/<user>/<name>/models/`
+### PUT `/v1/repos/<user>/<name>/versions/`
 
 Upload a new model.
 
 Example:
 
 ```
-$ curl -X PUT localhost:8080/v1/repos/andreas/my-model/models/ -F "file=@package.zip"
+$ curl -X PUT localhost:8080/v1/repos/andreas/my-model/versions/ -F "file=@package.zip"
 ```
 
 where `package.zip` is a zip folder of a directory with `cog.yaml` in it.
 
 This does the following:
-* Computes a content-addressable ID
-* Validates and completes config (e.g. sets correct CUDA version for PyTorch)
-* Saves the model to storage (local files)
-* Builds and pushes Docker images to registry
-* Tests that the model works by running the Docker image locally and performing an inference
-* Inserts model metadata into database (local files)
 
-### GET `/v1/repos/<user>/<name>/models/<id>`
+- Computes a content-addressable ID
+- Validates and completes config (e.g. sets correct CUDA version for PyTorch)
+- Saves the model to storage (local files)
+- Builds and pushes Docker images to registry
+- Tests that the model works by running the Docker image locally and performing an inference
+- Inserts model metadata into database (local files)
+
+### GET `/v1/repos/<user>/<name>/versions/<id>`
 
 Fetch model metadata.
 
 Example:
 
 ```
-$ curl localhost:8080/v1/repos/andreas/my-model/models/c43b98b37776656e6b3dac3ea3270660ffc21ca7 | jq .
+$ curl localhost:8080/v1/repos/andreas/my-model/versions/c43b98b37776656e6b3dac3ea3270660ffc21ca7 | jq .
 {
   "ID": "c43b98b37776656e6b3dac3ea3270660ffc21ca7",
   "Artifacts": [
@@ -59,14 +60,14 @@ $ curl localhost:8080/v1/repos/andreas/my-model/models/c43b98b37776656e6b3dac3ea
 }
 ```
 
-### GET `/v1/repos/<user>/<name>/models/`
+### GET `/v1/repos/<user>/<name>/versions/`
 
-List metadata for all models.
+List metadata for all versions.
 
 Example:
 
 ```
-$ curl localhost:8080/v1/repos/andreas/my-model/models/ | jq .
+$ curl localhost:8080/v1/repos/andreas/my-model/versions/ | jq .
 [
   {
     "ID": "c43b98b37776656e6b3dac3ea3270660ffc21ca7",
@@ -77,14 +78,14 @@ $ curl localhost:8080/v1/repos/andreas/my-model/models/ | jq .
 ]
 ```
 
-### GET `/v1/repos/<user>/<name>/models/<id>.zip`
+### GET `/v1/repos/<user>/<name>/versions/<id>.zip`
 
 Download a model.
 
 Example:
 
 ```
-$ curl localhost:8080/v1/repos/andreas/my-model/models/c43b98b37776656e6b3dac3ea3270660ffc21ca7.zip > my-package.zip
+$ curl localhost:8080/v1/repos/andreas/my-model/versions/c43b98b37776656e6b3dac3ea3270660ffc21ca7.zip > my-package.zip
 $ unzip my-package.zip
 Archive:  my-package.zip
   inflating: cog.yaml
