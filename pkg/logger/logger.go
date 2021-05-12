@@ -6,6 +6,17 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
+type Level int
+
+const (
+	LevelFatal Level = iota
+	LevelError
+	LevelWarn
+	LevelStatus
+	LevelInfo
+	LevelDebug
+)
+
 type Logger interface {
 	Info(line string)
 	Debug(line string)
@@ -17,6 +28,7 @@ type Logger interface {
 }
 
 type ConsoleLogger struct {
+	prefix string
 }
 
 func NewConsoleLogger() *ConsoleLogger {
@@ -24,29 +36,29 @@ func NewConsoleLogger() *ConsoleLogger {
 }
 
 func (l *ConsoleLogger) Info(line string) {
-	console.Info(line)
+	console.Info(l.prefix + line)
 }
 
 func (l *ConsoleLogger) Debug(line string) {
-	console.Debug(line)
+	console.Debug(l.prefix + line)
 }
 
 func (l *ConsoleLogger) Infof(line string, args ...interface{}) {
-	console.Infof(line, args...)
+	console.Infof(l.prefix+line, args...)
 }
 
 func (l *ConsoleLogger) Debugf(line string, args ...interface{}) {
-	console.Debugf(line, args...)
+	console.Debugf(l.prefix+line, args...)
 }
 
 func (l *ConsoleLogger) WriteStatus(status string, args ...interface{}) {
-	console.Infof(status, args...)
+	console.Infof(l.prefix+status, args...)
 }
 
 func (l *ConsoleLogger) WriteError(err error) {
-	console.Error(err.Error())
+	console.Error(l.prefix + err.Error())
 }
 
 func (l *ConsoleLogger) WriteModel(mod *model.Model) {
-	console.Infof("%v", mod)
+	console.Infof(l.prefix+"%v", mod)
 }

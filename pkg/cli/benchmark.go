@@ -19,7 +19,7 @@ import (
 
 var benchmarkSetups int
 var benchmarkRuns int
-var benchmarkTarget string
+var benchmarkArch string
 
 type BenchmarkResults struct {
 	SetupTimes []float64
@@ -37,7 +37,7 @@ func newBenchmarkCommand() *cobra.Command {
 
 	cmd.Flags().IntVarP(&benchmarkSetups, "setup-iterations", "s", 3, "Number of setup iterations")
 	cmd.Flags().IntVarP(&benchmarkRuns, "run-iterations", "r", 3, "Number of run iterations per setup iteration")
-	cmd.Flags().StringVarP(&benchmarkTarget, "target", "t", "docker-cpu", "Target to benchmark (e.g. docker-cpu, docker-gpu)")
+	cmd.Flags().StringVarP(&benchmarkArch, "arch", "a", "cpu", "Architecture to benchmark (cpu/gpu)")
 
 	return cmd
 }
@@ -52,10 +52,15 @@ func benchmarkModel(cmd *cobra.Command, args []string) error {
 	cli := client.NewClient()
 	console.Infof("Starting benchmark of %s:%s", repo, id)
 
-	mod, err := cli.GetModel(repo, id)
+	mod, images, err := cli.GetModel(repo, id)
 	if err != nil {
 		return err
 	}
+	image := model.ImageForArch(images, benchmarkArch)
+	if image == nil {
+		return fmt.Errorf("No %s image has been built for %s:%s", benchmarkArch, repo.String(), id)
+	}
+
 	if len(mod.Config.Examples) == 0 {
 		return fmt.Errorf("Model has no examples, cannot run benchmark")
 	}
@@ -71,7 +76,7 @@ func benchmarkModel(cmd *cobra.Command, args []string) error {
 	results := new(BenchmarkResults)
 	for i := 0; i < benchmarkSetups; i++ {
 		console.Infof("Running setup iteration %d", i+1)
-		if err := runBenchmarkInference(mod, modelDir, results, benchmarkRuns); err != nil {
+		if err := runBenchmarkInference(mod, image, modelDir, results, benchmarkRuns); err != nil {
 			return err
 		}
 	}
@@ -92,7 +97,7 @@ func benchmarkModel(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runBenchmarkInference(mod *model.Model, modelDir string, results *BenchmarkResults, runIterations int) error {
+func runBenchmarkInference(mod *model.Model, image *model.Image, modelDir string, results *BenchmarkResults, runIterations int) error {
 	servingPlatform, err := serving.NewLocalDockerPlatform()
 	if err != nil {
 		return err
@@ -103,11 +108,7 @@ func runBenchmarkInference(mod *model.Model, modelDir string, results *Benchmark
 
 	logWriter := logger.NewConsoleLogger()
 	bootStart := time.Now()
-	artifact, ok := mod.ArtifactFor(benchmarkTarget)
-	if !ok {
-		return fmt.Errorf("Target %s is not defined for model", benchmarkTarget)
-	}
-	deployment, err := servingPlatform.Deploy(context.Background(), artifact.URI, benchmarkTarget == "docker-gpu", logWriter)
+	deployment, err := servingPlatform.Deploy(context.Background(), image.URI, benchmarkArch == "docker-gpu", logWriter)
 	if err != nil {
 		return err
 	}

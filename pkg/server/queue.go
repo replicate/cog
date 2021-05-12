@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"runtime"
 	"time"
 
@@ -42,25 +40,18 @@ type BuildJob struct {
 	arch      string
 }
 
-type JobOutput struct {
-	LogInfo   *string
-	LogDebug  *string
-	LogError  *string
-	LogStatus *string
-	JobResult *JobResult
-}
-
-type JobResult struct {
-	Artifact   *model.Artifact
-	TestResult *serving.TestResult
-	Error      error
-	Arch       string
-}
-
 type BuildResult struct {
-	Artifacts  []*model.Artifact
-	RunArgs    map[string]*model.RunArgument
-	ModelStats *model.Stats
+	image      *model.Image
+	testResult *serving.TestResult
+}
+
+type JobOutput struct {
+	logInfo     *string
+	logDebug    *string
+	logError    *string
+	logStatus   *string
+	error       error
+	buildResult *BuildResult
 }
 
 func NewBuildQueue(servingPlatform serving.Platform, dockerImageBuilder docker.ImageBuilder, cpuConcurrency int, gpuConcurrency int) *BuildQueue {
@@ -81,114 +72,97 @@ func NewBuildQueue(servingPlatform serving.Platform, dockerImageBuilder docker.I
 }
 
 func (q *BuildQueue) Start() {
-	go func() {
-		for _, arch := range []string{"cpu", "gpu"} {
-			arch := arch
-			go func() {
-				for {
-					job := <-q.jobChans[arch]
-					go func() {
-						sem := q.archSemaphores[arch]
-						sem <- struct{}{}
-						defer func() { <-sem }()
-						q.handleJob(job)
-					}()
-				}
-			}()
-		}
-	}()
+	for _, arch := range []string{"cpu", "gpu"} {
+		go q.startHandler(arch)
+	}
+}
+
+func (q *BuildQueue) startHandler(arch string) {
+	for {
+		job := <-q.jobChans[arch]
+		go func() {
+			sem := q.archSemaphores[arch]
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			q.handleJob(job)
+		}()
+	}
 }
 
 // Build pushes per-arch BuildJobs onto the build queue's job channels
 // and creates result channels for those jobs. It then waits for
 // results on the newly created result channels.
-func (q *BuildQueue) Build(ctx context.Context, dir string, name string, id string, config *model.Config, logWriter logger.Logger) (*BuildResult, error) {
-	resultChan := make(chan *JobResult)
-	messageIDs := map[string]string{}
-	for _, arch := range config.Environment.Architectures {
-		arch := arch
+func (q *BuildQueue) Build(ctx context.Context, dir string, name string, id string, arch string, config *model.Config, logWriter logger.Logger) (*BuildResult, error) {
+	messageID := ksuid.New().String()
 
-		messageID := ksuid.New().String()
-		messageIDs[arch] = messageID
-		outputChan := make(chan *JobOutput)
-		q.outputChans[messageID] = outputChan
-		cancelChan := make(chan struct{})
-		q.cancelChans[messageID] = cancelChan
+	q.outputChans[messageID] = make(chan *JobOutput)
+	q.cancelChans[messageID] = make(chan struct{})
+	defer delete(q.outputChans, messageID)
+	defer delete(q.cancelChans, messageID)
 
-		q.jobChans[arch] <- &BuildJob{
-			messageID: messageID,
-			dir:       dir,
-			id:        id,
-			name:      name,
-			config:    config,
-			arch:      arch,
-		}
-
-		cancelReceivedChan := make(chan struct{})
-		go func() {
-			<-ctx.Done()
-			cancelReceivedChan <- struct{}{}
-		}()
-
-		go func() {
-			defer delete(q.outputChans, messageID)
-			defer delete(q.cancelChans, messageID)
-
-			queueState := QueueStateQueued
-			ticker := time.NewTicker(10 * time.Second)
-
-			for {
-				select {
-				case <-ticker.C:
-					switch queueState {
-					case QueueStateQueued:
-						logWriter.Infof("[%s] Build is queued", arch)
-						queueState = QueueStateStillQueued
-					case QueueStateStillQueued:
-						logWriter.Infof("[%s] Build is still waiting in queue", arch)
-					}
-				case message := <-outputChan:
-					queueState = QueueStateRunning
-					ticker.Stop()
-					switch {
-					case message.JobResult != nil:
-						resultChan <- message.JobResult
-						return
-					case message.LogError != nil:
-						logWriter.WriteError(errors.New(*message.LogError))
-					case message.LogInfo != nil:
-						logWriter.Info(*message.LogInfo)
-					case message.LogDebug != nil:
-						logWriter.Debug(*message.LogDebug)
-					case message.LogStatus != nil:
-						logWriter.WriteStatus(*message.LogStatus)
-					default:
-						console.Warnf("Invalid message: %v", message)
-					}
-				case <-cancelReceivedChan:
-					ticker.Stop()
-					cancelChan <- struct{}{}
-				}
-			}
-		}()
+	q.jobChans[arch] <- &BuildJob{
+		messageID: messageID,
+		dir:       dir,
+		id:        id,
+		name:      name,
+		config:    config,
+		arch:      arch,
 	}
 
-	results := []*JobResult{}
-	for range config.Environment.Architectures {
-		result := <-resultChan
-		if result.Error != nil {
+	cancelReceivedChan := make(chan struct{})
+	go func() {
+		<-ctx.Done()
+		cancelReceivedChan <- struct{}{}
+	}()
 
-			// TODO(andreas): cancel other build
-			return nil, result.Error
-		}
-		results = append(results, result)
-	}
-
-	if err := saveExamples(results, dir, config); err != nil {
+	result, err := q.waitForResult(messageID, cancelReceivedChan, logWriter)
+	if err != nil {
 		return nil, err
 	}
+	return result, nil
+}
 
-	return mergeBuildResults(results), nil
+func (q *BuildQueue) waitForResult(messageID string, cancelReceivedChan <-chan struct{}, logWriter logger.Logger) (*BuildResult, error) {
+	outputChan := q.outputChans[messageID]
+	cancelChan := q.cancelChans[messageID]
+
+	queueState := QueueStateQueued
+	ticker := time.NewTicker(10 * time.Second)
+
+	for {
+		select {
+		case <-ticker.C:
+			switch queueState {
+			case QueueStateQueued:
+				logWriter.Infof("Build is queued")
+				queueState = QueueStateStillQueued
+			case QueueStateStillQueued:
+				logWriter.Infof("Build is still waiting in queue")
+			}
+		case message := <-outputChan:
+			queueState = QueueStateRunning
+			ticker.Stop()
+			switch {
+			case message.buildResult != nil:
+				return message.buildResult, nil
+			case message.error != nil:
+				return nil, message.error
+			case message.logError != nil:
+				logWriter.WriteError(errors.New(*message.logError))
+			case message.logInfo != nil:
+				logWriter.Info(*message.logInfo)
+			case message.logDebug != nil:
+				logWriter.Debug(*message.logDebug)
+			case message.logStatus != nil:
+				logWriter.WriteStatus(*message.logStatus)
+			default:
+				console.Warnf("Invalid message: %v", message)
+			}
+		case <-cancelReceivedChan:
+			ticker.Stop()
+			cancelChan <- struct{}{}
+		}
+	}
 }
 
 func (q *BuildQueue) handleJob(job *BuildJob) {
@@ -202,103 +176,52 @@ func (q *BuildQueue) handleJob(job *BuildJob) {
 	}()
 
 	outChan := q.outputChans[job.messageID]
-	logWriter := NewQueueLogger(job.arch, outChan)
+	logWriter := NewQueueLogger(outChan)
 	logWriter.WriteStatus("Building image")
 
-	artifact, err := q.buildDockerImage(ctx, job, logWriter)
+	imageURI, err := q.buildDockerImage(ctx, job, logWriter)
 	if err != nil {
-		outChan <- &JobOutput{JobResult: &JobResult{Error: err}}
+		outChan <- &JobOutput{error: err}
 		return
 	}
 
-	testResult, err := serving.TestModel(ctx, q.servingPlatform, artifact.URI, job.config, job.dir, job.arch == "gpu", logWriter)
+	testResult, err := serving.TestModel(ctx, q.servingPlatform, imageURI, job.config, job.dir, job.arch == "gpu", logWriter)
 	if err != nil {
 		// TODO(andreas): return other response than 500 if validation fails
-		outChan <- &JobOutput{JobResult: &JobResult{Error: err}}
+		outChan <- &JobOutput{error: err}
 		return
 	}
 
-	if err := q.dockerImageBuilder.Push(ctx, artifact.URI, logWriter); err != nil {
-		outChan <- &JobOutput{JobResult: &JobResult{Error: err}}
+	if err := q.dockerImageBuilder.Push(ctx, imageURI, logWriter); err != nil {
+		outChan <- &JobOutput{error: err}
 		return
 	}
 
-	outChan <- &JobOutput{JobResult: &JobResult{
-		Artifact:   artifact,
-		TestResult: testResult,
-		Arch:       job.arch,
-	}}
+	outChan <- &JobOutput{
+		buildResult: &BuildResult{
+			image: &model.Image{
+				URI:          imageURI,
+				Arch:         job.arch,
+				RunArguments: testResult.RunArgs,
+				TestStats:    testResult.Stats,
+			},
+			testResult: testResult,
+		},
+	}
 }
 
-func (q *BuildQueue) buildDockerImage(ctx context.Context, job *BuildJob, logWriter logger.Logger) (*model.Artifact, error) {
+func (q *BuildQueue) buildDockerImage(ctx context.Context, job *BuildJob, logWriter logger.Logger) (string, error) {
 	generator := &docker.DockerfileGenerator{Config: job.config, Arch: job.arch, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH}
 	dockerfileContents, err := generator.Generate()
 	if err != nil {
-		return nil, fmt.Errorf("Failed to generate Dockerfile for %s: %w", job.arch, err)
+		return "", fmt.Errorf("Failed to generate Dockerfile for %s: %w", job.arch, err)
 	}
 	useGPU := job.config.Environment.BuildRequiresGPU && job.arch == "gpu"
-	tag, err := q.dockerImageBuilder.Build(ctx, job.dir, dockerfileContents, job.name, useGPU, logWriter)
+	uri, err := q.dockerImageBuilder.Build(ctx, job.dir, dockerfileContents, job.name, useGPU, logWriter)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to build Docker image: %w", err)
+		return "", fmt.Errorf("Failed to build Docker image: %w", err)
 	}
-	var target string
-	switch job.arch {
-	case "cpu":
-		target = model.TargetDockerCPU
-	case "gpu":
-		target = model.TargetDockerGPU
-	}
-	return &model.Artifact{
-		Target: target,
-		URI:    tag,
-	}, nil
-}
-
-func mergeBuildResults(results []*JobResult) *BuildResult {
-	result := &BuildResult{
-		Artifacts:  []*model.Artifact{},
-		RunArgs:    results[0].TestResult.RunArgs,
-		ModelStats: new(model.Stats),
-	}
-	for _, res := range results {
-		result.Artifacts = append(result.Artifacts, res.Artifact)
-		stats := res.TestResult.Stats
-		switch res.Arch {
-		case "cpu":
-			result.ModelStats.BootTimeCPU = stats.BootTimeCPU
-			result.ModelStats.SetupTimeCPU = stats.SetupTimeCPU
-			result.ModelStats.RunTimeCPU = stats.RunTimeCPU
-			result.ModelStats.MemoryUsageCPU = stats.MemoryUsageCPU
-			result.ModelStats.CPUUsageCPU = stats.CPUUsageCPU
-		case "gpu":
-			result.ModelStats.BootTimeGPU = stats.BootTimeGPU
-			result.ModelStats.SetupTimeGPU = stats.SetupTimeGPU
-			result.ModelStats.RunTimeGPU = stats.RunTimeGPU
-			result.ModelStats.MemoryUsageGPU = stats.MemoryUsageGPU
-			result.ModelStats.CPUUsageGPU = stats.CPUUsageGPU
-		}
-	}
-	return result
-}
-
-func saveExamples(results []*JobResult, dir string, config *model.Config) error {
-	// get the examples from the first result
-	result := results[0].TestResult
-
-	if len(result.NewExampleOutputs) > 0 {
-		config.Examples = result.Examples
-
-		for outputPath, outputBytes := range result.NewExampleOutputs {
-			exampleDir := filepath.Dir(outputPath)
-			if err := os.MkdirAll(filepath.Join(dir, exampleDir), 0755); err != nil {
-				return fmt.Errorf("Failed to make output dir: %w", err)
-			}
-			if err := os.WriteFile(filepath.Join(dir, outputPath), outputBytes, 0644); err != nil {
-				return fmt.Errorf("Failed to write output: %w", err)
-			}
-		}
-	}
-	return nil
+	return uri, nil
 }
 
 type QueueLogger struct {
@@ -306,42 +229,36 @@ type QueueLogger struct {
 	ch   chan *JobOutput
 }
 
-func NewQueueLogger(arch string, ch chan *JobOutput) *QueueLogger {
-	return &QueueLogger{arch: arch, ch: ch}
+func NewQueueLogger(ch chan *JobOutput) *QueueLogger {
+	return &QueueLogger{ch: ch}
 }
 
 func (l *QueueLogger) Info(line string) {
-	line = fmt.Sprintf("[%s] ", l.arch) + line
-	l.ch <- &JobOutput{LogInfo: &line}
+	l.ch <- &JobOutput{logInfo: &line}
 }
 
 func (l *QueueLogger) Debug(line string) {
-	line = fmt.Sprintf("[%s] ", l.arch) + line
-	l.ch <- &JobOutput{LogDebug: &line}
+	l.ch <- &JobOutput{logDebug: &line}
 }
 
 func (l *QueueLogger) Infof(line string, args ...interface{}) {
 	line = fmt.Sprintf(line, args...)
-	line = fmt.Sprintf("[%s] ", l.arch) + line
-	l.ch <- &JobOutput{LogInfo: &line}
+	l.ch <- &JobOutput{logInfo: &line}
 }
 
 func (l *QueueLogger) Debugf(line string, args ...interface{}) {
 	line = fmt.Sprintf(line, args...)
-	line = fmt.Sprintf("[%s] ", l.arch) + line
-	l.ch <- &JobOutput{LogDebug: &line}
+	l.ch <- &JobOutput{logDebug: &line}
 }
 
 func (l *QueueLogger) WriteStatus(status string, args ...interface{}) {
 	line := fmt.Sprintf(status, args...)
-	line = fmt.Sprintf("[%s] ", l.arch) + line
-	l.ch <- &JobOutput{LogStatus: &line}
+	l.ch <- &JobOutput{logStatus: &line}
 }
 
 func (l *QueueLogger) WriteError(err error) {
 	line := err.Error()
-	line = fmt.Sprintf("[%s] ", l.arch) + line
-	l.ch <- &JobOutput{LogError: &line}
+	l.ch <- &JobOutput{logError: &line}
 }
 
 func (l *QueueLogger) WriteModel(mod *model.Model) {

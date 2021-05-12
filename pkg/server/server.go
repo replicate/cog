@@ -25,29 +25,37 @@ const (
 )
 
 type Server struct {
-	webHooks     []*WebHook
-	authDelegate string
-	db           database.Database
-	store        storage.Storage
-	buildQueue   *BuildQueue
+	postUploadHooks       []*WebHook
+	postBuildHooks        []*WebHook
+	postBuildPrimaryHooks []*WebHook
+	authDelegate          string
+	db                    database.Database
+	store                 storage.Storage
+	buildQueue            *BuildQueue
 }
 
-func NewServer(cpuConcurrency int, gpuConcurrency int, rawWebHooks []string, authDelegate string, db database.Database, dockerImageBuilder docker.ImageBuilder, servingPlatform serving.Platform, store storage.Storage) (*Server, error) {
-	webHooks := []*WebHook{}
-	for _, rawWebHook := range rawWebHooks {
-		webHook, err := newWebHook(rawWebHook)
-		if err != nil {
-			return nil, err
-		}
-		webHooks = append(webHooks, webHook)
+func NewServer(cpuConcurrency int, gpuConcurrency int, rawPostUploadHooks []string, rawPostBuildHooks []string, rawPostBuildPrimaryHooks []string, authDelegate string, db database.Database, dockerImageBuilder docker.ImageBuilder, servingPlatform serving.Platform, store storage.Storage) (*Server, error) {
+	postUploadHooks, err := webHooksFromRaw(rawPostUploadHooks)
+	if err != nil {
+		return nil, err
+	}
+	postBuildHooks, err := webHooksFromRaw(rawPostBuildHooks)
+	if err != nil {
+		return nil, err
+	}
+	postBuildPrimaryHooks, err := webHooksFromRaw(rawPostBuildPrimaryHooks)
+	if err != nil {
+		return nil, err
 	}
 	buildQueue := NewBuildQueue(servingPlatform, dockerImageBuilder, cpuConcurrency, gpuConcurrency)
 	return &Server{
-		webHooks:     webHooks,
-		authDelegate: authDelegate,
-		db:           db,
-		store:        store,
-		buildQueue:   buildQueue,
+		postUploadHooks:       postUploadHooks,
+		postBuildHooks:        postBuildHooks,
+		postBuildPrimaryHooks: postBuildPrimaryHooks,
+		authDelegate:          authDelegate,
+		db:                    db,
+		store:                 store,
+		buildQueue:            buildQueue,
 	}, nil
 }
 
@@ -87,6 +95,9 @@ func (s *Server) Start(port int) error {
 	router.Path("/v1/repos/{user}/{name}/cache-hashes/").
 		Methods(http.MethodGet).
 		HandlerFunc(s.checkReadAccess(s.GetCacheHashes))
+	router.Path("/v1/repos/{user}/{name}/builds/{id}/logs").
+		Methods(http.MethodGet).
+		HandlerFunc(s.checkReadAccess(s.SendBuildLogs))
 	router.Path("/v1/auth/display-token-url").
 		Methods(http.MethodGet).
 		HandlerFunc(s.GetDisplayTokenURL)

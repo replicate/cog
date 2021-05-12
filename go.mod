@@ -17,6 +17,7 @@ require (
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
 	github.com/hokaccha/go-prettyjson v0.0.0-20210113012101-fb4e108d2519 // indirect
+	github.com/hpcloud/tail v1.0.0 // indirect
 	github.com/klauspost/compress v1.11.4 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/logrusorgru/aurora v2.0.3+incompatible
@@ -46,9 +47,14 @@ require (
 	google.golang.org/genproto v0.0.0-20210222152913-aa3ee6e6a81c // indirect
 	google.golang.org/grpc v1.35.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
+	gopkg.in/fsnotify.v1 v1.4.9 // indirect
+	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools/gotestsum v1.6.4 // indirect
 	gotest.tools/v3 v3.0.3 // indirect
 )
 
-replace github.com/mholt/archiver/v3 => github.com/bfirsh/archiver/v3 v3.5.1-0.20210316180101-755470a1a69b
+replace (
+	github.com/mholt/archiver/v3 => github.com/bfirsh/archiver/v3 v3.5.1-0.20210316180101-755470a1a69b
+	gopkg.in/fsnotify.v1 => github.com/kolaente/fsnotify v1.4.10-0.20200411160148-1bc3c8ff4048
+)

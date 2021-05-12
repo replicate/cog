@@ -33,38 +33,35 @@ func newWebHook(urlWithSecret string) (*WebHook, error) {
 	return &WebHook{url: hookURL, secret: secret}, nil
 }
 
-func (wh *WebHook) run(user string, name string, mod *model.Model, dir string, logWriter logger.Logger) error {
-	modelJSON, err := json.Marshal(mod)
-	if err != nil {
-		return err
+func (wh *WebHook) run(user string, name string, id string, mod *model.Model, image *model.Image, dir string, logWriter logger.Logger) error {
+	values := url.Values{
+		"model_id":  {id},
+		"user":      {user},
+		"repo_name": {name},
+		"secret":    {wh.secret},
 	}
-	modelJSONBase64 := base64.StdEncoding.EncodeToString(modelJSON)
-	modelPath := fmt.Sprintf("/v1/repos/%s/%s/models/%s", user, name, mod.ID)
-	dockerImageCPU := ""
-	if artifact, ok := mod.ArtifactFor(model.TargetDockerCPU); ok {
-		dockerImageCPU = artifact.URI
+	if mod != nil {
+		modelJSON, err := json.Marshal(mod)
+		if err != nil {
+			return err
+		}
+		values["model_json_base64"] = []string{base64.StdEncoding.EncodeToString(modelJSON)}
+		values["model_path"] = []string{fmt.Sprintf("/v1/repos/%s/%s/models/%s", user, name, mod.ID)}
 	}
-	dockerImageGPU := ""
-	if artifact, ok := mod.ArtifactFor(model.TargetDockerGPU); ok {
-		dockerImageGPU = artifact.URI
+	if image != nil {
+		imageJSON, err := json.Marshal(image)
+		if err != nil {
+			return err
+		}
+		values["image_json_base64"] = []string{base64.StdEncoding.EncodeToString(imageJSON)}
+		values["arch"] = []string{image.Arch}
+		values["cpu_usage"] = []string{fmt.Sprintf("%.2f", image.TestStats.CPUUsage)}
+		values["memory_usage"] = []string{strconv.FormatUint(image.TestStats.MemoryUsage, 10)}
 	}
 
-	logWriter.Infof("Posting model to %s", wh.url.Host)
+	logWriter.Infof("Posting to web hook %s", wh.url.Host)
 
-	req, err := http.PostForm(wh.url.String(), url.Values{
-		"model_id":          {mod.ID},
-		"model_path":        {modelPath},
-		"model_json_base64": {modelJSONBase64},
-		"docker_image_cpu":  {dockerImageCPU},
-		"docker_image_gpu":  {dockerImageGPU},
-		"memory_usage":      {strconv.FormatUint(mod.Stats.MemoryUsageCPU, 10)},
-		"cpu_usage":         {fmt.Sprintf("%.2f", mod.Stats.CPUUsageCPU)},
-		"memory_usage_gpu":  {strconv.FormatUint(mod.Stats.MemoryUsageGPU, 10)},
-		"cpu_usage_gpu":     {fmt.Sprintf("%.2f", mod.Stats.CPUUsageGPU)},
-		"user":              {user},
-		"repo_name":         {name},
-		"secret":            {wh.secret},
-	})
+	req, err := http.PostForm(wh.url.String(), values)
 	if err != nil {
 		return fmt.Errorf("Model post failed: %w", err)
 	}
@@ -74,11 +71,23 @@ func (wh *WebHook) run(user string, name string, mod *model.Model, dir string, l
 	return nil
 }
 
-func (s *Server) runWebHooks(user string, name string, mod *model.Model, dir string, logWriter logger.Logger) error {
-	for _, hook := range s.webHooks {
-		if err := hook.run(user, name, mod, dir, logWriter); err != nil {
+func (s *Server) runHooks(hooks []*WebHook, user string, id string, name string, mod *model.Model, image *model.Image, dir string, logWriter logger.Logger) error {
+	for _, hook := range hooks {
+		if err := hook.run(user, name, id, mod, image, dir, logWriter); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func webHooksFromRaw(rawHooks []string) ([]*WebHook, error) {
+	hooks := []*WebHook{}
+	for _, rawHook := range rawHooks {
+		webHook, err := newWebHook(rawHook)
+		if err != nil {
+			return nil, err
+		}
+		hooks = append(hooks, webHook)
+	}
+	return hooks, nil
 }
