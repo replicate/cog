@@ -9,8 +9,8 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
-func (c *Client) GetModel(repo *model.Repo, id string) (*model.Model, []*model.Image, error) {
-	url := newURL(repo, "v1/repos/%s/%s/models/%s", repo.User, repo.Name, id)
+func (c *Client) GetVersion(repo *model.Repo, id string) (*model.Version, []*model.Image, error) {
+	url := newURL(repo, "v1/repos/%s/%s/versions/%s", repo.User, repo.Name, id)
 	req, err := c.newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, nil, err
@@ -21,19 +21,19 @@ func (c *Client) GetModel(repo *model.Repo, id string) (*model.Model, []*model.I
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil, fmt.Errorf("Model not found: %s:%s", repo.String(), id)
+		return nil, nil, fmt.Errorf("Version not found: %s:%s", repo.String(), id)
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, nil, fmt.Errorf("Server returned status %d: %s", resp.StatusCode, body)
 	}
 	body := struct {
-		Model  *model.Model   `json:"model"`
-		Images []*model.Image `json:"images"`
+		Version *model.Version `json:"version"`
+		Images  []*model.Image `json:"images"`
 	}{}
 
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return nil, nil, err
 	}
-	return body.Model, body.Images, nil
+	return body.Version, body.Images, nil
 }

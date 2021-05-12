@@ -15,8 +15,8 @@ import (
 func newListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list",
-		Short:   "List Cog models",
-		RunE:    listModels,
+		Short:   "List versions",
+		RunE:    list,
 		Args:    cobra.NoArgs,
 		Aliases: []string{"ls"},
 	}
@@ -27,7 +27,7 @@ func newListCommand() *cobra.Command {
 	return cmd
 }
 
-func listModels(cmd *cobra.Command, args []string) error {
+func list(cmd *cobra.Command, args []string) error {
 	repo, err := getRepo()
 	if err != nil {
 		return err
@@ -38,24 +38,24 @@ func listModels(cmd *cobra.Command, args []string) error {
 	}
 
 	cli := client.NewClient()
-	models, err := cli.ListModels(repo)
+	versions, err := cli.ListVersions(repo)
 	if err != nil {
 		return err
 	}
 
-	sort.Slice(models, func(i, j int) bool {
-		return models[i].Created.After(models[j].Created)
+	sort.Slice(versions, func(i, j int) bool {
+		return versions[i].Created.After(versions[j].Created)
 	})
 
 	if quiet {
-		for _, mod := range models {
-			fmt.Println(mod.ID)
+		for _, version := range versions {
+			fmt.Println(version.ID)
 		}
 	} else {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "ID\tCREATED")
-		for _, mod := range models {
-			fmt.Fprintf(w, "%s\t%s\n", mod.ID, timeago.English.Format(mod.Created))
+		for _, version := range versions {
+			fmt.Fprintf(w, "%s\t%s\n", version.ID, timeago.English.Format(version.Created))
 		}
 		w.Flush()
 	}

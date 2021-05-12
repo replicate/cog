@@ -29,31 +29,32 @@ func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {
 
 	console.Info("Received build request")
 	streamLogger := logger.NewStreamLogger(r.Context(), w)
-	mod, err := s.ReceiveModel(r, streamLogger, user, name)
+	mod, err := s.ReceiveVersion(r, streamLogger, user, name)
 	if err != nil {
 		streamLogger.WriteError(err)
 		console.Error(err.Error())
 		return
 	}
-	streamLogger.WriteModel(mod)
+	streamLogger.WriteVersion(mod)
 }
 
-func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user string, name string) (*model.Model, error) {
+func (s *Server) ReceiveVersion(r *http.Request, logWriter logger.Logger, user string, name string) (*model.Version, error) {
 	dir, err := s.UnzipInputToTempDir(r, user, name)
 	if err != nil {
 		return nil, err
 	}
-	logWriter.Infof("Received model")
 
 	id, err := ComputeID(dir)
 	if err != nil {
 		return nil, err
 	}
+	logWriter.Debugf("Received version %s", id)
+
 	config, err := s.ReadConfig(dir)
 	if err != nil {
 		return nil, err
 	}
-	mod := &model.Model{
+	version := &model.Version{
 		Config:   config,
 		Created:  time.Now(),
 		ID:       id,
@@ -70,27 +71,27 @@ func (s *Server) ReceiveModel(r *http.Request, logWriter logger.Logger, user str
 	if err := s.store.Upload(user, name, id, file); err != nil {
 		return nil, fmt.Errorf("Failed to upload to storage: %w", err)
 	}
-	if err := s.runHooks(s.postUploadHooks, user, name, id, mod, nil, dir, logWriter); err != nil {
+	if err := s.runHooks(s.postUploadHooks, user, name, id, version, nil, dir, logWriter); err != nil {
 		return nil, err
 	}
 	for _, arch := range config.Environment.Architectures {
 		isPrimary := arch == "cpu" || (!config.HasCPU() && arch == "gpu")
 		buildID := ksuid.New().String()
-		mod.BuildIDs[arch] = buildID
+		version.BuildIDs[arch] = buildID
 		arch := arch
 		go func() {
 			defer os.RemoveAll(dir)
-			s.buildImage(buildID, dir, user, name, id, mod, arch, isPrimary)
+			s.buildImage(buildID, dir, user, name, id, version, arch, isPrimary)
 		}()
 	}
 	logWriter.WriteStatus("Inserting into database")
-	if err := s.db.InsertModel(user, name, id, mod); err != nil {
+	if err := s.db.InsertVersion(user, name, id, version); err != nil {
 		return nil, fmt.Errorf("Failed to insert into database: %w", err)
 	}
-	return mod, nil
+	return version, nil
 }
 
-func (s *Server) buildImage(buildID, dir, user, name, id string, mod *model.Model, arch string, isPrimary bool) {
+func (s *Server) buildImage(buildID, dir, user, name, id string, version *model.Version, arch string, isPrimary bool) {
 	logWriter := database.NewBuildLogger(user, name, buildID, s.db)
 	handleError := func(err error) {
 		logWriter.WriteError(err)
@@ -104,7 +105,7 @@ func (s *Server) buildImage(buildID, dir, user, name, id string, mod *model.Mode
 	}()
 
 	// TODO(andreas): make it possible to cancel the build
-	result, err := s.buildQueue.Build(context.Background(), dir, name, id, arch, mod.Config, logWriter)
+	result, err := s.buildQueue.Build(context.Background(), dir, name, id, arch, version.Config, logWriter)
 	if err != nil {
 		handleError(err)
 		return
@@ -112,7 +113,7 @@ func (s *Server) buildImage(buildID, dir, user, name, id string, mod *model.Mode
 
 	// only upload the zip and run post-build hooks on primary arch
 	if isPrimary {
-		if err := s.saveExamples(result, dir, mod.Config); err != nil {
+		if err := s.saveExamples(result, dir, version.Config); err != nil {
 			handleError(err)
 			return
 		}
@@ -128,17 +129,17 @@ func (s *Server) buildImage(buildID, dir, user, name, id string, mod *model.Mode
 		}
 		defer file.Close()
 
-		logWriter.Debug("Re-saving model with updated examples")
+		logWriter.Debug("Re-saving version with updated examples")
 		if err := s.store.Upload(user, name, id, file); err != nil {
 			handleError(err)
 			return
 		}
-		if err := s.db.InsertModel(user, name, id, mod); err != nil {
+		if err := s.db.InsertVersion(user, name, id, version); err != nil {
 			handleError(err)
 			return
 		}
 
-		if err := s.runHooks(s.postBuildPrimaryHooks, user, name, id, mod, result.image, dir, logWriter); err != nil {
+		if err := s.runHooks(s.postBuildPrimaryHooks, user, name, id, version, result.image, dir, logWriter); err != nil {
 			handleError(err)
 			return
 		}

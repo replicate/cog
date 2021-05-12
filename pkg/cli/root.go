@@ -7,10 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/settings"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 var repoFlag string
@@ -60,7 +60,7 @@ func setPersistentFlags(cmd *cobra.Command) {
 }
 
 func addRepoFlag(cmd *cobra.Command) {
-	cmd.Flags().StringVarP(&repoFlag, "repo", "r", "", "Remote repository, e.g. andreas/jazz-composer (for replicate.ai), or replicate.my-company.net/andreas/jazz-composer")
+	cmd.Flags().StringVarP(&repoFlag, "repo", "r", "", "Repository URL, e.g. https://cog.hooli.corp/hotdog-detector/hotdog-detector")
 }
 
 func getRepo() (*model.Repo, error) {
@@ -76,6 +76,9 @@ func getRepo() (*model.Repo, error) {
 			return nil, err
 		}
 		projectSettings, err := settings.LoadProjectSettings(cwd)
+		if err != nil {
+			return nil, err
+		}
 		if projectSettings.Repo != nil {
 			return projectSettings.Repo, nil
 		}
@@ -96,7 +99,7 @@ func parseRepo(repoString string) (*model.Repo, error) {
 }
 
 func addProjectDirFlag(cmd *cobra.Command) {
-	cmd.Flags().StringVarP(&projectDirFlag, "project-dir", "D", "", "Projet directory, defaults to current working directory")
+	cmd.Flags().StringVarP(&projectDirFlag, "project-dir", "D", "", "Project directory, defaults to current working directory")
 }
 
 func getProjectDir() (string, error) {

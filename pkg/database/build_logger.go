@@ -49,8 +49,8 @@ func (l *BuildLogger) WriteError(err error) {
 	l.log(err.Error(), logger.LevelError)
 }
 
-func (l *BuildLogger) WriteModel(mod *model.Model) {
-	panic("Call to WriteModel in BuildLogger")
+func (l *BuildLogger) WriteVersion(version *model.Version) {
+	panic("Call to WriteVersion in BuildLogger")
 }
 
 func (l *BuildLogger) log(line string, level logger.Level) {

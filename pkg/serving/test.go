@@ -26,11 +26,11 @@ type TestResult struct {
 	Stats             *model.Stats
 }
 
-// TestModel runs the example inputs and checks the example
+// TestVersion runs the example inputs and checks the example
 // outputs. If examples inputs are defined but example outputs aren't,
 // defined, the resulting outputs are written to exampleOutputDir and
 // the examples object is updated to point to those outputs.
-func TestModel(ctx context.Context, servingPlatform Platform, imageTag string, examples []*model.Example, dir string, useGPU bool, logWriter logger.Logger) (*TestResult, error) {
+func TestVersion(ctx context.Context, servingPlatform Platform, imageTag string, examples []*model.Example, dir string, useGPU bool, logWriter logger.Logger) (*TestResult, error) {
 	logWriter.WriteStatus("Testing model")
 
 	// copy examples to avoid race conditions when building in parallel

@@ -33,20 +33,20 @@ func newWebHook(urlWithSecret string) (*WebHook, error) {
 	return &WebHook{url: hookURL, secret: secret}, nil
 }
 
-func (wh *WebHook) run(user string, name string, id string, mod *model.Model, image *model.Image, dir string, logWriter logger.Logger) error {
+func (wh *WebHook) run(user string, name string, id string, version *model.Version, image *model.Image, dir string, logWriter logger.Logger) error {
 	values := url.Values{
-		"model_id":  {id},
-		"user":      {user},
-		"repo_name": {name},
-		"secret":    {wh.secret},
+		"version_id": {id},
+		"user":       {user},
+		"repo_name":  {name},
+		"secret":     {wh.secret},
 	}
-	if mod != nil {
-		modelJSON, err := json.Marshal(mod)
+	if version != nil {
+		versionJSON, err := json.Marshal(version)
 		if err != nil {
 			return err
 		}
-		values["model_json_base64"] = []string{base64.StdEncoding.EncodeToString(modelJSON)}
-		values["model_path"] = []string{fmt.Sprintf("/v1/repos/%s/%s/models/%s", user, name, mod.ID)}
+		values["version_json_base64"] = []string{base64.StdEncoding.EncodeToString(versionJSON)}
+		values["version_path"] = []string{fmt.Sprintf("/v1/repos/%s/%s/versions/%s", user, name, version.ID)}
 	}
 	if image != nil {
 		imageJSON, err := json.Marshal(image)
@@ -71,7 +71,7 @@ func (wh *WebHook) run(user string, name string, id string, mod *model.Model, im
 	return nil
 }
 
-func (s *Server) runHooks(hooks []*WebHook, user string, id string, name string, mod *model.Model, image *model.Image, dir string, logWriter logger.Logger) error {
+func (s *Server) runHooks(hooks []*WebHook, user string, id string, name string, mod *model.Version, image *model.Image, dir string, logWriter logger.Logger) error {
 	for _, hook := range hooks {
 		if err := hook.run(user, name, id, mod, image, dir, logWriter); err != nil {
 			return err

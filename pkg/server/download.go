@@ -8,11 +8,11 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/storage"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
-func (s *Server) DownloadModel(w http.ResponseWriter, r *http.Request) {
+func (s *Server) DownloadVersion(w http.ResponseWriter, r *http.Request) {
 	user, name, id := getRepoVars(r)
 	modTime := time.Now() // TODO
 

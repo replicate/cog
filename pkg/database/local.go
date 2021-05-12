@@ -42,8 +42,8 @@ func NewLocalFileDatabase(rootDir string) (*LocalFileDatabase, error) {
 	return db, nil
 }
 
-func (db *LocalFileDatabase) InsertModel(user string, name string, id string, mod *model.Model) error {
-	path := db.modelPath(user, name, id)
+func (db *LocalFileDatabase) InsertVersion(user string, name string, id string, version *model.Version) error {
+	path := db.versionPath(user, name, id)
 	exists, err := files.Exists(path)
 	if err != nil {
 		return err
@@ -58,15 +58,15 @@ func (db *LocalFileDatabase) InsertModel(user string, name string, id string, mo
 	if err != nil {
 		return fmt.Errorf("Failed to write metadata file %s: %w", path, err)
 	}
-	if json.NewEncoder(file).Encode(mod); err != nil {
+	if err = json.NewEncoder(file).Encode(version); err != nil {
 		return fmt.Errorf("Failed to marshall model: %w", err)
 	}
 	return nil
 }
 
-// GetModel returns a model or nil if the model doesn't exist
-func (db *LocalFileDatabase) GetModel(user string, name string, id string) (*model.Model, error) {
-	path := db.modelPath(user, name, id)
+// GetVersion returns a model or nil if the model doesn't exist
+func (db *LocalFileDatabase) GetVersion(user string, name string, id string) (*model.Version, error) {
+	path := db.versionPath(user, name, id)
 	exists, err := files.Exists(path)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to determine if %s exists: %w", path, err)
@@ -74,43 +74,43 @@ func (db *LocalFileDatabase) GetModel(user string, name string, id string) (*mod
 	if !exists {
 		return nil, nil
 	}
-	mod, err := db.readModel(path)
+	version, err := db.readVersion(path)
 	if err != nil {
 		return nil, err
 	}
-	return mod, nil
+	return version, nil
 }
 
-func (db *LocalFileDatabase) DeleteModel(user string, name string, id string) error {
-	path := db.modelPath(user, name, id)
+func (db *LocalFileDatabase) DeleteVersion(user string, name string, id string) error {
+	path := db.versionPath(user, name, id)
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("Failed to delete %s: %w", path, err)
 	}
 	return nil
 }
 
-func (db *LocalFileDatabase) ListModels(user string, name string) ([]*model.Model, error) {
+func (db *LocalFileDatabase) ListVersions(user string, name string) ([]*model.Version, error) {
 	repoDir := db.repoDir(user, name)
 	entries, err := os.ReadDir(repoDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []*model.Model{}, nil
+			return []*model.Version{}, nil
 		}
 		return nil, fmt.Errorf("Failed to scan %s: %w", db.rootDir, err)
 	}
-	models := []*model.Model{}
+	versions := []*model.Version{}
 	for _, entry := range entries {
 		filename := entry.Name()
 		if strings.HasSuffix(filename, ".json") {
 			path := filepath.Join(repoDir, filename)
-			mod, err := db.readModel(path)
+			version, err := db.readVersion(path)
 			if err != nil {
 				return nil, err
 			}
-			models = append(models, mod)
+			versions = append(versions, version)
 		}
 	}
-	return models, nil
+	return versions, nil
 }
 
 func (db *LocalFileDatabase) InsertImage(user string, name string, id string, arch string, image *model.Image) error {
@@ -130,7 +130,7 @@ func (db *LocalFileDatabase) InsertImage(user string, name string, id string, ar
 		return fmt.Errorf("Failed to write metadata file %s: %w", path, err)
 	}
 	if err := json.NewEncoder(file).Encode(image); err != nil {
-		return fmt.Errorf("Failed to marshall model: %w", err)
+		return fmt.Errorf("Failed to encode image as JSON: %w", err)
 	}
 	return nil
 }
@@ -242,16 +242,16 @@ func (db *LocalFileDatabase) GetBuildLogs(user, name, buildID string, follow boo
 	return logChan, nil
 }
 
-func (db *LocalFileDatabase) readModel(path string) (*model.Model, error) {
+func (db *LocalFileDatabase) readVersion(path string) (*model.Version, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to open %s: %w", path, err)
 	}
-	mod := new(model.Model)
-	if err := json.NewDecoder(file).Decode(mod); err != nil {
+	version := new(model.Version)
+	if err := json.NewDecoder(file).Decode(version); err != nil {
 		return nil, fmt.Errorf("Failed to parse %s: %w", path, err)
 	}
-	return mod, nil
+	return version, nil
 }
 
 func (db *LocalFileDatabase) readImage(path string) (*model.Image, error) {
@@ -266,7 +266,7 @@ func (db *LocalFileDatabase) readImage(path string) (*model.Image, error) {
 	return image, nil
 }
 
-func (db *LocalFileDatabase) modelPath(user string, name string, id string) string {
+func (db *LocalFileDatabase) versionPath(user string, name string, id string) string {
 	// TODO(andreas): make this user/name/versions/id.json
 	return filepath.Join(db.repoDir(user, name), id+".json")
 }

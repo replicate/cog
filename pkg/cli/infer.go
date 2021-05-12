@@ -30,7 +30,7 @@ var (
 func newInferCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "infer <id>",
-		Short: "Run a single inference against a Cog package",
+		Short: "Run a single inference against a version of a model",
 		RunE:  cmdInfer,
 		Args:  cobra.MinimumNArgs(1),
 	}
@@ -52,7 +52,7 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 
 	client := client.NewClient()
 	fmt.Println("Loading package", id)
-	_, images, err := client.GetModel(repo, id)
+	_, images, err := client.GetVersion(repo, id)
 	if err != nil {
 		return err
 	}
@@ -129,9 +129,7 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 	}
 
 	// Ignore @, to make it behave the same as -i
-	if strings.HasPrefix(outPath, "@") {
-		outPath = outPath[1:]
-	}
+	outPath = strings.TrimPrefix(outPath, "@")
 
 	outPath, err := homedir.Expand(outPath)
 	if err != nil {

@@ -10,7 +10,7 @@ import (
 )
 
 func Pull(tag string, logWriter logger.Logger) error {
-	console.Info("Downloading image...")
+	console.Debugf("Downloading image %s...", tag)
 	cmd := exec.Command("docker", "pull", tag)
 
 	stderrDone, err := pipeToWithDockerChecks(cmd.StderrPipe, logWriter)
@@ -21,7 +21,7 @@ func Pull(tag string, logWriter logger.Logger) error {
 	err = cmd.Run()
 	<-stderrDone
 	if err != nil {
-		return fmt.Errorf("Failed to download model: %w", err)
+		return fmt.Errorf("Failed to pull image: %w", err)
 	}
 
 	return err

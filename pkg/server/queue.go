@@ -9,11 +9,11 @@ import (
 
 	"github.com/segmentio/ksuid"
 
-	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/serving"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 const (
@@ -185,7 +185,7 @@ func (q *BuildQueue) handleJob(job *BuildJob) {
 		return
 	}
 
-	testResult, err := serving.TestModel(ctx, q.servingPlatform, imageURI, job.config.Examples, job.dir, job.arch == "gpu", logWriter)
+	testResult, err := serving.TestVersion(ctx, q.servingPlatform, imageURI, job.config.Examples, job.dir, job.arch == "gpu", logWriter)
 	if err != nil {
 		// TODO(andreas): return other response than 500 if validation fails
 		outChan <- &JobOutput{error: err}
@@ -261,6 +261,6 @@ func (l *QueueLogger) WriteError(err error) {
 	l.ch <- &JobOutput{logError: &line}
 }
 
-func (l *QueueLogger) WriteModel(mod *model.Model) {
-	panic("Unexpected call to WriteModel")
+func (l *QueueLogger) WriteVersion(version *model.Version) {
+	panic("Unexpected call to WriteVersion")
 }

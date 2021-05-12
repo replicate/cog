@@ -11,7 +11,7 @@ import (
 func newDeleteCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "delete",
-		Short:   "Delete a model",
+		Short:   "Delete a version",
 		RunE:    deleteModel,
 		Args:    cobra.MinimumNArgs(1),
 		Aliases: []string{"rm"},
@@ -26,10 +26,10 @@ func deleteModel(cmd *cobra.Command, args []string) error {
 	}
 	cli := client.NewClient()
 	for _, id := range args {
-		if err := cli.DeleteModel(repo, id); err != nil {
+		if err := cli.DeleteVersion(repo, id); err != nil {
 			return err
 		}
-		fmt.Printf("Deleted model %s:%s\n", repo, id)
+		fmt.Printf("Deleted version %s:%s\n", repo, id)
 	}
 	return nil
 }

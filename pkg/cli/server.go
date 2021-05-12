@@ -8,12 +8,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/database"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/server"
 	"github.com/replicate/cog/pkg/serving"
 	"github.com/replicate/cog/pkg/storage"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 var (
@@ -39,7 +39,7 @@ func newServerCommand() *cobra.Command {
 
 	cmd.Flags().IntVar(&port, "port", 8080, "Server port")
 	cmd.Flags().StringVar(&dockerRegistry, "docker-registry", "", "Docker registry to push images to")
-	cmd.Flags().StringArrayVar(&postUploadHooks, "post-upload-hook", []string{}, "Web hooks that are posted to after the model has been uploaded. Format: <url>@<secret>")
+	cmd.Flags().StringArrayVar(&postUploadHooks, "post-upload-hook", []string{}, "Web hooks that are posted to after a version has been uploaded. Format: <url>@<secret>")
 	cmd.Flags().StringArrayVar(&postBuildPrimaryHooks, "post-build-primary-hook", []string{}, "Web hooks that are posted to after the CPU image (or GPU image if no CPU image exists) has been built. Format: <url>@<secret>")
 	cmd.Flags().StringArrayVar(&postBuildHooks, "post-build-hook", []string{}, "Web hooks that are posted to after an image has been built. Format: <url>@<secret>")
 	cmd.Flags().StringVar(&authDelegate, "auth-delegate", "", "Address to service that handles authentication logic")

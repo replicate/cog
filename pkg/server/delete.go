@@ -6,17 +6,17 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-func (s *Server) DeleteModel(w http.ResponseWriter, r *http.Request) {
+func (s *Server) DeleteVersion(w http.ResponseWriter, r *http.Request) {
 	user, name, id := getRepoVars(r)
 	console.Infof("Received delete request for %s/%s/%s", user, name, id)
 
-	mod, err := s.db.GetModel(user, name, id)
+	version, err := s.db.GetVersion(user, name, id)
 	if err != nil {
 		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	if mod == nil {
+	if version == nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -26,7 +26,7 @@ func (s *Server) DeleteModel(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	if err := s.db.DeleteModel(user, name, id); err != nil {
+	if err := s.db.DeleteVersion(user, name, id); err != nil {
 		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return

@@ -11,10 +11,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/client"
-	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/serving"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 var benchmarkSetups int
@@ -52,7 +52,7 @@ func benchmarkModel(cmd *cobra.Command, args []string) error {
 	cli := client.NewClient()
 	console.Infof("Starting benchmark of %s:%s", repo, id)
 
-	mod, images, err := cli.GetModel(repo, id)
+	mod, images, err := cli.GetVersion(repo, id)
 	if err != nil {
 		return err
 	}
@@ -65,18 +65,18 @@ func benchmarkModel(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("Model has no examples, cannot run benchmark")
 	}
 
-	modelDir, err := os.MkdirTemp("/tmp", "benchmark")
+	tmpDir, err := os.MkdirTemp("/tmp", "benchmark")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(modelDir)
-	if err := cli.DownloadModel(repo, id, modelDir); err != nil {
+	defer os.RemoveAll(tmpDir)
+	if err := cli.DownloadVersion(repo, id, tmpDir); err != nil {
 		return err
 	}
 	results := new(BenchmarkResults)
 	for i := 0; i < benchmarkSetups; i++ {
 		console.Infof("Running setup iteration %d", i+1)
-		if err := runBenchmarkInference(mod, image, modelDir, results, benchmarkRuns); err != nil {
+		if err := runBenchmarkInference(mod, image, tmpDir, results, benchmarkRuns); err != nil {
 			return err
 		}
 	}
@@ -97,13 +97,13 @@ func benchmarkModel(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runBenchmarkInference(mod *model.Model, image *model.Image, modelDir string, results *BenchmarkResults, runIterations int) error {
+func runBenchmarkInference(version *model.Version, image *model.Image, modelDir string, results *BenchmarkResults, runIterations int) error {
 	servingPlatform, err := serving.NewLocalDockerPlatform()
 	if err != nil {
 		return err
 	}
 
-	example := mod.Config.Examples[0]
+	example := version.Config.Examples[0]
 	input := serving.NewExampleWithBaseDir(example.Input, modelDir)
 
 	logWriter := logger.NewConsoleLogger()

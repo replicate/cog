@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 type MessageType string
@@ -18,13 +18,13 @@ const (
 	MessageTypeDebugLine MessageType = "debug_line"
 	MessageTypeError     MessageType = "error"
 	MessageTypeStatus    MessageType = "status"
-	MessageTypeModel     MessageType = "model"
+	MessageTypeVersion   MessageType = "version"
 )
 
 type Message struct {
-	Type  MessageType  `json:"type"`
-	Text  string       `json:"data"`
-	Model *model.Model `json:"model"`
+	Type    MessageType    `json:"type"`
+	Text    string         `json:"data"`
+	Version *model.Version `json:"version"`
 }
 
 type StreamLogger struct {
@@ -92,11 +92,11 @@ func (logger *StreamLogger) WriteError(err error) {
 	logger.logText(MessageTypeError, err.Error())
 }
 
-func (logger *StreamLogger) WriteModel(mod *model.Model) {
-	msg := Message{Type: MessageTypeModel, Model: mod}
+func (logger *StreamLogger) WriteVersion(version *model.Version) {
+	msg := Message{Type: MessageTypeVersion, Version: version}
 	data, err := json.Marshal(msg)
 	if err != nil {
-		console.Warn("Failed to marshal model")
+		console.Warn("Failed to marshal version")
 	}
 	logger.write(data)
 }

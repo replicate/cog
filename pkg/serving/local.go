@@ -134,7 +134,7 @@ func (p *LocalDockerPlatform) waitForContainerReady(ctx context.Context, hostPor
 	url := fmt.Sprintf("http://localhost:%d/ping", hostPort)
 
 	start := time.Now()
-	logWriter.Info("Waiting for model container to become accessible")
+	logWriter.Info("Waiting for model to become accessible")
 	for {
 		now := time.Now()
 		if now.Sub(start) > global.StartupTimeout {
