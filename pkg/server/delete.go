@@ -8,7 +8,7 @@ import (
 
 func (s *Server) DeleteVersion(w http.ResponseWriter, r *http.Request) {
 	user, name, id := getModelVars(r)
-	console.Infof("Received delete request for %s/%s/%s", user, name, id)
+	console.Debugf("Received delete request for %s/%s/%s", user, name, id)
 
 	version, err := s.db.GetVersion(user, name, id)
 	if err != nil {

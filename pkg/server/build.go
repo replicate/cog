@@ -27,7 +27,7 @@ import (
 func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {
 	user, name, _ := getModelVars(r)
 
-	console.Info("Received build request")
+	console.Debug("Received build request")
 	streamLogger := logger.NewStreamLogger(r.Context(), w)
 	mod, err := s.ReceiveVersion(r, streamLogger, user, name)
 	if err != nil {
@@ -193,7 +193,7 @@ func (s *Server) ReadConfig(dir string) (*model.Config, error) {
 
 func (s *Server) GetCacheHashes(w http.ResponseWriter, r *http.Request) {
 	user, name, _ := getModelVars(r)
-	console.Infof("Received cache-hashes request for %s/%s", user, name)
+	console.Debugf("Received cache-hashes request for %s/%s", user, name)
 
 	zipCache, err := zip.NewModelCache(user, name)
 	if err != nil {
