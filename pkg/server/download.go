@@ -26,7 +26,7 @@ func (s *Server) DownloadVersion(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	console.Infof("Downloaded %d bytes", len(content))
+	console.Debugf("Downloaded %d bytes", len(content))
 	http.ServeContent(w, r, id+".zip", modTime, bytes.NewReader(content))
 }
 
@@ -47,6 +47,6 @@ func (s *Server) DownloadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filename := filepath.Base(path)
-	console.Infof("Downloaded %d bytes", len(content))
+	console.Debugf("Downloaded %d bytes", len(content))
 	http.ServeContent(w, r, filename, modTime, bytes.NewReader(content))
 }

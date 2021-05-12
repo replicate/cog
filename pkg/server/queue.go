@@ -171,7 +171,7 @@ func (q *BuildQueue) handleJob(job *BuildJob) {
 	go func() {
 		cancelChan := q.cancelChans[job.messageID]
 		<-cancelChan
-		console.Info("Cancelling build")
+		console.Debugf("Cancelling build")
 		cancel()
 	}()
 

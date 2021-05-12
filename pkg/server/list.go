@@ -9,7 +9,7 @@ import (
 
 func (s *Server) ListVersions(w http.ResponseWriter, r *http.Request) {
 	user, name, _ := getModelVars(r)
-	console.Infof("Received list request for %s%s", user, name)
+	console.Debugf("Received list request for %s%s", user, name)
 
 	versions, err := s.db.ListVersions(user, name)
 	if err != nil {
