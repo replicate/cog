@@ -24,7 +24,7 @@ As much as possible, this is attempting to follow the [Standard Go Project Layou
 - `pkg/client/` - Client used by the CLI to communicate with the server.
 - `pkg/database/` - Used by the server to store metadata about models.
 - `pkg/docker/` - Various interfaces with Docker for building and running containers.
-- `pkg/model/` - Model, repo, and configs (`cog.yaml`).
+- `pkg/model/` - Versions, repos, and configs (`cog.yaml`).
 - `pkg/server/` - Server for storing data and building Docker images.
 - `pkg/serving/` - Runs inferences to test models.
 - `pkg/settings/` - Manages `.cog` directory in repos and `.config/cog/` directory for user settings.
