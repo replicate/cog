@@ -7,8 +7,8 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
-func (c *Client) Ping(repo *model.Repo) error {
-	url := newURL(repo, "ping")
+func (c *Client) Ping(mod *model.Model) error {
+	url := newURL(mod, "ping")
 	req, err := c.newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return err

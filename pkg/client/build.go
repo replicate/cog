@@ -15,8 +15,8 @@ type LogEntry struct {
 	Line  string       `json:"line"`
 }
 
-func (c *Client) GetBuildLogs(repo *model.Repo, buildID string, follow bool) (chan *LogEntry, error) {
-	url := newURL(repo, "v1/repos/%s/%s/builds/%s/logs", repo.User, repo.Name, buildID)
+func (c *Client) GetBuildLogs(mod *model.Model, buildID string, follow bool) (chan *LogEntry, error) {
+	url := newURL(mod, "v1/models/%s/%s/builds/%s/logs", mod.User, mod.Name, buildID)
 	req, err := c.newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err

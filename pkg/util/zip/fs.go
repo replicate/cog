@@ -14,8 +14,8 @@ type CacheFileSystem struct {
 	dir string
 }
 
-func NewRepoCache(user string, repoName string) (*CacheFileSystem, error) {
-	return NewCacheFileSystem(fmt.Sprintf(".cog/zip-cache/%s/%s", user, repoName))
+func NewModelCache(user string, modelName string) (*CacheFileSystem, error) {
+	return NewCacheFileSystem(fmt.Sprintf(".cog/zip-cache/%s/%s", user, modelName))
 }
 
 func NewCacheFileSystem(cacheDir string) (*CacheFileSystem, error) {

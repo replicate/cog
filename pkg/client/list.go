@@ -8,8 +8,8 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
-func (c *Client) ListVersions(repo *model.Repo) ([]*model.Version, error) {
-	url := newURL(repo, "v1/repos/%s/%s/versions/", repo.User, repo.Name)
+func (c *Client) ListVersions(mod *model.Model) ([]*model.Version, error) {
+	url := newURL(mod, "v1/models/%s/%s/versions/", mod.User, mod.Name)
 	req, err := c.newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -19,7 +19,7 @@ func (c *Client) ListVersions(repo *model.Repo) ([]*model.Version, error) {
 		return nil, err
 	}
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("Repository not found: %s", repo.String())
+		return nil, fmt.Errorf("Model not found: %s", mod.String())
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("List endpoint returned status %d", resp.StatusCode)

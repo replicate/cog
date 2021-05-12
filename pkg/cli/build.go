@@ -28,7 +28,7 @@ func newBuildLogCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 	}
 
-	addRepoFlag(cmd)
+	addModelFlag(cmd)
 
 	cmd.Flags().BoolP("follow", "f", false, "Follow streaming logs")
 	// TODO(andreas): tail
@@ -43,13 +43,13 @@ func showBuildLogs(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	repo, err := getRepo()
+	model, err := getModel()
 	if err != nil {
 		return err
 	}
 
 	c := client.NewClient()
-	logChan, err := c.GetBuildLogs(repo, buildID, follow)
+	logChan, err := c.GetBuildLogs(model, buildID, follow)
 	if err != nil {
 		return err
 	}

@@ -55,7 +55,7 @@ func TestCachingZip(t *testing.T) {
 	require.NoError(t, err)
 	requireUnzippedCorrectly(t, unzipDir1, "foo", "bar", "baz")
 
-	cacheDir := filepath.Join(cacheRootDir, "my-repo")
+	cacheDir := filepath.Join(cacheRootDir, "my-model")
 	fs, err := NewCacheFileSystem(cacheDir)
 	require.NoError(t, err)
 

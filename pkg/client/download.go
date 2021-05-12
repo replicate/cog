@@ -13,8 +13,8 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
-func (c *Client) DownloadVersion(repo *model.Repo, id string, outputDir string) error {
-	url := newURL(repo, "v1/repos/%s/%s/versions/%s.zip", repo.User, repo.Name, id)
+func (c *Client) DownloadVersion(mod *model.Model, id string, outputDir string) error {
+	url := newURL(mod, "v1/models/%s/%s/versions/%s.zip", mod.User, mod.Name, id)
 	req, err := c.newRequest("GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("Failed to create HTTP request: %w", err)

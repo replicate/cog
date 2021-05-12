@@ -9,7 +9,7 @@ Then, start the server, pointing at your Docker registry:
 Next, let's build a model. We have [some models you can play around with](https://github.com/replicate/cog-examples). Clone that repository (you'll need git-lfs) and hook up that directory to your Cog server:
 
     cd example-models/inst-colorization/
-    cog repo set localhost:8080/examples/inst-colorization
+    cog model set http://localhost:8080/examples/inst-colorization
 
 Take a look at `cog.yaml` and `model.py` to see what we're building.
 
@@ -17,18 +17,18 @@ Then, let's push it:
 
     cog push
 
-This has uploaded the currently directory to the server and the server has stored that as a version of your model. In the background, it is now building two Docker images (CPU and GPU variants) that will run your model. You can see the status of this build with `cog show`, replacing the ID with your model's ID:
+This has uploaded the currently directory to the server and the server has stored that as a version of your model. In the background, it is now building two Docker images (CPU and GPU variants) that will run your model. You can see the status of this build with `cog show`, replacing the ID with the ID of the version you created:
 
     $ cog show b31f9f72d8f14f0eacc5452e85b05c957b9a8ed9
     ...
     CPU image: Building. Run `cog build logs 8f3a05c42ee5` to see its progress.
     GPU image: Building. Run `cog build logs b087a0bb5b7a` to see its progress.
 
-When the build has finished, you can run inferences on the built model from any machine that is pointed at the server. Replace the ID with your model's ID, and the file with an image on your disk you want to colorize:
+When the build has finished, you can run inferences on the built model from any machine that is pointed at the server. Replace the ID with yours, and the file with an image on your disk you want to colorize:
 
     cog infer b31f9f72d8f14f0eacc5452e85b05c957b9a8ed9 -i @hotdog.jpg
 
-You can also list the models for this repo:
+You can also list the versions of this model:
 
     cog list
 

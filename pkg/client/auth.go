@@ -54,8 +54,8 @@ func (c *Client) VerifyToken(address string, token string) (username string, err
 	return body.Username, nil
 }
 
-func (c *Client) CheckRead(repo *model.Repo) error {
-	url := newURL(repo, "v1/repos/%s/%s/check-read", repo.User, repo.Name)
+func (c *Client) CheckRead(mod *model.Model) error {
+	url := newURL(mod, "v1/models/%s/%s/check-read", mod.User, mod.Name)
 	req, err := c.newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return err

@@ -19,14 +19,14 @@ func newPushCommand() *cobra.Command {
 		RunE:  push,
 		Args:  cobra.NoArgs,
 	}
-	addRepoFlag(cmd)
+	addModelFlag(cmd)
 	addProjectDirFlag(cmd)
 
 	return cmd
 }
 
 func push(cmd *cobra.Command, args []string) error {
-	repo, err := getRepo()
+	model, err := getModel()
 	if err != nil {
 		return err
 	}
@@ -40,10 +40,10 @@ func push(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%s does not exist in %s. Are you in the right directory?", global.ConfigFilename, projectDir)
 	}
 
-	console.Infof("Uploading %s to %s", projectDir, repo)
+	console.Infof("Uploading %s to %s", projectDir, model)
 
 	cli := client.NewClient()
-	version, err := cli.UploadVersion(repo, projectDir)
+	version, err := cli.UploadVersion(model, projectDir)
 	if err != nil {
 		return err
 	}

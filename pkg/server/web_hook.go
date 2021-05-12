@@ -37,7 +37,7 @@ func (wh *WebHook) run(user string, name string, id string, version *model.Versi
 	values := url.Values{
 		"version_id": {id},
 		"user":       {user},
-		"repo_name":  {name},
+		"model_name": {name},
 		"secret":     {wh.secret},
 	}
 	if version != nil {
@@ -46,7 +46,7 @@ func (wh *WebHook) run(user string, name string, id string, version *model.Versi
 			return err
 		}
 		values["version_json_base64"] = []string{base64.StdEncoding.EncodeToString(versionJSON)}
-		values["version_path"] = []string{fmt.Sprintf("/v1/repos/%s/%s/versions/%s", user, name, version.ID)}
+		values["version_path"] = []string{fmt.Sprintf("/v1/models/%s/%s/versions/%s", user, name, version.ID)}
 	}
 	if image != nil {
 		imageJSON, err := json.Marshal(image)

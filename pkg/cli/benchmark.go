@@ -43,25 +43,25 @@ func newBenchmarkCommand() *cobra.Command {
 }
 
 func benchmarkModel(cmd *cobra.Command, args []string) error {
-	repo, err := getRepo()
+	mod, err := getModel()
 	if err != nil {
 		return err
 	}
 	id := args[0]
 
 	cli := client.NewClient()
-	console.Infof("Starting benchmark of %s:%s", repo, id)
+	console.Infof("Starting benchmark of %s:%s", mod, id)
 
-	mod, images, err := cli.GetVersion(repo, id)
+	version, images, err := cli.GetVersion(mod, id)
 	if err != nil {
 		return err
 	}
 	image := model.ImageForArch(images, benchmarkArch)
 	if image == nil {
-		return fmt.Errorf("No %s image has been built for %s:%s", benchmarkArch, repo.String(), id)
+		return fmt.Errorf("No %s image has been built for %s:%s", benchmarkArch, mod.String(), id)
 	}
 
-	if len(mod.Config.Examples) == 0 {
+	if len(version.Config.Examples) == 0 {
 		return fmt.Errorf("Model has no examples, cannot run benchmark")
 	}
 
@@ -70,13 +70,13 @@ func benchmarkModel(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer os.RemoveAll(tmpDir)
-	if err := cli.DownloadVersion(repo, id, tmpDir); err != nil {
+	if err := cli.DownloadVersion(mod, id, tmpDir); err != nil {
 		return err
 	}
 	results := new(BenchmarkResults)
 	for i := 0; i < benchmarkSetups; i++ {
 		console.Infof("Running setup iteration %d", i+1)
-		if err := runBenchmarkInference(mod, image, tmpDir, results, benchmarkRuns); err != nil {
+		if err := runBenchmarkInference(version, image, tmpDir, results, benchmarkRuns); err != nil {
 			return err
 		}
 	}

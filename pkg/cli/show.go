@@ -22,7 +22,7 @@ func newShowCommand() *cobra.Command {
 		Args:       cobra.ExactArgs(1),
 		SuggestFor: []string{"inspect"},
 	}
-	addRepoFlag(cmd)
+	addModelFlag(cmd)
 
 	cmd.Flags().Bool("json", false, "Print information as JSON")
 
@@ -34,7 +34,7 @@ func show(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	repo, err := getRepo()
+	model, err := getModel()
 	if err != nil {
 		return err
 	}
@@ -42,7 +42,7 @@ func show(cmd *cobra.Command, args []string) error {
 	id := args[0]
 
 	cli := client.NewClient()
-	version, images, err := cli.GetVersion(repo, id)
+	version, images, err := cli.GetVersion(model, id)
 	if err != nil {
 		return err
 	}
@@ -50,7 +50,7 @@ func show(cmd *cobra.Command, args []string) error {
 	if jsonOutput {
 		return showJSON(version, images)
 	}
-	return showTable(repo, version, images)
+	return showTable(model, version, images)
 }
 
 func showJSON(version *model.Version, images []*model.Image) error {
@@ -70,10 +70,10 @@ func showJSON(version *model.Version, images []*model.Image) error {
 	return nil
 }
 
-func showTable(repo *model.Repo, version *model.Version, images []*model.Image) error {
+func showTable(mod *model.Model, version *model.Version, images []*model.Image) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "ID:\t"+version.ID)
-	fmt.Fprintf(w, "Repo:\t%s/%s\n", repo.User, repo.Name)
+	fmt.Fprintf(w, "Model:\t%s/%s\n", mod.User, mod.Name)
 	fmt.Fprintln(w, "Created:\t"+timeago.English.Format(version.Created))
 	w.Flush()
 

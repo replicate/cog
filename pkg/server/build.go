@@ -25,7 +25,7 @@ import (
 )
 
 func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {
-	user, name, _ := getRepoVars(r)
+	user, name, _ := getModelVars(r)
 
 	console.Info("Received build request")
 	streamLogger := logger.NewStreamLogger(r.Context(), w)
@@ -192,10 +192,10 @@ func (s *Server) ReadConfig(dir string) (*model.Config, error) {
 }
 
 func (s *Server) GetCacheHashes(w http.ResponseWriter, r *http.Request) {
-	user, name, _ := getRepoVars(r)
+	user, name, _ := getModelVars(r)
 	console.Infof("Received cache-hashes request for %s/%s", user, name)
 
-	zipCache, err := zip.NewRepoCache(user, name)
+	zipCache, err := zip.NewModelCache(user, name)
 	if err != nil {
 		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
@@ -238,7 +238,7 @@ func (s *Server) UnzipInputToTempDir(r *http.Request, user string, name string) 
 	if err := os.Mkdir(dir, 0755); err != nil {
 		return "", fmt.Errorf("Failed to make source dir: %w", err)
 	}
-	zipCache, err := zip.NewRepoCache(user, name)
+	zipCache, err := zip.NewModelCache(user, name)
 	if err != nil {
 		return "", err
 	}
@@ -292,7 +292,7 @@ func ComputeID(dir string) (string, error) {
 }
 
 func (s *Server) SendBuildLogs(w http.ResponseWriter, r *http.Request) {
-	user, name, buildID := getRepoVars(r)
+	user, name, buildID := getModelVars(r)
 
 	follow := r.URL.Query().Get("follow") == "true"
 	logChan, err := s.db.GetBuildLogs(user, name, buildID, follow)

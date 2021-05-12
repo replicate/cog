@@ -21,7 +21,7 @@ func newDownloadCommand() *cobra.Command {
 		RunE:  download,
 		Args:  cobra.ExactArgs(1),
 	}
-	addRepoFlag(cmd)
+	addModelFlag(cmd)
 	cmd.Flags().StringVarP(&downloadOutputDir, "output-dir", "o", "", "Output directory")
 	cmd.MarkFlagRequired("output-dir")
 
@@ -29,7 +29,7 @@ func newDownloadCommand() *cobra.Command {
 }
 
 func download(cmd *cobra.Command, args []string) (err error) {
-	repo, err := getRepo()
+	model, err := getModel()
 	if err != nil {
 		return err
 	}
@@ -58,7 +58,7 @@ func download(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	cli := client.NewClient()
-	if err := cli.DownloadVersion(repo, id, downloadOutputDir); err != nil {
+	if err := cli.DownloadVersion(model, id, downloadOutputDir); err != nil {
 		return err
 	}
 
