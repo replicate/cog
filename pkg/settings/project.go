@@ -13,8 +13,8 @@ import (
 )
 
 type ProjectSettings struct {
-	Repo        *model.Repo `json:"repo"`
-	projectRoot string      `json:"-"`
+	Model       *model.Model `json:"model"`
+	projectRoot string       `json:"-"`
 }
 
 func LoadProjectSettings(projectRoot string) (*ProjectSettings, error) {

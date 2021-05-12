@@ -44,21 +44,21 @@ environment:
     - libglib2.0-0
 ```
 
-3. Push it to a repository and build it:
+3. Push it:
 
 ```
 $ cog push
---> Uploading '.' to repository http://10.1.2.3/colorization... done
+--> Uploading '.' to http://10.1.2.3/colorization... done
 --> Created version b6a2f8a2d2ff
 ```
 
 This has:
 
 - Created a ZIP file containing your code + weights + environment definition, and assigned it a content-addressable SHA256 ID.
-- Pushed this ZIP file up to a central repository so it never gets lost and can be run by anyone.
+- Pushed this ZIP file up to a central server so it never gets lost and can be run by anyone.
 - Built two Docker images (one for CPU and one for GPU) that contains the model in a reproducible environment, with the correct versions of Python, your dependencies, CUDA, etc.
 
-Now, anyone who has access to this repository can run inferences on this model:
+Now, anyone who has access to this server can run inferences on this model:
 
 ```
 $ cog infer b6a2f8a2d2ff -i @input.png -o @output.png

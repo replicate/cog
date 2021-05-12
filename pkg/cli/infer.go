@@ -34,7 +34,7 @@ func newInferCommand() *cobra.Command {
 		RunE:  cmdInfer,
 		Args:  cobra.MinimumNArgs(1),
 	}
-	addRepoFlag(cmd)
+	addModelFlag(cmd)
 	cmd.Flags().StringArrayVarP(&inputs, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
 	cmd.Flags().StringVarP(&inferArch, "arch", "a", "cpu", "Architecture to run inference on (cpu/gpu)")
@@ -43,7 +43,7 @@ func newInferCommand() *cobra.Command {
 }
 
 func cmdInfer(cmd *cobra.Command, args []string) error {
-	repo, err := getRepo()
+	mod, err := getModel()
 	if err != nil {
 		return err
 	}
@@ -52,14 +52,14 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 
 	client := client.NewClient()
 	fmt.Println("Loading package", id)
-	_, images, err := client.GetVersion(repo, id)
+	_, images, err := client.GetVersion(mod, id)
 	if err != nil {
 		return err
 	}
 	// TODO(bfirsh): differentiate between failed builds and in-progress builds, and probably block here if there is an in-progress build
 	image := model.ImageForArch(images, benchmarkArch)
 	if image == nil {
-		return fmt.Errorf("No %s image has been built for %s:%s", benchmarkArch, repo.String(), id)
+		return fmt.Errorf("No %s image has been built for %s:%s", benchmarkArch, mod.String(), id)
 	}
 
 	servingPlatform, err := serving.NewLocalDockerPlatform()

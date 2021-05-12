@@ -17,8 +17,8 @@ import (
 	"github.com/replicate/cog/pkg/util/zip"
 )
 
-func (c *Client) UploadVersion(repo *model.Repo, projectDir string) (*model.Version, error) {
-	hashes, err := c.getRepoCacheHashes(repo)
+func (c *Client) UploadVersion(mod *model.Model, projectDir string) (*model.Version, error) {
+	hashes, err := c.getModCacheHashes(mod)
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +33,7 @@ func (c *Client) UploadVersion(repo *model.Repo, projectDir string) (*model.Vers
 			DisableKeepAlives: true,
 		},
 	}
-	url := newURL(repo, "v1/repos/%s/%s/versions/", repo.User, repo.Name)
+	url := newURL(mod, "v1/models/%s/%s/versions/", mod.User, mod.Name)
 	req, err := c.newRequest(http.MethodPut, url, bodyReader)
 	if err != nil {
 		return nil, err
@@ -74,10 +74,10 @@ func (c *Client) UploadVersion(repo *model.Repo, projectDir string) (*model.Vers
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("Repository does not exist: %s", repo.String())
+		return nil, fmt.Errorf("Model does not exist: %s", mod.String())
 	}
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("You are not authorized to write to repository %s. Did you run cog login?", repo.String())
+		return nil, fmt.Errorf("You are not authorized to write to model %s. Did you run cog login?", mod.String())
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("Server returned HTTP status %d", resp.StatusCode)
@@ -126,8 +126,8 @@ func (c *Client) UploadVersion(repo *model.Repo, projectDir string) (*model.Vers
 	return version, nil
 }
 
-func (c *Client) getRepoCacheHashes(repo *model.Repo) ([]string, error) {
-	url := newURL(repo, "v1/repos/%s/%s/cache-hashes/", repo.User, repo.Name)
+func (c *Client) getModCacheHashes(mod *model.Model) ([]string, error) {
+	url := newURL(mod, "v1/models/%s/%s/cache-hashes/", mod.User, mod.Name)
 	req, err := c.newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err

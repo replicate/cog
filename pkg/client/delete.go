@@ -7,8 +7,8 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
-func (c *Client) DeleteVersion(repo *model.Repo, id string) error {
-	url := newURL(repo, "v1/repos/%s/%s/versions/%s", repo.User, repo.Name, id)
+func (c *Client) DeleteVersion(mod *model.Model, id string) error {
+	url := newURL(mod, "v1/models/%s/%s/versions/%s", mod.User, mod.Name, id)
 	req, err := c.newRequest(http.MethodDelete, url, nil)
 	if err != nil {
 		return err

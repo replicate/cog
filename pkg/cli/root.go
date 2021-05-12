@@ -13,10 +13,10 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-var repoFlag string
+var modelFlag string
 var projectDirFlag string
 
-var repoRegex = regexp.MustCompile("^(?:(https?://[^/]*)/)?(?:([-_a-zA-Z0-9]+)/)([-_a-zA-Z0-9]+)$")
+var modelRegex = regexp.MustCompile("^(?:(https?://[^/]*)/)?(?:([-_a-zA-Z0-9]+)/)([-_a-zA-Z0-9]+)$")
 
 func NewRootCommand() (*cobra.Command, error) {
 	rootCmd := cobra.Command{
@@ -42,7 +42,7 @@ func NewRootCommand() (*cobra.Command, error) {
 		newInferCommand(),
 		newServerCommand(),
 		newShowCommand(),
-		newRepoCommand(),
+		newModelCommand(),
 		newDownloadCommand(),
 		newListCommand(),
 		newBenchmarkCommand(),
@@ -59,17 +59,17 @@ func setPersistentFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().MarkHidden("profile")
 }
 
-func addRepoFlag(cmd *cobra.Command) {
-	cmd.Flags().StringVarP(&repoFlag, "repo", "r", "", "Repository URL, e.g. https://cog.hooli.corp/hotdog-detector/hotdog-detector")
+func addModelFlag(cmd *cobra.Command) {
+	cmd.Flags().StringVarP(&modelFlag, "model", "m", "", "Model URL, e.g. https://cog.hooli.corp/hotdog-detector/hotdog-detector")
 }
 
-func getRepo() (*model.Repo, error) {
-	if repoFlag != "" {
-		repo, err := parseRepo(repoFlag)
+func getModel() (*model.Model, error) {
+	if modelFlag != "" {
+		model, err := parseModel(modelFlag)
 		if err != nil {
 			return nil, err
 		}
-		return repo, nil
+		return model, nil
 	} else {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -79,19 +79,19 @@ func getRepo() (*model.Repo, error) {
 		if err != nil {
 			return nil, err
 		}
-		if projectSettings.Repo != nil {
-			return projectSettings.Repo, nil
+		if projectSettings.Model != nil {
+			return projectSettings.Model, nil
 		}
-		return nil, fmt.Errorf("No repository specified. You need to either run `cog repo set <repo>` to set a repo for the current directory, or pass --repo <repository> to the command")
+		return nil, fmt.Errorf("No model specified. You need to either run `cog model set <url>` to set a model for the current directory, or pass --model <url> to the command")
 	}
 }
 
-func parseRepo(repoString string) (*model.Repo, error) {
-	matches := repoRegex.FindStringSubmatch(repoString)
+func parseModel(modelString string) (*model.Model, error) {
+	matches := modelRegex.FindStringSubmatch(modelString)
 	if len(matches) == 0 {
-		return nil, fmt.Errorf("Repo '%s' doesn't match [http[s]://<host>/]<user>/<name>", repoString)
+		return nil, fmt.Errorf("Model '%s' doesn't match [http[s]://<host>/]<user>/<name>", modelString)
 	}
-	return &model.Repo{
+	return &model.Model{
 		Host: matches[1],
 		User: matches[2],
 		Name: matches[3],

@@ -9,7 +9,7 @@ import (
 )
 
 func (s *Server) SendVersionMetadata(w http.ResponseWriter, r *http.Request) {
-	user, name, id := getRepoVars(r)
+	user, name, id := getModelVars(r)
 	console.Infof("Received get request for %s/%s/%s", user, name, id)
 
 	version, err := s.db.GetVersion(user, name, id)

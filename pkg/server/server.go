@@ -74,28 +74,28 @@ func (s *Server) Start(port int) error {
 		HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("pong"))
 		})
-	router.Path("/v1/repos/{user}/{name}/versions/{id}.zip").
+	router.Path("/v1/models/{user}/{name}/versions/{id}.zip").
 		Methods(http.MethodGet).
 		HandlerFunc(s.checkReadAccess(s.DownloadVersion))
-	router.Path("/v1/repos/{user}/{name}/versions/{id}/files/{path:.+}").
+	router.Path("/v1/models/{user}/{name}/versions/{id}/files/{path:.+}").
 		Methods(http.MethodGet).
 		HandlerFunc(s.checkReadAccess(s.DownloadFile))
-	router.Path("/v1/repos/{user}/{name}/versions/").
+	router.Path("/v1/models/{user}/{name}/versions/").
 		Methods(http.MethodPut).
 		HandlerFunc(s.checkWriteAccess(s.ReceiveFile))
-	router.Path("/v1/repos/{user}/{name}/versions/").
+	router.Path("/v1/models/{user}/{name}/versions/").
 		Methods(http.MethodGet).
 		HandlerFunc(s.checkReadAccess(s.ListVersions))
-	router.Path("/v1/repos/{user}/{name}/versions/{id}").
+	router.Path("/v1/models/{user}/{name}/versions/{id}").
 		Methods(http.MethodGet).
 		HandlerFunc(s.checkReadAccess(s.SendVersionMetadata))
-	router.Path("/v1/repos/{user}/{name}/versions/{id}").
+	router.Path("/v1/models/{user}/{name}/versions/{id}").
 		Methods(http.MethodDelete).
 		HandlerFunc(s.checkWriteAccess(s.DeleteVersion))
-	router.Path("/v1/repos/{user}/{name}/cache-hashes/").
+	router.Path("/v1/models/{user}/{name}/cache-hashes/").
 		Methods(http.MethodGet).
 		HandlerFunc(s.checkReadAccess(s.GetCacheHashes))
-	router.Path("/v1/repos/{user}/{name}/builds/{id}/logs").
+	router.Path("/v1/models/{user}/{name}/builds/{id}/logs").
 		Methods(http.MethodGet).
 		HandlerFunc(s.checkReadAccess(s.SendBuildLogs))
 	router.Path("/v1/auth/display-token-url").
@@ -104,7 +104,7 @@ func (s *Server) Start(port int) error {
 	router.Path("/v1/auth/verify-token").
 		Methods(http.MethodPost).
 		HandlerFunc(s.VerifyToken)
-	router.Path("/v1/repos/{user}/{name}/check-read").
+	router.Path("/v1/models/{user}/{name}/check-read").
 		Methods(http.MethodGet).
 		HandlerFunc(s.checkReadAccess(nil))
 
@@ -127,7 +127,7 @@ func (s *Server) Start(port int) error {
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), loggedRouter)
 }
 
-func getRepoVars(r *http.Request) (user string, name string, id string) {
+func getModelVars(r *http.Request) (user string, name string, id string) {
 	vars := mux.Vars(r)
 	return vars["user"], vars["name"], vars["id"]
 }

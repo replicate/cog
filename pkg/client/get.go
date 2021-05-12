@@ -9,8 +9,8 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
-func (c *Client) GetVersion(repo *model.Repo, id string) (*model.Version, []*model.Image, error) {
-	url := newURL(repo, "v1/repos/%s/%s/versions/%s", repo.User, repo.Name, id)
+func (c *Client) GetVersion(mod *model.Model, id string) (*model.Version, []*model.Image, error) {
+	url := newURL(mod, "v1/models/%s/%s/versions/%s", mod.User, mod.Name, id)
 	req, err := c.newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, nil, err
@@ -21,7 +21,7 @@ func (c *Client) GetVersion(repo *model.Repo, id string) (*model.Version, []*mod
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil, fmt.Errorf("Version not found: %s:%s", repo.String(), id)
+		return nil, nil, fmt.Errorf("Version not found: %s:%s", mod.String(), id)
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

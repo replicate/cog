@@ -12,14 +12,13 @@ import (
 )
 
 type cogURL struct {
-	repo *model.Repo
+	mod  *model.Model
 	path string
-	args []interface{}
 }
 
-func newURL(repo *model.Repo, path string, args ...interface{}) *cogURL {
+func newURL(mod *model.Model, path string, args ...interface{}) *cogURL {
 	u := &cogURL{
-		repo: repo,
+		mod:  mod,
 		path: path,
 	}
 	if len(args) > 0 {
@@ -29,7 +28,7 @@ func newURL(repo *model.Repo, path string, args ...interface{}) *cogURL {
 }
 
 func (u *cogURL) String() string {
-	host := hostOrDefault(u.repo)
+	host := hostOrDefault(u.mod)
 	return fmt.Sprintf("%s/%s", host, u.path)
 }
 
@@ -45,12 +44,12 @@ func (c *Client) newRequest(method string, url *cogURL, body io.Reader) (*http.R
 	if err != nil {
 		return nil, err
 	}
-	c.addAuthHeader(req, url.repo)
-	return req, nil
+	err = c.addAuthHeader(req, url.mod)
+	return req, err
 }
 
-func (c *Client) addAuthHeader(req *http.Request, repo *model.Repo) error {
-	host := hostOrDefault(repo)
+func (c *Client) addAuthHeader(req *http.Request, mod *model.Model) error {
+	host := hostOrDefault(mod)
 	token, err := settings.LoadAuthToken(host)
 	if err != nil {
 		return err
@@ -62,9 +61,9 @@ func (c *Client) addAuthHeader(req *http.Request, repo *model.Repo) error {
 	return nil
 }
 
-func hostOrDefault(repo *model.Repo) string {
-	if repo.Host != "" {
-		return repo.Host
+func hostOrDefault(mod *model.Model) string {
+	if mod.Host != "" {
+		return mod.Host
 	}
 	return global.CogServerAddress
 }

@@ -20,7 +20,7 @@ func newListCommand() *cobra.Command {
 		Args:    cobra.NoArgs,
 		Aliases: []string{"ls"},
 	}
-	addRepoFlag(cmd)
+	addModelFlag(cmd)
 
 	cmd.Flags().BoolP("quiet", "q", false, "Quite output, only display IDs")
 
@@ -28,7 +28,7 @@ func newListCommand() *cobra.Command {
 }
 
 func list(cmd *cobra.Command, args []string) error {
-	repo, err := getRepo()
+	model, err := getModel()
 	if err != nil {
 		return err
 	}
@@ -38,7 +38,7 @@ func list(cmd *cobra.Command, args []string) error {
 	}
 
 	cli := client.NewClient()
-	versions, err := cli.ListVersions(repo)
+	versions, err := cli.ListVersions(model)
 	if err != nil {
 		return err
 	}

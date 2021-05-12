@@ -90,8 +90,8 @@ func (db *LocalFileDatabase) DeleteVersion(user string, name string, id string) 
 }
 
 func (db *LocalFileDatabase) ListVersions(user string, name string) ([]*model.Version, error) {
-	repoDir := db.repoDir(user, name)
-	entries, err := os.ReadDir(repoDir)
+	modelDir := db.modelDir(user, name)
+	entries, err := os.ReadDir(modelDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []*model.Version{}, nil
@@ -102,7 +102,7 @@ func (db *LocalFileDatabase) ListVersions(user string, name string) ([]*model.Ve
 	for _, entry := range entries {
 		filename := entry.Name()
 		if strings.HasSuffix(filename, ".json") {
-			path := filepath.Join(repoDir, filename)
+			path := filepath.Join(modelDir, filename)
 			version, err := db.readVersion(path)
 			if err != nil {
 				return nil, err
@@ -268,17 +268,17 @@ func (db *LocalFileDatabase) readImage(path string) (*model.Image, error) {
 
 func (db *LocalFileDatabase) versionPath(user string, name string, id string) string {
 	// TODO(andreas): make this user/name/versions/id.json
-	return filepath.Join(db.repoDir(user, name), id+".json")
+	return filepath.Join(db.modelDir(user, name), id+".json")
 }
 
 func (db *LocalFileDatabase) logPath(user string, name string, buildID string) string {
-	return filepath.Join(db.repoDir(user, name), "builds", buildID+".txt")
+	return filepath.Join(db.modelDir(user, name), "builds", buildID+".txt")
 }
 
 func (db *LocalFileDatabase) imagePath(user string, name string, id string, arch string) string {
-	return filepath.Join(db.repoDir(user, name), "versions", id, "images", arch+".json")
+	return filepath.Join(db.modelDir(user, name), "versions", id, "images", arch+".json")
 }
 
-func (db *LocalFileDatabase) repoDir(user string, name string) string {
+func (db *LocalFileDatabase) modelDir(user string, name string) string {
 	return filepath.Join(db.rootDir, user, name)
 }

@@ -38,8 +38,8 @@ def test_build_show_list_download_infer(cog_server_port_dir, tmpdir_factory):
     cog_port, cog_dir = cog_server_port_dir
 
     user = "".join(random.choice(string.ascii_lowercase) for i in range(10))
-    repo_name = "".join(random.choice(string.ascii_lowercase) for i in range(10))
-    repo = f"http://localhost:{cog_port}/{user}/{repo_name}"
+    model_name = "".join(random.choice(string.ascii_lowercase) for i in range(10))
+    model = f"http://localhost:{cog_port}/{user}/{model_name}"
 
     project_dir = tmpdir_factory.mktemp("project")
     with open(project_dir / "infer.py", "w") as f:
@@ -84,13 +84,13 @@ environment:
         f.write(cog_yaml)
 
     out, _ = subprocess.Popen(
-        ["cog", "repo", "set", f"http://localhost:{cog_port}/{user}/{repo_name}"],
+        ["cog", "model", "set", f"http://localhost:{cog_port}/{user}/{model_name}"],
         stdout=subprocess.PIPE,
         cwd=project_dir,
     ).communicate()
     assert (
         out.decode()
-        == f"Updated repo: http://localhost:{cog_port}/{user}/{repo_name}\n"
+        == f"Updated model: http://localhost:{cog_port}/{user}/{model_name}\n"
     )
 
     with open(project_dir / "myfile.txt", "w") as f:
@@ -108,25 +108,25 @@ environment:
     version_id = out.decode().strip().split("Successfully uploaded version ")[1]
 
     out, _ = subprocess.Popen(
-        ["cog", "-r", repo, "show", version_id], stdout=subprocess.PIPE
+        ["cog", "--model", model, "show", version_id], stdout=subprocess.PIPE
     ).communicate()
     lines = out.decode().splitlines()
     assert lines[0] == f"ID:       {version_id}"
-    assert lines[1] == f"Repo:     {user}/{repo_name}"
+    assert lines[1] == f"Model:    {user}/{model_name}"
 
     def show_version():
         out, _ = subprocess.Popen(
-            ["cog", "-r", repo, "show", "--json", version_id], stdout=subprocess.PIPE
+            ["cog", "--model", model, "show", "--json", version_id], stdout=subprocess.PIPE
         ).communicate()
         return json.loads(out)
 
     out = show_version()
-    subprocess.Popen(["cog", "-r", repo, "build", "log", "-f", out["version"]["build_ids"]["cpu"]]).communicate()
+    subprocess.Popen(["cog", "--model", model, "build", "log", "-f", out["version"]["build_ids"]["cpu"]]).communicate()
 
     out = show_version()
     assert out["version"]["config"]["examples"][2]["output"] == "@cog-example-output/output.02.txt"
 
-    # show without -r
+    # show without --model
     out, _ = subprocess.Popen(
         ["cog", "show", version_id],
         stdout=subprocess.PIPE,
@@ -134,17 +134,17 @@ environment:
     ).communicate()
     lines = out.decode().splitlines()
     assert lines[0] == f"ID:       {version_id}"
-    assert lines[1] == f"Repo:     {user}/{repo_name}"
+    assert lines[1] == f"Model:    {user}/{model_name}"
 
     out, _ = subprocess.Popen(
-        ["cog", "-r", repo, "ls"], stdout=subprocess.PIPE
+        ["cog", "--model", model, "ls"], stdout=subprocess.PIPE
     ).communicate()
     lines = out.decode().splitlines()
     assert lines[1].startswith(f"{version_id}  ")
 
     download_dir = tmpdir_factory.mktemp("download") / "my-dir"
     subprocess.Popen(
-        ["cog", "-r", repo, "download", "--output-dir", download_dir, version_id],
+        ["cog", "--model", model, "download", "--output-dir", download_dir, version_id],
         stdout=subprocess.PIPE,
     ).communicate()
     paths = sorted(glob(str(download_dir / "*.*")))
@@ -159,7 +159,7 @@ environment:
     with input_path.open("w") as f:
         f.write("input")
 
-    files_endpoint = f"http://localhost:{cog_port}/v1/repos/{user}/{repo_name}/versions/{version_id}/files"
+    files_endpoint = f"http://localhost:{cog_port}/v1/models/{user}/{model_name}/versions/{version_id}/files"
     assert requests.get(f"{files_endpoint}/cog.yaml").text == cog_yaml
     assert requests.get(f"{files_endpoint}/cog-example-output/output.02.txt").text == "fooquxbaz"
 
@@ -167,8 +167,8 @@ environment:
     subprocess.Popen(
         [
             "cog",
-            "-r",
-            repo,
+            "--model",
+            model,
             "infer",
             "-o",
             out_path,

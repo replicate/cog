@@ -20,16 +20,16 @@ func newDeleteCommand() *cobra.Command {
 }
 
 func deleteModel(cmd *cobra.Command, args []string) error {
-	repo, err := getRepo()
+	model, err := getModel()
 	if err != nil {
 		return err
 	}
 	cli := client.NewClient()
 	for _, id := range args {
-		if err := cli.DeleteVersion(repo, id); err != nil {
+		if err := cli.DeleteVersion(model, id); err != nil {
 			return err
 		}
-		fmt.Printf("Deleted version %s:%s\n", repo, id)
+		fmt.Printf("Deleted version %s:%s\n", model, id)
 	}
 	return nil
 }

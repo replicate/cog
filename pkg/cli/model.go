@@ -14,31 +14,25 @@ import (
 	"github.com/replicate/cog/pkg/util/files"
 )
 
-func newRepoCommand() *cobra.Command {
+func newModelCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "repo",
-		Short: "Manage remote repository",
-		RunE:  showRepo,
+		Use:   "model",
+		Short: "Manage model used in this directory",
+		RunE:  modelShow,
 		Args:  cobra.NoArgs,
 	}
 
-	cmd.AddCommand(newSetRepoCommand())
-
-	return cmd
-}
-
-func newSetRepoCommand() *cobra.Command {
-	cmd := &cobra.Command{
+	cmd.AddCommand(&cobra.Command{
 		Use:   "set",
-		Short: "Set remote repository",
-		RunE:  setRepo,
+		Short: "Set model used in this directory",
+		RunE:  modelSet,
 		Args:  cobra.ExactArgs(1),
-	}
+	})
 
 	return cmd
 }
 
-func showRepo(cmd *cobra.Command, args []string) error {
+func modelShow(cmd *cobra.Command, args []string) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -47,15 +41,15 @@ func showRepo(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if projectSettings.Repo == nil {
-		return fmt.Errorf("Repository not set. Run 'cog repo set <repo>' to set it for this directory.")
+	if projectSettings.Model == nil {
+		return fmt.Errorf("Model not set. Run 'cog model set <model>' to set it for this directory.")
 	}
-	fmt.Println(projectSettings.Repo.String())
+	fmt.Println(projectSettings.Model.String())
 	return nil
 }
 
-func setRepo(cmd *cobra.Command, args []string) error {
-	repo, err := parseRepo(args[0])
+func modelSet(cmd *cobra.Command, args []string) error {
+	model, err := parseModel(args[0])
 	if err != nil {
 		return err
 	}
@@ -69,7 +63,7 @@ func setRepo(cmd *cobra.Command, args []string) error {
 	}
 
 	cli := client.NewClient()
-	if err := cli.CheckRead(repo); err != nil {
+	if err := cli.CheckRead(model); err != nil {
 		return err
 	}
 
@@ -77,11 +71,11 @@ func setRepo(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	userSettings.Repo = repo
+	userSettings.Model = model
 	if err := userSettings.Save(); err != nil {
 		return fmt.Errorf("Failed to save settings: %w", err)
 	}
 
-	fmt.Printf("Updated repo: %s\n", repo)
+	fmt.Printf("Updated model: %s\n", model)
 	return nil
 }

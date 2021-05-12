@@ -80,7 +80,7 @@ func (s *Server) checkAccess(handler http.HandlerFunc, mode string) http.Handler
 			handler(w, r)
 			return
 		}
-		user, repo, versionID := getRepoVars(r)
+		user, model, versionID := getModelVars(r)
 
 		token := ""
 		authHeader := r.Header.Get("Authorization")
@@ -95,9 +95,9 @@ func (s *Server) checkAccess(handler http.HandlerFunc, mode string) http.Handler
 		}
 
 		values := url.Values{
-			"mode": []string{mode},
-			"user": []string{user},
-			"repo": []string{repo},
+			"mode":  []string{mode},
+			"user":  []string{user},
+			"model": []string{model},
 		}
 		if versionID != "" {
 			values["version_id"] = []string{versionID}
@@ -115,7 +115,7 @@ func (s *Server) checkAccess(handler http.HandlerFunc, mode string) http.Handler
 			handler(w, r)
 			return
 		}
-		console.Warnf("Not authorized to %s %s/%s:%s", mode, user, repo, versionID)
+		console.Warnf("Not authorized to %s %s/%s:%s", mode, user, model, versionID)
 		w.WriteHeader(resp.StatusCode)
 		if _, err := io.Copy(w, resp.Body); err != nil {
 			console.Errorf("Failed to copy body: %v", err)

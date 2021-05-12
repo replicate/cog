@@ -10,18 +10,18 @@ import (
 )
 
 type BuildLogger struct {
-	user     string
-	repoName string
-	buildID  string
-	db       Database
+	user      string
+	modelName string
+	buildID   string
+	db        Database
 }
 
-func NewBuildLogger(user, repoName, buildID string, db Database) *BuildLogger {
+func NewBuildLogger(user, modelName, buildID string, db Database) *BuildLogger {
 	return &BuildLogger{
-		user:     user,
-		repoName: repoName,
-		buildID:  buildID,
-		db:       db,
+		user:      user,
+		modelName: modelName,
+		buildID:   buildID,
+		db:        db,
 	}
 }
 
@@ -55,7 +55,7 @@ func (l *BuildLogger) WriteVersion(version *model.Version) {
 
 func (l *BuildLogger) log(line string, level logger.Level) {
 	timestamp := time.Now().UTC().UnixNano()
-	if err := l.db.AddBuildLogLine(l.user, l.repoName, l.buildID, line, level, timestamp); err != nil {
+	if err := l.db.AddBuildLogLine(l.user, l.modelName, l.buildID, line, level, timestamp); err != nil {
 		console.Warnf("Failed to write log line: %v", err)
 	}
 }

@@ -13,7 +13,7 @@ import (
 )
 
 func (s *Server) DownloadVersion(w http.ResponseWriter, r *http.Request) {
-	user, name, id := getRepoVars(r)
+	user, name, id := getModelVars(r)
 	modTime := time.Now() // TODO
 
 	content, err := s.store.Download(user, name, id)
@@ -31,7 +31,7 @@ func (s *Server) DownloadVersion(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) DownloadFile(w http.ResponseWriter, r *http.Request) {
-	user, name, id := getRepoVars(r)
+	user, name, id := getModelVars(r)
 	vars := mux.Vars(r)
 	path := vars["path"]
 	modTime := time.Now() // TODO

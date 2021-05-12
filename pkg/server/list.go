@@ -8,7 +8,7 @@ import (
 )
 
 func (s *Server) ListVersions(w http.ResponseWriter, r *http.Request) {
-	user, name, _ := getRepoVars(r)
+	user, name, _ := getModelVars(r)
 	console.Infof("Received list request for %s%s", user, name)
 
 	versions, err := s.db.ListVersions(user, name)
