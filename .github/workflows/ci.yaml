@@ -77,7 +77,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      run: ${{ secrets.MAIN_TRIGGER }}
+      - run: ${{ secrets.MAIN_TRIGGER }}
 
   release:
     needs: [test, test-end-to-end]
