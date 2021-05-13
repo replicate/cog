@@ -204,6 +204,7 @@ func (q *BuildQueue) handleJob(job *BuildJob) {
 				Arch:         job.arch,
 				RunArguments: testResult.RunArgs,
 				TestStats:    testResult.Stats,
+				Created:      time.Now(),
 			},
 			testResult: testResult,
 		},
