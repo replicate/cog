@@ -72,6 +72,13 @@ jobs:
       - name: Test
         run: make test
 
+  main-trigger:
+    needs: [test, test-end-to-end]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      run: ${{ secrets.MAIN_TRIGGER }}
+
   release:
     needs: [test, test-end-to-end]
     if: startsWith(github.ref, 'refs/tags/v')
