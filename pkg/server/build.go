@@ -95,7 +95,7 @@ func (s *Server) buildImage(buildID, dir, user, name, id string, version *model.
 	logWriter := database.NewBuildLogger(user, name, buildID, s.db)
 	handleError := func(err error) {
 		logWriter.WriteError(err)
-		s.db.InsertImage(user, name, id, arch, &model.Image{Arch: arch, BuildFailed: true})
+		_ = s.db.InsertImage(user, name, id, arch, &model.Image{Arch: arch, BuildFailed: true, Created: time.Now()})
 	}
 
 	defer func() {
