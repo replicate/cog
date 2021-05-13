@@ -121,10 +121,10 @@ environment:
         return json.loads(out)
 
     out = show_version()
-    subprocess.Popen(["cog", "--model", model, "build", "log", "-f", out["version"]["build_ids"]["cpu"]]).communicate()
+    subprocess.Popen(["cog", "--model", model, "build", "log", "-f", out["build_ids"]["cpu"]]).communicate()
 
     out = show_version()
-    assert out["version"]["config"]["examples"][2]["output"] == "@cog-example-output/output.02.txt"
+    assert out["config"]["examples"][2]["output"] == "@cog-example-output/output.02.txt"
 
     # show without --model
     out, _ = subprocess.Popen(

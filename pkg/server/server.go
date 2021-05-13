@@ -88,7 +88,7 @@ func (s *Server) Start(port int) error {
 		HandlerFunc(s.checkReadAccess(s.ListVersions))
 	router.Path("/v1/models/{user}/{name}/versions/{id}").
 		Methods(http.MethodGet).
-		HandlerFunc(s.checkReadAccess(s.SendVersionMetadata))
+		HandlerFunc(s.checkReadAccess(s.GetVersion))
 	router.Path("/v1/models/{user}/{name}/versions/{id}").
 		Methods(http.MethodDelete).
 		HandlerFunc(s.checkWriteAccess(s.DeleteVersion))

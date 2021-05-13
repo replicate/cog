@@ -52,12 +52,12 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 
 	client := client.NewClient()
 	fmt.Println("Loading package", id)
-	_, images, err := client.GetVersion(mod, id)
+	version, err := client.GetVersion(mod, id)
 	if err != nil {
 		return err
 	}
 	// TODO(bfirsh): differentiate between failed builds and in-progress builds, and probably block here if there is an in-progress build
-	image := model.ImageForArch(images, benchmarkArch)
+	image := model.ImageForArch(version.Images, benchmarkArch)
 	if image == nil {
 		return fmt.Errorf("No %s image has been built for %s:%s", benchmarkArch, mod.String(), id)
 	}

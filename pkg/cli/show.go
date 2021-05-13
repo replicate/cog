@@ -12,6 +12,7 @@ import (
 
 	"github.com/replicate/cog/pkg/client"
 	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/server"
 )
 
 func newShowCommand() *cobra.Command {
@@ -42,27 +43,19 @@ func show(cmd *cobra.Command, args []string) error {
 	id := args[0]
 
 	cli := client.NewClient()
-	version, images, err := cli.GetVersion(model, id)
+	version, err := cli.GetVersion(model, id)
 	if err != nil {
 		return err
 	}
 
 	if jsonOutput {
-		return showJSON(version, images)
+		return showJSON(version)
 	}
-	return showTable(model, version, images)
+	return showTable(model, version)
 }
 
-func showJSON(version *model.Version, images []*model.Image) error {
-	output := struct {
-		Model  *model.Version `json:"version"`
-		Images []*model.Image `json:"images"`
-	}{
-		Model:  version,
-		Images: images,
-	}
-
-	data, err := json.MarshalIndent(output, "", "  ")
+func showJSON(version *server.APIVersion) error {
+	data, err := json.MarshalIndent(version, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -70,7 +63,7 @@ func showJSON(version *model.Version, images []*model.Image) error {
 	return nil
 }
 
-func showTable(mod *model.Model, version *model.Version, images []*model.Image) error {
+func showTable(mod *model.Model, version *server.APIVersion) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "ID:\t"+version.ID)
 	fmt.Fprintf(w, "Model:\t%s/%s\n", mod.User, mod.Name)
@@ -80,9 +73,9 @@ func showTable(mod *model.Model, version *model.Version, images []*model.Image) 
 	fmt.Println()
 
 	fmt.Println("Inference arguments:")
-	if len(images) > 0 && images[0] != nil && images[0].RunArguments != nil && len(images[0].RunArguments) > 0 {
+	if len(version.Images) > 0 && version.Images[0] != nil && version.Images[0].RunArguments != nil && len(version.Images[0].RunArguments) > 0 {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		for name, arg := range images[0].RunArguments {
+		for name, arg := range version.Images[0].RunArguments {
 			typeStr := string(arg.Type)
 			help := ""
 			if arg.Help != nil {
@@ -114,7 +107,7 @@ func showTable(mod *model.Model, version *model.Version, images []*model.Image) 
 	} else {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		for _, arch := range version.Config.Environment.Architectures {
-			image := model.ImageForArch(images, arch)
+			image := model.ImageForArch(version.Images, arch)
 			var message string
 			switch {
 			case image == nil:

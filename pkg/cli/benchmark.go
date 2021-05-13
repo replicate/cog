@@ -52,11 +52,11 @@ func benchmarkModel(cmd *cobra.Command, args []string) error {
 	cli := client.NewClient()
 	console.Infof("Starting benchmark of %s:%s", mod, id)
 
-	version, images, err := cli.GetVersion(mod, id)
+	version, err := cli.GetVersion(mod, id)
 	if err != nil {
 		return err
 	}
-	image := model.ImageForArch(images, benchmarkArch)
+	image := model.ImageForArch(version.Images, benchmarkArch)
 	if image == nil {
 		return fmt.Errorf("No %s image has been built for %s:%s", benchmarkArch, mod.String(), id)
 	}
@@ -76,7 +76,7 @@ func benchmarkModel(cmd *cobra.Command, args []string) error {
 	results := new(BenchmarkResults)
 	for i := 0; i < benchmarkSetups; i++ {
 		console.Infof("Running setup iteration %d", i+1)
-		if err := runBenchmarkInference(version, image, tmpDir, results, benchmarkRuns); err != nil {
+		if err := runBenchmarkInference(&version.Version, image, tmpDir, results, benchmarkRuns); err != nil {
 			return err
 		}
 	}
