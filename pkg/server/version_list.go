@@ -17,10 +17,22 @@ func (s *Server) ListVersions(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+
+	result := []*APIVersion{}
+	for _, version := range versions {
+		apiVersion, err := createAPIVersion(s.db, version, user, name)
+		if err != nil {
+			console.Error(err.Error())
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		result = append(result, apiVersion)
+	}
+
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
 
-	if err := json.NewEncoder(w).Encode(versions); err != nil {
+	if err := json.NewEncoder(w).Encode(result); err != nil {
 		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return

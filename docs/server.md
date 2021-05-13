@@ -13,10 +13,10 @@ Upload a new model.
 Example:
 
 ```
-$ curl -X PUT localhost:8080/v1/models/andreas/my-model/versions/ -F "file=@package.zip"
+$ curl -X PUT localhost:8080/v1/models/andreas/my-model/versions/ -F "file=@version.zip"
 ```
 
-where `package.zip` is a zip folder of a directory with `cog.yaml` in it.
+where `version.zip` is a zip folder of a directory with `cog.yaml` in it.
 
 This does the following:
 
@@ -29,34 +29,32 @@ This does the following:
 
 ### GET `/v1/models/<user>/<name>/versions/<id>`
 
-Fetch model metadata.
+Fetch version metadata.
 
 Example:
 
 ```
 $ curl localhost:8080/v1/models/andreas/my-model/versions/c43b98b37776656e6b3dac3ea3270660ffc21ca7 | jq .
 {
-  "ID": "c43b98b37776656e6b3dac3ea3270660ffc21ca7",
-  "Artifacts": [
-    {
-      "Target": "docker-cpu",
-      "URI": "us-central1-docker.pkg.dev/replicate/andreas-scratch/andreas/scratch:2c7492b7d3d6"
-    }
-  ],
-  "Config": {
-    "Environment": {
-      "PythonVersion": "3.8",
-      "PythonRequirements": "",
-      "PythonPackages": null,
-      "SystemPackages": null,
-      "Architectures": [
+  "id": "c43b98b37776656e6b3dac3ea3270660ffc21ca7",
+  "config": {
+    "environment": {
+      "python_version": "3.8",
+      "python_requirements": "",
+      "python_packages": null,
+      "system_packages": null,
+      "architectures": [
         "cpu"
       ],
-      "CUDA": "",
-      "CuDNN": ""
     },
-    "Model": "infer.py:Model"
-  }
+    "model": "infer.py:Model"
+  },
+  "images": [
+    {
+      "uri": "gcr.io/bfirsh-dev/hello-world:cb39be9f6323",
+      "arch": "cpu"
+    }
+  ]
 }
 ```
 
@@ -70,24 +68,21 @@ Example:
 $ curl localhost:8080/v1/models/andreas/my-model/versions/ | jq .
 [
   {
-    "ID": "c43b98b37776656e6b3dac3ea3270660ffc21ca7",
-    "Artifacts": [
-      {
-        "Target": "docker-cpu",
+    "id": "c43b98b37776656e6b3dac3ea3270660ffc21ca7",
   [...]
 ]
 ```
 
 ### GET `/v1/models/<user>/<name>/versions/<id>.zip`
 
-Download a model.
+Download a version.
 
 Example:
 
 ```
-$ curl localhost:8080/v1/models/andreas/my-model/versions/c43b98b37776656e6b3dac3ea3270660ffc21ca7.zip > my-package.zip
-$ unzip my-package.zip
-Archive:  my-package.zip
+$ curl localhost:8080/v1/models/andreas/my-model/versions/c43b98b37776656e6b3dac3ea3270660ffc21ca7.zip > version.zip
+$ unzip version.zip
+Archive:  version.zip
   inflating: cog.yaml
   inflating: infer.py
 ```
