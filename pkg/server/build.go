@@ -71,7 +71,7 @@ func (s *Server) ReceiveVersion(r *http.Request, logWriter logger.Logger, user s
 	if err := s.store.Upload(user, name, id, file); err != nil {
 		return nil, fmt.Errorf("Failed to upload to storage: %w", err)
 	}
-	if err := s.runHooks(s.postUploadHooks, user, name, id, version, nil, dir, logWriter); err != nil {
+	if err := s.runHooks(s.postUploadHooks, user, name, id, version, nil, logWriter); err != nil {
 		return nil, err
 	}
 	for _, arch := range config.Environment.Architectures {
@@ -111,6 +111,11 @@ func (s *Server) buildImage(buildID, dir, user, name, id string, version *model.
 		return
 	}
 
+	if err := s.runHooks(s.postBuildHooks, user, name, id, nil, result.image, logWriter); err != nil {
+		handleError(err)
+		return
+	}
+
 	// only upload the zip and run post-build hooks on primary arch
 	if isPrimary {
 		if err := s.saveExamples(result, dir, version.Config); err != nil {
@@ -139,14 +144,10 @@ func (s *Server) buildImage(buildID, dir, user, name, id string, version *model.
 			return
 		}
 
-		if err := s.runHooks(s.postBuildPrimaryHooks, user, name, id, version, result.image, dir, logWriter); err != nil {
+		if err := s.runHooks(s.postBuildPrimaryHooks, user, name, id, version, result.image, logWriter); err != nil {
 			handleError(err)
 			return
 		}
-	}
-	if err := s.runHooks(s.postBuildHooks, user, name, id, nil, result.image, dir, logWriter); err != nil {
-		handleError(err)
-		return
 	}
 
 	if err := s.db.InsertImage(user, name, id, arch, result.image); err != nil {

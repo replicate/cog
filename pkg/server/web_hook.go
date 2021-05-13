@@ -33,7 +33,7 @@ func newWebHook(urlWithSecret string) (*WebHook, error) {
 	return &WebHook{url: hookURL, secret: secret}, nil
 }
 
-func (wh *WebHook) run(user string, name string, id string, version *model.Version, image *model.Image, dir string, logWriter logger.Logger) error {
+func (wh *WebHook) run(user string, name string, id string, version *model.Version, image *model.Image, logWriter logger.Logger) error {
 	values := url.Values{
 		"version_id": {id},
 		"user":       {user},
@@ -54,7 +54,8 @@ func (wh *WebHook) run(user string, name string, id string, version *model.Versi
 			return err
 		}
 		values["image_json_base64"] = []string{base64.StdEncoding.EncodeToString(imageJSON)}
-		values["arch"] = []string{image.Arch}
+		values["image_uri"] = []string{image.URI}
+		values["image_arch"] = []string{image.Arch}
 		values["cpu_usage"] = []string{fmt.Sprintf("%.2f", image.TestStats.CPUUsage)}
 		values["memory_usage"] = []string{strconv.FormatUint(image.TestStats.MemoryUsage, 10)}
 	}
@@ -71,9 +72,9 @@ func (wh *WebHook) run(user string, name string, id string, version *model.Versi
 	return nil
 }
 
-func (s *Server) runHooks(hooks []*WebHook, user string, id string, name string, mod *model.Version, image *model.Image, dir string, logWriter logger.Logger) error {
+func (s *Server) runHooks(hooks []*WebHook, user string, name string, id string, version *model.Version, image *model.Image, logWriter logger.Logger) error {
 	for _, hook := range hooks {
-		if err := hook.run(user, name, id, mod, image, dir, logWriter); err != nil {
+		if err := hook.run(user, name, id, version, image, logWriter); err != nil {
 			return err
 		}
 	}
