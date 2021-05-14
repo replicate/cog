@@ -71,6 +71,9 @@ func (s *Server) ReceiveVersion(r *http.Request, logWriter logger.Logger, user s
 	if err := s.store.Upload(user, name, id, file); err != nil {
 		return nil, fmt.Errorf("Failed to upload to storage: %w", err)
 	}
+	if len(s.postUploadHooks) > 0 {
+		logWriter.Debug("Running post-upload hooks")
+	}
 	if err := s.runHooks(s.postUploadHooks, user, name, id, version, nil, logWriter); err != nil {
 		return nil, err
 	}
@@ -111,6 +114,9 @@ func (s *Server) buildImage(buildID, dir, user, name, id string, version *model.
 		return
 	}
 
+	if len(s.postBuildHooks) > 0 {
+		logWriter.Debug("Running post-build hooks")
+	}
 	if err := s.runHooks(s.postBuildHooks, user, name, id, nil, result.image, logWriter); err != nil {
 		handleError(err)
 		return
@@ -144,6 +150,9 @@ func (s *Server) buildImage(buildID, dir, user, name, id string, version *model.
 			return
 		}
 
+		if len(s.postBuildPrimaryHooks) > 0 {
+			logWriter.Debug("Running post-build primary hooks")
+		}
 		if err := s.runHooks(s.postBuildPrimaryHooks, user, name, id, version, result.image, logWriter); err != nil {
 			handleError(err)
 			return
