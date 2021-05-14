@@ -71,21 +71,25 @@ func NewBuildQueue(servingPlatform serving.Platform, dockerImageBuilder docker.I
 	}
 }
 
-func (q *BuildQueue) Start() {
+func (q *BuildQueue) Start(ctx context.Context) {
 	for _, arch := range []string{"cpu", "gpu"} {
-		go q.startHandler(arch)
+		go q.startHandler(ctx, arch)
 	}
 }
 
-func (q *BuildQueue) startHandler(arch string) {
+func (q *BuildQueue) startHandler(ctx context.Context, arch string) {
 	for {
-		job := <-q.jobChans[arch]
-		go func() {
-			sem := q.archSemaphores[arch]
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			q.handleJob(job)
-		}()
+		select {
+		case job := <-q.jobChans[arch]:
+			go func() {
+				sem := q.archSemaphores[arch]
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				q.handleJob(job)
+			}()
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
