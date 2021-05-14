@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime"
 	"time"
 
 	"github.com/segmentio/ksuid"
@@ -216,11 +215,12 @@ func (q *BuildQueue) handleJob(job *BuildJob) {
 }
 
 func (q *BuildQueue) buildDockerImage(ctx context.Context, job *BuildJob, logWriter logger.Logger) (string, error) {
-	generator := &docker.DockerfileGenerator{Config: job.config, Arch: job.arch, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH}
+	generator := docker.NewDockerfileGenerator(job.config, job.arch, job.dir)
 	dockerfileContents, err := generator.Generate()
 	if err != nil {
 		return "", fmt.Errorf("Failed to generate Dockerfile for %s: %w", job.arch, err)
 	}
+	defer generator.Cleanup()
 	useGPU := job.config.Environment.BuildRequiresGPU && job.arch == "gpu"
 	uri, err := q.dockerImageBuilder.Build(ctx, job.dir, dockerfileContents, job.name, useGPU, logWriter)
 	if err != nil {

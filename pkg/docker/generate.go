@@ -4,11 +4,14 @@ package docker
 
 import (
 	_ "embed"
-	"encoding/base64"
 	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/replicate/cog/pkg/model"
+	"github.com/segmentio/ksuid"
 )
 
 const codeDir = "/code"
@@ -34,10 +37,25 @@ var cogLibrary []byte
 type DockerfileGenerator struct {
 	Config *model.Config
 	Arch   string
+	Dir    string
 
 	// these are here to make this type testable
 	GOOS   string
 	GOARCH string
+
+	// to clean up
+	generatedPaths []string
+}
+
+func NewDockerfileGenerator(config *model.Config, arch string, dir string) *DockerfileGenerator {
+	return &DockerfileGenerator{
+		Config:         config,
+		Arch:           arch,
+		Dir:            dir,
+		GOOS:           runtime.GOOS,
+		GOARCH:         runtime.GOOS,
+		generatedPaths: []string{},
+	}
 }
 
 func (g *DockerfileGenerator) Generate() (string, error) {
@@ -62,6 +80,10 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	installCog, err := g.installCog()
+	if err != nil {
+		return "", err
+	}
 	return strings.Join(filterEmpty([]string{
 		"FROM " + baseImage,
 		g.preamble(),
@@ -69,7 +91,7 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 		aptInstalls,
 		pythonRequirements,
 		pipInstalls,
-		g.installCog(),
+		installCog,
 		g.preInstall(),
 		g.copyCode(),
 		g.installHelperScripts(),
@@ -77,6 +99,15 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 		g.postInstall(),
 		g.command(),
 	}), "\n"), nil
+}
+
+func (g *DockerfileGenerator) Cleanup() error {
+	for _, generatedPath := range g.generatedPaths {
+		if err := os.Remove(generatedPath); err != nil {
+			return fmt.Errorf("Failed to clean up %s: %w", generatedPath, err)
+		}
+	}
+	return nil
 }
 
 func (g *DockerfileGenerator) baseImage() (string, error) {
@@ -139,12 +170,18 @@ RUN apt-get update -q && apt-get install -qy --no-install-recommends \
 	pyenv global $(pyenv install-latest --print "%s")`, py, py), nil
 }
 
-func (g *DockerfileGenerator) installCog() string {
-	cogLibB64 := base64.StdEncoding.EncodeToString(cogLibrary)
+func (g *DockerfileGenerator) installCog() (string, error) {
+	cogFilename := "cog." + ksuid.New().String() + ".py"
+	cogPath := filepath.Join(g.Dir, cogFilename)
+	if err := os.WriteFile(cogPath, cogLibrary, 0644); err != nil {
+		return "", fmt.Errorf("Failed to write cog.py: %w", err)
+	}
+	g.generatedPaths = append(g.generatedPaths, cogPath)
 	return g.sectionLabel(SectionInstallingCog) +
 		fmt.Sprintf(`RUN pip install flask requests redis
 ENV PYTHONPATH=/usr/local/lib/cog
-RUN mkdir -p /usr/local/lib/cog && echo %s | base64 --decode > /usr/local/lib/cog/cog.py`, cogLibB64)
+RUN mkdir -p /usr/local/lib/cog
+COPY %s /usr/local/lib/cog/cog.py`, cogFilename), nil
 }
 
 func (g *DockerfileGenerator) installHelperScripts() string {
