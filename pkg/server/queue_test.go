@@ -94,11 +94,13 @@ func TestQueueBuild(t *testing.T) {
 
 	go submitBuild("cpu")
 	require.Equal(t, <-buildStartChans["cpu"], 1)
+	time.Sleep(10 * time.Millisecond)
 	require.Equal(t, 1, len(queue.archSemaphores["cpu"]))
 	require.Equal(t, 0, len(queue.archSemaphores["gpu"]))
 	buildCompleteChans["cpu"] <- 1
 
 	result := <-buildResultChans["cpu"]
+	time.Sleep(10 * time.Millisecond)
 	require.Equal(t, 0, len(queue.archSemaphores["cpu"]))
 	require.Equal(t, "image-cpu", result.image.URI)
 	require.Equal(t, "cpu", result.image.Arch)
@@ -110,11 +112,13 @@ func TestQueueBuild(t *testing.T) {
 	go submitBuild("cpu")
 	require.Equal(t, <-buildStartChans["cpu"], 3)
 
+	time.Sleep(10 * time.Millisecond)
 	require.Equal(t, 2, len(queue.archSemaphores["cpu"]))
 	require.Equal(t, 1, len(queue.archSemaphores["gpu"]))
 
 	go submitBuild("cpu")
 	require.Equal(t, <-buildStartChans["cpu"], 4)
+	time.Sleep(10 * time.Millisecond)
 	require.Equal(t, 3, len(queue.archSemaphores["cpu"]))
 
 	// block
