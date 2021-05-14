@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/spf13/cobra"
 
@@ -66,11 +65,12 @@ func Test(cmd *cobra.Command, args []string) error {
 	if _, ok := archMap[arch]; !ok {
 		return fmt.Errorf("Architecture %s is not defined for model", arch)
 	}
-	generator := &docker.DockerfileGenerator{Config: config, Arch: arch, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH}
+	generator := docker.NewDockerfileGenerator(config, arch, projectDir)
 	dockerfileContents, err := generator.Generate()
 	if err != nil {
 		return fmt.Errorf("Failed to generate Dockerfile for %s: %w", arch, err)
 	}
+	defer generator.Cleanup()
 	dockerImageBuilder := docker.NewLocalImageBuilder("")
 	servingPlatform, err := serving.NewLocalDockerPlatform()
 	if err != nil {

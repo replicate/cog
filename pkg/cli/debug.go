@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
-	"runtime"
 
 	"github.com/spf13/cobra"
 
@@ -67,11 +66,12 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	generator := &docker.DockerfileGenerator{Config: config, Arch: arch, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH}
+	generator := docker.NewDockerfileGenerator(config, arch, projectDir)
 	out, err := generator.Generate()
 	if err != nil {
 		return err
 	}
+	defer generator.Cleanup()
 	fmt.Print(out)
 	return nil
 }

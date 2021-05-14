@@ -1,8 +1,9 @@
 package docker
 
 import (
-	"encoding/base64"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -10,12 +11,12 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
-func installCog() string {
-	cogLibB64 := base64.StdEncoding.EncodeToString(cogLibrary)
+func installCog(generatedPaths []string) string {
 	return fmt.Sprintf(`RUN ### --> Installing Cog
 RUN pip install flask requests redis
 ENV PYTHONPATH=/usr/local/lib/cog
-RUN mkdir -p /usr/local/lib/cog && echo %s | base64 --decode > /usr/local/lib/cog/cog.py`, cogLibB64)
+RUN mkdir -p /usr/local/lib/cog
+COPY %s /usr/local/lib/cog/cog.py`, filepath.Base(generatedPaths[0]))
 }
 
 func installPython(version string) string {
@@ -51,46 +52,53 @@ RUN curl https://pyenv.run | bash && \
 }
 
 func TestGenerateEmpty(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "test")
+	require.NoError(t, err)
+
 	conf, err := model.ConfigFromYAML([]byte(`
 model: infer.py:Model
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndCompleteConfig())
 
+	gen := DockerfileGenerator{Config: conf, Arch: "cpu", Dir: tmpDir}
+	actualCPU, err := gen.Generate()
+	require.NoError(t, err)
+
 	expectedCPU := `FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
-` + installPython("3.8") + installCog() + `
+` + installPython("3.8") + installCog(gen.generatedPaths) + `
 RUN ### --> Copying code
 COPY . /code
 ` + helperScripts() + `
 WORKDIR /code
 CMD /usr/bin/cog-http-server`
+
+	gen = DockerfileGenerator{Config: conf, Arch: "gpu", Dir: tmpDir}
+	actualGPU, err := gen.Generate()
+	require.NoError(t, err)
 
 	expectedGPU := `FROM nvidia/cuda:11.0-cudnn8-devel-ubuntu16.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
-` + installPython("3.8") + installCog() + `
+` + installPython("3.8") + installCog(gen.generatedPaths) + `
 RUN ### --> Copying code
 COPY . /code
 ` + helperScripts() + `
 WORKDIR /code
 CMD /usr/bin/cog-http-server`
-
-	gen := DockerfileGenerator{Config: conf, Arch: "cpu"}
-	actualCPU, err := gen.Generate()
-	require.NoError(t, err)
-	gen = DockerfileGenerator{Config: conf, Arch: "gpu"}
-	actualGPU, err := gen.Generate()
-	require.NoError(t, err)
 
 	require.Equal(t, expectedCPU, actualCPU)
 	require.Equal(t, expectedGPU, actualGPU)
 }
 
 func TestGenerateFull(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "test")
+	require.NoError(t, err)
+
 	conf, err := model.ConfigFromYAML([]byte(`
 environment:
   python_requirements: my-requirements.txt
@@ -105,6 +113,10 @@ model: infer.py:Model
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndCompleteConfig())
 
+	gen := DockerfileGenerator{Config: conf, Arch: "cpu", Dir: tmpDir}
+	actualCPU, err := gen.Generate()
+	require.NoError(t, err)
+
 	expectedCPU := `FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -116,12 +128,16 @@ COPY my-requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
 RUN ### --> Installing Python packages
 RUN pip install -f https://download.pytorch.org/whl/torch_stable.html   torch==1.5.1+cpu pandas==1.2.0.12
-` + installCog() + `
+` + installCog(gen.generatedPaths) + `
 RUN ### --> Copying code
 COPY . /code
 ` + helperScripts() + `
 WORKDIR /code
 CMD /usr/bin/cog-http-server`
+
+	gen = DockerfileGenerator{Config: conf, Arch: "gpu", Dir: tmpDir}
+	actualGPU, err := gen.Generate()
+	require.NoError(t, err)
 
 	expectedGPU := `FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
 ENV DEBIAN_FRONTEND=noninteractive
@@ -134,19 +150,12 @@ COPY my-requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
 RUN ### --> Installing Python packages
 RUN pip install   torch==1.5.1 pandas==1.2.0.12
-` + installCog() + `
+` + installCog(gen.generatedPaths) + `
 RUN ### --> Copying code
 COPY . /code
 ` + helperScripts() + `
 WORKDIR /code
 CMD /usr/bin/cog-http-server`
-
-	gen := DockerfileGenerator{Config: conf, Arch: "cpu"}
-	actualCPU, err := gen.Generate()
-	require.NoError(t, err)
-	gen = DockerfileGenerator{Config: conf, Arch: "gpu"}
-	actualGPU, err := gen.Generate()
-	require.NoError(t, err)
 
 	require.Equal(t, expectedCPU, actualCPU)
 	require.Equal(t, expectedGPU, actualGPU)
