@@ -3,6 +3,7 @@ package client
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/replicate/cog/pkg/logger"
@@ -29,6 +30,9 @@ func (c *Client) GetBuildLogs(mod *model.Model, buildID string, follow bool) (ch
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Build logs endpoint returned error %d", resp.StatusCode)
 	}
 	logChan := make(chan *LogEntry)
 	go func() {
