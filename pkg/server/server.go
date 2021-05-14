@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/pprof"
@@ -60,7 +61,7 @@ func NewServer(cpuConcurrency int, gpuConcurrency int, rawPostUploadHooks []stri
 }
 
 func (s *Server) Start(port int) error {
-	s.buildQueue.Start()
+	s.buildQueue.Start(context.Background())
 
 	router := mux.NewRouter()
 
