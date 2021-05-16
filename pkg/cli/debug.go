@@ -2,16 +2,11 @@ package cli
 
 import (
 	"fmt"
-	"io/ioutil"
-	"os"
-	"path"
 
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
-	"github.com/replicate/cog/pkg/model"
-	"github.com/replicate/cog/pkg/util/files"
 )
 
 func newDebugCommand() *cobra.Command {
@@ -34,31 +29,8 @@ func newDebugCommand() *cobra.Command {
 }
 
 func cmdDockerfile(cmd *cobra.Command, args []string) error {
-	projectDir, err := os.Getwd()
+	config, projectDir, err := getConfig()
 	if err != nil {
-		return err
-	}
-
-	configPath := path.Join(projectDir, global.ConfigFilename)
-
-	exists, err := files.Exists(configPath)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return fmt.Errorf("%s does not exist in %s. Are you in the right directory?", global.ConfigFilename, projectDir)
-	}
-
-	contents, err := ioutil.ReadFile(configPath)
-	if err != nil {
-		return err
-	}
-
-	config, err := model.ConfigFromYAML(contents)
-	if err != nil {
-		return err
-	}
-	if err := config.ValidateAndCompleteConfig(); err != nil {
 		return err
 	}
 

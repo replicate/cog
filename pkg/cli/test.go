@@ -3,17 +3,12 @@ package cli
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/logger"
-	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/serving"
-	"github.com/replicate/cog/pkg/util/files"
 )
 
 func newTestCommand() *cobra.Command {
@@ -33,31 +28,12 @@ func Test(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	projectDir, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	logWriter := logger.NewConsoleLogger()
 
-	configPath := filepath.Join(projectDir, global.ConfigFilename)
-	exists, err := files.Exists(configPath)
+	config, projectDir, err := getConfig()
 	if err != nil {
 		return err
 	}
-	if !exists {
-		return fmt.Errorf("%s does not exist in %s. Are you in the right directory?", global.ConfigFilename, projectDir)
-	}
-	configRaw, err := os.ReadFile(filepath.Join(projectDir, global.ConfigFilename))
-	if err != nil {
-		return fmt.Errorf("Failed to read %s: %w", global.ConfigFilename, err)
-	}
-	config, err := model.ConfigFromYAML(configRaw)
-	if err != nil {
-		return err
-	}
-	if err := config.ValidateAndCompleteConfig(); err != nil {
-		return err
-	}
+
 	archMap := map[string]bool{}
 	for _, confArch := range config.Environment.Architectures {
 		archMap[confArch] = true
@@ -76,6 +52,7 @@ func Test(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	logWriter := logger.NewConsoleLogger()
 	buildUseGPU := config.Environment.BuildRequiresGPU && arch == "gpu"
 	tag, err := dockerImageBuilder.Build(context.Background(), projectDir, dockerfileContents, "", buildUseGPU, logWriter)
 	if err != nil {

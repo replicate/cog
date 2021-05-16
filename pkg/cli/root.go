@@ -2,7 +2,9 @@ package cli
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path"
 	"regexp"
 
 	"github.com/spf13/cobra"
@@ -11,6 +13,7 @@ import (
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/settings"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/files"
 )
 
 var modelFlag string
@@ -107,4 +110,33 @@ func getProjectDir() (string, error) {
 		return os.Getwd()
 	}
 	return projectDirFlag, nil
+}
+
+func getConfig() (*model.Config, string, error) {
+	projectDir, err := os.Getwd()
+	if err != nil {
+		return nil, "", err
+	}
+
+	configPath := path.Join(projectDir, global.ConfigFilename)
+
+	exists, err := files.Exists(configPath)
+	if err != nil {
+		return nil, "", err
+	}
+	if !exists {
+		return nil, "", fmt.Errorf("%s does not exist in %s. Are you in the right directory?", global.ConfigFilename, projectDir)
+	}
+
+	contents, err := ioutil.ReadFile(configPath)
+	if err != nil {
+		return nil, "", err
+	}
+
+	config, err := model.ConfigFromYAML(contents)
+	if err != nil {
+		return nil, "", err
+	}
+	err = config.ValidateAndCompleteConfig()
+	return config, projectDir, err
 }
