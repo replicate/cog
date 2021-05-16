@@ -1,7 +1,5 @@
 package docker
 
-// TODO(andreas): allow files to be edited without re-running the subsequent post_install scripts (hard!)
-
 import (
 	_ "embed"
 	"fmt"
@@ -28,7 +26,6 @@ const (
 	SectionInstallingCog                 = "Installing Cog"
 	SectionCopyingCode                   = "Copying code"
 	SectionPreInstall                    = "Running pre-install script"
-	SectionPostInstall                   = "Running post-install script"
 )
 
 //go:embed cog.py
@@ -96,7 +93,6 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 		g.copyCode(),
 		g.installHelperScripts(),
 		g.workdir(),
-		g.postInstall(),
 		g.command(),
 	}), "\n"), nil
 }
@@ -290,15 +286,6 @@ func (g *DockerfileGenerator) preInstall() string {
 	for _, run := range g.Config.Environment.PreInstall {
 		run = strings.TrimSpace(run)
 		lines = append(lines, g.sectionLabel(SectionPreInstall+" "+run)+"RUN "+run)
-	}
-	return strings.Join(lines, "\n")
-}
-
-func (g *DockerfileGenerator) postInstall() string {
-	lines := []string{}
-	for _, run := range g.Config.Environment.PostInstall {
-		run = strings.TrimSpace(run)
-		lines = append(lines, g.sectionLabel(SectionPostInstall+" "+run)+"RUN "+run)
 	}
 	return strings.Join(lines, "\n")
 }
