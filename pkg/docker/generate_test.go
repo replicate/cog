@@ -11,7 +11,7 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
-func installCog(generatedPaths []string) string {
+func testInstallCog(generatedPaths []string) string {
 	return fmt.Sprintf(`RUN ### --> Installing Cog
 RUN pip install flask requests redis
 ENV PYTHONPATH=/usr/local/lib/cog
@@ -19,7 +19,7 @@ RUN mkdir -p /usr/local/lib/cog
 COPY %s /usr/local/lib/cog/cog.py`, filepath.Base(generatedPaths[0]))
 }
 
-func installPython(version string) string {
+func testInstallPython(version string) string {
 	return fmt.Sprintf(`RUN ### --> Installing Python prerequisites
 ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
 RUN apt-get update -q && apt-get install -qy --no-install-recommends \
@@ -69,11 +69,10 @@ model: infer.py:Model
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
-` + installPython("3.8") + installCog(gen.generatedPaths) + `
+` + testInstallPython("3.8") + testInstallCog(gen.generatedPaths) + "\n" + testHelperScripts() + `
+WORKDIR /code
 RUN ### --> Copying code
 COPY . /code
-` + helperScripts() + `
-WORKDIR /code
 CMD /usr/bin/cog-http-server`
 
 	gen = DockerfileGenerator{Config: conf, Arch: "gpu", Dir: tmpDir}
@@ -84,11 +83,10 @@ CMD /usr/bin/cog-http-server`
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
-` + installPython("3.8") + installCog(gen.generatedPaths) + `
+` + testInstallPython("3.8") + testInstallCog(gen.generatedPaths) + "\n" + testHelperScripts() + `
+WORKDIR /code
 RUN ### --> Copying code
 COPY . /code
-` + helperScripts() + `
-WORKDIR /code
 CMD /usr/bin/cog-http-server`
 
 	require.Equal(t, expectedCPU, actualCPU)
@@ -121,18 +119,17 @@ model: infer.py:Model
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
-` + installPython("3.8") + `RUN ### --> Installing system packages
+` + testInstallPython("3.8") + `RUN ### --> Installing system packages
 RUN apt-get update -qq && apt-get install -qy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 RUN ### --> Installing Python requirements
 COPY my-requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
 RUN ### --> Installing Python packages
 RUN pip install -f https://download.pytorch.org/whl/torch_stable.html   torch==1.5.1+cpu pandas==1.2.0.12
-` + installCog(gen.generatedPaths) + `
+` + testInstallCog(gen.generatedPaths) + "\n" + testHelperScripts() + `
+WORKDIR /code
 RUN ### --> Copying code
 COPY . /code
-` + helperScripts() + `
-WORKDIR /code
 CMD /usr/bin/cog-http-server`
 
 	gen = DockerfileGenerator{Config: conf, Arch: "gpu", Dir: tmpDir}
@@ -143,25 +140,24 @@ CMD /usr/bin/cog-http-server`
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
-` + installPython("3.8") + `RUN ### --> Installing system packages
+` + testInstallPython("3.8") + `RUN ### --> Installing system packages
 RUN apt-get update -qq && apt-get install -qy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 RUN ### --> Installing Python requirements
 COPY my-requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
 RUN ### --> Installing Python packages
 RUN pip install   torch==1.5.1 pandas==1.2.0.12
-` + installCog(gen.generatedPaths) + `
+` + testInstallCog(gen.generatedPaths) + "\n" + testHelperScripts() + `
+WORKDIR /code
 RUN ### --> Copying code
 COPY . /code
-` + helperScripts() + `
-WORKDIR /code
 CMD /usr/bin/cog-http-server`
 
 	require.Equal(t, expectedCPU, actualCPU)
 	require.Equal(t, expectedGPU, actualGPU)
 }
 
-func helperScripts() string {
+func testHelperScripts() string {
 	return `
 RUN echo '#!/usr/bin/env python\nimport sys\nimport cog\nimport os\nos.chdir("/code")\nsys.path.append("/code")\nfrom infer import Model\ncog.HTTPServer(Model()).start_server()' > /usr/bin/cog-http-server
 RUN chmod +x /usr/bin/cog-http-server

@@ -55,7 +55,7 @@ func NewDockerfileGenerator(config *model.Config, arch string, dir string) *Dock
 	}
 }
 
-func (g *DockerfileGenerator) Generate() (string, error) {
+func (g *DockerfileGenerator) GenerateBase() (string, error) {
 	baseImage, err := g.baseImage()
 	if err != nil {
 		return "", err
@@ -89,10 +89,20 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 		pythonRequirements,
 		pipInstalls,
 		installCog,
-		g.preInstall(),
-		g.copyCode(),
 		g.installHelperScripts(),
+		g.preInstall(),
 		g.workdir(),
+	}), "\n"), nil
+}
+
+func (g *DockerfileGenerator) Generate() (string, error) {
+	base, err := g.GenerateBase()
+	if err != nil {
+		return "", err
+	}
+	return strings.Join(filterEmpty([]string{
+		base,
+		g.copyCode(),
 		g.command(),
 	}), "\n"), nil
 }
