@@ -54,21 +54,25 @@ func showBuildLogs(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	for entry := range logChan {
-		switch entry.Level {
-		case logger.LevelFatal:
-			console.Fatal(entry.Line)
-		case logger.LevelError:
-			console.Error(entry.Line)
-		case logger.LevelWarn:
-			console.Warn(entry.Line)
-		case logger.LevelStatus: // TODO(andreas): handle status differently or remove
-			console.Info(entry.Line)
-		case logger.LevelInfo:
-			console.Info(entry.Line)
-		case logger.LevelDebug:
-			console.Debug(entry.Line)
-		}
+		outputLogEntry(entry, "")
 	}
 
 	return nil
+}
+
+func outputLogEntry(entry *client.LogEntry, prefix string) {
+	switch entry.Level {
+	case logger.LevelFatal:
+		console.Fatal(prefix + entry.Line)
+	case logger.LevelError:
+		console.Error(prefix + entry.Line)
+	case logger.LevelWarn:
+		console.Warn(prefix + entry.Line)
+	case logger.LevelStatus: // TODO(andreas): handle status differently or remove
+		console.Info(prefix + entry.Line)
+	case logger.LevelInfo:
+		console.Info(prefix + entry.Line)
+	case logger.LevelDebug:
+		console.Debug(prefix + entry.Line)
+	}
 }

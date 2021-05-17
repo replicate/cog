@@ -116,6 +116,8 @@ func (s *Server) buildImage(buildID, dir, user, name, id string, version *model.
 		}
 	}()
 
+	logWriter.Debug("Submitting build")
+
 	// TODO(andreas): make it possible to cancel the build
 	result, err := s.buildQueue.Build(context.Background(), dir, name, id, arch, version.Config, logWriter)
 	if err != nil {
@@ -318,6 +320,7 @@ func (s *Server) SendBuildLogs(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		console.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 	encoder := json.NewEncoder(w)
 	for entry := range logChan {
