@@ -1,4 +1,3 @@
-import time
 import json
 import random
 import string
@@ -15,7 +14,7 @@ from waiting import wait
 
 
 @pytest.fixture
-def cog_server_port_dir():
+def cog_server_port():
     old_cwd = os.getcwd()
     with tempfile.TemporaryDirectory() as cog_dir:
         os.chdir(cog_dir)
@@ -28,7 +27,7 @@ def cog_server_port_dir():
         )
         assert resp.text == "pong"
 
-        yield port, cog_dir
+        yield port
 
     os.chdir(old_cwd)
     server_proc.kill()
@@ -78,33 +77,21 @@ environment:
         """
         f.write(cog_yaml)
 
+    with open(tmpdir / "myfile.txt", "w") as f:
+        f.write("baz")
+
     return tmpdir
 
 
-def test_build_show_list_download_infer(
-    cog_server_port_dir, project_dir, tmpdir_factory
-):
-    cog_port, cog_dir = cog_server_port_dir
-
+def test_build_show_list_download_infer(cog_server_port, project_dir, tmpdir_factory):
     user = random_string(10)
     model_name = random_string(10)
-    model_url = f"http://localhost:{cog_port}/{user}/{model_name}"
+    model_url = f"http://localhost:{cog_server_port}/{user}/{model_name}"
 
     with open(os.path.join(project_dir, "cog.yaml")) as f:
         cog_yaml = f.read()
 
-    out, _ = subprocess.Popen(
-        ["cog", "model", "set", model_url],
-        stdout=subprocess.PIPE,
-        cwd=project_dir,
-    ).communicate()
-    assert (
-        out.decode()
-        == f"Updated model: http://localhost:{cog_port}/{user}/{model_name}\n"
-    )
-
-    with open(project_dir / "myfile.txt", "w") as f:
-        f.write("baz")
+    set_model_url(model_url, project_dir)
 
     out, _ = subprocess.Popen(
         ["cog", "push"],
@@ -173,7 +160,7 @@ def test_build_show_list_download_infer(
     with input_path.open("w") as f:
         f.write("input")
 
-    files_endpoint = f"http://localhost:{cog_port}/v1/models/{user}/{model_name}/versions/{version_id}/files"
+    files_endpoint = f"http://localhost:{cog_server_port}/v1/models/{user}/{model_name}/versions/{version_id}/files"
     assert requests.get(f"{files_endpoint}/cog.yaml").text == cog_yaml
     assert (
         requests.get(f"{files_endpoint}/cog-example-output/output.02.txt").text
@@ -201,26 +188,100 @@ def test_build_show_list_download_infer(
         assert f.read() == "foobazinput"
 
 
-def test_push_log(cog_server_port_dir, project_dir):
-    cog_port, cog_dir = cog_server_port_dir
-
+def test_push_log(cog_server_port, project_dir):
     user = random_string(10)
     model_name = random_string(10)
-    model_url = f"http://localhost:{cog_port}/{user}/{model_name}"
+    model_url = f"http://localhost:{cog_server_port}/{user}/{model_name}"
 
+    set_model_url(model_url, project_dir)
+    version_id = push_with_log(project_dir)
+
+    out = show_version(model_url, version_id)
+    assert out["config"]["examples"][2]["output"] == "@cog-example-output/output.02.txt"
+    assert out["images"][0]["arch"] == "cpu"
+    assert out["images"][0]["run_arguments"]["text"]["type"] == "str"
+
+
+def test_infer_batch(cog_server_port, project_dir, tmpdir_factory):
+    user = random_string(10)
+    model_name = random_string(10)
+    model_url = f"http://localhost:{cog_server_port}/{user}/{model_name}"
+
+    input_dir = tmpdir_factory.mktemp("input")
+
+    with open(input_dir / "myfile1.txt", "w") as f:
+        f.write("111")
+    with open(input_dir / "myfile2.txt", "w") as f:
+        f.write("222")
+
+    set_model_url(model_url, project_dir)
+    version_id = push_with_log(project_dir)
+
+    input_path = input_dir / "input_filenames.txt"
+    with input_path.open("w") as f:
+        f.write("""
+text=bar,path=@myfile1.txt
+# comment, with newline below
+
+text=baz,path=@doesnotexist.txt
+text="first,second",path=@myfile2.txt
+""")
+
+    output_dir = tmpdir_factory.mktemp("output")
+    subprocess.Popen(
+        [
+            "cog",
+            "--model",
+            model_url,
+            "infer",
+            "--output-dir",
+            output_dir,
+            "--file",
+            input_path,
+            version_id,
+        ],
+        stdout=subprocess.PIPE,
+        cwd=input_dir,
+    ).communicate()
+
+    with (output_dir / "output.0000002.txt").open() as f:
+        assert f.read() == "foobar111"
+    with (output_dir / "output.0000006.txt").open() as f:
+        assert f.read() == "foofirst,second222"
+
+    actual_filenames = {os.path.basename(p) for p in glob(f"{output_dir}/*.txt")}
+    assert actual_filenames == set(["output.0000002.txt", "output.0000006.txt"])
+
+
+def find_free_port():
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.bind(("", 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s.getsockname()[1]
+
+
+def random_string(length):
+    return "".join(random.choice(string.ascii_lowercase) for _ in range(length))
+
+
+def show_version(model_url, version_id):
+    out, _ = subprocess.Popen(
+        ["cog", "--model", model_url, "show", "--json", version_id],
+        stdout=subprocess.PIPE,
+    ).communicate()
+    return json.loads(out)
+
+
+def set_model_url(model_url, project_dir):
     out, _ = subprocess.Popen(
         ["cog", "model", "set", model_url],
         stdout=subprocess.PIPE,
         cwd=project_dir,
     ).communicate()
-    assert (
-        out.decode()
-        == f"Updated model: http://localhost:{cog_port}/{user}/{model_name}\n"
-    )
+    assert out.decode() == f"Updated model: {model_url}\n"
 
-    with open(project_dir / "myfile.txt", "w") as f:
-        f.write("baz")
 
+def push_with_log(project_dir):
     out, _ = subprocess.Popen(
         ["cog", "push", "--log"],
         cwd=project_dir,
@@ -232,26 +293,4 @@ def test_push_log(cog_server_port_dir, project_dir):
     )
     version_id = out.decode().strip().split("Successfully uploaded version ")[1]
 
-    out = show_version(model_url, version_id)
-    assert out["config"]["examples"][2]["output"] == "@cog-example-output/output.02.txt"
-    assert out["images"][0]["arch"] == "cpu"
-    assert out["images"][0]["run_arguments"]["text"]["type"] == "str"
-
-
-def find_free_port():
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-        s.bind(("", 0))
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        return s.getsockname()[1]
-
-
-def random_string(length):
-    return "".join(random.choice(string.ascii_lowercase) for i in range(length))
-
-
-def show_version(model_url, version_id):
-    out, _ = subprocess.Popen(
-        ["cog", "--model", model_url, "show", "--json", version_id],
-        stdout=subprocess.PIPE,
-    ).communicate()
-    return json.loads(out)
+    return version_id
