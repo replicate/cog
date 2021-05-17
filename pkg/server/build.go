@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/mholt/archiver/v3"
@@ -77,16 +78,24 @@ func (s *Server) ReceiveVersion(r *http.Request, logWriter logger.Logger, user s
 	if err := s.runHooks(s.postUploadHooks, user, name, id, version, nil, logWriter); err != nil {
 		return nil, err
 	}
+	wg := sync.WaitGroup{}
 	for _, arch := range config.Environment.Architectures {
+		wg.Add(1)
 		isPrimary := arch == "cpu" || (!config.HasCPU() && arch == "gpu")
 		buildID := ksuid.New().String()
 		version.BuildIDs[arch] = buildID
 		arch := arch
 		go func() {
-			defer os.RemoveAll(dir)
+			defer wg.Done()
 			s.buildImage(buildID, dir, user, name, id, version, arch, isPrimary)
 		}()
 	}
+	go func() {
+		wg.Wait()
+		if err := os.RemoveAll(dir); err != nil {
+			console.Errorf("Failed to remove model version directory: %v", err)
+		}
+	}()
 	logWriter.WriteStatus("Inserting into database")
 	if err := s.db.InsertVersion(user, name, id, version); err != nil {
 		return nil, fmt.Errorf("Failed to insert into database: %w", err)
