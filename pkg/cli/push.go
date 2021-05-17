@@ -29,7 +29,7 @@ func newPushCommand() *cobra.Command {
 	addModelFlag(cmd)
 	addProjectDirFlag(cmd)
 
-	cmd.Flags().BoolP("log", "l", false, "Follow image build logs after successful push")
+	cmd.Flags().Bool("log", false, "Follow image build logs after successful push")
 
 	return cmd
 }
