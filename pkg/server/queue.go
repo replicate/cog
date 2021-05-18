@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/segmentio/ksuid"
@@ -28,6 +29,8 @@ type BuildQueue struct {
 	archSemaphores     map[string]chan struct{}
 	outputChans        map[string]chan *JobOutput
 	cancelChans        map[string]chan struct{}
+	outputChansLock    sync.RWMutex
+	cancelChansLock    sync.RWMutex
 }
 
 type BuildJob struct {
@@ -98,10 +101,24 @@ func (q *BuildQueue) startHandler(ctx context.Context, arch string) {
 func (q *BuildQueue) Build(ctx context.Context, dir string, name string, id string, arch string, config *model.Config, logWriter logger.Logger) (*BuildResult, error) {
 	messageID := ksuid.New().String()
 
+	q.outputChansLock.Lock()
 	q.outputChans[messageID] = make(chan *JobOutput)
+	q.outputChansLock.Unlock()
+
+	q.cancelChansLock.Lock()
 	q.cancelChans[messageID] = make(chan struct{})
-	defer delete(q.outputChans, messageID)
-	defer delete(q.cancelChans, messageID)
+	q.cancelChansLock.Unlock()
+
+	defer func() {
+		q.outputChansLock.Lock()
+		delete(q.outputChans, messageID)
+		q.outputChansLock.Unlock()
+	}()
+	defer func() {
+		q.cancelChansLock.Lock()
+		delete(q.cancelChans, messageID)
+		q.cancelChansLock.Unlock()
+	}()
 
 	q.jobChans[arch] <- &BuildJob{
 		messageID: messageID,
@@ -126,8 +143,12 @@ func (q *BuildQueue) Build(ctx context.Context, dir string, name string, id stri
 }
 
 func (q *BuildQueue) waitForResult(messageID string, cancelReceivedChan <-chan struct{}, logWriter logger.Logger) (*BuildResult, error) {
+	q.outputChansLock.RLock()
 	outputChan := q.outputChans[messageID]
+	q.outputChansLock.RUnlock()
+	q.cancelChansLock.RLock()
 	cancelChan := q.cancelChans[messageID]
+	q.cancelChansLock.RUnlock()
 
 	queueState := QueueStateQueued
 	ticker := time.NewTicker(10 * time.Second)
@@ -172,13 +193,19 @@ func (q *BuildQueue) handleJob(job *BuildJob) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
+		q.cancelChansLock.RLock()
 		cancelChan := q.cancelChans[job.messageID]
+		q.cancelChansLock.RUnlock()
+
 		<-cancelChan
 		console.Debugf("Cancelling build")
 		cancel()
 	}()
 
+	q.outputChansLock.RLock()
 	outChan := q.outputChans[job.messageID]
+	q.outputChansLock.RUnlock()
+
 	logWriter := NewQueueLogger(outChan)
 	logWriter.WriteStatus("Building image")
 
