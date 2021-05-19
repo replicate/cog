@@ -68,12 +68,16 @@ func (s *Server) Start(port int) error {
 	router.Path("/").
 		Methods(http.MethodGet).
 		HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte("OK"))
+			if _, err := w.Write([]byte("OK")); err != nil {
+				console.Errorf("Failed to write body: %v", err)
+			}
 		})
 	router.Path("/ping").
 		Methods(http.MethodGet).
 		HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte("pong"))
+			if _, err := w.Write([]byte("pong")); err != nil {
+				console.Errorf("Failed to write body: %v", err)
+			}
 		})
 	router.Path("/v1/models/{user}/{name}/versions/{id}.zip").
 		Methods(http.MethodGet).

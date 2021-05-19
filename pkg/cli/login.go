@@ -11,9 +11,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/client"
-	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/settings"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 type VerifyResponse struct {
@@ -64,7 +64,7 @@ func login(cmd *cobra.Command, args []string) error {
 
 	err = settings.SaveAuthToken(address, username, token)
 	if err != nil {
-	return err
+		return err
 	}
 
 	console.Infof("Successfully authenticated as %s", username)
@@ -75,10 +75,10 @@ func login(cmd *cobra.Command, args []string) error {
 func maybeOpenBrowser(url string) {
 	switch runtime.GOOS {
 	case "linux":
-		exec.Command("xdg-open", url).Start()
+		_ = exec.Command("xdg-open", url).Start()
 	case "windows":
-		exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+		_ = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
 	case "darwin":
-		exec.Command("open", url).Start()
+		_ = exec.Command("open", url).Start()
 	}
 }

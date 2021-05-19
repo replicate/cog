@@ -59,7 +59,7 @@ func NewRootCommand() (*cobra.Command, error) {
 func setPersistentFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().BoolVarP(&global.Verbose, "verbose", "v", false, "Verbose output")
 	cmd.PersistentFlags().BoolVar(&global.ProfilingEnabled, "profile", false, "Enable profiling")
-	cmd.PersistentFlags().MarkHidden("profile")
+	_ = cmd.PersistentFlags().MarkHidden("profile")
 }
 
 func addModelFlag(cmd *cobra.Command) {

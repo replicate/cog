@@ -7,6 +7,7 @@ import (
 
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 func newDebugCommand() *cobra.Command {
@@ -43,7 +44,11 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer generator.Cleanup()
+	defer func() {
+		if err := generator.Cleanup(); err != nil {
+			console.Warnf("Error cleaning up after build: %v", err)
+		}
+	}()
 	fmt.Print(out)
 	return nil
 }

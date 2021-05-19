@@ -306,24 +306,6 @@ func splitPythonPackage(pkg string) (name string, version string, err error) {
 	return parts[0], parts[1], nil
 }
 
-func setIntersect(a []string, b []string) []string {
-	aMap := map[string]bool{}
-	bMap := map[string]bool{}
-	for _, s := range a {
-		aMap[s] = true
-	}
-	for _, s := range b {
-		bMap[s] = true
-	}
-	ret := []string{}
-	for key := range aMap {
-		if _, ok := bMap[key]; ok {
-			ret = append(ret, key)
-		}
-	}
-	return ret
-}
-
 func sliceContains(slice []string, s string) bool {
 	for _, el := range slice {
 		if el == s {

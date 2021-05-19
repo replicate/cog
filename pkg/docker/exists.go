@@ -8,10 +8,10 @@ import (
 )
 
 func Exists(tag string, logWriter logger.Logger) bool {
-	// TODO(andreas): error handling
 	cmd := exec.Command("docker", "inspect", "--type=image", tag)
 	cmd.Env = os.Environ()
-
+	// TODO(andreas): error handling
+	//nolint
 	pipeToWithDockerChecks(cmd.StderrPipe, logWriter)
 
 	err := cmd.Run()

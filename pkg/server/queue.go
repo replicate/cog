@@ -247,7 +247,11 @@ func (q *BuildQueue) buildDockerImage(ctx context.Context, job *BuildJob, logWri
 	if err != nil {
 		return "", fmt.Errorf("Failed to generate Dockerfile for %s: %w", job.arch, err)
 	}
-	defer generator.Cleanup()
+	defer func() {
+		if err := generator.Cleanup(); err != nil {
+			console.Warnf("Error cleaning up after build: %v", err)
+		}
+	}()
 	useGPU := job.config.Environment.BuildRequiresGPU && job.arch == "gpu"
 	uri, err := q.dockerImageBuilder.Build(ctx, job.dir, dockerfileContents, job.name, useGPU, logWriter)
 	if err != nil {
@@ -257,8 +261,7 @@ func (q *BuildQueue) buildDockerImage(ctx context.Context, job *BuildJob, logWri
 }
 
 type QueueLogger struct {
-	arch string
-	ch   chan *JobOutput
+	ch chan *JobOutput
 }
 
 func NewQueueLogger(ch chan *JobOutput) *QueueLogger {

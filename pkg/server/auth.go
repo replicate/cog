@@ -71,8 +71,9 @@ func (s *Server) checkAccess(handler http.HandlerFunc, mode string) http.Handler
 	return func(w http.ResponseWriter, r *http.Request) {
 		if handler == nil {
 			handler = func(w http.ResponseWriter, r *http.Request) {
-				w.Write([]byte("OK"))
-				return
+				if _, err := w.Write([]byte("OK")); err != nil {
+					console.Errorf("Failed to write body: %v", err)
+				}
 			}
 		}
 
@@ -120,6 +121,5 @@ func (s *Server) checkAccess(handler http.HandlerFunc, mode string) http.Handler
 		if _, err := io.Copy(w, resp.Body); err != nil {
 			console.Errorf("Failed to copy body: %v", err)
 		}
-		return
 	}
 }

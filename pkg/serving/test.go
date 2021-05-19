@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/montanaflynn/stats"
+
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 // TODO(andreas): put this somewhere else since it's used by server?
@@ -42,7 +44,9 @@ func TestVersion(ctx context.Context, servingPlatform Platform, imageTag string,
 	deployment, err := servingPlatform.Deploy(ctx, imageTag, useGPU, logWriter)
 	defer func() {
 		if deployment != nil {
-			deployment.Undeploy()
+			if err := deployment.Undeploy(); err != nil {
+				console.Errorf("Error undeploying: %s", err)
+			}
 		}
 	}()
 	if err != nil {
@@ -282,7 +286,7 @@ func extensionByType(mimeType string) string {
 		return ".7z"
 	default:
 		extensions, _ := mime.ExtensionsByType(mimeType)
-		if extensions == nil || len(extensions) == 0 {
+		if len(extensions) == 0 {
 			return ""
 		}
 		return extensions[0]

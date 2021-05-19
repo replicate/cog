@@ -8,11 +8,10 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/replicate/cog/pkg/model"
 	"github.com/segmentio/ksuid"
-)
 
-const codeDir = "/code"
+	"github.com/replicate/cog/pkg/model"
+)
 
 const SectionPrefix = "### --> "
 

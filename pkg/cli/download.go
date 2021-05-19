@@ -23,7 +23,7 @@ func newDownloadCommand() *cobra.Command {
 	}
 	addModelFlag(cmd)
 	cmd.Flags().StringVarP(&downloadOutputDir, "output-dir", "o", "", "Output directory")
-	cmd.MarkFlagRequired("output-dir")
+	_ = cmd.MarkFlagRequired("output-dir")
 
 	return cmd
 }

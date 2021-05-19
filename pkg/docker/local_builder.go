@@ -209,6 +209,7 @@ func buildPipe(pipe io.ReadCloser, logWriter logger.Logger) (lastLogs []string, 
 	scanner := bufio.NewScanner(pipe)
 	currentSection := SectionStartingBuild
 	currentLogLines := []string{}
+	logWriter.Infof("  * %s", currentSection)
 
 	for scanner.Scan() {
 		line := scanner.Text()
