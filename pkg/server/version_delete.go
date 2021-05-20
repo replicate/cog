@@ -32,5 +32,8 @@ func (s *Server) DeleteVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Deleted " + id))
+
+	if _, err := w.Write([]byte("Deleted " + id)); err != nil {
+		console.Errorf("Failed to write body: %v", err)
+	}
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/serving"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 func newTestCommand() *cobra.Command {
@@ -46,7 +47,11 @@ func Test(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("Failed to generate Dockerfile for %s: %w", arch, err)
 	}
-	defer generator.Cleanup()
+	defer func() {
+		if err := generator.Cleanup(); err != nil {
+			console.Warnf("Error cleaning up after build: %v", err)
+		}
+	}()
 	dockerImageBuilder := docker.NewLocalImageBuilder("")
 	servingPlatform, err := serving.NewLocalDockerPlatform()
 	if err != nil {

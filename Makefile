@@ -24,7 +24,7 @@ generate:
 	go generate ./...
 
 .PHONY: test
-test:
+test: check-fmt vet lint
 	go get gotest.tools/gotestsum
 	go run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
 
@@ -34,7 +34,17 @@ install:
 
 .PHONY: fmt
 fmt:
-	go run golang.org/x/tools/cmd/goimports --local github.com/replicate/cog -w -d .
+	go run golang.org/x/tools/cmd/goimports -w -d .
+
+.PHONY: vet
+vet:
+	go vet ./...
+
+
+.PHONY: check-fmt
+check-fmt:
+	go run golang.org/x/tools/cmd/goimports -d .
+	@test -z $$(go run golang.org/x/tools/cmd/goimports -l .)
 
 .PHONY: lint
 lint:

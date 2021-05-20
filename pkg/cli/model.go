@@ -58,6 +58,9 @@ func modelSet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	exists, err := files.Exists(filepath.Join(cwd, global.ConfigFilename))
+	if err != nil {
+		console.Error(err.Error())
+	}
 	if !exists {
 		console.Warnf("%s does not exist in %s. Are you in the right directory?", global.ConfigFilename, cwd)
 	}

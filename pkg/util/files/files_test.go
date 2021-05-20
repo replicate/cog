@@ -16,6 +16,6 @@ func TestIsExecutable(t *testing.T) {
 	require.NoError(t, err)
 
 	require.False(t, IsExecutable(path))
-	os.Chmod(path, 0744)
+	require.NoError(t, os.Chmod(path, 0744))
 	require.True(t, IsExecutable(path))
 }

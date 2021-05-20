@@ -88,6 +88,7 @@ func TestCachingZip(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "anotherdir/baz.txt"), []byte("changed-baz"), 0644))
 
 	err = z.WriterArchive(dataDir+"/", out2, hashes)
+	require.NoError(t, err)
 
 	err = new(archiver.Zip).Unarchive(outPath2, unzipDir3)
 	require.NoError(t, err)
