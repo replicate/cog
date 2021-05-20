@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -64,6 +65,17 @@ func (z *CachingZip) WriterArchive(source string, destination io.Writer, cachedH
 		}
 
 		var file io.ReadCloser
+		if info.Mode()&fs.ModeSymlink != 0 {
+			targetPath, err := os.Readlink(fpath)
+			if err != nil {
+				return handleErr(fmt.Errorf("Failed to read symlink: %w", err))
+			}
+			info, err = os.Lstat(targetPath)
+			if err != nil {
+				return handleErr(fmt.Errorf("Failed to stat symlink: %w", err))
+			}
+			fpath = targetPath
+		}
 		if info.Mode().IsRegular() {
 			hash, err := getFileHash(fpath)
 			if err != nil {
