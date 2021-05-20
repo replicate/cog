@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -61,6 +62,12 @@ func (z *CachingZip) WriterArchive(source string, destination io.Writer, cachedH
 		nameInArchive, err := makeNameInArchive(sourceInfo, source, "", fpath)
 		if err != nil {
 			return handleErr(err)
+		}
+
+		if info.Mode()&fs.ModeSymlink != 0 {
+			// TODO(andreas): handle symlinks with targets inside the tree?
+			console.Warnf("%s is a symlink and will be ignored. To suppress this warning, add this file to .cogignore", nameInArchive)
+			return nil
 		}
 
 		var file io.ReadCloser
