@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional, Any, Type, List, Callable, Dict
 from numbers import Number
 
-from flask import Flask, send_file, request, jsonify, abort, Response
+from flask import Flask, send_file, request, jsonify, Response
 from werkzeug.datastructures import FileStorage
 import redis
 
@@ -79,7 +79,7 @@ class HTTPServer:
                 else:
                     inputs = raw_inputs
 
-                result = self.model.run(**inputs)
+                result = run_model(self.model, inputs, cleanup_functions)
                 run_time = time.time() - start_time
                 return self.create_response(result, setup_time, run_time)
             finally:
@@ -158,7 +158,7 @@ class AIPlatformPredictionServer:
                         )
                     except InputValidationError as e:
                         return jsonify({"error": str(e)})
-                    results.append(self.model.run(**instance))
+                    results.append(run_model(self.model, instance, cleanup_functions))
                 return jsonify(
                     {
                         "predictions": results,
@@ -171,6 +171,12 @@ class AIPlatformPredictionServer:
                         "error": tb,
                     }
                 )
+            finally:
+                for cleanup_function in cleanup_functions:
+                    try:
+                        cleanup_function()
+                    except Exception as e:
+                        sys.stderr.write(f"Cleanup function caught error: {e}")
 
         @app.route("/ping")
         def ping():
@@ -214,7 +220,6 @@ class AIPlatformPredictionServer:
         return resp
 
 
-# TODO: reliable queue
 class RedisQueueWorker:
     def __init__(
         self,
@@ -251,7 +256,6 @@ class RedisQueueWorker:
         self.should_exit = True
         sys.stderr.write("Caught SIGTERM, exiting...\n")
 
-    # TODO(andreas): test this
     def receive_message(self):
         # first, try to autoclaim old messages from pending queue
         _, raw_messages = self.redis.execute_command(
@@ -362,7 +366,7 @@ class RedisQueueWorker:
             self.push_error(response_queue, e)
             return
 
-        result = self.model.run(**inputs)
+        result = run_model(self.model, inputs, cleanup_functions)
         self.push_result(response_queue, result)
 
     def download(self, url):
@@ -504,22 +508,15 @@ def validate_and_convert_inputs(
     return inputs
 
 
-@contextmanager
-def unzip_to_tempdir(zip_path):
-    with tempfile.TemporaryDirectory() as tempdir:
-        shutil.unpack_archive(zip_path, tempdir, "zip")
-        yield tempdir
-
-
-def make_temp_path(filename):
-    temp_dir = make_temp_dir()
-    return Path(os.path.join(temp_dir, filename))
-
-
-def make_temp_dir():
-    # TODO(andreas): cleanup
-    temp_dir = tempfile.mkdtemp()
-    return temp_dir
+def run_model(model, inputs, cleanup_functions):
+    """
+    Run the model on the inputs, and append resulting paths
+    to cleanup functions for removal.
+    """
+    result = model.run(**inputs)
+    if isinstance(result, Path):
+        cleanup_functions.append(result.unlink)
+    return result
 
 
 @dataclass

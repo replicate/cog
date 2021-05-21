@@ -1,0 +1,5 @@
+flask==2.0.1
+pillow==8.2.0
+pytest==6.2.4
+redis==3.5.3
+requests==2.25.1

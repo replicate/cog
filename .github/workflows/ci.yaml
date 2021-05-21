@@ -10,7 +10,7 @@ on:
 
 jobs:
   test:
-    name: "Test"
+    name: "Test Go"
     strategy:
       fail-fast: false
       matrix:
@@ -34,7 +34,30 @@ jobs:
       - name: "Build"
         run: make build
       - name: Test
-        run: make test
+        run: make test-go
+
+  test-cog-library:
+    name: "Test Cog library"
+    runs-on: ubuntu-20.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@master
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - uses: actions/cache@v2
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('**/pkg/docker/cog_test_requirements.txt') }}
+          restore-keys: |
+            pip-${{ secrets.CACHE_VERSION }}-
+      - name: Install requirements
+        run: pip install -r pkg/docker/cog_test_requirements.txt
+      - name: Test
+        run: make test-cog-library
 
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-end-to-end:

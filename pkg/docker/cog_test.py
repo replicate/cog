@@ -358,7 +358,6 @@ def test_path_output_str():
 
         @cog.input("text", type=str)
         def run(self, text):
-            # TODO(andreas): how to clean up files?
             temp_dir = tempfile.mkdtemp()
             temp_path = os.path.join(temp_dir, "my_file.txt")
             with open(temp_path, "w") as f:
@@ -387,7 +386,8 @@ def test_path_output_image():
     client = make_client(Model())
     resp = client.post("/infer")
     assert resp.status_code == 200
-    assert resp.content_type == "image/bmp"
+    # need both image/bmp and image/x-ms-bmp until https://bugs.python.org/issue44211 is fixed
+    assert resp.content_type in ["image/bmp", "image/x-ms-bmp"]
     assert resp.content_length == 195894
 
 
@@ -483,22 +483,3 @@ def test_timing():
     assert resp.status_code == 200
     assert float(resp.headers["X-Setup-Time"]) < 0.5
     assert float(resp.headers["X-Run-Time"]) < 0.5
-
-
-def test_unzip_to_tempdir(tmpdir_factory):
-    input_dir = tmpdir_factory.mktemp("input")
-    with open(os.path.join(input_dir, "hello.txt"), "w") as f:
-        f.write("hello")
-    os.mkdir(os.path.join(input_dir, "mydir"))
-    with open(os.path.join(input_dir, "mydir", "world.txt"), "w") as f:
-        f.write("world")
-
-    zip_dir = tmpdir_factory.mktemp("zip")
-    zip_path = os.path.join(zip_dir, "my-archive.zip")
-
-    shutil.make_archive(zip_path.split(".zip")[0], "zip", input_dir)
-    with cog.unzip_to_tempdir(zip_path) as tempdir:
-        with open(os.path.join(tempdir, "hello.txt")) as f:
-            assert f.read() == "hello"
-        with open(os.path.join(tempdir, "mydir", "world.txt")) as f:
-            assert f.read() == "world"
