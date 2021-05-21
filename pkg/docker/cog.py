@@ -171,6 +171,12 @@ class AIPlatformPredictionServer:
                         "error": tb,
                     }
                 )
+            finally:
+                for cleanup_function in cleanup_functions:
+                    try:
+                        cleanup_function()
+                    except Exception as e:
+                        sys.stderr.write(f"Cleanup function caught error: {e}")
 
         @app.route("/ping")
         def ping():
