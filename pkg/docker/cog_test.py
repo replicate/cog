@@ -386,7 +386,8 @@ def test_path_output_image():
     client = make_client(Model())
     resp = client.post("/infer")
     assert resp.status_code == 200
-    assert resp.content_type == "image/bmp"
+    # need both image/bmp and image/x-ms-bmp until https://bugs.python.org/issue44211 is fixed
+    assert resp.content_type in ["image/bmp", "image/x-ms-bmp"]
     assert resp.content_length == 195894
 
 

@@ -37,7 +37,7 @@ test-cog-library:
 	cd pkg/docker/ && pytest cog_test.py
 
 .PHONY: test
-test: test-go test-end-to-end test-cog-library
+test: test-go test-cog-library test-end-to-end
 
 .PHONY: install
 install:
