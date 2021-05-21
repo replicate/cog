@@ -214,7 +214,6 @@ class AIPlatformPredictionServer:
         return resp
 
 
-# TODO: reliable queue
 class RedisQueueWorker:
     def __init__(
         self,
@@ -251,7 +250,6 @@ class RedisQueueWorker:
         self.should_exit = True
         sys.stderr.write("Caught SIGTERM, exiting...\n")
 
-    # TODO(andreas): test this
     def receive_message(self):
         # first, try to autoclaim old messages from pending queue
         _, raw_messages = self.redis.execute_command(
