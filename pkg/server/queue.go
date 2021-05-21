@@ -214,6 +214,11 @@ func (q *BuildQueue) handleJob(job *BuildJob) {
 		outChan <- &JobOutput{error: err}
 		return
 	}
+	defer func() {
+		if err := q.dockerImageBuilder.Cleanup(imageURI); err != nil {
+			console.Errorf("Failed to clean up %s: %v", imageURI, err)
+		}
+	}()
 
 	testResult, err := serving.TestVersion(ctx, q.servingPlatform, imageURI, job.config.Examples, job.dir, job.arch == "gpu", logWriter)
 	if err != nil {

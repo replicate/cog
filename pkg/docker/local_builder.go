@@ -96,6 +96,14 @@ func (b *LocalImageBuilder) Build(ctx context.Context, dir string, dockerfileCon
 		if err := b.tag(dockerTag, tag, logWriter); err != nil {
 			return "", err
 		}
+
+		// tag with :latest so we can rmi the tag created above without removing
+		// all the cached layers. this means we only ever keep one copy of the image,
+		// and avoid using too much disk space.
+		latestTag := fmt.Sprintf("%s/%s:latest", b.registry, strings.ToLower(name))
+		if err := b.tag(dockerTag, latestTag, logWriter); err != nil {
+			return "", err
+		}
 	}
 
 	return tag, nil
@@ -188,6 +196,23 @@ func (b *LocalImageBuilder) Push(ctx context.Context, tag string, logWriter logg
 	<-stderrDone
 	if err != nil {
 		return err
+	}
+	return nil
+}
+
+func (b *LocalImageBuilder) Cleanup(dockerTag string) error {
+	return b.rmi(dockerTag)
+}
+
+func (b *LocalImageBuilder) rmi(dockerTag string) error {
+	console.Debugf("Untagging %s", dockerTag)
+
+	cmd := exec.Command("docker", "rmi", dockerTag)
+	cmd.Env = os.Environ()
+	if _, err := cmd.Output(); err != nil {
+		ee := err.(*exec.ExitError)
+		stderr := string(ee.Stderr)
+		return fmt.Errorf("Failed to untag %s: %s", dockerTag, stderr)
 	}
 	return nil
 }
