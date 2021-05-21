@@ -150,14 +150,6 @@ func TestValidateServingExampleInput(t *testing.T) {
 	}))
 }
 
-func TestExtensionByType(t *testing.T) {
-	require.Equal(t, ".txt", extensionByType("text/plain"))
-	require.Equal(t, ".jpg", extensionByType("image/jpeg"))
-	require.Equal(t, ".png", extensionByType("image/png"))
-	require.Equal(t, ".json", extensionByType("application/json"))
-	require.Equal(t, "", extensionByType("asdfasdf"))
-}
-
 func TestOutputBytesFromExample(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)

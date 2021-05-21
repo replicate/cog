@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime"
 	"os"
 	"strings"
 
@@ -13,12 +12,13 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/util/console"
-
 	"github.com/replicate/cog/pkg/client"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/serving"
+	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/mime"
+	"github.com/replicate/cog/pkg/util/slices"
 )
 
 var (
@@ -43,6 +43,10 @@ func newInferCommand() *cobra.Command {
 }
 
 func cmdInfer(cmd *cobra.Command, args []string) error {
+	if !slices.ContainsString([]string{"cpu", "gpu"}, inferArch) {
+		return fmt.Errorf("--arch must be either 'cpu' or 'gpu'")
+	}
+
 	mod, err := getModel()
 	if err != nil {
 		return err
@@ -67,8 +71,7 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	logWriter := logger.NewConsoleLogger()
-	// TODO(andreas): GPU inference
-	useGPU := false
+	useGPU := inferArch == "gpu"
 	deployment, err := servingPlatform.Deploy(context.Background(), image.URI, useGPU, logWriter)
 	if err != nil {
 		return err
@@ -79,22 +82,11 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	keyVals := map[string]string{}
-	for _, input := range inputs {
-		var name, value string
+	return inferIndividualInputs(deployment, inputs, outPath, logWriter)
+}
 
-		// Default input name is "input"
-		if !strings.Contains(input, "=") {
-			name = "input"
-			value = input
-		} else {
-			split := strings.SplitN(input, "=", 2)
-			name = split[0]
-			value = split[1]
-		}
-		keyVals[name] = value
-	}
-	example := serving.NewExample(keyVals)
+func inferIndividualInputs(deployment serving.Deployment, inputs []string, outputPath string, logWriter logger.Logger) error {
+	example := parseInferInputs(inputs)
 	result, err := deployment.RunInference(context.Background(), example, logWriter)
 	if err != nil {
 		return err
@@ -103,7 +95,7 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 	output := result.Values["output"]
 
 	// Write to stdout
-	if outPath == "" {
+	if outputPath == "" {
 		// Is it something we can sensibly write to stdout?
 		if output.MimeType == "plain/text" {
 			_, err := io.Copy(os.Stdout, output.Buffer)
@@ -121,23 +113,23 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 		// Otherwise, fall back to writing file
-		outPath = "output"
-		extension, _ := mime.ExtensionsByType(output.MimeType)
-		if len(extension) > 0 {
-			outPath += extension[0]
+		outputPath = "output"
+		extension := mime.ExtensionByType(output.MimeType)
+		if extension != "" {
+			outputPath += extension
 		}
 	}
 
 	// Ignore @, to make it behave the same as -i
-	outPath = strings.TrimPrefix(outPath, "@")
+	outputPath = strings.TrimPrefix(outputPath, "@")
 
-	outPath, err := homedir.Expand(outPath)
+	outputPath, err = homedir.Expand(outputPath)
 	if err != nil {
 		return err
 	}
 
 	// Write to file
-	outFile, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE, 0755)
+	outFile, err := os.OpenFile(outputPath, os.O_WRONLY|os.O_CREATE, 0755)
 	if err != nil {
 		return err
 	}
@@ -146,6 +138,28 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Println("Written output to " + outPath)
+	fmt.Println("Written output to " + outputPath)
 	return nil
+}
+
+func parseInferInputs(inputs []string) *serving.Example {
+	keyVals := map[string]string{}
+	for _, input := range inputs {
+		var name, value string
+
+		// Default input name is "input"
+		if !strings.Contains(input, "=") {
+			name = "input"
+			value = input
+		} else {
+			split := strings.SplitN(input, "=", 2)
+			name = split[0]
+			value = split[1]
+		}
+		if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
+			value = value[1 : len(value)-1]
+		}
+		keyVals[name] = value
+	}
+	return serving.NewExample(keyVals)
 }
