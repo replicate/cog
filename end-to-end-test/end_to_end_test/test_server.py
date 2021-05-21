@@ -1,16 +1,15 @@
 from glob import glob
 import os
 import subprocess
-
 import requests
 
 from .util import random_string, set_model_url, show_version, push_with_log
 
 
-def test_build_show_list_download_infer(cog_server_port, project_dir, tmpdir_factory):
+def test_server_end_to_end(cog_server, project_dir, tmpdir_factory):
     user = random_string(10)
     model_name = random_string(10)
-    model_url = f"http://localhost:{cog_server_port}/{user}/{model_name}"
+    model_url = f"http://localhost:{cog_server.port}/{user}/{model_name}"
 
     with open(os.path.join(project_dir, "cog.yaml")) as f:
         cog_yaml = f.read()
@@ -31,6 +30,7 @@ def test_build_show_list_download_infer(cog_server_port, project_dir, tmpdir_fac
     out, _ = subprocess.Popen(
         ["cog", "--model", model_url, "show", version_id], stdout=subprocess.PIPE
     ).communicate()
+
     lines = out.decode().splitlines()
     assert lines[0] == f"ID:       {version_id}"
     assert lines[1] == f"Model:    {user}/{model_name}"
@@ -42,6 +42,33 @@ def test_build_show_list_download_infer(cog_server_port, project_dir, tmpdir_fac
 
     out = show_version(model_url, version_id)
     assert out["config"]["examples"][2]["output"] == "@cog-example-output/output.02.txt"
+
+    # check that the image was uploaded to the registry
+    image_uri = out["images"][0]["uri"]
+    image_tag = image_uri.split("/")[1].split(":")[1]
+    tags_response = requests.get(
+        f"http://{cog_server.registry_host}/v2/{model_name}/tags/list"
+    ).json()
+    assert tags_response["tags"][0] == image_tag
+
+    # check that only the :latest version remains locally
+    local_tags = (
+        subprocess.Popen(
+            [
+                "docker",
+                "images",
+                f"{cog_server.registry_host}/{model_name}",
+                "--format",
+                "{{.Tag}}",
+            ],
+            stdout=subprocess.PIPE,
+        )
+        .communicate()[0]
+        .decode()
+        .strip()
+        .splitlines()
+    )
+    assert local_tags == ["latest"]
 
     # show without --model
     out, _ = subprocess.Popen(
@@ -84,7 +111,7 @@ def test_build_show_list_download_infer(cog_server_port, project_dir, tmpdir_fac
     with input_path.open("w") as f:
         f.write("input")
 
-    files_endpoint = f"http://localhost:{cog_server_port}/v1/models/{user}/{model_name}/versions/{version_id}/files"
+    files_endpoint = f"http://localhost:{cog_server.port}/v1/models/{user}/{model_name}/versions/{version_id}/files"
     assert requests.get(f"{files_endpoint}/cog.yaml").text == cog_yaml
     assert (
         requests.get(f"{files_endpoint}/cog-example-output/output.02.txt").text
@@ -112,10 +139,10 @@ def test_build_show_list_download_infer(cog_server_port, project_dir, tmpdir_fac
         assert f.read() == "foobazinput"
 
 
-def test_push_log(cog_server_port, project_dir):
+def test_push_log(cog_server, project_dir):
     user = random_string(10)
     model_name = random_string(10)
-    model_url = f"http://localhost:{cog_server_port}/{user}/{model_name}"
+    model_url = f"http://localhost:{cog_server.port}/{user}/{model_name}"
 
     set_model_url(model_url, project_dir)
     version_id = push_with_log(project_dir)

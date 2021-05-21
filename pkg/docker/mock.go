@@ -23,3 +23,7 @@ func (m *MockImageBuilder) Build(ctx context.Context, dir string, dockerfileCont
 func (m *MockImageBuilder) Push(ctx context.Context, tag string, logWriter logger.Logger) error {
 	return nil
 }
+
+func (m *MockImageBuilder) Cleanup(imageURI string) error {
+	return nil
+}
