@@ -511,7 +511,7 @@ def validate_and_convert_inputs(
 def run_model(model, inputs, cleanup_functions):
     result = model.run(**inputs)
     if isinstance(result, Path):
-        cleanup_functions.append(lambda: result.unlink())
+        cleanup_functions.append(result.unlink)
     return result
 
 
