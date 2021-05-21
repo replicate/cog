@@ -509,6 +509,10 @@ def validate_and_convert_inputs(
 
 
 def run_model(model, inputs, cleanup_functions):
+    """
+    Run the model on the inputs, and append resulting paths
+    to cleanup functions for removal.
+    """
     result = model.run(**inputs)
     if isinstance(result, Path):
         cleanup_functions.append(result.unlink)
