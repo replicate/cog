@@ -80,7 +80,11 @@ func (c *Client) UploadVersion(mod *model.Model, projectDir string) (*model.Vers
 		return nil, fmt.Errorf("You are not authorized to write to model %s. Did you run cog login?", mod.String())
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Server returned HTTP status %d", resp.StatusCode)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to read response body: %w", err)
+		}
+		return nil, fmt.Errorf("Push failed. %s", body)
 	}
 
 	var version *model.Version

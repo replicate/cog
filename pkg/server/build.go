@@ -29,26 +29,41 @@ func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {
 	user, name, _ := getModelVars(r)
 
 	console.Debug("Received build request")
-	streamLogger := logger.NewStreamLogger(r.Context(), w)
-	mod, err := s.ReceiveVersion(r, streamLogger, user, name)
-	if err != nil {
-		streamLogger.WriteError(err)
-		console.Error(err.Error())
-		return
-	}
-	streamLogger.WriteVersion(mod)
-}
-
-func (s *Server) ReceiveVersion(r *http.Request, logWriter logger.Logger, user string, name string) (*model.Version, error) {
 	dir, err := s.UnzipInputToTempDir(r, user, name)
 	if err != nil {
-		return nil, err
+		writeError(w, http.StatusInternalServerError, "Failed to unzip input directory")
+		console.Error(err.Error())
+		return
 	}
 
 	id, err := ComputeID(dir)
 	if err != nil {
-		return nil, err
+		writeError(w, http.StatusInternalServerError, "Failed to compute version ID")
+		console.Error(err.Error())
+		return
 	}
+	version, err := s.db.GetVersion(user, name, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to determine if version already exists")
+		console.Error(err.Error())
+		return
+	}
+	if version != nil {
+		writeError(w, http.StatusConflict, "Model version %s already exists", id)
+		return
+	}
+
+	logWriter := logger.NewStreamLogger(r.Context(), w)
+	mod, err := s.ReceiveVersion(dir, id, logWriter, user, name)
+	if err != nil {
+		logWriter.WriteError(err)
+		console.Error(err.Error())
+		return
+	}
+	logWriter.WriteVersion(mod)
+}
+
+func (s *Server) ReceiveVersion(dir string, id string, logWriter logger.Logger, user string, name string) (*model.Version, error) {
 	logWriter.Debugf("Received version %s", id)
 
 	config, err := s.ReadConfig(dir)
@@ -337,5 +352,18 @@ func (s *Server) SendBuildLogs(w http.ResponseWriter, r *http.Request) {
 		} else {
 			console.Warn("HTTP response writer can not be flushed")
 		}
+	}
+}
+
+func writeError(w http.ResponseWriter, statusCode int, format string, args ...interface{}) {
+	var message string
+	if len(args) > 0 {
+		message = fmt.Sprintf(format, args...)
+	} else {
+		message = format
+	}
+	w.WriteHeader(statusCode)
+	if _, err := w.Write([]byte(message)); err != nil {
+		console.Error("Failed to write to response writer")
 	}
 }
