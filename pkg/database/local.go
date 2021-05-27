@@ -247,6 +247,7 @@ func (db *LocalFileDatabase) readVersion(path string) (*model.Version, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Failed to open %s: %w", path, err)
 	}
+	defer file.Close()
 	version := new(model.Version)
 	if err := json.NewDecoder(file).Decode(version); err != nil {
 		return nil, fmt.Errorf("Failed to parse %s: %w", path, err)
@@ -259,6 +260,7 @@ func (db *LocalFileDatabase) readImage(path string) (*model.Image, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Failed to read %s: %w", path, err)
 	}
+	defer file.Close()
 	image := new(model.Image)
 	if err := json.NewDecoder(file).Decode(image); err != nil {
 		return nil, fmt.Errorf("Failed to parse %s: %w", path, err)
