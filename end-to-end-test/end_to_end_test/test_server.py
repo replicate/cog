@@ -124,3 +124,21 @@ def test_push_log(cog_server_port, project_dir):
     assert out["config"]["examples"][2]["output"] == "@cog-example-output/output.02.txt"
     assert out["images"][0]["arch"] == "cpu"
     assert out["images"][0]["run_arguments"]["text"]["type"] == "str"
+
+
+def test_repush(cog_server_port, project_dir):
+    user = random_string(10)
+    model_name = random_string(10)
+    model_url = f"http://localhost:{cog_server_port}/{user}/{model_name}"
+
+    set_model_url(model_url, project_dir)
+    version_id = push_with_log(project_dir)
+
+    _, err = subprocess.Popen(
+        ["cog", "push"],
+        cwd=project_dir,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    ).communicate()
+
+    assert f"Model version {version_id} already exists" in err.decode()
