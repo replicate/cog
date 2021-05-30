@@ -7,4 +7,5 @@
     "go.coverOnTestPackage": false,
     "go.lintTool": "golangci-lint",
     "go.formatTool": "goimports",
+    "go.testOnSave": true,
 }
