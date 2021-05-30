@@ -75,7 +75,7 @@ func (b *LocalImageBuilder) Build(ctx context.Context, dir string, dockerfileCon
 		return "", err
 	}
 
-	lastLogs, dockerTag := buildPipe(outputPipe, logWriter)
+	lastLogs, imageId := buildPipe(outputPipe, logWriter)
 
 	if err = cmd.Wait(); err != nil {
 		for _, logLine := range lastLogs {
@@ -84,16 +84,16 @@ func (b *LocalImageBuilder) Build(ctx context.Context, dir string, dockerfileCon
 		return "", err
 	}
 
-	logWriter.Infof("Successfully built %s", dockerTag)
+	logWriter.Infof("Successfully built %s", imageId)
 
 	if err != nil {
 		return "", err
 	}
 
-	tag = dockerTag
+	tag = imageId
 	if name != "" {
-		tag = fmt.Sprintf("%s/%s:%s", b.registry, strings.ToLower(name), dockerTag)
-		if err := b.tag(dockerTag, tag, logWriter); err != nil {
+		tag = fmt.Sprintf("%s/%s:%s", b.registry, strings.ToLower(name), imageId)
+		if err := b.tag(imageId, tag, logWriter); err != nil {
 			return "", err
 		}
 
@@ -101,7 +101,7 @@ func (b *LocalImageBuilder) Build(ctx context.Context, dir string, dockerfileCon
 		// all the cached layers. this means we only ever keep one copy of the image,
 		// and avoid using too much disk space.
 		latestTag := fmt.Sprintf("%s/%s:latest", b.registry, strings.ToLower(name))
-		if err := b.tag(dockerTag, latestTag, logWriter); err != nil {
+		if err := b.tag(imageId, latestTag, logWriter); err != nil {
 			return "", err
 		}
 	}
