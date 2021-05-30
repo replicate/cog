@@ -88,7 +88,6 @@ func (g *DockerfileGenerator) GenerateBase() (string, error) {
 		pythonRequirements,
 		pipInstalls,
 		installCog,
-		g.installHelperScripts(),
 		g.preInstall(),
 		g.workdir(),
 	}), "\n"), nil
@@ -101,6 +100,7 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 	}
 	return strings.Join(filterEmpty([]string{
 		base,
+		g.installHelperScripts(),
 		g.copyCode(),
 		g.command(),
 	}), "\n"), nil

@@ -125,14 +125,13 @@ func (c *Config) ValidateAndCompleteConfig() error {
 	// TODO(andreas): warn if user specifies tensorflow-gpu instead of tensorflow
 	// TODO(andreas): use pypi api to validate that all python versions exist
 
-	if c.Model == "" {
-		return fmt.Errorf("'model' must be set in cog.yaml")
-	}
-	if len(strings.Split(c.Model, ".py:")) != 2 {
-		return fmt.Errorf("'model' in cog.yaml must be in the form 'model.py:ModelClass")
-	}
-	if strings.Contains(c.Model, "/") {
-		return fmt.Errorf("'model' in cog.yaml cannot be in a subdirectory. It needs to be in the same directory as cog.yaml, in the form 'model.py:ModelClass")
+	if c.Model != "" {
+		if len(strings.Split(c.Model, ".py:")) != 2 {
+			return fmt.Errorf("'model' in cog.yaml must be in the form 'model.py:ModelClass")
+		}
+		if strings.Contains(c.Model, "/") {
+			return fmt.Errorf("'model' in cog.yaml cannot be in a subdirectory. It needs to be in the same directory as cog.yaml, in the form 'model.py:ModelClass")
+		}
 	}
 
 	if err := c.validatePythonPackagesHaveVersions(); err != nil {

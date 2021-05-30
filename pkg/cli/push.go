@@ -2,14 +2,11 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"path"
 	"sync"
 
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/client"
-	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -45,13 +42,13 @@ func push(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	projectDir, err := getProjectDir()
+	config, projectDir, err := getConfig()
 	if err != nil {
 		return err
 	}
 
-	if _, err := os.Stat(path.Join(projectDir, global.ConfigFilename)); os.IsNotExist(err) {
-		return fmt.Errorf("%s does not exist in %s. Are you in the right directory?", global.ConfigFilename, projectDir)
+	if config.Model == "" {
+		return fmt.Errorf("To push a model, you must set the 'model' option in cog.yaml.")
 	}
 
 	console.Infof("Uploading %s to %s", projectDir, model)
