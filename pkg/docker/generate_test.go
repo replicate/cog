@@ -69,8 +69,9 @@ model: predict.py:Model
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
-` + testInstallPython("3.8") + testInstallCog(gen.generatedPaths) + "\n" + testHelperScripts() + `
+` + testInstallPython("3.8") + testInstallCog(gen.generatedPaths) + `
 WORKDIR /code
+` + testHelperScripts() + `
 RUN ### --> Copying code
 COPY . /code
 CMD /usr/bin/cog-http-server`
@@ -83,8 +84,9 @@ CMD /usr/bin/cog-http-server`
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
-` + testInstallPython("3.8") + testInstallCog(gen.generatedPaths) + "\n" + testHelperScripts() + `
+` + testInstallPython("3.8") + testInstallCog(gen.generatedPaths) + `
 WORKDIR /code
+` + testHelperScripts() + `
 RUN ### --> Copying code
 COPY . /code
 CMD /usr/bin/cog-http-server`
@@ -126,8 +128,9 @@ COPY my-requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
 RUN ### --> Installing Python packages
 RUN pip install -f https://download.pytorch.org/whl/torch_stable.html   torch==1.5.1+cpu pandas==1.2.0.12
-` + testInstallCog(gen.generatedPaths) + "\n" + testHelperScripts() + `
+` + testInstallCog(gen.generatedPaths) + `
 WORKDIR /code
+` + testHelperScripts() + `
 RUN ### --> Copying code
 COPY . /code
 CMD /usr/bin/cog-http-server`
@@ -147,8 +150,9 @@ COPY my-requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
 RUN ### --> Installing Python packages
 RUN pip install   torch==1.5.1 pandas==1.2.0.12
-` + testInstallCog(gen.generatedPaths) + "\n" + testHelperScripts() + `
+` + testInstallCog(gen.generatedPaths) + `
 WORKDIR /code
+` + testHelperScripts() + `
 RUN ### --> Copying code
 COPY . /code
 CMD /usr/bin/cog-http-server`

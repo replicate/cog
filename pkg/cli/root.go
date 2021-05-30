@@ -104,13 +104,6 @@ func addProjectDirFlag(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&projectDirFlag, "project-dir", "D", "", "Project directory, defaults to current working directory")
 }
 
-func getProjectDir() (string, error) {
-	if projectDirFlag == "" {
-		return os.Getwd()
-	}
-	return projectDirFlag, nil
-}
-
 func getConfig() (*model.Config, string, error) {
 	projectDir, err := os.Getwd()
 	if err != nil {
