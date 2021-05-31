@@ -60,7 +60,7 @@ func (wh *WebHook) run(user string, name string, id string, version *model.Versi
 		values["memory_usage"] = []string{strconv.FormatUint(image.TestStats.MemoryUsage, 10)}
 	}
 
-	logWriter.Infof("Posting to web hook %s", wh.url.Host)
+	logWriter.Debugf("Posting to web hook %s", wh.url.Host)
 
 	req, err := http.PostForm(wh.url.String(), values)
 	if err != nil {

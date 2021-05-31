@@ -49,7 +49,7 @@ func (s *Server) ReceiveFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if version != nil {
-		writeError(w, http.StatusConflict, "Model version %s already exists", id)
+		writeError(w, http.StatusConflict, "Version %s already exists", id)
 		return
 	}
 
@@ -111,7 +111,7 @@ func (s *Server) ReceiveVersion(dir string, id string, logWriter logger.Logger, 
 			console.Errorf("Failed to remove model version directory: %v", err)
 		}
 	}()
-	logWriter.WriteStatus("Inserting into database")
+	logWriter.Debug("Inserting into database")
 	if err := s.db.InsertVersion(user, name, id, version); err != nil {
 		return nil, fmt.Errorf("Failed to insert into database: %w", err)
 	}

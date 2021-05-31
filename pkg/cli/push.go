@@ -58,11 +58,19 @@ func push(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-
+	fmt.Println()
 	fmt.Printf("Successfully uploaded version %s\n", version.ID)
+	fmt.Println()
 
 	if log {
 		return pushLog(model, version)
+	} else {
+		for _, arch := range version.Config.Environment.Architectures {
+			fmt.Printf("Docker image for %s building in the background... See the status with:\n", arch)
+			fmt.Printf("  cog build log %s\n", version.BuildIDs[arch])
+			fmt.Println()
+		}
+
 	}
 
 	return nil

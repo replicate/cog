@@ -43,6 +43,8 @@ func (c *Client) UploadVersion(mod *model.Model, projectDir string) (*model.Vers
 		-1,
 		"uploading",
 	)
+	// HACK: make sure there's always a new line. progress bar doesn't always close in time.
+	defer fmt.Println()
 
 	zipReader, zipWriter := io.Pipe()
 
@@ -114,11 +116,11 @@ func (c *Client) UploadVersion(mod *model.Model, projectDir string) (*model.Vers
 		case logger.MessageTypeError:
 			return nil, fmt.Errorf("Error: %s", msg.Text)
 		case logger.MessageTypeLogLine:
-			console.Info(msg.Text)
+			console.Debug(msg.Text)
 		case logger.MessageTypeDebugLine:
 			console.Debug(msg.Text)
 		case logger.MessageTypeStatus:
-			console.Info(msg.Text)
+			console.Debug(msg.Text)
 		case logger.MessageTypeVersion:
 			version = msg.Version
 		}
