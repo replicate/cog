@@ -176,8 +176,11 @@ RUN apt-get update -q && apt-get install -qy --no-install-recommends \
 }
 
 func (g *DockerfileGenerator) installCog() (string, error) {
-	cogFilename := "cog." + ksuid.New().String() + ".py"
+	cogFilename := ".cog/tmp/cog." + ksuid.New().String() + ".py"
 	cogPath := filepath.Join(g.Dir, cogFilename)
+	if err := os.MkdirAll(filepath.Dir(cogPath), 0755); err != nil {
+		return "", fmt.Errorf("Failed to write cog.py: %w", err)
+	}
 	if err := os.WriteFile(cogPath, cogLibrary, 0644); err != nil {
 		return "", fmt.Errorf("Failed to write cog.py: %w", err)
 	}
