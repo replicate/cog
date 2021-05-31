@@ -59,7 +59,16 @@ def push_with_log(project_dir):
         stdout=subprocess.PIPE,
     ).communicate()
 
-    assert "Successfully uploaded version" in out.decode()
+    # HACK(bfirsh): try again due to intermittent error
+    # https://github.com/replicate/cog/issues/103
+    if "Successfully uploaded version" not in out.decode():
+        out, _ = subprocess.Popen(
+            ["cog", "push", "--log"],
+            cwd=project_dir,
+            stdout=subprocess.PIPE,
+        ).communicate()
+        assert "Successfully uploaded version" in out.decode()
+
     version_id = re.search("Successfully uploaded version (.+)", out.decode()).group(1)
 
     return version_id
