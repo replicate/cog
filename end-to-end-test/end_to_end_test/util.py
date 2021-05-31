@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import json
 import subprocess
 import random
+import re
 import string
 import socket
 from typing import List, Optional
@@ -58,10 +59,8 @@ def push_with_log(project_dir):
         stdout=subprocess.PIPE,
     ).communicate()
 
-    assert out.decode().startswith("Successfully uploaded version "), (
-        out.decode() + " doesn't start with 'Successfully uploaded version'"
-    )
-    version_id = out.decode().strip().split("Successfully uploaded version ")[1]
+    assert "Successfully uploaded version" in out.decode()
+    version_id = re.search("Successfully uploaded version (.+)", out.decode()).group(1)
 
     return version_id
 

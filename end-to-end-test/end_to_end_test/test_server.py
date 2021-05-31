@@ -16,16 +16,7 @@ def test_server_end_to_end(cog_server, project_dir, tmpdir_factory):
 
     set_model_url(model_url, project_dir)
 
-    out, _ = subprocess.Popen(
-        ["cog", "push"],
-        cwd=project_dir,
-        stdout=subprocess.PIPE,
-    ).communicate()
-
-    assert out.decode().startswith("Successfully uploaded version "), (
-        out.decode() + " doesn't start with 'Successfully uploaded version'"
-    )
-    version_id = out.decode().strip().split("Successfully uploaded version ")[1]
+    version_id = push_with_log(project_dir)
 
     out, _ = subprocess.Popen(
         ["cog", "--model", model_url, "show", version_id], stdout=subprocess.PIPE
