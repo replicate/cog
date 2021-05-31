@@ -71,7 +71,7 @@ func (c *Client) UploadVersion(mod *model.Model, projectDir string) (*model.Vers
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() // Also closed at end of function for error handling
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("Model does not exist: %s", mod.String())
@@ -127,6 +127,9 @@ func (c *Client) UploadVersion(mod *model.Model, projectDir string) (*model.Vers
 	if version == nil {
 		return nil, fmt.Errorf("Failed to build version")
 	}
+	if err := resp.Body.Close(); err != nil {
+		return nil, fmt.Errorf("Error closing response writer: %w", err)
+	}
 	return version, nil
 }
 
@@ -140,7 +143,7 @@ func (c *Client) getModCacheHashes(mod *model.Model) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() // Also closed at end of function for error handling
 	if resp.StatusCode == http.StatusNotFound {
 		return []string{}, nil
 	}
@@ -152,13 +155,16 @@ func (c *Client) getModCacheHashes(mod *model.Model) ([]string, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&hashes); err != nil {
 		return nil, err
 	}
+	if err := resp.Body.Close(); err != nil {
+		return nil, fmt.Errorf("Error closing response writer: %w", err)
+	}
 	return hashes, nil
 }
 
 func uploadFile(req *http.Request, key, filename string, file io.ReadCloser, body io.WriteCloser) error {
 	mwriter := multipart.NewWriter(body)
 	req.Header.Add("Content-Type", mwriter.FormDataContentType())
-	defer mwriter.Close()
+	defer mwriter.Close() // Also closed at end of function for error handling
 
 	w, err := mwriter.CreateFormFile(key, filename)
 	if err != nil {
