@@ -13,7 +13,7 @@ import (
 
 func testInstallCog(generatedPaths []string) string {
 	return fmt.Sprintf(`RUN ### --> Installing Cog
-RUN pip install flask requests redis
+RUN pip install flask==2.0.1 requests==2.25.1 redis==3.5.3
 ENV PYTHONPATH=/usr/local/lib/cog
 RUN mkdir -p /usr/local/lib/cog
 COPY .cog/tmp/%s /usr/local/lib/cog/cog.py`, filepath.Base(generatedPaths[0]))
