@@ -10,18 +10,18 @@ environment:
   python_version: "3.8"
   python_requirements: "requirements.txt"
   system_packages:
-  - "ffmpeg"
-  - "libavcodec-dev"
+    - "ffmpeg"
+    - "libavcodec-dev"
 ```
 
 ## `model`
 
-The pointer to the `cog.Model` object in your code, which defines how your model is loaded and how inferences are run on it.
+The pointer to the `cog.Model` object in your code, which defines how predictions are run on your model.
 
 For example:
 
 ```yaml
-model: "model.py:HotdogDetector"
+model: "predict.py:HotdogDetector"
 ```
 
 See [the Python API documentation for more information](python.md).
@@ -59,6 +59,6 @@ A list of Ubuntu APT packages to install. For example:
 ```yaml
 environment:
   system_packages:
-  - "ffmpeg"
-  - "libavcodec-dev"
+    - "ffmpeg"
+    - "libavcodec-dev"
 ```

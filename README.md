@@ -14,7 +14,7 @@ Cog does a few things to make your life easier:
 
 ## How does it work?
 
-1. Define how inferences are run on your model:
+1. Define how predictions are run on your model:
 
 ```python
 import cog
@@ -58,12 +58,12 @@ This has:
 - Pushed this ZIP file up to a central server so it never gets lost and can be run by anyone.
 - Built two Docker images (one for CPU and one for GPU) that contains the model in a reproducible environment, with the correct versions of Python, your dependencies, CUDA, etc.
 
-Now, anyone who has access to this server can run inferences on this model:
+Now, anyone who has access to this server can run predictions on this model:
 
 ```
-$ cog infer b6a2f8a2d2ff -i @input.png -o @output.png
+$ cog predict b6a2f8a2d2ff -i @input.png -o @output.png
 --> Pulling GPU Docker image for b6a2f8a2d2ff... done
---> Running inference... done
+--> Running prediction... done
 --> Written output to output.png
 ```
 
@@ -77,7 +77,7 @@ Docker image (CPU):  registry.hooli.net/colorization:b6a2f8a2d2ff-cpu
 
 $ docker run -d -p 5000:5000 --gpus all registry.hooli.net/colorization:b6a2f8a2d2ff-gpu
 
-$ curl http://localhost:5000/infer -X POST -F input=@image.png
+$ curl http://localhost:5000/predict -X POST -F input=@image.png
 ```
 
 ## Why are we building this?

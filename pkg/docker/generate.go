@@ -273,7 +273,7 @@ func (g *DockerfileGenerator) copyCode() string {
 }
 
 func (g *DockerfileGenerator) command() string {
-	// TODO: handle infer scripts in subdirectories
+	// TODO: handle predict scripts in subdirectories
 	// TODO: check this actually exists
 	return `CMD /usr/bin/cog-http-server`
 }

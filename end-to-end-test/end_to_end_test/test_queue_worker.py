@@ -32,7 +32,7 @@ def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory):
     upload_url = f"http://{local_ip}:{controller_port}/upload"
     redis_host = local_ip
     worker_name = "test-worker"
-    infer_queue_name = "infer-queue"
+    predict_queue_name = "predict-queue"
     response_queue_name = "response-queue"
 
     wait_for_port(redis_host, redis_port)
@@ -46,22 +46,22 @@ def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory):
             "cog-redis-queue-worker",
             redis_host,
             str(redis_port),
-            infer_queue_name,
+            predict_queue_name,
             upload_url,
             worker_name,
         ],
     ):
         redis_client.xgroup_create(
-            mkstream=True, groupname=infer_queue_name, name=infer_queue_name, id="$"
+            mkstream=True, groupname=predict_queue_name, name=predict_queue_name, id="$"
         )
 
-        infer_id = random_string(10)
+        predict_id = random_string(10)
         redis_client.xadd(
-            name=infer_queue_name,
+            name=predict_queue_name,
             fields={
                 "value": json.dumps(
                     {
-                        "id": infer_id,
+                        "id": predict_id,
                         "inputs": {
                             "text": {"value": "bar"},
                             "path": {
@@ -80,13 +80,13 @@ def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory):
         response = json.loads(redis_client.brpop(response_queue_name)[1])["value"]
         assert response == "foobartest"
 
-        infer_id = random_string(10)
+        predict_id = random_string(10)
         redis_client.xadd(
-            name=infer_queue_name,
+            name=predict_queue_name,
             fields={
                 "value": json.dumps(
                     {
-                        "id": infer_id,
+                        "id": predict_id,
                         "inputs": {
                             "text": {"value": "bar"},
                             "output_file": {"value": "true"},

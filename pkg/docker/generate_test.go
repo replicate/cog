@@ -56,7 +56,7 @@ func TestGenerateEmpty(t *testing.T) {
 	require.NoError(t, err)
 
 	conf, err := model.ConfigFromYAML([]byte(`
-model: infer.py:Model
+model: predict.py:Model
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndCompleteConfig())
@@ -106,7 +106,7 @@ environment:
   system_packages:
     - ffmpeg
     - cowsay
-model: infer.py:Model
+model: predict.py:Model
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndCompleteConfig())
@@ -159,10 +159,10 @@ CMD /usr/bin/cog-http-server`
 
 func testHelperScripts() string {
 	return `
-RUN echo '#!/usr/bin/env python\nimport sys\nimport cog\nimport os\nos.chdir("/code")\nsys.path.append("/code")\nfrom infer import Model\ncog.HTTPServer(Model()).start_server()' > /usr/bin/cog-http-server
+RUN echo '#!/usr/bin/env python\nimport sys\nimport cog\nimport os\nos.chdir("/code")\nsys.path.append("/code")\nfrom predict import Model\ncog.HTTPServer(Model()).start_server()' > /usr/bin/cog-http-server
 RUN chmod +x /usr/bin/cog-http-server
-RUN echo '#!/usr/bin/env python\nimport sys\nimport cog\nimport os\nos.chdir("/code")\nsys.path.append("/code")\nfrom infer import Model\ncog.AIPlatformPredictionServer(Model()).start_server()' > /usr/bin/cog-ai-platform-prediction-server
+RUN echo '#!/usr/bin/env python\nimport sys\nimport cog\nimport os\nos.chdir("/code")\nsys.path.append("/code")\nfrom predict import Model\ncog.AIPlatformPredictionServer(Model()).start_server()' > /usr/bin/cog-ai-platform-prediction-server
 RUN chmod +x /usr/bin/cog-ai-platform-prediction-server
-RUN echo '#!/usr/bin/env python\nimport sys\nimport cog\nimport os\nos.chdir("/code")\nsys.path.append("/code")\nfrom infer import Model\ncog.RedisQueueWorker(Model(), redis_host=sys.argv[1], redis_port=sys.argv[2], input_queue=sys.argv[3], upload_url=sys.argv[4], consumer_id=sys.argv[5]).start()' > /usr/bin/cog-redis-queue-worker
+RUN echo '#!/usr/bin/env python\nimport sys\nimport cog\nimport os\nos.chdir("/code")\nsys.path.append("/code")\nfrom predict import Model\ncog.RedisQueueWorker(Model(), redis_host=sys.argv[1], redis_port=sys.argv[2], input_queue=sys.argv[3], upload_url=sys.argv[4], consumer_id=sys.argv[5]).start()' > /usr/bin/cog-redis-queue-worker
 RUN chmod +x /usr/bin/cog-redis-queue-worker`
 }

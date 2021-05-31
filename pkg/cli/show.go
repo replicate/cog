@@ -72,7 +72,7 @@ func showTable(mod *model.Model, version *server.APIVersion) error {
 
 	fmt.Println()
 
-	fmt.Println("Inference arguments:")
+	fmt.Println("Input types:")
 	if len(version.Images) > 0 && version.Images[0] != nil && version.Images[0].RunArguments != nil && len(version.Images[0].RunArguments) > 0 {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		for name, arg := range version.Images[0].RunArguments {
@@ -97,7 +97,7 @@ func showTable(mod *model.Model, version *server.APIVersion) error {
 		}
 		w.Flush()
 	} else {
-		fmt.Println("  [No arguments]")
+		fmt.Println("  [No inputs]")
 	}
 	fmt.Println()
 

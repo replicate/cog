@@ -26,7 +26,7 @@ As much as possible, this is attempting to follow the [Standard Go Project Layou
 - `pkg/docker/` - Various interfaces with Docker for building and running containers.
 - `pkg/model/` - Models, versions, and configs (`cog.yaml`).
 - `pkg/server/` - Server for storing data and building Docker images.
-- `pkg/serving/` - Runs inferences to test models.
+- `pkg/serving/` - Runs predictions to test models.
 - `pkg/settings/` - Manages `.cog` directory in model directories and `.config/cog/` directory for user settings.
 - `pkg/storage/` - Used by the server to store models.
 - `pkg/util/` - Various packages that aren't part of Cog. They could reasonably be separate re-usable projects.

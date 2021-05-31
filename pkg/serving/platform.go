@@ -18,7 +18,7 @@ type Platform interface {
 }
 
 type Deployment interface {
-	RunInference(ctx context.Context, input *Example, logWriter logger.Logger) (*Result, error)
+	RunPrediction(ctx context.Context, input *Example, logWriter logger.Logger) (*Result, error)
 	Help(ctx context.Context, logWriter logger.Logger) (*HelpResponse, error)
 	Undeploy() error
 }

@@ -33,7 +33,7 @@ type MockServingDeployment struct {
 	platform *MockServingPlatform
 }
 
-func (d *MockServingDeployment) RunInference(ctx context.Context, input *Example, logWriter logger.Logger) (*Result, error) {
+func (d *MockServingDeployment) RunPrediction(ctx context.Context, input *Example, logWriter logger.Logger) (*Result, error) {
 	return d.platform.run(input), nil
 }
 

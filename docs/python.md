@@ -18,11 +18,11 @@ See the [cog-examples](https://github.com/replicate/cog-examples) repo for more 
 
 ## `Model.setup()`
 
-Set up the model for inference. This is where you load trained models, instantiate data transformations, etc., so that as little work as possible has to be done during the actual inference call.
+Set up the model for prediction. This is where you load trained models, instantiate data transformations, etc., so as little work as possible has to be done during the actual prediction call.
 
 ## `Model.run(**kwargs)`
 
-Run a single inference. This is where you call the model that was loaded during `setup()`, but you may also want to add pre- and post-processing code here.
+Run a single prediction. This is where you call the model that was loaded during `setup()`, but you may also want to add pre- and post-processing code here.
 
 The `run()` function takes an arbitrary list of named arguments, where each argument name must correspond to a `@cog.input()` annotation.
 
@@ -35,11 +35,12 @@ If the output is a `pathlib.Path` object, that will be returned by the built-in 
 The `@cog.input()` annotation describes a single input to the `run()` function. The `name` must correspond to an argument name in `run()`.
 
 `type` can be one of:
-* `str`
-* `int`
-* `float`
-* `bool`
-* `pathlib.Path`
+
+- `str`
+- `int`
+- `float`
+- `bool`
+- `pathlib.Path`
 
 We are working on support for other types of input, but for now we recommend using base-64 encoded strings or `pathlib.Path`s for more complex inputs.
 
