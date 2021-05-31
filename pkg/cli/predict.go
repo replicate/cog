@@ -98,7 +98,7 @@ func predictIndividualInputs(deployment serving.Deployment, inputs []string, out
 	// Write to stdout
 	if outputPath == "" {
 		// Is it something we can sensibly write to stdout?
-		if output.MimeType == "plain/text" {
+		if output.MimeType == "text/plain" {
 			_, err := io.Copy(os.Stdout, output.Buffer)
 			return err
 		} else if output.MimeType == "application/json" {
