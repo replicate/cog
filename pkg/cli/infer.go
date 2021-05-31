@@ -61,9 +61,9 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	// TODO(bfirsh): differentiate between failed builds and in-progress builds, and probably block here if there is an in-progress build
-	image := model.ImageForArch(version.Images, benchmarkArch)
+	image := model.ImageForArch(version.Images, inferArch)
 	if image == nil {
-		return fmt.Errorf("No %s image has been built for %s:%s", benchmarkArch, mod.String(), id)
+		return fmt.Errorf("No %s image has been built for %s:%s", inferArch, mod.String(), id)
 	}
 
 	servingPlatform, err := serving.NewLocalDockerPlatform()
