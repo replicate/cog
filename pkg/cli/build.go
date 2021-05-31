@@ -8,6 +8,8 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
+var buildNoFollow bool
+
 func newBuildCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "build",
@@ -30,7 +32,7 @@ func newBuildLogCommand() *cobra.Command {
 
 	addModelFlag(cmd)
 
-	cmd.Flags().BoolP("follow", "f", false, "Follow streaming logs")
+	cmd.Flags().BoolVarP(&buildNoFollow, "no-follow", "", false, "Exit immediately instead of waiting until output finishes")
 	// TODO(andreas): tail
 
 	return cmd
@@ -38,10 +40,6 @@ func newBuildLogCommand() *cobra.Command {
 
 func showBuildLogs(cmd *cobra.Command, args []string) error {
 	buildID := args[0]
-	follow, err := cmd.Flags().GetBool("follow")
-	if err != nil {
-		return err
-	}
 
 	model, err := getModel()
 	if err != nil {
@@ -49,7 +47,8 @@ func showBuildLogs(cmd *cobra.Command, args []string) error {
 	}
 
 	c := client.NewClient()
-	logChan, err := c.GetBuildLogs(model, buildID, follow)
+	// FIXME(bfirsh): why isn't this a logger.Logger?
+	logChan, err := c.GetBuildLogs(model, buildID, !buildNoFollow)
 	if err != nil {
 		return err
 	}
