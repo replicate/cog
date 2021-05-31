@@ -51,7 +51,7 @@ func NewLocalDockerPlatform() (*LocalDockerPlatform, error) {
 func (p *LocalDockerPlatform) Deploy(ctx context.Context, imageTag string, useGPU bool, logWriter logger.Logger) (Deployment, error) {
 	// TODO(andreas): output container logs
 
-	logWriter.Infof("Deploying container %s", imageTag)
+	logWriter.Debugf("Deploying container %s", imageTag)
 
 	if !docker.Exists(imageTag, logWriter) {
 		if err := docker.Pull(imageTag, logWriter); err != nil {
@@ -106,6 +106,15 @@ func (p *LocalDockerPlatform) Deploy(ctx context.Context, imageTag string, useGP
 			DeviceRequests: deviceRequests,
 		},
 	}
+	// TODO(bfirsh): support mounting local code
+	// if mountCodePath != "" {
+	// 	hostConfig.Mounts = []mount.Mount{{
+	// 		Type:     mount.TypeBind,
+	// 		Source:   mountCodePath,
+	// 		Target:   "/code",
+	// 		ReadOnly: false,
+	// 	}}
+	// }
 	resp, err := p.client.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create Docker container for image %s: %w", imageTag, err)
@@ -134,7 +143,7 @@ func (p *LocalDockerPlatform) waitForContainerReady(ctx context.Context, hostPor
 	url := fmt.Sprintf("http://localhost:%d/ping", hostPort)
 
 	start := time.Now()
-	logWriter.Info("Waiting for model to become accessible")
+	logWriter.Debug("Waiting for model to become accessible")
 	for {
 		now := time.Now()
 		if now.Sub(start) > global.StartupTimeout {
@@ -158,7 +167,7 @@ func (p *LocalDockerPlatform) waitForContainerReady(ctx context.Context, hostPor
 		if resp.StatusCode != http.StatusOK {
 			continue
 		}
-		logWriter.Info("Got successful ping response from container")
+		logWriter.Debug("Got successful ping response from container")
 		return nil
 	}
 }
