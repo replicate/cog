@@ -159,4 +159,4 @@ def test_repush(cog_server, project_dir):
         stderr=subprocess.PIPE,
     ).communicate()
 
-    assert f"Model version {version_id} already exists" in err.decode()
+    assert f"{version_id} already exists" in err.decode()
