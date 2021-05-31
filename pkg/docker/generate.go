@@ -186,7 +186,7 @@ func (g *DockerfileGenerator) installCog() (string, error) {
 	}
 	g.generatedPaths = append(g.generatedPaths, cogPath)
 	return g.sectionLabel(SectionInstallingCog) +
-		fmt.Sprintf(`RUN pip install flask requests redis
+		fmt.Sprintf(`RUN pip install flask==2.0.1 requests==2.25.1 redis==3.5.3
 ENV PYTHONPATH=/usr/local/lib/cog
 RUN mkdir -p /usr/local/lib/cog
 COPY %s /usr/local/lib/cog/cog.py`, cogFilename), nil
