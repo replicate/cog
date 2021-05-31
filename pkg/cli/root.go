@@ -48,7 +48,6 @@ func NewRootCommand() (*cobra.Command, error) {
 		newModelCommand(),
 		newDownloadCommand(),
 		newListCommand(),
-		newBenchmarkCommand(),
 		newDeleteCommand(),
 		newLoginCommand(),
 	)
