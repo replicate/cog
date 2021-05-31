@@ -24,7 +24,7 @@ This does the following:
 - Validates and completes config (e.g. sets correct CUDA version for PyTorch)
 - Saves the model to storage (local files)
 - Builds and pushes Docker images to registry
-- Tests that the model works by running the Docker image locally and performing an inference
+- Tests that the model works by running the Docker image locally and performing a prediction
 - Inserts model metadata into database (local files)
 
 ### GET `/v1/models/<user>/<name>/versions/<id>`
@@ -47,7 +47,7 @@ $ curl localhost:8080/v1/models/andreas/my-model/versions/c43b98b37776656e6b3dac
         "cpu"
       ],
     },
-    "model": "infer.py:Model"
+    "model": "predict.py:Model"
   },
   "images": [
     {
@@ -84,5 +84,5 @@ $ curl localhost:8080/v1/models/andreas/my-model/versions/c43b98b37776656e6b3dac
 $ unzip version.zip
 Archive:  version.zip
   inflating: cog.yaml
-  inflating: infer.py
+  inflating: predict.py
 ```

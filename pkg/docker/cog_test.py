@@ -30,7 +30,7 @@ def test_no_input():
             return self.foo + "bar"
 
     client = make_client(Model())
-    resp = client.post("/infer")
+    resp = client.post("/predict")
     assert resp.status_code == 200
     assert resp.data == b"foobar"
 
@@ -45,7 +45,7 @@ def test_good_str_input():
             return self.foo + text
 
     client = make_client(Model())
-    resp = client.post("/infer", data={"text": "baz"})
+    resp = client.post("/predict", data={"text": "baz"})
     assert resp.status_code == 200
     assert resp.data == b"foobaz"
 
@@ -60,7 +60,7 @@ def test_extranous_input_keys():
             return self.foo + text
 
     client = make_client(Model())
-    resp = client.post("/infer", data={"text": "baz", "text2": "qux"})
+    resp = client.post("/predict", data={"text": "baz", "text2": "qux"})
     assert resp.status_code == 400
 
 
@@ -88,10 +88,10 @@ def test_good_int_input():
             return self.foo + str(num2)
 
     client = make_client(Model())
-    resp = client.post("/infer", data={"num": 3})
+    resp = client.post("/predict", data={"num": 3})
     assert resp.status_code == 200
     assert resp.data == b"foo27"
-    resp = client.post("/infer", data={"num": -3})
+    resp = client.post("/predict", data={"num": -3})
     assert resp.status_code == 200
     assert resp.data == b"foo-27"
 
@@ -107,7 +107,7 @@ def test_bad_int_input():
             return self.foo + str(num2)
 
     client = make_client(Model())
-    resp = client.post("/infer", data={"num": "foo"})
+    resp = client.post("/predict", data={"num": "foo"})
     assert resp.status_code == 400
 
 
@@ -122,10 +122,10 @@ def test_default_int_input():
             return self.foo + str(num2)
 
     client = make_client(Model())
-    resp = client.post("/infer", data={"num": 3})
+    resp = client.post("/predict", data={"num": 3})
     assert resp.status_code == 200
     assert resp.data == b"foo9"
-    resp = client.post("/infer")
+    resp = client.post("/predict")
     assert resp.status_code == 200
     assert resp.data == b"foo25"
 
@@ -141,13 +141,13 @@ def test_good_float_input():
             return self.foo + str(num2)
 
     client = make_client(Model())
-    resp = client.post("/infer", data={"num": 3})
+    resp = client.post("/predict", data={"num": 3})
     assert resp.status_code == 200
     assert resp.data == b"foo27.0"
-    resp = client.post("/infer", data={"num": 3.5})
+    resp = client.post("/predict", data={"num": 3.5})
     assert resp.status_code == 200
     assert resp.data == b"foo42.875"
-    resp = client.post("/infer", data={"num": -3.5})
+    resp = client.post("/predict", data={"num": -3.5})
     assert resp.status_code == 200
     assert resp.data == b"foo-42.875"
 
@@ -163,7 +163,7 @@ def test_bad_float_input():
             return self.foo + str(num2)
 
     client = make_client(Model())
-    resp = client.post("/infer", data={"num": "foo"})
+    resp = client.post("/predict", data={"num": "foo"})
     assert resp.status_code == 400
 
 
@@ -180,10 +180,10 @@ def test_good_bool_input():
                 return self.foo + "no"
 
     client = make_client(Model())
-    resp = client.post("/infer", data={"flag": True})
+    resp = client.post("/predict", data={"flag": True})
     assert resp.status_code == 200
     assert resp.data == b"fooyes"
-    resp = client.post("/infer", data={"flag": False})
+    resp = client.post("/predict", data={"flag": False})
     assert resp.status_code == 200
     assert resp.data == b"foono"
 
@@ -201,7 +201,7 @@ def test_bad_float_input():
                 return self.foo + "no"
 
     client = make_client(Model())
-    resp = client.post("/infer", data={"flag": "foo"})
+    resp = client.post("/predict", data={"flag": "foo"})
     assert resp.status_code == 400
 
 
@@ -217,14 +217,14 @@ def test_min_max():
             return num1 + num2 + num3
 
     client = make_client(Model())
-    resp = client.post("/infer", data={"num1": 3, "num2": -4, "num3": -4})
+    resp = client.post("/predict", data={"num1": 3, "num2": -4, "num3": -4})
     assert resp.status_code == 200
     assert resp.data == b"-5.0\n"
-    resp = client.post("/infer", data={"num1": 2, "num2": -4, "num3": -4})
+    resp = client.post("/predict", data={"num1": 2, "num2": -4, "num3": -4})
     assert resp.status_code == 400
-    resp = client.post("/infer", data={"num1": 3, "num2": -4.1, "num3": -4})
+    resp = client.post("/predict", data={"num1": 3, "num2": -4.1, "num3": -4})
     assert resp.status_code == 400
-    resp = client.post("/infer", data={"num1": 3, "num2": -4, "num3": -3})
+    resp = client.post("/predict", data={"num1": 3, "num2": -4, "num3": -3})
     assert resp.status_code == 400
 
 
@@ -239,7 +239,7 @@ def test_good_options():
             return text + ("a" * num)
 
     client = make_client(Model())
-    resp = client.post("/infer", data={"text": "foo", "num": 2})
+    resp = client.post("/predict", data={"text": "foo", "num": 2})
     assert resp.status_code == 200
     assert resp.data == b"fooaa"
 
@@ -287,9 +287,9 @@ def test_bad_options():
             return text + ("a" * num)
 
     client = make_client(Model())
-    resp = client.post("/infer", data={"text": "baz", "num": 2})
+    resp = client.post("/predict", data={"text": "baz", "num": 2})
     assert resp.status_code == 400
-    resp = client.post("/infer", data={"text": "bar", "num": 4})
+    resp = client.post("/predict", data={"text": "bar", "num": 4})
     assert resp.status_code == 400
 
 
@@ -306,7 +306,7 @@ def test_good_path_input():
     client = make_client(Model())
     path_data = (io.BytesIO(b"bar"), "foo.txt")
     resp = client.post(
-        "/infer", data={"path": path_data}, content_type="multipart/form-data"
+        "/predict", data={"path": path_data}, content_type="multipart/form-data"
     )
     assert resp.status_code == 200
     assert resp.data == b"foo bar foo.txt"
@@ -323,7 +323,7 @@ def test_bad_path_input():
                 return self.foo + " " + f.read() + " " + os.path.basename(path)
 
     client = make_client(Model())
-    resp = client.post("/infer", data={"path": "bar"})
+    resp = client.post("/predict", data={"path": "bar"})
     assert resp.status_code == 400
 
 
@@ -342,11 +342,11 @@ def test_default_path_input():
     client = make_client(Model())
     path_data = (io.BytesIO(b"bar"), "foo.txt")
     resp = client.post(
-        "/infer", data={"path": path_data}, content_type="multipart/form-data"
+        "/predict", data={"path": path_data}, content_type="multipart/form-data"
     )
     assert resp.status_code == 200
     assert resp.data == b"foo bar foo.txt"
-    resp = client.post("/infer", data={})
+    resp = client.post("/predict", data={})
     assert resp.status_code == 200
     assert resp.data == b"noneee"
 
@@ -365,7 +365,7 @@ def test_path_output_str():
             return Path(temp_path)
 
     client = make_client(Model())
-    resp = client.post("/infer", data={"text": "baz"})
+    resp = client.post("/predict", data={"text": "baz"})
     assert resp.status_code == 200
     assert resp.content_type == "text/plain; charset=utf-8"
     assert resp.data == b"foobaz"
@@ -384,7 +384,7 @@ def test_path_output_image():
             return Path(temp_path)
 
     client = make_client(Model())
-    resp = client.post("/infer")
+    resp = client.post("/predict")
     assert resp.status_code == 200
     # need both image/bmp and image/x-ms-bmp until https://bugs.python.org/issue44211 is fixed
     assert resp.content_type in ["image/bmp", "image/x-ms-bmp"]
@@ -408,7 +408,7 @@ def test_multiple_arguments():
     client = make_client(Model())
     path_data = (io.BytesIO(b"bar"), "foo.txt")
     resp = client.post(
-        "/infer",
+        "/predict",
         data={"text": "baz", "num1": 5, "path": path_data},
         content_type="multipart/form-data",
     )
@@ -473,13 +473,13 @@ def test_timing():
             return ""
 
     client = make_client(ModelSlow())
-    resp = client.post("/infer")
+    resp = client.post("/predict")
     assert resp.status_code == 200
     assert 0.5 < float(resp.headers["X-Setup-Time"]) < 1.0
     assert 0.5 < float(resp.headers["X-Run-Time"]) < 1.0
 
     client = make_client(ModelFast())
-    resp = client.post("/infer")
+    resp = client.post("/predict")
     assert resp.status_code == 200
     assert float(resp.headers["X-Setup-Time"]) < 0.5
     assert float(resp.headers["X-Run-Time"]) < 0.5

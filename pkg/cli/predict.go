@@ -22,28 +22,29 @@ import (
 )
 
 var (
-	inputs    []string
-	outPath   string
-	inferArch string
+	inputs      []string
+	outPath     string
+	predictArch string
 )
 
-func newInferCommand() *cobra.Command {
+func newPredictCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "infer <id>",
-		Short: "Run a single inference against a version of a model",
-		RunE:  cmdInfer,
-		Args:  cobra.MinimumNArgs(1),
+		Use:        "predict <id>",
+		Short:      "Run a single prediction against a version of a model",
+		RunE:       cmdPredict,
+		Args:       cobra.MinimumNArgs(1),
+		SuggestFor: []string{"infer"},
 	}
 	addModelFlag(cmd)
 	cmd.Flags().StringArrayVarP(&inputs, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
-	cmd.Flags().StringVarP(&inferArch, "arch", "a", "cpu", "Architecture to run inference on (cpu/gpu)")
+	cmd.Flags().StringVarP(&predictArch, "arch", "a", "cpu", "Architecture to run prediction on (cpu/gpu)")
 
 	return cmd
 }
 
-func cmdInfer(cmd *cobra.Command, args []string) error {
-	if !slices.ContainsString([]string{"cpu", "gpu"}, inferArch) {
+func cmdPredict(cmd *cobra.Command, args []string) error {
+	if !slices.ContainsString([]string{"cpu", "gpu"}, predictArch) {
 		return fmt.Errorf("--arch must be either 'cpu' or 'gpu'")
 	}
 
@@ -61,9 +62,9 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	// TODO(bfirsh): differentiate between failed builds and in-progress builds, and probably block here if there is an in-progress build
-	image := model.ImageForArch(version.Images, inferArch)
+	image := model.ImageForArch(version.Images, predictArch)
 	if image == nil {
-		return fmt.Errorf("No %s image has been built for %s:%s", inferArch, mod.String(), id)
+		return fmt.Errorf("No %s image has been built for %s:%s", predictArch, mod.String(), id)
 	}
 
 	servingPlatform, err := serving.NewLocalDockerPlatform()
@@ -71,7 +72,7 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	logWriter := logger.NewConsoleLogger()
-	useGPU := inferArch == "gpu"
+	useGPU := predictArch == "gpu"
 	deployment, err := servingPlatform.Deploy(context.Background(), image.URI, useGPU, logWriter)
 	if err != nil {
 		return err
@@ -82,12 +83,12 @@ func cmdInfer(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	return inferIndividualInputs(deployment, inputs, outPath, logWriter)
+	return predictIndividualInputs(deployment, inputs, outPath, logWriter)
 }
 
-func inferIndividualInputs(deployment serving.Deployment, inputs []string, outputPath string, logWriter logger.Logger) error {
-	example := parseInferInputs(inputs)
-	result, err := deployment.RunInference(context.Background(), example, logWriter)
+func predictIndividualInputs(deployment serving.Deployment, inputs []string, outputPath string, logWriter logger.Logger) error {
+	example := parsePredictInputs(inputs)
+	result, err := deployment.RunPrediction(context.Background(), example, logWriter)
 	if err != nil {
 		return err
 	}
@@ -142,7 +143,7 @@ func inferIndividualInputs(deployment serving.Deployment, inputs []string, outpu
 	return nil
 }
 
-func parseInferInputs(inputs []string) *serving.Example {
+func parsePredictInputs(inputs []string) *serving.Example {
 	keyVals := map[string]string{}
 	for _, input := range inputs {
 		var name, value string

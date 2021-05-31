@@ -53,7 +53,8 @@ class HTTPServer:
         app = Flask(__name__)
         setup_time = time.time() - start_time
 
-        @app.route("/infer", methods=["POST"])
+        @app.route("/predict", methods=["POST"])
+        @app.route("/infer", methods=["POST"])  # deprecated
         def handle_request():
             start_time = time.time()
 
@@ -245,7 +246,7 @@ class RedisQueueWorker:
         )
         self.should_exit = False
         self.setup_time_queue = input_queue + "-setup-time"
-        self.infer_time_queue = input_queue + "-run-time"
+        self.predict_time_queue = input_queue + "-run-time"
         self.stats_queue_length = 100
 
         sys.stderr.write(
@@ -311,9 +312,11 @@ class RedisQueueWorker:
                     continue
 
                 message = json.loads(message_json)
-                infer_id = message["id"]
+                prediction_id = message["id"]
                 response_queue = message["response_queue"]
-                sys.stderr.write(f"Received message {infer_id} on {self.input_queue}\n")
+                sys.stderr.write(
+                    f"Received message {prediction_id} on {self.input_queue}\n"
+                )
                 cleanup_functions = []
                 try:
                     start_time = time.time()
@@ -324,7 +327,7 @@ class RedisQueueWorker:
                     )  # xdel to be able to get stream size
                     run_time = time.time() - start_time
                     self.redis.xadd(
-                        self.infer_time_queue,
+                        self.predict_time_queue,
                         fields={"duration": run_time},
                         maxlen=self.stats_queue_length,
                     )

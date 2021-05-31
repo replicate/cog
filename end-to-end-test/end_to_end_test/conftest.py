@@ -55,7 +55,7 @@ def cog_server(registry_host) -> Generator[CogServer, None, None]:
 @pytest.fixture
 def project_dir(tmpdir_factory):
     tmpdir = tmpdir_factory.mktemp("project")
-    with open(tmpdir / "infer.py", "w") as f:
+    with open(tmpdir / "predict.py", "w") as f:
         f.write(
             """
 import time
@@ -87,7 +87,7 @@ class Model(cog.Model):
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
 name: andreas/hello-world
-model: infer.py:Model
+model: predict.py:Model
 examples:
   - input:
       text: "foo"

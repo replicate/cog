@@ -42,7 +42,7 @@ func NewRootCommand() (*cobra.Command, error) {
 		newPushCommand(),
 		newTestCommand(),
 		newDebugCommand(),
-		newInferCommand(),
+		newPredictCommand(),
 		newServerCommand(),
 		newShowCommand(),
 		newModelCommand(),

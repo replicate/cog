@@ -174,7 +174,7 @@ func (d *LocalDockerDeployment) Undeploy() error {
 	return nil
 }
 
-func (d *LocalDockerDeployment) RunInference(ctx context.Context, input *Example, logWriter logger.Logger) (*Result, error) {
+func (d *LocalDockerDeployment) RunPrediction(ctx context.Context, input *Example, logWriter logger.Logger) (*Result, error) {
 	bodyBuffer := new(bytes.Buffer)
 
 	mwriter := multipart.NewWriter(bodyBuffer)
@@ -213,6 +213,7 @@ func (d *LocalDockerDeployment) RunInference(ctx context.Context, input *Example
 		return nil, err
 	}
 
+	// TODO(bfirsh): mirgate to /predict https://github.com/replicate/cog/issues/94
 	url := fmt.Sprintf("http://localhost:%d/infer", d.port)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bodyBuffer)
 	if err != nil {
@@ -240,7 +241,7 @@ func (d *LocalDockerDeployment) RunInference(ctx context.Context, input *Example
 			Message string `json:"message"`
 		}{}
 		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-			return nil, fmt.Errorf("/infer call return status 400, and the response body failed to decode: %w", err)
+			return nil, fmt.Errorf("/predict call return status 400, and the response body failed to decode: %w", err)
 		}
 		if body.Message == "" {
 			return nil, fmt.Errorf("Bad request")
@@ -250,7 +251,7 @@ func (d *LocalDockerDeployment) RunInference(ctx context.Context, input *Example
 
 	if resp.StatusCode != http.StatusOK {
 		d.writeContainerLogs(logWriter)
-		return nil, fmt.Errorf("/infer call returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("/predict call returned status %d", resp.StatusCode)
 	}
 
 	contentType := resp.Header.Get("Content-Type")

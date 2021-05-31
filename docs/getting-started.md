@@ -24,9 +24,9 @@ This has uploaded the currently directory to the server and the server has store
     CPU image: Building. Run `cog build logs 8f3a05c42ee5` to see its progress.
     GPU image: Building. Run `cog build logs b087a0bb5b7a` to see its progress.
 
-When the build has finished, you can run inferences on the built model from any machine that is pointed at the server. Replace the ID with yours, and the file with an image on your disk you want to colorize:
+When the build has finished, you can run predictions on the built model from any machine that is pointed at the server. Replace the ID with yours, and the file with an image on your disk you want to colorize:
 
-    cog infer b31f9f72d8f14f0eacc5452e85b05c957b9a8ed9 -i @hotdog.jpg
+    cog predict b31f9f72d8f14f0eacc5452e85b05c957b9a8ed9 -i @hotdog.jpg
 
 You can also list the versions of this model:
 
@@ -34,7 +34,7 @@ You can also list the versions of this model:
 
 ## Deploying the model
 
-Cog builds Docker images for each version of your model. Those Docker images serve an HTTP inference API (to be documented).
+Cog builds Docker images for each version of your model. Those Docker images serve an HTTP prediction API (to be documented).
 
 To get the Docker image, run this with the version you want to deploy:
 
@@ -43,4 +43,4 @@ To get the Docker image, run this with the version you want to deploy:
 In this output is the name of the CPU or GPU Docker images, dependending on whether you are deploying on CPU or GPU. You can run these anywhere a Docker image runs. For example:
 
     $ docker run -d -p 5000:5000 --gpus all registry.hooli.net/colorization:b6a2f8a2d2ff-gpu
-    $ curl http://localhost:5000/infer -F input=@image.png
+    $ curl http://localhost:5000/predict -F input=@image.png

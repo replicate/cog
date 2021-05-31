@@ -75,7 +75,7 @@ func TestVersion(ctx context.Context, servingPlatform Platform, imageTag string,
 
 		input := NewExampleWithBaseDir(example.Input, dir)
 
-		result, err := deployment.RunInference(ctx, input, logWriter)
+		result, err := deployment.RunPrediction(ctx, input, logWriter)
 		if err != nil {
 			return nil, err
 		}
@@ -87,7 +87,7 @@ func TestVersion(ctx context.Context, servingPlatform Platform, imageTag string,
 		if err != nil {
 			return nil, fmt.Errorf("Failed to read output: %w", err)
 		}
-		logWriter.Infof("Inference result length: %d, mime type: %s", len(outputBytes), output.MimeType)
+		logWriter.Infof("Prediction length: %d, mime type: %s", len(outputBytes), output.MimeType)
 		if expectedOutput == nil {
 			updateExampleOutput(example, newExampleOutputs, outputBytes, output.MimeType, index)
 		} else {
