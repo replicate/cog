@@ -1,9 +1,11 @@
 package logger
 
 import (
-	"github.com/replicate/cog/pkg/util/console"
+	"fmt"
 
 	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/terminal"
 )
 
 type Level int
@@ -17,6 +19,7 @@ const (
 	LevelDebug
 )
 
+// Logger is an interface for abstracting log output in a way that can be written to a log file, output to the console, or transported over the network.
 type Logger interface {
 	Info(line string)
 	Debug(line string)
@@ -59,6 +62,53 @@ func (l *ConsoleLogger) WriteError(err error) {
 	console.Error(l.prefix + err.Error())
 }
 
+// TODO(bfirsh): remove
 func (l *ConsoleLogger) WriteVersion(version *model.Version) {
 	console.Infof(l.prefix+"%v", version)
+}
+
+type TerminalLogger struct {
+	ui        terminal.UI
+	stepGroup terminal.StepGroup
+	step      terminal.Step
+	prefix    string
+}
+
+func NewTerminalLogger(ui terminal.UI, prefix string) *TerminalLogger {
+	l := &TerminalLogger{ui: ui, prefix: prefix}
+	l.stepGroup = ui.StepGroup()
+	l.step = l.stepGroup.Add("")
+	return l
+}
+
+func (l *TerminalLogger) Info(line string) {
+	l.Infof(line)
+}
+
+func (l *TerminalLogger) Debug(line string) {
+	l.Debugf(line)
+}
+
+func (l *TerminalLogger) Infof(line string, args ...interface{}) {
+	l.step.Update(l.prefix + fmt.Sprintf(line, args...))
+}
+
+func (l *TerminalLogger) Debugf(line string, args ...interface{}) {
+	fmt.Fprintf(l.step.TermOutput(), line+"\n", args...)
+}
+
+func (l *TerminalLogger) WriteStatus(status string, args ...interface{}) {
+	l.Infof("status: "+status, args...)
+}
+
+func (l *TerminalLogger) WriteError(err error) {
+	l.step.Abort()
+}
+
+func (l *TerminalLogger) WriteVersion(version *model.Version) {
+	l.Infof("version: %v", version)
+}
+
+func (l *TerminalLogger) Done() {
+	l.step.Done()
 }

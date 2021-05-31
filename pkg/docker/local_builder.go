@@ -52,17 +52,20 @@ func (b *LocalImageBuilder) Build(ctx context.Context, dir string, dockerfileCon
 	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
 		cmd, outputPipeFn = b.buildxCommand(ctx, dir, dockerfilePath, logWriter)
 		if err != nil {
+			logWriter.WriteError(err)
 			return "", err
 		}
 	} else if useGPU {
 		// TODO(andreas): follow https://github.com/moby/buildkit/issues/1436, hopefully buildkit will be able to use GPUs soon
 		cmd, outputPipeFn = b.legacyCommand(ctx, dir, dockerfilePath, logWriter)
 		if err != nil {
+			logWriter.WriteError(err)
 			return "", err
 		}
 	} else {
 		cmd, outputPipeFn = b.buildKitCommand(ctx, dir, dockerfilePath, logWriter)
 		if err != nil {
+			logWriter.WriteError(err)
 			return "", err
 		}
 	}
@@ -72,23 +75,18 @@ func (b *LocalImageBuilder) Build(ctx context.Context, dir string, dockerfileCon
 		return "", err
 	}
 	if err := cmd.Start(); err != nil {
+		logWriter.WriteError(err)
 		return "", err
 	}
 
-	lastLogs, imageId := buildPipe(outputPipe, logWriter)
+	imageId := buildPipe(outputPipe, logWriter)
 
 	if err = cmd.Wait(); err != nil {
-		for _, logLine := range lastLogs {
-			logWriter.Info(logLine)
-		}
+		logWriter.WriteError(err)
 		return "", err
 	}
 
 	logWriter.Infof("Successfully built %s", imageId)
-
-	if err != nil {
-		return "", err
-	}
 
 	tag = imageId
 	if name != "" {
@@ -217,7 +215,7 @@ func (b *LocalImageBuilder) rmi(dockerTag string) error {
 	return nil
 }
 
-func buildPipe(pipe io.ReadCloser, logWriter logger.Logger) (lastLogs []string, tag string) {
+func buildPipe(pipe io.ReadCloser, logWriter logger.Logger) (tag string) {
 	// TODO: this is a hack, use Docker Go API instead
 
 	// awkward logic: scan docker build output for the string
@@ -233,8 +231,7 @@ func buildPipe(pipe io.ReadCloser, logWriter logger.Logger) (lastLogs []string, 
 
 	scanner := bufio.NewScanner(pipe)
 	currentSection := SectionStartingBuild
-	currentLogLines := []string{}
-	logWriter.Infof("  * %s", currentSection)
+	logWriter.Infof(currentSection)
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -242,10 +239,7 @@ func buildPipe(pipe io.ReadCloser, logWriter logger.Logger) (lastLogs []string, 
 
 		if strings.Contains(line, sectionPrefix) {
 			currentSection = strings.SplitN(line, sectionPrefix, 2)[1]
-			currentLogLines = []string{}
-			logWriter.Infof("  * %s", currentSection)
-		} else {
-			currentLogLines = append(currentLogLines, line)
+			logWriter.Infof(currentSection)
 		}
 		if strings.HasPrefix(line, successPrefix) {
 			tag = strings.TrimSpace(strings.TrimPrefix(line, successPrefix))
@@ -255,18 +249,18 @@ func buildPipe(pipe io.ReadCloser, logWriter logger.Logger) (lastLogs []string, 
 			tag = match[1]
 		}
 	}
-	lastLogs = currentLogLines
-
-	return lastLogs, tag
+	return tag
 }
 
 func pipeToWithDockerChecks(pf shell.PipeFunc, logWriter logger.Logger) (done chan struct{}, err error) {
 	return shell.PipeTo(pf, func(args ...interface{}) {
 		line := args[0].(string)
 		if strings.Contains(line, "Cannot connect to the Docker daemon") {
+			// FIXME(bfirsh): this should return an error
 			console.Fatal("Docker does not appear to be running; please start Docker and try again")
 		}
 		if strings.Contains(line, "failed to dial gRPC: unable to upgrade to h2c, received 502") {
+			// FIXME(bfirsh): this should return an error
 			console.Fatal("Your Docker version appears to be out out date; please upgrade Docker to the latest version and try again")
 		}
 		if logWriter != nil {
