@@ -40,15 +40,15 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	generator := docker.NewDockerfileGenerator(config, arch, projectDir)
-	out, err := generator.Generate()
-	if err != nil {
-		return err
-	}
 	defer func() {
 		if err := generator.Cleanup(); err != nil {
 			console.Warnf("Error cleaning up after build: %v", err)
 		}
 	}()
+	out, err := generator.Generate()
+	if err != nil {
+		return err
+	}
 	fmt.Print(out)
 	return nil
 }

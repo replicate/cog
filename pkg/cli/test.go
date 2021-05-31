@@ -44,14 +44,14 @@ func Test(cmd *cobra.Command, args []string) error {
 	}
 	generator := docker.NewDockerfileGenerator(config, arch, projectDir)
 	dockerfileContents, err := generator.Generate()
-	if err != nil {
-		return fmt.Errorf("Failed to generate Dockerfile for %s: %w", arch, err)
-	}
 	defer func() {
 		if err := generator.Cleanup(); err != nil {
 			console.Warnf("Error cleaning up after build: %v", err)
 		}
 	}()
+	if err != nil {
+		return fmt.Errorf("Failed to generate Dockerfile for %s: %w", arch, err)
+	}
 	dockerImageBuilder := docker.NewLocalImageBuilder("")
 	servingPlatform, err := serving.NewLocalDockerPlatform()
 	if err != nil {
