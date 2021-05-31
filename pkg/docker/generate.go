@@ -94,6 +94,10 @@ func (g *DockerfileGenerator) GenerateBase() (string, error) {
 }
 
 func (g *DockerfileGenerator) Generate() (string, error) {
+	if g.Config.Model == "" {
+		return "", fmt.Errorf("'model' option is not set in cog.yaml")
+	}
+
 	base, err := g.GenerateBase()
 	if err != nil {
 		return "", err
