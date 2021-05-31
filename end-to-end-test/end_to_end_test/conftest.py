@@ -70,7 +70,7 @@ class Model(cog.Model):
     @cog.input("text", type=str)
     @cog.input("path", type=Path)
     @cog.input("output_file", type=bool, default=False)
-    def run(self, text, path, output_file):
+    def predict(self, text, path, output_file):
         time.sleep(1)
         with open(path) as f:
             output = self.foo + text + f.read()

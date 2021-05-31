@@ -39,7 +39,7 @@ class Model(ABC):
         pass
 
     @abstractmethod
-    def run(self, **kwargs):
+    def predict(self, **kwargs):
         pass
 
 
@@ -70,7 +70,7 @@ class HTTPServer:
                         )
                     raw_inputs[key] = val
 
-                if hasattr(self.model.run, "_inputs"):
+                if hasattr(self.model.predict, "_inputs"):
                     try:
                         inputs = validate_and_convert_inputs(
                             self.model, raw_inputs, cleanup_functions
@@ -97,8 +97,8 @@ class HTTPServer:
         @app.route("/help")
         def help():
             args = {}
-            if hasattr(self.model.run, "_inputs"):
-                input_specs = self.model.run._inputs
+            if hasattr(self.model.predict, "_inputs"):
+                input_specs = self.model.predict._inputs
                 for name, spec in input_specs.items():
                     arg: Dict[str, Any] = {
                         "type": _type_name(spec.type),
@@ -186,8 +186,8 @@ class AIPlatformPredictionServer:
         @app.route("/help")
         def help():
             args = {}
-            if hasattr(self.model.run, "_inputs"):
-                input_specs = self.model.run._inputs
+            if hasattr(self.model.predict, "_inputs"):
+                input_specs = self.model.predict._inputs
                 for name, spec in input_specs.items():
                     arg = {
                         "type": _type_name(spec.type),
@@ -420,7 +420,7 @@ class RedisQueueWorker:
 def validate_and_convert_inputs(
     model: Model, raw_inputs: Dict[str, Any], cleanup_functions: List[Callable]
 ) -> Dict[str, Any]:
-    input_specs = model.run._inputs
+    input_specs = model.predict._inputs
     inputs = {}
 
     for name, input_spec in input_specs.items():
@@ -516,7 +516,7 @@ def run_model(model, inputs, cleanup_functions):
     Run the model on the inputs, and append resulting paths
     to cleanup functions for removal.
     """
-    result = model.run(**inputs)
+    result = model.predict(**inputs)
     if isinstance(result, Path):
         cleanup_functions.append(result.unlink)
     return result

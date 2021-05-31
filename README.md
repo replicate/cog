@@ -25,7 +25,7 @@ class ColorizationModel(cog.Model):
         self.model = torch.load("./weights.pth")
 
     @cog.input("input", type=Path, help="Grayscale input image")
-    def run(self, input):
+    def predict(self, input):
         # ... pre-processing ...
         output = self.model(processed_input)
         # ... post-processing ...

@@ -26,7 +26,7 @@ def test_no_input():
         def setup(self):
             self.foo = "foo"
 
-        def run(self):
+        def predict(self):
             return self.foo + "bar"
 
     client = make_client(Model())
@@ -41,7 +41,7 @@ def test_good_str_input():
             self.foo = "foo"
 
         @cog.input("text", type=str)
-        def run(self, text):
+        def predict(self, text):
             return self.foo + text
 
     client = make_client(Model())
@@ -56,7 +56,7 @@ def test_extranous_input_keys():
             self.foo = "foo"
 
         @cog.input("text", type=str)
-        def run(self, text):
+        def predict(self, text):
             return self.foo + text
 
     client = make_client(Model())
@@ -73,7 +73,7 @@ def test_bad_input_name():
                 self.foo = "foo"
 
             @cog.input("text", type=str)
-            def run(self, bad):
+            def predict(self, bad):
                 return self.foo + "bar"
 
 
@@ -83,7 +83,7 @@ def test_good_int_input():
             self.foo = "foo"
 
         @cog.input("num", type=int)
-        def run(self, num):
+        def predict(self, num):
             num2 = num ** 3
             return self.foo + str(num2)
 
@@ -102,7 +102,7 @@ def test_bad_int_input():
             self.foo = "foo"
 
         @cog.input("num", type=int)
-        def run(self, num):
+        def predict(self, num):
             num2 = num ** 2
             return self.foo + str(num2)
 
@@ -117,7 +117,7 @@ def test_default_int_input():
             self.foo = "foo"
 
         @cog.input("num", type=int, default=5)
-        def run(self, num):
+        def predict(self, num):
             num2 = num ** 2
             return self.foo + str(num2)
 
@@ -136,7 +136,7 @@ def test_good_float_input():
             self.foo = "foo"
 
         @cog.input("num", type=float)
-        def run(self, num):
+        def predict(self, num):
             num2 = num ** 3
             return self.foo + str(num2)
 
@@ -158,7 +158,7 @@ def test_bad_float_input():
             self.foo = "foo"
 
         @cog.input("num", type=float)
-        def run(self, num):
+        def predict(self, num):
             num2 = num ** 2
             return self.foo + str(num2)
 
@@ -173,7 +173,7 @@ def test_good_bool_input():
             self.foo = "foo"
 
         @cog.input("flag", type=bool)
-        def run(self, flag):
+        def predict(self, flag):
             if flag:
                 return self.foo + "yes"
             else:
@@ -194,7 +194,7 @@ def test_bad_float_input():
             self.foo = "foo"
 
         @cog.input("flag", type=bool)
-        def run(self, flag):
+        def predict(self, flag):
             if flag:
                 return self.foo + "yes"
             else:
@@ -213,7 +213,7 @@ def test_min_max():
         @cog.input("num1", type=float, min=3, max=10.5)
         @cog.input("num2", type=float, min=-4)
         @cog.input("num3", type=int, max=-4)
-        def run(self, num1, num2, num3):
+        def predict(self, num1, num2, num3):
             return num1 + num2 + num3
 
     client = make_client(Model())
@@ -235,7 +235,7 @@ def test_good_options():
 
         @cog.input("text", type=str, options=["foo", "bar"])
         @cog.input("num", type=int, options=[1, 2, 3])
-        def run(self, text, num):
+        def predict(self, text, num):
             return text + ("a" * num)
 
     client = make_client(Model())
@@ -252,7 +252,7 @@ def test_bad_options_type():
                 pass
 
             @cog.input("text", type=str, options=[])
-            def run(self, text):
+            def predict(self, text):
                 return text
 
     with pytest.raises(ValueError):
@@ -262,7 +262,7 @@ def test_bad_options_type():
                 pass
 
             @cog.input("text", type=str, options=["foo"])
-            def run(self, text):
+            def predict(self, text):
                 return text
 
     with pytest.raises(ValueError):
@@ -272,7 +272,7 @@ def test_bad_options_type():
                 pass
 
             @cog.input("text", type=Path, options=["foo"])
-            def run(self, text):
+            def predict(self, text):
                 return text
 
 
@@ -283,7 +283,7 @@ def test_bad_options():
 
         @cog.input("text", type=str, options=["foo", "bar"])
         @cog.input("num", type=int, options=[1, 2, 3])
-        def run(self, text, num):
+        def predict(self, text, num):
             return text + ("a" * num)
 
     client = make_client(Model())
@@ -299,7 +299,7 @@ def test_good_path_input():
             self.foo = "foo"
 
         @cog.input("path", type=Path)
-        def run(self, path):
+        def predict(self, path):
             with open(path) as f:
                 return self.foo + " " + f.read() + " " + os.path.basename(path)
 
@@ -318,7 +318,7 @@ def test_bad_path_input():
             self.foo = "foo"
 
         @cog.input("path", type=Path)
-        def run(self, path):
+        def predict(self, path):
             with open(path) as f:
                 return self.foo + " " + f.read() + " " + os.path.basename(path)
 
@@ -333,7 +333,7 @@ def test_default_path_input():
             self.foo = "foo"
 
         @cog.input("path", type=Path, default=None)
-        def run(self, path):
+        def predict(self, path):
             if path is None:
                 return "noneee"
             with open(path) as f:
@@ -357,7 +357,7 @@ def test_path_output_str():
             self.foo = "foo"
 
         @cog.input("text", type=str)
-        def run(self, text):
+        def predict(self, text):
             temp_dir = tempfile.mkdtemp()
             temp_path = os.path.join(temp_dir, "my_file.txt")
             with open(temp_path, "w") as f:
@@ -376,7 +376,7 @@ def test_path_output_image():
         def setup(self):
             pass
 
-        def run(self):
+        def predict(self):
             temp_dir = tempfile.mkdtemp()
             temp_path = os.path.join(temp_dir, "my_file.bmp")
             img = Image.new("RGB", (255, 255), "red")
@@ -400,7 +400,7 @@ def test_multiple_arguments():
         @cog.input("num1", type=int)
         @cog.input("num2", type=int, default=10)
         @cog.input("path", type=Path)
-        def run(self, text, num1, num2, path):
+        def predict(self, text, num1, num2, path):
             with open(path) as f:
                 path_contents = f.read()
             return self.foo + " " + text + " " + str(num1 * num2) + " " + path_contents
@@ -425,7 +425,7 @@ def test_help():
         @cog.input("num1", type=int, help="First number")
         @cog.input("num2", type=int, default=10, help="Second number")
         @cog.input("path", type=Path, help="A file path")
-        def run(self, text, num1, num2, path):
+        def predict(self, text, num1, num2, path):
             with open(path) as f:
                 path_contents = f.read()
             return self.foo + " " + text + " " + str(num1 * num2) + " " + path_contents
@@ -461,7 +461,7 @@ def test_timing():
         def setup(self):
             time.sleep(0.5)
 
-        def run(self):
+        def predict(self):
             time.sleep(0.5)
             return ""
 
@@ -469,7 +469,7 @@ def test_timing():
         def setup(self):
             pass
 
-        def run(self):
+        def predict(self):
             return ""
 
     client = make_client(ModelSlow())
