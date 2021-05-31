@@ -10,7 +10,7 @@ class HelloWorldModel(cog.Model):
         self.prefix = "hello "
 
     @cog.input("text", type=str, help="Text that will get prefixed by 'hello '")
-    def run(self, text):
+    def predict(self, text):
         return self.prefix + text
 ```
 

@@ -101,7 +101,7 @@ def test_server_end_to_end(cog_server, project_dir, tmpdir_factory):
     ).communicate()
     paths = sorted(glob(str(download_dir / "*.*")))
     filenames = [os.path.basename(f) for f in paths]
-    assert filenames == ["cog.yaml", "predict.py", "myfile.txt"]
+    assert filenames == ["cog.yaml", "myfile.txt", "predict.py"]
 
     with open(download_dir / "cog-example-output/output.02.txt") as f:
         assert f.read() == "fooquxbaz"
