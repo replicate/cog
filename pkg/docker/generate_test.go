@@ -16,7 +16,7 @@ func testInstallCog(generatedPaths []string) string {
 RUN pip install flask requests redis
 ENV PYTHONPATH=/usr/local/lib/cog
 RUN mkdir -p /usr/local/lib/cog
-COPY %s /usr/local/lib/cog/cog.py`, filepath.Base(generatedPaths[0]))
+COPY .cog/tmp/%s /usr/local/lib/cog/cog.py`, filepath.Base(generatedPaths[0]))
 }
 
 func testInstallPython(version string) string {
