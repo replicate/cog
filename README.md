@@ -92,11 +92,10 @@ The hard part is defining a model interface that works for everyone. We're relea
 
 ## Install
 
-No binaries yet! You'll need Go 1.16, then run:
+Run this in a terminal:
 
-    make install
-
-This installs the `cog` binary to `$GOPATH/bin/cog`.
+    curl -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m` > /usr/local/bin/cog
+    chmod +x /usr/local/bin/cog
 
 ## Next steps
 

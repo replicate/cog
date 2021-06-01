@@ -2,9 +2,11 @@
 
 ## Development environment
 
-To install Replicate from source:
+You'll need Go 1.16, then run:
 
     make install
+
+This installs the `cog` binary to `$GOPATH/bin/cog`.
 
 To run the tests:
 
