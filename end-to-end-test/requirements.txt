@@ -1,4 +1,5 @@
 pytest==6.1.1
+pytest-xdist==2.2.1
 waiting==1.4.1
 requests==2.25.1
 redis==3.5.3

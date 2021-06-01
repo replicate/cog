@@ -1,3 +1,3 @@
 .PHONY: test
 test:
-	pytest -s --tb=short
+	pytest --tb=short -n 10
