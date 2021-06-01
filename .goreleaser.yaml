@@ -8,7 +8,6 @@ builds:
       - CGO_ENABLED=0
     goos:
       - linux
-      - windows
     goarch:
       - amd64
     main: ./cmd/cog/cog.go
@@ -27,7 +26,6 @@ archives:
     replacements:
       darwin: Darwin
       linux: Linux
-      windows: Windows
       386: i386
       amd64: x86_64
 checksum:
