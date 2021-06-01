@@ -23,6 +23,7 @@ builds:
     main: ./cmd/cog/cog.go
 archives:
   - format: binary
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
     replacements:
       darwin: Darwin
       linux: Linux
