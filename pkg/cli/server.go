@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,7 +14,7 @@ import (
 	"github.com/replicate/cog/pkg/server"
 	"github.com/replicate/cog/pkg/serving"
 	"github.com/replicate/cog/pkg/storage"
-	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/terminal"
 )
 
 var (
@@ -49,6 +50,11 @@ func newServerCommand() *cobra.Command {
 }
 
 func startServer(cmd *cobra.Command, args []string) error {
+	ui := terminal.ConsoleUI(context.Background())
+	defer ui.Close()
+	st := ui.Status()
+	st.Update("Starting server...")
+
 	var err error
 	if port == 0 {
 		portEnv := os.Getenv("PORT")
@@ -57,11 +63,9 @@ func startServer(cmd *cobra.Command, args []string) error {
 		}
 		port, err = strconv.Atoi(portEnv)
 		if err != nil {
-			return fmt.Errorf("Failed to convert PORT %s to integer", portEnv)
+			return fmt.Errorf("PORT environment variable is not an integer: %s", portEnv)
 		}
 	}
-
-	console.Debugf("Preparing to start server on port %d", port)
 
 	// TODO(andreas): make this configurable
 	dataDir := ".cog"
@@ -79,7 +83,7 @@ func startServer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if dockerRegistry == "" {
-		console.Warn("Running without docker registry. Please add --docker-registry to be able to push images")
+		ui.Output("Running without a Docker registry, so any Docker images won't be persisted. Pass the --docker-registry flag to persist images.\n")
 	}
 	dockerImageBuilder := docker.NewLocalImageBuilder(dockerRegistry)
 	servingPlatform, err := serving.NewLocalDockerPlatform()
@@ -94,5 +98,8 @@ func startServer(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	st.Step(terminal.StatusOK, fmt.Sprintf("Server running on 0.0.0.0:%d", port))
+	st.Close()
 	return s.Start(port)
 }
