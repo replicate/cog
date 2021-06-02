@@ -30,6 +30,7 @@ func newRunCommand() *cobra.Command {
 }
 
 func run(cmd *cobra.Command, args []string) error {
+	// TODO: support multiple run architectures, or automatically select arch based on host
 	arch := "cpu"
 
 	ui := terminal.ConsoleUI(context.Background())
