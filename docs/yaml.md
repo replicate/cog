@@ -62,3 +62,7 @@ environment:
     - "ffmpeg"
     - "libavcodec-dev"
 ```
+
+### `architectures`
+
+List of architectures (`cpu` or `gpu`) to build Docker images for. Useful if the model only works on either CPU or GPU. Defaults to [`cpu`, `gpu`].
