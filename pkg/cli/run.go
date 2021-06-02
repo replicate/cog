@@ -16,7 +16,7 @@ import (
 
 func newRunCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "run <command> <args>",
+		Use:   "run <command> [arg...]",
 		Short: "Run a command inside a Docker environment",
 		RunE:  run,
 		Args:  cobra.MinimumNArgs(1),
