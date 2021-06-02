@@ -28,9 +28,21 @@ The `run()` function takes an arbitrary list of named arguments, where each argu
 
 `run()` can output strings, numbers, `pathlib.Path` objects, or lists or dicts of those types. We are working on support for other types of output, but for now we recommend using base-64 encoded strings or `pathlib.Path`s for more complex outputs.
 
+### Returning `pathlib.Path` objects
+
 If the output is a `pathlib.Path` object, that will be returned by the built-in HTTP server as a file download.
 
-## `@cog.input(name, type, default, help)`
+To output `pathlib.Path` objects the file needs to exist, which means that you probably need to create a temporary file first. This file will automatically be deleted by Cog after it has been returned. For example:
+
+```python
+def predict(self, input):
+    output = do_some_processing(input)
+    out_path = Path(tempfile.mkdtemp()) / "my-file.txt"
+    out_path.write_text(output)
+    return out_path
+```
+
+## `@cog.input(name, type, default, help, min=None, max=None, options=None)`
 
 The `@cog.input()` annotation describes a single input to the `run()` function. The `name` must correspond to an argument name in `run()`.
 
@@ -49,3 +61,7 @@ The `pathlib.Path` input type is used for file inputs.
 `default` can be any value, or `None` if the input is optional. If no `default` is set, the input is required.
 
 You can document the input argument using `help`. This documentation is surfaced in `cog show <model-id>`.
+
+Type-specific arguments:
+* `min` and `max` can be used with `int` and `float` inputs to constrain their ranges.
+* `options` can be used with `str`, `int`, and `float` inputs to limit the set of acceptable values.
