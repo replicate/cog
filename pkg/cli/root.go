@@ -85,7 +85,7 @@ func getModel() (*model.Model, error) {
 		if projectSettings.Model != nil {
 			return projectSettings.Model, nil
 		}
-		return nil, fmt.Errorf("No model specified. You need to either run `cog model set <url>` to set a model for the current directory, or pass --model <url> to the command")
+		return nil, fmt.Errorf("No model set. You need to either run `cog model set <url>` to set a model for the current directory, or pass --model <url> to the command")
 	}
 }
 
