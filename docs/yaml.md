@@ -30,6 +30,12 @@ See [the Python API documentation for more information](python.md).
 
 This defines the environment the model runs in. It contains various options within it:
 
+<!-- Alphabetical order, please! -->
+
+### `architectures`
+
+List of architectures (`cpu` or `gpu`) to build Docker images for. Useful if the model only works on either CPU or GPU. Defaults to `[cpu, gpu]`.
+
 ### `cuda`
 
 Cog automatically picks the correct version of CUDA to install, but this lets you override it for whatever reason.
@@ -62,7 +68,3 @@ environment:
     - "ffmpeg"
     - "libavcodec-dev"
 ```
-
-### `architectures`
-
-List of architectures (`cpu` or `gpu`) to build Docker images for. Useful if the model only works on either CPU or GPU. Defaults to [`cpu`, `gpu`].

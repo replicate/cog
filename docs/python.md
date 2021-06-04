@@ -1,34 +1,40 @@
-# Python reference
+# Prediction interface reference
 
-The `cog.Model` class defines the standard interface to trained machine learning models. Subclasses of `cog.Model` must implement two functions: `setup()` and `run()`. For example,
+Subclasses of `cog.Model` define how Cog runs a prediction on your model. It looks something like this:
 
 ```python
 import cog
+from pathlib import Path
+import torch
 
-class HelloWorldModel(cog.Model):
+class ImageScalingModel(cog.Model):
     def setup(self):
-        self.prefix = "hello "
+        self.net = torch.load("weights.pth")
 
-    @cog.input("text", type=str, help="Text that will get prefixed by 'hello '")
-    def predict(self, text):
-        return self.prefix + text
+    @cog.input("input", type=Path, help="Image to enlarge")
+    @cog.input("scale", type=float, default=1.5, help="Factor to scale image by")
+    def predict(self, input):
+        # ... pre-processing ...
+        output = self.net(input)
+        # ... post-processing ...
+        return output
 ```
 
-See the [cog-examples](https://github.com/replicate/cog-examples) repo for more interesting model examples.
+You need to override two functions: `setup()` and `predict()`.
 
-## `Model.setup()`
+### `Model.setup()`
 
-Set up the model for prediction. This is where you load trained models, instantiate data transformations, etc., so as little work as possible has to be done during the actual prediction call.
+Set up the model for prediction. This is where you load trained models, instantiate data transformations, etc., so multiple predictions can be run efficiently.
 
-## `Model.run(**kwargs)`
+### `Model.predict(**kwargs)`
 
 Run a single prediction. This is where you call the model that was loaded during `setup()`, but you may also want to add pre- and post-processing code here.
 
-The `run()` function takes an arbitrary list of named arguments, where each argument name must correspond to a `@cog.input()` annotation.
+The `predict()` function takes an arbitrary list of named arguments, where each argument name must correspond to a `@cog.input()` annotation.
 
-`run()` can output strings, numbers, `pathlib.Path` objects, or lists or dicts of those types. We are working on support for other types of output, but for now we recommend using base-64 encoded strings or `pathlib.Path`s for more complex outputs.
+`predict()` can output strings, numbers, `pathlib.Path` objects, or lists or dicts of those types. We are working on support for other types of output, but for now we recommend using base-64 encoded strings or `pathlib.Path`s for more complex outputs.
 
-### Returning `pathlib.Path` objects
+#### Returning `pathlib.Path` objects
 
 If the output is a `pathlib.Path` object, that will be returned by the built-in HTTP server as a file download.
 
@@ -42,26 +48,15 @@ def predict(self, input):
     return out_path
 ```
 
-## `@cog.input(name, type, default, help, min=None, max=None, options=None)`
+### `@cog.input(name, type, help, default=None, min=None, max=None, options=None)`
 
-The `@cog.input()` annotation describes a single input to the `run()` function. The `name` must correspond to an argument name in `run()`.
+The `@cog.input()` annotation describes a single input to the `predict()` function. The `name` must correspond to an argument name in `predict()`.
 
-`type` can be one of:
+It takes these arguments:
 
-- `str`
-- `int`
-- `float`
-- `bool`
-- `pathlib.Path`
-
-We are working on support for other types of input, but for now we recommend using base-64 encoded strings or `pathlib.Path`s for more complex inputs.
-
-The `pathlib.Path` input type is used for file inputs.
-
-`default` can be any value, or `None` if the input is optional. If no `default` is set, the input is required.
-
-You can document the input argument using `help`. This documentation is surfaced in `cog show <model-id>`.
-
-Type-specific arguments:
-* `min` and `max` can be used with `int` and `float` inputs to constrain their ranges.
-* `options` can be used with `str`, `int`, and `float` inputs to limit the set of acceptable values.
+- `type`: Either `str`, `int`, `float`, `bool`, or `Path` (be sure to add the import, as in the example above). `Path` is used for files. For more complex inputs, save it to a file and use `Path`.
+- `help`: A description of what to pass to this input for users of the model
+- `default`: A default value to set the input to. If this argument is not passed, the input is required. If it is explicitly set to `None`, the input is optional.
+- `min`: A minimum value for `int` or `float` types.
+- `max`: A maximum value for `int` or `float` types.
+- `options`: A list of values to limit the input to. It can be used with `str`, `int`, and `float` inputs.
