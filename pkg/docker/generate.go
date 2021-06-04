@@ -87,8 +87,8 @@ func (g *DockerfileGenerator) GenerateBase() (string, error) {
 		aptInstalls,
 		pythonRequirements,
 		pipInstalls,
-		installCog,
 		g.preInstall(),
+		installCog,
 		g.workdir(),
 	}), "\n"), nil
 }
