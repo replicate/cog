@@ -101,6 +101,7 @@ Run this in a terminal:
 
 - [Get started with an example model](docs/getting-started.md)
 - [Get started with your own model](docs/getting-started-own-model.md)
+- [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's envrionment
 - [Prediction interface reference](docs/python.md) to learn how the `cog.Model` interface works
 - [Server documention](docs/server.md), if you want to integrate directly with the Cog server
