@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/client"
+	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/logger"
-	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/terminal"
 )
 
 var buildNoFollow bool
@@ -47,31 +51,44 @@ func showBuildLogs(cmd *cobra.Command, args []string) error {
 	}
 
 	c := client.NewClient()
-	// FIXME(bfirsh): why isn't this a logger.Logger?
+
+	ui := terminal.ConsoleUI(context.Background())
+	defer ui.Close()
+
 	logChan, err := c.GetBuildLogs(model, buildID, !buildNoFollow)
 	if err != nil {
 		return err
 	}
-	for entry := range logChan {
-		outputLogEntry(entry, "")
+
+	if global.Verbose {
+		for entry := range logChan {
+			fmt.Println(entry.Line)
+		}
+	} else {
+		logWriter := logger.NewTerminalLogger(ui)
+		pipeLogChanToLogger(logChan, logWriter)
 	}
 
 	return nil
 }
 
-func outputLogEntry(entry *client.LogEntry, prefix string) {
-	switch entry.Level {
-	case logger.LevelFatal:
-		console.Fatal(prefix + entry.Line)
-	case logger.LevelError:
-		console.Error(prefix + entry.Line)
-	case logger.LevelWarn:
-		console.Warn(prefix + entry.Line)
-	case logger.LevelStatus: // TODO(andreas): handle status differently or remove
-		console.Info(prefix + entry.Line)
-	case logger.LevelInfo:
-		console.Info(prefix + entry.Line)
-	case logger.LevelDebug:
-		console.Debug(prefix + entry.Line)
+// FIXME(bfirsh):
+func pipeLogChanToLogger(logChan chan *client.LogEntry, logWriter logger.Logger) {
+	for entry := range logChan {
+		switch entry.Level {
+		case logger.LevelFatal:
+			logWriter.WriteError(fmt.Errorf(entry.Line))
+		case logger.LevelError:
+			logWriter.WriteError(fmt.Errorf(entry.Line))
+		case logger.LevelWarn:
+			logWriter.WriteError(fmt.Errorf(entry.Line))
+		case logger.LevelStatus:
+			logWriter.Info(entry.Line)
+		case logger.LevelInfo:
+			logWriter.Info(entry.Line)
+		case logger.LevelDebug:
+			logWriter.Debug(entry.Line)
+		}
 	}
+
 }
