@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/client"
+	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -118,4 +119,21 @@ func mergeLogs(channelMap map[string]chan *client.LogEntry) <-chan *archLogEntry
 		close(out)
 	}()
 	return out
+}
+
+func outputLogEntry(entry *client.LogEntry, prefix string) {
+	switch entry.Level {
+	case logger.LevelFatal:
+		console.Fatal(prefix + entry.Line)
+	case logger.LevelError:
+		console.Error(prefix + entry.Line)
+	case logger.LevelWarn:
+		console.Warn(prefix + entry.Line)
+	case logger.LevelStatus: // TODO(andreas): handle status differently or remove
+		console.Info(prefix + entry.Line)
+	case logger.LevelInfo:
+		console.Info(prefix + entry.Line)
+	case logger.LevelDebug:
+		console.Debug(prefix + entry.Line)
+	}
 }
