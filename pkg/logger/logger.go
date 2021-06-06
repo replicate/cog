@@ -71,13 +71,11 @@ type TerminalLogger struct {
 	ui        terminal.UI
 	stepGroup terminal.StepGroup
 	step      terminal.Step
-	prefix    string
 }
 
-func NewTerminalLogger(ui terminal.UI, prefix string) *TerminalLogger {
-	l := &TerminalLogger{ui: ui, prefix: prefix}
+func NewTerminalLogger(ui terminal.UI) *TerminalLogger {
+	l := &TerminalLogger{ui: ui}
 	l.stepGroup = ui.StepGroup()
-	l.step = l.stepGroup.Add("")
 	return l
 }
 
@@ -90,11 +88,16 @@ func (l *TerminalLogger) Debug(line string) {
 }
 
 func (l *TerminalLogger) Infof(line string, args ...interface{}) {
-	l.step.Update(l.prefix + fmt.Sprintf(line, args...))
+	if l.step != nil {
+		l.step.Done()
+	}
+	l.step = l.stepGroup.Add(fmt.Sprintf(line, args...))
 }
 
 func (l *TerminalLogger) Debugf(line string, args ...interface{}) {
-	fmt.Fprintf(l.step.TermOutput(), line+"\n", args...)
+	if l.step != nil {
+		fmt.Fprintf(l.step.TermOutput(), line+"\n", args...)
+	}
 }
 
 func (l *TerminalLogger) WriteStatus(status string, args ...interface{}) {

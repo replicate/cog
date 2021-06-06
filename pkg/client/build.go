@@ -11,6 +11,7 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
+// FIXME(bfirsh): why is this a different format to logger.LogWriter?
 type LogEntry struct {
 	Level logger.Level `json:"level"`
 	Line  string       `json:"line"`
