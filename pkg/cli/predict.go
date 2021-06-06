@@ -68,7 +68,9 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		logWriter := logger.NewTerminalLogger(ui, "Building Docker image from environment in cog.yaml... ")
+		ui.Output("Building Docker image from environment in cog.yaml...")
+		// FIXME: refactor to share with predict
+		logWriter := logger.NewTerminalLogger(ui)
 		generator := docker.NewDockerfileGenerator(config, predictArch, projectDir)
 		defer func() {
 			if err := generator.Cleanup(); err != nil {
