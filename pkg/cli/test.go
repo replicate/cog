@@ -9,6 +9,7 @@ import (
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/serving"
+	"github.com/replicate/cog/pkg/util/config"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -30,7 +31,7 @@ func Test(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	config, projectDir, err := getConfig()
+	config, projectDir, err := config.GetConfig(projectDirFlag)
 	if err != nil {
 		return err
 	}

@@ -3,15 +3,13 @@ package cli
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/client"
-	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/settings"
+	"github.com/replicate/cog/pkg/util/config"
 	"github.com/replicate/cog/pkg/util/console"
-	"github.com/replicate/cog/pkg/util/files"
 )
 
 func newModelCommand() *cobra.Command {
@@ -53,16 +51,10 @@ func modelSet(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	exists, err := files.Exists(filepath.Join(cwd, global.ConfigFilename))
+
+	projectDir, err := config.GetProjectDir(projectDirFlag)
 	if err != nil {
 		console.Error(err.Error())
-	}
-	if !exists {
-		console.Warnf("%s does not exist in %s. Are you in the right directory?", global.ConfigFilename, cwd)
 	}
 
 	cli := client.NewClient()
@@ -70,7 +62,7 @@ func modelSet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	userSettings, err := settings.LoadProjectSettings(cwd)
+	userSettings, err := settings.LoadProjectSettings(projectDir)
 	if err != nil {
 		return err
 	}
