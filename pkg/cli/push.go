@@ -7,9 +7,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/client"
+	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
-	"github.com/replicate/cog/pkg/util/config"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
