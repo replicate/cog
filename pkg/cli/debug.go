@@ -7,6 +7,7 @@ import (
 
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/util/config"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -30,7 +31,7 @@ func newDebugCommand() *cobra.Command {
 }
 
 func cmdDockerfile(cmd *cobra.Command, args []string) error {
-	config, projectDir, err := getConfig()
+	config, projectDir, err := config.GetConfig(projectDirFlag)
 	if err != nil {
 		return err
 	}

@@ -17,10 +17,10 @@ import (
 	"github.com/segmentio/ksuid"
 
 	"github.com/replicate/cog/pkg/database"
-	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/serving"
+	"github.com/replicate/cog/pkg/util/config"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/zip"
 )
@@ -212,18 +212,13 @@ func (s *Server) saveExamples(result *BuildResult, dir string, config *model.Con
 	return nil
 }
 
+// Load the Cog config
 func (s *Server) ReadConfig(dir string) (*model.Config, error) {
-	configRaw, err := os.ReadFile(filepath.Join(dir, global.ConfigFilename))
-	if err != nil {
-		return nil, fmt.Errorf("Failed to read %s: %w", global.ConfigFilename, err)
-	}
-	config, err := model.ConfigFromYAML(configRaw)
+	config, _, err := config.GetConfig("") // Read from cwd by default
 	if err != nil {
 		return nil, err
 	}
-	if err := config.ValidateAndCompleteConfig(); err != nil {
-		return nil, err
-	}
+
 	return config, nil
 }
 
