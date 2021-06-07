@@ -16,11 +16,11 @@ import (
 	"github.com/mholt/archiver/v3"
 	"github.com/segmentio/ksuid"
 
+	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/database"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/serving"
-	"github.com/replicate/cog/pkg/util/config"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/zip"
 )

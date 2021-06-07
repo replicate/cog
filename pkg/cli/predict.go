@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/client"
+	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/model"
@@ -64,7 +65,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		// Local
 
-		config, projectDir, err := getConfig()
+		config, projectDir, err := config.GetConfig(projectDirFlag)
 		if err != nil {
 			return err
 		}

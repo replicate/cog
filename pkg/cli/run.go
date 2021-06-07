@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mattn/go-isatty"
+	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/util/terminal"
@@ -36,7 +37,7 @@ func run(cmd *cobra.Command, args []string) error {
 	ui := terminal.ConsoleUI(context.Background())
 	defer ui.Close()
 
-	config, projectDir, err := getConfig()
+	config, projectDir, err := config.GetConfig(projectDirFlag)
 	if err != nil {
 		return err
 	}
