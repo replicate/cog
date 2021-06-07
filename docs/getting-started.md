@@ -6,15 +6,20 @@ This guide will help you understand how Cog works. We're going to take a model t
 
 You'll need git-lfs installed to get the trained model weights. On Mac, run `brew install git-lfs`.
 
-First, clone our examples repository and cat a look at the `inst-colorization` model:
+First, install Cog if you haven't already:
+
+    curl -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m` > /usr/local/bin/cog
+    chmod +x /usr/local/bin/cog
+
+Then, clone our example repository:
 
     git clone https://github.com/andreasjansson/InstColorization.git
-    cd cog-examples/inst-colorization/
+    cd InstColorization/
 
 In this directory are two files, in addition to the model itself:
 
 - `cog.yaml`, which defines the Docker environment the model will run inside
-- `predict.py`, which defines how inferences are run on the model
+- `cog_predict.py`, which defines how predictions are run on the model
 
 ## Run your model in a consistent environment
 
@@ -30,13 +35,19 @@ The simplest thing you can do with Cog is run a command inside the Docker enviro
     Type "help", "copyright", "credits" or "license" for more information.
     >>>
 
-Cog also lets you run inferences on your model with the interface defined in `predict.py`:
+## Run inferences on a model
 
-    $ cog predict -i
+Cog also lets you run inferences on your model with the interface defined in `cog_predict.py`:
+
+    $ cog predict -i @input.jpg
+    ✓ Building Docker image from environment in cog.yaml... Successfully built 664ef88bc1f4
+    ✓ Model running in Docker image 664ef88bc1f4
+
+    Written output to output.png
 
 ## Pushing a model to a server
 
-First step is to start a server. You'll need to point it at a Docker registry to store the Docker images For example,
+Cog models can be stored centrally on a server so other people can run them and you can deploy them to production.
 
 First step is to start a Cog server:
 
@@ -70,13 +81,13 @@ You can list versions:
 
     $ cog list
     ID                                        CREATED
-    1a7f64c8585020e97d87146e6927af5c147cc49b  about a minute ago
+    0665f83fe2d219e22c56d0a3c7b0c7d96cb65ecc  about a minute ago
     6b4df032586fb9b4831042a65d4e2cd09a36d064  2 minutes ago
 
 And, you can view more details about a version:
 
-    $ cog show 1a7f64c8585020e97d87146e6927af5c147cc49b
-    ID:       1a7f64c8585020e97d87146e6927af5c147cc49b
+    $ cog show 0665f83fe2d219e22c56d0a3c7b0c7d96cb65ecc
+    ID:       0665f83fe2d219e22c56d0a3c7b0c7d96cb65ecc
     Model:    test/hello-world
     Created:  2 minutes ago
     ...
@@ -87,9 +98,13 @@ Cog builds Docker images for each version of your model. Those Docker images ser
 
 To get the Docker image, run this with the version you want to deploy:
 
-    cog show b31f9f72d8f14f0eacc5452e85b05c957b9a8ed9
+    cog show 0665f83fe2d219e22c56d0a3c7b0c7d96cb65ecc
 
 In this output is the name of the CPU or GPU Docker images, dependending on whether you are deploying on CPU or GPU. You can run these anywhere a Docker image runs. For example:
 
     $ docker run -d -p 5000:5000 --gpus all registry.hooli.net/colorization:b6a2f8a2d2ff-gpu
     $ curl http://localhost:5000/predict -F input=@image.png
+
+## Next steps
+
+[You might want to take a look at the guide to help you set up your own model on Cog.](https://github.com/replicate/cog/blob/main/docs/getting-started-own-model.md)
