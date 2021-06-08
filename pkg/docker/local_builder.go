@@ -95,10 +95,21 @@ func (b *LocalImageBuilder) Build(ctx context.Context, dir string, dockerfileCon
 			return "", err
 		}
 
+		latestTag := fmt.Sprintf("%s/%s:latest", b.registry, strings.ToLower(name))
+
+		// delete the current latest image, if it exists. if two versions are pushed
+		// at the same time such that both deletes happen simulataneously, only one of
+		// the deletes will succeed. if two versions are pushed almost simulataneously
+		// such that build 2 causes the delete to happen after build 1 has tagged
+		// :latest, build 2's version will become :latest. this is fine since we only
+		// keep :latest around to persist cached layers.
+		if err := b.rmi(latestTag); err != nil {
+			console.Debugf("Failed to delete old ':latest' image: %v", err)
+		}
+
 		// tag with :latest so we can rmi the tag created above without removing
 		// all the cached layers. this means we only ever keep one copy of the image,
 		// and avoid using too much disk space.
-		latestTag := fmt.Sprintf("%s/%s:latest", b.registry, strings.ToLower(name))
 		if err := b.tag(imageId, latestTag, logWriter); err != nil {
 			return "", err
 		}
