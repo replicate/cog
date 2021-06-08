@@ -28,7 +28,7 @@ def test_server_end_to_end(cog_server, project_dir, tmpdir_factory):
 
     out = show_version(model_url, version_id)
     subprocess.Popen(
-        ["cog", "--model", model_url, "build", "log", "-f", out["build_ids"]["cpu"]]
+        ["cog", "--model", model_url, "build", "log", out["build_ids"]["cpu"]]
     ).communicate()
 
     out = show_version(model_url, version_id)
@@ -41,25 +41,6 @@ def test_server_end_to_end(cog_server, project_dir, tmpdir_factory):
         f"http://{cog_server.registry_host}/v2/{model_name}/tags/list"
     ).json()
     assert tags_response["tags"][0] == image_tag
-
-    # check that only the :latest version remains locally
-    local_tags = (
-        subprocess.Popen(
-            [
-                "docker",
-                "images",
-                f"{cog_server.registry_host}/{model_name}",
-                "--format",
-                "{{.Tag}}",
-            ],
-            stdout=subprocess.PIPE,
-        )
-        .communicate()[0]
-        .decode()
-        .strip()
-        .splitlines()
-    )
-    assert local_tags == ["latest"]
 
     # show without --model
     out, _ = subprocess.Popen(
