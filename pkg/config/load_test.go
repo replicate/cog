@@ -34,14 +34,13 @@ func TestGetProjectDirWithFlagSet(t *testing.T) {
 	require.Equal(t, projectDir, projectDirFlag)
 }
 
-func TestGetConfigShouldLoadFromFile(t *testing.T) {
-	dir, err := ioutil.TempDir("/tmp/", "cog-test")
+func TestGetConfigShouldLoadFromCustomDir(t *testing.T) {
+	dir, err := ioutil.TempDir("", "cog-test")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 
 	err = ioutil.WriteFile(path.Join(dir, "cog.yaml"), []byte(TEST_CONFIG), 0644)
 	require.NoError(t, err)
-	t.Log(dir)
 	conf, _, err := GetConfig(dir)
 	require.NoError(t, err)
 	want := &model.Config{
@@ -71,4 +70,32 @@ func TestGetConfigShouldLoadFromFile(t *testing.T) {
 		},
 	}
 	require.Equal(t, want, conf)
+}
+
+func TestFindProjectRootDirShouldFindParentDir(t *testing.T) {
+	projectDir, err := ioutil.TempDir("", "cog-test")
+	require.NoError(t, err)
+	defer os.RemoveAll(projectDir)
+
+	err = ioutil.WriteFile(path.Join(projectDir, "cog.yaml"), []byte(TEST_CONFIG), 0644)
+	require.NoError(t, err)
+
+	subdir := path.Join(projectDir, "some/sub/dir")
+	os.MkdirAll(subdir, 0700)
+
+	foundDir, err := findProjectRootDir(subdir)
+	require.NoError(t, err)
+	require.Equal(t, foundDir, projectDir)
+}
+
+func TestFindProjectRootDirShouldReturnErrIfNoConfig(t *testing.T) {
+	projectDir, err := ioutil.TempDir("", "cog-test")
+	require.NoError(t, err)
+	defer os.RemoveAll(projectDir)
+
+	subdir := path.Join(projectDir, "some/sub/dir")
+	os.MkdirAll(subdir, 0700)
+
+	_, err = findProjectRootDir(subdir)
+	require.Error(t, err)
 }
