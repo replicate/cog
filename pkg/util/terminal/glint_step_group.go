@@ -84,7 +84,7 @@ func (f *glintStep) TermOutput() io.Writer {
 	defer f.mu.Unlock()
 
 	if f.term == nil {
-		t, err := newGlintTerm(f.ctx, 10, 80)
+		t, err := newGlintTerm(f.ctx, 20, 80)
 		if err != nil {
 			panic(err)
 		}
