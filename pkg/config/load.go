@@ -18,9 +18,9 @@ const maxSearchDepth = 100
 // Public ///////////////////////////////////////
 
 // Returns the project's root directory, or the directory specified by the --project-dir flag
-func GetProjectDir(projectDirFlag string) (string, error) {
-	if projectDirFlag != "" {
-		return projectDirFlag, nil
+func GetProjectDir(customDir string) (string, error) {
+	if customDir != "" {
+		return customDir, nil
 	}
 
 	cwd, err := os.Getwd()
@@ -31,23 +31,10 @@ func GetProjectDir(projectDirFlag string) (string, error) {
 }
 
 // Loads and instantiates a Config object
-// projectDir can be specified to override the default - current working directory
-func GetConfig(projectDir string) (*model.Config, string, error) {
-	var rootDir string
-	if projectDir == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return nil, "", err
-		}
-
-		// First find the project root directory
-		rootDir, err = findProjectRootDir(cwd)
-		if err != nil {
-			return nil, "", err
-		}
-	} else {
-		rootDir = projectDir
-	}
+// customDir can be specified to override the default - current working directory
+func GetConfig(customDir string) (*model.Config, string, error) {
+	// Find the root project directory
+	rootDir, err := GetProjectDir(customDir)
 	configPath := path.Join(rootDir, global.ConfigFilename)
 
 	// Then try to load the config file from there
@@ -107,13 +94,13 @@ func findConfigPathInDirectory(dir string) (configPath string, err error) {
 func findProjectRootDir(startDir string) (string, error) {
 	dir := startDir
 	for i := 0; i < maxSearchDepth; i++ {
-		configPath, err := findConfigPathInDirectory(dir)
+		_, err := findConfigPathInDirectory(dir)
 		if err != nil && !errors.IsConfigNotFound(err) {
 			return "", err
 		} else if err == nil {
-			return configPath, nil
+			return dir, nil
 		} else if dir == "." || dir == "/" {
-			return "", errors.ConfigNotFound(fmt.Sprintf("%s not found in %s (or in any parent directories)", global.ConfigFilename, dir))
+			return "", errors.ConfigNotFound(fmt.Sprintf("%s not found in %s (or in any parent directories)", global.ConfigFilename, startDir))
 		}
 
 		dir = filepath.Dir(dir)
