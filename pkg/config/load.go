@@ -34,7 +34,7 @@ func GetProjectDir(projectDirFlag string) (string, error) {
 // projectDir can be specified to override the default - current working directory
 func GetConfig(projectDir string) (*model.Config, string, error) {
 	var rootDir string
-	if projectDir != "" {
+	if projectDir == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
 			return nil, "", err
