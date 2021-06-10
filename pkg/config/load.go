@@ -35,6 +35,9 @@ func GetProjectDir(customDir string) (string, error) {
 func GetConfig(customDir string) (*model.Config, string, error) {
 	// Find the root project directory
 	rootDir, err := GetProjectDir(customDir)
+	if err != nil {
+		return nil, "", err
+	}
 	configPath := path.Join(rootDir, global.ConfigFilename)
 
 	// Then try to load the config file from there

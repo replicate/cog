@@ -81,7 +81,8 @@ func TestFindProjectRootDirShouldFindParentDir(t *testing.T) {
 	require.NoError(t, err)
 
 	subdir := path.Join(projectDir, "some/sub/dir")
-	os.MkdirAll(subdir, 0700)
+	err = os.MkdirAll(subdir, 0700)
+	require.NoError(t, err)
 
 	foundDir, err := findProjectRootDir(subdir)
 	require.NoError(t, err)
@@ -94,7 +95,8 @@ func TestFindProjectRootDirShouldReturnErrIfNoConfig(t *testing.T) {
 	defer os.RemoveAll(projectDir)
 
 	subdir := path.Join(projectDir, "some/sub/dir")
-	os.MkdirAll(subdir, 0700)
+	err = os.MkdirAll(subdir, 0700)
+	require.NoError(t, err)
 
 	_, err = findProjectRootDir(subdir)
 	require.Error(t, err)
