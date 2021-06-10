@@ -114,4 +114,7 @@ def get_local_ip():
 
 def get_bridge_ip():
     """Return the IP address of the docker bridge network"""
-    return "172.17.0.1"
+    cmd = ["docker", "network", "inspect", "bridge", "--format='{{ json (index .IPAM.Config 0).Gateway }}'"]
+    out, _ = subprocess.Popen(cmd, stdout=subprocess.PIPE).communicate()
+
+    return out.decode().strip().replace('"', "").replace("'", "")
