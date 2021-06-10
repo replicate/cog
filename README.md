@@ -1,4 +1,4 @@
-# Cog: Containers for machine learning models
+# Cog: Containers for machine learning
 
 Define your models in a standard format, store them in a central place, run them anywhere.
 
@@ -44,7 +44,18 @@ environment:
     - libglib2.0-0
 ```
 
-3. Push it:
+3. Run a prediction:
+
+```
+$ cog predict -i @input.jpg
+--> Building Docker image...
+--> Running Prediction...
+--> Output written to output.jpg
+```
+
+That's it! Your model is now running inside a reproducible Docker environment.
+
+You can also save a version of your model and push it to a central server:
 
 ```
 $ cog push
