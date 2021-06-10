@@ -1,4 +1,4 @@
-# Cog: Standard machine learning models
+# Cog: Containers for machine learning models
 
 Define your models in a standard format, store them in a central place, run them anywhere.
 
