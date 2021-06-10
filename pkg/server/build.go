@@ -214,7 +214,7 @@ func (s *Server) saveExamples(result *BuildResult, dir string, config *model.Con
 
 // Load the Cog config
 func (s *Server) ReadConfig(dir string) (*model.Config, error) {
-	config, _, err := config.GetConfig("") // Read from cwd by default
+	config, _, err := config.GetConfig(dir)
 	if err != nil {
 		return nil, err
 	}
