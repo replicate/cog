@@ -1,13 +1,12 @@
-import time
-from contextlib import contextmanager
 import json
-import subprocess
 import random
 import re
-import string
 import socket
+import string
+import subprocess
+import time
+from contextlib import closing, contextmanager
 from typing import List, Optional
-from contextlib import closing
 
 
 def find_free_port():
@@ -112,3 +111,7 @@ def docker_run(
 
 def get_local_ip():
     return socket.gethostbyname(socket.gethostname())
+
+def get_bridge_ip():
+    """Return the IP address of the docker bridge network"""
+    return "172.17.0.1"
