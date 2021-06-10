@@ -1,18 +1,19 @@
 import json
-import redis
-from contextlib import contextmanager
 import multiprocessing
-from flask import Flask, request, jsonify, Response
+from contextlib import contextmanager
+
+import redis
+from flask import Flask, Response, jsonify, request
 
 from .util import (
+    docker_run,
+    find_free_port,
+    get_bridge_ip,
+    push_with_log,
     random_string,
     set_model_url,
     show_version,
-    push_with_log,
-    find_free_port,
-    docker_run,
-    get_local_ip,
-    wait_for_port,
+    wait_for_port
 )
 
 
@@ -28,9 +29,9 @@ def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory):
     input_queue = multiprocessing.Queue()
     output_queue = multiprocessing.Queue()
     controller_port = find_free_port()
-    local_ip = get_local_ip()
-    upload_url = f"http://{local_ip}:{controller_port}/upload"
-    redis_host = local_ip
+    bridge_ip = get_bridge_ip()
+    upload_url = f"http://{bridge_ip}:{controller_port}/upload"
+    redis_host = bridge_ip
     worker_name = "test-worker"
     predict_queue_name = "predict-queue"
     response_queue_name = "response-queue"
@@ -67,7 +68,7 @@ def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory):
                             "path": {
                                 "file": {
                                     "name": "myinput.txt",
-                                    "url": f"http://{local_ip}:{controller_port}/download",
+                                    "url": f"http://{bridge_ip}:{controller_port}/download",
                                 }
                             },
                         },
@@ -93,7 +94,7 @@ def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory):
                             "path": {
                                 "file": {
                                     "name": "myinput.txt",
-                                    "url": f"http://{local_ip}:{controller_port}/download",
+                                    "url": f"http://{bridge_ip}:{controller_port}/download",
                                 }
                             },
                         },
