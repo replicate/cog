@@ -4,3 +4,6 @@ Untitled*.ipynb
 __pycache__
 .cog
 dist
+# Used by a vim plugin (projectionist)
+.projections.json
+.venv/
