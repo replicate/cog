@@ -25,7 +25,7 @@ require (
 	github.com/kr/pretty v0.2.1 // indirect
 	github.com/lab47/vterm v0.0.0-20201001232628-a9dd795f94c2
 	github.com/logrusorgru/aurora v2.0.3+incompatible
-	github.com/mattn/go-isatty v0.0.12
+	github.com/mattn/go-isatty v0.0.13
 	github.com/mholt/archiver/v3 v3.5.0
 	github.com/mitchellh/go-glint v0.0.0-20201119015200-53f6eb3bf4d2
 	github.com/mitchellh/go-homedir v1.1.0
