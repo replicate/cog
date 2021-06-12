@@ -25,11 +25,10 @@ require (
 	github.com/kr/pretty v0.2.1 // indirect
 	github.com/lab47/vterm v0.0.0-20201001232628-a9dd795f94c2
 	github.com/logrusorgru/aurora v2.0.3+incompatible
-	github.com/mattn/go-isatty v0.0.12
+	github.com/mattn/go-isatty v0.0.13
 	github.com/mholt/archiver/v3 v3.5.0
 	github.com/mitchellh/go-glint v0.0.0-20201119015200-53f6eb3bf4d2
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/mitchellh/go-wordwrap v1.0.1
 	github.com/mitchellh/mapstructure v1.3.3 // indirect
 	github.com/moby/term v0.0.0-20201110203204-bea5bbe245bf
 	github.com/montanaflynn/stats v0.6.5
