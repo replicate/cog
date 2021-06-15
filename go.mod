@@ -11,7 +11,7 @@ require (
 	github.com/containerd/console v1.0.2
 	github.com/containerd/containerd v1.4.4 // indirect
 	github.com/docker/distribution v2.7.1+incompatible // indirect
-	github.com/docker/docker v20.10.5+incompatible
+	github.com/docker/docker v20.10.7+incompatible
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.4.0 // indirect
 	github.com/fatih/color v1.10.0
@@ -31,11 +31,11 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/mitchellh/mapstructure v1.3.3 // indirect
 	github.com/moby/term v0.0.0-20201110203204-bea5bbe245bf
-	github.com/montanaflynn/stats v0.6.5
+	github.com/montanaflynn/stats v0.6.6
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.0.1 // indirect
-	github.com/pkg/profile v1.5.0
+	github.com/pkg/profile v1.6.0
 	github.com/sabhiram/go-gitignore v0.0.0-20201211210132-54b8a0bf510f
 	github.com/schollz/progressbar/v3 v3.7.6
 	github.com/segmentio/ksuid v1.0.3
