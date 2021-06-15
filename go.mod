@@ -35,7 +35,7 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.0.1 // indirect
-	github.com/pkg/profile v1.5.0
+	github.com/pkg/profile v1.6.0
 	github.com/sabhiram/go-gitignore v0.0.0-20201211210132-54b8a0bf510f
 	github.com/schollz/progressbar/v3 v3.8.1
 	github.com/segmentio/ksuid v1.0.3
