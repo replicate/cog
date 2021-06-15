@@ -171,7 +171,7 @@ func (s *Server) buildImage(buildID, dir, user, name, id string, version *model.
 			handleError(err)
 			return
 		}
-		if err := s.db.InsertVersion(user, name, id, version); err != nil {
+		if err := s.db.UpdateVersion(user, name, id, version); err != nil {
 			handleError(err)
 			return
 		}

@@ -64,6 +64,10 @@ func (db *LocalFileDatabase) InsertVersion(user string, name string, id string, 
 	return nil
 }
 
+func (db *LocalFileDatabase) UpdateVersion(user string, name string, id string, version *model.Version) error {
+	return db.InsertVersion(user, name, id, version)
+}
+
 // GetVersion returns a model or nil if the model doesn't exist
 func (db *LocalFileDatabase) GetVersion(user string, name string, id string) (*model.Version, error) {
 	path := db.versionPath(user, name, id)
@@ -240,6 +244,35 @@ func (db *LocalFileDatabase) GetBuildLogs(user, name, buildID string, follow boo
 		}
 	}()
 	return logChan, nil
+}
+
+func (db *LocalFileDatabase) ListUserModels() ([]*UserModel, error) {
+	dbDir, err := os.Open(db.rootDir)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to open root dir: %w", err)
+	}
+	usernames, err := dbDir.Readdirnames(-1)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to read root dir: %w", err)
+	}
+	userModels := []*UserModel{}
+	for _, username := range usernames {
+		userDir, err := os.Open(filepath.Join(db.rootDir, username))
+		if err != nil {
+			return nil, fmt.Errorf("Failed to open user dir: %w", err)
+		}
+		modelNames, err := userDir.Readdirnames(-1)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to read user dir: %w", err)
+		}
+		for _, modelName := range modelNames {
+			userModels = append(userModels, &UserModel{
+				Username:  username,
+				ModelName: modelName,
+			})
+		}
+	}
+	return userModels, nil
 }
 
 func (db *LocalFileDatabase) readVersion(path string) (*model.Version, error) {

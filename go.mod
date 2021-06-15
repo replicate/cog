@@ -3,6 +3,7 @@ module github.com/replicate/cog
 go 1.16
 
 require (
+	github.com/GoogleCloudPlatform/cloudsql-proxy v1.23.0
 	github.com/Microsoft/go-winio v0.4.16 // indirect
 	github.com/TylerBrock/colorjson v0.0.0-20200706003622-8a50f05110d2
 	github.com/ahmetalpbalkan/dlog v0.0.0-20170105205344-4fb5f8204f26 // indirect
@@ -15,7 +16,6 @@ require (
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.4.0 // indirect
 	github.com/fatih/color v1.10.0
-	github.com/golang/protobuf v1.4.3 // indirect
 	github.com/golangci/golangci-lint v1.40.1
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
@@ -24,6 +24,7 @@ require (
 	github.com/hpcloud/tail v1.0.0
 	github.com/kr/pretty v0.2.1 // indirect
 	github.com/lab47/vterm v0.0.0-20201001232628-a9dd795f94c2
+	github.com/lib/pq v1.10.2
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/mattn/go-isatty v0.0.12
 	github.com/mholt/archiver/v3 v3.5.0
@@ -42,11 +43,9 @@ require (
 	github.com/spf13/cobra v1.1.3
 	github.com/stretchr/testify v1.7.0
 	github.com/xeonx/timeago v1.0.0-rc4
-	golang.org/x/sys v0.0.0-20210510120138-977fb7262007
+	golang.org/x/sys v0.0.0-20210601080250-7ecdf8ef093b
 	golang.org/x/term v0.0.0-20210220032956-6a3ed077a48d
 	golang.org/x/tools v0.1.2-0.20210512205948-8287d5da45e4
-	google.golang.org/genproto v0.0.0-20210222152913-aa3ee6e6a81c // indirect
-	google.golang.org/grpc v1.35.0 // indirect
 	gopkg.in/fsnotify.v1 v1.4.9 // indirect
 	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools/gotestsum v1.6.4

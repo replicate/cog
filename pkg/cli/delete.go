@@ -16,6 +16,8 @@ func newDeleteCommand() *cobra.Command {
 		Args:    cobra.MinimumNArgs(1),
 		Aliases: []string{"rm"},
 	}
+	addModelFlag(cmd)
+
 	return cmd
 }
 

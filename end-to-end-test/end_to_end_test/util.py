@@ -8,6 +8,8 @@ import string
 import socket
 from typing import List, Optional
 from contextlib import closing
+from waiting import wait
+import requests
 
 
 def find_free_port():
@@ -17,7 +19,7 @@ def find_free_port():
         return s.getsockname()[1]
 
 
-def wait_for_port(host, port, timeout=60):
+def wait_for_port(host, port, timeout=300):
     start = time.time()
     while True:
         try:
@@ -29,6 +31,14 @@ def wait_for_port(host, port, timeout=60):
             pass
         except socket.timeout:
             raise
+
+
+def wait_for_http(url, timeout_seconds=60):
+    return wait(
+        lambda: requests.get(url),
+        timeout_seconds=timeout_seconds,
+        expected_exceptions=(requests.exceptions.ConnectionError,),
+    )
 
 
 def random_string(length):
@@ -103,6 +113,7 @@ def docker_run(
     cmd += [image]
     if command:
         cmd += command
+
     try:
         subprocess.Popen(cmd)
         yield
@@ -112,3 +123,15 @@ def docker_run(
 
 def get_local_ip():
     return socket.gethostbyname(socket.gethostname())
+
+
+def retry(fn, retries=3, sleep=1):
+    e = None
+    for _ in range(retries):
+        try:
+            return fn()
+        except Exception as ee:
+            e = ee
+            time.sleep(sleep)
+    if e is not None:
+        raise e

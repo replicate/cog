@@ -23,7 +23,6 @@ func newListCommand() *cobra.Command {
 	addModelFlag(cmd)
 
 	cmd.Flags().BoolP("quiet", "q", false, "Quite output, only display IDs")
-
 	return cmd
 }
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -17,6 +16,13 @@ import (
 	"github.com/replicate/cog/pkg/util/terminal"
 )
 
+const (
+	storageDir = ".cog/storage"
+
+	// TODO(andreas): make this configurable
+	localDatabaseDir = ".cog/database"
+)
+
 var (
 	port                  int
 	dockerRegistry        string
@@ -26,6 +32,12 @@ var (
 	authDelegate          string
 	cpuConcurrency        int
 	gpuConcurrency        int
+	serverDatabase        string
+	dbHost                string
+	dbPort                int
+	dbUser                string
+	dbPassword            string
+	dbName                string
 )
 
 func newServerCommand() *cobra.Command {
@@ -46,6 +58,14 @@ func newServerCommand() *cobra.Command {
 	cmd.Flags().StringVar(&authDelegate, "auth-delegate", "", "Address to service that handles authentication logic")
 	cmd.Flags().IntVar(&cpuConcurrency, "cpu-concurrency", 4, "Number of concurrent CPU builds")
 	cmd.Flags().IntVar(&gpuConcurrency, "gpu-concurrency", 1, "Number of concurrent GPU builds")
+	cmd.Flags().StringVar(&serverDatabase, "database", "filesystem", "Database (options: 'filesystem', 'postgres', 'googlecloudsql')")
+
+	cmd.Flags().StringVar(&dbHost, "db-host", "", "Database host (applicable when --database=postgres or --database=googlecloudsql)")
+	cmd.Flags().IntVar(&dbPort, "db-port", 5432, "Database port (applicable when --database=postgres or --database=googlecloudsql)")
+	cmd.Flags().StringVar(&dbUser, "db-user", "", "Database user (applicable when --database=postgres or --database=googlecloudsql)")
+	cmd.Flags().StringVar(&dbPassword, "db-password", "", "Database password (applicable when --database=postgres or --database=googlecloudsql)")
+	cmd.Flags().StringVar(&dbName, "db-name", "", "Database name (applicable when --database=postgres or --database=googlecloudsql)")
+
 	return cmd
 }
 
@@ -67,21 +87,14 @@ func startServer(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// TODO(andreas): make this configurable
-	dataDir := ".cog"
-	storageDir := filepath.Join(dataDir, "storage")
 	if err := os.MkdirAll(storageDir, 0755); err != nil {
 		return fmt.Errorf("Failed to create %s: %w", storageDir, err)
 	}
-	databaseDir := filepath.Join(dataDir, "database")
-	if err := os.MkdirAll(databaseDir, 0755); err != nil {
-		return fmt.Errorf("Failed to create %s: %w", databaseDir, err)
-	}
-
-	db, err := database.NewLocalFileDatabase(databaseDir)
+	db, err := database.NewDatabase(serverDatabase, dbHost, dbPort, dbUser, dbPassword, dbName, localDatabaseDir)
 	if err != nil {
 		return err
 	}
+
 	if dockerRegistry == "" {
 		ui.Output("Running without a Docker registry, so any Docker images won't be persisted. Pass the --docker-registry flag to persist images.\n")
 	}
