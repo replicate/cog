@@ -14,7 +14,7 @@ require (
 	github.com/docker/docker v20.10.7+incompatible
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.4.0 // indirect
-	github.com/fatih/color v1.10.0
+	github.com/fatih/color v1.12.0
 	github.com/golang/protobuf v1.4.3 // indirect
 	github.com/golangci/golangci-lint v1.40.1
 	github.com/gorilla/handlers v1.5.1
