@@ -14,9 +14,8 @@ require (
 	github.com/docker/docker v20.10.7+incompatible
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.4.0 // indirect
-	github.com/fatih/color v1.10.0
-	github.com/golang/protobuf v1.4.3 // indirect
-	github.com/golangci/golangci-lint v1.40.1
+	github.com/fatih/color v1.12.0
+	github.com/golangci/golangci-lint v1.41.0
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
 	github.com/hashicorp/go-hclog v0.14.1 // indirect
@@ -44,7 +43,7 @@ require (
 	github.com/xeonx/timeago v1.0.0-rc4
 	golang.org/x/sys v0.0.0-20210511113859-b0526f3d8744
 	golang.org/x/term v0.0.0-20210503060354-a79de5458b56
-	golang.org/x/tools v0.1.2-0.20210512205948-8287d5da45e4
+	golang.org/x/tools v0.1.3
 	google.golang.org/genproto v0.0.0-20210222152913-aa3ee6e6a81c // indirect
 	google.golang.org/grpc v1.35.0 // indirect
 	gopkg.in/fsnotify.v1 v1.4.9 // indirect
