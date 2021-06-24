@@ -37,13 +37,13 @@ require (
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/pkg/profile v1.6.0
 	github.com/sabhiram/go-gitignore v0.0.0-20201211210132-54b8a0bf510f
-	github.com/schollz/progressbar/v3 v3.8.1
+	github.com/schollz/progressbar/v3 v3.8.2
 	github.com/segmentio/ksuid v1.0.3
 	github.com/spf13/cobra v1.1.3
 	github.com/stretchr/testify v1.7.0
 	github.com/xeonx/timeago v1.0.0-rc4
-	golang.org/x/sys v0.0.0-20210511113859-b0526f3d8744
-	golang.org/x/term v0.0.0-20210503060354-a79de5458b56
+	golang.org/x/sys v0.0.0-20210616094352-59db8d763f22
+	golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b
 	golang.org/x/tools v0.1.2-0.20210512205948-8287d5da45e4
 	google.golang.org/genproto v0.0.0-20210222152913-aa3ee6e6a81c // indirect
 	google.golang.org/grpc v1.35.0 // indirect
