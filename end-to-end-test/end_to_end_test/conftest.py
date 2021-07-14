@@ -58,20 +58,21 @@ def project_dir(tmpdir_factory):
     with open(tmpdir / "predict.py", "w") as f:
         f.write(
             """
-import time
+import sys
 import tempfile
 from pathlib import Path
 import cog
 
 class Model(cog.Model):
     def setup(self):
+        print("setting up model")
         self.foo = "foo"
 
     @cog.input("text", type=str)
     @cog.input("path", type=Path)
     @cog.input("output_file", type=bool, default=False)
     def predict(self, text, path, output_file):
-        time.sleep(1)
+        sys.stderr.write("processing " + text + "\\n")
         with open(path) as f:
             output = self.foo + text + f.read()
         if output_file:
@@ -80,7 +81,9 @@ class Model(cog.Model):
             tmp_path = Path(tmp.name)
             with tmp_path.open("w") as f:
                 f.write(output)
+                print("successfully processed file " + text)
                 return tmp_path
+        print("successfully processed " + text)
         return output
         """
         )

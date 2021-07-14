@@ -1,3 +1,4 @@
+import contextlib
 import signal
 import requests
 from io import BytesIO
@@ -222,6 +223,11 @@ class AIPlatformPredictionServer:
 
 
 class RedisQueueWorker:
+    SETUP_TIME_QUEUE_SUFFIX = "-setup-time"
+    RUN_TIME_QUEUE_SUFFIX = "-run-time"
+    STAGE_SETUP = "setup"
+    STAGE_RUN = "run"
+
     def __init__(
         self,
         model: Model,
@@ -230,12 +236,16 @@ class RedisQueueWorker:
         input_queue: str,
         consumer_id: str,
         upload_url: str,
+        model_id: Optional[str] = None,
+        log_queue: Optional[str] = None,
         redis_db: int = 0,
     ):
         self.model = model
+        self.model_id = model_id
         self.redis_host = redis_host
         self.redis_port = redis_port
         self.input_queue = input_queue
+        self.log_queue = log_queue
         self.consumer_id = consumer_id
         self.upload_url = upload_url
         self.redis_db = redis_db
@@ -245,8 +255,8 @@ class RedisQueueWorker:
             host=self.redis_host, port=self.redis_port, db=self.redis_db
         )
         self.should_exit = False
-        self.setup_time_queue = input_queue + "-setup-time"
-        self.predict_time_queue = input_queue + "-run-time"
+        self.setup_time_queue = input_queue + self.SETUP_TIME_QUEUE_SUFFIX
+        self.predict_time_queue = input_queue + self.RUN_TIME_QUEUE_SUFFIX
         self.stats_queue_length = 100
 
         sys.stderr.write(
@@ -293,7 +303,9 @@ class RedisQueueWorker:
     def start(self):
         signal.signal(signal.SIGTERM, self.signal_exit)
         start_time = time.time()
-        self.model.setup()
+
+        with self.capture_log(self.STAGE_SETUP, self.model_id):
+            self.model.setup()
 
         setup_time = time.time() - start_time
         self.redis.xadd(
@@ -351,6 +363,8 @@ class RedisQueueWorker:
     def handle_message(self, response_queue, message, cleanup_functions):
         inputs = {}
         raw_inputs = message["inputs"]
+        prediction_id = message["id"]
+
         for k, v in raw_inputs.items():
             if "value" in v and v["value"] != "":
                 inputs[k] = v["value"]
@@ -369,7 +383,8 @@ class RedisQueueWorker:
             self.push_error(response_queue, e)
             return
 
-        result = run_model(self.model, inputs, cleanup_functions)
+        with self.capture_log(self.STAGE_RUN, prediction_id):
+            result = run_model(self.model, inputs, cleanup_functions)
         self.push_result(response_queue, result)
 
     def download(self, url):
@@ -415,6 +430,51 @@ class RedisQueueWorker:
         )
         resp.raise_for_status()
         return resp.json()["url"]
+
+    @contextlib.contextmanager
+    def capture_log(self, stage, id):
+        """
+        Send each log line to a redis RPUSH queue in addition to an
+        existing output stream.
+        """
+
+        class QueueLogger:
+            def __init__(self, redis, queue, old_out):
+                self.redis = redis
+                self.queue = queue
+                self.old_out = old_out
+                self.linebuf = ""
+
+            def write(self, buf):
+                for line in buf.rstrip().splitlines():
+                    self.redis.rpush(self.queue, self.log_message(line))
+                    self.old_out.write(line + "\n")
+
+            def log_message(self, line):
+                timestamp_sec = time.time()
+                return json.dumps(
+                    {
+                        "stage": stage,
+                        "id": id,
+                        "line": line,
+                        "timestamp_sec": timestamp_sec,
+                    }
+                )
+
+        if self.log_queue is None:
+            yield
+
+        else:
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
+            try:
+                # TODO(andreas): differentiate stdout/stderr?
+                sys.stdout = QueueLogger(self.redis, self.log_queue, old_stdout)
+                sys.stderr = QueueLogger(self.redis, self.log_queue, old_stderr)
+                yield
+            finally:
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
 
 
 def validate_and_convert_inputs(
