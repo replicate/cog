@@ -3,7 +3,8 @@ import multiprocessing
 from contextlib import contextmanager
 
 import redis
-from flask import Flask, Response, jsonify, request
+import flask
+from flask import Flask, Response, jsonify
 
 from .util import (
     docker_run,
@@ -17,7 +18,7 @@ from .util import (
 )
 
 
-def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory):
+def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory, request):
     user = random_string(10)
     model_name = random_string(10)
     model_url = f"http://localhost:{cog_server.port}/{user}/{model_name}"
@@ -40,7 +41,7 @@ def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory):
 
     redis_client = redis.Redis(host=redis_host, port=redis_port, db=0)
 
-    with queue_controller(input_queue, output_queue, controller_port), docker_run(
+    with queue_controller(input_queue, output_queue, controller_port, request), docker_run(
         image=version_data["images"][0]["uri"],
         interactive=True,
         command=[
@@ -50,6 +51,8 @@ def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory):
             predict_queue_name,
             upload_url,
             worker_name,
+            f"{user}/{model_name}:{version_id}",
+            "logs",
         ],
     ):
         redis_client.xgroup_create(
@@ -89,7 +92,7 @@ def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory):
                     {
                         "id": predict_id,
                         "inputs": {
-                            "text": {"value": "bar"},
+                            "text": {"value": "baz"},
                             "output_file": {"value": "true"},
                             "path": {
                                 "file": {
@@ -106,13 +109,36 @@ def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory):
         input_queue.put("test")
         response_contents = output_queue.get()
         response = json.loads(redis_client.brpop(response_queue_name)[1])["file"]
-        assert response_contents.decode() == "foobartest"
+        assert response_contents.decode() == "foobaztest"
         assert response["url"] == "uploaded.txt"
+
+        setup_log_lines = []
+        run_log_lines = []
+        while True:
+            raw_entry = redis_client.lpop("logs")
+            if not raw_entry:
+                break
+            entry = json.loads(raw_entry)
+            stage = entry["stage"]
+            line = entry["line"]
+            if stage == "setup":
+                setup_log_lines.append(line)
+            else:
+                run_log_lines.append(line)
+
+        assert setup_log_lines == ["setting up model"]
+        assert run_log_lines == [
+            "processing bar",
+            "successfully processed bar",
+            "processing baz",
+            "successfully processed file baz",
+        ]
 
 
 @contextmanager
-def queue_controller(input_queue, output_queue, controller_port):
+def queue_controller(input_queue, output_queue, controller_port, request):
     controller = QueueController(input_queue, output_queue, controller_port)
+    request.addfinalizer(controller.kill)
     controller.start()
     yield controller
     controller.kill()
@@ -134,7 +160,7 @@ class QueueController(multiprocessing.Process):
 
         @app.route("/upload", methods=["PUT"])
         def handle_upload():
-            f = request.files["file"]
+            f = flask.request.files["file"]
             contents = f.read()
             self.output_queue.put(contents)
             return jsonify({"url": "uploaded.txt"})
