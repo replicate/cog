@@ -42,7 +42,6 @@ Signed-off-by: Sam Smith <sam.smith@example.com>
 
 You can sign your commit automatically by passing the `-s` option to Git commit: `git commit -s -m "Reticulate splines"`
 
-
 ## Development environment
 
 You'll need Go 1.16, then run:
@@ -64,7 +63,6 @@ The project is formatted by goimports. To format the source code, run:
 As much as possible, this is attempting to follow the [Standard Go Project Layout](https://github.com/golang-standards/project-layout).
 
 - `cmd/` - The root `cog` command.
-- `end-to-end-test/` - High-level integration tests for Cog.
 - `pkg/cli/` - CLI commands.
 - `pkg/client/` - Client used by the CLI to communicate with the server.
 - `pkg/database/` - Used by the server to store metadata about models.
@@ -75,3 +73,4 @@ As much as possible, this is attempting to follow the [Standard Go Project Layou
 - `pkg/settings/` - Manages `.cog` directory in model directories and `.config/cog/` directory for user settings.
 - `pkg/storage/` - Used by the server to store models.
 - `pkg/util/` - Various packages that aren't part of Cog. They could reasonably be separate re-usable projects.
+- `test-integration/` - High-level integration tests for Cog.

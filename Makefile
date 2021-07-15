@@ -28,16 +28,16 @@ test-go: check-fmt vet lint
 	go get gotest.tools/gotestsum
 	go run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
 
-.PHONY: test-end-to-end
-test-end-to-end: install
-	cd end-to-end-test/ && $(MAKE)
+.PHONY: test-integration
+test-integration: install
+	cd test-integration/ && $(MAKE)
 
 .PHONY: test-cog-library
 test-cog-library:
 	cd pkg/docker/ && pytest cog_test.py
 
 .PHONY: test
-test: test-go test-cog-library test-end-to-end
+test: test-go test-cog-library test-integration
 
 .PHONY: install
 install:
