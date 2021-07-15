@@ -37,7 +37,7 @@ require (
 	github.com/pkg/profile v1.6.0
 	github.com/sabhiram/go-gitignore v0.0.0-20201211210132-54b8a0bf510f
 	github.com/schollz/progressbar/v3 v3.8.2
-	github.com/segmentio/ksuid v1.0.3
+	github.com/segmentio/ksuid v1.0.4
 	github.com/spf13/cobra v1.1.3
 	github.com/stretchr/testify v1.7.0
 	github.com/xeonx/timeago v1.0.0-rc4
