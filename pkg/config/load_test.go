@@ -19,11 +19,6 @@ environment:
   system_packages:
     - libgl1-mesa-glx
     - libglib2.0-0
-examples:
-  - input:
-      input: "@example/foo.jpg"
-  - input:
-      input: "@example/bar.jpg"
 `
 
 func TestGetProjectDirWithFlagSet(t *testing.T) {
@@ -54,18 +49,6 @@ func TestGetConfigShouldLoadFromCustomDir(t *testing.T) {
 			SystemPackages: []string{
 				"libgl1-mesa-glx",
 				"libglib2.0-0",
-			},
-		},
-		Examples: []*model.Example{
-			{
-				Input: map[string]string{
-					"input": "@example/foo.jpg",
-				},
-			},
-			{
-				Input: map[string]string{
-					"input": "@example/bar.jpg",
-				},
 			},
 		},
 	}

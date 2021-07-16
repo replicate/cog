@@ -2,11 +2,6 @@ package model
 
 import "time"
 
-const (
-	TargetDockerCPU = "docker-cpu"
-	TargetDockerGPU = "docker-gpu"
-)
-
 type Version struct {
 	ID       string            `json:"id"`
 	Config   *Config           `json:"config"`
@@ -48,13 +43,4 @@ type RunArgument struct {
 	Max     *string      `json:"max"`
 	Options *[]string    `json:"options"`
 	Help    *string      `json:"help"`
-}
-
-func ImageForArch(images []*Image, arch string) *Image {
-	for _, image := range images {
-		if image != nil && image.Arch == arch {
-			return image
-		}
-	}
-	return nil
 }

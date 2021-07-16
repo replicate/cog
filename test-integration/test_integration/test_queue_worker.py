@@ -1,6 +1,7 @@
 import json
 import multiprocessing
 from contextlib import contextmanager
+import pytest
 
 import redis
 import flask
@@ -10,14 +11,14 @@ from .util import (
     docker_run,
     find_free_port,
     get_bridge_ip,
-    push_with_log,
     random_string,
     set_model_url,
     show_version,
-    wait_for_port
+    wait_for_port,
 )
 
 
+@pytest.mark.skip("TODO: bring this back when images can be built")
 def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory, request):
     user = random_string(10)
     model_name = random_string(10)
@@ -41,7 +42,9 @@ def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory, reque
 
     redis_client = redis.Redis(host=redis_host, port=redis_port, db=0)
 
-    with queue_controller(input_queue, output_queue, controller_port, request), docker_run(
+    with queue_controller(
+        input_queue, output_queue, controller_port, request
+    ), docker_run(
         image=version_data["images"][0]["uri"],
         interactive=True,
         command=[

@@ -91,18 +91,6 @@ class Model(cog.Model):
         cog_yaml = """
 name: andreas/hello-world
 model: predict.py:Model
-examples:
-  - input:
-      text: "foo"
-      path: "@myfile.txt"
-    output: "foofoobaz"
-  - input:
-      text: "bar"
-      path: "@myfile.txt"
-    output: "foobarbaz"
-  - input:
-      text: "qux"
-      path: "@myfile.txt"
 environment:
   architectures:
     - cpu

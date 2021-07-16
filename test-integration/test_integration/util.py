@@ -51,28 +51,6 @@ def set_model_url(model_url, project_dir):
     assert out.decode() == f"Updated model: {model_url}\n"
 
 
-def push_with_log(project_dir):
-    out, _ = subprocess.Popen(
-        ["cog", "push", "--log"],
-        cwd=project_dir,
-        stdout=subprocess.PIPE,
-    ).communicate()
-
-    # HACK(bfirsh): try again due to intermittent error
-    # https://github.com/replicate/cog/issues/103
-    if "Successfully uploaded version" not in out.decode():
-        out, _ = subprocess.Popen(
-            ["cog", "push", "--log"],
-            cwd=project_dir,
-            stdout=subprocess.PIPE,
-        ).communicate()
-        assert "Successfully uploaded version" in out.decode()
-
-    version_id = re.search("Successfully uploaded version (.+)", out.decode()).group(1)
-
-    return version_id
-
-
 @contextmanager
 def docker_run(
     image,
@@ -112,9 +90,16 @@ def docker_run(
 def get_local_ip():
     return socket.gethostbyname(socket.gethostname())
 
+
 def get_bridge_ip():
     """Return the IP address of the docker bridge network"""
-    cmd = ["docker", "network", "inspect", "bridge", "--format='{{ json (index .IPAM.Config 0).Gateway }}'"]
+    cmd = [
+        "docker",
+        "network",
+        "inspect",
+        "bridge",
+        "--format='{{ json (index .IPAM.Config 0).Gateway }}'",
+    ]
     out, _ = subprocess.Popen(cmd, stdout=subprocess.PIPE).communicate()
 
     return out.decode().strip().replace('"', "").replace("'", "")
