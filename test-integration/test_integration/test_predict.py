@@ -29,3 +29,8 @@ environment:
         ["cog", "predict", "-i", "world"], cwd=tmpdir, check=True, capture_output=True
     )
     assert b"hello world" in result.stdout
+
+
+def test_predict_with_existing_image(tmpdir_factory):
+    # TODO: when there is a build command
+    pass

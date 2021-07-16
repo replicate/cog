@@ -12,11 +12,9 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/client"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/logger"
-	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/serving"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/mime"
@@ -32,18 +30,19 @@ var (
 
 func newPredictCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "predict [version id]",
-		Short: "Run a prediction on a version",
-		Long: `Run a prediction on a version.
+		Use:   "predict [image]",
+		Short: "Run a prediction",
+		Long: `Run a prediction.
 		
-If 'version id' is passed, it will run the prediction on that version of the 
-model. Otherwise, it will build the model in the current directory and run
+If 'image' is passed, it will run the prediction on that Docker image.
+It must be an image that has been built by Cog.
+
+Otherwise, it will build the model in the current directory and run
 the prediction on that.`,
 		RunE:       cmdPredict,
 		Args:       cobra.MaximumNArgs(1),
 		SuggestFor: []string{"infer"},
 	}
-	addModelFlag(cmd)
 	cmd.Flags().StringArrayVarP(&inputs, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
 	cmd.Flags().StringVarP(&predictArch, "arch", "a", "cpu", "Architecture to run prediction on (cpu/gpu)")
@@ -60,10 +59,10 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	defer ui.Close()
 
 	useGPU := predictArch == "gpu"
-	dockerImageName := ""
+	image := ""
 
 	if len(args) == 0 {
-		// Local
+		// Build image
 
 		config, projectDir, err := config.GetConfig(projectDirFlag)
 		if err != nil {
@@ -83,48 +82,27 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("Failed to generate Dockerfile for %s: %w", predictArch, err)
 		}
 		dockerImageBuilder := docker.NewLocalImageBuilder("")
-		dockerImageName, err = dockerImageBuilder.Build(context.Background(), projectDir, dockerfileContents, "", useGPU, logWriter)
+		image, err = dockerImageBuilder.Build(context.Background(), projectDir, dockerfileContents, "", useGPU, logWriter)
 		if err != nil {
 			return fmt.Errorf("Failed to build Docker image: %w", err)
 		}
 
 		logWriter.Done()
-
 	} else {
-		// Remote
-
-		id := args[0]
-		mod, err := getModel()
-		if err != nil {
-			return err
-		}
-		client := client.NewClient()
-		st := ui.Status()
-		defer st.Close()
-		st.Update("Loading version " + id)
-		version, err := client.GetVersion(mod, id)
-		st.Step(terminal.StatusOK, "Loaded version "+id)
-		if err != nil {
-			return err
-		}
-		image := model.ImageForArch(version.Images, predictArch)
-		// TODO(bfirsh): differentiate between failed builds and in-progress builds, and probably block here if there is an in-progress build
-		if image == nil {
-			return fmt.Errorf("No %s image has been built for %s:%s", predictArch, mod.String(), id)
-		}
-		dockerImageName = image.URI
+		// Use existing image
+		image = args[0]
 	}
 
 	st := ui.Status()
 	defer st.Close()
-	st.Update(fmt.Sprintf("Starting Docker image %s and running setup()...", dockerImageName))
+	st.Update(fmt.Sprintf("Starting Docker image %s and running setup()...", image))
 	servingPlatform, err := serving.NewLocalDockerPlatform()
 	if err != nil {
 		st.Step(terminal.StatusError, "Failed to start model: "+err.Error())
 		return err
 	}
-	logWriter := logger.NewConsoleLogger()
-	deployment, err := servingPlatform.Deploy(context.Background(), dockerImageName, useGPU, logWriter)
+	deployLogWriter := logger.NewConsoleLogger()
+	deployment, err := servingPlatform.Deploy(context.Background(), image, useGPU, deployLogWriter)
 	if err != nil {
 		st.Step(terminal.StatusError, "Failed to start model: "+err.Error())
 		return err
@@ -134,9 +112,9 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			console.Warnf("Failed to kill Docker container: %s", err)
 		}
 	}()
-	st.Step(terminal.StatusOK, fmt.Sprintf("Model running in Docker image %s", dockerImageName))
+	st.Step(terminal.StatusOK, fmt.Sprintf("Model running in Docker image %s", image))
 
-	return predictIndividualInputs(ui, deployment, inputs, outPath, logWriter)
+	return predictIndividualInputs(ui, deployment, inputs, outPath, deployLogWriter)
 }
 
 func predictIndividualInputs(ui terminal.UI, deployment serving.Deployment, inputs []string, outputPath string, logWriter logger.Logger) error {

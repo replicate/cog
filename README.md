@@ -115,4 +115,3 @@ Run this in a terminal:
 - [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's envrionment
 - [Prediction interface reference](docs/python.md) to learn how the `cog.Model` interface works
-- [Server documention](docs/server.md), if you want to integrate directly with the Cog server
