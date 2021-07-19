@@ -69,4 +69,5 @@ As much as possible, this is attempting to follow the [Standard Go Project Layou
 - `pkg/model/` - Models, versions, and configs (`cog.yaml`).
 - `pkg/serving/` - Runs predictions to test models.
 - `pkg/util/` - Various packages that aren't part of Cog. They could reasonably be separate re-usable projects.
+- `python/` - The Cog Python library.
 - `test-integration/` - High-level integration tests for Cog.
