@@ -10,8 +10,18 @@ MAIN := cmd/cog/cog.go
 BUILD_TIME := $(shell date +%Y-%m-%dT%H:%M:%S%z)
 LDFLAGS := -ldflags "-X github.com/replicate/cog/pkg/global.Version=$(VERSION) -X github.com/replicate/cog/pkg/global.BuildTime=$(BUILD_TIME) -w"
 
+
+pkg/dockerfile/embed/cog.whl: python/* python/cog/*
+	@echo "Building Python library"
+	rm -rf python/dist
+	cd python && python setup.py bdist_wheel
+	mkdir -p pkg/dockerfile/embed 
+	cp python/dist/*.whl pkg/dockerfile/embed/cog.whl
+
+go-dependencies: pkg/dockerfile/embed/cog.whl
+
 .PHONY: build
-build: clean
+build: clean go-dependencies
 	@mkdir -p $(RELEASE_DIR)
 	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BINARY) $(MAIN)
 
@@ -24,23 +34,24 @@ generate:
 	go generate ./...
 
 .PHONY: test-go
-test-go: check-fmt vet lint
+test-go: go-dependencies check-fmt vet lint
 	go get gotest.tools/gotestsum
 	go run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
 
+# TODO(bfirsh): use local copy of cog so we don't have to install globally
 .PHONY: test-integration
 test-integration: install
 	cd test-integration/ && $(MAKE)
 
-.PHONY: test-cog-library
-test-cog-library:
-	cd pkg/dockerfile/ && pytest cog_test.py
+.PHONY: test-python
+test-python:
+	cd python/ && pytest
 
 .PHONY: test
-test: test-go test-cog-library test-integration
+test: test-go test-python test-integration
 
 .PHONY: install
-install:
+install: go-dependencies
 	go install $(LDFLAGS) $(MAIN)
 
 .PHONY: fmt

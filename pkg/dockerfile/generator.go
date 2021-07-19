@@ -8,8 +8,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/segmentio/ksuid"
-
 	"github.com/replicate/cog/pkg/model"
 )
 
@@ -27,8 +25,8 @@ const (
 	SectionPreInstall                    = "Running pre-install script"
 )
 
-//go:embed cog.py
-var cogLibrary []byte
+//go:embed embed/cog.whl
+var cogWheelEmbed []byte
 
 type DockerfileGenerator struct {
 	Config *model.Config
@@ -180,20 +178,19 @@ RUN apt-get update -q && apt-get install -qy --no-install-recommends \
 }
 
 func (g *DockerfileGenerator) installCog() (string, error) {
-	cogFilename := ".cog/tmp/cog." + ksuid.New().String() + ".py"
-	cogPath := filepath.Join(g.Dir, cogFilename)
+	// Wheel name needs to be full format otherwise pip refuses to install it
+	cogFilename := "cog-0.0.1.dev-py3-none-any.whl"
+	cogPath := filepath.Join(g.Dir, ".cog/tmp", cogFilename)
 	if err := os.MkdirAll(filepath.Dir(cogPath), 0755); err != nil {
-		return "", fmt.Errorf("Failed to write cog.py: %w", err)
+		return "", fmt.Errorf("Failed to write %s: %w", cogFilename, err)
 	}
-	if err := os.WriteFile(cogPath, cogLibrary, 0644); err != nil {
-		return "", fmt.Errorf("Failed to write cog.py: %w", err)
+	if err := os.WriteFile(cogPath, cogWheelEmbed, 0644); err != nil {
+		return "", fmt.Errorf("Failed to write %s: %w", cogFilename, err)
 	}
 	g.generatedPaths = append(g.generatedPaths, cogPath)
 	return g.sectionLabel(SectionInstallingCog) +
-		fmt.Sprintf(`RUN pip install flask==2.0.1 requests==2.25.1 redis==3.5.3
-ENV PYTHONPATH=/usr/local/lib/cog
-RUN mkdir -p /usr/local/lib/cog
-COPY %s /usr/local/lib/cog/cog.py`, cogFilename), nil
+		fmt.Sprintf(`COPY .cog/tmp/%s /tmp/%s
+RUN pip install /tmp/%s`, cogFilename, cogFilename, cogFilename), nil
 }
 
 func (g *DockerfileGenerator) installHelperScripts() string {

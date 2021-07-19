@@ -1,5 +1,0 @@
-pytest==6.1.1
-waiting==1.4.1
-requests==2.25.1
-redis==3.5.3
-flask==2.0.0
