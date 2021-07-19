@@ -3,7 +3,6 @@ package dockerfile
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -12,11 +11,9 @@ import (
 )
 
 func testInstallCog(generatedPaths []string) string {
-	return fmt.Sprintf(`RUN ### --> Installing Cog
-RUN pip install flask==2.0.1 requests==2.25.1 redis==3.5.3
-ENV PYTHONPATH=/usr/local/lib/cog
-RUN mkdir -p /usr/local/lib/cog
-COPY .cog/tmp/%s /usr/local/lib/cog/cog.py`, filepath.Base(generatedPaths[0]))
+	return `RUN ### --> Installing Cog
+COPY .cog/tmp/cog-0.0.1.dev-py3-none-any.whl /tmp/cog-0.0.1.dev-py3-none-any.whl
+RUN pip install /tmp/cog-0.0.1.dev-py3-none-any.whl`
 }
 
 func testInstallPython(version string) string {

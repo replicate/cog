@@ -25,6 +25,18 @@ jobs:
       - uses: actions/setup-go@v2
         with:
           go-version: 1.16
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - uses: actions/cache@v2
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('**/requirements-dev.txt') }}
+          restore-keys: |
+            pip-${{ secrets.CACHE_VERSION }}-
+      - name: Install Python dependencies
+        run: pip install -r requirements-dev.txt
       - uses: actions/cache@v2
         with:
           path: ~/go/pkg/mod
@@ -36,8 +48,8 @@ jobs:
       - name: Test
         run: make test-go
 
-  test-cog-library:
-    name: "Test Cog library"
+  test-python:
+    name: "Test Python"
     runs-on: ubuntu-20.04
     defaults:
       run:
@@ -51,22 +63,18 @@ jobs:
       - uses: actions/cache@v2
         with:
           path: ~/.cache/pip
-          key: pip-${{ hashFiles('**/pkg/dockerfile/cog_test_requirements.txt') }}
+          key: pip-${{ hashFiles('**/requirements-dev.txt') }}
           restore-keys: |
             pip-${{ secrets.CACHE_VERSION }}-
-      - name: Install requirements
-        run: pip install -r pkg/dockerfile/cog_test_requirements.txt
+      - name: Install Python dependencies
+        run: pip install -r requirements-dev.txt
       - name: Test
-        run: make test-cog-library
+        run: make test-python
 
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-integration:
-    name: "Test (integration)"
+    name: "Test integration"
     runs-on: ubuntu-20.04
-    defaults:
-      run:
-        shell: bash
-        working-directory: test-integration
     steps:
       - uses: actions/checkout@master
       - uses: actions/setup-go@v2
@@ -85,15 +93,14 @@ jobs:
       - uses: actions/cache@v2
         with:
           path: ~/.cache/pip
-          key: pip-${{ hashFiles('**/test-integration/requirements.txt') }}
+          key: pip-${{ hashFiles('**/requirements-dev.txt') }}
           restore-keys: |
             pip-${{ secrets.CACHE_VERSION }}-
-      - name: Install
+      - name: Install Python dependencies
         run: |
-          (cd ../ && make install)
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
       - name: Test
-        run: make test
+        run: make test-integration
 
   main-trigger:
     needs: [test, test-integration]

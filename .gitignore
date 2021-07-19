@@ -4,6 +4,9 @@ Untitled*.ipynb
 __pycache__
 .cog
 dist
+*.egg-info
+pkg/dockerfile/embed/cog.whl
+python/build
 # Used by a vim plugin (projectionist)
 .projections.json
 .venv/
