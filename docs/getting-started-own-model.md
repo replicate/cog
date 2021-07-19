@@ -82,12 +82,20 @@ model: "predict.py:Model"
 That's it! To test this works, try running a prediction on the model:
 
 ```
-$ cog predict -i @input.jpg
+$ cog predict -i input=@input.jpg
 ✓ Building Docker image from environment in cog.yaml... Successfully built 664ef88bc1f4
 ✓ Model running in Docker image 664ef88bc1f4
 
 Written output to output.png
 ```
+
+To pass more inputs to the model, you can add more `-i` options:
+
+```
+$ cog predict -i input=@input.jpg -i scale=2.0
+```
+
+In this case it is just a number, not a file, so you don't need the `@` prefix.
 
 ## Next steps
 
