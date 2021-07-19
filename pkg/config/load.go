@@ -46,7 +46,6 @@ func GetConfig(customDir string) (*model.Config, string, error) {
 		return nil, "", err
 	}
 
-	// Finally, validate the loaded config
 	err = config.ValidateAndCompleteConfig()
 
 	return config, rootDir, err
