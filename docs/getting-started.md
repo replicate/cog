@@ -6,7 +6,7 @@ This guide will help you understand how Cog works. We're going to take a model t
 
 You'll need git-lfs installed to get the trained model weights. On Mac, run `brew install git-lfs`.
 
-First, install Cog if you haven't already:
+First, [install Docker if you haven't already](https://docs.docker.com/get-docker/). Then, install Cog:
 
     curl -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m` > /usr/local/bin/cog
     chmod +x /usr/local/bin/cog
