@@ -20,7 +20,6 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/mime"
 	"github.com/replicate/cog/pkg/util/slices"
-	"github.com/replicate/cog/pkg/util/terminal"
 )
 
 var (
@@ -56,9 +55,6 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--arch must be either 'cpu' or 'gpu'")
 	}
 
-	ui := terminal.ConsoleUI(context.Background())
-	defer ui.Close()
-
 	useGPU := predictArch == "gpu"
 	image := ""
 
@@ -69,13 +65,13 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		ui.Output("Building Docker image from environment in cog.yaml...")
+		console.Info("Building Docker image from environment in cog.yaml...")
 		// FIXME: refactor to share with predict
-		logWriter := logger.NewTerminalLogger(ui)
+		logWriter := logger.NewConsoleLogger()
 		generator := dockerfile.NewGenerator(config, predictArch, projectDir)
 		defer func() {
 			if err := generator.Cleanup(); err != nil {
-				ui.Output(fmt.Sprintf("Error cleaning up Dockerfile generator: %s", err))
+				console.Warnf("Error cleaning up Dockerfile generator: %s", err)
 			}
 		}()
 		dockerfileContents, err := generator.Generate()
@@ -87,25 +83,19 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("Failed to build Docker image: %w", err)
 		}
-
-		logWriter.Done()
 	} else {
 		// Use existing image
 		image = args[0]
 	}
 
-	st := ui.Status()
-	defer st.Close()
-	st.Update(fmt.Sprintf("Starting Docker image %s and running setup()...", image))
+	console.Infof("Starting Docker image %s and running setup()...", image)
 	servingPlatform, err := serving.NewLocalDockerPlatform()
 	if err != nil {
-		st.Step(terminal.StatusError, "Failed to start model: "+err.Error())
 		return err
 	}
 	deployLogWriter := logger.NewConsoleLogger()
 	deployment, err := servingPlatform.Deploy(context.Background(), image, useGPU, deployLogWriter)
 	if err != nil {
-		st.Step(terminal.StatusError, "Failed to start model: "+err.Error())
 		return err
 	}
 	defer func() {
@@ -113,27 +103,20 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			console.Warnf("Failed to kill Docker container: %s", err)
 		}
 	}()
-	st.Step(terminal.StatusOK, fmt.Sprintf("Model running in Docker image %s", image))
 
-	return predictIndividualInputs(ui, deployment, inputs, outPath, deployLogWriter)
+	return predictIndividualInputs(deployment, inputs, outPath, deployLogWriter)
 }
 
-func predictIndividualInputs(ui terminal.UI, deployment serving.Deployment, inputs []string, outputPath string, logWriter logger.Logger) error {
-	st := ui.Status()
-	defer st.Close()
-	st.Update("Running prediction...")
+func predictIndividualInputs(deployment serving.Deployment, inputs []string, outputPath string, logWriter logger.Logger) error {
+	console.Info("Running prediction...")
 	example := parsePredictInputs(inputs)
 	result, err := deployment.RunPrediction(context.Background(), example, logWriter)
 	if err != nil {
-		st.Step(terminal.StatusError, "Failed to run prediction: "+err.Error())
 		return err
 	}
-	st.Close()
 
 	// TODO(andreas): support multiple outputs?
 	output := result.Values["output"]
-
-	ui.Output("")
 
 	// Write to stdout
 	if outputPath == "" {
@@ -143,7 +126,7 @@ func predictIndividualInputs(ui terminal.UI, deployment serving.Deployment, inpu
 			if err != nil {
 				return err
 			}
-			ui.Output(string(output))
+			console.Output(string(output))
 			return nil
 		} else if output.MimeType == "application/json" {
 			var obj map[string]interface{}
@@ -154,7 +137,7 @@ func predictIndividualInputs(ui terminal.UI, deployment serving.Deployment, inpu
 			f := colorjson.NewFormatter()
 			f.Indent = 2
 			s, _ := f.Marshal(obj)
-			ui.Output(string(s))
+			console.Output(string(s))
 			return nil
 		}
 		// Otherwise, fall back to writing file
@@ -183,7 +166,7 @@ func predictIndividualInputs(ui terminal.UI, deployment serving.Deployment, inpu
 		return err
 	}
 
-	ui.Output("Written output to " + outputPath)
+	console.Infof("Written output to %s", outputPath)
 	return nil
 }
 

@@ -12,7 +12,7 @@ import (
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/logger"
-	"github.com/replicate/cog/pkg/util/terminal"
+	"github.com/replicate/cog/pkg/util/console"
 	"github.com/spf13/cobra"
 )
 
@@ -35,20 +35,17 @@ func run(cmd *cobra.Command, args []string) error {
 	// TODO: support multiple run architectures, or automatically select arch based on host
 	arch := "cpu"
 
-	ui := terminal.ConsoleUI(context.Background())
-	defer ui.Close()
-
 	config, projectDir, err := config.GetConfig(projectDirFlag)
 	if err != nil {
 		return err
 	}
 	// FIXME: refactor to share with predict
-	ui.Output("Building Docker image from environment in cog.yaml...")
-	logWriter := logger.NewTerminalLogger(ui)
+	console.Info("Building Docker image from environment in cog.yaml...")
+	logWriter := logger.NewConsoleLogger()
 	generator := dockerfile.NewGenerator(config, arch, projectDir)
 	defer func() {
 		if err := generator.Cleanup(); err != nil {
-			ui.Output(fmt.Sprintf("Error cleaning up Dockerfile generator: %s", err))
+			console.Warnf("Error cleaning up Dockerfile generator: %s", err)
 		}
 	}()
 	dockerfileContents, err := generator.GenerateBase()
@@ -62,13 +59,10 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
 	}
 
-	logWriter.Done()
-
 	// TODO(bfirsh): ports
 	ports := []string{}
 
-	ui.Output(fmt.Sprintf("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " ")))
-	ui.HorizontalRule()
+	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
 
 	dockerArgs := []string{
 		"run",
