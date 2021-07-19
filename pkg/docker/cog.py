@@ -439,6 +439,7 @@ class RedisQueueWorker:
         """
 
         class QueueLogger:
+        # TODO(bfirsh): maybe this should be a subclass of io.TextIOWrapper?
             def __init__(self, redis, queue, old_out):
                 self.redis = redis
                 self.queue = queue
