@@ -61,14 +61,17 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		// Build image
 
-		config, projectDir, err := config.GetConfig(projectDirFlag)
+		cfg, projectDir, err := config.GetConfig(projectDirFlag)
 		if err != nil {
 			return err
 		}
+
+		// TODO: better image management so we don't eat up disk space
+		image = config.DockerImageName(projectDir)
+
 		console.Info("Building Docker image from environment in cog.yaml...")
-		// FIXME: refactor to share with predict
-		logWriter := logger.NewConsoleLogger()
-		generator := dockerfile.NewGenerator(config, predictArch, projectDir)
+		// FIXME: refactor to share with run
+		generator := dockerfile.NewGenerator(cfg, predictArch, projectDir)
 		defer func() {
 			if err := generator.Cleanup(); err != nil {
 				console.Warnf("Error cleaning up Dockerfile generator: %s", err)
@@ -78,9 +81,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("Failed to generate Dockerfile for %s: %w", predictArch, err)
 		}
-		dockerImageBuilder := docker.NewLocalImageBuilder("")
-		image, err = dockerImageBuilder.Build(context.Background(), projectDir, dockerfileContents, "", useGPU, logWriter)
-		if err != nil {
+		if err := docker.Build(projectDir, dockerfileContents, image); err != nil {
 			return fmt.Errorf("Failed to build Docker image: %w", err)
 		}
 	} else {
