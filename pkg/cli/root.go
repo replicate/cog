@@ -34,6 +34,7 @@ https://github.com/replicate/cog`,
 	setPersistentFlags(&rootCmd)
 
 	rootCmd.AddCommand(
+		newBuildCommand(),
 		newDebugCommand(),
 		newPredictCommand(),
 		newRunCommand(),
