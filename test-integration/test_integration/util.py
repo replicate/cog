@@ -34,23 +34,6 @@ def random_string(length):
     return "".join(random.choice(string.ascii_lowercase) for i in range(length))
 
 
-def show_version(model_url, version_id):
-    out, _ = subprocess.Popen(
-        ["cog", "--model", model_url, "show", "--json", version_id],
-        stdout=subprocess.PIPE,
-    ).communicate()
-    return json.loads(out)
-
-
-def set_model_url(model_url, project_dir):
-    out, _ = subprocess.Popen(
-        ["cog", "model", "set", model_url],
-        stdout=subprocess.PIPE,
-        cwd=project_dir,
-    ).communicate()
-    assert out.decode() == f"Updated model: {model_url}\n"
-
-
 @contextmanager
 def docker_run(
     image,
