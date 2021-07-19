@@ -3,49 +3,40 @@ import multiprocessing
 from contextlib import contextmanager
 import pytest
 
-import redis
 import flask
+import redis
 from flask import Flask, Response, jsonify
+import subprocess
 
 from .util import (
     docker_run,
     find_free_port,
     get_bridge_ip,
+    get_local_ip,
     random_string,
-    set_model_url,
-    show_version,
     wait_for_port,
 )
 
 
-@pytest.mark.skip("TODO: bring this back when images can be built")
-def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory, request):
-    user = random_string(10)
-    model_name = random_string(10)
-    model_url = f"http://localhost:{cog_server.port}/{user}/{model_name}"
-
-    set_model_url(model_url, project_dir)
-    version_id = push_with_log(project_dir)
-    version_data = show_version(model_url, version_id)
+def test_queue_worker(project_dir, docker_image, redis_port, request):
+    subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
     input_queue = multiprocessing.Queue()
     output_queue = multiprocessing.Queue()
     controller_port = find_free_port()
-    bridge_ip = get_bridge_ip()
-    upload_url = f"http://{bridge_ip}:{controller_port}/upload"
-    redis_host = bridge_ip
+    local_ip = get_local_ip()
+    upload_url = f"http://{local_ip}:{controller_port}/upload"
+    redis_host = local_ip
     worker_name = "test-worker"
     predict_queue_name = "predict-queue"
     response_queue_name = "response-queue"
-
-    wait_for_port(redis_host, redis_port)
 
     redis_client = redis.Redis(host=redis_host, port=redis_port, db=0)
 
     with queue_controller(
         input_queue, output_queue, controller_port, request
     ), docker_run(
-        image=version_data["images"][0]["uri"],
+        image=docker_image,
         interactive=True,
         command=[
             "cog-redis-queue-worker",
@@ -54,7 +45,7 @@ def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory, reque
             predict_queue_name,
             upload_url,
             worker_name,
-            f"{user}/{model_name}:{version_id}",
+            "model_id",
             "logs",
         ],
     ):
@@ -74,7 +65,7 @@ def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory, reque
                             "path": {
                                 "file": {
                                     "name": "myinput.txt",
-                                    "url": f"http://{bridge_ip}:{controller_port}/download",
+                                    "url": f"http://{local_ip}:{controller_port}/download",
                                 }
                             },
                         },
@@ -100,7 +91,7 @@ def test_queue_worker(cog_server, project_dir, redis_port, tmpdir_factory, reque
                             "path": {
                                 "file": {
                                     "name": "myinput.txt",
-                                    "url": f"http://{bridge_ip}:{controller_port}/download",
+                                    "url": f"http://{local_ip}:{controller_port}/download",
                                 }
                             },
                         },

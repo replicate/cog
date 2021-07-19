@@ -113,4 +113,12 @@ def redis_port():
         publish=[{"host": port, "container": 6379}],
         detach=True,
     ):
+        wait_for_port(get_local_ip(), port)
         yield port
+
+
+@pytest.fixture
+def docker_image():
+    image = "cog-test-" + random_string(10)
+    yield image
+    subprocess.run(["docker", "rmi", image], check=False)
