@@ -21,7 +21,6 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 
-	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/util/console"
@@ -53,11 +52,12 @@ func (p *LocalDockerPlatform) Deploy(ctx context.Context, imageTag string, useGP
 
 	logWriter.Debugf("Deploying container %s", imageTag)
 
-	if !docker.Exists(imageTag, logWriter) {
-		if err := docker.Pull(imageTag, logWriter); err != nil {
-			return nil, fmt.Errorf("Failed to pull image %s: %w", imageTag, err)
-		}
-	}
+	// FIXME(bfirsh): check for 404 instead of checking for existence each time
+	// if !docker.Exists(imageTag, logWriter) {
+	// 	if err := docker.Pull(imageTag, logWriter); err != nil {
+	// 		return nil, fmt.Errorf("Failed to pull image %s: %w", imageTag, err)
+	// 	}
+	// }
 
 	/* requires auth, therefore we just shell out for now
 	_, err := p.client.ImagePull(ctx, imageTag, types.ImagePullOptions{})

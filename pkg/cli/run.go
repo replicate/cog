@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,7 +10,6 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/dockerfile"
-	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/spf13/cobra"
 )
@@ -35,14 +33,18 @@ func run(cmd *cobra.Command, args []string) error {
 	// TODO: support multiple run architectures, or automatically select arch based on host
 	arch := "cpu"
 
-	config, projectDir, err := config.GetConfig(projectDirFlag)
+	cfg, projectDir, err := config.GetConfig(projectDirFlag)
 	if err != nil {
 		return err
 	}
+
+	// TODO: better image management so we don't eat up disk space
+	image := config.BaseDockerImageName(projectDir)
+
 	// FIXME: refactor to share with predict
 	console.Info("Building Docker image from environment in cog.yaml...")
-	logWriter := logger.NewConsoleLogger()
-	generator := dockerfile.NewGenerator(config, arch, projectDir)
+
+	generator := dockerfile.NewGenerator(cfg, arch, projectDir)
 	defer func() {
 		if err := generator.Cleanup(); err != nil {
 			console.Warnf("Error cleaning up Dockerfile generator: %s", err)
@@ -52,10 +54,8 @@ func run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("Failed to generate Dockerfile for %s: %w", arch, err)
 	}
-	dockerImageBuilder := docker.NewLocalImageBuilder("")
-	buildUseGPU := config.Environment.BuildRequiresGPU && arch == "gpu"
-	tag, err := dockerImageBuilder.Build(context.Background(), projectDir, dockerfileContents, "", buildUseGPU, logWriter)
-	if err != nil {
+
+	if err := docker.Build(projectDir, dockerfileContents, image); err != nil {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
 	}
 
@@ -78,7 +78,7 @@ func run(cmd *cobra.Command, args []string) error {
 	if isatty.IsTerminal(os.Stdin.Fd()) {
 		dockerArgs = append(dockerArgs, "--tty")
 	}
-	dockerArgs = append(dockerArgs, tag)
+	dockerArgs = append(dockerArgs, image)
 	dockerArgs = append(dockerArgs, args...)
 
 	dockerCmd := exec.Command("docker", dockerArgs...)

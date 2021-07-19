@@ -26,7 +26,6 @@ type Environment struct {
 	Architectures        []string `json:"architectures" yaml:"architectures"`
 	CUDA                 string   `json:"cuda" yaml:"cuda"`
 	CuDNN                string   `json:"cudnn" yaml:"cudnn"`
-	BuildRequiresGPU     bool     `json:"build_requires_gpu" yaml:"build_requires_gpu"`
 }
 
 type Example struct {
