@@ -70,7 +70,7 @@ func run(cmd *cobra.Command, args []string) error {
 		"--rm",
 		"--shm-size", "8G", // https://github.com/pytorch/pytorch/issues/2244
 		// TODO: escape
-		"--volume", projectDir + ":/code",
+		"--volume", projectDir + ":/src",
 	}
 	for _, port := range ports {
 		dockerArgs = append(dockerArgs, "-p", port+":"+port)
