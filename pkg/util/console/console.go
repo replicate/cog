@@ -11,7 +11,8 @@ import (
 )
 
 // Console represents a standardized interface for console UI. It is designed to abstract:
-// - Writing messages to logs or displaying on console
+// - Writing main output
+// - Giving information to user
 // - Console user interface elements (progress, interactive prompts, etc)
 // - Switching between human and machine modes for these things (e.g. don't display progress bars or colors in logs, don't prompt for input when in a script)
 type Console struct {
@@ -21,22 +22,22 @@ type Console struct {
 	mu        sync.Mutex
 }
 
-// Debug level message
+// Debug prints a verbose debugging message, that is not displayed by default to the user.
 func (c *Console) Debug(msg string) {
 	c.log(DebugLevel, msg)
 }
 
-// Info level message
+// Info tells the user what's going on.
 func (c *Console) Info(msg string) {
 	c.log(InfoLevel, msg)
 }
 
-// Warn level message
+// Warn tells the user that something might break.
 func (c *Console) Warn(msg string) {
 	c.log(WarnLevel, msg)
 }
 
-// Error level message
+// Error tells the user that something is broken.
 func (c *Console) Error(msg string) {
 	c.log(ErrorLevel, msg)
 }
@@ -73,31 +74,12 @@ func (c *Console) Fatalf(msg string, v ...interface{}) {
 	os.Exit(1)
 }
 
-// Output a line to stdout. Useful for printing primary output of a command, or the output of a subcommand.
-func (c *Console) Output(line string) {
+// Output a string to stdout. Useful for printing primary output of a command, or the output of a subcommand.
+// A newline is added to the string.
+func (c *Console) Output(s string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	fmt.Fprintln(os.Stdout, line)
-}
-
-// OutputErr a line to stderr. Useful for printing primary output of a command, or the output of a subcommand.
-func (c *Console) OutputErr(line string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	fmt.Fprintln(os.Stderr, line)
-}
-
-// DebugOutput a line to stdout. Like Output, but only when level is DebugLevel.
-func (c *Console) DebugOutput(line string) {
-	if c.Level > DebugLevel {
-		return
-	}
-	if c.Color {
-		line = aurora.Faint(line).String()
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	fmt.Fprintln(os.Stderr, line)
+	fmt.Fprintln(os.Stdout, s)
 }
 
 func (c *Console) log(level Level, msg string) {

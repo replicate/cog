@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/config"
@@ -50,6 +48,6 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Print(out)
+	console.Output(out)
 	return nil
 }

@@ -74,18 +74,8 @@ func Fatalf(msg string, v ...interface{}) {
 }
 
 // Output a line to stdout. Useful for printing primary output of a command, or the output of a subcommand.
-func Output(line string) {
-	ConsoleInstance.Output(line)
-}
-
-// OutputErr a line to stderr. Useful for printing primary output of a command, or the output of a subcommand.
-func OutputErr(line string) {
-	ConsoleInstance.OutputErr(line)
-}
-
-// DebugOutput a line to stdout. Like Output, but only when level is DebugLevel.
-func DebugOutput(line string) {
-	ConsoleInstance.DebugOutput(line)
+func Output(s string) {
+	ConsoleInstance.Output(s)
 }
 
 // IsTTY checks if a file is a TTY or not. E.g. IsTTY(os.Stdin)
