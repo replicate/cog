@@ -39,7 +39,9 @@ def test_queue_worker(project_dir, docker_image, redis_port, request):
         image=docker_image,
         interactive=True,
         command=[
-            "cog-redis-queue-worker",
+            "python",
+            "-m",
+            "cog.server.redis_queue",
             redis_host,
             str(redis_port),
             predict_queue_name,

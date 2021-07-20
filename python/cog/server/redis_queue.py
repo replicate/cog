@@ -14,7 +14,7 @@ from werkzeug.datastructures import FileStorage
 
 
 from ..input import InputValidationError, validate_and_convert_inputs
-from ..model import Model, run_model
+from ..model import Model, run_model, load_model
 
 
 class RedisQueueWorker:
@@ -271,3 +271,18 @@ class RedisQueueWorker:
             finally:
                 sys.stdout = old_stdout
                 sys.stderr = old_stderr
+
+
+if __name__ == "__main__":
+    model = load_model()
+    worker = RedisQueueWorker(
+        model,
+        redis_host=sys.argv[1],
+        redis_port=sys.argv[2],
+        input_queue=sys.argv[3],
+        upload_url=sys.argv[4],
+        consumer_id=sys.argv[5],
+        model_id=sys.argv[6],
+        log_queue=sys.argv[7],
+    )
+    worker.start()
