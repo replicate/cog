@@ -67,10 +67,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
 ` + testInstallPython("3.8") + testInstallCog(gen.generatedPaths) + `
-WORKDIR /code
+WORKDIR /src
 ` + testHelperScripts() + `
 RUN ### --> Copying code
-COPY . /code
+COPY . /src
 CMD /usr/bin/cog-http-server`
 
 	gen = DockerfileGenerator{Config: conf, Arch: "gpu", Dir: tmpDir}
@@ -82,10 +82,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
 ` + testInstallPython("3.8") + testInstallCog(gen.generatedPaths) + `
-WORKDIR /code
+WORKDIR /src
 ` + testHelperScripts() + `
 RUN ### --> Copying code
-COPY . /code
+COPY . /src
 CMD /usr/bin/cog-http-server`
 
 	require.Equal(t, expectedCPU, actualCPU)
@@ -126,10 +126,10 @@ RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
 RUN ### --> Installing Python packages
 RUN pip install -f https://download.pytorch.org/whl/torch_stable.html   torch==1.5.1+cpu pandas==1.2.0.12
 ` + testInstallCog(gen.generatedPaths) + `
-WORKDIR /code
+WORKDIR /src
 ` + testHelperScripts() + `
 RUN ### --> Copying code
-COPY . /code
+COPY . /src
 CMD /usr/bin/cog-http-server`
 
 	gen = DockerfileGenerator{Config: conf, Arch: "gpu", Dir: tmpDir}
@@ -148,10 +148,10 @@ RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
 RUN ### --> Installing Python packages
 RUN pip install   torch==1.5.1 pandas==1.2.0.12
 ` + testInstallCog(gen.generatedPaths) + `
-WORKDIR /code
+WORKDIR /src
 ` + testHelperScripts() + `
 RUN ### --> Copying code
-COPY . /code
+COPY . /src
 CMD /usr/bin/cog-http-server`
 
 	require.Equal(t, expectedCPU, actualCPU)
@@ -160,10 +160,10 @@ CMD /usr/bin/cog-http-server`
 
 func testHelperScripts() string {
 	return `
-RUN echo '#!/usr/bin/env python\nimport sys\nimport cog\nimport os\nos.chdir("/code")\nsys.path.append("/code")\nfrom predict import Model\ncog.HTTPServer(Model()).start_server()' > /usr/bin/cog-http-server
+RUN echo '#!/usr/bin/env python\nimport sys\nimport cog\nimport os\nos.chdir("/src")\nsys.path.append("/src")\nfrom predict import Model\ncog.HTTPServer(Model()).start_server()' > /usr/bin/cog-http-server
 RUN chmod +x /usr/bin/cog-http-server
-RUN echo '#!/usr/bin/env python\nimport sys\nimport cog\nimport os\nos.chdir("/code")\nsys.path.append("/code")\nfrom predict import Model\ncog.AIPlatformPredictionServer(Model()).start_server()' > /usr/bin/cog-ai-platform-prediction-server
+RUN echo '#!/usr/bin/env python\nimport sys\nimport cog\nimport os\nos.chdir("/src")\nsys.path.append("/src")\nfrom predict import Model\ncog.AIPlatformPredictionServer(Model()).start_server()' > /usr/bin/cog-ai-platform-prediction-server
 RUN chmod +x /usr/bin/cog-ai-platform-prediction-server
-RUN echo '#!/usr/bin/env python\nimport sys\nimport cog\nimport os\nos.chdir("/code")\nsys.path.append("/code")\nfrom predict import Model\ncog.RedisQueueWorker(Model(), redis_host=sys.argv[1], redis_port=sys.argv[2], input_queue=sys.argv[3], upload_url=sys.argv[4], consumer_id=sys.argv[5], model_id=sys.argv[6], log_queue=sys.argv[7]).start()' > /usr/bin/cog-redis-queue-worker
+RUN echo '#!/usr/bin/env python\nimport sys\nimport cog\nimport os\nos.chdir("/src")\nsys.path.append("/src")\nfrom predict import Model\ncog.RedisQueueWorker(Model(), redis_host=sys.argv[1], redis_port=sys.argv[2], input_queue=sys.argv[3], upload_url=sys.argv[4], consumer_id=sys.argv[5], model_id=sys.argv[6], log_queue=sys.argv[7]).start()' > /usr/bin/cog-redis-queue-worker
 RUN chmod +x /usr/bin/cog-redis-queue-worker`
 }

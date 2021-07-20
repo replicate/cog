@@ -111,7 +111,7 @@ func (p *LocalDockerPlatform) Deploy(ctx context.Context, imageTag string, useGP
 	// 	hostConfig.Mounts = []mount.Mount{{
 	// 		Type:     mount.TypeBind,
 	// 		Source:   mountCodePath,
-	// 		Target:   "/code",
+	// 		Target:   "/src",
 	// 		ReadOnly: false,
 	// 	}}
 	// }
