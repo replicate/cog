@@ -9,7 +9,7 @@ from ..input import (
     get_type_name,
     UNSPECIFIED,
 )
-from ..model import Model, run_model
+from ..model import Model, run_model, load_model
 
 
 class AIPlatformPredictionServer:
@@ -97,3 +97,9 @@ class AIPlatformPredictionServer:
         resp.headers["X-Setup-Time"] = setup_time
         resp.headers["X-Run-Time"] = run_time
         return resp
+
+
+if __name__ == "__main__":
+    model = load_model()
+    server = AIPlatformPredictionServer(model)
+    server.start_server()

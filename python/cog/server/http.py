@@ -11,7 +11,7 @@ from ..input import (
     get_type_name,
     UNSPECIFIED,
 )
-from ..model import Model, run_model
+from ..model import Model, run_model, load_model
 
 
 class HTTPServer:
@@ -109,3 +109,9 @@ def _abort400(message):
     resp = jsonify({"message": message})
     resp.status_code = 400
     return resp
+
+
+if __name__ == "__main__":
+    model = load_model()
+    server = HTTPServer(model)
+    server.start_server()

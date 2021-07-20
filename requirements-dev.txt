@@ -1,6 +1,7 @@
 flask==2.0.1
 pillow==8.2.0
 pytest==6.2.4
+PyYAML==5.4.1
 redis==3.5.3
 requests==2.25.1
 waiting==1.4.1
