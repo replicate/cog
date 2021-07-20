@@ -209,8 +209,8 @@ func (g *DockerfileGenerator) serverHelperScript(serverClass string, filename st
 import sys
 import cog
 import os
-os.chdir("` + g.getWorkdir() + `")
-sys.path.append("` + g.getWorkdir() + `")
+os.chdir("/code")
+sys.path.append("/code")
 from ` + module + ` import ` + class + `
 cog.` + serverClass + `(` + class + `()).start_server()`
 	scriptString := strings.ReplaceAll(script, "\n", "\\n")
@@ -229,8 +229,8 @@ func (g *DockerfileGenerator) queueWorkerHelperScript() string {
 import sys
 import cog
 import os
-os.chdir("` + g.getWorkdir() + `")
-sys.path.append("` + g.getWorkdir() + `")
+os.chdir("/code")
+sys.path.append("/code")
 from ` + module + ` import ` + class + `
 cog.RedisQueueWorker(` + class + `(), redis_host=sys.argv[1], redis_port=sys.argv[2], input_queue=sys.argv[3], upload_url=sys.argv[4], consumer_id=sys.argv[5], model_id=sys.argv[6], log_queue=sys.argv[7]).start()`
 	scriptString := strings.ReplaceAll(script, "\n", "\\n")
@@ -283,15 +283,7 @@ func (g *DockerfileGenerator) command() string {
 }
 
 func (g *DockerfileGenerator) workdir() string {
-	return "WORKDIR " + g.getWorkdir()
-}
-
-func (g *DockerfileGenerator) getWorkdir() string {
-	wd := "/code"
-	if g.Config.Workdir != "" {
-		wd += "/" + g.Config.Workdir
-	}
-	return wd
+	return "WORKDIR /code"
 }
 
 func (g *DockerfileGenerator) preInstall() string {

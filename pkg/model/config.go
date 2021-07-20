@@ -37,7 +37,6 @@ type Config struct {
 	Environment *Environment `json:"environment" yaml:"environment"`
 	Image       string       `json:"image" yaml:"image"`
 	Model       string       `json:"model" yaml:"model"`
-	Workdir     string       `json:"workdir" yaml:"workdir"`
 }
 
 func DefaultConfig() *Config {
