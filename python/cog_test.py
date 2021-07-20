@@ -12,10 +12,11 @@ from flask.testing import FlaskClient
 from PIL import Image
 
 import cog
+from cog.server.http import HTTPServer
 
 
 def make_client(version) -> FlaskClient:
-    app = cog.HTTPServer(version).make_app()
+    app = HTTPServer(version).make_app()
     app.config["TESTING"] = True
     with app.test_client() as client:
         return client

@@ -19,6 +19,7 @@ setuptools.setup(
         "flask>=2,<3",
         "redis>=3,<4",
         "requests>=2,<3",
+        "PyYAML",
     ],
     packages=setuptools.find_packages(),
 )
