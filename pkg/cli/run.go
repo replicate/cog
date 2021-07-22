@@ -2,11 +2,8 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 
-	"github.com/mattn/go-isatty"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/dockerfile"
@@ -59,33 +56,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
 	}
 
-	// TODO(bfirsh): ports
-	ports := []string{}
-
+	console.Info("")
 	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
-
-	dockerArgs := []string{
-		"run",
-		"--interactive",
-		"--rm",
-		"--shm-size", "8G", // https://github.com/pytorch/pytorch/issues/2244
-		// TODO: escape
-		"--volume", projectDir + ":/src",
-	}
-	for _, port := range ports {
-		dockerArgs = append(dockerArgs, "-p", port+":"+port)
-	}
-	if isatty.IsTerminal(os.Stdin.Fd()) {
-		dockerArgs = append(dockerArgs, "--tty")
-	}
-	dockerArgs = append(dockerArgs, image)
-	dockerArgs = append(dockerArgs, args...)
-
-	dockerCmd := exec.Command("docker", dockerArgs...)
-	dockerCmd.Env = os.Environ()
-	dockerCmd.Stdout = os.Stdout
-	dockerCmd.Stderr = os.Stderr
-	dockerCmd.Stdin = os.Stdin
-
-	return dockerCmd.Run()
+	return docker.Run(projectDir, image, args)
 }
