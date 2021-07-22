@@ -11,20 +11,6 @@ import (
 	"github.com/replicate/cog/pkg/model"
 )
 
-const SectionPrefix = "### --> "
-
-const (
-	SectionStartingBuild                 = "Starting build"
-	SectionInstallingSystemPackages      = "Installing system packages"
-	SectionInstallingPythonPrerequisites = "Installing Python prerequisites"
-	SectionInstallingPython              = "Installing Python"
-	SectionInstallingPythonRequirements  = "Installing Python requirements"
-	SectionInstallingPythonPackages      = "Installing Python packages"
-	SectionInstallingCog                 = "Installing Cog"
-	SectionCopyingCode                   = "Copying code"
-	SectionPreInstall                    = "Running pre-install script"
-)
-
 //go:embed embed/cog.whl
 var cogWheelEmbed []byte
 
@@ -138,7 +124,7 @@ func (g *DockerfileGenerator) aptInstalls() (string, error) {
 	if len(packages) == 0 {
 		return "", nil
 	}
-	return g.sectionLabel(SectionInstallingSystemPackages) + "RUN apt-get update -qq && apt-get install -qy " +
+	return "RUN apt-get update -qq && apt-get install -qy " +
 		strings.Join(packages, " ") +
 		" && rm -rf /var/lib/apt/lists/*", nil
 }
@@ -148,7 +134,7 @@ func (g *DockerfileGenerator) installPython() (string, error) {
 
 	py := g.Config.Environment.PythonVersion
 
-	return g.sectionLabel(SectionInstallingPythonPrerequisites) + `ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
+	return `ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
 RUN apt-get update -q && apt-get install -qy --no-install-recommends \
 	make \
 	build-essential \
@@ -170,7 +156,7 @@ RUN apt-get update -q && apt-get install -qy --no-install-recommends \
 	git \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
-` + g.sectionLabel(SectionInstallingPython+" "+g.Config.Environment.PythonVersion) + fmt.Sprintf(`RUN curl https://pyenv.run | bash && \
+` + fmt.Sprintf(`RUN curl https://pyenv.run | bash && \
 	git clone https://github.com/momo-lab/pyenv-install-latest.git "$(pyenv root)"/plugins/pyenv-install-latest && \
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s")`, py, py), nil
@@ -187,8 +173,7 @@ func (g *DockerfileGenerator) installCog() (string, error) {
 		return "", fmt.Errorf("Failed to write %s: %w", cogFilename, err)
 	}
 	g.generatedPaths = append(g.generatedPaths, cogPath)
-	return g.sectionLabel(SectionInstallingCog) +
-		fmt.Sprintf(`COPY .cog/tmp/%s /tmp/%s
+	return fmt.Sprintf(`COPY .cog/tmp/%s /tmp/%s
 RUN pip install /tmp/%s`, cogFilename, cogFilename, cogFilename), nil
 }
 
@@ -197,7 +182,7 @@ func (g *DockerfileGenerator) pythonRequirements() (string, error) {
 	if reqs == "" {
 		return "", nil
 	}
-	return g.sectionLabel(SectionInstallingPythonRequirements) + fmt.Sprintf(`COPY %s /tmp/requirements.txt
+	return fmt.Sprintf(`COPY %s /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt`, reqs), nil
 }
 
@@ -222,11 +207,11 @@ func (g *DockerfileGenerator) pipInstalls() (string, error) {
 		extraIndexURLs += "--extra-index-url=" + indexURL
 	}
 
-	return g.sectionLabel(SectionInstallingPythonPackages) + "RUN pip install " + findLinks + " " + extraIndexURLs + " " + strings.Join(packages, " "), nil
+	return "RUN pip install " + findLinks + " " + extraIndexURLs + " " + strings.Join(packages, " "), nil
 }
 
 func (g *DockerfileGenerator) copyCode() string {
-	return g.sectionLabel(SectionCopyingCode) + `COPY . /src`
+	return `COPY . /src`
 }
 
 func (g *DockerfileGenerator) command() string {
@@ -241,13 +226,9 @@ func (g *DockerfileGenerator) preInstall() string {
 	lines := []string{}
 	for _, run := range g.Config.Environment.PreInstall {
 		run = strings.TrimSpace(run)
-		lines = append(lines, g.sectionLabel(SectionPreInstall+" "+run)+"RUN "+run)
+		lines = append(lines, "RUN "+run)
 	}
 	return strings.Join(lines, "\n")
-}
-
-func (g *DockerfileGenerator) sectionLabel(label string) string {
-	return fmt.Sprintf("RUN %s%s\n", SectionPrefix, label)
 }
 
 func filterEmpty(list []string) []string {
