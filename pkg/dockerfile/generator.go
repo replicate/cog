@@ -57,9 +57,12 @@ func (g *DockerfileGenerator) GenerateBase() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	installPython, err := g.installPython()
-	if err != nil {
-		return "", err
+	installPython := ""
+	if g.Arch == "gpu" {
+		installPython, err = g.installPython()
+		if err != nil {
+			return "", err
+		}
 	}
 	aptInstalls, err := g.aptInstalls()
 	if err != nil {
@@ -115,7 +118,8 @@ func (g *DockerfileGenerator) Cleanup() error {
 func (g *DockerfileGenerator) baseImage() (string, error) {
 	switch g.Arch {
 	case "cpu":
-		return "ubuntu:20.04", nil
+
+		return "python:" + g.Config.Environment.PythonVersion, nil
 	case "gpu":
 		return g.Config.CUDABaseImageTag()
 	}
