@@ -8,7 +8,8 @@ It has two required keys: `model` and `environment`. It looks a bit like this:
 model: "model.py:JazzSoloComposerModel"
 environment:
   python_version: "3.8"
-  python_requirements: "requirements.txt"
+  python_packages:
+    - pytorch==1.4.0
   system_packages:
     - "ffmpeg"
     - "libavcodec-dev"
@@ -40,13 +41,15 @@ List of architectures (`cpu` or `gpu`) to build Docker images for. Useful if the
 
 Cog automatically picks the correct version of CUDA to install, but this lets you override it for whatever reason.
 
-### `python_requirements`
+### `python_packages`
 
-The path to a `requirements.txt` file to install. For example:
+A list of Python packages to install, in the format `package=version`. For example:
 
 ```yaml
 environment:
-  python_requirements: "requirements.txt"
+  python_packages:
+    - pillow==8.3.1
+    - tensorflow==2.5.0
 ```
 
 ### `python_version`
