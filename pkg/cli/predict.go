@@ -101,7 +101,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		Image:   image,
 		Volumes: volumes,
 	})
-	if err := predictor.Start(); err != nil {
+	if err := predictor.Start(os.Stderr); err != nil {
 		return err
 	}
 

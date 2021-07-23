@@ -32,7 +32,7 @@ func NewPredictor(runOptions docker.RunOptions) Predictor {
 	return Predictor{runOptions: runOptions}
 }
 
-func (p *Predictor) Start() error {
+func (p *Predictor) Start(logsWriter io.Writer) error {
 	var err error
 	p.port, err = shell.NextFreePort(5000 + rand.Intn(1000))
 	if err != nil {
@@ -49,6 +49,11 @@ func (p *Predictor) Start() error {
 	if err != nil {
 		return fmt.Errorf("Failed to start container: %w", err)
 	}
+	go func() {
+		if err := docker.ContainerLogsFollow(p.containerID, logsWriter); err != nil {
+			console.Warnf("Error getting container logs: %s", err)
+		}
+	}()
 
 	return p.waitForContainerReady()
 }
