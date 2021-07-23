@@ -1,6 +1,6 @@
 # Getting started with your own model
 
-This guide will show you how package up your trained model with Cog and run predictions on it.
+This guide will show you how put your own machine learning model in a Docker image using Cog. If you haven't got a model to try out, you'll want to follow the [main getting started guide](getting-started.md).
 
 ## Define the environment
 
@@ -45,15 +45,15 @@ from pathlib import Path
 import torch
 
 class Model(cog.Model):
-    # Load the model into memory to make running multiple inferences efficient
     def setup(self):
+        """Load the model into memory to make running multiple inferences efficient"""
         self.net = torch.load("weights.pth")
 
     # Define the arguments and types the model takes as input
     @cog.input("input", type=Path, help="Image to enlarge")
     @cog.input("scale", type=float, default=1.5, help="Factor to scale image by")
-    # Run a single prediction on the model
     def predict(self, input, scale):
+        """Run a single prediction on the model"""
         # ... pre-processing ...
         output = self.net(input)
         # ... post-processing ...
@@ -99,4 +99,7 @@ In this case it is just a number, not a file, so you don't need the `@` prefix.
 
 ## Next steps
 
-You might want to look at [the main getting started guide](getting-started.md), where it shows you how to set up a Cog server and push your model to it.
+Next, you might want to take a look at:
+
+- [The reference for `cog.yaml`](docs/yaml.md)
+- [The reference for the Python library](docs/python.md)

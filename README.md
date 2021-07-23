@@ -1,20 +1,52 @@
 # Cog: Containers for machine learning
 
-Define your models in a standard format, store them in a central place, run them anywhere.
+Use Docker for machine learning, without all the pain.
 
-- **Standard interface for a model.** Define all your models with Cog, in a standard format. It's not just the graph – it also includes code, pre-/post-processing, data types, Python dependencies, system dependencies – everything.
-- **Store models in a central place.** No more hunting for the right model file on S3. Cog models are in one place with a content-addressable ID.
-- **Run models anywhere**: Cog models run anywhere Docker runs: your laptop, Kubernetes, cloud platforms, batch processing pipelines, etc. And, you can use adapters to convert the models to on-device formats.
+Cog gives you a consistent environment to run your model in – for developing on your laptop, training on GPU machines, and for other people working on the model. Then, when the model is trained and you want to share or deploy it, you can bake the model into a Docker image that serves a standard HTTP API.
 
-Cog does a few things to make your life easier:
+Cog does a few handy things beyond normal Docker:
 
-- **Automatic Docker image.** Define your environment with a simple format, and Cog will generate CPU and GPU Docker images using best practices and efficient base images.
+- **Automatic Docker image.** Define your environment with a simple configuration file, then Cog will generate Dockerfiles with best practices and do all the GPU configuration for you.
 - **Automatic HTTP service.** Cog will generate an HTTP service from the definition of your model, so you don't need to write a Flask server in the right way.
 - **No more CUDA hell.** Cog knows which CUDA/cuDNN/PyTorch/Tensorflow/Python combos are compatible and will pick the right versions for you.
 
-## How does it work?
+## Develop and train in a consistent environment
 
-1. Define how predictions are run on your model:
+Define the environment your model runs in with `cog.yaml`:
+
+```yaml
+environment:
+  gpu: true
+  system_packages:
+    - libgl1-mesa-glx
+    - libglib2.0-0
+  python_version: "3.8"
+  python_requirements: "requirements.txt"
+```
+
+Now, you can run commands inside this environment:
+
+```
+$ cog run python train.py
+...
+```
+
+This will:
+
+- Generate a `Dockerfile` with best practices
+- Pick the right CUDA version
+- Build an image
+- Run `python train.py` in the image with the current directory mounted as a volume and GPUs hooked up correctly
+
+Or, spin up a Jupyter notebook:
+
+```
+$ cog run jupyter notebook
+```
+
+## Put a trained model in a Docker image
+
+First, you define how predictions are run on your model:
 
 ```python
 import cog
@@ -32,19 +64,7 @@ class ColorizationModel(cog.Model):
         return processed_output
 ```
 
-2. Define the environment it runs in with `cog.yaml`:
-
-```yaml
-model: "model.py:ColorizationModel"
-environment:
-  python_version: "3.8"
-  python_requirements: "requirements.txt"
-  system_packages:
-    - libgl1-mesa-glx
-    - libglib2.0-0
-```
-
-3. Run a prediction:
+Now, you can run predictions on this model:
 
 ```
 $ cog predict -i @input.jpg
@@ -53,53 +73,31 @@ $ cog predict -i @input.jpg
 --> Output written to output.jpg
 ```
 
-That's it! Your model is now running inside a reproducible Docker environment.
-
-You can also save a version of your model and push it to a central server:
+Or, build a Docker image for deployment:
 
 ```
-$ cog push
---> Uploading '.' to http://10.1.2.3/colorization... done
---> Created version b6a2f8a2d2ff
-```
+$ cog build -t my-colorization-model
+--> Building Docker image...
+--> Built my-colorization-model:latest
 
-This has:
-
-- Created a ZIP file containing your code + weights + environment definition, and assigned it a content-addressable SHA256 ID.
-- Pushed this ZIP file up to a central server so it never gets lost and can be run by anyone.
-- Built two Docker images (one for CPU and one for GPU) that contains the model in a reproducible environment, with the correct versions of Python, your dependencies, CUDA, etc.
-
-Now, anyone who has access to this server can run predictions on this model:
-
-```
-$ cog predict b6a2f8a2d2ff -i @input.png -o @output.png
---> Pulling GPU Docker image for b6a2f8a2d2ff... done
---> Running prediction... done
---> Written output to output.png
-```
-
-It is also just a Docker image, so you can run it as an HTTP service wherever Docker runs:
-
-```
-$ cog show b6a2f8a2d2ff
-...
-Docker image (GPU):  registry.hooli.net/colorization:b6a2f8a2d2ff-gpu
-Docker image (CPU):  registry.hooli.net/colorization:b6a2f8a2d2ff-cpu
-
-$ docker run -d -p 5000:5000 --gpus all registry.hooli.net/colorization:b6a2f8a2d2ff-gpu
+$ docker run -d -p 5000:5000 --gpus all my-colorization-model
 
 $ curl http://localhost:5000/predict -X POST -F input=@image.png
 ```
 
+That's it! Your model will now run forever in this reproducible Docker environment.
+
 ## Why are we building this?
 
-It's really hard for researchers to ship machine learning models to production. Dockerfiles, pre-/post-processing, API servers, CUDA versions. More often than not the researcher has to sit down with an engineer to get the damn thing deployed.
+It's really hard for researchers to ship machine learning models to production.
 
-By defining a standard model, all that complexity is wrapped up behind a standard interface. Other systems in your machine learning stack just need to support Cog models and they'll be able to run anything a researcher dreams up.
+Part of the solution is Docker, but it is so complex to get it to work: Dockerfiles, pre-/post-processing, Flask servers, CUDA versions. More often than not the researcher has to sit down with an engineer to get the damn thing deployed.
 
-At Spotify, we built a system like this for deploying audio deep learning models. We realized this was a repeating pattern: [Uber](https://eng.uber.com/michelangelo-pyml/), Coinbase, and others have built similar systems. So, we're making an open source version.
+We are [Andreas](https://github.com/andreasjansson) and [Ben](https://github.com/bfirsh), and we're trying to fix this. Andreas used to work at Spotify, where he built tools for building and deploying audio deep learning models with Docker. Ben worked at Docker, where he created Docker Compose and led product for the developer tools.
 
-The hard part is defining a model interface that works for everyone. We're releasing this early so we can get feedback on the design and find collaborators. Hit us up if you're interested in using it or want to collaborate with us. [We're on Discord](https://discord.gg/QmzJApGjyE) or email us at [team@replicate.ai](mailto:team@replicate.ai).
+We realized that, in addition to Spotify, other companies were also using Docker to build and deploy machine learning models. [Uber](https://eng.uber.com/michelangelo-pyml/), Coinbase, and others have built similar systems. So, we're making an open source version so other people can do this too.
+
+Hit us up if you're interested in using it or want to collaborate with us. [We're on Discord](https://discord.gg/QmzJApGjyE) or email us at [team@replicate.ai](mailto:team@replicate.ai).
 
 ## Install
 

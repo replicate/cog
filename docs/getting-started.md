@@ -1,29 +1,29 @@
-# Quickstart
+# Getting started
 
-> **Note:** This guide is a work in progress! Please excuse the brevity. Hopefully it'll give you an idea of how it works, though.
-
-This guide will help you understand how Cog works. We're going to take a model that somebody else has built and trained and run it with Cog.
-
-You'll need [git-lfs installed](https://docs.github.com/en/github/managing-large-files/versioning-large-files/installing-git-large-file-storage) to get the trained model weights. On Mac, run `brew install git-lfs && git lfs install`.
+This guide will walk you through what you can do with Cog by using an example model.
 
 First, [install Docker if you haven't already](https://docs.docker.com/get-docker/). Then, install Cog:
 
     curl -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m` > /usr/local/bin/cog
     chmod +x /usr/local/bin/cog
 
-Then, clone our example repository:
+Let's make a directory to work in:
 
-    git clone https://github.com/andreasjansson/InstColorization.git
-    cd InstColorization/
+    mkdir cog-quickstart
+    cd cog-quickstart
 
-In this directory are two files, in addition to the model itself:
+## Run commands
 
-- `cog.yaml`, which defines the Docker environment the model will run inside
-- `cog_predict.py`, which defines how predictions are run on the model
+The simplest thing you can do with Cog is run a command inside a Docker environment.
 
-## Run your model in a consistent environment
+The first thing you need to do is create a file called `cog.yaml`:
 
-The simplest thing you can do with Cog is run a command inside the Docker environment. For example, to get a Python shell:
+```yaml
+environment:
+  python_version: "3.8"
+```
+
+Then, you can run any command inside this environment. For example, to get a Python shell:
 
     $ cog run python
     ✓ Building Docker image from environment in cog.yaml... Successfully built 8f54020c8981
@@ -35,76 +35,133 @@ The simplest thing you can do with Cog is run a command inside the Docker enviro
     Type "help", "copyright", "credits" or "license" for more information.
     >>>
 
-## Run inferences on a model
+Inside this environment you can do anything – run a Jupyter notebook, your training script, your evaluation script, and so on.
 
-Cog also lets you run inferences on your model with the interface defined in `cog_predict.py`:
+## Run predictions on a model
 
-    $ cog predict -i @input.jpg
-    ✓ Building Docker image from environment in cog.yaml... Successfully built 664ef88bc1f4
-    ✓ Model running in Docker image 664ef88bc1f4
+Let's pretend we've trained a model. With Cog, we can define how to run predictions on it in a standard way, so other people can easily run predictions on it without having to hunt around for a prediction script.
 
-    Written output to output.png
+First, run this get some pre-trained model weights:
 
-## Pushing a model to a server
+    wget https://storage.googleapis.com/tensorflow/keras-applications/resnet/resnet50_weights_tf_dim_ordering_tf_kernels.h5
 
-Cog models can be stored centrally on a server so other people can run them and you can deploy them to production.
+Then, we need to write some code to describe how inferences are run on the model. Save this to `predict.py`:
 
-First step is to start a Cog server:
+```python
+import cog
+from pathlib import Path
+from tensorflow.keras.applications.resnet50 import ResNet50
+from tensorflow.keras.preprocessing import image
+from tensorflow.keras.applications.resnet50 import preprocess_input, decode_predictions
+import numpy as np
 
-    cog server
 
-> Note: This won't persist any Docker images you create to a Docker registry, so you won't be able to share any models you push. In production, you probably want to create a registry on somewhere like [Google Cloud Container Registry](https://cloud.google.com/container-registry/docs/quickstart) and pass it with the `--docker-registry` flag.
+class ResNetModel(cog.Model):
+    def setup(self):
+        """Load the model into memory to make running multiple inferences efficient"""
+        self.model = ResNet50(weights='resnet50_weights_tf_dim_ordering_tf_kernels.h5')
 
-Next, connect the directory on your local machine to a model on the server:
+    # Define the arguments and types the model takes as input
+    @cog.input("input", type=Path, help="Image to classify")
+    def predict(self, input):
+        """Run a single prediction on the model"""
+        # Preprocess the image
+        img = image.load_img(input, target_size=(224, 224))
+        x = image.img_to_array(img)
+        x = np.expand_dims(x, axis=0)
+        x = preprocess_input(x)
+        # Run the prediction
+        preds = self.model.predict(x)
+        # Return the top 3 predictions
+        return str(decode_predictions(preds, top=3)[0])
+```
 
-    $ cog model set http://localhost:8080/test/inst-colorization
+We also need to point Cog at this, and tell it what Python dependencies to install. Update `cog.yaml` to look like this:
 
-Then, let's push the model:
+```yaml
+environment:
+  python_version: "3.8"
+  python_packages:
+    - pillow==8.3.1
+    - tensorflow==2.5.0
+model: "predict.py:ResNetModel"
+```
 
-    $ cog push
-    Uploading /Users/ben/p/cog-examples/inst-colorization to http://localhost:8080/test/inst-colorization
-    Successfully uploaded version 0665f83fe2d219e22c56d0a3c7b0c7d96cb65ecc
+Let's grab an image to test the model with:
 
-    Docker image for cpu building in the background... See the status with:
-      cog build log 1tVML8WbzoVhCz7OrRr3lJIe5aH
+    curl https://upload.wikimedia.org/wikipedia/commons/4/4d/Cat_November_2010-1a.jpg > input.jpg
 
-    Docker image for gpu building in the background... See the status with:
-      cog build log 1tVML8vTraxdWCF6IEZ6db31SiM
+Now, let's run the model using Cog:
 
-This has uploaded the current directory to the server and created a new **version** of your model. In the background, it is now building two Docker images (CPU and GPU variants) that will run your model. You can see the status of the build by running the `cog build log` commands it mentions.
+```
+$ cog predict -i @input.jpg
+...
+[
+  [
+    "n02123159",
+    "tiger_cat",
+    0.4874822497367859
+  ],
+  [
+    "n02123045",
+    "tabby",
+    0.23169134557247162
+  ],
+  [
+    "n02124075",
+    "Egyptian_cat",
+    0.09728282690048218
+  ]
+]
+```
 
-When the build has finished, you can run predictions on the built model from any machine that is pointed at the server. Replace the ID with the ID mentioned by `cog push`, and the file with an image on your disk you want to colorize:
+Looks like it worked!
 
-    cog predict 0665f83fe2d219e22c56d0a3c7b0c7d96cb65ecc -i @hotdog.jpg
+## Build an image
 
-You can list versions:
+We can bake your model's code, the trained weights, and the Docker environment into a Docker image. This image serves inferences with an HTTP server, and can be deployed to anywhere that Docker runs to serve real-time inferences.
 
-    $ cog list
-    ID                                        CREATED
-    0665f83fe2d219e22c56d0a3c7b0c7d96cb65ecc  about a minute ago
-    6b4df032586fb9b4831042a65d4e2cd09a36d064  2 minutes ago
+```
+$ cog build -t resnet
+Building Docker image...
+Built resnet:latest
+```
 
-And, you can view more details about a version:
+You can run this image with `cog predict` by passing the image name as an argument:
 
-    $ cog show 0665f83fe2d219e22c56d0a3c7b0c7d96cb65ecc
-    ID:       0665f83fe2d219e22c56d0a3c7b0c7d96cb65ecc
-    Model:    test/hello-world
-    Created:  2 minutes ago
-    ...
+```
+$ cog predict resnet:latest -i @input.jpg
+```
 
-## Deploying the model
+Or, you can run it with Docker directly, and it'll serve an HTTP server:
 
-Cog builds Docker images for each version of your model. Those Docker images serve an HTTP prediction API (to be documented).
+```
+$ docker run -d -p 5000:5000 --gpus all resnet
 
-To get the Docker image, run this with the version you want to deploy:
+$ curl http://localhost:5000/predict -X POST -F input=@image.png
+```
 
-    cog show 0665f83fe2d219e22c56d0a3c7b0c7d96cb65ecc
+As a shorthand, you can add the image name as an extra line in `cog.yaml`:
 
-In this output is the name of the CPU or GPU Docker images, dependending on whether you are deploying on CPU or GPU. You can run these anywhere a Docker image runs. For example:
+```yaml
+image: "registry.hooli.corp/resnet"
+```
 
-    $ docker run -d -p 5000:5000 --gpus all registry.hooli.net/colorization:b6a2f8a2d2ff-gpu
-    $ curl http://localhost:5000/predict -F input=@image.png
+Once you've done this, you can use `cog push` to build and push the image to a Docker registry:
+
+```
+$ cog push
+Building registry.hooli.corp/resnet...
+Pushing registry.hooli.corp/resnet...
+Pushed!
+```
+
+The Docker image is now accessible to anyone or any system that has access to this Docker registry.
 
 ## Next steps
 
-[You might want to take a look at the guide to help you set up your own model on Cog.](https://github.com/replicate/cog/blob/main/docs/getting-started-own-model.md)
+Those are the basics! Next, you might want to take a look at:
+
+- [A guide to help you set up your own model on Cog.](docs/getting-started-own-model.md)
+- [Reference for `cog.yaml`](docs/yaml.md)
+- [Reference for the Python library](docs/python.md)
