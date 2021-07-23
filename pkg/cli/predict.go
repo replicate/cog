@@ -54,6 +54,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	}
 
 	image := ""
+	volumes := []docker.Volume{}
 
 	if len(args) == 0 {
 		// Build image
@@ -64,7 +65,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 
 		// TODO: better image management so we don't eat up disk space
-		image = config.DockerImageName(projectDir)
+		image = config.BaseDockerImageName(projectDir)
 
 		console.Info("Building Docker image from environment in cog.yaml...")
 		// FIXME: refactor to share with run
@@ -74,13 +75,20 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 				console.Warnf("Error cleaning up Dockerfile generator: %s", err)
 			}
 		}()
-		dockerfileContents, err := generator.Generate()
+		dockerfileContents, err := generator.GenerateBase()
 		if err != nil {
 			return fmt.Errorf("Failed to generate Dockerfile for %s: %w", predictArch, err)
 		}
 		if err := docker.Build(projectDir, dockerfileContents, image); err != nil {
 			return fmt.Errorf("Failed to build Docker image: %w", err)
 		}
+
+		// Base image doesn't have /src in it, so mount as volume
+		volumes = append(volumes, docker.Volume{
+			Source:      projectDir,
+			Destination: "/src",
+		})
+
 	} else {
 		// Use existing image
 		image = args[0]
@@ -91,7 +99,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 	predictor := predict.NewPredictor(docker.RunOptions{
 		Image:   image,
-		Workdir: "/src",
+		Volumes: volumes,
 	})
 	if err := predictor.Start(); err != nil {
 		return err
