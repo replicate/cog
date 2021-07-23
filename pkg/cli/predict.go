@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,8 +14,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/dockerfile"
-	"github.com/replicate/cog/pkg/logger"
-	"github.com/replicate/cog/pkg/serving"
+	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/mime"
 	"github.com/replicate/cog/pkg/util/slices"
@@ -55,7 +53,6 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--arch must be either 'cpu' or 'gpu'")
 	}
 
-	useGPU := predictArch == "gpu"
 	image := ""
 
 	if len(args) == 0 {
@@ -89,29 +86,32 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		image = args[0]
 	}
 
+	console.Info("")
 	console.Infof("Starting Docker image %s and running setup()...", image)
-	servingPlatform, err := serving.NewLocalDockerPlatform()
-	if err != nil {
+
+	predictor := predict.NewPredictor(docker.RunOptions{
+		Image:   image,
+		Workdir: "/src",
+	})
+	if err := predictor.Start(); err != nil {
 		return err
 	}
-	deployLogWriter := logger.NewConsoleLogger()
-	deployment, err := servingPlatform.Deploy(context.Background(), image, useGPU, deployLogWriter)
-	if err != nil {
-		return err
-	}
+
+	// FIXME: will not run on signal
 	defer func() {
-		if err := deployment.Undeploy(); err != nil {
-			console.Warnf("Failed to kill Docker container: %s", err)
+		console.Infof("Stopping model...")
+		if err := predictor.Stop(); err != nil {
+			console.Warnf("Failed to stop container: %s", err)
 		}
 	}()
 
-	return predictIndividualInputs(deployment, inputs, outPath, deployLogWriter)
+	return predictIndividualInputs(predictor, inputs, outPath)
 }
 
-func predictIndividualInputs(deployment serving.Deployment, inputs []string, outputPath string, logWriter logger.Logger) error {
+func predictIndividualInputs(predictor predict.Predictor, inputs []string, outputPath string) error {
 	console.Info("Running prediction...")
-	example := parsePredictInputs(inputs)
-	result, err := deployment.RunPrediction(context.Background(), example, logWriter)
+	input := parsePredictInputs(inputs)
+	result, err := predictor.Predict(input)
 	if err != nil {
 		return err
 	}
@@ -171,7 +171,7 @@ func predictIndividualInputs(deployment serving.Deployment, inputs []string, out
 	return nil
 }
 
-func parsePredictInputs(inputs []string) *serving.Example {
+func parsePredictInputs(inputs []string) predict.Input {
 	keyVals := map[string]string{}
 	for _, input := range inputs {
 		var name, value string
@@ -190,5 +190,5 @@ func parsePredictInputs(inputs []string) *serving.Example {
 		}
 		keyVals[name] = value
 	}
-	return serving.NewExample(keyVals)
+	return predict.NewInput(keyVals)
 }
