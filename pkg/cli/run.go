@@ -58,5 +58,10 @@ func run(cmd *cobra.Command, args []string) error {
 
 	console.Info("")
 	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
-	return docker.Run(projectDir, image, args)
+	return docker.Run(docker.RunOptions{
+		Args:    args,
+		Image:   image,
+		Volumes: []docker.Volume{{Source: projectDir, Destination: "/src"}},
+		Workdir: "/src",
+	})
 }

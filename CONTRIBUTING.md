@@ -67,7 +67,7 @@ As much as possible, this is attempting to follow the [Standard Go Project Layou
 - `pkg/docker/` - Various interfaces with Docker for building and running containers.
 - `pkg/dockerfile/` - Creates Dockerfiles.
 - `pkg/model/` - Models, versions, and configs (`cog.yaml`).
-- `pkg/serving/` - Runs predictions to test models.
+- `pkg/predict/` - Runs predictions on models.
 - `pkg/util/` - Various packages that aren't part of Cog. They could reasonably be separate re-usable projects.
 - `python/` - The Cog Python library.
 - `test-integration/` - High-level integration tests for Cog.
