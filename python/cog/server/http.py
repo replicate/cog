@@ -11,6 +11,7 @@ from ..input import (
     get_type_name,
     UNSPECIFIED,
 )
+from ..json import to_json
 from ..model import Model, run_model, load_model
 
 
@@ -99,7 +100,7 @@ class HTTPServer:
         elif isinstance(result, str):
             resp = Response(result, mimetype="text/plain")
         else:
-            resp = jsonify(result)
+            resp = Response(to_json(result), mimetype="application/json")
         resp.headers["X-Setup-Time"] = setup_time
         resp.headers["X-Run-Time"] = run_time
         return resp
