@@ -138,7 +138,7 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 			console.Output(string(output))
 			return nil
 		} else if output.MimeType == "application/json" {
-			var obj map[string]interface{}
+			var obj interface{}
 			dec := json.NewDecoder(output.Buffer)
 			if err := dec.Decode(&obj); err != nil {
 				return err

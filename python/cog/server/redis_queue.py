@@ -14,6 +14,7 @@ from werkzeug.datastructures import FileStorage
 
 
 from ..input import InputValidationError, validate_and_convert_inputs
+from ..json import to_json
 from ..model import Model, run_model, load_model
 
 
@@ -210,7 +211,7 @@ class RedisQueueWorker:
             }
         else:
             message = {
-                "value": json.dumps(result),
+                "value": to_json(result),
             }
 
         sys.stderr.write(f"Pushing successful result to {response_queue}\n")
