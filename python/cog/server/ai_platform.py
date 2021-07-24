@@ -9,6 +9,7 @@ from ..input import (
     get_type_name,
     UNSPECIFIED,
 )
+from ..json import to_json
 from ..model import Model, run_model, load_model
 
 
@@ -38,10 +39,13 @@ class AIPlatformPredictionServer:
                     except InputValidationError as e:
                         return jsonify({"error": str(e)})
                     results.append(run_model(self.model, instance, cleanup_functions))
-                return jsonify(
-                    {
-                        "predictions": results,
-                    }
+                return Response(
+                    to_json(
+                        {
+                            "predictions": results,
+                        }
+                    ),
+                    mimetype="application/json",
                 )
             except Exception as e:
                 tb = traceback.format_exc()

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from flask.testing import FlaskClient
+import numpy as np
 from PIL import Image
 
 import cog
@@ -220,7 +221,7 @@ def test_min_max():
     client = make_client(Model())
     resp = client.post("/predict", data={"num1": 3, "num2": -4, "num3": -4})
     assert resp.status_code == 200
-    assert resp.data == b"-5.0\n"
+    assert resp.data == b"-5.0"
     resp = client.post("/predict", data={"num1": 2, "num2": -4, "num3": -4})
     assert resp.status_code == 400
     resp = client.post("/predict", data={"num1": 3, "num2": -4.1, "num3": -4})
@@ -390,6 +391,21 @@ def test_path_output_image():
     # need both image/bmp and image/x-ms-bmp until https://bugs.python.org/issue44211 is fixed
     assert resp.content_type in ["image/bmp", "image/x-ms-bmp"]
     assert resp.content_length == 195894
+
+
+def test_json_output_numpy():
+    class Model(cog.Model):
+        def setup(self):
+            pass
+
+        def predict(self):
+            return {"foo": np.float32(1.0)}
+
+    client = make_client(Model())
+    resp = client.post("/predict")
+    assert resp.status_code == 200
+    assert resp.content_type == "application/json"
+    assert resp.data == b'{"foo": 1.0}'
 
 
 def test_multiple_arguments():
