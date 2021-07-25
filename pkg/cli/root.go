@@ -37,6 +37,7 @@ https://github.com/replicate/cog`,
 		newBuildCommand(),
 		newDebugCommand(),
 		newPredictCommand(),
+		newPushCommand(),
 		newRunCommand(),
 	)
 
