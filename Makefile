@@ -34,7 +34,7 @@ test-integration: install
 
 .PHONY: test-cog-library
 test-cog-library:
-	cd pkg/docker/ && pytest cog_test.py
+	cd pkg/dockerfile/ && pytest cog_test.py
 
 .PHONY: test
 test: test-go test-cog-library test-integration

@@ -51,11 +51,11 @@ jobs:
       - uses: actions/cache@v2
         with:
           path: ~/.cache/pip
-          key: pip-${{ hashFiles('**/pkg/docker/cog_test_requirements.txt') }}
+          key: pip-${{ hashFiles('**/pkg/dockerfile/cog_test_requirements.txt') }}
           restore-keys: |
             pip-${{ secrets.CACHE_VERSION }}-
       - name: Install requirements
-        run: pip install -r pkg/docker/cog_test_requirements.txt
+        run: pip install -r pkg/dockerfile/cog_test_requirements.txt
       - name: Test
         run: make test-cog-library
 

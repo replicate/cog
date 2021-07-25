@@ -1,4 +1,4 @@
-package docker
+package dockerfile
 
 import (
 	_ "embed"
@@ -43,7 +43,7 @@ type DockerfileGenerator struct {
 	generatedPaths []string
 }
 
-func NewDockerfileGenerator(config *model.Config, arch string, dir string) *DockerfileGenerator {
+func NewGenerator(config *model.Config, arch string, dir string) *DockerfileGenerator {
 	return &DockerfileGenerator{
 		Config:         config,
 		Arch:           arch,
