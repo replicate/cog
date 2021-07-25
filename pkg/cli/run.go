@@ -10,6 +10,7 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/util/terminal"
 	"github.com/spf13/cobra"
@@ -44,7 +45,7 @@ func run(cmd *cobra.Command, args []string) error {
 	// FIXME: refactor to share with predict
 	ui.Output("Building Docker image from environment in cog.yaml...")
 	logWriter := logger.NewTerminalLogger(ui)
-	generator := docker.NewDockerfileGenerator(config, arch, projectDir)
+	generator := dockerfile.NewGenerator(config, arch, projectDir)
 	defer func() {
 		if err := generator.Cleanup(); err != nil {
 			ui.Output(fmt.Sprintf("Error cleaning up Dockerfile generator: %s", err))

@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
@@ -237,11 +238,11 @@ func buildPipe(pipe io.ReadCloser, logWriter logger.Logger) (tag string) {
 	// all LABELs to be at the end of the build script.
 
 	successPrefix := "Successfully built "
-	sectionPrefix := "RUN " + SectionPrefix
+	sectionPrefix := "RUN " + dockerfile.SectionPrefix
 	buildkitRegex := regexp.MustCompile("^#[0-9]+ writing image sha256:([0-9a-f]{12}).+$")
 
 	scanner := bufio.NewScanner(pipe)
-	currentSection := SectionStartingBuild
+	currentSection := dockerfile.SectionStartingBuild
 	logWriter.Infof(currentSection)
 
 	for scanner.Scan() {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/logger"
 	"github.com/replicate/cog/pkg/serving"
 	"github.com/replicate/cog/pkg/util/console"
@@ -71,7 +72,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		ui.Output("Building Docker image from environment in cog.yaml...")
 		// FIXME: refactor to share with predict
 		logWriter := logger.NewTerminalLogger(ui)
-		generator := docker.NewDockerfileGenerator(config, predictArch, projectDir)
+		generator := dockerfile.NewGenerator(config, predictArch, projectDir)
 		defer func() {
 			if err := generator.Cleanup(); err != nil {
 				ui.Output(fmt.Sprintf("Error cleaning up Dockerfile generator: %s", err))
