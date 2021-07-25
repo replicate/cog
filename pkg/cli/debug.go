@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -40,7 +40,7 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	generator := docker.NewDockerfileGenerator(config, arch, projectDir)
+	generator := dockerfile.NewGenerator(config, arch, projectDir)
 	defer func() {
 		if err := generator.Cleanup(); err != nil {
 			console.Warnf("Error cleaning up after build: %v", err)
