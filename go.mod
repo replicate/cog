@@ -48,7 +48,7 @@ require (
 	google.golang.org/grpc v1.35.0 // indirect
 	gopkg.in/fsnotify.v1 v1.4.9 // indirect
 	gopkg.in/yaml.v2 v2.4.0
-	gotest.tools/gotestsum v1.6.4
+	gotest.tools/gotestsum v1.7.0
 )
 
 replace (
