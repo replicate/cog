@@ -12,7 +12,6 @@ type Version struct {
 type Image struct {
 	URI          string                  `json:"uri"`
 	Created      time.Time               `json:"created"`
-	Arch         string                  `json:"arch"`
 	RunArguments map[string]*RunArgument `json:"run_arguments"`
 	TestStats    *Stats                  `json:"test_stats"`
 	BuildFailed  bool                    `json:"build_failed"`

@@ -92,9 +92,7 @@ class Model(cog.Model):
 name: andreas/hello-world
 model: predict.py:Model
 environment:
-  architectures:
-    - cpu
-        """
+"""
         f.write(cog_yaml)
 
     with open(tmpdir / "myfile.txt", "w") as f:

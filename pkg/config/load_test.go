@@ -11,8 +11,6 @@ import (
 
 const TEST_CONFIG = `model: "model.py:SomeModel"
 environment:
-  architectures:
-    - cpu
   python_version: "3.8"
   python_requirements: requirements.txt
   system_packages:
@@ -42,9 +40,6 @@ func TestGetConfigShouldLoadFromCustomDir(t *testing.T) {
 		Environment: &Environment{
 			PythonVersion:      "3.8",
 			PythonRequirements: "requirements.txt",
-			Architectures: []string{
-				"cpu",
-			},
 			SystemPackages: []string{
 				"libgl1-mesa-glx",
 				"libglib2.0-0",

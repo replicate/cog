@@ -17,13 +17,11 @@ import (
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/mime"
-	"github.com/replicate/cog/pkg/util/slices"
 )
 
 var (
-	inputFlags  []string
-	outPath     string
-	predictArch string
+	inputFlags []string
+	outPath    string
 )
 
 func newPredictCommand() *cobra.Command {
@@ -43,18 +41,14 @@ the prediction on that.`,
 	}
 	cmd.Flags().StringArrayVarP(&inputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
-	cmd.Flags().StringVarP(&predictArch, "arch", "a", "cpu", "Architecture to run prediction on (cpu/gpu)")
 
 	return cmd
 }
 
 func cmdPredict(cmd *cobra.Command, args []string) error {
-	if !slices.ContainsString([]string{"cpu", "gpu"}, predictArch) {
-		return fmt.Errorf("--arch must be either 'cpu' or 'gpu'")
-	}
-
 	image := ""
 	volumes := []docker.Volume{}
+	gpus := ""
 
 	if len(args) == 0 {
 		// Build image
@@ -69,7 +63,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 		console.Info("Building Docker image from environment in cog.yaml...")
 		// FIXME: refactor to share with run
-		generator := dockerfile.NewGenerator(cfg, predictArch, projectDir)
+		generator := dockerfile.NewGenerator(cfg, projectDir)
 		defer func() {
 			if err := generator.Cleanup(); err != nil {
 				console.Warnf("Error cleaning up Dockerfile generator: %s", err)
@@ -77,7 +71,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}()
 		dockerfileContents, err := generator.GenerateBase()
 		if err != nil {
-			return fmt.Errorf("Failed to generate Dockerfile for %s: %w", predictArch, err)
+			return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 		}
 		if err := docker.Build(projectDir, dockerfileContents, image); err != nil {
 			return fmt.Errorf("Failed to build Docker image: %w", err)
@@ -89,15 +83,22 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			Destination: "/src",
 		})
 
+		if cfg.Environment.GPU {
+			gpus = "all"
+		}
+
 	} else {
 		// Use existing image
 		image = args[0]
+
+		// TODO: check metadata for GPUs
 	}
 
 	console.Info("")
 	console.Infof("Starting Docker image %s and running setup()...", image)
 
 	predictor := predict.NewPredictor(docker.RunOptions{
+		GPUs:    gpus,
 		Image:   image,
 		Volumes: volumes,
 	})

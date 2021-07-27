@@ -42,8 +42,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", image)
 
-	arch := "cpu"
-	generator := dockerfile.NewGenerator(cfg, arch, projectDir)
+	generator := dockerfile.NewGenerator(cfg, projectDir)
 	defer func() {
 		if err := generator.Cleanup(); err != nil {
 			console.Warnf("Error cleaning up Dockerfile generator: %s", err)
@@ -52,7 +51,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 
 	dockerfileContents, err := generator.Generate()
 	if err != nil {
-		return fmt.Errorf("Failed to generate Dockerfile for %s: %w", arch, err)
+		return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 	}
 
 	if err := docker.Build(projectDir, dockerfileContents, image); err != nil {

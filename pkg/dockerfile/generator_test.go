@@ -45,21 +45,23 @@ RUN curl https://pyenv.run | bash && \
 `, version, version)
 }
 
-func TestGenerateEmpty(t *testing.T) {
+func TestGenerateEmptyCPU(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
 	conf, err := config.ConfigFromYAML([]byte(`
 model: predict.py:Model
+environment:
+  gpu: false
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndCompleteConfig())
 
-	gen := DockerfileGenerator{Config: conf, Arch: "cpu", Dir: tmpDir}
-	actualCPU, err := gen.Generate()
+	gen := DockerfileGenerator{Config: conf, Dir: tmpDir}
+	actual, err := gen.Generate()
 	require.NoError(t, err)
 
-	expectedCPU := `FROM python:3.8
+	expected := `FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
@@ -68,11 +70,25 @@ WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
-	gen = DockerfileGenerator{Config: conf, Arch: "gpu", Dir: tmpDir}
-	actualGPU, err := gen.Generate()
+	require.Equal(t, expected, actual)
+}
+
+func TestGenerateEmptyGPU(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
-	expectedGPU := `FROM nvidia/cuda:11.0-cudnn8-devel-ubuntu16.04
+	conf, err := config.ConfigFromYAML([]byte(`
+model: predict.py:Model
+environment:
+  gpu: true
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndCompleteConfig())
+	gen := DockerfileGenerator{Config: conf, Dir: tmpDir}
+	actual, err := gen.Generate()
+	require.NoError(t, err)
+
+	expected := `FROM nvidia/cuda:11.0-cudnn8-devel-ubuntu16.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
@@ -81,16 +97,16 @@ WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
-	require.Equal(t, expectedCPU, actualCPU)
-	require.Equal(t, expectedGPU, actualGPU)
+	require.Equal(t, expected, actual)
 }
 
-func TestGenerateFull(t *testing.T) {
+func TestGenerateFullCPU(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
 	conf, err := config.ConfigFromYAML([]byte(`
 environment:
+  gpu: false
   python_requirements: my-requirements.txt
   python_packages:
     - torch==1.5.1
@@ -103,11 +119,11 @@ model: predict.py:Model
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndCompleteConfig())
 
-	gen := DockerfileGenerator{Config: conf, Arch: "cpu", Dir: tmpDir}
-	actualCPU, err := gen.Generate()
+	gen := DockerfileGenerator{Config: conf, Dir: tmpDir}
+	actual, err := gen.Generate()
 	require.NoError(t, err)
 
-	expectedCPU := `FROM python:3.8
+	expected := `FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
@@ -119,12 +135,33 @@ RUN pip install -f https://download.pytorch.org/whl/torch_stable.html   torch==1
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
+	require.Equal(t, expected, actual)
+}
 
-	gen = DockerfileGenerator{Config: conf, Arch: "gpu", Dir: tmpDir}
-	actualGPU, err := gen.Generate()
+func TestGenerateFullGPU(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
-	expectedGPU := `FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
+	conf, err := config.ConfigFromYAML([]byte(`
+environment:
+  gpu: true
+  python_requirements: my-requirements.txt
+  python_packages:
+    - torch==1.5.1
+    - pandas==1.2.0.12
+  system_packages:
+    - ffmpeg
+    - cowsay
+model: predict.py:Model
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndCompleteConfig())
+
+	gen := DockerfileGenerator{Config: conf, Dir: tmpDir}
+	actual, err := gen.Generate()
+	require.NoError(t, err)
+
+	expected := `FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
@@ -138,6 +175,5 @@ WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
-	require.Equal(t, expectedCPU, actualCPU)
-	require.Equal(t, expectedGPU, actualGPU)
+	require.Equal(t, expected, actual)
 }

@@ -23,6 +23,7 @@ type Volume struct {
 type RunOptions struct {
 	Args    []string
 	Env     []string
+	GPUs    string
 	Image   string
 	Ports   []Port
 	Volumes []Volume
@@ -37,6 +38,9 @@ func generateDockerArgs(options RunOptions) []string {
 		"--rm",
 		"--shm-size", "8G", // https://github.com/pytorch/pytorch/issues/2244
 		// TODO: relative to pwd and cog.yaml
+	}
+	if options.GPUs != "" {
+		dockerArgs = append(dockerArgs, "--gpus", options.GPUs)
 	}
 	for _, port := range options.Ports {
 		dockerArgs = append(dockerArgs, "--publish", fmt.Sprintf("%d:%d", port.HostPort, port.ContainerPort))
