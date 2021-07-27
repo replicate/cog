@@ -97,6 +97,20 @@ $ cog predict -i input=@input.jpg -i scale=2.0
 
 In this case it is just a number, not a file, so you don't need the `@` prefix.
 
+## Using GPUs
+
+To use GPUs with Cog, add the `gpu: true` option to the `environment` section of your `cog.yaml`:
+
+```yaml
+environment:
+  gpu: true
+  ...
+```
+
+Cog will use the [nvidia-docker](https://github.com/NVIDIA/nvidia-docker) base image and automatically figure out what versions of CUDA and cuDNN to use based on the version of Python, PyTorch, and Tensorflow that you are using.
+
+For more details, [see the `gpu` section of the `cog.yaml` reference](yaml.md#gpu).
+
 ## Next steps
 
 Next, you might want to take a look at:

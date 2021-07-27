@@ -27,9 +27,6 @@ func newRunCommand() *cobra.Command {
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	// TODO: support multiple run architectures, or automatically select arch based on host
-	arch := "cpu"
-
 	cfg, projectDir, err := config.GetConfig(projectDirFlag)
 	if err != nil {
 		return err
@@ -41,7 +38,7 @@ func run(cmd *cobra.Command, args []string) error {
 	// FIXME: refactor to share with predict
 	console.Info("Building Docker image from environment in cog.yaml...")
 
-	generator := dockerfile.NewGenerator(cfg, arch, projectDir)
+	generator := dockerfile.NewGenerator(cfg, projectDir)
 	defer func() {
 		if err := generator.Cleanup(); err != nil {
 			console.Warnf("Error cleaning up Dockerfile generator: %s", err)
@@ -49,17 +46,23 @@ func run(cmd *cobra.Command, args []string) error {
 	}()
 	dockerfileContents, err := generator.GenerateBase()
 	if err != nil {
-		return fmt.Errorf("Failed to generate Dockerfile for %s: %w", arch, err)
+		return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 	}
 
 	if err := docker.Build(projectDir, dockerfileContents, image); err != nil {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
 	}
 
+	gpus := ""
+	if cfg.Environment.GPU {
+		gpus = "all"
+	}
+
 	console.Info("")
 	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
 	return docker.Run(docker.RunOptions{
 		Args:    args,
+		GPUs:    gpus,
 		Image:   image,
 		Volumes: []docker.Volume{{Source: projectDir, Destination: "/src"}},
 		Workdir: "/src",
