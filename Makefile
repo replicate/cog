@@ -7,6 +7,8 @@ GOARCH := $(shell go env GOARCH)
 BINARY := $(RELEASE_DIR)/$(GOOS)/$(GOARCH)/cog
 INSTALL_PATH := /usr/local/bin/cog
 MAIN := cmd/cog/cog.go
+DOCKER_CREDENTIAL_BINARY := $(RELEASE_DIR)/$(GOOS)/$(GOARCH)/docker-credential-cog
+DOCKER_CREDENTIAL_MAIN := cmd/docker-credential-cog/docker-credential-cog.go
 BUILD_TIME := $(shell date +%Y-%m-%dT%H:%M:%S%z)
 LDFLAGS := -ldflags "-X github.com/replicate/cog/pkg/global.Version=$(VERSION) -X github.com/replicate/cog/pkg/global.BuildTime=$(BUILD_TIME) -w"
 
@@ -64,3 +66,12 @@ lint:
 .PHONY: mod-tidy
 mod-tidy:
 	go mod tidy
+
+.PHONY: build-docker-credential
+build-docker-credential:
+	@mkdir -p $(RELEASE_DIR)
+	CGO_ENABLED=0 go build $(LDFLAGS) -o $(DOCKER_CREDENTIAL_BINARY) $(DOCKER_CREDENTIAL_MAIN)
+
+.PHONY: install-docker-credential
+install-docker-credential:
+	go install $(LDFLAGS) $(DOCKER_CREDENTIAL_MAIN)
