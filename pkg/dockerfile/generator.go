@@ -8,14 +8,14 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/config"
 )
 
 //go:embed embed/cog.whl
 var cogWheelEmbed []byte
 
 type DockerfileGenerator struct {
-	Config *model.Config
+	Config *config.Config
 	Arch   string
 	Dir    string
 
@@ -27,7 +27,7 @@ type DockerfileGenerator struct {
 	generatedPaths []string
 }
 
-func NewGenerator(config *model.Config, arch string, dir string) *DockerfileGenerator {
+func NewGenerator(config *config.Config, arch string, dir string) *DockerfileGenerator {
 	return &DockerfileGenerator{
 		Config:         config,
 		Arch:           arch,

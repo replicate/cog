@@ -1,7 +1,7 @@
 package predict
 
-import "github.com/replicate/cog/pkg/model"
+import "github.com/replicate/cog/pkg/config"
 
 type HelpResponse struct {
-	Arguments map[string]*model.RunArgument `json:"arguments"`
+	Arguments map[string]*config.RunArgument `json:"arguments"`
 }
