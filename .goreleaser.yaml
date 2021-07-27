@@ -7,20 +7,14 @@ builds:
     env:
       - CGO_ENABLED=0
     goos:
-      - linux
-    goarch:
-      - amd64
-    main: ./cmd/cog/cog.go
-  - binary: cog
-    id: cog-macos-arm64
-    env:
-      - CGO_ENABLED=0
-    goos:
       - darwin
+      - linux
     goarch:
       - amd64
       - arm64
     main: ./cmd/cog/cog.go
+    ldflags:
+      - "-s -w -X github.com/replicate/cog/pkg/global.Version={{.Version}} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
 archives:
   - format: binary
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
