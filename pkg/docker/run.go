@@ -2,6 +2,7 @@ package docker
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -30,20 +31,37 @@ type RunOptions struct {
 	Workdir string
 }
 
-func generateDockerArgs(options RunOptions) []string {
+// used for generating arguments, with a few options not exposed by public API
+type internalRunOptions struct {
+	RunOptions
+	Detach      bool
+	Interactive bool
+	TTY         bool
+}
+
+func generateDockerArgs(options internalRunOptions) []string {
 	// Use verbose options for clarity
 	dockerArgs := []string{
 		"run",
-		"--interactive",
 		"--rm",
 		"--shm-size", "8G", // https://github.com/pytorch/pytorch/issues/2244
 		// TODO: relative to pwd and cog.yaml
 	}
+
+	if options.Detach {
+		dockerArgs = append(dockerArgs, "--detach")
+	}
 	if options.GPUs != "" {
 		dockerArgs = append(dockerArgs, "--gpus", options.GPUs)
 	}
+	if options.Interactive {
+		dockerArgs = append(dockerArgs, "--interactive")
+	}
 	for _, port := range options.Ports {
 		dockerArgs = append(dockerArgs, "--publish", fmt.Sprintf("%d:%d", port.HostPort, port.ContainerPort))
+	}
+	if options.TTY {
+		dockerArgs = append(dockerArgs, "--tty")
 	}
 	for _, volume := range options.Volumes {
 		// This needs escaping if we want to support commas in filenames
@@ -53,33 +71,39 @@ func generateDockerArgs(options RunOptions) []string {
 	if options.Workdir != "" {
 		dockerArgs = append(dockerArgs, "--workdir", options.Workdir)
 	}
-	if isatty.IsTerminal(os.Stdin.Fd()) {
-		dockerArgs = append(dockerArgs, "--tty")
-	}
+	dockerArgs = append(dockerArgs, options.Image)
+	dockerArgs = append(dockerArgs, options.Args...)
 	return dockerArgs
 }
 
 func Run(options RunOptions) error {
-	dockerArgs := generateDockerArgs(options)
-	dockerArgs = append(dockerArgs, options.Image)
-	dockerArgs = append(dockerArgs, options.Args...)
+	return RunWithIO(options, os.Stdin, os.Stdout, os.Stderr)
+}
 
+func RunWithIO(options RunOptions, stdin io.Reader, stdout, stderr io.Writer) error {
+	internalOptions := internalRunOptions{RunOptions: options}
+	if stdin != nil {
+		internalOptions.Interactive = true
+		if f, ok := stdin.(*os.File); ok {
+			internalOptions.TTY = isatty.IsTerminal(f.Fd())
+		}
+	}
+	dockerArgs := generateDockerArgs(internalOptions)
 	cmd := exec.Command("docker", dockerArgs...)
 	cmd.Env = os.Environ()
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
+	cmd.Stdout = stdout
+	cmd.Stdin = stdin
+	cmd.Stderr = stderr
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
 
 	return cmd.Run()
 }
 
 func RunDaemon(options RunOptions) (string, error) {
-	dockerArgs := generateDockerArgs(options)
-	dockerArgs = append(dockerArgs, "--detach")
-	dockerArgs = append(dockerArgs, options.Image)
-	dockerArgs = append(dockerArgs, options.Args...)
+	internalOptions := internalRunOptions{RunOptions: options}
+	internalOptions.Detach = true
 
+	dockerArgs := generateDockerArgs(internalOptions)
 	cmd := exec.Command("docker", dockerArgs...)
 	cmd.Env = os.Environ()
 	// TODO: display errors more elegantly?

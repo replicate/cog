@@ -65,8 +65,9 @@ As much as possible, this is attempting to follow the [Standard Go Project Layou
 - `cmd/` - The root `cog` command.
 - `pkg/cli/` - CLI commands.
 - `pkg/config` - Everything `cog.yaml` related.
-- `pkg/docker/` - Various interfaces with Docker for building and running containers.
+- `pkg/docker/` - Low-level interface for Docker commands.
 - `pkg/dockerfile/` - Creates Dockerfiles.
+- `pkg/image/` - Creates and manipulates Cog Docker images.
 - `pkg/predict/` - Runs predictions on models.
 - `pkg/util/` - Various packages that aren't part of Cog. They could reasonably be separate re-usable projects.
 - `python/` - The Cog Python library.

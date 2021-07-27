@@ -7,7 +7,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/dockerfile"
+	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -30,34 +30,20 @@ func push(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	image := cfg.Image
+	imageName := cfg.Image
 	if len(args) > 0 {
-		image = args[0]
+		imageName = args[0]
 	}
 
-	if image == "" {
+	if imageName == "" {
 		return fmt.Errorf("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push registry.hooli.corp/hotdog-detector'")
 	}
 
-	console.Infof("Building Docker image from environment in cog.yaml as %s...\n\n", image)
-
-	generator := dockerfile.NewGenerator(cfg, projectDir)
-	defer func() {
-		if err := generator.Cleanup(); err != nil {
-			console.Warnf("Error cleaning up Dockerfile generator: %s", err)
-		}
-	}()
-
-	dockerfileContents, err := generator.Generate()
-	if err != nil {
-		return fmt.Errorf("Failed to generate Dockerfile: %w", err)
+	if err := image.Build(cfg, projectDir, imageName); err != nil {
+		return err
 	}
 
-	if err := docker.Build(projectDir, dockerfileContents, image); err != nil {
-		return fmt.Errorf("Failed to build Docker image: %w", err)
-	}
+	console.Infof("\nPushing image '%s'...", imageName)
 
-	console.Infof("\nPushing image '%s'...", image)
-
-	return docker.Push(image)
+	return docker.Push(imageName)
 }

@@ -1,15 +1,12 @@
 from pathlib import Path
 import sys
 import time
-from typing import Dict, Any
 
 from flask import Flask, send_file, request, jsonify, Response
 
 from ..input import (
     validate_and_convert_inputs,
     InputValidationError,
-    get_type_name,
-    UNSPECIFIED,
 )
 from ..json import to_json
 from ..model import Model, run_model, load_model
@@ -66,27 +63,9 @@ class HTTPServer:
         def ping():
             return "PONG"
 
-        @app.route("/help")
-        def help():
-            args = {}
-            if hasattr(self.model.predict, "_inputs"):
-                input_specs = self.model.predict._inputs
-                for name, spec in input_specs.items():
-                    arg: Dict[str, Any] = {
-                        "type": get_type_name(spec.type),
-                    }
-                    if spec.help:
-                        arg["help"] = spec.help
-                    if spec.default is not UNSPECIFIED:
-                        arg["default"] = str(spec.default)  # TODO: don't string this
-                    if spec.min is not None:
-                        arg["min"] = str(spec.min)  # TODO: don't string this
-                    if spec.max is not None:
-                        arg["max"] = str(spec.max)  # TODO: don't string this
-                    if spec.options is not None:
-                        arg["options"] = [str(o) for o in spec.options]
-                    args[name] = arg
-            return jsonify({"arguments": args})
+        @app.route("/type-signature")
+        def type_signature():
+            return jsonify(self.model.get_type_signature())
 
         return app
 

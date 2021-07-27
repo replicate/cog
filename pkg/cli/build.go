@@ -1,11 +1,8 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/dockerfile"
+	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/spf13/cobra"
 )
@@ -24,41 +21,24 @@ func newBuildCommand() *cobra.Command {
 }
 
 func buildCommand(cmd *cobra.Command, args []string) error {
-
 	cfg, projectDir, err := config.GetConfig(projectDirFlag)
 	if err != nil {
 		return err
 	}
 
-	image := cfg.Image
-
+	imageName := cfg.Image
 	if buildTag != "" {
-		image = buildTag
+		imageName = buildTag
+	}
+	if imageName == "" {
+		imageName = config.DockerImageName(projectDir)
 	}
 
-	if image == "" {
-		image = config.DockerImageName(projectDir)
+	if err := image.Build(cfg, projectDir, imageName); err != nil {
+		return err
 	}
 
-	console.Infof("Building Docker image from environment in cog.yaml as %s...", image)
-
-	generator := dockerfile.NewGenerator(cfg, projectDir)
-	defer func() {
-		if err := generator.Cleanup(); err != nil {
-			console.Warnf("Error cleaning up Dockerfile generator: %s", err)
-		}
-	}()
-
-	dockerfileContents, err := generator.Generate()
-	if err != nil {
-		return fmt.Errorf("Failed to generate Dockerfile: %w", err)
-	}
-
-	if err := docker.Build(projectDir, dockerfileContents, image); err != nil {
-		return fmt.Errorf("Failed to build Docker image: %w", err)
-	}
-
-	console.Infof("\nImage built as %s", image)
+	console.Infof("\nImage built as %s", imageName)
 
 	return nil
 }
