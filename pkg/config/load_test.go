@@ -6,7 +6,6 @@ import (
 	"path"
 	"testing"
 
-	"github.com/replicate/cog/pkg/model"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,9 +37,9 @@ func TestGetConfigShouldLoadFromCustomDir(t *testing.T) {
 	require.NoError(t, err)
 	conf, _, err := GetConfig(dir)
 	require.NoError(t, err)
-	want := &model.Config{
+	want := &Config{
 		Model: "model.py:SomeModel",
-		Environment: &model.Environment{
+		Environment: &Environment{
 			PythonVersion:      "3.8",
 			PythonRequirements: "requirements.txt",
 			Architectures: []string{
