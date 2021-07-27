@@ -9,13 +9,10 @@ import (
 
 	"github.com/replicate/cog/pkg/errors"
 	"github.com/replicate/cog/pkg/global"
-	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/util/files"
 )
 
 const maxSearchDepth = 100
-
-// Public ///////////////////////////////////////
 
 // Returns the project's root directory, or the directory specified by the --project-dir flag
 func GetProjectDir(customDir string) (string, error) {
@@ -32,7 +29,7 @@ func GetProjectDir(customDir string) (string, error) {
 
 // Loads and instantiates a Config object
 // customDir can be specified to override the default - current working directory
-func GetConfig(customDir string) (*model.Config, string, error) {
+func GetConfig(customDir string) (*Config, string, error) {
 	// Find the root project directory
 	rootDir, err := GetProjectDir(customDir)
 	if err != nil {
@@ -51,10 +48,8 @@ func GetConfig(customDir string) (*model.Config, string, error) {
 	return config, rootDir, err
 }
 
-// Private //////////////////////////////////////
-
 // Given a file path, attempt to load a config from that file
-func loadConfigFromFile(file string) (*model.Config, error) {
+func loadConfigFromFile(file string) (*Config, error) {
 	exists, err := files.Exists(file)
 	if err != nil {
 		return nil, err
@@ -69,7 +64,7 @@ func loadConfigFromFile(file string) (*model.Config, error) {
 		return nil, err
 	}
 
-	config, err := model.ConfigFromYAML(contents)
+	config, err := ConfigFromYAML(contents)
 	if err != nil {
 		return nil, err
 	}

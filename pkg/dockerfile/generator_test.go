@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/config"
 )
 
 func testInstallCog(generatedPaths []string) string {
@@ -49,7 +49,7 @@ func TestGenerateEmpty(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
-	conf, err := model.ConfigFromYAML([]byte(`
+	conf, err := config.ConfigFromYAML([]byte(`
 model: predict.py:Model
 `))
 	require.NoError(t, err)
@@ -89,7 +89,7 @@ func TestGenerateFull(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
-	conf, err := model.ConfigFromYAML([]byte(`
+	conf, err := config.ConfigFromYAML([]byte(`
 environment:
   python_requirements: my-requirements.txt
   python_packages:
