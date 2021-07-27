@@ -68,6 +68,8 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
 ` + testInstallCog(gen.generatedPaths) + `
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
+LABEL org.cogmodel.cog_version="dev"
+LABEL org.cogmodel.config="{\"environment\":{\"python_version\":\"3.8\"},\"model\":\"predict.py:Model\"}"
 COPY . /src`
 
 	require.Equal(t, expected, actual)
@@ -95,6 +97,8 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
 ` + testInstallPython("3.8") + testInstallCog(gen.generatedPaths) + `
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
+LABEL org.cogmodel.cog_version="dev"
+LABEL org.cogmodel.config="{\"environment\":{\"gpu\":true,\"python_version\":\"3.8\",\"cuda\":\"11.0\",\"cudnn\":\"8\"},\"model\":\"predict.py:Model\"}"
 COPY . /src`
 
 	require.Equal(t, expected, actual)
@@ -134,6 +138,8 @@ RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
 RUN pip install -f https://download.pytorch.org/whl/torch_stable.html   torch==1.5.1+cpu pandas==1.2.0.12
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
+LABEL org.cogmodel.cog_version="dev"
+LABEL org.cogmodel.config="{\"environment\":{\"python_version\":\"3.8\",\"python_requirements\":\"my-requirements.txt\",\"python_packages\":[\"torch==1.5.1\",\"pandas==1.2.0.12\"],\"system_packages\":[\"ffmpeg\",\"cowsay\"]},\"model\":\"predict.py:Model\"}"
 COPY . /src`
 	require.Equal(t, expected, actual)
 }
@@ -173,6 +179,8 @@ RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
 RUN pip install   torch==1.5.1 pandas==1.2.0.12
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
+LABEL org.cogmodel.cog_version="dev"
+LABEL org.cogmodel.config="{\"environment\":{\"gpu\":true,\"python_version\":\"3.8\",\"python_requirements\":\"my-requirements.txt\",\"python_packages\":[\"torch==1.5.1\",\"pandas==1.2.0.12\"],\"system_packages\":[\"ffmpeg\",\"cowsay\"],\"cuda\":\"10.2\",\"cudnn\":\"8\"},\"model\":\"predict.py:Model\"}"
 COPY . /src`
 
 	require.Equal(t, expected, actual)

@@ -13,4 +13,5 @@ var (
 	StartupTimeout   = 5 * time.Minute
 	ConfigFilename   = "cog.yaml"
 	CogServerAddress = "https://cog.replicate.ai"
+	LabelNamespace   = "org.cogmodel."
 )

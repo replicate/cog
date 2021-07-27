@@ -16,16 +16,16 @@ import (
 // TODO(andreas): suggest valid torchvision versions (e.g. if the user wants to use 0.8.0, suggest 0.8.1)
 
 type Environment struct {
-	GPU                  bool     `yaml:"gpu"`
-	PythonVersion        string   `json:"python_version" yaml:"python_version"`
-	PythonRequirements   string   `json:"python_requirements" yaml:"python_requirements"`
-	PythonExtraIndexURLs []string `json:"python_extra_index_urls" yaml:"python_extra_index_urls"`
-	PythonFindLinks      []string `json:"python_find_links" yaml:"python_find_links"`
-	PythonPackages       []string `json:"python_packages" yaml:"python_packages"`
-	SystemPackages       []string `json:"system_packages" yaml:"system_packages"`
-	PreInstall           []string `json:"pre_install" yaml:"pre_install"`
-	CUDA                 string   `json:"cuda" yaml:"cuda"`
-	CuDNN                string   `json:"cudnn" yaml:"cudnn"`
+	GPU                  bool     `json:"gpu,omitempty" yaml:"gpu"`
+	PythonVersion        string   `json:"python_version,omitempty" yaml:"python_version"`
+	PythonRequirements   string   `json:"python_requirements,omitempty" yaml:"python_requirements"`
+	PythonExtraIndexURLs []string `json:"python_extra_index_urls,omitempty" yaml:"python_extra_index_urls"`
+	PythonFindLinks      []string `json:"python_find_links,omitempty" yaml:"python_find_links"`
+	PythonPackages       []string `json:"python_packages,omitempty" yaml:"python_packages"`
+	SystemPackages       []string `json:"system_packages,omitempty" yaml:"system_packages"`
+	PreInstall           []string `json:"pre_install,omitempty" yaml:"pre_install"`
+	CUDA                 string   `json:"cuda,omitempty" yaml:"cuda"`
+	CuDNN                string   `json:"cudnn,omitempty" yaml:"cudnn"`
 }
 
 type Example struct {
@@ -35,8 +35,8 @@ type Example struct {
 
 type Config struct {
 	Environment *Environment `json:"environment" yaml:"environment"`
-	Image       string       `json:"image" yaml:"image"`
-	Model       string       `json:"model" yaml:"model"`
+	Image       string       `json:"image,omitempty" yaml:"image"`
+	Model       string       `json:"model,omitempty" yaml:"model"`
 }
 
 func DefaultConfig() *Config {
