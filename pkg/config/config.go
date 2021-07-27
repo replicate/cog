@@ -16,6 +16,7 @@ import (
 // TODO(andreas): suggest valid torchvision versions (e.g. if the user wants to use 0.8.0, suggest 0.8.1)
 
 type Environment struct {
+	GPU                  bool     `yaml:"gpu"`
 	PythonVersion        string   `json:"python_version" yaml:"python_version"`
 	PythonRequirements   string   `json:"python_requirements" yaml:"python_requirements"`
 	PythonExtraIndexURLs []string `json:"python_extra_index_urls" yaml:"python_extra_index_urls"`
@@ -23,7 +24,6 @@ type Environment struct {
 	PythonPackages       []string `json:"python_packages" yaml:"python_packages"`
 	SystemPackages       []string `json:"system_packages" yaml:"system_packages"`
 	PreInstall           []string `json:"pre_install" yaml:"pre_install"`
-	Architectures        []string `json:"architectures" yaml:"architectures"`
 	CUDA                 string   `json:"cuda" yaml:"cuda"`
 	CuDNN                string   `json:"cudnn" yaml:"cudnn"`
 }
@@ -42,8 +42,8 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Environment: &Environment{
+			GPU:           false,
 			PythonVersion: "3.8",
-			Architectures: []string{"cpu", "gpu"},
 		},
 	}
 }
@@ -53,25 +53,11 @@ func ConfigFromYAML(contents []byte) (*Config, error) {
 	if err := yaml.Unmarshal(contents, config); err != nil {
 		return nil, fmt.Errorf("Failed to parse config yaml: %w", err)
 	}
+	// Everything assumes environment is not nil
+	if config.Environment == nil {
+		config.Environment = DefaultConfig().Environment
+	}
 	return config, nil
-}
-
-func (c *Config) HasGPU() bool {
-	for _, arch := range c.Environment.Architectures {
-		if arch == "gpu" {
-			return true
-		}
-	}
-	return false
-}
-
-func (c *Config) HasCPU() bool {
-	for _, arch := range c.Environment.Architectures {
-		if arch == "cpu" {
-			return true
-		}
-	}
-	return false
 }
 
 func (c *Config) CUDABaseImageTag() (string, error) {
@@ -136,7 +122,7 @@ func (c *Config) ValidateAndCompleteConfig() error {
 		return err
 	}
 
-	if c.HasGPU() {
+	if c.Environment.GPU {
 		if err := c.validateAndCompleteCUDA(); err != nil {
 			return err
 		}
@@ -144,11 +130,11 @@ func (c *Config) ValidateAndCompleteConfig() error {
 	return nil
 }
 
-func (c *Config) PythonPackagesForArch(arch string, goos string, goarch string) (packages []string, indexURLs []string, err error) {
+func (c *Config) PythonPackagesForArch(goos string, goarch string) (packages []string, indexURLs []string, err error) {
 	packages = []string{}
 	indexURLSet := map[string]bool{}
 	for _, pkg := range c.Environment.PythonPackages {
-		archPkg, indexURL, err := c.pythonPackageForArch(pkg, arch, goos, goarch)
+		archPkg, indexURL, err := c.pythonPackageForArch(pkg, goos, goarch)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -164,43 +150,43 @@ func (c *Config) PythonPackagesForArch(arch string, goos string, goarch string) 
 	return packages, indexURLs, nil
 }
 
-func (c *Config) pythonPackageForArch(pkg string, arch string, goos string, goarch string) (actualPackage string, indexURL string, err error) {
+func (c *Config) pythonPackageForArch(pkg string, goos string, goarch string) (actualPackage string, indexURL string, err error) {
 	name, version, err := splitPythonPackage(pkg)
 	if err != nil {
 		return "", "", err
 	}
 	if name == "tensorflow" {
-		if arch == "cpu" {
-			name, version, err = tfCPUPackage(version)
+		if c.Environment.GPU {
+			name, version, err = tfGPUPackage(version, c.Environment.CUDA)
 			if err != nil {
 				return "", "", err
 			}
 		} else {
-			name, version, err = tfGPUPackage(version, c.Environment.CUDA)
+			name, version, err = tfCPUPackage(version)
 			if err != nil {
 				return "", "", err
 			}
 		}
 	} else if name == "torch" {
-		if arch == "cpu" {
-			name, version, indexURL, err = torchCPUPackage(version, goos, goarch)
+		if c.Environment.GPU {
+			name, version, indexURL, err = torchGPUPackage(version, c.Environment.CUDA)
 			if err != nil {
 				return "", "", err
 			}
 		} else {
-			name, version, indexURL, err = torchGPUPackage(version, c.Environment.CUDA)
+			name, version, indexURL, err = torchCPUPackage(version, goos, goarch)
 			if err != nil {
 				return "", "", err
 			}
 		}
 	} else if name == "torchvision" {
-		if arch == "cpu" {
-			name, version, indexURL, err = torchvisionCPUPackage(version, goos, goarch)
+		if c.Environment.GPU {
+			name, version, indexURL, err = torchvisionGPUPackage(version, c.Environment.CUDA)
 			if err != nil {
 				return "", "", err
 			}
 		} else {
-			name, version, indexURL, err = torchvisionGPUPackage(version, c.Environment.CUDA)
+			name, version, indexURL, err = torchvisionCPUPackage(version, goos, goarch)
 			if err != nil {
 				return "", "", err
 			}

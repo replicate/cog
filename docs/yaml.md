@@ -21,13 +21,22 @@ This defines the environment the model runs in. It contains various options with
 
 <!-- Alphabetical order, please! -->
 
-### `architectures`
-
-List of architectures (`cpu` or `gpu`) to build Docker images for. Useful if the model only works on either CPU or GPU. Defaults to `[cpu, gpu]`.
-
 ### `cuda`
 
 Cog automatically picks the correct version of CUDA to install, but this lets you override it for whatever reason.
+
+### `gpu`
+
+Enable GPUs for this model. When enabled, the [nvidia-docker](https://github.com/NVIDIA/nvidia-docker) base image will be used, and Cog will automatically figure out what versions of CUDA and cuDNN to use based on the version of Python, PyTorch, and Tensorflow that you are using.
+
+When you use `cog run` or `cog predict`, Cog will automatically pass the `--gpus=all` flag to Docker. When you run a Docker image build with Cog, you'll need to pass this option to `docker run`.
+
+For example:
+
+```yaml
+environment:
+  gpu: true
+```
 
 ### `python_packages`
 

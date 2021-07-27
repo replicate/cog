@@ -16,7 +16,6 @@ var cogWheelEmbed []byte
 
 type DockerfileGenerator struct {
 	Config *config.Config
-	Arch   string
 	Dir    string
 
 	// these are here to make this type testable
@@ -27,10 +26,9 @@ type DockerfileGenerator struct {
 	generatedPaths []string
 }
 
-func NewGenerator(config *config.Config, arch string, dir string) *DockerfileGenerator {
+func NewGenerator(config *config.Config, dir string) *DockerfileGenerator {
 	return &DockerfileGenerator{
 		Config:         config,
-		Arch:           arch,
 		Dir:            dir,
 		GOOS:           runtime.GOOS,
 		GOARCH:         runtime.GOOS,
@@ -44,7 +42,7 @@ func (g *DockerfileGenerator) GenerateBase() (string, error) {
 		return "", err
 	}
 	installPython := ""
-	if g.Arch == "gpu" {
+	if g.Config.Environment.GPU {
 		installPython, err = g.installPython()
 		if err != nil {
 			return "", err
@@ -102,14 +100,10 @@ func (g *DockerfileGenerator) Cleanup() error {
 }
 
 func (g *DockerfileGenerator) baseImage() (string, error) {
-	switch g.Arch {
-	case "cpu":
-
-		return "python:" + g.Config.Environment.PythonVersion, nil
-	case "gpu":
+	if g.Config.Environment.GPU {
 		return g.Config.CUDABaseImageTag()
 	}
-	return "", fmt.Errorf("Invalid architecture: %s", g.Arch)
+	return "python:" + g.Config.Environment.PythonVersion, nil
 }
 
 func (g *DockerfileGenerator) preamble() string {
@@ -187,7 +181,7 @@ RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt`, reqs), ni
 }
 
 func (g *DockerfileGenerator) pipInstalls() (string, error) {
-	packages, indexURLs, err := g.Config.PythonPackagesForArch(g.Arch, g.GOOS, g.GOARCH)
+	packages, indexURLs, err := g.Config.PythonPackagesForArch(g.GOOS, g.GOARCH)
 	if err != nil {
 		return "", err
 	}
