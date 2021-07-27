@@ -433,7 +433,7 @@ def test_multiple_arguments():
     assert resp.data == b"foo baz 50 bar"
 
 
-def test_help():
+def test_type_signature():
     class Model(cog.Model):
         def setup(self):
             self.foo = "foo"
@@ -448,10 +448,10 @@ def test_help():
             return self.foo + " " + text + " " + str(num1 * num2) + " " + path_contents
 
     client = make_client(Model())
-    resp = client.get("/help")
+    resp = client.get("/type-signature")
     assert resp.status_code == 200
     assert resp.json == {
-        "arguments": {
+        "inputs": {
             "text": {
                 "type": "str",
                 "help": "Some text",

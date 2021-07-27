@@ -1,3 +1,4 @@
+import json
 import subprocess
 from .util import random_string
 
@@ -11,27 +12,42 @@ environment:
 """
         f.write(cog_yaml)
 
-    image = "cog-test-" + random_string(length=10)
+    image_name = "cog-test-" + random_string(length=10)
 
     try:
         subprocess.run(
-            ["cog", "build", "-t", image],
+            ["cog", "build", "-t", image_name],
             cwd=tmpdir,
             check=True,
         )
-        assert image in str(
+        assert image_name in str(
             subprocess.run(["docker", "images"], capture_output=True).stdout
         )
+        image = json.loads(
+            subprocess.run(
+                ["docker", "image", "inspect", image_name], capture_output=True
+            ).stdout
+        )
+        labels = image[0]["Config"]["Labels"]
+        assert len(labels["org.cogmodel.cog_version"]) > 0
+        print(labels["org.cogmodel.config"])
+        assert json.loads(image[0]["Config"]["Labels"]["org.cogmodel.config"]) == {
+            "environment": {"python_version": "3.8"}
+        }
+        assert (
+            json.loads(image[0]["Config"]["Labels"]["org.cogmodel.type_signature"])
+            == {}
+        )
     finally:
-        subprocess.run(["docker", "rmi", image], check=False)
+        subprocess.run(["docker", "rmi", image_name], check=False)
 
 
 def test_build_image_option(tmpdir_factory):
     tmpdir = tmpdir_factory.mktemp("project")
-    image = "cog-test-" + random_string(length=10)
+    image_name = "cog-test-" + random_string(length=10)
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = f"""
-image: {image}
+image: {image_name}
 environment:
   python_version: 3.8
 """
@@ -43,8 +59,35 @@ environment:
             cwd=tmpdir,
             check=True,
         )
-        assert image in str(
+        assert image_name in str(
             subprocess.run(["docker", "images"], capture_output=True).stdout
         )
     finally:
-        subprocess.run(["docker", "rmi", image], check=False)
+        subprocess.run(["docker", "rmi", image_name], check=False)
+
+
+def test_build_with_model(project_dir):
+    image_name = "cog-test-" + random_string(length=10)
+    try:
+        subprocess.run(
+            ["cog", "build", "-t", image_name],
+            cwd=project_dir,
+            check=True,
+        )
+        image = json.loads(
+            subprocess.run(
+                ["docker", "image", "inspect", image_name], capture_output=True
+            ).stdout
+        )
+        labels = image[0]["Config"]["Labels"]
+        assert json.loads(
+            image[0]["Config"]["Labels"]["org.cogmodel.type_signature"]
+        ) == {
+            "inputs": {
+                "output_file": {"type": "bool", "default": "False"},
+                "path": {"type": "Path"},
+                "text": {"type": "str"},
+            }
+        }
+    finally:
+        subprocess.run(["docker", "rmi", image_name], check=False)
