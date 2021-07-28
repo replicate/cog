@@ -64,7 +64,7 @@ environment:
 	expected := `FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ` + testInstallCog(gen.generatedPaths) + `
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
@@ -93,7 +93,7 @@ environment:
 	expected := `FROM nvidia/cuda:11.0-cudnn8-devel-ubuntu16.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ` + testInstallPython("3.8") + testInstallCog(gen.generatedPaths) + `
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
@@ -130,7 +130,7 @@ model: predict.py:Model
 	expected := `FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ` + testInstallCog(gen.generatedPaths) + `
 RUN apt-get update -qq && apt-get install -qy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 COPY my-requirements.txt /tmp/requirements.txt
@@ -170,7 +170,7 @@ model: predict.py:Model
 	expected := `FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ` + testInstallPython("3.8") +
 		testInstallCog(gen.generatedPaths) + `
 RUN apt-get update -qq && apt-get install -qy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
