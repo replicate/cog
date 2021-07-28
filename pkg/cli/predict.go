@@ -2,7 +2,6 @@ package cli
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -13,7 +12,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/dockerfile"
+	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/mime"
@@ -46,7 +45,7 @@ the prediction on that.`,
 }
 
 func cmdPredict(cmd *cobra.Command, args []string) error {
-	image := ""
+	imageName := ""
 	volumes := []docker.Volume{}
 	gpus := ""
 
@@ -58,23 +57,8 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		// TODO: better image management so we don't eat up disk space
-		image = config.BaseDockerImageName(projectDir)
-
-		console.Info("Building Docker image from environment in cog.yaml...")
-		// FIXME: refactor to share with run
-		generator := dockerfile.NewGenerator(cfg, projectDir)
-		defer func() {
-			if err := generator.Cleanup(); err != nil {
-				console.Warnf("Error cleaning up Dockerfile generator: %s", err)
-			}
-		}()
-		dockerfileContents, err := generator.GenerateBase()
-		if err != nil {
-			return fmt.Errorf("Failed to generate Dockerfile: %w", err)
-		}
-		if err := docker.Build(projectDir, dockerfileContents, image); err != nil {
-			return fmt.Errorf("Failed to build Docker image: %w", err)
+		if imageName, err = image.BuildBase(cfg, projectDir); err != nil {
+			return err
 		}
 
 		// Base image doesn't have /src in it, so mount as volume
@@ -89,17 +73,17 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 	} else {
 		// Use existing image
-		image = args[0]
+		imageName = args[0]
 
 		// TODO: check metadata for GPUs
 	}
 
 	console.Info("")
-	console.Infof("Starting Docker image %s and running setup()...", image)
+	console.Infof("Starting Docker image %s and running setup()...", imageName)
 
 	predictor := predict.NewPredictor(docker.RunOptions{
 		GPUs:    gpus,
-		Image:   image,
+		Image:   imageName,
 		Volumes: volumes,
 	})
 	if err := predictor.Start(os.Stderr); err != nil {
