@@ -1,12 +1,11 @@
 package cli
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/dockerfile"
+	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/spf13/cobra"
 )
@@ -32,25 +31,9 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// TODO: better image management so we don't eat up disk space
-	image := config.BaseDockerImageName(projectDir)
-
-	// FIXME: refactor to share with predict
-	console.Info("Building Docker image from environment in cog.yaml...")
-
-	generator := dockerfile.NewGenerator(cfg, projectDir)
-	defer func() {
-		if err := generator.Cleanup(); err != nil {
-			console.Warnf("Error cleaning up Dockerfile generator: %s", err)
-		}
-	}()
-	dockerfileContents, err := generator.GenerateBase()
+	imageName, err := image.BuildBase(cfg, projectDir)
 	if err != nil {
-		return fmt.Errorf("Failed to generate Dockerfile: %w", err)
-	}
-
-	if err := docker.Build(projectDir, dockerfileContents, image); err != nil {
-		return fmt.Errorf("Failed to build Docker image: %w", err)
+		return err
 	}
 
 	gpus := ""
@@ -63,7 +46,7 @@ func run(cmd *cobra.Command, args []string) error {
 	return docker.Run(docker.RunOptions{
 		Args:    args,
 		GPUs:    gpus,
-		Image:   image,
+		Image:   imageName,
 		Volumes: []docker.Volume{{Source: projectDir, Destination: "/src"}},
 		Workdir: "/src",
 	})
