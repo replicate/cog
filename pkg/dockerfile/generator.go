@@ -122,7 +122,7 @@ func (g *DockerfileGenerator) preamble() string {
 	// TODO: other stuff
 	return `ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu`
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin`
 }
 
 func (g *DockerfileGenerator) aptInstalls() (string, error) {

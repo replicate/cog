@@ -41,8 +41,6 @@ func (p *Predictor) Start(logsWriter io.Writer) error {
 
 	containerPort := 5000
 
-	// TODO: put this in the image
-	p.runOptions.Env = append(p.runOptions.Env, "LD_LIBRARY_PATH=/usr/local/nvidia/lib64:/usr/local/nvidia/bin")
 	p.runOptions.Ports = append(p.runOptions.Ports, docker.Port{HostPort: p.port, ContainerPort: containerPort})
 
 	p.containerID, err = docker.RunDaemon(p.runOptions)
