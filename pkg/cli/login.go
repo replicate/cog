@@ -2,7 +2,10 @@ package cli
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -10,7 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/client"
+	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/settings"
 	"github.com/replicate/cog/pkg/util/console"
@@ -38,14 +41,7 @@ func login(cmd *cobra.Command, args []string) error {
 		address = args[0]
 	}
 
-	c := client.NewClient()
-	url, err := c.GetDisplayTokenURL(address)
-	if err != nil {
-		return err
-	}
-	if url == "" {
-		return fmt.Errorf("This server does not support authentication")
-	}
+	url := address + "/api/auth/display-token"
 	fmt.Println("Please visit " + url + " in a web browser")
 	fmt.Println("and copy the authorization token.")
 	maybeOpenBrowser(url)
@@ -57,13 +53,16 @@ func login(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	username, err := c.VerifyToken(address, token)
+	username, registryHost, err := verifyToken(address, token)
 	if err != nil {
 		return err
 	}
 
-	err = settings.SaveAuthToken(address, username, token)
-	if err != nil {
+	if err := settings.SaveAuthToken(address, username, token, registryHost); err != nil {
+		return err
+	}
+
+	if err := docker.SetCogCredentialHelperForHost(registryHost); err != nil {
 		return err
 	}
 
@@ -81,4 +80,27 @@ func maybeOpenBrowser(url string) {
 	case "darwin":
 		_ = exec.Command("open", url).Start()
 	}
+}
+
+func verifyToken(address string, token string) (username string, registryHost string, err error) {
+	resp, err := http.PostForm(address+"/api/auth/verify-token", url.Values{
+		"token": []string{token},
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("Failed to verify token: %w", err)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return "", "", fmt.Errorf("User does not exist")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("Failed to verify token, got status %d", resp.StatusCode)
+	}
+	body := &struct {
+		Username     string `json:"username"`
+		RegistryHost string `json:"registry_host"`
+	}{}
+	if err := json.NewDecoder(resp.Body).Decode(body); err != nil {
+		return "", "", err
+	}
+	return body.Username, body.RegistryHost, nil
 }

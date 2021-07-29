@@ -12,15 +12,16 @@ import (
 )
 
 type AuthInfo struct {
-	Token    string `json:"token"`
-	Username string `json:"username"`
+	Token        string `json:"token"`
+	Username     string `json:"username"`
+	RegistryHost string `json:"registry_host"`
 }
 
 type UserSettings struct {
 	Auth map[string]AuthInfo `json:"auth"`
 }
 
-func SaveAuthToken(address string, username string, token string) error {
+func SaveAuthToken(address string, username string, token string, registryHost string) error {
 	var err error
 
 	settingsPath, err := getUserSettingsPath()
@@ -46,8 +47,9 @@ func SaveAuthToken(address string, username string, token string) error {
 		settings.Auth = map[string]AuthInfo{}
 	}
 	settings.Auth[address] = AuthInfo{
-		Token:    token,
-		Username: username,
+		Token:        token,
+		Username:     username,
+		RegistryHost: registryHost,
 	}
 
 	data, err := json.MarshalIndent(settings, "", "  ")

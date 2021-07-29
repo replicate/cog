@@ -18,8 +18,10 @@ func (h Helper) List() (urlsToUsernames map[string]string, err error) {
 		return nil, err
 	}
 	urlsToUsernames = make(map[string]string)
-	for url, authInfo := range userSettings.Auth {
-		urlsToUsernames[url] = authInfo.Username
+	for _, authInfo := range userSettings.Auth {
+		if authInfo.RegistryHost != "" {
+			urlsToUsernames[authInfo.RegistryHost] = authInfo.Username
+		}
 	}
 	return urlsToUsernames, nil
 }
@@ -30,19 +32,21 @@ func (h Helper) Get(serverURL string) (username string, secret string, err error
 	if err != nil {
 		return "", "", err
 	}
-	if authInfo, ok := userSettings.Auth[serverURL]; ok {
-		f, err := os.OpenFile("/tmp/docker-credential-cog.log", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
-		if err != nil {
-			panic(err)
+	for _, authInfo := range userSettings.Auth {
+		if authInfo.RegistryHost == serverURL {
+			f, err := os.OpenFile("/tmp/docker-credential-cog.log", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+			if err != nil {
+				panic(err)
+			}
+
+			defer f.Close()
+
+			if _, err = f.WriteString(fmt.Sprintf("%s %s %s\n", authInfo.Username, authInfo.Token, secret)); err != nil {
+				panic(err)
+			}
+
+			return authInfo.Username, authInfo.Token, nil
 		}
-
-		defer f.Close()
-
-		if _, err = f.WriteString(fmt.Sprintf("%s %s %s\n", authInfo.Username, authInfo.Token, secret)); err != nil {
-			panic(err)
-		}
-
-		return authInfo.Username, authInfo.Token, nil
 	}
 
 	return "", "", credentials.NewErrCredentialsNotFound()
