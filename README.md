@@ -93,7 +93,7 @@ It's really hard for researchers to ship machine learning models to production.
 
 Part of the solution is Docker, but it is so complex to get it to work: Dockerfiles, pre-/post-processing, Flask servers, CUDA versions. More often than not the researcher has to sit down with an engineer to get the damn thing deployed.
 
-We are [Andreas](https://github.com/andreasjansson) and [Ben](https://github.com/bfirsh), and we're trying to fix this. Andreas used to work at Spotify, where he built tools for building and deploying audio deep learning models with Docker. Ben worked at Docker, where he created Docker Compose and led product for the developer tools.
+We are [Andreas](https://github.com/andreasjansson) and [Ben](https://github.com/bfirsh), and we're trying to fix this. Andreas used to work at Spotify, where he built tools for building and deploying ML models with Docker. Ben worked at Docker, where he created Docker Compose.
 
 We realized that, in addition to Spotify, other companies were also using Docker to build and deploy machine learning models. [Uber](https://eng.uber.com/michelangelo-pyml/), Coinbase, and others have built similar systems. So, we're making an open source version so other people can do this too.
 
