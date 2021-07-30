@@ -451,25 +451,29 @@ def test_type_signature():
     resp = client.get("/type-signature")
     assert resp.status_code == 200
     assert resp.json == {
-        "inputs": {
-            "text": {
+        "inputs": [
+            {
+                "name": "text",
                 "type": "str",
                 "help": "Some text",
             },
-            "num1": {
+            {
+                "name": "num1",
                 "type": "int",
                 "help": "First number",
             },
-            "num2": {
+            {
+                "name": "num2",
                 "type": "int",
                 "help": "Second number",
                 "default": "10",
             },
-            "path": {
+            {
+                "name": "path",
                 "type": "Path",
                 "help": "A file path",
             },
-        }
+        ]
     }
 
 

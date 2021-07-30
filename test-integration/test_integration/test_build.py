@@ -83,11 +83,11 @@ def test_build_with_model(project_dir):
         assert json.loads(
             image[0]["Config"]["Labels"]["org.cogmodel.type_signature"]
         ) == {
-            "inputs": {
-                "output_file": {"type": "bool", "default": "False"},
-                "path": {"type": "Path"},
-                "text": {"type": "str"},
-            }
+            "inputs": [
+                {"name": "text", "type": "str"},
+                {"name": "path", "type": "Path"},
+                {"name": "output_file", "type": "bool", "default": "False"},
+            ]
         }
     finally:
         subprocess.run(["docker", "rmi", image_name], check=False)
