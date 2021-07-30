@@ -7,7 +7,7 @@ def test_build(tmpdir_factory):
     tmpdir = tmpdir_factory.mktemp("project")
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
-environment:
+build:
   python_version: 3.8
 """
         f.write(cog_yaml)
@@ -32,7 +32,7 @@ environment:
         assert len(labels["org.cogmodel.cog_version"]) > 0
         print(labels["org.cogmodel.config"])
         assert json.loads(image[0]["Config"]["Labels"]["org.cogmodel.config"]) == {
-            "environment": {"python_version": "3.8"}
+            "build": {"python_version": "3.8"}
         }
         assert (
             json.loads(image[0]["Config"]["Labels"]["org.cogmodel.type_signature"])
@@ -48,7 +48,7 @@ def test_build_image_option(tmpdir_factory):
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = f"""
 image: {image_name}
-environment:
+build:
   python_version: 3.8
 """
         f.write(cog_yaml)

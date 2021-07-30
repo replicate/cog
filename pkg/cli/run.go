@@ -37,7 +37,7 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	gpus := ""
-	if cfg.Environment.GPU {
+	if cfg.Build.GPU {
 		gpus = "all"
 	}
 

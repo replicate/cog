@@ -15,7 +15,7 @@ import (
 // TODO(andreas): validate python_requirements
 // TODO(andreas): suggest valid torchvision versions (e.g. if the user wants to use 0.8.0, suggest 0.8.1)
 
-type Environment struct {
+type Build struct {
 	GPU                  bool     `json:"gpu,omitempty" yaml:"gpu"`
 	PythonVersion        string   `json:"python_version,omitempty" yaml:"python_version"`
 	PythonRequirements   string   `json:"python_requirements,omitempty" yaml:"python_requirements"`
@@ -34,14 +34,14 @@ type Example struct {
 }
 
 type Config struct {
-	Environment *Environment `json:"environment" yaml:"environment"`
-	Image       string       `json:"image,omitempty" yaml:"image"`
-	Predict     string       `json:"predict,omitempty" yaml:"predict"`
+	Build   *Build `json:"build" yaml:"build"`
+	Image   string `json:"image,omitempty" yaml:"image"`
+	Predict string `json:"predict,omitempty" yaml:"predict"`
 }
 
 func DefaultConfig() *Config {
 	return &Config{
-		Environment: &Environment{
+		Build: &Build{
 			GPU:           false,
 			PythonVersion: "3.8",
 		},
@@ -53,15 +53,15 @@ func ConfigFromYAML(contents []byte) (*Config, error) {
 	if err := yaml.Unmarshal(contents, config); err != nil {
 		return nil, fmt.Errorf("Failed to parse config yaml: %w", err)
 	}
-	// Everything assumes environment is not nil
-	if config.Environment == nil {
-		config.Environment = DefaultConfig().Environment
+	// Everything assumes Build is not nil
+	if config.Build == nil {
+		config.Build = DefaultConfig().Build
 	}
 	return config, nil
 }
 
 func (c *Config) CUDABaseImageTag() (string, error) {
-	return CUDABaseImageFor(c.Environment.CUDA, c.Environment.CuDNN)
+	return CUDABaseImageFor(c.Build.CUDA, c.Build.CuDNN)
 }
 
 func (c *Config) cudasFromTorch() (torchVersion string, torchCUDAs []string, err error) {
@@ -87,7 +87,7 @@ func (c *Config) cudaFromTF() (tfVersion string, tfCUDA string, tfCuDNN string, 
 }
 
 func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
-	for _, pkg := range c.Environment.PythonPackages {
+	for _, pkg := range c.Build.PythonPackages {
 		pkgName, version, err := splitPythonPackage(pkg)
 		if err != nil {
 			// this should be caught by validation earlier
@@ -122,7 +122,7 @@ func (c *Config) ValidateAndCompleteConfig() error {
 		return err
 	}
 
-	if c.Environment.GPU {
+	if c.Build.GPU {
 		if err := c.validateAndCompleteCUDA(); err != nil {
 			return err
 		}
@@ -133,7 +133,7 @@ func (c *Config) ValidateAndCompleteConfig() error {
 func (c *Config) PythonPackagesForArch(goos string, goarch string) (packages []string, indexURLs []string, err error) {
 	packages = []string{}
 	indexURLSet := map[string]bool{}
-	for _, pkg := range c.Environment.PythonPackages {
+	for _, pkg := range c.Build.PythonPackages {
 		archPkg, indexURL, err := c.pythonPackageForArch(pkg, goos, goarch)
 		if err != nil {
 			return nil, nil, err
@@ -156,8 +156,8 @@ func (c *Config) pythonPackageForArch(pkg string, goos string, goarch string) (a
 		return "", "", err
 	}
 	if name == "tensorflow" {
-		if c.Environment.GPU {
-			name, version, err = tfGPUPackage(version, c.Environment.CUDA)
+		if c.Build.GPU {
+			name, version, err = tfGPUPackage(version, c.Build.CUDA)
 			if err != nil {
 				return "", "", err
 			}
@@ -168,8 +168,8 @@ func (c *Config) pythonPackageForArch(pkg string, goos string, goarch string) (a
 			}
 		}
 	} else if name == "torch" {
-		if c.Environment.GPU {
-			name, version, indexURL, err = torchGPUPackage(version, c.Environment.CUDA)
+		if c.Build.GPU {
+			name, version, indexURL, err = torchGPUPackage(version, c.Build.CUDA)
 			if err != nil {
 				return "", "", err
 			}
@@ -180,8 +180,8 @@ func (c *Config) pythonPackageForArch(pkg string, goos string, goarch string) (a
 			}
 		}
 	} else if name == "torchvision" {
-		if c.Environment.GPU {
-			name, version, indexURL, err = torchvisionGPUPackage(version, c.Environment.CUDA)
+		if c.Build.GPU {
+			name, version, indexURL, err = torchvisionGPUPackage(version, c.Build.CUDA)
 			if err != nil {
 				return "", "", err
 			}
@@ -200,11 +200,11 @@ func (c *Config) pythonPackageForArch(pkg string, goos string, goarch string) (a
 }
 
 func (c *Config) validateAndCompleteCUDA() error {
-	if c.Environment.CUDA != "" && c.Environment.CuDNN != "" {
-		compatibleCuDNNs := compatibleCuDNNsForCUDA(c.Environment.CUDA)
-		if !sliceContains(compatibleCuDNNs, c.Environment.CuDNN) {
+	if c.Build.CUDA != "" && c.Build.CuDNN != "" {
+		compatibleCuDNNs := compatibleCuDNNsForCUDA(c.Build.CUDA)
+		if !sliceContains(compatibleCuDNNs, c.Build.CuDNN) {
 			return fmt.Errorf(`The specified CUDA version %s is not compatible with CuDNN %s.
-Compatible CuDNN versions are: %s`, c.Environment.CUDA, c.Environment.CuDNN, strings.Join(compatibleCuDNNs, ","))
+Compatible CuDNN versions are: %s`, c.Build.CUDA, c.Build.CuDNN, strings.Join(compatibleCuDNNs, ","))
 		}
 	}
 
@@ -220,39 +220,39 @@ Compatible CuDNN versions are: %s`, c.Environment.CUDA, c.Environment.CuDNN, str
 	// installed, but Torch bundles their own CUDA/CuDNN libraries.
 
 	if tfVersion != "" {
-		if c.Environment.CUDA == "" {
+		if c.Build.CUDA == "" {
 			console.Debugf("Setting CUDA to version %s from Tensorflow version", tfCUDA)
-			c.Environment.CUDA = tfCUDA
-		} else if tfCUDA != c.Environment.CUDA {
+			c.Build.CUDA = tfCUDA
+		} else if tfCUDA != c.Build.CUDA {
 			return fmt.Errorf(`The specified CUDA version %s is not compatible with tensorflow==%s.
 Compatible CUDA version is: %s`,
-				c.Environment.CUDA, tfVersion, tfCUDA)
+				c.Build.CUDA, tfVersion, tfCUDA)
 		}
-		if c.Environment.CuDNN == "" {
+		if c.Build.CuDNN == "" {
 			console.Debugf("Setting CuDNN to version %s from Tensorflow version", tfCuDNN)
-			c.Environment.CuDNN = tfCuDNN
-		} else if tfCuDNN != c.Environment.CuDNN {
+			c.Build.CuDNN = tfCuDNN
+		} else if tfCuDNN != c.Build.CuDNN {
 			return fmt.Errorf(`The specified cuDNN version %s is not compatible with tensorflow==%s.
 Compatible cuDNN version is: %s`,
-				c.Environment.CuDNN, tfVersion, tfCuDNN)
+				c.Build.CuDNN, tfVersion, tfCuDNN)
 		}
 	} else if torchVersion != "" {
-		if c.Environment.CUDA == "" {
-			c.Environment.CUDA = latestCUDAFrom(torchCUDAs)
-			console.Debugf("Setting CUDA to version %s from Torch version", c.Environment.CUDA)
+		if c.Build.CUDA == "" {
+			c.Build.CUDA = latestCUDAFrom(torchCUDAs)
+			console.Debugf("Setting CUDA to version %s from Torch version", c.Build.CUDA)
 		}
-		if c.Environment.CuDNN == "" {
-			c.Environment.CuDNN = latestCuDNNForCUDA(c.Environment.CUDA)
-			console.Debugf("Setting CuDNN to version %s", c.Environment.CUDA)
+		if c.Build.CuDNN == "" {
+			c.Build.CuDNN = latestCuDNNForCUDA(c.Build.CUDA)
+			console.Debugf("Setting CuDNN to version %s", c.Build.CUDA)
 		}
 	} else {
-		if c.Environment.CUDA == "" {
-			c.Environment.CUDA = defaultCUDA()
-			console.Debugf("Setting CUDA to version %s", c.Environment.CUDA)
+		if c.Build.CUDA == "" {
+			c.Build.CUDA = defaultCUDA()
+			console.Debugf("Setting CUDA to version %s", c.Build.CUDA)
 		}
-		if c.Environment.CuDNN == "" {
-			c.Environment.CuDNN = latestCuDNNForCUDA(c.Environment.CUDA)
-			console.Debugf("Setting CuDNN to version %s", c.Environment.CUDA)
+		if c.Build.CuDNN == "" {
+			c.Build.CuDNN = latestCuDNNForCUDA(c.Build.CUDA)
+			console.Debugf("Setting CuDNN to version %s", c.Build.CUDA)
 		}
 	}
 
@@ -261,7 +261,7 @@ Compatible cuDNN version is: %s`,
 
 func (c *Config) validatePythonPackagesHaveVersions() error {
 	packagesWithoutVersions := []string{}
-	for _, pkg := range c.Environment.PythonPackages {
+	for _, pkg := range c.Build.PythonPackages {
 		_, _, err := splitPythonPackage(pkg)
 		if err != nil {
 			packagesWithoutVersions = append(packagesWithoutVersions, pkg)

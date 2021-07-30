@@ -21,7 +21,7 @@ class Predictor(cog.Predictor):
         )
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
-environment:
+build:
   python_version: "3.8"
 predict: "predict.py:Predictor"
         """
@@ -53,7 +53,7 @@ class Predictor(cog.Predictor):
             )
         with open(tmpdir / "cog.yaml", "w") as f:
             cog_yaml = """
-environment:
+build:
   python_version: "3.8"
 predict: "predict.py:Predictor"
             """

@@ -2,10 +2,10 @@
 
 `cog.yaml` defines how to build a Docker image and how to run predictions on your model inside that image.
 
-It has three keys: `environment`, `image`, and `predict`. It looks a bit like this:
+It has three keys: `build`, `image`, and `predict`. It looks a bit like this:
 
 ```yaml
-environment:
+build:
   python_version: "3.8"
   python_packages:
     - pytorch==1.4.0
@@ -15,9 +15,9 @@ environment:
 predict: "predict.py:JazzSoloComposerPredictor"
 ```
 
-## `environment`
+## `build`
 
-This defines the environment the model runs in. It contains various options within it:
+This how to build the Docker image your model runs in. It contains various options within it:
 
 <!-- Alphabetical order, please! -->
 
@@ -34,7 +34,7 @@ When you use `cog run` or `cog predict`, Cog will automatically pass the `--gpus
 For example:
 
 ```yaml
-environment:
+build:
   gpu: true
 ```
 
@@ -43,7 +43,7 @@ environment:
 A list of Python packages to install, in the format `package=version`. For example:
 
 ```yaml
-environment:
+build:
   python_packages:
     - pillow==8.3.1
     - tensorflow==2.5.0
@@ -54,7 +54,7 @@ environment:
 The minor (`3.8`) or patch (`3.8.1`) version of Python to use. For example:
 
 ```yaml
-environment:
+build:
   python_version: "3.8.1"
 ```
 
@@ -63,7 +63,7 @@ environment:
 A list of Ubuntu APT packages to install. For example:
 
 ```yaml
-environment:
+build:
   system_packages:
     - "ffmpeg"
     - "libavcodec-dev"

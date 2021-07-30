@@ -50,7 +50,7 @@ func TestGenerateEmptyCPU(t *testing.T) {
 	require.NoError(t, err)
 
 	conf, err := config.ConfigFromYAML([]byte(`
-environment:
+build:
   gpu: false
 predict: predict.py:Predictor
 `))
@@ -69,7 +69,7 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
 LABEL org.cogmodel.cog_version="dev"
-LABEL org.cogmodel.config="{\"environment\":{\"python_version\":\"3.8\"},\"predict\":\"predict.py:Predictor\"}"
+LABEL org.cogmodel.config="{\"build\":{\"python_version\":\"3.8\"},\"predict\":\"predict.py:Predictor\"}"
 COPY . /src`
 
 	require.Equal(t, expected, actual)
@@ -80,7 +80,7 @@ func TestGenerateEmptyGPU(t *testing.T) {
 	require.NoError(t, err)
 
 	conf, err := config.ConfigFromYAML([]byte(`
-environment:
+build:
   gpu: true
 predict: predict.py:Predictor
 `))
@@ -98,7 +98,7 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
 LABEL org.cogmodel.cog_version="dev"
-LABEL org.cogmodel.config="{\"environment\":{\"gpu\":true,\"python_version\":\"3.8\",\"cuda\":\"11.0\",\"cudnn\":\"8\"},\"predict\":\"predict.py:Predictor\"}"
+LABEL org.cogmodel.config="{\"build\":{\"gpu\":true,\"python_version\":\"3.8\",\"cuda\":\"11.0\",\"cudnn\":\"8\"},\"predict\":\"predict.py:Predictor\"}"
 COPY . /src`
 
 	require.Equal(t, expected, actual)
@@ -109,7 +109,7 @@ func TestGenerateFullCPU(t *testing.T) {
 	require.NoError(t, err)
 
 	conf, err := config.ConfigFromYAML([]byte(`
-environment:
+build:
   gpu: false
   python_requirements: my-requirements.txt
   python_packages:
@@ -139,7 +139,7 @@ RUN pip install -f https://download.pytorch.org/whl/torch_stable.html   torch==1
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
 LABEL org.cogmodel.cog_version="dev"
-LABEL org.cogmodel.config="{\"environment\":{\"python_version\":\"3.8\",\"python_requirements\":\"my-requirements.txt\",\"python_packages\":[\"torch==1.5.1\",\"pandas==1.2.0.12\"],\"system_packages\":[\"ffmpeg\",\"cowsay\"]},\"predict\":\"predict.py:Predictor\"}"
+LABEL org.cogmodel.config="{\"build\":{\"python_version\":\"3.8\",\"python_requirements\":\"my-requirements.txt\",\"python_packages\":[\"torch==1.5.1\",\"pandas==1.2.0.12\"],\"system_packages\":[\"ffmpeg\",\"cowsay\"]},\"predict\":\"predict.py:Predictor\"}"
 COPY . /src`
 	require.Equal(t, expected, actual)
 }
@@ -149,7 +149,7 @@ func TestGenerateFullGPU(t *testing.T) {
 	require.NoError(t, err)
 
 	conf, err := config.ConfigFromYAML([]byte(`
-environment:
+build:
   gpu: true
   python_requirements: my-requirements.txt
   python_packages:
@@ -180,7 +180,7 @@ RUN pip install   torch==1.5.1 pandas==1.2.0.12
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
 LABEL org.cogmodel.cog_version="dev"
-LABEL org.cogmodel.config="{\"environment\":{\"gpu\":true,\"python_version\":\"3.8\",\"python_requirements\":\"my-requirements.txt\",\"python_packages\":[\"torch==1.5.1\",\"pandas==1.2.0.12\"],\"system_packages\":[\"ffmpeg\",\"cowsay\"],\"cuda\":\"10.2\",\"cudnn\":\"8\"},\"predict\":\"predict.py:Predictor\"}"
+LABEL org.cogmodel.config="{\"build\":{\"gpu\":true,\"python_version\":\"3.8\",\"python_requirements\":\"my-requirements.txt\",\"python_packages\":[\"torch==1.5.1\",\"pandas==1.2.0.12\"],\"system_packages\":[\"ffmpeg\",\"cowsay\"],\"cuda\":\"10.2\",\"cudnn\":\"8\"},\"predict\":\"predict.py:Predictor\"}"
 COPY . /src`
 
 	require.Equal(t, expected, actual)

@@ -2,14 +2,14 @@
 
 This guide will show you how put your own machine learning model in a Docker image using Cog. If you haven't got a model to try out, you'll want to follow the [main getting started guide](getting-started.md).
 
-## Define the environment
+## Define the Docker environment
 
 First step is to create a `cog.yaml`. It defines all the different things that need to be installed for your model to run. You can think of it as a simple way of defining a Docker image.
 
 For example:
 
 ```yaml
-environment:
+build:
   python_version: "3.8"
   python_packages:
     - "torch==1.7.0"
@@ -21,7 +21,7 @@ To run a command inside this environment, prefix it with `cog run`:
 
 ```
 $ cog run python
-✓ Building Docker image from environment in cog.yaml... Successfully built 8f54020c8981
+✓ Building Docker image from cog.yaml... Successfully built 8f54020c8981
 Running 'python' in Docker with the current directory mounted as a volume...
 ────────────────────────────────────────────────────────────────────────────────────────
 
@@ -83,7 +83,7 @@ That's it! To test this works, try running a prediction on the model:
 
 ```
 $ cog predict -i input=@input.jpg
-✓ Building Docker image from environment in cog.yaml... Successfully built 664ef88bc1f4
+✓ Building Docker image from cog.yaml... Successfully built 664ef88bc1f4
 ✓ Model running in Docker image 664ef88bc1f4
 
 Written output to output.png
@@ -99,10 +99,10 @@ In this case it is just a number, not a file, so you don't need the `@` prefix.
 
 ## Using GPUs
 
-To use GPUs with Cog, add the `gpu: true` option to the `environment` section of your `cog.yaml`:
+To use GPUs with Cog, add the `gpu: true` option to the `build` section of your `cog.yaml`:
 
 ```yaml
-environment:
+build:
   gpu: true
   ...
 ```
