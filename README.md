@@ -52,7 +52,7 @@ First, you define how predictions are run on your model:
 import cog
 import torch
 
-class ColorizationModel(cog.Model):
+class ColorizationPredictor(cog.Predictor):
     def setup(self):
         self.model = torch.load("./weights.pth")
 
@@ -112,4 +112,4 @@ Run this in a terminal:
 - [Get started with your own model](docs/getting-started-own-model.md)
 - [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's envrionment
-- [Prediction interface reference](docs/python.md) to learn how the `cog.Model` interface works
+- [Prediction interface reference](docs/python.md) to learn how the `cog.Predictor` interface works

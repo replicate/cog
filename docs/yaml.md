@@ -2,7 +2,7 @@
 
 `cog.yaml` defines how to build a Docker image and how to run predictions on your model inside that image.
 
-It has three keys: `environment`, `image`, and `model`. It looks a bit like this:
+It has three keys: `environment`, `image`, and `predict`. It looks a bit like this:
 
 ```yaml
 environment:
@@ -12,7 +12,7 @@ environment:
   system_packages:
     - "ffmpeg"
     - "libavcodec-dev"
-model: "model.py:JazzSoloComposerModel"
+predict: "predict.py:JazzSoloComposerPredictor"
 ```
 
 ## `environment`
@@ -81,14 +81,14 @@ For example:
 image: "registry.hooli.corp/jazz-solo-model"
 ```
 
-## `model`
+## `predictor`
 
-The pointer to the `cog.Model` object in your code, which defines how predictions are run on your model.
+The pointer to the `cog.Predictor` object in your code, which defines how predictions are run on your model.
 
 For example:
 
 ```yaml
-model: "predict.py:HotdogDetector"
+predict: "predict.py:HotdogPredictor"
 ```
 
 See [the Python API documentation for more information](python.md).

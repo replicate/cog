@@ -9,7 +9,7 @@ from typing import Any, Optional, List, Callable, Dict, Type
 
 from werkzeug.datastructures import FileStorage
 
-from .model import Model
+from .predictor import Predictor
 
 _VALID_INPUT_TYPES = frozenset([str, int, float, bool, Path])
 UNSPECIFIED = object()
@@ -64,8 +64,8 @@ def input(name, type, default=UNSPECIFIED, min=None, max=None, options=None, hel
 
         @functools.wraps(f)
         def wraps(self, **kwargs):
-            if not isinstance(self, Model):
-                raise TypeError("{self} is not an instance of cog.Model")
+            if not isinstance(self, Predictor):
+                raise TypeError("{self} is not an instance of cog.Predictor")
             return f(self, **kwargs)
 
         return wraps
@@ -92,9 +92,9 @@ def _is_numeric_type(typ: Type) -> bool:
 
 
 def validate_and_convert_inputs(
-    model: Model, raw_inputs: Dict[str, Any], cleanup_functions: List[Callable]
+    predictor: Predictor, raw_inputs: Dict[str, Any], cleanup_functions: List[Callable]
 ) -> Dict[str, Any]:
-    input_specs = model.predict._inputs
+    input_specs = predictor.predict._inputs
     inputs = {}
 
     for name, input_spec in input_specs.items():

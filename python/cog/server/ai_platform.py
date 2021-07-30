@@ -10,18 +10,18 @@ from ..input import (
     UNSPECIFIED,
 )
 from ..json import to_json
-from ..model import Model, run_model, load_model
+from ..predictor import Predictor, run_prediction, load_predictor
 
 
 class AIPlatformPredictionServer:
-    def __init__(self, model: Model):
+    def __init__(self, predictor: Predictor):
         sys.stderr.write(
             "WARNING: AIPlatformPredictionServer is experimental, do not use this in production\n"
         )
-        self.model = model
+        self.predictor = predictor
 
     def make_app(self) -> Flask:
-        self.model.setup()
+        self.predictor.setup()
         app = Flask(__name__)
 
         @app.route("/infer", methods=["POST"])
@@ -34,11 +34,13 @@ class AIPlatformPredictionServer:
                 for instance in instances:
                     try:
                         validate_and_convert_inputs(
-                            self.model, instance, cleanup_functions
+                            self.predictor, instance, cleanup_functions
                         )
                     except InputValidationError as e:
                         return jsonify({"error": str(e)})
-                    results.append(run_model(self.model, instance, cleanup_functions))
+                    results.append(
+                        run_prediction(self.predictor, instance, cleanup_functions)
+                    )
                 return Response(
                     to_json(
                         {
@@ -68,8 +70,8 @@ class AIPlatformPredictionServer:
         @app.route("/help")
         def help():
             args = {}
-            if hasattr(self.model.predict, "_inputs"):
-                input_specs = self.model.predict._inputs
+            if hasattr(self.predictor.predict, "_inputs"):
+                input_specs = self.predictor.predict._inputs
                 for name, spec in input_specs.items():
                     arg = {
                         "type": get_type_name(spec.type),
@@ -104,6 +106,6 @@ class AIPlatformPredictionServer:
 
 
 if __name__ == "__main__":
-    model = load_model()
-    server = AIPlatformPredictionServer(model)
+    predictor = load_predictor()
+    server = AIPlatformPredictionServer(predictor)
     server.start_server()

@@ -6,5 +6,5 @@ class ConfigDoesNotExist(CogError):
     """Exception raised when a cog.yaml does not exist."""
 
 
-class ModelNotSet(CogError):
-    """Exception raised when 'model' is not set in cog.yaml when it needs to be."""
+class PredictorNotSet(CogError):
+    """Exception raised when 'predict' is not set in cog.yaml when it needs to be."""

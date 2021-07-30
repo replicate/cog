@@ -6,7 +6,7 @@ from typing import Dict, Any
 
 import yaml
 
-from .errors import ConfigDoesNotExist, ModelNotSet
+from .errors import ConfigDoesNotExist, PredictorNotSet
 
 
 # TODO(andreas): handle directory input
@@ -14,7 +14,7 @@ from .errors import ConfigDoesNotExist, ModelNotSet
 # TODO(andreas): model-level documentation
 
 
-class Model(ABC):
+class Predictor(ABC):
     @abstractmethod
     def setup(self):
         pass
@@ -53,18 +53,18 @@ class Model(ABC):
         return {"inputs": inputs}
 
 
-def run_model(model, inputs, cleanup_functions):
+def run_prediction(predictor, inputs, cleanup_functions):
     """
-    Run the model on the inputs, and append resulting paths
+    Run the predictor on the inputs, and append resulting paths
     to cleanup functions for removal.
     """
-    result = model.predict(**inputs)
+    result = predictor.predict(**inputs)
     if isinstance(result, Path):
         cleanup_functions.append(result.unlink)
     return result
 
 
-def load_model():
+def load_predictor():
     # Assumes the working directory is /src
     config_path = os.path.abspath("cog.yaml")
     try:
@@ -75,12 +75,14 @@ def load_model():
             f"Could not find {config_path}",
         )
 
-    if "model" not in config:
-        raise ModelNotSet("Can't run predictions: 'model' option not found in cog.yaml")
+    if "predict" not in config:
+        raise PredictorNotSet(
+            "Can't run predictions: 'predict' option not found in cog.yaml"
+        )
 
     # TODO: handle predict scripts in subdirectories
-    model = config["model"]
-    module_name, class_name = model.split(".py:", 1)
+    predict_string = config["predict"]
+    module_name, class_name = predict_string.split(".py:", 1)
     module = importlib.import_module(module_name)
-    model_class = getattr(module, class_name)
-    return model_class()
+    predictor_class = getattr(module, class_name)
+    return predictor_class()

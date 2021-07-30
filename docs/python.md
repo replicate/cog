@@ -1,32 +1,32 @@
 # Prediction interface reference
 
-Subclasses of `cog.Model` define how Cog runs a prediction on your model. It looks something like this:
+You define how Cog runs predictions on your model by defining a class that inherits from `cog.Predictor`. It looks something like this:
 
 ```python
 import cog
 from pathlib import Path
 import torch
 
-class ImageScalingModel(cog.Model):
+class ImageScalingPredictor(cog.Predictor):
     def setup(self):
-        self.net = torch.load("weights.pth")
+        self.model = torch.load("weights.pth")
 
     @cog.input("input", type=Path, help="Image to enlarge")
     @cog.input("scale", type=float, default=1.5, help="Factor to scale image by")
     def predict(self, input):
         # ... pre-processing ...
-        output = self.net(input)
+        output = self.model(input)
         # ... post-processing ...
         return output
 ```
 
 You need to override two functions: `setup()` and `predict()`.
 
-### `Model.setup()`
+### `Predictor.setup()`
 
-Set up the model for prediction. This is where you load trained models, instantiate data transformations, etc., so multiple predictions can be run efficiently.
+Set up the model for prediction so multiple predictions run efficiently. Include any expensive one-off operations in here like loading trained models, instantiate data transformations, etc.
 
-### `Model.predict(**kwargs)`
+### `Predictor.predict(**kwargs)`
 
 Run a single prediction. This is where you call the model that was loaded during `setup()`, but you may also want to add pre- and post-processing code here.
 

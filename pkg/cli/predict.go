@@ -92,7 +92,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 	// FIXME: will not run on signal
 	defer func() {
-		console.Infof("Stopping model...")
+		console.Infof("Stopping container...")
 		if err := predictor.Stop(); err != nil {
 			console.Warnf("Failed to stop container: %s", err)
 		}

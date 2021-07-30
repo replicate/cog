@@ -9,16 +9,16 @@ from ..input import (
     InputValidationError,
 )
 from ..json import to_json
-from ..model import Model, run_model, load_model
+from ..predictor import Predictor, run_prediction, load_predictor
 
 
 class HTTPServer:
-    def __init__(self, model: Model):
-        self.model = model
+    def __init__(self, predictor: Predictor):
+        self.predictor = predictor
 
     def make_app(self) -> Flask:
         start_time = time.time()
-        self.model.setup()
+        self.predictor.setup()
         app = Flask(__name__)
         setup_time = time.time() - start_time
 
@@ -39,17 +39,17 @@ class HTTPServer:
                         )
                     raw_inputs[key] = val
 
-                if hasattr(self.model.predict, "_inputs"):
+                if hasattr(self.predictor.predict, "_inputs"):
                     try:
                         inputs = validate_and_convert_inputs(
-                            self.model, raw_inputs, cleanup_functions
+                            self.predictor, raw_inputs, cleanup_functions
                         )
                     except InputValidationError as e:
                         return _abort400(str(e))
                 else:
                     inputs = raw_inputs
 
-                result = run_model(self.model, inputs, cleanup_functions)
+                result = run_prediction(self.predictor, inputs, cleanup_functions)
                 run_time = time.time() - start_time
                 return self.create_response(result, setup_time, run_time)
             finally:
@@ -65,7 +65,7 @@ class HTTPServer:
 
         @app.route("/type-signature")
         def type_signature():
-            return jsonify(self.model.get_type_signature())
+            return jsonify(self.predictor.get_type_signature())
 
         return app
 
@@ -92,6 +92,6 @@ def _abort400(message):
 
 
 if __name__ == "__main__":
-    model = load_model()
-    server = HTTPServer(model)
+    predictor = load_predictor()
+    server = HTTPServer(predictor)
     server.start_server()

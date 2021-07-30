@@ -24,21 +24,21 @@ def make_client(version) -> FlaskClient:
 
 
 def test_no_input():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             self.foo = "foo"
 
         def predict(self):
             return self.foo + "bar"
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.post("/predict")
     assert resp.status_code == 200
     assert resp.data == b"foobar"
 
 
 def test_good_str_input():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             self.foo = "foo"
 
@@ -46,14 +46,14 @@ def test_good_str_input():
         def predict(self, text):
             return self.foo + text
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.post("/predict", data={"text": "baz"})
     assert resp.status_code == 200
     assert resp.data == b"foobaz"
 
 
 def test_extranous_input_keys():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             self.foo = "foo"
 
@@ -61,7 +61,7 @@ def test_extranous_input_keys():
         def predict(self, text):
             return self.foo + text
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.post("/predict", data={"text": "baz", "text2": "qux"})
     assert resp.status_code == 400
 
@@ -70,7 +70,7 @@ def test_extranous_input_keys():
 def test_bad_input_name():
     with pytest.raises(TypeError):
 
-        class Model(cog.Model):
+        class Predictor(cog.Predictor):
             def setup(self):
                 self.foo = "foo"
 
@@ -80,7 +80,7 @@ def test_bad_input_name():
 
 
 def test_good_int_input():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             self.foo = "foo"
 
@@ -89,7 +89,7 @@ def test_good_int_input():
             num2 = num ** 3
             return self.foo + str(num2)
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.post("/predict", data={"num": 3})
     assert resp.status_code == 200
     assert resp.data == b"foo27"
@@ -99,7 +99,7 @@ def test_good_int_input():
 
 
 def test_bad_int_input():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             self.foo = "foo"
 
@@ -108,13 +108,13 @@ def test_bad_int_input():
             num2 = num ** 2
             return self.foo + str(num2)
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.post("/predict", data={"num": "foo"})
     assert resp.status_code == 400
 
 
 def test_default_int_input():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             self.foo = "foo"
 
@@ -123,7 +123,7 @@ def test_default_int_input():
             num2 = num ** 2
             return self.foo + str(num2)
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.post("/predict", data={"num": 3})
     assert resp.status_code == 200
     assert resp.data == b"foo9"
@@ -133,7 +133,7 @@ def test_default_int_input():
 
 
 def test_good_float_input():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             self.foo = "foo"
 
@@ -142,7 +142,7 @@ def test_good_float_input():
             num2 = num ** 3
             return self.foo + str(num2)
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.post("/predict", data={"num": 3})
     assert resp.status_code == 200
     assert resp.data == b"foo27.0"
@@ -155,7 +155,7 @@ def test_good_float_input():
 
 
 def test_bad_float_input():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             self.foo = "foo"
 
@@ -164,13 +164,13 @@ def test_bad_float_input():
             num2 = num ** 2
             return self.foo + str(num2)
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.post("/predict", data={"num": "foo"})
     assert resp.status_code == 400
 
 
 def test_good_bool_input():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             self.foo = "foo"
 
@@ -181,7 +181,7 @@ def test_good_bool_input():
             else:
                 return self.foo + "no"
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.post("/predict", data={"flag": True})
     assert resp.status_code == 200
     assert resp.data == b"fooyes"
@@ -191,7 +191,7 @@ def test_good_bool_input():
 
 
 def test_bad_float_input():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             self.foo = "foo"
 
@@ -202,13 +202,13 @@ def test_bad_float_input():
             else:
                 return self.foo + "no"
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.post("/predict", data={"flag": "foo"})
     assert resp.status_code == 400
 
 
 def test_min_max():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             pass
 
@@ -218,7 +218,7 @@ def test_min_max():
         def predict(self, num1, num2, num3):
             return num1 + num2 + num3
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.post("/predict", data={"num1": 3, "num2": -4, "num3": -4})
     assert resp.status_code == 200
     assert resp.data == b"-5.0"
@@ -231,7 +231,7 @@ def test_min_max():
 
 
 def test_good_options():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             pass
 
@@ -240,7 +240,7 @@ def test_good_options():
         def predict(self, text, num):
             return text + ("a" * num)
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.post("/predict", data={"text": "foo", "num": 2})
     assert resp.status_code == 200
     assert resp.data == b"fooaa"
@@ -249,7 +249,7 @@ def test_good_options():
 def test_bad_options_type():
     with pytest.raises(ValueError):
 
-        class Model(cog.Model):
+        class Predictor(cog.Predictor):
             def setup(self):
                 pass
 
@@ -259,7 +259,7 @@ def test_bad_options_type():
 
     with pytest.raises(ValueError):
 
-        class Model(cog.Model):
+        class Predictor(cog.Predictor):
             def setup(self):
                 pass
 
@@ -269,7 +269,7 @@ def test_bad_options_type():
 
     with pytest.raises(ValueError):
 
-        class Model(cog.Model):
+        class Predictor(cog.Predictor):
             def setup(self):
                 pass
 
@@ -279,7 +279,7 @@ def test_bad_options_type():
 
 
 def test_bad_options():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             pass
 
@@ -288,7 +288,7 @@ def test_bad_options():
         def predict(self, text, num):
             return text + ("a" * num)
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.post("/predict", data={"text": "baz", "num": 2})
     assert resp.status_code == 400
     resp = client.post("/predict", data={"text": "bar", "num": 4})
@@ -296,7 +296,7 @@ def test_bad_options():
 
 
 def test_good_path_input():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             self.foo = "foo"
 
@@ -305,7 +305,7 @@ def test_good_path_input():
             with open(path) as f:
                 return self.foo + " " + f.read() + " " + os.path.basename(path)
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     path_data = (io.BytesIO(b"bar"), "foo.txt")
     resp = client.post(
         "/predict", data={"path": path_data}, content_type="multipart/form-data"
@@ -315,7 +315,7 @@ def test_good_path_input():
 
 
 def test_bad_path_input():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             self.foo = "foo"
 
@@ -324,13 +324,13 @@ def test_bad_path_input():
             with open(path) as f:
                 return self.foo + " " + f.read() + " " + os.path.basename(path)
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.post("/predict", data={"path": "bar"})
     assert resp.status_code == 400
 
 
 def test_default_path_input():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             self.foo = "foo"
 
@@ -341,7 +341,7 @@ def test_default_path_input():
             with open(path) as f:
                 return self.foo + " " + f.read() + " " + os.path.basename(path)
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     path_data = (io.BytesIO(b"bar"), "foo.txt")
     resp = client.post(
         "/predict", data={"path": path_data}, content_type="multipart/form-data"
@@ -354,7 +354,7 @@ def test_default_path_input():
 
 
 def test_path_output_str():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             self.foo = "foo"
 
@@ -366,7 +366,7 @@ def test_path_output_str():
                 f.write(self.foo + text)
             return Path(temp_path)
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.post("/predict", data={"text": "baz"})
     assert resp.status_code == 200
     assert resp.content_type == "text/plain; charset=utf-8"
@@ -374,7 +374,7 @@ def test_path_output_str():
 
 
 def test_path_output_image():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             pass
 
@@ -385,7 +385,7 @@ def test_path_output_image():
             img.save(temp_path)
             return Path(temp_path)
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.post("/predict")
     assert resp.status_code == 200
     # need both image/bmp and image/x-ms-bmp until https://bugs.python.org/issue44211 is fixed
@@ -394,14 +394,14 @@ def test_path_output_image():
 
 
 def test_json_output_numpy():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             pass
 
         def predict(self):
             return {"foo": np.float32(1.0)}
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.post("/predict")
     assert resp.status_code == 200
     assert resp.content_type == "application/json"
@@ -409,7 +409,7 @@ def test_json_output_numpy():
 
 
 def test_multiple_arguments():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             self.foo = "foo"
 
@@ -422,7 +422,7 @@ def test_multiple_arguments():
                 path_contents = f.read()
             return self.foo + " " + text + " " + str(num1 * num2) + " " + path_contents
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     path_data = (io.BytesIO(b"bar"), "foo.txt")
     resp = client.post(
         "/predict",
@@ -434,7 +434,7 @@ def test_multiple_arguments():
 
 
 def test_type_signature():
-    class Model(cog.Model):
+    class Predictor(cog.Predictor):
         def setup(self):
             self.foo = "foo"
 
@@ -447,7 +447,7 @@ def test_type_signature():
                 path_contents = f.read()
             return self.foo + " " + text + " " + str(num1 * num2) + " " + path_contents
 
-    client = make_client(Model())
+    client = make_client(Predictor())
     resp = client.get("/type-signature")
     assert resp.status_code == 200
     assert resp.json == {
@@ -474,7 +474,7 @@ def test_type_signature():
 
 
 def test_timing():
-    class ModelSlow(cog.Model):
+    class PredictorSlow(cog.Predictor):
         def setup(self):
             time.sleep(0.5)
 
@@ -482,20 +482,20 @@ def test_timing():
             time.sleep(0.5)
             return ""
 
-    class ModelFast(cog.Model):
+    class PredictorFast(cog.Predictor):
         def setup(self):
             pass
 
         def predict(self):
             return ""
 
-    client = make_client(ModelSlow())
+    client = make_client(PredictorSlow())
     resp = client.post("/predict")
     assert resp.status_code == 200
     assert 0.5 < float(resp.headers["X-Setup-Time"]) < 1.0
     assert 0.5 < float(resp.headers["X-Run-Time"]) < 1.0
 
-    client = make_client(ModelFast())
+    client = make_client(PredictorFast())
     resp = client.post("/predict")
     assert resp.status_code == 200
     assert float(resp.headers["X-Setup-Time"]) < 0.5
