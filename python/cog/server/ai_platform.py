@@ -1,3 +1,4 @@
+from pathlib import Path
 import sys
 import traceback
 
@@ -67,27 +68,9 @@ class AIPlatformPredictionServer:
         def ping():
             return "PONG"
 
-        @app.route("/help")
-        def help():
-            args = {}
-            if hasattr(self.predictor.predict, "_inputs"):
-                input_specs = self.predictor.predict._inputs
-                for name, spec in input_specs.items():
-                    arg = {
-                        "type": get_type_name(spec.type),
-                    }
-                    if spec.help:
-                        arg["help"] = spec.help
-                    if spec.default is not UNSPECIFIED:
-                        arg["default"] = str(spec.default)  # TODO: don't string this
-                    if spec.min is not None:
-                        arg["min"] = str(spec.min)  # TODO: don't string this
-                    if spec.max is not None:
-                        arg["max"] = str(spec.max)  # TODO: don't string this
-                    args[name] = arg
-            return jsonify({"arguments": args})
-
-        return app
+        @app.route("/type-signature")
+        def type_signature():
+            return jsonify(self.predictor.get_type_signature())
 
     def start_server(self):
         app = self.make_app()
