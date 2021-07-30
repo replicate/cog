@@ -44,12 +44,12 @@ import cog
 from pathlib import Path
 import torch
 
-class Model(cog.Model):
+class Predictor(cog.Predictor):
     def setup(self):
-        """Load the model into memory to make running multiple inferences efficient"""
+        """Load the model into memory to make running multiple predictions efficient"""
         self.net = torch.load("weights.pth")
 
-    # Define the arguments and types the model takes as input
+    # Define the input types for a prediction
     @cog.input("input", type=Path, help="Image to enlarge")
     @cog.input("scale", type=float, default=1.5, help="Factor to scale image by")
     def predict(self, input, scale):
@@ -60,7 +60,7 @@ class Model(cog.Model):
         return output
 ```
 
-Put this in a file called `predict.py` and fill in the functions with your own model's setup and prediction code. You might want to import parts of your model from another file.
+Put this in a file called `predict.py` and fill in the functions with your own model's setup and prediction code. You might need to import parts of your model from another file.
 
 You also need to define the inputs to your model using the `@cog.input()` decorator, as demonstrated above. The first argument maps to the name of the argument in the `predict()` function, and it also takes these other arguments:
 
@@ -76,7 +76,7 @@ For more details about writing your model interface, [take a look at the predict
 Next, add this line at the top of your `cog.yaml` file so Cog knows how to run predictions:
 
 ```yaml
-model: "predict.py:Model"
+predict: "predict.py:Predictor"
 ```
 
 That's it! To test this works, try running a prediction on the model:

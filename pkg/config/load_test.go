@@ -9,13 +9,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const TEST_CONFIG = `model: "model.py:SomeModel"
+const TEST_CONFIG = `
 environment:
   python_version: "3.8"
   python_requirements: requirements.txt
   system_packages:
     - libgl1-mesa-glx
     - libglib2.0-0
+predict: "predict.py:SomePredictor"
 `
 
 func TestGetProjectDirWithFlagSet(t *testing.T) {
@@ -36,7 +37,7 @@ func TestGetConfigShouldLoadFromCustomDir(t *testing.T) {
 	conf, _, err := GetConfig(dir)
 	require.NoError(t, err)
 	want := &Config{
-		Model: "model.py:SomeModel",
+		Predict: "predict.py:SomePredictor",
 		Environment: &Environment{
 			PythonVersion:      "3.8",
 			PythonRequirements: "requirements.txt",

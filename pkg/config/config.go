@@ -36,7 +36,7 @@ type Example struct {
 type Config struct {
 	Environment *Environment `json:"environment" yaml:"environment"`
 	Image       string       `json:"image,omitempty" yaml:"image"`
-	Model       string       `json:"model,omitempty" yaml:"model"`
+	Predict     string       `json:"predict,omitempty" yaml:"predict"`
 }
 
 func DefaultConfig() *Config {
@@ -109,12 +109,12 @@ func (c *Config) ValidateAndCompleteConfig() error {
 	// TODO(andreas): warn if user specifies tensorflow-gpu instead of tensorflow
 	// TODO(andreas): use pypi api to validate that all python versions exist
 
-	if c.Model != "" {
-		if len(strings.Split(c.Model, ".py:")) != 2 {
-			return fmt.Errorf("'model' in cog.yaml must be in the form 'model.py:ModelClass")
+	if c.Predict != "" {
+		if len(strings.Split(c.Predict, ".py:")) != 2 {
+			return fmt.Errorf("'predict' in cog.yaml must be in the form 'predict.py:PredictorClass")
 		}
-		if strings.Contains(c.Model, "/") {
-			return fmt.Errorf("'model' in cog.yaml cannot be in a subdirectory. It needs to be in the same directory as cog.yaml, in the form 'model.py:ModelClass")
+		if strings.Contains(c.Predict, "/") {
+			return fmt.Errorf("'predict' in cog.yaml cannot be in a subdirectory. It needs to be in the same directory as cog.yaml, in the form 'predict.py:PredictorClass")
 		}
 	}
 

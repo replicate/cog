@@ -45,7 +45,7 @@ First, run this get some pre-trained model weights:
 
     wget https://storage.googleapis.com/tensorflow/keras-applications/resnet/resnet50_weights_tf_dim_ordering_tf_kernels.h5
 
-Then, we need to write some code to describe how inferences are run on the model. Save this to `predict.py`:
+Then, we need to write some code to describe how predictions are run on the model. Save this to `predict.py`:
 
 ```python
 import cog
@@ -56,9 +56,9 @@ from tensorflow.keras.applications.resnet50 import preprocess_input, decode_pred
 import numpy as np
 
 
-class ResNetModel(cog.Model):
+class ResNetPredictor(cog.Predictor):
     def setup(self):
-        """Load the model into memory to make running multiple inferences efficient"""
+        """Load the model into memory to make running multiple predictions efficient"""
         self.model = ResNet50(weights='resnet50_weights_tf_dim_ordering_tf_kernels.h5')
 
     # Define the arguments and types the model takes as input
@@ -84,7 +84,7 @@ environment:
   python_packages:
     - pillow==8.3.1
     - tensorflow==2.5.0
-model: "predict.py:ResNetModel"
+predict: "predict.py:ResNetPredictor"
 ```
 
 Let's grab an image to test the model with:
@@ -119,7 +119,7 @@ Looks like it worked!
 
 ## Build an image
 
-We can bake your model's code, the trained weights, and the Docker environment into a Docker image. This image serves inferences with an HTTP server, and can be deployed to anywhere that Docker runs to serve real-time inferences.
+We can bake your model's code, the trained weights, and the Docker environment into a Docker image. This image serves predictions with an HTTP server, and can be deployed to anywhere that Docker runs to serve real-time predictions.
 
 ```
 $ cog build -t resnet

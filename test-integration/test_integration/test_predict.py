@@ -10,7 +10,7 @@ def test_predict(tmpdir_factory):
             """
 import cog
 
-class Model(cog.Model):
+class Predictor(cog.Predictor):
     def setup(self):
         pass
 
@@ -21,9 +21,9 @@ class Model(cog.Model):
         )
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
-model: "predict.py:Model"
 environment:
-  python: "3.8"
+  python_version: "3.8"
+predict: "predict.py:Predictor"
         """
         f.write(cog_yaml)
 
@@ -42,7 +42,7 @@ def test_predict_with_existing_image(tmpdir_factory):
                 """
 import cog
 
-class Model(cog.Model):
+class Predictor(cog.Predictor):
     def setup(self):
         pass
 
@@ -53,9 +53,9 @@ class Model(cog.Model):
             )
         with open(tmpdir / "cog.yaml", "w") as f:
             cog_yaml = """
-model: "predict.py:Model"
 environment:
-python: "3.8"
+  python_version: "3.8"
+predict: "predict.py:Predictor"
             """
             f.write(cog_yaml)
 

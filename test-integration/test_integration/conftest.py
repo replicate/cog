@@ -63,9 +63,9 @@ import tempfile
 from pathlib import Path
 import cog
 
-class Model(cog.Model):
+class Predictor(cog.Predictor):
     def setup(self):
-        print("setting up model")
+        print("setting up predictor")
         self.foo = "foo"
 
     @cog.input("text", type=str)
@@ -89,9 +89,8 @@ class Model(cog.Model):
         )
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
-name: andreas/hello-world
-model: predict.py:Model
 environment:
+predict: predict.py:Predictor
 """
         f.write(cog_yaml)
 

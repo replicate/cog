@@ -122,7 +122,7 @@ def test_queue_worker(project_dir, docker_image, redis_port, request):
             else:
                 run_log_lines.append(line)
 
-        assert setup_log_lines == ["setting up model"]
+        assert setup_log_lines == ["setting up predictor"]
         assert run_log_lines == [
             "processing bar",
             "successfully processed bar",

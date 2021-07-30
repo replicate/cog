@@ -15,7 +15,7 @@ from werkzeug.datastructures import FileStorage
 
 from ..input import InputValidationError, validate_and_convert_inputs
 from ..json import to_json
-from ..model import Model, run_model, load_model
+from ..predictor import Predictor, run_prediction, load_predictor
 
 
 class RedisQueueWorker:
@@ -26,7 +26,7 @@ class RedisQueueWorker:
 
     def __init__(
         self,
-        model: Model,
+        predictor: Predictor,
         redis_host: str,
         redis_port: int,
         input_queue: str,
@@ -36,7 +36,7 @@ class RedisQueueWorker:
         log_queue: Optional[str] = None,
         redis_db: int = 0,
     ):
-        self.model = model
+        self.predictor = predictor
         self.model_id = model_id
         self.redis_host = redis_host
         self.redis_port = redis_port
@@ -101,7 +101,7 @@ class RedisQueueWorker:
         start_time = time.time()
 
         with self.capture_log(self.STAGE_SETUP, self.model_id):
-            self.model.setup()
+            self.predictor.setup()
 
         setup_time = time.time() - start_time
         self.redis.xadd(
@@ -172,7 +172,9 @@ class RedisQueueWorker:
                     stream=BytesIO(value_bytes), filename=v["file"]["name"]
                 )
         try:
-            inputs = validate_and_convert_inputs(self.model, inputs, cleanup_functions)
+            inputs = validate_and_convert_inputs(
+                self.predictor, inputs, cleanup_functions
+            )
         except InputValidationError as e:
             tb = traceback.format_exc()
             sys.stderr.write(tb)
@@ -180,7 +182,7 @@ class RedisQueueWorker:
             return
 
         with self.capture_log(self.STAGE_RUN, prediction_id):
-            result = run_model(self.model, inputs, cleanup_functions)
+            result = run_prediction(self.predictor, inputs, cleanup_functions)
         self.push_result(response_queue, result)
 
     def download(self, url):
@@ -275,9 +277,9 @@ class RedisQueueWorker:
 
 
 if __name__ == "__main__":
-    model = load_model()
+    predictor = load_predictor()
     worker = RedisQueueWorker(
-        model,
+        predictor,
         redis_host=sys.argv[1],
         redis_port=sys.argv[2],
         input_queue=sys.argv[3],
