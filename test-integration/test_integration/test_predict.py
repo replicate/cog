@@ -30,8 +30,7 @@ predict: "predict.py:Predictor"
     result = subprocess.run(
         ["cog", "predict", "-i", "world"], cwd=tmpdir, check=True, capture_output=True
     )
-    # stdout should be clean without any log messages so it can be piped to other commands
-    assert result.stdout == b"hello world\n"
+    assert b"hello world" in result.stdout
 
 
 def test_predict_with_existing_image(tmpdir_factory):
@@ -74,6 +73,6 @@ predict: "predict.py:Predictor"
             check=True,
             capture_output=True,
         )
-        assert result.stdout == b"hello world\n"
+        assert b"hello world" in result.stdout
     finally:
         subprocess.run(["docker", "rmi", image_name], check=True)
