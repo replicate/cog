@@ -5,8 +5,8 @@ def test_run(tmpdir_factory):
     tmpdir = tmpdir_factory.mktemp("project")
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
-environment:
-  python: "3.8"
+build:
+  python_version: "3.8"
         """
         f.write(cog_yaml)
 

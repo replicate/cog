@@ -89,7 +89,7 @@ class Predictor(cog.Predictor):
         )
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
-environment:
+build:
 predict: predict.py:Predictor
 """
         f.write(cog_yaml)

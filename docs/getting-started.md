@@ -19,14 +19,14 @@ The simplest thing you can do with Cog is run a command inside a Docker environm
 The first thing you need to do is create a file called `cog.yaml`:
 
 ```yaml
-environment:
+build:
   python_version: "3.8"
 ```
 
 Then, you can run any command inside this environment. For example, to get a Python shell:
 
     $ cog run python
-    ✓ Building Docker image from environment in cog.yaml... Successfully built 8f54020c8981
+    ✓ Building Docker image from cog.yaml... Successfully built 8f54020c8981
     Running 'python' in Docker with the current directory mounted as a volume...
     ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -79,7 +79,7 @@ class ResNetPredictor(cog.Predictor):
 We also need to point Cog at this, and tell it what Python dependencies to install. Update `cog.yaml` to look like this:
 
 ```yaml
-environment:
+build:
   python_version: "3.8"
   python_packages:
     - pillow==8.3.1

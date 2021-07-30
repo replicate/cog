@@ -10,7 +10,7 @@ import (
 )
 
 const TEST_CONFIG = `
-environment:
+build:
   python_version: "3.8"
   python_requirements: requirements.txt
   system_packages:
@@ -38,7 +38,7 @@ func TestGetConfigShouldLoadFromCustomDir(t *testing.T) {
 	require.NoError(t, err)
 	want := &Config{
 		Predict: "predict.py:SomePredictor",
-		Environment: &Environment{
+		Build: &Build{
 			PythonVersion:      "3.8",
 			PythonRequirements: "requirements.txt",
 			SystemPackages: []string{

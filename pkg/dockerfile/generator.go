@@ -45,7 +45,7 @@ func (g *DockerfileGenerator) GenerateBase() (string, error) {
 		return "", err
 	}
 	installPython := ""
-	if g.Config.Environment.GPU {
+	if g.Config.Build.GPU {
 		installPython, err = g.installPython()
 		if err != nil {
 			return "", err
@@ -112,10 +112,10 @@ func (g *DockerfileGenerator) Cleanup() error {
 }
 
 func (g *DockerfileGenerator) baseImage() (string, error) {
-	if g.Config.Environment.GPU {
+	if g.Config.Build.GPU {
 		return g.Config.CUDABaseImageTag()
 	}
-	return "python:" + g.Config.Environment.PythonVersion, nil
+	return "python:" + g.Config.Build.PythonVersion, nil
 }
 
 func (g *DockerfileGenerator) preamble() string {
@@ -126,7 +126,7 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia
 }
 
 func (g *DockerfileGenerator) aptInstalls() (string, error) {
-	packages := g.Config.Environment.SystemPackages
+	packages := g.Config.Build.SystemPackages
 	if len(packages) == 0 {
 		return "", nil
 	}
@@ -138,7 +138,7 @@ func (g *DockerfileGenerator) aptInstalls() (string, error) {
 func (g *DockerfileGenerator) installPython() (string, error) {
 	// TODO: check that python version is valid
 
-	py := g.Config.Environment.PythonVersion
+	py := g.Config.Build.PythonVersion
 
 	return `ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
 RUN apt-get update -q && apt-get install -qy --no-install-recommends \
@@ -184,7 +184,7 @@ RUN pip install /tmp/%s`, cogFilename, cogFilename, cogFilename), nil
 }
 
 func (g *DockerfileGenerator) pythonRequirements() (string, error) {
-	reqs := g.Config.Environment.PythonRequirements
+	reqs := g.Config.Build.PythonRequirements
 	if reqs == "" {
 		return "", nil
 	}
@@ -205,11 +205,11 @@ func (g *DockerfileGenerator) pipInstalls() (string, error) {
 	for _, indexURL := range indexURLs {
 		findLinks += "-f " + indexURL + " "
 	}
-	for _, indexURL := range g.Config.Environment.PythonFindLinks {
+	for _, indexURL := range g.Config.Build.PythonFindLinks {
 		findLinks += "-f " + indexURL + " "
 	}
 	extraIndexURLs := ""
-	for _, indexURL := range g.Config.Environment.PythonExtraIndexURLs {
+	for _, indexURL := range g.Config.Build.PythonExtraIndexURLs {
 		extraIndexURLs += "--extra-index-url=" + indexURL
 	}
 
@@ -230,7 +230,7 @@ func (g *DockerfileGenerator) workdir() string {
 
 func (g *DockerfileGenerator) preInstall() string {
 	lines := []string{}
-	for _, run := range g.Config.Environment.PreInstall {
+	for _, run := range g.Config.Build.PreInstall {
 		run = strings.TrimSpace(run)
 		lines = append(lines, "RUN "+run)
 	}

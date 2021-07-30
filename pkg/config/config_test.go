@@ -9,7 +9,7 @@ import (
 func TestValidateAndCompleteCUDAForAllTF(t *testing.T) {
 	for _, compat := range TFCompatibilityMatrix {
 		config := &Config{
-			Environment: &Environment{
+			Build: &Build{
 				PythonVersion: "3.8",
 				PythonPackages: []string{
 					"tensorflow==" + compat.TF,
@@ -19,8 +19,8 @@ func TestValidateAndCompleteCUDAForAllTF(t *testing.T) {
 
 		err := config.validateAndCompleteCUDA()
 		require.NoError(t, err)
-		require.Equal(t, compat.CUDA, config.Environment.CUDA)
-		require.Equal(t, compat.CuDNN, config.Environment.CuDNN)
+		require.Equal(t, compat.CUDA, config.Build.CUDA)
+		require.Equal(t, compat.CuDNN, config.Build.CuDNN)
 	}
 }
 
@@ -28,7 +28,7 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 	// test that all torch versions fill out cuda
 	for _, compat := range TorchCompatibilityMatrix {
 		config := &Config{
-			Environment: &Environment{
+			Build: &Build{
 				PythonVersion: "3.8",
 				PythonPackages: []string{
 					"torch==" + compat.TorchVersion(),
@@ -38,8 +38,8 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 
 		err := config.validateAndCompleteCUDA()
 		require.NoError(t, err)
-		require.NotEqual(t, "", config.Environment.CUDA)
-		require.NotEqual(t, "", config.Environment.CuDNN)
+		require.NotEqual(t, "", config.Build.CUDA)
+		require.NotEqual(t, "", config.Build.CuDNN)
 	}
 
 	// test correctness for a subset
@@ -53,7 +53,7 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 		{"1.5.1", "10.2", "8"},
 	} {
 		config := &Config{
-			Environment: &Environment{
+			Build: &Build{
 				PythonVersion: "3.8",
 				PythonPackages: []string{
 					"torch==" + tt.torch,
@@ -62,14 +62,14 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 		}
 		err := config.validateAndCompleteCUDA()
 		require.NoError(t, err)
-		require.Equal(t, tt.cuda, config.Environment.CUDA)
-		require.Equal(t, tt.cuDNN, config.Environment.CuDNN)
+		require.Equal(t, tt.cuda, config.Build.CUDA)
+		require.Equal(t, tt.cuDNN, config.Build.CuDNN)
 	}
 }
 
 func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 	config := &Config{
-		Environment: &Environment{
+		Build: &Build{
 			GPU:           true,
 			PythonVersion: "3.8",
 			PythonPackages: []string{
@@ -83,8 +83,8 @@ func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 	}
 	err := config.validateAndCompleteCUDA()
 	require.NoError(t, err)
-	require.Equal(t, "10.1", config.Environment.CUDA)
-	require.Equal(t, "8", config.Environment.CuDNN)
+	require.Equal(t, "10.1", config.Build.CUDA)
+	require.Equal(t, "8", config.Build.CuDNN)
 
 	packages, indexURLs, err := config.PythonPackagesForArch("", "")
 	require.NoError(t, err)
@@ -101,7 +101,7 @@ func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 
 func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 	config := &Config{
-		Environment: &Environment{
+		Build: &Build{
 			GPU:           false,
 			PythonVersion: "3.8",
 			PythonPackages: []string{
@@ -115,8 +115,8 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 	}
 	err := config.validateAndCompleteCUDA()
 	require.NoError(t, err)
-	require.Equal(t, "10.1", config.Environment.CUDA)
-	require.Equal(t, "8", config.Environment.CuDNN)
+	require.Equal(t, "10.1", config.Build.CUDA)
+	require.Equal(t, "8", config.Build.CuDNN)
 
 	packages, indexURLs, err := config.PythonPackagesForArch("", "")
 	require.NoError(t, err)
@@ -133,7 +133,7 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 
 func TestPythonPackagesForArchTensorflowGPU(t *testing.T) {
 	config := &Config{
-		Environment: &Environment{
+		Build: &Build{
 			GPU:           true,
 			PythonVersion: "3.8",
 			PythonPackages: []string{
@@ -145,8 +145,8 @@ func TestPythonPackagesForArchTensorflowGPU(t *testing.T) {
 	}
 	err := config.validateAndCompleteCUDA()
 	require.NoError(t, err)
-	require.Equal(t, "10.0", config.Environment.CUDA)
-	require.Equal(t, "7", config.Environment.CuDNN)
+	require.Equal(t, "10.0", config.Build.CUDA)
+	require.Equal(t, "7", config.Build.CuDNN)
 
 	packages, indexURLs, err := config.PythonPackagesForArch("", "")
 	require.NoError(t, err)
@@ -161,7 +161,7 @@ func TestPythonPackagesForArchTensorflowGPU(t *testing.T) {
 
 func TestCUDABaseImageTag(t *testing.T) {
 	config := &Config{
-		Environment: &Environment{
+		Build: &Build{
 			PythonVersion: "3.8",
 			PythonPackages: []string{
 				"tensorflow==1.8.0",
@@ -177,11 +177,11 @@ func TestCUDABaseImageTag(t *testing.T) {
 	require.Equal(t, "nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04", imageTag)
 }
 
-func TestBlankEnvironment(t *testing.T) {
-	// Naively, this turns into nil, so make sure it's a real environment object
-	config, err := ConfigFromYAML([]byte(`environment:`))
+func TestBlankBuild(t *testing.T) {
+	// Naively, this turns into nil, so make sure it's a real build object
+	config, err := ConfigFromYAML([]byte(`build:`))
 	require.NoError(t, err)
-	require.NotNil(t, config.Environment)
-	require.Equal(t, false, config.Environment.GPU)
+	require.NotNil(t, config.Build)
+	require.Equal(t, false, config.Build.GPU)
 
 }

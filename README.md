@@ -12,10 +12,10 @@ Cog does a few handy things beyond normal Docker:
 
 ## Develop and train in a consistent environment
 
-Define the environment your model runs in with `cog.yaml`:
+Define the Docker environment your model runs in with `cog.yaml`:
 
 ```yaml
-environment:
+build:
   gpu: true
   system_packages:
     - libgl1-mesa-glx

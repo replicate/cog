@@ -67,7 +67,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			Destination: "/src",
 		})
 
-		if cfg.Environment.GPU {
+		if cfg.Build.GPU {
 			gpus = "all"
 		}
 
