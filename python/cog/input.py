@@ -17,6 +17,7 @@ UNSPECIFIED = object()
 
 @dataclass
 class InputSpec:
+    name: str
     type: Type
     default: Any = UNSPECIFIED
     min: Optional[Number] = None
@@ -50,16 +51,26 @@ def input(name, type, default=UNSPECIFIED, min=None, max=None, options=None, hel
 
     def wrapper(f):
         if not hasattr(f, "_inputs"):
-            f._inputs = {}
+            f._inputs = []
 
-        if name in f._inputs:
+        if name in (i.name for i in f._inputs):
             raise ValueError(f"{name} is already defined as an argument")
 
         if type == Path and default is not UNSPECIFIED and default is not None:
             raise TypeError("Cannot use default with Path type")
 
-        f._inputs[name] = InputSpec(
-            type=type, default=default, min=min, max=max, options=options, help=help
+        # Insert at start of list because decorators are run bottom up
+        f._inputs.insert(
+            0,
+            InputSpec(
+                name=name,
+                type=type,
+                default=default,
+                min=min,
+                max=max,
+                options=options,
+                help=help,
+            ),
         )
 
         @functools.wraps(f)
@@ -97,18 +108,18 @@ def validate_and_convert_inputs(
     input_specs = predictor.predict._inputs
     inputs = {}
 
-    for name, input_spec in input_specs.items():
-        if name in raw_inputs:
-            val = raw_inputs[name]
+    for input_spec in input_specs:
+        if input_spec.name in raw_inputs:
+            val = raw_inputs[input_spec.name]
 
             if input_spec.type == Path:
                 if not isinstance(val, FileStorage):
                     raise InputValidationError(
-                        f"Could not convert file input {name} to {get_type_name(input_spec.type)}",
+                        f"Could not convert file input {input_spec.name} to {get_type_name(input_spec.type)}",
                     )
                 if val.filename is None:
                     raise InputValidationError(
-                        f"No filename is provided for file input {name}"
+                        f"No filename is provided for file input {input_spec.name}"
                     )
 
                 temp_dir = tempfile.mkdtemp()
@@ -123,25 +134,29 @@ def validate_and_convert_inputs(
                 try:
                     converted = int(val)
                 except ValueError:
-                    raise InputValidationError(f"Could not convert {name}={val} to int")
+                    raise InputValidationError(
+                        f"Could not convert {input_spec.name}={val} to int"
+                    )
 
             elif input_spec.type == float:
                 try:
                     converted = float(val)
                 except ValueError:
                     raise InputValidationError(
-                        f"Could not convert {name}={val} to float"
+                        f"Could not convert {input_spec.name}={val} to float"
                     )
 
             elif input_spec.type == bool:
                 if val.lower() not in ["true", "false"]:
-                    raise InputValidationError(f"{name}={val} is not a boolean")
+                    raise InputValidationError(
+                        f"{input_spec.name}={val} is not a boolean"
+                    )
                 converted = val.lower() == "true"
 
             elif input_spec.type == str:
                 if isinstance(val, FileStorage):
                     raise InputValidationError(
-                        f"Could not convert file input {name} to str"
+                        f"Could not convert file input {input_spec.name} to str"
                     )
                 converted = val
 
@@ -171,12 +186,14 @@ def validate_and_convert_inputs(
             if input_spec.default is not UNSPECIFIED:
                 converted = input_spec.default
             else:
-                raise InputValidationError(f"Missing expected argument: {name}")
-        inputs[name] = converted
+                raise InputValidationError(
+                    f"Missing expected argument: {input_spec.name}"
+                )
+        inputs[input_spec.name] = converted
 
-    expected_keys = set(input_specs.keys())
+    expected_names = set(s.name for s in input_specs)
     raw_keys = set(raw_inputs.keys())
-    extraneous_keys = raw_keys - expected_keys
+    extraneous_keys = raw_keys - expected_names
     if extraneous_keys:
         raise InputValidationError(
             f"Extraneous input keys: {', '.join(extraneous_keys)}"

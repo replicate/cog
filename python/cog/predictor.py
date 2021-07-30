@@ -32,11 +32,12 @@ class Predictor(ABC):
             UNSPECIFIED,
         )
 
-        inputs = {}
+        inputs = []
         if hasattr(self.predict, "_inputs"):
             input_specs = self.predict._inputs
-            for name, spec in input_specs.items():
+            for spec in input_specs:
                 arg: Dict[str, Any] = {
+                    "name": spec.name,
                     "type": get_type_name(spec.type),
                 }
                 if spec.help:
@@ -49,7 +50,7 @@ class Predictor(ABC):
                     arg["max"] = str(spec.max)  # TODO: don't string this
                 if spec.options is not None:
                     arg["options"] = [str(o) for o in spec.options]
-                inputs[name] = arg
+                inputs.append(arg)
         return {"inputs": inputs}
 
 

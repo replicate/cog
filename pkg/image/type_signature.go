@@ -19,6 +19,7 @@ const (
 )
 
 type Input struct {
+	Name    string    `json:"name"`
 	Type    InputType `json:"type,omitempty"`
 	Default *string   `json:"default,omitempty"`
 	Min     *string   `json:"min,omitempty"`
@@ -28,7 +29,7 @@ type Input struct {
 }
 
 type TypeSignature struct {
-	Inputs map[string]Input `json:"inputs,omitempty"`
+	Inputs []Input `json:"inputs,omitempty"`
 }
 
 func GetTypeSignature(imageName string) (*TypeSignature, error) {
