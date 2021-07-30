@@ -4,23 +4,24 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
 func Build(dir, dockerfile, imageName string) error {
-	cmd := exec.Command(
-		"docker", "build", ".",
-		"-f", "-",
-		"--build-arg", "BUILDKIT_INLINE_CACHE=1",
-		"-t", imageName,
-	)
+	var cmd *exec.Cmd
+	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
+		cmd = m1BuildxCommand(imageName)
+	} else {
+		cmd = buildKitCommand(imageName)
+	}
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = strings.NewReader(dockerfile)
-	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
 
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
 	return cmd.Run()
@@ -50,4 +51,27 @@ func BuildAddLabelsToImage(image string, labels map[string]string) error {
 		return err
 	}
 	return nil
+}
+
+func buildKitCommand(imageName string) *exec.Cmd {
+	cmd := exec.Command(
+		"docker", "build", ".",
+		"-f", "-",
+		"--build-arg", "BUILDKIT_INLINE_CACHE=1",
+		"-t", imageName,
+	)
+	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
+	return cmd
+}
+
+func m1BuildxCommand(imageName string) *exec.Cmd {
+	cmd := exec.Command(
+		"docker", "buildx", "build", ".",
+		"-f", "-",
+		"--build-arg", "BUILDKIT_INLINE_CACHE=1",
+		"-t", imageName,
+		"--platform", "linux/amd64",
+	)
+	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
+	return cmd
 }
