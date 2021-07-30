@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -144,6 +145,8 @@ func writeCUDABaseImageTags(outputPath string) error {
 			tags = append(tags, tag)
 		}
 	}
+
+	sort.Strings(tags)
 
 	data, err := json.MarshalIndent(tags, "", "  ")
 	if err != nil {
