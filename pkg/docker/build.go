@@ -4,23 +4,31 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
 func Build(dir, dockerfile, imageName string) error {
-	cmd := exec.Command(
-		"docker", "build", ".",
-		"-f", "-",
+	var args []string
+	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
+		args = m1BuildxBuildArgs()
+	} else {
+		args = buildKitBuildArgs()
+	}
+	args = append(args,
+		"--file", "-",
 		"--build-arg", "BUILDKIT_INLINE_CACHE=1",
-		"-t", imageName,
+		"--tag", imageName,
+		".",
 	)
+	cmd := exec.Command("docker", args...)
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = strings.NewReader(dockerfile)
-	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
 
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
 	return cmd.Run()
@@ -28,11 +36,17 @@ func Build(dir, dockerfile, imageName string) error {
 
 func BuildAddLabelsToImage(image string, labels map[string]string) error {
 	dockerfile := "FROM " + image
-	args := []string{
-		"build",
-		"-f", "-",
-		"-t", image,
+	var args []string
+	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
+		args = m1BuildxBuildArgs()
+	} else {
+		args = buildKitBuildArgs()
 	}
+
+	args = append(args,
+		"--file", "-",
+		"--tag", image,
+	)
 	for k, v := range labels {
 		// Unlike in Dockerfiles, the value here does not need quoting -- Docker merely
 		// splits on the first '=' in the argument and the rest is the label value.
@@ -50,4 +64,12 @@ func BuildAddLabelsToImage(image string, labels map[string]string) error {
 		return err
 	}
 	return nil
+}
+
+func m1BuildxBuildArgs() []string {
+	return []string{"buildx", "build", "--platform", "linux/amd64"}
+}
+
+func buildKitBuildArgs() []string {
+	return []string{"build"}
 }
