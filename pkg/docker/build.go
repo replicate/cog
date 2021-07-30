@@ -11,12 +11,12 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-func Build(dir, dockerfile, imageName string) error {
+func Build(dir, dockerfile, imageName, progressOutput string) error {
 	var cmd *exec.Cmd
 	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
-		cmd = m1BuildxCommand(imageName)
+		cmd = m1BuildxCommand(imageName, progressOutput)
 	} else {
-		cmd = buildKitCommand(imageName)
+		cmd = buildKitCommand(imageName, progressOutput)
 	}
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
@@ -53,24 +53,26 @@ func BuildAddLabelsToImage(image string, labels map[string]string) error {
 	return nil
 }
 
-func buildKitCommand(imageName string) *exec.Cmd {
+func buildKitCommand(imageName, progressOutput string) *exec.Cmd {
 	cmd := exec.Command(
 		"docker", "build", ".",
 		"-f", "-",
 		"--build-arg", "BUILDKIT_INLINE_CACHE=1",
 		"-t", imageName,
+		"--progress", progressOutput,
 	)
 	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
 	return cmd
 }
 
-func m1BuildxCommand(imageName string) *exec.Cmd {
+func m1BuildxCommand(imageName, progressOutput string) *exec.Cmd {
 	cmd := exec.Command(
 		"docker", "buildx", "build", ".",
 		"-f", "-",
 		"--build-arg", "BUILDKIT_INLINE_CACHE=1",
 		"-t", imageName,
 		"--platform", "linux/amd64",
+		"--progress", progressOutput,
 	)
 	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
 	return cmd
