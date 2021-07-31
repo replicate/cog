@@ -18,10 +18,11 @@ Define the Docker environment your model runs in with `cog.yaml`:
 build:
   gpu: true
   system_packages:
-    - libgl1-mesa-glx
-    - libglib2.0-0
+    - "libgl1-mesa-glx"
+    - "libglib2.0-0"
   python_version: "3.8"
-  python_requirements: "requirements.txt"
+  python_packages:
+    - "torch==1.8.1"
 ```
 
 Now, you can run commands inside this environment:
