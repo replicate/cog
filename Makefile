@@ -18,10 +18,10 @@ pkg/dockerfile/embed/cog.whl: python/* python/cog/*
 	mkdir -p pkg/dockerfile/embed 
 	cp python/dist/*.whl pkg/dockerfile/embed/cog.whl
 
-go-dependencies: pkg/dockerfile/embed/cog.whl
+build-dependencies: pkg/dockerfile/embed/cog.whl
 
 .PHONY: build
-build: clean go-dependencies
+build: clean build-dependencies
 	@mkdir -p $(RELEASE_DIR)
 	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BINARY) $(MAIN)
 
@@ -34,7 +34,7 @@ generate:
 	go generate ./...
 
 .PHONY: test-go
-test-go: go-dependencies check-fmt vet lint
+test-go: build-dependencies check-fmt vet lint
 	go get gotest.tools/gotestsum
 	go run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
 
@@ -51,7 +51,7 @@ test-python:
 test: test-go test-python test-integration
 
 .PHONY: install
-install: go-dependencies
+install: build-dependencies
 	go install $(LDFLAGS) $(MAIN)
 
 .PHONY: fmt
