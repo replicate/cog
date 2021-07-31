@@ -161,11 +161,12 @@ func (c *Config) pythonPackageForArch(pkg string, goos string, goarch string) (a
 			if err != nil {
 				return "", "", err
 			}
-		} else {
-			name, version, err = tfCPUPackage(version)
-			if err != nil {
-				return "", "", err
-			}
+			// HACK: disable for CPU
+			// } else {
+			// name, version, err = tfCPUPackage(version)
+			// if err != nil {
+			// 	return "", "", err
+			// }
 		}
 	} else if name == "torch" {
 		if c.Build.GPU {
