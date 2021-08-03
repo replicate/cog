@@ -11,11 +11,13 @@ BUILD_TIME := $(shell date +%Y-%m-%dT%H:%M:%S%z)
 LDFLAGS := -ldflags "-X github.com/replicate/cog/pkg/global.Version=$(VERSION) -X github.com/replicate/cog/pkg/global.BuildTime=$(BUILD_TIME) -w"
 
 
+default: build
+
 pkg/dockerfile/embed/cog.whl: python/* python/cog/*
 	@echo "Building Python library"
 	rm -rf python/dist
 	cd python && python setup.py bdist_wheel
-	mkdir -p pkg/dockerfile/embed 
+	mkdir -p pkg/dockerfile/embed
 	cp python/dist/*.whl pkg/dockerfile/embed/cog.whl
 
 build-dependencies: pkg/dockerfile/embed/cog.whl
