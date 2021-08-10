@@ -28,7 +28,7 @@ func newPredictCommand() *cobra.Command {
 		Use:   "predict [image]",
 		Short: "Run a prediction",
 		Long: `Run a prediction.
-		
+
 If 'image' is passed, it will run the prediction on that Docker image.
 It must be an image that has been built by Cog.
 
@@ -38,6 +38,7 @@ the prediction on that.`,
 		Args:       cobra.MaximumNArgs(1),
 		SuggestFor: []string{"infer"},
 	}
+	addBuildProgressOutputFlag(cmd)
 	cmd.Flags().StringArrayVarP(&inputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
 
@@ -57,7 +58,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		if imageName, err = image.BuildBase(cfg, projectDir); err != nil {
+		if imageName, err = image.BuildBase(cfg, projectDir, buildProgressOutput); err != nil {
 			return err
 		}
 

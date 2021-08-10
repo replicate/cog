@@ -11,7 +11,7 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-func Build(dir, dockerfile, imageName string) error {
+func Build(dir, dockerfile, imageName string, progressOutput string) error {
 	var args []string
 	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
 		args = m1BuildxBuildArgs()
@@ -22,6 +22,7 @@ func Build(dir, dockerfile, imageName string) error {
 		"--file", "-",
 		"--build-arg", "BUILDKIT_INLINE_CACHE=1",
 		"--tag", imageName,
+		"--progress", progressOutput,
 		".",
 	)
 	cmd := exec.Command("docker", args...)
