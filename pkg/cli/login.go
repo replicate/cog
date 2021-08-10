@@ -24,35 +24,43 @@ type VerifyResponse struct {
 
 func newLoginCommand() *cobra.Command {
 	var cmd = &cobra.Command{
-		Use:        "login [REGISTRY_HOST]",
+		Use:        "login",
 		SuggestFor: []string{"auth", "authenticate", "authorize"},
-		Short:      "Authorize the replicate CLI to a Cog server",
+		Short:      "Log in to Replicate Docker registry",
 		RunE:       login,
-		Args:       cobra.MaximumNArgs(1),
+		Args:       cobra.MaximumNArgs(0),
 	}
 
 	return cmd
 }
 
 func login(cmd *cobra.Command, args []string) error {
-	registryHost := global.DefaultRegistryHost
-	if len(args) == 1 {
-		registryHost = args[0]
-	}
+	registryHost := global.ReplicateRegistryHost
 	url, err := getDisplayTokenURL(registryHost)
 	if err != nil {
 		return err
 	}
-	fmt.Println("Please visit " + url + " in a web browser")
-	fmt.Println("and copy the authorization token.")
+	console.Info("This command will authenticate Docker with Replicate's 'r8.im' Docker registry. You will need a Replicate account.")
+	console.Info("")
+
+	// TODO(bfirsh): if you have defined a registry in cog.yaml that is not r8.im, suggest to use 'docker login'
+
+	console.Info("Hit enter to get started. A browser will open with an authentication token that you need to paste here.")
+	if _, err := bufio.NewReader(os.Stdin).ReadString('\n'); err != nil {
+		return err
+	}
+
+	console.Info("If it didn't open automatically, open this URL in a web browser:")
+	console.Info(url)
 	maybeOpenBrowser(url)
 
-	fmt.Print("\nPaste the token here: ")
+	console.Info("")
+	console.Info("Once you've signed in, copy the authentication token from that web page, paste it here, then hit enter:")
 	token, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	token = strings.TrimSpace(token)
 	if err != nil {
 		return err
 	}
+	token = strings.TrimSpace(token)
 
 	username, err := verifyToken(registryHost, token)
 	if err != nil {
@@ -63,7 +71,7 @@ func login(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	console.Infof("Successfully authenticated as %s", username)
+	console.Infof("You've successfully authenticated as %s! You can now use the 'r8.im' registry.", username)
 
 	return nil
 }
@@ -71,10 +79,10 @@ func login(cmd *cobra.Command, args []string) error {
 func getDisplayTokenURL(registryHost string) (string, error) {
 	resp, err := http.Get(addressWithScheme(registryHost) + "/cog/v1/display-token-url")
 	if err != nil {
-		return "", fmt.Errorf("Failed to log in to %s: %w\nDoes this registry support Cog authentication?", registryHost, err)
+		return "", fmt.Errorf("Failed to log in to %s: %w", registryHost, err)
 	}
 	if resp.StatusCode == http.StatusNotFound {
-		return "", fmt.Errorf("%s does not support Cog authentication\nPlease log in using `docker login`", registryHost)
+		return "", fmt.Errorf("%s is not the Replicate registry\nPlease log in using 'docker login'", registryHost)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("%s returned HTTP status %d", registryHost, resp.StatusCode)
