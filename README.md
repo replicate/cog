@@ -39,11 +39,13 @@ This will:
 - Build an image
 - Run `python train.py` in the image with the current directory mounted as a volume and GPUs hooked up correctly
 
+<!-- TODO: this doesn't work yet (needs ports etc)
 Or, spin up a Jupyter notebook:
 
 ```
 $ cog run jupyter notebook
 ```
+-->
 
 ## Put a trained model in a Docker image
 
