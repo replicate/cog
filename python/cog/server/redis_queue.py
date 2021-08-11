@@ -1,4 +1,5 @@
 import contextlib
+import io
 from io import BytesIO
 import json
 from pathlib import Path
@@ -246,8 +247,11 @@ class RedisQueueWorker:
 
             def write(self, buf):
                 for line in buf.rstrip().splitlines():
-                    self.redis.rpush(self.queue, self.log_message(line))
-                    self.old_out.write(line + "\n")
+                    self.write_line(line)
+
+            def write_line(self, line):
+                self.redis.rpush(self.queue, self.log_message(line))
+                self.old_out.write(line + "\n")
 
             def log_message(self, line):
                 timestamp_sec = time.time()
@@ -259,6 +263,44 @@ class RedisQueueWorker:
                         "timestamp_sec": timestamp_sec,
                     }
                 )
+
+            # standard IOBase methods implemented with noops
+            def flush(self):
+                pass
+
+            def readable(self):
+                return False
+
+            def close(self):
+                self.write("WARNING: stream close() attempted")
+
+            def fileno(self):
+                raise OSError()
+
+            def isatty(self):
+                return False
+
+            def readline(self):
+                raise io.UnsupportedOperation("not readable")
+
+            def readlines(self):
+                raise io.UnsupportedOperation("not readable")
+
+            def seek(self):
+                raise io.UnsupportedOperation("not seekable")
+
+            def seekable(self):
+                return OSError()
+
+            def tell(self):
+                return 0
+
+            def writeable(self):
+                return True
+
+            def writelines(self, lines):
+                for line in lines:
+                    self.write_line(line)
 
         if self.log_queue is None:
             yield
