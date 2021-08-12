@@ -5,7 +5,7 @@ go 1.16
 require (
 	github.com/TylerBrock/colorjson v0.0.0-20200706003622-8a50f05110d2
 	github.com/anaskhan96/soup v1.2.4
-	github.com/docker/cli v20.10.7+incompatible
+	github.com/docker/cli v20.10.8+incompatible
 	github.com/docker/docker v20.10.8+incompatible
 	github.com/docker/docker-credential-helpers v0.6.4 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
