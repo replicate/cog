@@ -12,12 +12,12 @@ import (
 
 func testInstallCog(generatedPaths []string) string {
 	return `COPY .cog/tmp/cog-0.0.1.dev-py3-none-any.whl /tmp/cog-0.0.1.dev-py3-none-any.whl
-RUN pip install /tmp/cog-0.0.1.dev-py3-none-any.whl`
+RUN --mount=type=cache,target=/root/.cache/pip pip install /tmp/cog-0.0.1.dev-py3-none-any.whl`
 }
 
 func testInstallPython(version string) string {
 	return fmt.Sprintf(`ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
-RUN apt-get update -q && apt-get install -qy --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy --no-install-recommends \
 	make \
 	build-essential \
 	libssl-dev \
@@ -61,7 +61,8 @@ predict: predict.py:Predictor
 	actual, err := gen.Generate()
 	require.NoError(t, err)
 
-	expected := `FROM python:3.8
+	expected := `# syntax = docker/dockerfile:1.2
+FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
@@ -90,7 +91,8 @@ predict: predict.py:Predictor
 	actual, err := gen.Generate()
 	require.NoError(t, err)
 
-	expected := `FROM nvidia/cuda:11.0-cudnn8-devel-ubuntu16.04
+	expected := `# syntax = docker/dockerfile:1.2
+FROM nvidia/cuda:11.0-cudnn8-devel-ubuntu16.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
@@ -127,15 +129,16 @@ predict: predict.py:Predictor
 	actual, err := gen.Generate()
 	require.NoError(t, err)
 
-	expected := `FROM python:3.8
+	expected := `# syntax = docker/dockerfile:1.2
+FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ` + testInstallCog(gen.generatedPaths) + `
-RUN apt-get update -qq && apt-get install -qy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 COPY my-requirements.txt /tmp/requirements.txt
-RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
-RUN pip install -f https://download.pytorch.org/whl/torch_stable.html   torch==1.5.1+cpu pandas==1.2.0.12
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -f https://download.pytorch.org/whl/torch_stable.html   torch==1.5.1+cpu pandas==1.2.0.12
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
 LABEL org.cogmodel.cog_version="dev"
@@ -167,16 +170,17 @@ predict: predict.py:Predictor
 	actual, err := gen.Generate()
 	require.NoError(t, err)
 
-	expected := `FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
+	expected := `# syntax = docker/dockerfile:1.2
+FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ` + testInstallPython("3.8") +
 		testInstallCog(gen.generatedPaths) + `
-RUN apt-get update -qq && apt-get install -qy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 COPY my-requirements.txt /tmp/requirements.txt
-RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
-RUN pip install   torch==1.5.1 pandas==1.2.0.12
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install   torch==1.5.1 pandas==1.2.0.12
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
 LABEL org.cogmodel.cog_version="dev"

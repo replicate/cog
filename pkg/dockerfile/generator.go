@@ -75,6 +75,7 @@ func (g *DockerfileGenerator) GenerateBase() (string, error) {
 	}
 
 	return strings.Join(filterEmpty([]string{
+		"# syntax = docker/dockerfile:1.2",
 		"FROM " + baseImage,
 		g.preamble(),
 		installPython,
@@ -119,7 +120,6 @@ func (g *DockerfileGenerator) baseImage() (string, error) {
 }
 
 func (g *DockerfileGenerator) preamble() string {
-	// TODO: other stuff
 	return `ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin`
@@ -130,7 +130,7 @@ func (g *DockerfileGenerator) aptInstalls() (string, error) {
 	if len(packages) == 0 {
 		return "", nil
 	}
-	return "RUN apt-get update -qq && apt-get install -qy " +
+	return "RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy " +
 		strings.Join(packages, " ") +
 		" && rm -rf /var/lib/apt/lists/*", nil
 }
@@ -141,7 +141,7 @@ func (g *DockerfileGenerator) installPython() (string, error) {
 	py := g.Config.Build.PythonVersion
 
 	return `ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
-RUN apt-get update -q && apt-get install -qy --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy --no-install-recommends \
 	make \
 	build-essential \
 	libssl-dev \
@@ -180,7 +180,7 @@ func (g *DockerfileGenerator) installCog() (string, error) {
 	}
 	g.generatedPaths = append(g.generatedPaths, cogPath)
 	return fmt.Sprintf(`COPY .cog/tmp/%s /tmp/%s
-RUN pip install /tmp/%s`, cogFilename, cogFilename, cogFilename), nil
+RUN --mount=type=cache,target=/root/.cache/pip pip install /tmp/%s`, cogFilename, cogFilename, cogFilename), nil
 }
 
 func (g *DockerfileGenerator) pythonRequirements() (string, error) {
@@ -189,7 +189,7 @@ func (g *DockerfileGenerator) pythonRequirements() (string, error) {
 		return "", nil
 	}
 	return fmt.Sprintf(`COPY %s /tmp/requirements.txt
-RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt`, reqs), nil
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt`, reqs), nil
 }
 
 func (g *DockerfileGenerator) pipInstalls() (string, error) {
@@ -213,7 +213,7 @@ func (g *DockerfileGenerator) pipInstalls() (string, error) {
 		extraIndexURLs += "--extra-index-url=" + indexURL
 	}
 
-	return "RUN pip install " + findLinks + " " + extraIndexURLs + " " + strings.Join(packages, " "), nil
+	return "RUN --mount=type=cache,target=/root/.cache/pip pip install " + findLinks + " " + extraIndexURLs + " " + strings.Join(packages, " "), nil
 }
 
 func (g *DockerfileGenerator) copyCode() string {
