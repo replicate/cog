@@ -13,7 +13,7 @@ LDFLAGS := -ldflags "-X github.com/replicate/cog/pkg/global.Version=$(VERSION) -
 
 default: build
 
-pkg/dockerfile/embed/cog.whl: python/* python/cog/*
+pkg/dockerfile/embed/cog.whl: python/* python/cog/* python/cog/server/* python/cog/command/*
 	@echo "Building Python library"
 	rm -rf python/dist
 	cd python && python setup.py bdist_wheel
