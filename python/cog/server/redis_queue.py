@@ -237,13 +237,13 @@ class RedisQueueWorker:
         existing output stream.
         """
 
-        class QueueLogger:
+        class QueueLogger(io.IOBase):
             # TODO(bfirsh): maybe this should be a subclass of io.TextIOWrapper?
             def __init__(self, redis, queue, old_out):
+                super().__init__()
                 self.redis = redis
                 self.queue = queue
                 self.old_out = old_out
-                self.linebuf = ""
 
             def write(self, buf):
                 for line in buf.rstrip().splitlines():
@@ -263,44 +263,6 @@ class RedisQueueWorker:
                         "timestamp_sec": timestamp_sec,
                     }
                 )
-
-            # standard IOBase methods implemented with noops
-            def flush(self):
-                pass
-
-            def readable(self):
-                return False
-
-            def close(self):
-                self.write("WARNING: stream close() attempted")
-
-            def fileno(self):
-                raise OSError()
-
-            def isatty(self):
-                return False
-
-            def readline(self):
-                raise io.UnsupportedOperation("not readable")
-
-            def readlines(self):
-                raise io.UnsupportedOperation("not readable")
-
-            def seek(self):
-                raise io.UnsupportedOperation("not seekable")
-
-            def seekable(self):
-                return OSError()
-
-            def tell(self):
-                return 0
-
-            def writeable(self):
-                return True
-
-            def writelines(self, lines):
-                for line in lines:
-                    self.write_line(line)
 
         if self.log_queue is None:
             yield

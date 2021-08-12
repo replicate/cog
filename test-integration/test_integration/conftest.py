@@ -73,6 +73,7 @@ class Predictor(cog.Predictor):
     @cog.input("output_file", type=bool, default=False)
     def predict(self, text, path, output_file):
         sys.stderr.write("processing " + text + "\\n")
+        sys.stderr.flush()
         with open(path) as f:
             output = self.foo + text + f.read()
         if output_file:
