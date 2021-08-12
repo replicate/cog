@@ -162,6 +162,6 @@ The Docker image is now accessible to anyone or any system that has access to th
 
 Those are the basics! Next, you might want to take a look at:
 
-- [A guide to help you set up your own model on Cog.](docs/getting-started-own-model.md)
-- [Reference for `cog.yaml`](docs/yaml.md)
-- [Reference for the Python library](docs/python.md)
+- [A guide to help you set up your own model on Cog.](getting-started-own-model.md)
+- [Reference for `cog.yaml`](yaml.md)
+- [Reference for the Python library](python.md)
