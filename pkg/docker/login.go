@@ -1,7 +1,6 @@
 package docker
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -30,9 +29,10 @@ func SaveLoginToken(registryHost string, username string, token string) error {
 }
 
 func saveAuthToConfig(conf *configfile.ConfigFile, registryHost string, username string, token string) error {
-	authBase64 := base64.StdEncoding.EncodeToString([]byte(username + ":" + token))
+	// conf.Save() will base64 encode username and password
 	conf.AuthConfigs[registryHost] = types.AuthConfig{
-		Auth: authBase64,
+		Username: username,
+		Password: token,
 	}
 	if err := conf.Save(); err != nil {
 		return fmt.Errorf("Failed to save Docker config.json: %w", err)
