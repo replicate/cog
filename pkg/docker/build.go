@@ -26,6 +26,7 @@ func Build(dir, dockerfile, imageName string, progressOutput string) error {
 		".",
 	)
 	cmd := exec.Command("docker", args...)
+	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
