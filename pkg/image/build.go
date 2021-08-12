@@ -34,7 +34,7 @@ func Build(cfg *config.Config, dir, imageName string, progressOutput string) err
 	}
 
 	console.Info("Adding labels to image...")
-	signature, err := GetTypeSignature(imageName)
+	signature, err := GetTypeSignature(imageName, cfg.Build.GPU)
 	if err != nil {
 		return fmt.Errorf("Failed to get type signature: %w", err)
 	}

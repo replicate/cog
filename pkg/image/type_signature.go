@@ -32,14 +32,22 @@ type TypeSignature struct {
 	Inputs []Input `json:"inputs,omitempty"`
 }
 
-func GetTypeSignature(imageName string) (*TypeSignature, error) {
+func GetTypeSignature(imageName string, enableGPU bool) (*TypeSignature, error) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
+
+	// FIXME(bfirsh): we could detect this by reading the config label on the image
+	gpus := ""
+	if enableGPU {
+		gpus = "all"
+	}
+
 	if err := docker.RunWithIO(docker.RunOptions{
 		Image: imageName,
 		Args: []string{
 			"python", "-m", "cog.command.type_signature",
 		},
+		GPUs: gpus,
 	}, nil, &stdout, &stderr); err != nil {
 		console.Info(stdout.String())
 		console.Info(stderr.String())
