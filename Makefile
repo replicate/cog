@@ -1,6 +1,5 @@
 SHELL := /bin/bash
 
-VERSION := 0.0.1
 RELEASE_DIR := release
 GOOS := $(shell go env GOOS)
 GOARCH := $(shell go env GOARCH)
@@ -8,7 +7,7 @@ BINARY := $(RELEASE_DIR)/$(GOOS)/$(GOARCH)/cog
 INSTALL_PATH := /usr/local/bin/cog
 MAIN := cmd/cog/cog.go
 BUILD_TIME := $(shell date +%Y-%m-%dT%H:%M:%S%z)
-LDFLAGS := -ldflags "-X github.com/replicate/cog/pkg/global.Version=$(VERSION) -X github.com/replicate/cog/pkg/global.BuildTime=$(BUILD_TIME) -w"
+LDFLAGS := -ldflags "-X github.com/replicate/cog/pkg/global.BuildTime=$(BUILD_TIME) -w"
 
 
 default: build
