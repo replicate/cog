@@ -57,14 +57,16 @@ import torch
 
 class ColorizationPredictor(cog.Predictor):
     def setup(self):
+        """Load the model into memory to make running multiple predictions efficient"""
         self.model = torch.load("./weights.pth")
-
+    
+    # The arguments and types the model takes as input
     @cog.input("input", type=cog.Path, help="Grayscale input image")
     def predict(self, input):
-        # ... pre-processing ...
+        """Run a single prediction on the model"""
+        processed_input = pre_processing(input)
         output = self.model(processed_input)
-        # ... post-processing ...
-        return processed_output
+        return post_processing(output)
 ```
 
 Now, you can run predictions on this model:
