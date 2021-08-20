@@ -1,9 +1,7 @@
 package dockerfile
 
 import (
-	"bytes"
 	_ "embed"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/global"
 )
 
 //go:embed embed/cog.whl
@@ -69,11 +66,6 @@ func (g *DockerfileGenerator) GenerateBase() (string, error) {
 		return "", err
 	}
 
-	configJson, err := json.Marshal(g.Config)
-	if err != nil {
-		return "", err
-	}
-
 	return strings.Join(filterEmpty([]string{
 		"# syntax = docker/dockerfile:1.2",
 		"FROM " + baseImage,
@@ -86,9 +78,6 @@ func (g *DockerfileGenerator) GenerateBase() (string, error) {
 		g.preInstall(),
 		g.workdir(),
 		g.command(),
-		// Add labels at end so cache isn't busted
-		label(global.LabelNamespace+"cog_version", global.Version),
-		label(global.LabelNamespace+"config", string(bytes.TrimSpace(configJson))),
 	}), "\n"), nil
 }
 
@@ -235,10 +224,6 @@ func (g *DockerfileGenerator) preInstall() string {
 		lines = append(lines, "RUN "+run)
 	}
 	return strings.Join(lines, "\n")
-}
-
-func label(name, value string) string {
-	return fmt.Sprintf(`LABEL %s="%s"`, name, strings.Replace(value, `"`, `\"`, -1))
 }
 
 func filterEmpty(list []string) []string {
