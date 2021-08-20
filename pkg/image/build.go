@@ -1,6 +1,7 @@
 package image
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -42,9 +43,19 @@ func Build(cfg *config.Config, dir, imageName string, progressOutput string) err
 	if err != nil {
 		return fmt.Errorf("Failed to convert type signature to JSON: %w", err)
 	}
-	if err := docker.BuildAddLabelsToImage(imageName, map[string]string{
+	configJson, err := json.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("Failed to convert config to JSON: %w", err)
+	}
+	// We used to set the cog_version and config labels in Dockerfile, because we didn't require running the
+	// built image to get those. But, the escaping of JSON inside a label inside a Dockerfile was gnarly, and
+	// doesn't seem to be a problem here, so do it here instead.
+	labels := map[string]string{
+		global.LabelNamespace + "cog_version":    global.Version,
+		global.LabelNamespace + "config":         string(bytes.TrimSpace(configJson)),
 		global.LabelNamespace + "type_signature": string(signatureJSON),
-	}); err != nil {
+	}
+	if err := docker.BuildAddLabelsToImage(imageName, labels); err != nil {
 		return fmt.Errorf("Failed to add labels to image: %w", err)
 	}
 	return nil
