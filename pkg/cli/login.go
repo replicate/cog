@@ -31,16 +31,22 @@ func newLoginCommand() *cobra.Command {
 		Args:       cobra.MaximumNArgs(0),
 	}
 
+	cmd.Flags().String("registry", global.ReplicateRegistryHost, "Registry host")
+	_ = cmd.Flags().MarkHidden("registry")
+
 	return cmd
 }
 
 func login(cmd *cobra.Command, args []string) error {
-	registryHost := global.ReplicateRegistryHost
+	registryHost, err := cmd.Flags().GetString("registry")
+	if err != nil {
+		return err
+	}
 	url, err := getDisplayTokenURL(registryHost)
 	if err != nil {
 		return err
 	}
-	console.Info("This command will authenticate Docker with Replicate's 'r8.im' Docker registry. You will need a Replicate account.")
+	console.Infof("This command will authenticate Docker with Replicate's '%s' Docker registry. You will need a Replicate account.", registryHost)
 	console.Info("")
 
 	// TODO(bfirsh): if you have defined a registry in cog.yaml that is not r8.im, suggest to use 'docker login'
@@ -71,7 +77,7 @@ func login(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	console.Infof("You've successfully authenticated as %s! You can now use the 'r8.im' registry.", username)
+	console.Infof("You've successfully authenticated as %s! You can now use the '%s' registry.", username, registryHost)
 
 	return nil
 }
