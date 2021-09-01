@@ -143,7 +143,9 @@ class RedisQueueWorker:
                     sys.stderr.write(f"Run time: {run_time:.2f}\n")
                 except Exception as e:
                     tb = traceback.format_exc()
-                    sys.stderr.write(f"Failed to handle message: {tb}\n")
+
+                    with self.capture_log(self.STAGE_RUN, prediction_id):
+                        sys.stderr.write(f"{tb}\n")
                     self.push_error(response_queue, e)
                     self.redis.xack(self.input_queue, self.input_queue, message_id)
                     self.redis.xdel(self.input_queue, message_id)
