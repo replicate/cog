@@ -161,13 +161,8 @@ func (c *Config) pythonPackageForArch(pkg string, goos string, goarch string) (a
 			if err != nil {
 				return "", "", err
 			}
-			// HACK: disable for CPU
-			// } else {
-			// name, version, err = tfCPUPackage(version)
-			// if err != nil {
-			// 	return "", "", err
-			// }
 		}
+		// There is no CPU case for tensorflow because the default package is just the CPU package, so no transformation of version is needed
 	} else if name == "torch" {
 		if c.Build.GPU {
 			name, version, indexURL, err = torchGPUPackage(version, c.Build.CUDA)
