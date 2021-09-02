@@ -231,15 +231,6 @@ func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
 	return "", fmt.Errorf("No matching base image for CUDA %s and CuDNN %s", cuda, cuDNN)
 }
 
-// func tfCPUPackage(ver string) (name string, cpuVersion string, err error) {
-// 	for _, compat := range TFCompatibilityMatrix {
-// 		if compat.TF == ver {
-// 			return splitPythonPackage(compat.TFCPUPackage)
-// 		}
-// 	}
-// 	return "", "", fmt.Errorf("No matching tensorflow CPU package for version %s", ver)
-// }
-
 func tfGPUPackage(ver string, cuda string) (name string, cpuVersion string, err error) {
 	for _, compat := range TFCompatibilityMatrix {
 		if compat.TF == ver && compat.CUDA == cuda {
