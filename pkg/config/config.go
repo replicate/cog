@@ -22,8 +22,9 @@ type Build struct {
 	PythonExtraIndexURLs []string `json:"python_extra_index_urls,omitempty" yaml:"python_extra_index_urls"`
 	PythonFindLinks      []string `json:"python_find_links,omitempty" yaml:"python_find_links"`
 	PythonPackages       []string `json:"python_packages,omitempty" yaml:"python_packages"`
+	Run                  []string `json:"run,omitempty" yaml:"run"`
 	SystemPackages       []string `json:"system_packages,omitempty" yaml:"system_packages"`
-	PreInstall           []string `json:"pre_install,omitempty" yaml:"pre_install"`
+	PreInstall           []string `json:"pre_install,omitempty" yaml:"pre_install"` // Deprecated, but included for backwards compatibility
 	CUDA                 string   `json:"cuda,omitempty" yaml:"cuda"`
 	CuDNN                string   `json:"cudnn,omitempty" yaml:"cudnn"`
 }

@@ -58,6 +58,21 @@ build:
   python_version: "3.8.1"
 ```
 
+### `run`
+
+A list of commands to run to run in the environment to set it up. They are run last, after your system packages and Python packages have been installed. If you've used Docker, it's just like a `RUN` instruction in your `Dockerfile`.
+
+Your code is _not_ available to commands in `run`. This is so we can build your image efficiently when running locally.
+
+For example:
+
+```yaml
+build:
+  run:
+    - curl -L https://github.com/cowsay-org/cowsay/archive/refs/tags/v3.7.0.tar.gz | tar -xzf -
+    - cd cowsay-3.7.0 && make install
+```
+
 ### `system_packages`
 
 A list of Ubuntu APT packages to install. For example:

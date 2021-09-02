@@ -65,6 +65,10 @@ func (g *DockerfileGenerator) GenerateBase() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	run, err := g.run()
+	if err != nil {
+		return "", err
+	}
 
 	return strings.Join(filterEmpty([]string{
 		"# syntax = docker/dockerfile:1.2",
@@ -75,7 +79,7 @@ func (g *DockerfileGenerator) GenerateBase() (string, error) {
 		aptInstalls,
 		pythonRequirements,
 		pipInstalls,
-		g.preInstall(),
+		run,
 		g.workdir(),
 		g.command(),
 	}), "\n"), nil
@@ -217,13 +221,23 @@ func (g *DockerfileGenerator) workdir() string {
 	return "WORKDIR /src"
 }
 
-func (g *DockerfileGenerator) preInstall() string {
+func (g *DockerfileGenerator) run() (string, error) {
+	runCommands := g.Config.Build.Run
+
+	// For backwards compatibility
+	runCommands = append(runCommands, g.Config.Build.PreInstall...)
+
 	lines := []string{}
-	for _, run := range g.Config.Build.PreInstall {
+	for _, run := range runCommands {
 		run = strings.TrimSpace(run)
+		if strings.Contains(run, "\n") {
+			return "", fmt.Errorf(`One of the commands in 'run' contains a new line, which won't work. You need to create a new list item in YAML prefixed with '-' for each command.
+
+This is the offending line: %s`, run)
+		}
 		lines = append(lines, "RUN "+run)
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(lines, "\n"), nil
 }
 
 func filterEmpty(list []string) []string {

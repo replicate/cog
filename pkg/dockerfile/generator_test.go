@@ -109,13 +109,15 @@ func TestGenerateFullCPU(t *testing.T) {
 	conf, err := config.ConfigFromYAML([]byte(`
 build:
   gpu: false
+  system_packages:
+    - ffmpeg
+    - cowsay
   python_requirements: my-requirements.txt
   python_packages:
     - torch==1.5.1
     - pandas==1.2.0.12
-  system_packages:
-    - ffmpeg
-    - cowsay
+  run:
+    - "cowsay moo"
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
@@ -135,6 +137,7 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get insta
 COPY my-requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip pip install -f https://download.pytorch.org/whl/torch_stable.html   torch==1.5.1+cpu pandas==1.2.0.12
+RUN cowsay moo
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
@@ -148,13 +151,15 @@ func TestGenerateFullGPU(t *testing.T) {
 	conf, err := config.ConfigFromYAML([]byte(`
 build:
   gpu: true
+  system_packages:
+    - ffmpeg
+    - cowsay
   python_requirements: my-requirements.txt
   python_packages:
     - torch==1.5.1
     - pandas==1.2.0.12
-  system_packages:
-    - ffmpeg
-    - cowsay
+  run:
+    - "cowsay moo"
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
@@ -175,9 +180,44 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get insta
 COPY my-requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip pip install   torch==1.5.1 pandas==1.2.0.12
+RUN cowsay moo
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, actual)
+}
+
+// pre_install is deprecated but supported for backwards compatibility
+func TestPreInstall(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "test")
+	require.NoError(t, err)
+
+	conf, err := config.ConfigFromYAML([]byte(`
+build:
+  system_packages:
+    - cowsay
+  pre_install:
+    - "cowsay moo"
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndCompleteConfig())
+
+	gen := DockerfileGenerator{Config: conf, Dir: tmpDir}
+	actual, err := gen.Generate()
+	require.NoError(t, err)
+
+	expected := `# syntax = docker/dockerfile:1.2
+FROM python:3.8
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+` + testInstallCog(gen.generatedPaths) + `
+RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
+RUN cowsay moo
+WORKDIR /src
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`
+	require.Equal(t, expected, actual)
+
 }
