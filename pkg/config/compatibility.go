@@ -256,7 +256,8 @@ func torchCPUPackage(ver string, goos string, goarch string) (name string, cpuVe
 		}
 	}
 
-	return "", "", "", fmt.Errorf("No matching Torch CPU package for version %s", ver)
+	// Fall back to just installing default version. For older pytorch versions, they don't have any CPU versions.
+	return "torch", ver, "", nil
 }
 
 func torchGPUPackage(ver string, cuda string) (name string, cpuVersion string, indexURL string, err error) {
@@ -302,7 +303,8 @@ func torchvisionCPUPackage(ver string, goos string, goarch string) (name string,
 			return "torchvision", torchStripCPUSuffixForM1(compat.Torchvision, goos, goarch), compat.IndexURL, nil
 		}
 	}
-	return "", "", "", fmt.Errorf("No matching torchvision CPU package for version %s", ver)
+	// Fall back to just installing default version. For older torchvision versions, they don't have any CPU versions.
+	return "torchvision", ver, "", nil
 }
 
 func torchvisionGPUPackage(ver string, cuda string) (name string, cpuVersion string, indexURL string, err error) {
