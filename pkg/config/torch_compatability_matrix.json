@@ -1,5 +1,44 @@
 [
   {
+    "Torch": "1.9.0",
+    "Torchvision": "0.10.0",
+    "Torchaudio": "0.9.0",
+    "IndexURL": "",
+    "CUDA": "10.2",
+    "Pythons": [
+      "3.6",
+      "3.7",
+      "3.8",
+      "3.9"
+    ]
+  },
+  {
+    "Torch": "1.9.0+cu111",
+    "Torchvision": "0.10.0+cu111",
+    "Torchaudio": "0.9.0",
+    "IndexURL": "https://download.pytorch.org/whl/torch_stable.html",
+    "CUDA": "11.1",
+    "Pythons": [
+      "3.6",
+      "3.7",
+      "3.8",
+      "3.9"
+    ]
+  },
+  {
+    "Torch": "1.9.0+cpu",
+    "Torchvision": "0.10.0+cpu",
+    "Torchaudio": "0.9.0",
+    "IndexURL": "https://download.pytorch.org/whl/torch_stable.html",
+    "CUDA": null,
+    "Pythons": [
+      "3.6",
+      "3.7",
+      "3.8",
+      "3.9"
+    ]
+  },
+  {
     "Torch": "1.8.0+cu111",
     "Torchvision": "0.9.0+cu111",
     "Torchaudio": "0.8.0",
