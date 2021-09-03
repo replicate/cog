@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -22,18 +23,36 @@ type DockerfileGenerator struct {
 	GOOS   string
 	GOARCH string
 
-	// to clean up
-	generatedPaths []string
+	// absolute path to tmpDir, a directory that will be cleaned up
+	tmpDir string
+	// tmpDir relative to Dir
+	relativeTmpDir string
 }
 
-func NewGenerator(config *config.Config, dir string) *DockerfileGenerator {
+func NewGenerator(config *config.Config, dir string) (*DockerfileGenerator, error) {
+	rootTmp := path.Join(dir, ".cog/tmp")
+	if err := os.MkdirAll(rootTmp, 0755); err != nil {
+		return nil, err
+	}
+	// tmpDir ends up being something like dir/.cog/tmp/build123456789
+	tmpDir, err := os.MkdirTemp(rootTmp, "build")
+	if err != nil {
+		return nil, err
+	}
+	// tmpDir, but without dir prefix. This is the path used in the Dockerfile.
+	relativeTmpDir, err := filepath.Rel(dir, tmpDir)
+	if err != nil {
+		return nil, err
+	}
+
 	return &DockerfileGenerator{
 		Config:         config,
 		Dir:            dir,
 		GOOS:           runtime.GOOS,
 		GOARCH:         runtime.GOOS,
-		generatedPaths: []string{},
-	}
+		tmpDir:         tmpDir,
+		relativeTmpDir: relativeTmpDir,
+	}, nil
 }
 
 func (g *DockerfileGenerator) GenerateBase() (string, error) {
@@ -97,10 +116,8 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 }
 
 func (g *DockerfileGenerator) Cleanup() error {
-	for _, generatedPath := range g.generatedPaths {
-		if err := os.Remove(generatedPath); err != nil {
-			return fmt.Errorf("Failed to clean up %s: %w", generatedPath, err)
-		}
+	if err := os.RemoveAll(g.tmpDir); err != nil {
+		return fmt.Errorf("Failed to clean up %s: %w", g.tmpDir, err)
 	}
 	return nil
 }
@@ -164,16 +181,15 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get insta
 func (g *DockerfileGenerator) installCog() (string, error) {
 	// Wheel name needs to be full format otherwise pip refuses to install it
 	cogFilename := "cog-0.0.1.dev-py3-none-any.whl"
-	cogPath := filepath.Join(g.Dir, ".cog/tmp", cogFilename)
+	cogPath := filepath.Join(g.tmpDir, cogFilename)
 	if err := os.MkdirAll(filepath.Dir(cogPath), 0755); err != nil {
 		return "", fmt.Errorf("Failed to write %s: %w", cogFilename, err)
 	}
 	if err := os.WriteFile(cogPath, cogWheelEmbed, 0644); err != nil {
 		return "", fmt.Errorf("Failed to write %s: %w", cogFilename, err)
 	}
-	g.generatedPaths = append(g.generatedPaths, cogPath)
-	return fmt.Sprintf(`COPY .cog/tmp/%s /tmp/%s
-RUN --mount=type=cache,target=/root/.cache/pip pip install /tmp/%s`, cogFilename, cogFilename, cogFilename), nil
+	return fmt.Sprintf(`COPY %s /tmp/%s
+RUN --mount=type=cache,target=/root/.cache/pip pip install /tmp/%s`, path.Join(g.relativeTmpDir, cogFilename), cogFilename, cogFilename), nil
 }
 
 func (g *DockerfileGenerator) pythonRequirements() (string, error) {

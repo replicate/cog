@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/config"
@@ -33,7 +35,10 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	generator := dockerfile.NewGenerator(config, projectDir)
+	generator, err := dockerfile.NewGenerator(config, projectDir)
+	if err != nil {
+		return fmt.Errorf("Error creating Dockerfile generator: %w", err)
+	}
 	defer func() {
 		if err := generator.Cleanup(); err != nil {
 			console.Warnf("Error cleaning up after build: %v", err)
