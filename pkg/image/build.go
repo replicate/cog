@@ -18,7 +18,10 @@ import (
 func Build(cfg *config.Config, dir, imageName string, progressOutput string) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 
-	generator := dockerfile.NewGenerator(cfg, dir)
+	generator, err := dockerfile.NewGenerator(cfg, dir)
+	if err != nil {
+		return fmt.Errorf("Error creating Dockerfile generator: %w", err)
+	}
 	defer func() {
 		if err := generator.Cleanup(); err != nil {
 			console.Warnf("Error cleaning up Dockerfile generator: %s", err)
@@ -67,7 +70,10 @@ func BuildBase(cfg *config.Config, dir string, progressOutput string) (string, e
 	imageName := config.BaseDockerImageName(dir)
 
 	console.Info("Building Docker image from environment in cog.yaml...")
-	generator := dockerfile.NewGenerator(cfg, dir)
+	generator, err := dockerfile.NewGenerator(cfg, dir)
+	if err != nil {
+		return "", fmt.Errorf("Error creating Dockerfile generator: %w", err)
+	}
 	defer func() {
 		if err := generator.Cleanup(); err != nil {
 			console.Warnf("Error cleaning up Dockerfile generator: %s", err)
