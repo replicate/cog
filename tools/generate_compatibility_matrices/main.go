@@ -173,16 +173,29 @@ func fetchCurrentTorchVersions(compats []config.TorchCompatibility) ([]config.To
 		return nil, err
 	}
 
+	// Gather the latest version of each library, in case the install string doesn't mention a version
 	defaultVersions := map[string]string{}
 	for _, lib := range []string{"torch", "torchvision", "torchaudio"} {
 		latestVersionRe := regexp.MustCompile(lib + `==([0-9]+\.[0-9]+\.[0-9]+)`)
-		latestVersions := latestVersionRe.FindAllStringSubmatch(resp, -1)
-		latestVersion := latestVersions[0][1]
-		for _, v := range latestVersions[1:] {
-			if latestVersion != v[1] {
-				return nil, fmt.Errorf("%s versions aren't all the same, has the JS changed?", lib)
+		latestVersion := ""
+
+		for k, v := range obj {
+			if strings.HasPrefix(k, "stable,pip,linux") && strings.HasSuffix(k, ",python") {
+				latestVersions := latestVersionRe.FindAllStringSubmatch(v, -1)
+				if len(latestVersions) > 0 {
+					if latestVersion != "" && latestVersions[0][1] != latestVersion {
+						return nil, fmt.Errorf("%s versions aren't all the same, has the JS changed?", lib)
+					}
+					latestVersion = latestVersions[0][1]
+				}
 			}
 		}
+
+		if latestVersion == "" {
+			return nil, fmt.Errorf("Couldn't find latest version for %s", lib)
+
+		}
+
 		defaultVersions[lib] = latestVersion
 	}
 
@@ -213,7 +226,8 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 	libVersions := map[string]string{}
 
 	s = strings.TrimSpace(s)
-	s = strings.Split(s, "pip install ")[1]
+	s = strings.TrimPrefix(s, "pip install ")
+	s = strings.TrimPrefix(s, "pip3 install ")
 	parts := strings.Split(s, " -f ")
 	libs := strings.Split(parts[0], " ")
 	for _, lib := range libs {
@@ -300,7 +314,8 @@ func parsePreviousTorchVersionsCode(code string, compats []config.TorchCompatibi
 			_, c := split2(rawArch, " ")
 			cuda = &c // can't take pointer directly
 		} else if rawArch != "CPU only" {
-			return nil, fmt.Errorf("Invalid arch: %s", rawArch)
+			// Stuff like "# RocM 4.0.1 (Linux only)"
+			continue
 		}
 		compat, err := parseTorchInstallString(install, supportedLibrarySet, cuda)
 		if err != nil {
