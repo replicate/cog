@@ -46,7 +46,7 @@ test-integration: install
 
 .PHONY: test-python
 test-python:
-	cd python/ && pytest
+	cd python/ && pytest -vv
 
 .PHONY: test
 test: test-go test-python test-integration
