@@ -7,6 +7,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/slices"
 )
 
 // TODO(andreas): support conda packages
@@ -235,9 +236,16 @@ Compatible cuDNN version is: %s`,
 		}
 	} else if torchVersion != "" {
 		if c.Build.CUDA == "" {
+			if len(torchCUDAs) == 0 {
+				return fmt.Errorf("Cog couldn't automatically determine a CUDA version for torch==%s. You need to set the 'cuda' option in cog.yaml to set what version to use. You might be able to find this out from https://pytorch.org/", torchVersion)
+			}
 			c.Build.CUDA = latestCUDAFrom(torchCUDAs)
 			console.Debugf("Setting CUDA to version %s from Torch version", c.Build.CUDA)
+		} else if !slices.ContainsString(torchCUDAs, c.Build.CUDA) {
+			// TODO: can we suggest a CUDA version known to be compatible?
+			console.Warnf("Cog doesn't know if CUDA %s is compatible with PyTorch %s. This might cause CUDA problems.", c.Build.CUDA, torchVersion)
 		}
+
 		if c.Build.CuDNN == "" {
 			c.Build.CuDNN = latestCuDNNForCUDA(c.Build.CUDA)
 			console.Debugf("Setting CuDNN to version %s", c.Build.CUDA)

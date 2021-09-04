@@ -128,9 +128,6 @@ func cudasFromTorch(ver string) ([]string, error) {
 			cudas = append(cudas, *compat.CUDA)
 		}
 	}
-	if len(cudas) == 0 {
-		return nil, fmt.Errorf("torch==%s doesn't have any compatible CUDA versions", ver)
-	}
 	return cudas, nil
 }
 
@@ -282,7 +279,8 @@ func torchGPUPackage(ver string, cuda string) (name string, cpuVersion string, i
 		}
 	}
 	if latest == nil {
-		return "", "", "", fmt.Errorf("No torch GPU package for version %s that's lower or equal to CUDA %s", ver, cuda)
+		// We've already warned user if they're doing something stupid in validateAndCompleteCUDA()
+		return "torch", ver, "", nil
 	}
 
 	return "torch", latest.Torch, latest.IndexURL, nil
