@@ -29,6 +29,7 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 	for _, compat := range TorchCompatibilityMatrix {
 		config := &Config{
 			Build: &Build{
+				GPU:           true,
 				PythonVersion: "3.8",
 				PythonPackages: []string{
 					"torch==" + compat.TorchVersion(),
@@ -54,6 +55,7 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 	} {
 		config := &Config{
 			Build: &Build{
+				GPU:           true,
 				PythonVersion: "3.8",
 				PythonPackages: []string{
 					"torch==" + tt.torch,
@@ -65,6 +67,42 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 		require.Equal(t, tt.cuda, config.Build.CUDA)
 		require.Equal(t, tt.cuDNN, config.Build.CuDNN)
 	}
+}
+
+func TestUnsupportedTorch(t *testing.T) {
+	// Ensure version is not known by Cog
+	cudas, err := cudasFromTorch("0.4.1")
+	require.NoError(t, err)
+	require.Empty(t, cudas)
+
+	// Unknown versions require cuda
+	config := &Config{
+		Build: &Build{
+			GPU:           true,
+			PythonVersion: "3.8",
+			PythonPackages: []string{
+				"torch==0.4.1",
+			},
+		},
+	}
+	err = config.validateAndCompleteCUDA()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Cog couldn't automatically determine a CUDA version for torch==0.4.1.")
+
+	config = &Config{
+		Build: &Build{
+			GPU:           true,
+			CUDA:          "9.2",
+			PythonVersion: "3.8",
+			PythonPackages: []string{
+				"torch==0.4.1",
+			},
+		},
+	}
+	err = config.validateAndCompleteCUDA()
+	require.NoError(t, err)
+	require.Equal(t, "9.2", config.Build.CUDA)
+
 }
 
 func TestPythonPackagesForArchTorchGPU(t *testing.T) {
