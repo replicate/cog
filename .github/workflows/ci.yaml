@@ -102,13 +102,6 @@ jobs:
       - name: Test
         run: make test-integration
 
-  main-trigger:
-    needs: [test, test-integration]
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - run: ${{ secrets.MAIN_TRIGGER }}
-
   release:
     needs: [test, test-integration]
     if: startsWith(github.ref, 'refs/tags/v')
