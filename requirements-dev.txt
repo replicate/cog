@@ -1,6 +1,6 @@
 flask==2.0.1
 numpy==1.21.1
-pillow==8.2.0
+pillow==8.3.2
 pytest==6.2.4
 PyYAML==5.4.1
 redis==3.5.3
