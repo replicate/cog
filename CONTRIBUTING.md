@@ -44,7 +44,7 @@ You can sign your commit automatically by passing the `-s` option to Git commit:
 
 ## Development environment
 
-You'll need Go 1.16, then run:
+You'll need to [install Go 1.16](https://golang.org/doc/install), then run:
 
     make install
 
