@@ -58,6 +58,8 @@ The project is formatted by goimports. To format the source code, run:
 
     make fmt
 
+If you encounter any errors, see the troubleshooting section below?
+
 ## Project structure
 
 As much as possible, this is attempting to follow the [Standard Go Project Layout](https://github.com/golang-standards/project-layout).
@@ -72,3 +74,19 @@ As much as possible, this is attempting to follow the [Standard Go Project Layou
 - `pkg/util/` - Various packages that aren't part of Cog. They could reasonably be separate re-usable projects.
 - `python/` - The Cog Python library.
 - `test-integration/` - High-level integration tests for Cog.
+
+## Troubleshooting
+
+### `invalid command 'bdist_wheel'`
+
+If you get this error running `make install`, you'll need to run `pip install wheel` first.
+
+### `cog command not found`
+
+The compiled `cog` binary will be installed in `$GOPATH/bin/cog`, e.g. `~/go/bin/cog`. Make sure that Golang's bin directory is present on your system PATH by adding it to your shell config (`.bashrc`, `.zshrc`, etc):
+
+    export PATH=~/go/bin:$PATH
+
+---
+
+Still having trouble? Please [open an issue](https://github.com/replicate/cog/issues) on GitHub.
