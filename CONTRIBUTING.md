@@ -75,6 +75,19 @@ As much as possible, this is attempting to follow the [Standard Go Project Layou
 - `python/` - The Cog Python library.
 - `test-integration/` - High-level integration tests for Cog.
 
+## Publishing a release
+
+This project has a [GitHub Actions workflow](https://github.com/replicate/cog/blob/39cfc5c44ab81832886c9139ee130296f1585b28/.github/workflows/ci.yaml#L107) that uses [goreleaser](https://goreleaser.com/quick-start/#quick-start) to facilitate the process of publishing new releases. The release process is triggered by manually creating and pushing a new git tag.
+
+To publish a new release, run the following in your local checkout of cog:
+
+    git checkout main
+    git fetch --all --tags
+    git tag v0.0.11
+    git push --tags
+
+Then visit [github.com/replicate/cog/actions](https://github.com/replicate/cog/actions) to monitor the release process.
+
 ## Troubleshooting
 
 ### `invalid command 'bdist_wheel'`
