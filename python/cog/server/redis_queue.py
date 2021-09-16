@@ -1,3 +1,4 @@
+import inspect
 import contextlib
 import io
 from io import BytesIO
@@ -184,9 +185,20 @@ class RedisQueueWorker:
             self.push_error(response_queue, e)
             return
 
-        with self.capture_log(self.STAGE_RUN, prediction_id):
-            result = run_prediction(self.predictor, inputs, cleanup_functions)
-        self.push_result(response_queue, result)
+        if inspect.isgeneratorfunction(self.predictor.predict):
+            final_result = None
+            with self.capture_log(self.STAGE_RUN, prediction_id):
+                for result in self.predictor.predict(**inputs):
+                    if isinstance(result, Path):
+                        cleanup_functions.append(result.unlink)
+                    final_result = result
+                    self.push_result(response_queue, result, done=False)
+            if final_result is not None:
+                self.push_result(response_queue, final_result, done=True)
+        else:
+            with self.capture_log(self.STAGE_RUN, prediction_id):
+                result = run_prediction(self.predictor, inputs, cleanup_functions)
+            self.push_result(response_queue, result, done=True)
 
     def download(self, url):
         resp = requests.get(url)
@@ -202,7 +214,7 @@ class RedisQueueWorker:
         sys.stderr.write(f"Pushing error to {response_queue}\n")
         self.redis.rpush(response_queue, message)
 
-    def push_result(self, response_queue, result):
+    def push_result(self, response_queue, result, done):
         if isinstance(result, Path):
             message = {
                 "file": {
@@ -218,6 +230,9 @@ class RedisQueueWorker:
             message = {
                 "value": to_json(result),
             }
+
+        if not done:
+            message["in_progress"] = True
 
         sys.stderr.write(f"Pushing successful result to {response_queue}\n")
         self.redis.rpush(response_queue, json.dumps(message))
