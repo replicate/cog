@@ -26,6 +26,8 @@ You need to override two functions: `setup()` and `predict()`.
 
 Set up the model for prediction so multiple predictions run efficiently. Include any expensive one-off operations in here like loading trained models, instantiate data transformations, etc.
 
+It's best not to download model weights or any other files in this function. You should bake these into the image when you build it. This means your model doesn't depend on any other system being available and accessible. It also means the Docker image ID becomes an immutible identifier for the precise model you're running, instead of the combination of the image ID and whatever files it might have downloaded.
+
 ### `Predictor.predict(**kwargs)`
 
 Run a single prediction. This is where you call the model that was loaded during `setup()`, but you may also want to add pre- and post-processing code here.
