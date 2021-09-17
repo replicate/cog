@@ -352,6 +352,21 @@ def test_default_path_input():
     assert resp.status_code == 200
     assert resp.data == b"noneee"
 
+def test_yielding_strings():
+    class Predictor(cog.Predictor):
+        def setup(self):
+            pass
+
+        def predict(self):
+            predictions = ["foo", "bar", "baz"]
+            for prediction in predictions:
+                yield prediction
+
+    client = make_client(Predictor())
+    resp = client.post("/predict")
+    assert resp.status_code == 200
+    assert resp.content_type == "text/plain; charset=utf-8"
+    assert resp.data == b"baz"
 
 def test_path_output_str():
     class Predictor(cog.Predictor):
