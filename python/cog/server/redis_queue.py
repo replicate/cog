@@ -9,6 +9,7 @@ import signal
 import sys
 import traceback
 import time
+import types
 
 import redis
 import requests
@@ -185,20 +186,24 @@ class RedisQueueWorker:
             self.push_error(response_queue, e)
             return
 
-        if inspect.isgeneratorfunction(self.predictor.predict):
-            final_result = None
-            with self.capture_log(self.STAGE_RUN, prediction_id):
-                for result in self.predictor.predict(**inputs):
-                    if isinstance(result, Path):
-                        cleanup_functions.append(result.unlink)
-                    final_result = result
-                    self.push_result(response_queue, result, done=False)
-            if final_result is not None:
-                self.push_result(response_queue, final_result, done=True)
+        with self.capture_log(self.STAGE_RUN, prediction_id):
+            return_value = self.predictor.predict(**inputs)
+        if isinstance(return_value, types.GeneratorType):
+            last_result = None
+            for i, result in enumerate(return_value):
+                # push the previous result, so we can eventually detect the last iteration
+                if i > 0:
+                    self.push_result(response_queue, last_result, status="processing")
+                if isinstance(result, Path):
+                    cleanup_functions.append(result.unlink)
+                last_result = result
+
+            # push the last result
+            self.push_result(response_queue, last_result, status="success")
         else:
-            with self.capture_log(self.STAGE_RUN, prediction_id):
-                result = run_prediction(self.predictor, inputs, cleanup_functions)
-            self.push_result(response_queue, result, done=True)
+            if isinstance(return_value, Path):
+                cleanup_functions.append(return_value.unlink)
+            self.push_result(response_queue, return_value, status="success")
 
     def download(self, url):
         resp = requests.get(url)
@@ -214,7 +219,7 @@ class RedisQueueWorker:
         sys.stderr.write(f"Pushing error to {response_queue}\n")
         self.redis.rpush(response_queue, message)
 
-    def push_result(self, response_queue, result, done):
+    def push_result(self, response_queue, result, status):
         if isinstance(result, Path):
             message = {
                 "file": {
@@ -231,8 +236,7 @@ class RedisQueueWorker:
                 "value": to_json(result),
             }
 
-        if not done:
-            message["in_progress"] = True
+        message["status"] = status
 
         sys.stderr.write(f"Pushing successful result to {response_queue}\n")
         self.redis.rpush(response_queue, json.dumps(message))
