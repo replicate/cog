@@ -9,6 +9,7 @@ import signal
 import sys
 import traceback
 import time
+import types
 
 import redis
 import requests
@@ -185,20 +186,24 @@ class RedisQueueWorker:
             self.push_error(response_queue, e)
             return
 
-        if inspect.isgeneratorfunction(self.predictor.predict):
+
+        with self.capture_log(self.STAGE_RUN, prediction_id):
             final_result = None
-            with self.capture_log(self.STAGE_RUN, prediction_id):
-                for result in self.predictor.predict(**inputs):
+            return_value = self.predictor.predict(**inputs)
+            if isinstance(return_value, types.GeneratorType):
+                for result in return_value:
                     if isinstance(result, Path):
                         cleanup_functions.append(result.unlink)
                     final_result = result
                     self.push_result(response_queue, result, done=False)
-            if final_result is not None:
-                self.push_result(response_queue, final_result, done=True)
-        else:
-            with self.capture_log(self.STAGE_RUN, prediction_id):
-                result = run_prediction(self.predictor, inputs, cleanup_functions)
-            self.push_result(response_queue, result, done=True)
+            else:
+                final_result = return_value
+                if isinstance(final_result, Path):
+                    cleanup_functions.append(final_result.unlink)
+
+        if final_result is not None:
+            self.push_result(response_queue, final_result, done=True)
+
 
     def download(self, url):
         resp = requests.get(url)
