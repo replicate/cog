@@ -29,6 +29,7 @@ build: clean build-dependencies
 .PHONY: clean
 clean:
 	rm -rf $(RELEASE_DIR)
+	rm -f pkg/dockerfile/embed/cog.whl
 
 .PHONY: generate
 generate:
