@@ -4,8 +4,8 @@ This guide will walk you through what you can do with Cog by using an example mo
 
 First, [install Docker if you haven't already](https://docs.docker.com/get-docker/). Then, install Cog:
 
-    curl -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m` > /usr/local/bin/cog
-    chmod +x /usr/local/bin/cog
+    sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
+    sudo chmod +x /usr/local/bin/cog
 
 Let's make a directory to work in:
 
