@@ -71,16 +71,18 @@ def test_queue_worker_yielding(docker_image, redis_port, request):
                 ),
             },
         )
-        # input_queue.put("test")
-        response = json.loads(redis_client.brpop(response_queue_name)[1])["value"]
-        assert response == "foo"
 
-        response = json.loads(redis_client.brpop(response_queue_name)[1])["value"]
-        assert response == "bar"
+        response = json.loads(redis_client.brpop(response_queue_name)[1])
+        assert response == {"value": "foo", "status": "processing"}
 
-        response = json.loads(redis_client.brpop(response_queue_name)[1])["value"]
-        assert response == "baz"
+        response = json.loads(redis_client.brpop(response_queue_name)[1])
+        assert response == {"value": "bar", "status": "processing"}
 
+        response = json.loads(redis_client.brpop(response_queue_name)[1])
+        assert response == {"value": "baz", "status": "success"}
+        
+        response = redis_client.rpop(response_queue_name)
+        assert response == None
 
 def test_queue_worker(project_dir, docker_image, redis_port, request):
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)

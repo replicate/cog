@@ -188,22 +188,23 @@ class RedisQueueWorker:
 
 
         with self.capture_log(self.STAGE_RUN, prediction_id):
-            final_result = None
             return_value = self.predictor.predict(**inputs)
             if isinstance(return_value, types.GeneratorType):
-                for result in return_value:
+                last_result = None
+                for i, result in enumerate(return_value):
+                    # push the previous result, so we can eventually detect the last iterationself.push_result(response_queue, result, status="processing")
+                    if i > 0:
+                        self.push_result(response_queue, last_result, status="processing")
                     if isinstance(result, Path):
                         cleanup_functions.append(result.unlink)
-                    final_result = result
-                    self.push_result(response_queue, result, done=False)
+                    last_result = result
+                
+                # push the last result
+                self.push_result(response_queue, last_result, status="success")
             else:
-                final_result = return_value
-                if isinstance(final_result, Path):
-                    cleanup_functions.append(final_result.unlink)
-
-        if final_result is not None:
-            self.push_result(response_queue, final_result, done=True)
-
+                if isinstance(return_value, Path):
+                    cleanup_functions.append(return_value.unlink)
+                    self.push_result(response_queue, return_value, status="success")
 
     def download(self, url):
         resp = requests.get(url)
@@ -219,7 +220,7 @@ class RedisQueueWorker:
         sys.stderr.write(f"Pushing error to {response_queue}\n")
         self.redis.rpush(response_queue, message)
 
-    def push_result(self, response_queue, result, done):
+    def push_result(self, response_queue, result, status):
         if isinstance(result, Path):
             message = {
                 "file": {
@@ -236,8 +237,7 @@ class RedisQueueWorker:
                 "value": to_json(result),
             }
 
-        if not done:
-            message["in_progress"] = True
+        message["status"] = status
 
         sys.stderr.write(f"Pushing successful result to {response_queue}\n")
         self.redis.rpush(response_queue, json.dumps(message))
