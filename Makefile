@@ -1,5 +1,6 @@
 SHELL := /bin/bash
 
+include common.mk
 RELEASE_DIR := release
 GOOS := $(shell go env GOOS)
 GOARCH := $(shell go env GOARCH)
@@ -12,17 +13,17 @@ LDFLAGS := -ldflags "-X github.com/replicate/cog/pkg/global.BuildTime=$(BUILD_TI
 
 default: build
 
-pkg/dockerfile/embed/cog.whl: python/* python/cog/* python/cog/server/* python/cog/command/*
+pkg/dockerfile/embed/cog.whl: check_python python/* python/cog/* python/cog/server/* python/cog/command/*
 	@echo "Building Python library"
 	rm -rf python/dist
 	cd python && python setup.py bdist_wheel
 	mkdir -p pkg/dockerfile/embed
 	cp python/dist/*.whl pkg/dockerfile/embed/cog.whl
 
-build-dependencies: pkg/dockerfile/embed/cog.whl
+build-dependencies: check_python pkg/dockerfile/embed/cog.whl
 
 .PHONY: build
-build: clean build-dependencies
+build: check_python clean build-dependencies
 	@mkdir -p $(RELEASE_DIR)
 	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BINARY) $(MAIN)
 
@@ -31,7 +32,7 @@ clean:
 	rm -rf $(RELEASE_DIR)
 
 .PHONY: generate
-generate:
+generate: check_python
 	go generate ./...
 
 .PHONY: test-go
@@ -45,7 +46,7 @@ test-integration: install
 	cd test-integration/ && $(MAKE)
 
 .PHONY: test-python
-test-python:
+test-python: check_python
 	cd python/ && pytest -vv
 
 .PHONY: test
