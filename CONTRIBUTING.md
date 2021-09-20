@@ -44,9 +44,9 @@ You can sign your commit automatically by passing the `-s` option to Git commit:
 
 ## Development environment
 
-You'll need to [install Go 1.16](https://golang.org/doc/install). If you're using a Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
+You'll need to [install Go 1.16](https://golang.org/doc/install). If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
 
-Once you have Go install, then run:
+Once you have Go installed, then run:
 
     make install
 
