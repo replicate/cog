@@ -23,9 +23,9 @@ require (
 	github.com/stretchr/objx v0.2.0 // indirect
 	github.com/stretchr/testify v1.7.0
 	github.com/xeonx/timeago v1.0.0-rc4
-	golang.org/x/sys v0.0.0-20210630005230-0f9fa26af87c
+	golang.org/x/sys v0.0.0-20210809222454-d867a43fc93e
 	golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b // indirect
-	golang.org/x/tools v0.1.5
+	golang.org/x/tools v0.1.6
 	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools/gotestsum v1.7.0
 )
