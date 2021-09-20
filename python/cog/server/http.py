@@ -1,6 +1,7 @@
 from pathlib import Path
 import sys
 import time
+import types
 
 from flask import Flask, send_file, request, jsonify, Response
 
@@ -74,6 +75,14 @@ class HTTPServer:
         app.run(host="0.0.0.0", port=5000)
 
     def create_response(self, result, setup_time, run_time):
+        # loop over generator function to get the last result
+        if isinstance(result, types.GeneratorType):
+            last_result = None
+            for iteration in enumerate(result):
+                last_result = iteration        
+            # last result is a tuple with (index, value)
+            result = last_result[1]
+
         if isinstance(result, Path):
             resp = send_file(str(result))
         elif isinstance(result, str):
