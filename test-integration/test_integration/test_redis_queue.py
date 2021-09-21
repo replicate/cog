@@ -73,13 +73,13 @@ def test_queue_worker_yielding(docker_image, redis_port, request):
             },
         )
 
-        response = json.loads(redis_client.brpop(response_queue_name)[1])
+        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
         assert response == {"value": "foo", "status": "processing"}
 
-        response = json.loads(redis_client.brpop(response_queue_name)[1])
+        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
         assert response == {"value": "bar", "status": "processing"}
 
-        response = json.loads(redis_client.brpop(response_queue_name)[1])
+        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
         assert response == {"value": "baz", "status": "success"}
 
         response = redis_client.rpop(response_queue_name)
@@ -146,6 +146,7 @@ def test_queue_worker_error(docker_image, redis_port, request):
         response = redis_client.rpop(response_queue_name)
         assert response == None
 
+
 def test_queue_worker(project_dir, docker_image, redis_port, request):
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
@@ -205,7 +206,9 @@ def test_queue_worker(project_dir, docker_image, redis_port, request):
             },
         )
         input_queue.put("test")
-        response = json.loads(redis_client.brpop(response_queue_name)[1])["value"]
+        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])[
+            "value"
+        ]
         assert response == "foobartest"
 
         predict_id = random_string(10)
@@ -232,7 +235,9 @@ def test_queue_worker(project_dir, docker_image, redis_port, request):
         )
         input_queue.put("test")
         response_contents = output_queue.get()
-        response = json.loads(redis_client.brpop(response_queue_name)[1])["file"]
+        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])[
+            "file"
+        ]
         assert response_contents.decode() == "foobaztest"
         assert response["url"] == "uploaded.txt"
 
