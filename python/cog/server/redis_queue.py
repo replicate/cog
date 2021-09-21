@@ -186,25 +186,24 @@ class RedisQueueWorker:
             self.push_error(response_queue, e)
             return
 
-
         with self.capture_log(self.STAGE_RUN, prediction_id):
             return_value = self.predictor.predict(**inputs)
-            if isinstance(return_value, types.GeneratorType):
-                last_result = None
-                for i, result in enumerate(return_value):
-                    # push the previous result, so we can eventually detect the last iteration
-                    if i > 0:
-                        self.push_result(response_queue, last_result, status="processing")
-                    if isinstance(result, Path):
-                        cleanup_functions.append(result.unlink)
-                    last_result = result
-                
-                # push the last result
-                self.push_result(response_queue, last_result, status="success")
-            else:
-                if isinstance(return_value, Path):
-                    cleanup_functions.append(return_value.unlink)
-                    self.push_result(response_queue, return_value, status="success")
+        if isinstance(return_value, types.GeneratorType):
+            last_result = None
+            for i, result in enumerate(return_value):
+                # push the previous result, so we can eventually detect the last iteration
+                if i > 0:
+                    self.push_result(response_queue, last_result, status="processing")
+                if isinstance(result, Path):
+                    cleanup_functions.append(result.unlink)
+                last_result = result
+
+            # push the last result
+            self.push_result(response_queue, last_result, status="success")
+        else:
+            if isinstance(return_value, Path):
+                cleanup_functions.append(return_value.unlink)
+            self.push_result(response_queue, return_value, status="success")
 
     def download(self, url):
         resp = requests.get(url)
