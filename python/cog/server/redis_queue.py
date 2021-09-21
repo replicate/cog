@@ -192,7 +192,7 @@ class RedisQueueWorker:
             if isinstance(return_value, types.GeneratorType):
                 last_result = None
                 for i, result in enumerate(return_value):
-                    # push the previous result, so we can eventually detect the last iterationself.push_result(response_queue, result, status="processing")
+                    # push the previous result, so we can eventually detect the last iteration
                     if i > 0:
                         self.push_result(response_queue, last_result, status="processing")
                     if isinstance(result, Path):
