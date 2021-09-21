@@ -213,6 +213,7 @@ class RedisQueueWorker:
     def push_error(self, response_queue, error):
         message = json.dumps(
             {
+                "status": "failed",
                 "error": str(error),
             }
         )
