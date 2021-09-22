@@ -190,9 +190,16 @@ class RedisQueueWorker:
             return_value = self.predictor.predict(**inputs)
         if isinstance(return_value, types.GeneratorType):
             last_result = None
-            for i, result in enumerate(return_value):
+
+            while True:
+                # we consume iterator manually to capture log
+                try:
+                    with self.capture_log(self.STAGE_RUN, prediction_id):
+                        result = next(return_value)
+                except StopIteration:
+                    break
                 # push the previous result, so we can eventually detect the last iteration
-                if i > 0:
+                if last_result is not None:
                     self.push_result(response_queue, last_result, status="processing")
                 if isinstance(result, Path):
                     cleanup_functions.append(result.unlink)
