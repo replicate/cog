@@ -21,6 +21,32 @@ from ..json import to_json
 from ..predictor import Predictor, run_prediction, load_predictor
 
 
+class timeout:
+    """A context manager that times out after a given number of seconds."""
+
+    def __init__(self, seconds, elapsed=None, error_message="Prediction timed out"):
+        if elapsed is None or seconds is None:
+            self.seconds = seconds
+        else:
+            self.seconds = seconds - int(elapsed)
+        self.error_message = error_message
+
+    def handle_timeout(self, signum, frame):
+        raise TimeoutError(self.error_message)
+
+    def __enter__(self):
+        if self.seconds is not None:
+            if self.seconds <= 0:
+                self.handle_timeout(None, None)
+            else:
+                signal.signal(signal.SIGALRM, self.handle_timeout)
+                signal.alarm(self.seconds)
+
+    def __exit__(self, type, value, traceback):
+        if self.seconds is not None:
+            signal.alarm(0)
+
+
 class RedisQueueWorker:
     SETUP_TIME_QUEUE_SUFFIX = "-setup-time"
     RUN_TIME_QUEUE_SUFFIX = "-run-time"
@@ -33,20 +59,22 @@ class RedisQueueWorker:
         redis_host: str,
         redis_port: int,
         input_queue: str,
-        consumer_id: str,
         upload_url: str,
+        consumer_id: str,
         model_id: Optional[str] = None,
         log_queue: Optional[str] = None,
+        predict_timeout: Optional[int] = None,
         redis_db: int = 0,
     ):
         self.predictor = predictor
-        self.model_id = model_id
         self.redis_host = redis_host
         self.redis_port = redis_port
         self.input_queue = input_queue
-        self.log_queue = log_queue
-        self.consumer_id = consumer_id
         self.upload_url = upload_url
+        self.consumer_id = consumer_id
+        self.model_id = model_id
+        self.log_queue = log_queue
+        self.predict_timeout = predict_timeout
         self.redis_db = redis_db
         # TODO: respect max_processing_time in message handling
         self.max_processing_time = 10 * 60  # timeout after 10 minutes
@@ -103,6 +131,7 @@ class RedisQueueWorker:
         signal.signal(signal.SIGTERM, self.signal_exit)
         start_time = time.time()
 
+        # TODO(bfirsh): setup should time out too, but we don't display these logs to the user, so don't timeout to avoid confusion
         with self.capture_log(self.STAGE_SETUP, self.model_id):
             self.predictor.setup()
 
@@ -186,7 +215,10 @@ class RedisQueueWorker:
             self.push_error(response_queue, e)
             return
 
-        with self.capture_log(self.STAGE_RUN, prediction_id):
+        start_time = time.time()
+        with self.capture_log(self.STAGE_RUN, prediction_id), timeout(
+            seconds=self.predict_timeout
+        ):
             return_value = self.predictor.predict(**inputs)
         if isinstance(return_value, types.GeneratorType):
             last_result = None
@@ -194,7 +226,9 @@ class RedisQueueWorker:
             while True:
                 # we consume iterator manually to capture log
                 try:
-                    with self.capture_log(self.STAGE_RUN, prediction_id):
+                    with self.capture_log(self.STAGE_RUN, prediction_id), timeout(
+                        seconds=self.predict_timeout, elapsed=time.time() - start_time
+                    ):
                         result = next(return_value)
                 except StopIteration:
                     break
@@ -308,16 +342,39 @@ class RedisQueueWorker:
                 sys.stderr = old_stderr
 
 
+def _queue_worker_from_argv(
+    predictor,
+    redis_host,
+    redis_port,
+    input_queue,
+    upload_url,
+    comsumer_id,
+    model_id,
+    log_queue,
+    predict_timeout=None,
+):
+    """
+    Construct a RedisQueueWorker object from sys.argv, taking into account optional arguments and types.
+
+    This is intensely fragile. This should be kwargs or JSON or something like that.
+    """
+    if predict_timeout is not None:
+        predict_timeout = int(predict_timeout)
+    return RedisQueueWorker(
+        predictor,
+        redis_host,
+        redis_port,
+        input_queue,
+        upload_url,
+        comsumer_id,
+        model_id,
+        log_queue,
+        predict_timeout,
+    )
+
+
 if __name__ == "__main__":
     predictor = load_predictor()
-    worker = RedisQueueWorker(
-        predictor,
-        redis_host=sys.argv[1],
-        redis_port=sys.argv[2],
-        input_queue=sys.argv[3],
-        upload_url=sys.argv[4],
-        consumer_id=sys.argv[5],
-        model_id=sys.argv[6],
-        log_queue=sys.argv[7],
-    )
+
+    worker = _queue_worker_from_argv(predictor, *sys.argv[1:])
     worker.start()

@@ -264,6 +264,168 @@ def test_queue_worker(project_dir, docker_image, redis_port, request):
         ]
 
 
+def test_queue_worker_timeout(docker_image, redis_port, request):
+    project_dir = Path(__file__).parent / "fixtures/timeout-project"
+    subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
+
+    input_queue = multiprocessing.Queue()
+    output_queue = multiprocessing.Queue()
+    controller_port = find_free_port()
+    local_ip = get_local_ip()
+    upload_url = f"http://{local_ip}:{controller_port}/upload"
+    redis_host = local_ip
+    worker_name = "test-worker"
+    predict_queue_name = "predict-queue"
+    response_queue_name = "response-queue"
+
+    redis_client = redis.Redis(host=redis_host, port=redis_port, db=0)
+
+    with queue_controller(
+        input_queue, output_queue, controller_port, request
+    ), docker_run(
+        image=docker_image,
+        interactive=True,
+        command=[
+            "python",
+            "-m",
+            "cog.server.redis_queue",
+            redis_host,
+            str(redis_port),
+            predict_queue_name,
+            upload_url,
+            worker_name,
+            "model_id",
+            "logs",
+            "1",  # timeout
+        ],
+    ):
+        redis_client.xgroup_create(
+            mkstream=True, groupname=predict_queue_name, name=predict_queue_name, id="$"
+        )
+
+        predict_id = random_string(10)
+        redis_client.xadd(
+            name=predict_queue_name,
+            fields={
+                "value": json.dumps(
+                    {
+                        "id": predict_id,
+                        "inputs": {
+                            "sleep_time": {"value": 0.5},
+                        },
+                        "response_queue": response_queue_name,
+                    }
+                ),
+            },
+        )
+
+        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
+        assert response == {"status": "success", "value": "it worked!"}
+
+        predict_id = random_string(10)
+        redis_client.xadd(
+            name=predict_queue_name,
+            fields={
+                "value": json.dumps(
+                    {
+                        "id": predict_id,
+                        "inputs": {
+                            "sleep_time": {"value": 5.0},
+                        },
+                        "response_queue": response_queue_name,
+                    }
+                ),
+            },
+        )
+
+        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
+        assert response == {"status": "failed", "error": "Prediction timed out"}
+
+
+def test_queue_worker_yielding_timeout(docker_image, redis_port, request):
+    project_dir = Path(__file__).parent / "fixtures/yielding-timeout-project"
+    subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
+
+    input_queue = multiprocessing.Queue()
+    output_queue = multiprocessing.Queue()
+    controller_port = find_free_port()
+    local_ip = get_local_ip()
+    upload_url = f"http://{local_ip}:{controller_port}/upload"
+    redis_host = local_ip
+    worker_name = "test-worker"
+    predict_queue_name = "predict-queue"
+    response_queue_name = "response-queue"
+
+    redis_client = redis.Redis(host=redis_host, port=redis_port, db=0)
+
+    with queue_controller(
+        input_queue, output_queue, controller_port, request
+    ), docker_run(
+        image=docker_image,
+        interactive=True,
+        command=[
+            "python",
+            "-m",
+            "cog.server.redis_queue",
+            redis_host,
+            str(redis_port),
+            predict_queue_name,
+            upload_url,
+            worker_name,
+            "model_id",
+            "logs",
+            "1",  # timeout
+        ],
+    ):
+        redis_client.xgroup_create(
+            mkstream=True, groupname=predict_queue_name, name=predict_queue_name, id="$"
+        )
+
+        predict_id = random_string(10)
+        redis_client.xadd(
+            name=predict_queue_name,
+            fields={
+                "value": json.dumps(
+                    {
+                        "id": predict_id,
+                        "inputs": {
+                            "sleep_time": {"value": 0.5},
+                            "n_iterations": {"value": 1},
+                        },
+                        "response_queue": response_queue_name,
+                    }
+                ),
+            },
+        )
+
+        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
+        assert response == {"status": "success", "value": "yield 0"}
+
+        predict_id = random_string(10)
+        redis_client.xadd(
+            name=predict_queue_name,
+            fields={
+                "value": json.dumps(
+                    {
+                        "id": predict_id,
+                        "inputs": {
+                            "sleep_time": {"value": 0.7},
+                            "n_iterations": {"value": 10},
+                        },
+                        "response_queue": response_queue_name,
+                    }
+                ),
+            },
+        )
+
+        # TODO(andreas): revisit this test design if it starts being flakey
+        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
+        assert response == {"value": "yield 0", "status": "processing"}
+
+        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
+        assert response == {"status": "failed", "error": "Prediction timed out"}
+
+
 @contextmanager
 def queue_controller(input_queue, output_queue, controller_port, request):
     controller = QueueController(input_queue, output_queue, controller_port)
