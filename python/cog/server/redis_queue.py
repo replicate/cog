@@ -24,8 +24,11 @@ from ..predictor import Predictor, run_prediction, load_predictor
 class timeout:
     """A context manager that times out after a given number of seconds."""
 
-    def __init__(self, seconds=1, error_message="Prediction timed out"):
-        self.seconds = seconds
+    def __init__(self, seconds, elapsed=None, error_message="Prediction timed out"):
+        if elapsed is None or seconds is None:
+            self.seconds = seconds
+        else:
+            self.seconds = seconds - int(elapsed)
         self.error_message = error_message
 
     def handle_timeout(self, signum, frame):
@@ -33,8 +36,11 @@ class timeout:
 
     def __enter__(self):
         if self.seconds is not None:
-            signal.signal(signal.SIGALRM, self.handle_timeout)
-            signal.alarm(self.seconds)
+            if self.seconds <= 0:
+                self.handle_timeout(None, None)
+            else:
+                signal.signal(signal.SIGALRM, self.handle_timeout)
+                signal.alarm(self.seconds)
 
     def __exit__(self, type, value, traceback):
         if self.seconds is not None:
@@ -209,6 +215,7 @@ class RedisQueueWorker:
             self.push_error(response_queue, e)
             return
 
+        start_time = time.time()
         with self.capture_log(self.STAGE_RUN, prediction_id), timeout(
             seconds=self.predict_timeout
         ):
@@ -220,7 +227,7 @@ class RedisQueueWorker:
                 # we consume iterator manually to capture log
                 try:
                     with self.capture_log(self.STAGE_RUN, prediction_id), timeout(
-                        seconds=self.predict_timeout
+                        seconds=self.predict_timeout, elapsed=time.time() - start_time
                     ):
                         result = next(return_value)
                 except StopIteration:
