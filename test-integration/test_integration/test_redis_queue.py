@@ -418,6 +418,7 @@ def test_queue_worker_yielding_timeout(docker_image, redis_port, request):
             },
         )
 
+        # TODO(andreas): revisit this test design if it starts being flakey
         response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
         assert response == {"value": "yield 0", "status": "processing"}
 
