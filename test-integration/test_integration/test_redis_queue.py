@@ -13,7 +13,7 @@ from .util import (
     docker_run,
     find_free_port,
     get_bridge_ip,
-    get_local_ip,
+    get_local_host,
     random_string,
     wait_for_port,
 )
@@ -26,7 +26,7 @@ def test_queue_worker_yielding(docker_image, redis_port, request):
     input_queue = multiprocessing.Queue()
     output_queue = multiprocessing.Queue()
     controller_port = find_free_port()
-    local_ip = get_local_ip()
+    local_ip = get_local_host()
     upload_url = f"http://{local_ip}:{controller_port}/upload"
     redis_host = local_ip
     worker_name = "test-worker"
@@ -93,7 +93,7 @@ def test_queue_worker_error(docker_image, redis_port, request):
     input_queue = multiprocessing.Queue()
     output_queue = multiprocessing.Queue()
     controller_port = find_free_port()
-    local_ip = get_local_ip()
+    local_ip = get_local_host()
     upload_url = f"http://{local_ip}:{controller_port}/upload"
     redis_host = local_ip
     worker_name = "test-worker"
@@ -153,7 +153,7 @@ def test_queue_worker(project_dir, docker_image, redis_port, request):
     input_queue = multiprocessing.Queue()
     output_queue = multiprocessing.Queue()
     controller_port = find_free_port()
-    local_ip = get_local_ip()
+    local_ip = get_local_host()
     upload_url = f"http://{local_ip}:{controller_port}/upload"
     redis_host = local_ip
     worker_name = "test-worker"

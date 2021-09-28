@@ -7,7 +7,13 @@ from waiting import wait
 import requests
 import pytest
 
-from .util import random_string, find_free_port, docker_run, get_local_ip, wait_for_port
+from .util import (
+    random_string,
+    find_free_port,
+    docker_run,
+    get_local_host,
+    wait_for_port,
+)
 
 
 @dataclass
@@ -111,7 +117,7 @@ def redis_port():
         publish=[{"host": port, "container": 6379}],
         detach=True,
     ):
-        wait_for_port(get_local_ip(), port)
+        wait_for_port(get_local_host(), port)
         yield port
 
 

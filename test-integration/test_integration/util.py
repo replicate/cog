@@ -70,8 +70,9 @@ def docker_run(
         subprocess.Popen(["docker", "rm", "--force", name]).wait()
 
 
-def get_local_ip():
-    return socket.gethostbyname(socket.gethostname())
+def get_local_host():
+    # FIXME: this is fragile https://github.com/replicate/cog/issues/262
+    return socket.gethostname()
 
 
 def get_bridge_ip():
