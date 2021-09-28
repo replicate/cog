@@ -327,7 +327,9 @@ func torchvisionGPUPackage(ver string, cuda string) (name string, cpuVersion str
 		}
 	}
 	if latest == nil {
-		return "", "", "", fmt.Errorf("No torchvision GPU package for version %s that's lower or equal to CUDA %s", ver, cuda)
+		// TODO: can we suggest a CUDA version known to be compatible?
+		console.Warnf("Cog doesn't know if CUDA %s is compatible with torchvision %s. This might cause CUDA problems.", cuda, ver)
+		return "torchvision", ver, "", nil
 	}
 
 	return "torchvision", latest.Torchvision, latest.IndexURL, nil
