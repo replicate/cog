@@ -117,6 +117,8 @@ $ cog predict -i @input.jpg
 
 Looks like it worked!
 
+Note: The first time you run `cog predict`, the build process will be triggered to generate a Docker container that can run your model. The next time you run `cog predict` the pre-built container will be used.
+
 ## Build an image
 
 We can bake your model's code, the trained weights, and the Docker environment into a Docker image. This image serves predictions with an HTTP server, and can be deployed to anywhere that Docker runs to serve real-time predictions.
