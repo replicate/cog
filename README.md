@@ -106,7 +106,7 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 
 ## Install
 
-Run this in a terminal:
+First, [install Docker if you haven't already](https://docs.docker.com/get-docker/). Then, run this in a terminal:
 
 ```
 sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
