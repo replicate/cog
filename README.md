@@ -108,8 +108,10 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 
 Run this in a terminal:
 
-  sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
-  sudo chmod +x /usr/local/bin/cog
+```
+sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
+sudo chmod +x /usr/local/bin/cog
+```
 
 ## Next steps
 
