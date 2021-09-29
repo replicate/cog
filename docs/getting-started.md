@@ -43,7 +43,7 @@ Let's pretend we've trained a model. With Cog, we can define how to run predicti
 
 First, run this to get some pre-trained model weights:
 
-    curl -O -J https://storage.googleapis.com/tensorflow/keras-applications/resnet/resnet50_weights_tf_dim_ordering_tf_kernels.h5
+    curl -O https://storage.googleapis.com/tensorflow/keras-applications/resnet/resnet50_weights_tf_dim_ordering_tf_kernels.h5
 
 Then, we need to write some code to describe how predictions are run on the model. Save this to `predict.py`:
 
