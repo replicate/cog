@@ -41,9 +41,9 @@ Inside this environment you can do anything – run a Jupyter notebook, your tr
 
 Let's pretend we've trained a model. With Cog, we can define how to run predictions on it in a standard way, so other people can easily run predictions on it without having to hunt around for a prediction script.
 
-First, run this get some pre-trained model weights:
+First, run this to get some pre-trained model weights:
 
-    wget https://storage.googleapis.com/tensorflow/keras-applications/resnet/resnet50_weights_tf_dim_ordering_tf_kernels.h5
+    curl -O https://storage.googleapis.com/tensorflow/keras-applications/resnet/resnet50_weights_tf_dim_ordering_tf_kernels.h5
 
 Then, we need to write some code to describe how predictions are run on the model. Save this to `predict.py`:
 
