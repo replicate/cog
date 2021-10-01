@@ -146,15 +146,15 @@ $ curl http://localhost:5000/predict -X POST -F input=@image.png
 As a shorthand, you can add the image name as an extra line in `cog.yaml`:
 
 ```yaml
-image: "registry.hooli.corp/resnet"
+image: "r8.im/replicate/resnet"
 ```
 
 Once you've done this, you can use `cog push` to build and push the image to a Docker registry:
 
 ```
 $ cog push
-Building registry.hooli.corp/resnet...
-Pushing registry.hooli.corp/resnet...
+Building r8.im/replicate/resnet...
+Pushing r8.im/replicate/resnet...
 Pushed!
 ```
 
