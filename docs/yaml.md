@@ -17,7 +17,7 @@ predict: "predict.py:JazzSoloComposerPredictor"
 
 ## `build`
 
-This how to build the Docker image your model runs in. It contains various options within it:
+This stanza describes how to build the Docker image your model runs in. It contains various options within it:
 
 <!-- Alphabetical order, please! -->
 
@@ -29,8 +29,6 @@ Cog automatically picks the correct version of CUDA to install, but this lets yo
 
 Enable GPUs for this model. When enabled, the [nvidia-docker](https://github.com/NVIDIA/nvidia-docker) base image will be used, and Cog will automatically figure out what versions of CUDA and cuDNN to use based on the version of Python, PyTorch, and Tensorflow that you are using.
 
-When you use `cog run` or `cog predict`, Cog will automatically pass the `--gpus=all` flag to Docker. When you run a Docker image build with Cog, you'll need to pass this option to `docker run`.
-
 For example:
 
 ```yaml
@@ -38,9 +36,11 @@ build:
   gpu: true
 ```
 
+When you use `cog run` or `cog predict`, Cog will automatically pass the `--gpus=all` flag to Docker. When you run a Docker image built with Cog, you'll need to pass this option to `docker run`.
+
 ### `python_packages`
 
-A list of Python packages to install, in the format `package=version`. For example:
+A list of Python packages to install, in the format `package==version`. For example:
 
 ```yaml
 build:
@@ -60,9 +60,7 @@ build:
 
 ### `run`
 
-A list of commands to run to run in the environment to set it up. They are run last, after your system packages and Python packages have been installed. If you've used Docker, it's just like a `RUN` instruction in your `Dockerfile`.
-
-Your code is _not_ available to commands in `run`. This is so we can build your image efficiently when running locally.
+A list of setup commands to run in the environment after your system packages and Python packages have been installed. If you're familiar with Docker, it's like a `RUN` instruction in your `Dockerfile`.
 
 For example:
 
@@ -72,6 +70,8 @@ build:
     - curl -L https://github.com/cowsay-org/cowsay/archive/refs/tags/v3.7.0.tar.gz | tar -xzf -
     - cd cowsay-3.7.0 && make install
 ```
+
+Your code is _not_ available to commands in `run`. This is so we can build your image efficiently when running locally.
 
 ### `system_packages`
 
@@ -88,13 +88,13 @@ build:
 
 The name given to built Docker images. If you want to push to a registry, this should also include the registry name.
 
-If you don't provide this, a name will be generated from the directory name.
-
 For example:
 
 ```yaml
 image: "registry.hooli.corp/jazz-solo-model"
 ```
+
+If you don't provide this, a name will be generated from the directory name.
 
 ## `predictor`
 
