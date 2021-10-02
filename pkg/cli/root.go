@@ -40,6 +40,7 @@ https://github.com/replicate/cog`,
 		newPushCommand(),
 		newRunCommand(),
 		newLoginCommand(),
+		newInitCommand(),
 	)
 
 	return &rootCmd, nil
