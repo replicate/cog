@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/files"
 )
 
 //go:embed init-templates/cog.yaml
@@ -35,24 +36,44 @@ func initialize(cmd *cobra.Command, args []string) error {
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("Unable to get current working directory: %w", err)
+		return err
 	}
 
-	// Create cog.yaml
+	// cog.yaml
 	cogYamlPath := path.Join(cwd, "cog.yaml")
+
+	cogYamlPathExists, err := files.Exists(cogYamlPath)
+	if err != nil {
+		return err
+	}
+
+	if cogYamlPathExists {
+		return fmt.Errorf("Found an existing cog.yaml.\nExiting without overwriting (to be on the safe side!)")
+	}
+
 	err = ioutil.WriteFile(cogYamlPath, []byte(cogYamlContent), 0644)
 	if err != nil {
 		return fmt.Errorf("Error writing %s: %w", cogYamlPath, err)
 	}
-	console.Infof("Wrote %s", cogYamlPath)
+	console.Infof("Created %s", cogYamlPath)
 
-	// Create predict.py
+	// predict.py
 	predictPyPath := path.Join(cwd, "predict.py")
+
+	predictPyPathExists, err := files.Exists(predictPyPath)
+	if err != nil {
+		return err
+	}
+
+	if predictPyPathExists {
+		return fmt.Errorf("Found an existing predict.py.\nExiting without overwriting (to be on the safe side!)")
+	}
+
 	err = ioutil.WriteFile(predictPyPath, []byte(predictPyContent), 0644)
 	if err != nil {
 		return fmt.Errorf("Error writing %s: %w", predictPyPath, err)
 	}
-	console.Infof("Wrote %s", predictPyPath)
+	console.Infof("Created %s", predictPyPath)
 
 	return nil
 }
