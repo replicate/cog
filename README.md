@@ -64,9 +64,9 @@ class ColorizationPredictor(cog.Predictor):
     @cog.input("input", type=cog.Path, help="Grayscale input image")
     def predict(self, input):
         """Run a single prediction on the model"""
-        processed_input = pre_processing(input)
+        processed_input = preprocess(input)
         output = self.model(processed_input)
-        return post_processing(output)
+        return postprocess(output)
 ```
 
 Now, you can run predictions on this model:
