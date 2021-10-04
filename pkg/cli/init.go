@@ -24,14 +24,16 @@ func newInitCommand() *cobra.Command {
 		Use:        "init",
 		SuggestFor: []string{"new", "start"},
 		Short:      "Configure your project for use with Cog",
-		RunE:       initialize,
-		Args:       cobra.MaximumNArgs(0),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return initCommand(args)
+		},
+		Args: cobra.MaximumNArgs(0),
 	}
 
 	return cmd
 }
 
-func initialize(cmd *cobra.Command, args []string) error {
+func initCommand(args []string) error {
 	console.Infof("Setting up the current directory for use with Cog...")
 
 	cwd, err := os.Getwd()
