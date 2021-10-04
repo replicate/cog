@@ -2,7 +2,7 @@
 # Reference: https://github.com/replicate/cog/blob/main/docs/python.md
 	
 import cog
-# import torch #
+# import torch
 
 class Predictor(cog.Predictor):
     def setup(self):
@@ -10,6 +10,7 @@ class Predictor(cog.Predictor):
       # self.model = torch.load("./weights.pth")
 
     @cog.input("image", type=cog.Path, help="Grayscale input image")
+    @cog.input("scale", type=float, default=1.5, help="Factor to scale image by")
     def predict(self, image):
         """Run a single prediction on the model"""
         # processed_input = preprocess(image)
