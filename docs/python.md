@@ -20,6 +20,8 @@ class ImageScalingPredictor(cog.Predictor):
         return output
 ```
 
+Tip: Run [`cog init`](getting-started-own-model#initialization) to generate an annotated `predict.py` file that can be used as a starting point for setting up your model.
+
 You need to override two functions: `setup()` and `predict()`.
 
 ### `Predictor.setup()`
