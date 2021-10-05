@@ -2,7 +2,7 @@ package docker
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -10,6 +10,8 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/replicate/cog/pkg/util/console"
 )
+
+var ErrNoSuchImage = errors.New("No image returned")
 
 func ImageInspect(id string) (*types.ImageInspect, error) {
 	cmd := exec.Command("docker", "image", "inspect", id)
@@ -25,7 +27,7 @@ func ImageInspect(id string) (*types.ImageInspect, error) {
 		return nil, err
 	}
 	if len(slice) == 0 {
-		return nil, fmt.Errorf("No image returned")
+		return nil, ErrNoSuchImage
 	}
 	return &slice[0], nil
 }
