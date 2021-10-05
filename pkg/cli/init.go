@@ -34,7 +34,7 @@ func newInitCommand() *cobra.Command {
 }
 
 func initCommand(args []string) error {
-	console.Infof("Setting up the current directory for use with Cog...")
+	console.Infof("\nSetting up the current directory for use with Cog...\n")
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -57,7 +57,7 @@ func initCommand(args []string) error {
 	if err != nil {
 		return fmt.Errorf("Error writing %s: %w", cogYamlPath, err)
 	}
-	console.Infof("Created %s", cogYamlPath)
+	console.Infof("✅ Created %s", cogYamlPath)
 
 	// predict.py
 	predictPyPath := path.Join(cwd, "predict.py")
@@ -75,7 +75,9 @@ func initCommand(args []string) error {
 	if err != nil {
 		return fmt.Errorf("Error writing %s: %w", predictPyPath, err)
 	}
-	console.Infof("Created %s", predictPyPath)
+	console.Infof("✅ Created %s", predictPyPath)
+
+	console.Infof("\nDone! For next steps, check out the docs at https://github.com/replicate/cog/tree/main/docs")
 
 	return nil
 }
