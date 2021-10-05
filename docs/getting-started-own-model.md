@@ -2,9 +2,14 @@
 
 This guide will show you how put your own machine learning model in a Docker image using Cog. If you haven't got a model to try out, you'll want to follow the [main getting started guide](getting-started.md).
 
+First, [install Docker if you haven't already](https://docs.docker.com/get-docker/). Then, install Cog:
+
+    sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
+    sudo chmod +x /usr/local/bin/cog
+
 ## Define the Docker environment
 
-First step is to create a `cog.yaml`. It defines all the different things that need to be installed for your model to run. You can think of it as a simple way of defining a Docker image.
+First step is to create a `cog.yaml` in the directory where your model is. It defines all the different things that need to be installed for your model to run. You can think of it as a simple way of defining a Docker image.
 
 For example:
 
