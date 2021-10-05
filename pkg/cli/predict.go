@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -76,7 +77,17 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		// Use existing image
 		imageName = args[0]
 
-		// TODO: check metadata for GPUs
+		console.Infof("Pulling image: %s", imageName)
+		if err := docker.Pull(imageName); err != nil {
+			return fmt.Errorf("Failed to pull %s: %w", imageName, err)
+		}
+		conf, err := image.GetConfig(imageName)
+		if err != nil {
+			return err
+		}
+		if conf.Build.GPU {
+			gpus = "all"
+		}
 	}
 
 	console.Info("")
