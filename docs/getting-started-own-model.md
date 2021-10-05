@@ -16,6 +16,11 @@ $ cd path/to/your/model
 $ cog init
 ```
 
+First, [install Docker if you haven't already](https://docs.docker.com/get-docker/). Then, install Cog:
+
+    sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
+    sudo chmod +x /usr/local/bin/cog
+
 ## Define the Docker environment
 
 The `cog.yaml` file defines all the different things that need to be installed for your model to run. You can think of it as a simple way of defining a Docker image.
