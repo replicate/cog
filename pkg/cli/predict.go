@@ -77,9 +77,15 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		// Use existing image
 		imageName = args[0]
 
-		console.Infof("Pulling image: %s", imageName)
-		if err := docker.Pull(imageName); err != nil {
-			return fmt.Errorf("Failed to pull %s: %w", imageName, err)
+		exists, err := docker.ImageExists(imageName)
+		if err != nil {
+			return fmt.Errorf("Failed to determine if %s exists: %w", imageName, err)
+		}
+		if !exists {
+			console.Infof("Pulling image: %s", imageName)
+			if err := docker.Pull(imageName); err != nil {
+				return fmt.Errorf("Failed to pull %s: %w", imageName, err)
+			}
 		}
 		conf, err := image.GetConfig(imageName)
 		if err != nil {
