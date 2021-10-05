@@ -15,6 +15,8 @@ build:
 predict: "predict.py:JazzSoloComposerPredictor"
 ```
 
+Tip: Run [`cog init`](getting-started-own-model#initialization) to generate an annotated `cog.yaml` file that can be used as a starting point for setting up your model.
+
 ## `build`
 
 This stanza describes how to build the Docker image your model runs in. It contains various options within it:
