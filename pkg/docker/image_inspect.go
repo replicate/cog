@@ -5,14 +5,16 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/docker/docker/api/types"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 func ImageInspect(id string) (*types.ImageInspect, error) {
 	cmd := exec.Command("docker", "image", "inspect", id)
 	cmd.Env = os.Environ()
-
+	console.Debug("$ " + strings.Join(cmd.Args, " "))
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
