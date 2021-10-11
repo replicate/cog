@@ -2,11 +2,11 @@ package docker
 
 func ImageExists(id string) (bool, error) {
 	_, err := ImageInspect(id)
-	if err == ErrNoSuchImage {
-		return false, nil
-	}
+	// assume all errors mean it doesn't exist
+	// TODO(andreas): differentiate between actual errors and image not
+	// existing in ImageInspect
 	if err != nil {
-		return false, err
+		return false, nil
 	}
 	return true, nil
 }

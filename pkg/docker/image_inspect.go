@@ -26,6 +26,8 @@ func ImageInspect(id string) (*types.ImageInspect, error) {
 	if err != nil {
 		return nil, err
 	}
+	// TODO(andreas): we never actually get here if the image
+	// doesn't exist, because docker image inspect returns exit 1
 	if len(slice) == 0 {
 		return nil, ErrNoSuchImage
 	}
