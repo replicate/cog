@@ -19,17 +19,19 @@ func ImageInspect(id string) (*types.ImageInspect, error) {
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
 	out, err := cmd.Output()
 	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			// TODO(andreas): this is fragile in case the
+			// error message changes
+			if strings.Contains(string(ee.Stderr), "No such image") {
+				return nil, ErrNoSuchImage
+			}
+		}
 		return nil, err
 	}
 	var slice []types.ImageInspect
 	err = json.Unmarshal(out, &slice)
 	if err != nil {
 		return nil, err
-	}
-	// TODO(andreas): we never actually get here if the image
-	// doesn't exist, because docker image inspect returns exit 1
-	if len(slice) == 0 {
-		return nil, ErrNoSuchImage
 	}
 	return &slice[0], nil
 }

@@ -92,6 +92,8 @@ def test_predict_with_remote_image(tmpdir_factory):
         capture_output=True,
     )
 
+    out = result.stdout.decode()
+
     # lots of docker pull logs are written to stdout before writing the actual output
     # TODO: clean up docker output so cog predict is always clean
-    assert result.stdout.decode().endswith("\nhello world\n")
+    assert out.strip().endswith("hello world")
