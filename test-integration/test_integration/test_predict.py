@@ -77,3 +77,23 @@ predict: "predict.py:Predictor"
         assert result.stdout == b"hello world\n"
     finally:
         subprocess.run(["docker", "rmi", image_name], check=True)
+
+
+def test_predict_with_remote_image(tmpdir_factory):
+    image_name = "r8.im/bfirsh/hello-world@sha256:942f3080b0307e926646c6be51f9762991a2d5411b9fd8ee98a6dcc25bcaa9b9"
+    subprocess.run(["docker", "rmi", image_name], check=False)
+
+    # Run in another directory to ensure it doesn't use cog.yaml
+    another_directory = tmpdir_factory.mktemp("project")
+    result = subprocess.run(
+        ["cog", "predict", image_name, "-i", "world"],
+        cwd=another_directory,
+        check=True,
+        capture_output=True,
+    )
+
+    out = result.stdout.decode()
+
+    # lots of docker pull logs are written to stdout before writing the actual output
+    # TODO: clean up docker output so cog predict is always clean
+    assert out.strip().endswith("hello world")
