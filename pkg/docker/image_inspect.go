@@ -33,5 +33,11 @@ func ImageInspect(id string) (*types.ImageInspect, error) {
 	if err != nil {
 		return nil, err
 	}
+	// There may be some Docker versions where a missing image
+	// doesn't return exit code 1, but progresses to output an
+	// empty list.
+	if len(slice) == 0 {
+		return nil, ErrNoSuchImage
+	}
 	return &slice[0], nil
 }
