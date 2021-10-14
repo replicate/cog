@@ -42,13 +42,22 @@ func GetTypeSignature(imageName string, enableGPU bool) (*TypeSignature, error) 
 		gpus = "all"
 	}
 
-	if err := docker.RunWithIO(docker.RunOptions{
+	err := docker.RunWithIO(docker.RunOptions{
 		Image: imageName,
 		Args: []string{
 			"python", "-m", "cog.command.type_signature",
 		},
 		GPUs: gpus,
-	}, nil, &stdout, &stderr); err != nil {
+	}, nil, &stdout, &stderr)
+
+	if enableGPU && err == docker.ErrMissingDeviceDriver {
+		console.Debug(stdout.String())
+		console.Debug(stderr.String())
+		console.Debug("Missing device driver, re-trying without GPU")
+		return GetTypeSignature(imageName, false)
+	}
+
+	if err != nil {
 		console.Info(stdout.String())
 		console.Info(stderr.String())
 		return nil, err

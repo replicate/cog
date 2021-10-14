@@ -1,6 +1,8 @@
 package docker
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -38,6 +40,8 @@ type internalRunOptions struct {
 	Interactive bool
 	TTY         bool
 }
+
+var ErrMissingDeviceDriver = errors.New("Docker is missing required device driver")
 
 func generateDockerArgs(options internalRunOptions) []string {
 	// Use verbose options for clarity
@@ -88,15 +92,25 @@ func RunWithIO(options RunOptions, stdin io.Reader, stdout, stderr io.Writer) er
 			internalOptions.TTY = isatty.IsTerminal(f.Fd())
 		}
 	}
+	stderrCopy := new(bytes.Buffer)
+	stderrMultiWriter := io.MultiWriter(stderr, stderrCopy)
+
 	dockerArgs := generateDockerArgs(internalOptions)
 	cmd := exec.Command("docker", dockerArgs...)
 	cmd.Env = os.Environ()
 	cmd.Stdout = stdout
 	cmd.Stdin = stdin
-	cmd.Stderr = stderr
+	cmd.Stderr = stderrMultiWriter
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
 
-	return cmd.Run()
+	err := cmd.Run()
+	if err != nil {
+		if strings.Contains(stderrCopy.String(), "could not select device driver") {
+			return ErrMissingDeviceDriver
+		}
+		return err
+	}
+	return nil
 }
 
 func RunDaemon(options RunOptions) (string, error) {
