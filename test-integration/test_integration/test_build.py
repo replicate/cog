@@ -91,3 +91,47 @@ def test_build_with_model(project_dir):
         }
     finally:
         subprocess.run(["docker", "rmi", image_name], check=False)
+
+
+def test_build_gpu_model_on_cpu(tmpdir_factory):
+    tmpdir = tmpdir_factory.mktemp("project")
+    with open(tmpdir / "cog.yaml", "w") as f:
+        cog_yaml = """
+build:
+  python_version: 3.8
+  gpu: true
+"""
+        f.write(cog_yaml)
+
+    image_name = "cog-test-" + random_string(length=10)
+
+    try:
+        subprocess.run(
+            ["cog", "build", "-t", image_name],
+            cwd=tmpdir,
+            check=True,
+        )
+        assert image_name in str(
+            subprocess.run(["docker", "images"], capture_output=True).stdout
+        )
+        image = json.loads(
+            subprocess.run(
+                ["docker", "image", "inspect", image_name], capture_output=True
+            ).stdout
+        )
+        labels = image[0]["Config"]["Labels"]
+        assert len(labels["org.cogmodel.cog_version"]) > 0
+        assert json.loads(image[0]["Config"]["Labels"]["org.cogmodel.config"]) == {
+            "build": {
+                "python_version": "3.8",
+                "gpu": True,
+                "cuda": "11.0",
+                "cudnn": "8",
+            }
+        }
+        assert (
+            json.loads(image[0]["Config"]["Labels"]["org.cogmodel.type_signature"])
+            == {}
+        )
+    finally:
+        subprocess.run(["docker", "rmi", image_name], check=False)
