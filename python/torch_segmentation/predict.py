@@ -1,5 +1,6 @@
+import random
+import string
 import sys
-from pathlib import Path
 
 sys.path.insert(0, '..')
 
@@ -8,7 +9,9 @@ import cv2
 import torch
 import torchvision
 from PIL import Image
-
+from pathlib import Path
+import platform
+import tempfile
 import segmentation_utils
 
 
@@ -33,22 +36,22 @@ class Segmentation(cog.Predictor):
         image = Image.open(input)
         # do forward pass and get the output dictionary
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        try:
-            outputs = segmentation_utils.get_segment_labels(image, self.model, device)
-        except Exception as e:
-            print(e)
+        outputs = segmentation_utils.get_segment_labels(image, self.model, device)
+
         # get the data from the `out` key
         outputs = outputs['out']
         segmented_image = segmentation_utils.draw_segmentation_map(outputs)
 
         final_image = segmentation_utils.image_overlay(image, segmented_image)
-        save_name = f"{input.split('/')[-1].split('.')[0]}"
         # # show the segmented image and save to disk
         # cv2.imshow('Segmented image', final_image)
         # cv2.waitKey(0)
-        cv2.imwrite(f"outputs/{save_name}.jpg", final_image)
+
+        save_name = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(10))
+        tempdir = Path("/tmp" if platform.system() == "Darwin" else tempfile.gettempdir())
+        cv2.imwrite(f"{tempdir}/{save_name}_out.jpg", final_image)
         print(f"Saving file at: outputs/{save_name}.jpg")
-        return Path(f"outputs/{save_name}.jpg")
+        return Path(f"{tempdir}/{save_name}_out.jpg")
 
 # Usage: uncomment this and run
 # python predict.py
