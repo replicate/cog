@@ -2,7 +2,7 @@ import random
 import string
 import sys
 
-sys.path.insert(0, '..')
+sys.path.insert(0, '../..')
 
 import cog
 import cv2
@@ -26,11 +26,8 @@ class Segmentation(cog.Predictor):
         # model to eval() model and load onto computation device
         self.model.eval().to(device)
 
-    # Define the arguments and types the model takes as input
-    @cog.input("input", type=Path, help="Image to classify")
+    @cog.input("input", type=Path, help="Image to segment")
     def predict(self, input):
-        """Run a single prediction on the model"""
-        # download or load the model from disk
 
         # read the image
         image = Image.open(input)
@@ -50,10 +47,9 @@ class Segmentation(cog.Predictor):
         save_name = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(10))
         tempdir = Path("/tmp" if platform.system() == "Darwin" else tempfile.gettempdir())
         cv2.imwrite(f"{tempdir}/{save_name}_out.jpg", final_image)
-        print(f"Saving file at: outputs/{save_name}.jpg")
         return Path(f"{tempdir}/{save_name}_out.jpg")
 
-# Usage: uncomment this and run
+# Usage: uncomment this and run the below command to run directly
 # python predict.py
 # if __name__ == "__main__":
 #     obj = Segmentation()
