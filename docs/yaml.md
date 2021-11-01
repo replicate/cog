@@ -2,7 +2,7 @@
 
 `cog.yaml` defines how to build a Docker image and how to run predictions on your model inside that image.
 
-It has three keys: `build`, `image`, and `predict`. It looks a bit like this:
+It has three keys: [#build](`build`), [#image](`image`), and [#predict](`predict`). It looks a bit like this:
 
 ```yaml
 build:
