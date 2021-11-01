@@ -4,7 +4,6 @@ This guide will show you how to put your own machine learning model in a Docker 
 
 ## Prerequisites
 
-- **A trained model**. If you don't already have your own trained model, you can use one from [https://github.com/replicate/cog-examples](replicate/cog-examples).
 - **macOS or Linux**. Cog works on macOS and Linux, but does not currently support Windows.
 - **Docker**. Cog uses Docker to create a container for your model. You'll need to [https://docs.docker.com/get-docker/](install Docker) before you can run Cog.
 
