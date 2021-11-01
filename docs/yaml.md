@@ -96,6 +96,12 @@ For example:
 image: "registry.hooli.corp/jazz-solo-model"
 ```
 
+To point to a model in the Replicate registry, use the `r8.im` domain:
+
+```yaml
+image: "r8.im/your-username/your-model"
+```
+
 If you don't provide this, a name will be generated from the directory name.
 
 ## `predictor`
