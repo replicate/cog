@@ -113,6 +113,16 @@ sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/lat
 sudo chmod +x /usr/local/bin/cog
 ```
 
+## Upgrade
+
+If you're already got Cog installed and want to update to a newer version:
+
+```
+sudo rm $(which cog)
+sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
+sudo chmod +x /usr/local/bin/cog
+```
+
 ## Next steps
 
 - [Get started with an example model](docs/getting-started.md)
