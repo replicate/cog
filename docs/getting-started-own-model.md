@@ -2,7 +2,20 @@
 
 This guide will show you how to put your own machine learning model in a Docker image using Cog. If you haven't got a model to try out, you'll want to follow the [main getting started guide](getting-started.md).
 
+## Prerequisites
+
+- **A trained model**. If you don't already have your own trained model, you can use one from [https://github.com/replicate/cog-examples](replicate/cog-examples).
+- **macOS or Linux**. Cog works on macOS and Linux, but does not currently support Windows.
+- **Docker**. Cog uses Docker to create a container for your model. You'll need to [https://docs.docker.com/get-docker/](install Docker) before you can run Cog.
+
 ## Initialization
+
+First, install Cog if you haven't already:
+
+```sh
+sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
+sudo chmod +x /usr/local/bin/cog
+```
 
 To configure your project for use with Cog, you'll need to add two files:
 
@@ -15,11 +28,6 @@ Use the `cog init` command to generate these files in your project:
 $ cd path/to/your/model
 $ cog init
 ```
-
-First, [install Docker if you haven't already](https://docs.docker.com/get-docker/). Then, install Cog:
-
-    sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
-    sudo chmod +x /usr/local/bin/cog
 
 ## Define the Docker environment
 

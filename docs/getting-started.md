@@ -2,10 +2,20 @@
 
 This guide will walk you through what you can do with Cog by using an example model.
 
+## Prerequisites
+
+- **A trained model**. If you don't already have your own trained model, you can use one from [https://github.com/replicate/cog-examples](replicate/cog-examples).
+- **macOS or Linux**. Cog works on macOS and Linux, but does not currently support Windows.
+- **Docker**. Cog uses Docker to create a container for your model. You'll need to [https://docs.docker.com/get-docker/](install Docker) before you can run Cog.
+
+## Install Cog
+
 First, [install Docker if you haven't already](https://docs.docker.com/get-docker/). Then, install Cog:
 
     sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
     sudo chmod +x /usr/local/bin/cog
+
+## Create a project
 
 Let's make a directory to work in:
 
