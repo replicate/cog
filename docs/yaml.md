@@ -93,14 +93,10 @@ The name given to built Docker images. If you want to push to a registry, this s
 For example:
 
 ```yaml
-image: "registry.hooli.corp/jazz-solo-model"
-```
-
-To point to a model in the Replicate registry, use the `r8.im` domain:
-
-```yaml
 image: "r8.im/your-username/your-model"
 ```
+
+r8.im is Replicate's registry, but this can be any Docker registry.
 
 If you don't provide this, a name will be generated from the directory name.
 
