@@ -50,7 +50,7 @@ func DefaultConfig() *Config {
 	}
 }
 
-func ConfigFromYAML(contents []byte) (*Config, error) {
+func FromYAML(contents []byte) (*Config, error) {
 	config := DefaultConfig()
 	if err := yaml.Unmarshal(contents, config); err != nil {
 		return nil, fmt.Errorf("Failed to parse config yaml: %w", err)

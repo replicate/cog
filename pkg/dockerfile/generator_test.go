@@ -49,7 +49,7 @@ func TestGenerateEmptyCPU(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
-	conf, err := config.ConfigFromYAML([]byte(`
+	conf, err := config.FromYAML([]byte(`
 build:
   gpu: false
 predict: predict.py:Predictor
@@ -79,7 +79,7 @@ func TestGenerateEmptyGPU(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
-	conf, err := config.ConfigFromYAML([]byte(`
+	conf, err := config.FromYAML([]byte(`
 build:
   gpu: true
 predict: predict.py:Predictor
@@ -108,7 +108,7 @@ func TestGenerateFullCPU(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
-	conf, err := config.ConfigFromYAML([]byte(`
+	conf, err := config.FromYAML([]byte(`
 build:
   gpu: false
   system_packages:
@@ -151,7 +151,7 @@ func TestGenerateFullGPU(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
-	conf, err := config.ConfigFromYAML([]byte(`
+	conf, err := config.FromYAML([]byte(`
 build:
   gpu: true
   system_packages:
@@ -197,7 +197,7 @@ func TestPreInstall(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
-	conf, err := config.ConfigFromYAML([]byte(`
+	conf, err := config.FromYAML([]byte(`
 build:
   system_packages:
     - cowsay

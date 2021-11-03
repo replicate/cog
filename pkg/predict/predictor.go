@@ -87,11 +87,11 @@ func (p *Predictor) waitForContainerReady() error {
 	}
 }
 
-func (d *Predictor) Stop() error {
-	return docker.Stop(d.containerID)
+func (p *Predictor) Stop() error {
+	return docker.Stop(p.containerID)
 }
 
-func (d *Predictor) Predict(inputs Inputs) (*Output, error) {
+func (p *Predictor) Predict(inputs Inputs) (*Output, error) {
 	bodyBuffer := new(bytes.Buffer)
 
 	mwriter := multipart.NewWriter(bodyBuffer)
@@ -125,7 +125,7 @@ func (d *Predictor) Predict(inputs Inputs) (*Output, error) {
 		return nil, fmt.Errorf("Failed to close form mime writer: %w", err)
 	}
 
-	url := fmt.Sprintf("http://localhost:%d/predict", d.port)
+	url := fmt.Sprintf("http://localhost:%d/predict", p.port)
 	req, err := http.NewRequest(http.MethodPost, url, bodyBuffer)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create HTTP request to %s: %w", url, err)
@@ -196,8 +196,8 @@ func (d *Predictor) Predict(inputs Inputs) (*Output, error) {
 	return output, nil
 }
 
-func (d *Predictor) Help() (*HelpResponse, error) {
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://localhost:%d/help", d.port), nil)
+func (p *Predictor) Help() (*HelpResponse, error) {
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://localhost:%d/help", p.port), nil)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create GET request: %w", err)
 	}
