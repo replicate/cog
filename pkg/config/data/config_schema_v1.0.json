@@ -33,7 +33,7 @@
       "properties": {
         "python_version": {
           "$id": "#/properties/build/properties/python_version",
-          "type": "string",
+          "type": ["number", "string"],
           "title": "The python_version schema",
           "description": "The minor (3.8) or patch (3.8.1) version of Python to use.",
           "default": "",
