@@ -2,9 +2,10 @@ package config
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/xeipuuv/gojsonschema"
 	"sigs.k8s.io/yaml"
-	"strings"
 )
 
 const (

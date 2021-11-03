@@ -1,8 +1,9 @@
 package config
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestValidateConfig(t *testing.T) {
@@ -17,7 +18,8 @@ func TestValidateConfig(t *testing.T) {
 			CUDA: "10.0",
 		},
 	}
-	assert.NoError(t, ValidateConfig(config, "1.0"))
+	err := ValidateConfig(config, "1.0")
+	require.NoError(t, err)
 }
 
 func TestValidateSuccess(t *testing.T) {
@@ -30,7 +32,22 @@ func TestValidateSuccess(t *testing.T) {
   python_packages:
     - "torch==1.8.1"`
 
-	assert.NoError(t, Validate(config, "1.0"))
+	err := Validate(config, "1.0")
+	require.NoError(t, err)
+}
+
+func TestValidatePythonVersionNumerical(t *testing.T) {
+	config := `build:
+  gpu: true
+  system_packages:
+    - "libgl1-mesa-glx"
+    - "libglib2.0-0"
+  python_version: 3.8
+  python_packages:
+    - "torch==1.8.1"`
+
+	err := Validate(config, "1.0")
+	require.NoError(t, err)
 }
 
 func TestValidateBuildIsRequired(t *testing.T) {
@@ -44,8 +61,8 @@ func TestValidateBuildIsRequired(t *testing.T) {
     - "torch==1.8.1"`
 
 	err := Validate(config, "1.0")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "build is required")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "build is required")
 }
 
 func TestValidatePythonVersionIsRequired(t *testing.T) {
@@ -58,6 +75,6 @@ func TestValidatePythonVersionIsRequired(t *testing.T) {
     - "torch==1.8.1"`
 
 	err := Validate(config, "1.0")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "python_version is required")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "python_version is required")
 }

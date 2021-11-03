@@ -41,7 +41,7 @@ type Config struct {
 	Predict string `json:"predict,omitempty" yaml:"predict"`
 }
 
-func ConfigFromYAML(contents []byte) (*Config, error) {
+func FromYAML(contents []byte) (*Config, error) {
 	config := &Config{}
 	err := Validate(string(contents), "")
 	if err != nil {

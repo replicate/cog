@@ -64,7 +64,7 @@ func loadConfigFromFile(file string) (*Config, error) {
 		return nil, err
 	}
 
-	config, err := ConfigFromYAML(contents)
+	config, err := FromYAML(contents)
 	if err != nil {
 		return nil, err
 	}

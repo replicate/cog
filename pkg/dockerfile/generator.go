@@ -1,6 +1,7 @@
 package dockerfile
 
 import (
+	// blank import for embeds
 	_ "embed"
 	"fmt"
 	"os"
@@ -15,7 +16,7 @@ import (
 //go:embed embed/cog.whl
 var cogWheelEmbed []byte
 
-type DockerfileGenerator struct {
+type Generator struct {
 	Config *config.Config
 	Dir    string
 
@@ -29,7 +30,7 @@ type DockerfileGenerator struct {
 	relativeTmpDir string
 }
 
-func NewGenerator(config *config.Config, dir string) (*DockerfileGenerator, error) {
+func NewGenerator(config *config.Config, dir string) (*Generator, error) {
 	rootTmp := path.Join(dir, ".cog/tmp")
 	if err := os.MkdirAll(rootTmp, 0755); err != nil {
 		return nil, err
@@ -45,7 +46,7 @@ func NewGenerator(config *config.Config, dir string) (*DockerfileGenerator, erro
 		return nil, err
 	}
 
-	return &DockerfileGenerator{
+	return &Generator{
 		Config:         config,
 		Dir:            dir,
 		GOOS:           runtime.GOOS,
@@ -55,7 +56,7 @@ func NewGenerator(config *config.Config, dir string) (*DockerfileGenerator, erro
 	}, nil
 }
 
-func (g *DockerfileGenerator) GenerateBase() (string, error) {
+func (g *Generator) GenerateBase() (string, error) {
 	baseImage, err := g.baseImage()
 	if err != nil {
 		return "", err
@@ -104,7 +105,7 @@ func (g *DockerfileGenerator) GenerateBase() (string, error) {
 	}), "\n"), nil
 }
 
-func (g *DockerfileGenerator) Generate() (string, error) {
+func (g *Generator) Generate() (string, error) {
 	base, err := g.GenerateBase()
 	if err != nil {
 		return "", err
@@ -115,27 +116,27 @@ func (g *DockerfileGenerator) Generate() (string, error) {
 	}), "\n"), nil
 }
 
-func (g *DockerfileGenerator) Cleanup() error {
+func (g *Generator) Cleanup() error {
 	if err := os.RemoveAll(g.tmpDir); err != nil {
 		return fmt.Errorf("Failed to clean up %s: %w", g.tmpDir, err)
 	}
 	return nil
 }
 
-func (g *DockerfileGenerator) baseImage() (string, error) {
+func (g *Generator) baseImage() (string, error) {
 	if g.Config.Build.GPU {
 		return g.Config.CUDABaseImageTag()
 	}
 	return "python:" + g.Config.Build.PythonVersion, nil
 }
 
-func (g *DockerfileGenerator) preamble() string {
+func (g *Generator) preamble() string {
 	return `ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin`
 }
 
-func (g *DockerfileGenerator) aptInstalls() (string, error) {
+func (g *Generator) aptInstalls() (string, error) {
 	packages := g.Config.Build.SystemPackages
 	if len(packages) == 0 {
 		return "", nil
@@ -145,7 +146,7 @@ func (g *DockerfileGenerator) aptInstalls() (string, error) {
 		" && rm -rf /var/lib/apt/lists/*", nil
 }
 
-func (g *DockerfileGenerator) installPython() (string, error) {
+func (g *Generator) installPython() (string, error) {
 	// TODO: check that python version is valid
 
 	py := g.Config.Build.PythonVersion
@@ -178,7 +179,7 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get insta
 	pyenv global $(pyenv install-latest --print "%s")`, py, py), nil
 }
 
-func (g *DockerfileGenerator) installCog() (string, error) {
+func (g *Generator) installCog() (string, error) {
 	// Wheel name needs to be full format otherwise pip refuses to install it
 	cogFilename := "cog-0.0.1.dev-py3-none-any.whl"
 	cogPath := filepath.Join(g.tmpDir, cogFilename)
@@ -192,7 +193,7 @@ func (g *DockerfileGenerator) installCog() (string, error) {
 RUN --mount=type=cache,target=/root/.cache/pip pip install /tmp/%s`, path.Join(g.relativeTmpDir, cogFilename), cogFilename, cogFilename), nil
 }
 
-func (g *DockerfileGenerator) pythonRequirements() (string, error) {
+func (g *Generator) pythonRequirements() (string, error) {
 	reqs := g.Config.Build.PythonRequirements
 	if reqs == "" {
 		return "", nil
@@ -201,7 +202,7 @@ func (g *DockerfileGenerator) pythonRequirements() (string, error) {
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt`, reqs), nil
 }
 
-func (g *DockerfileGenerator) pipInstalls() (string, error) {
+func (g *Generator) pipInstalls() (string, error) {
 	packages, indexURLs, err := g.Config.PythonPackagesForArch(g.GOOS, g.GOARCH)
 	if err != nil {
 		return "", err
@@ -225,19 +226,19 @@ func (g *DockerfileGenerator) pipInstalls() (string, error) {
 	return "RUN --mount=type=cache,target=/root/.cache/pip pip install " + findLinks + " " + extraIndexURLs + " " + strings.Join(packages, " "), nil
 }
 
-func (g *DockerfileGenerator) copyCode() string {
+func (g *Generator) copyCode() string {
 	return `COPY . /src`
 }
 
-func (g *DockerfileGenerator) command() string {
+func (g *Generator) command() string {
 	return `CMD ["python", "-m", "cog.server.http"]`
 }
 
-func (g *DockerfileGenerator) workdir() string {
+func (g *Generator) workdir() string {
 	return "WORKDIR /src"
 }
 
-func (g *DockerfileGenerator) run() (string, error) {
+func (g *Generator) run() (string, error) {
 	runCommands := g.Config.Build.Run
 
 	// For backwards compatibility

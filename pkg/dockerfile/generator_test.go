@@ -2,7 +2,6 @@ package dockerfile
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
 
@@ -47,15 +46,15 @@ RUN curl https://pyenv.run | bash && \
 }
 
 func TestBlankBuildThrowsError(t *testing.T) {
-	_, err := config.ConfigFromYAML([]byte(`
+	_, err := config.FromYAML([]byte(`
 
 `))
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "must be a mapping")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "must be a mapping")
 }
 
 func TestBuildIsRequiredError(t *testing.T) {
-	_, err := config.ConfigFromYAML([]byte(`
+	_, err := config.FromYAML([]byte(`
 builds:
   gpu: true
   system_packages:
@@ -64,11 +63,11 @@ builds:
   python_packages:
     - "torch==1.8.1"
 `))
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "build is required")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "build is required")
 }
 func TestPythonVersionIsRequiredError(t *testing.T) {
-	_, err := config.ConfigFromYAML([]byte(`
+	_, err := config.FromYAML([]byte(`
 build:
   gpu: true
   system_packages:
@@ -77,15 +76,15 @@ build:
   python_packages:
     - "torch==1.8.1"
 `))
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "build python_version is required")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "build python_version is required")
 }
 
 func TestGenerateEmptyCPU(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
-	conf, err := config.ConfigFromYAML([]byte(`
+	conf, err := config.FromYAML([]byte(`
 build:
   gpu: false
   python_version: "3.8"
@@ -116,7 +115,7 @@ func TestGenerateEmptyGPU(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
-	conf, err := config.ConfigFromYAML([]byte(`
+	conf, err := config.FromYAML([]byte(`
 build:
   gpu: true
   python_version: "3.8"
@@ -146,7 +145,7 @@ func TestGenerateFullCPU(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
-	conf, err := config.ConfigFromYAML([]byte(`
+	conf, err := config.FromYAML([]byte(`
 build:
   gpu: false
   system_packages:
@@ -190,7 +189,7 @@ func TestGenerateFullGPU(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
-	conf, err := config.ConfigFromYAML([]byte(`
+	conf, err := config.FromYAML([]byte(`
 build:
   gpu: true
   python_version: "3.8"
@@ -237,7 +236,7 @@ func TestPreInstall(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
-	conf, err := config.ConfigFromYAML([]byte(`
+	conf, err := config.FromYAML([]byte(`
 build:
   python_version: "3.8"
   system_packages:

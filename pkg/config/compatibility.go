@@ -1,6 +1,7 @@
 package config
 
 import (
+	// blank import for embeds
 	_ "embed"
 	"encoding/json"
 	"fmt"
