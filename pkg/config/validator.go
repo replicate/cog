@@ -1,6 +1,8 @@
 package config
 
 import (
+	// blank import for embeds
+	_ "embed"
 	"fmt"
 	"strings"
 
@@ -10,18 +12,22 @@ import (
 
 const (
 	defaultVersion = "1.0"
-	schemaFilePath = "data/config_schema_v%s.json"
 )
 
+//go:embed data/config_schema_v1.0.json
+var schemaV1 []byte
+
 func getSchema(version string) (gojsonschema.JSONLoader, error) {
-	if version == "" {
-		version = defaultVersion
+
+	// Default schema
+	currentSchema := schemaV1
+
+	switch version {
+	case defaultVersion:
+		currentSchema = schemaV1
 	}
-	schemaData, err := Asset(fmt.Sprintf(schemaFilePath, version))
-	if err != nil {
-		return nil, err
-	}
-	return gojsonschema.NewStringLoader(string(schemaData)), nil
+
+	return gojsonschema.NewStringLoader(string(currentSchema)), nil
 }
 
 func ValidateConfig(config *Config, version string) error {
