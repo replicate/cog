@@ -46,7 +46,7 @@ func Build(cfg *config.Config, dir, imageName string, progressOutput string) err
 	if err != nil {
 		return fmt.Errorf("Failed to convert type signature to JSON: %w", err)
 	}
-	configJson, err := json.Marshal(cfg)
+	configJSON, err := json.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("Failed to convert config to JSON: %w", err)
 	}
@@ -55,7 +55,7 @@ func Build(cfg *config.Config, dir, imageName string, progressOutput string) err
 	// doesn't seem to be a problem here, so do it here instead.
 	labels := map[string]string{
 		global.LabelNamespace + "cog_version":    global.Version,
-		global.LabelNamespace + "config":         string(bytes.TrimSpace(configJson)),
+		global.LabelNamespace + "config":         string(bytes.TrimSpace(configJSON)),
 		global.LabelNamespace + "type_signature": string(signatureJSON),
 	}
 	if err := docker.BuildAddLabelsToImage(imageName, labels); err != nil {

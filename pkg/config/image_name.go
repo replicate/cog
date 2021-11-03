@@ -1,7 +1,6 @@
 package config
 
 import (
-	"log"
 	"path"
 	"regexp"
 	"strings"
@@ -16,10 +15,7 @@ func DockerImageName(projectDir string) string {
 	projectName = strings.Replace(projectName, " ", "-", -1)
 
 	// Remove anything non-alphanumeric
-	reg, err := regexp.Compile(`[^a-z0-9\-]+`)
-	if err != nil {
-		log.Fatal(err)
-	}
+	reg := regexp.MustCompile(`[^a-z0-9\-]+`)
 	projectName = reg.ReplaceAllString(projectName, "")
 
 	// Limit to 30 characters (max Docker image name length)

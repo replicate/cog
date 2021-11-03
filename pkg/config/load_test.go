@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const TEST_CONFIG = `
+const testConfig = `
 build:
   python_version: "3.8"
   python_requirements: requirements.txt
@@ -32,7 +32,7 @@ func TestGetConfigShouldLoadFromCustomDir(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 
-	err = ioutil.WriteFile(path.Join(dir, "cog.yaml"), []byte(TEST_CONFIG), 0644)
+	err = ioutil.WriteFile(path.Join(dir, "cog.yaml"), []byte(testConfig), 0644)
 	require.NoError(t, err)
 	conf, _, err := GetConfig(dir)
 	require.NoError(t, err)
@@ -55,7 +55,7 @@ func TestFindProjectRootDirShouldFindParentDir(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(projectDir)
 
-	err = ioutil.WriteFile(path.Join(projectDir, "cog.yaml"), []byte(TEST_CONFIG), 0644)
+	err = ioutil.WriteFile(path.Join(projectDir, "cog.yaml"), []byte(testConfig), 0644)
 	require.NoError(t, err)
 
 	subdir := path.Join(projectDir, "some/sub/dir")
