@@ -34,6 +34,7 @@ func TestValidateSuccess(t *testing.T) {
 
 	err := Validate(config, "1.0")
 	require.NoError(t, err)
+<<<<<<< HEAD
 }
 
 func TestValidatePythonVersionNumerical(t *testing.T) {
@@ -48,6 +49,8 @@ func TestValidatePythonVersionNumerical(t *testing.T) {
 
 	err := Validate(config, "1.0")
 	require.NoError(t, err)
+=======
+>>>>>>> bf8b1be (Fix broken tests)
 }
 
 func TestValidateBuildIsRequired(t *testing.T) {
