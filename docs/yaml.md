@@ -108,4 +108,13 @@ For example:
 predict: "predict.py:HotdogPredictor"
 ```
 
+## Validate `cog.yaml` file
+
+To validate a cog.yaml file run this command:
+
+```
+    cog validate
+```
+This will validate the cog.yaml in the current directory.
+
 See [the Python API documentation for more information](python.md).
