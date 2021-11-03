@@ -110,4 +110,14 @@ For example:
 predict: "predict.py:HotdogPredictor"
 ```
 
+## Update JsonSchema
+The json schema for cog.yaml is defined at "pkg/config/data/config_schema_v1.0.json"
+After each schema update the binding must be generated. 
+
+To generate binding run this command from the `config` directory.
+
+```
+    go-bindata -pkg config data/
+```
+
 See [the Python API documentation for more information](python.md).

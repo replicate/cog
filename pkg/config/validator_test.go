@@ -64,8 +64,7 @@ func TestValidatePythonVersionNumerical(t *testing.T) {
     - "torch==1.8.1"`
 
 	err := Validate(config, "1.0")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "python_version is required")
+	require.NoError(t, err)
 }
 
 func TestValidateBuildIsRequired(t *testing.T) {
