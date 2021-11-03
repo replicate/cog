@@ -214,12 +214,3 @@ func TestCUDABaseImageTag(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04", imageTag)
 }
-
-func TestBlankBuild(t *testing.T) {
-	// Naively, this turns into nil, so make sure it's a real build object
-	config, err := ConfigFromYAML([]byte(`build:`))
-	require.NoError(t, err)
-	require.NotNil(t, config.Build)
-	require.Equal(t, false, config.Build.GPU)
-
-}

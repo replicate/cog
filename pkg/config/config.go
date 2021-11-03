@@ -41,24 +41,16 @@ type Config struct {
 	Predict string `json:"predict,omitempty" yaml:"predict"`
 }
 
-func DefaultConfig() *Config {
-	return &Config{
-		Build: &Build{
-			GPU:           false,
-			PythonVersion: "3.8",
-		},
-	}
-}
-
 func ConfigFromYAML(contents []byte) (*Config, error) {
-	config := DefaultConfig()
+	config := &Config{}
+	err := Validate(string(contents), "")
+	if err != nil {
+		return nil, err
+	}
 	if err := yaml.Unmarshal(contents, config); err != nil {
 		return nil, fmt.Errorf("Failed to parse config yaml: %w", err)
 	}
-	// Everything assumes Build is not nil
-	if config.Build == nil {
-		config.Build = DefaultConfig().Build
-	}
+
 	return config, nil
 }
 
@@ -110,6 +102,11 @@ func (c *Config) ValidateAndCompleteConfig() error {
 	// TODO(andreas): validate that torch/torchvision/torchaudio are compatible
 	// TODO(andreas): warn if user specifies tensorflow-gpu instead of tensorflow
 	// TODO(andreas): use pypi api to validate that all python versions exist
+
+	err := ValidateConfig(c, "")
+	if err != nil {
+		return err
+	}
 
 	if c.Predict != "" {
 		if len(strings.Split(c.Predict, ".py:")) != 2 {

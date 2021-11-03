@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "http://example.com/example.json",
+  "type": "object",
+  "title": "Cog's config YAML schema",
+  "description": "This schema is used to validate cog.yaml file in each project.cog.yaml defines how to build a Docker image and how to run predictions on your model inside that image.",
+  "default": {},
+  "examples": [
+    {
+      "build": {
+        "python_version": "3.8"
+      }
+    }
+  ],
+  "required": [
+    "build"
+  ],
+  "properties": {
+    "build": {
+      "$id": "#/properties/build",
+      "type": "object",
+      "title": "The build schema",
+      "description": "This stanza describes how to build the Docker image your model runs in. It contains various options within it:",
+      "default": {},
+      "examples": [
+        {
+          "python_version": "3.8"
+        }
+      ],
+      "required": [
+        "python_version"
+      ],
+      "properties": {
+        "python_version": {
+          "$id": "#/properties/build/properties/python_version",
+          "type": "string",
+          "title": "The python_version schema",
+          "description": "The minor (3.8) or patch (3.8.1) version of Python to use.",
+          "default": "",
+          "examples": [
+            "3.8"
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
