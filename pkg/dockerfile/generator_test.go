@@ -2,6 +2,7 @@ package dockerfile
 
 import (
 	"fmt"
+	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
 
@@ -45,6 +46,41 @@ RUN curl https://pyenv.run | bash && \
 `, version, version)
 }
 
+func TestBlankBuildThrowsError(t *testing.T) {
+	_, err := config.ConfigFromYAML([]byte(`
+
+`))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "must be a mapping")
+}
+
+func TestBuildIsRequiredError(t *testing.T) {
+	_, err := config.ConfigFromYAML([]byte(`
+builds:
+  gpu: true
+  system_packages:
+    - "libgl1-mesa-glx"
+    - "libglib2.0-0"
+  python_packages:
+    - "torch==1.8.1"
+`))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "build is required")
+}
+func TestPythonVersionIsRequiredError(t *testing.T) {
+	_, err := config.ConfigFromYAML([]byte(`
+build:
+  gpu: true
+  system_packages:
+    - "libgl1-mesa-glx"
+    - "libglib2.0-0"
+  python_packages:
+    - "torch==1.8.1"
+`))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "build python_version is required")
+}
+
 func TestGenerateEmptyCPU(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
@@ -52,6 +88,7 @@ func TestGenerateEmptyCPU(t *testing.T) {
 	conf, err := config.ConfigFromYAML([]byte(`
 build:
   gpu: false
+  python_version: "3.8"
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
@@ -82,6 +119,7 @@ func TestGenerateEmptyGPU(t *testing.T) {
 	conf, err := config.ConfigFromYAML([]byte(`
 build:
   gpu: true
+  python_version: "3.8"
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
@@ -115,6 +153,7 @@ build:
     - ffmpeg
     - cowsay
   python_requirements: my-requirements.txt
+  python_version: "3.8"
   python_packages:
     - torch==1.5.1
     - pandas==1.2.0.12
@@ -154,6 +193,7 @@ func TestGenerateFullGPU(t *testing.T) {
 	conf, err := config.ConfigFromYAML([]byte(`
 build:
   gpu: true
+  python_version: "3.8"
   system_packages:
     - ffmpeg
     - cowsay
@@ -199,6 +239,7 @@ func TestPreInstall(t *testing.T) {
 
 	conf, err := config.ConfigFromYAML([]byte(`
 build:
+  python_version: "3.8"
   system_packages:
     - cowsay
   pre_install:

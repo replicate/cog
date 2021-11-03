@@ -10,3 +10,5 @@ python/build
 # Used by a vim plugin (projectionist)
 .projections.json
 .venv/
+.idea/
+.vscode/

@@ -12,6 +12,7 @@ require (
 	github.com/docker/go-units v0.4.0 // indirect
 	github.com/golangci/golangci-lint v1.42.1
 	github.com/hokaccha/go-prettyjson v0.0.0-20210113012101-fb4e108d2519 // indirect
+	github.com/jteeuwen/go-bindata v3.0.7+incompatible // indirect
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/mattn/go-isatty v0.0.14
 	github.com/mattn/go-runewidth v0.0.13 // indirect
@@ -22,12 +23,14 @@ require (
 	github.com/spf13/cobra v1.2.1
 	github.com/stretchr/objx v0.2.0 // indirect
 	github.com/stretchr/testify v1.7.0
+	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
 	github.com/xeonx/timeago v1.0.0-rc4
 	golang.org/x/sys v0.0.0-20210809222454-d867a43fc93e
 	golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b // indirect
 	golang.org/x/tools v0.1.7
 	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools/gotestsum v1.7.0
+	sigs.k8s.io/yaml v1.3.0 // indirectq
 )
 
 replace (
