@@ -1,0 +1,252 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "http://example.com/example.json",
+  "type": "object",
+  "title": "The root schema",
+  "description": "The root schema comprises the entire JSON document.",
+  "default": {},
+  "examples": [
+    {
+      "build": {
+        "cuda": "10.1",
+        "gpu": true,
+        "python_version": "3.8",
+        "python_packages": [
+          "pytorch==1.4.0"
+        ],
+        "pre_install": [
+          "cowsay moo"
+        ],
+        "python_requirements": "my-requirements.txt",
+        "system_packages": [
+          "ffmpeg",
+          "libavcodec-dev"
+        ],
+        "run": [
+          "curl -L https://github.com/cowsay-org/cowsay/archive/refs/tags/v3.7.0.tar.gz | tar -xzf -",
+          "cd cowsay-3.7.0 && make install"
+        ]
+      },
+      "image": "registry.hooli.corp/jazz-solo-model",
+      "predict": "predict.py:JazzSoloComposerPredictor"
+    }
+  ],
+  "required": [
+  ],
+  "properties": {
+    "build": {
+      "$id": "#/properties/build",
+      "type": "object",
+      "title": "The build schema",
+      "description": "An explanation about the purpose of this instance.",
+      "default": {},
+      "examples": [
+        {
+          "cuda": "10.1",
+          "gpu": true,
+          "python_version": "3.8",
+          "python_packages": [
+            "pytorch==1.4.0"
+          ],
+          "pre_install": [
+            "cowsay moo"
+          ],
+          "python_requirements": "my-requirements.txt",
+          "system_packages": [
+            "ffmpeg",
+            "libavcodec-dev"
+          ],
+          "run": [
+            "curl -L https://github.com/cowsay-org/cowsay/archive/refs/tags/v3.7.0.tar.gz | tar -xzf -",
+            "cd cowsay-3.7.0 && make install"
+          ]
+        }
+      ],
+      "required": [
+      ],
+      "properties": {
+        "cuda": {
+          "$id": "#/properties/build/properties/cuda",
+          "type": "string",
+          "title": "The cuda schema",
+          "description": "An explanation about the purpose of this instance.",
+          "default": "",
+          "examples": [
+            "10.1"
+          ]
+        },
+        "gpu": {
+          "$id": "#/properties/build/properties/gpu",
+          "type": "boolean",
+          "title": "The gpu schema",
+          "description": "An explanation about the purpose of this instance.",
+          "default": false,
+          "examples": [
+            true
+          ]
+        },
+        "python_version": {
+          "$id": "#/properties/build/properties/python_version",
+          "type": [
+            "string",
+            "number"
+          ],
+          "title": "The python_version schema",
+          "description": "An explanation about the purpose of this instance.",
+          "default": "",
+          "examples": [
+            "3.8"
+          ]
+        },
+        "python_packages": {
+          "$id": "#/properties/build/properties/python_packages",
+          "type": "array",
+          "title": "The python_packages schema",
+          "description": "An explanation about the purpose of this instance.",
+          "default": [],
+          "examples": [
+            [
+              "pytorch==1.4.0"
+            ]
+          ],
+          "additionalItems": true,
+          "items": {
+            "$id": "#/properties/build/properties/python_packages/items",
+            "anyOf": [
+              {
+                "$id": "#/properties/build/properties/python_packages/items/anyOf/0",
+                "type": "string",
+                "title": "The first anyOf schema",
+                "description": "An explanation about the purpose of this instance.",
+                "default": "",
+                "examples": [
+                  "pytorch==1.4.0"
+                ]
+              }
+            ]
+          }
+        },
+        "pre_install": {
+          "$id": "#/properties/build/properties/pre_install",
+          "type": "array",
+          "title": "The pre_install schema",
+          "description": "An explanation about the purpose of this instance.",
+          "default": [],
+          "examples": [
+            [
+              "cowsay moo"
+            ]
+          ],
+          "additionalItems": true,
+          "items": {
+            "$id": "#/properties/build/properties/pre_install/items",
+            "anyOf": [
+              {
+                "$id": "#/properties/build/properties/pre_install/items/anyOf/0",
+                "type": "string",
+                "title": "The first anyOf schema",
+                "description": "An explanation about the purpose of this instance.",
+                "default": "",
+                "examples": [
+                  "cowsay moo"
+                ]
+              }
+            ]
+          }
+        },
+        "python_requirements": {
+          "$id": "#/properties/build/properties/python_requirements",
+          "type": "string",
+          "title": "The python_requirements schema",
+          "description": "An explanation about the purpose of this instance.",
+          "default": "",
+          "examples": [
+            "my-requirements.txt"
+          ]
+        },
+        "system_packages": {
+          "$id": "#/properties/build/properties/system_packages",
+          "type": "array",
+          "title": "The system_packages schema",
+          "description": "An explanation about the purpose of this instance.",
+          "default": [],
+          "examples": [
+            [
+              "ffmpeg",
+              "libavcodec-dev"
+            ]
+          ],
+          "additionalItems": true,
+          "items": {
+            "$id": "#/properties/build/properties/system_packages/items",
+            "anyOf": [
+              {
+                "$id": "#/properties/build/properties/system_packages/items/anyOf/0",
+                "type": "string",
+                "title": "The first anyOf schema",
+                "description": "An explanation about the purpose of this instance.",
+                "default": "",
+                "examples": [
+                  "ffmpeg",
+                  "libavcodec-dev"
+                ]
+              }
+            ]
+          }
+        },
+        "run": {
+          "$id": "#/properties/build/properties/run",
+          "type": "array",
+          "title": "The run schema",
+          "description": "An explanation about the purpose of this instance.",
+          "default": [],
+          "examples": [
+            [
+              "curl -L https://github.com/cowsay-org/cowsay/archive/refs/tags/v3.7.0.tar.gz | tar -xzf -",
+              "cd cowsay-3.7.0 && make install"
+            ]
+          ],
+          "additionalItems": true,
+          "items": {
+            "$id": "#/properties/build/properties/run/items",
+            "anyOf": [
+              {
+                "$id": "#/properties/build/properties/run/items/anyOf/0",
+                "type": "string",
+                "title": "The first anyOf schema",
+                "description": "An explanation about the purpose of this instance.",
+                "default": "",
+                "examples": [
+                  "curl -L https://github.com/cowsay-org/cowsay/archive/refs/tags/v3.7.0.tar.gz | tar -xzf -",
+                  "cd cowsay-3.7.0 && make install"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "image": {
+      "$id": "#/properties/image",
+      "type": "string",
+      "title": "The image schema",
+      "description": "An explanation about the purpose of this instance.",
+      "default": "",
+      "examples": [
+        "registry.hooli.corp/jazz-solo-model"
+      ]
+    },
+    "predict": {
+      "$id": "#/properties/predict",
+      "type": "string",
+      "title": "The predict schema",
+      "description": "An explanation about the purpose of this instance.",
+      "default": "",
+      "examples": [
+        "predict.py:JazzSoloComposerPredictor"
+      ]
+    }
+  },
+  "additionalProperties": false
+}
