@@ -273,6 +273,23 @@ class RedisQueueWorker:
             message = {
                 "value": result,
             }
+        elif isinstance(result, dict):
+            multi_values = []
+            for key, value in result.items():
+                multi_value = {"name": key}
+                if isinstance(value, Path):
+                    multi_value["file"] = {
+                        "url": self.upload_to_temp(value),
+                        "name": value.name,
+                    }
+                elif isinstance(value, str):
+                    multi_value["value"] = value
+                else:
+                    multi_value["value"] = to_json(value)
+                multi_values.append(multi_value)
+            message = {
+                "multi_values": multi_values,
+            }
         else:
             message = {
                 "value": to_json(result),

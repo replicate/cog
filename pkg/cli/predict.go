@@ -40,6 +40,7 @@ the prediction on that.`,
 		SuggestFor: []string{"infer"},
 	}
 	addBuildProgressOutputFlag(cmd)
+	addProjectDirFlag(cmd)
 	cmd.Flags().StringArrayVarP(&inputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
 
@@ -127,34 +128,60 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 		return err
 	}
 
-	// TODO(andreas): support multiple outputs?
-	output := result.Values["output"]
+	hasMultipleOutputs := len(result.Values) > 1
+	for key, value := range result.Values {
+		if err := produceOutput(key, value, outputPath, hasMultipleOutputs); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
+func produceOutput(key string, value predict.OutputValue, outputPath string, hasMultipleOutputs bool) error {
 	// Write to stdout
 	if outputPath == "" {
 		// Is it something we can sensibly write to stdout?
-		if output.MimeType == "text/plain" {
-			output, err := io.ReadAll(output.Buffer)
+		if value.MimeType == "text/plain" {
+			output, err := io.ReadAll(value.Buffer)
 			if err != nil {
 				return err
 			}
+			// Multiple outputs are formatted as
+			// key1:
+			// output1
+			// key2:
+			// output2
+			if hasMultipleOutputs {
+				console.Output(key + ":")
+			}
 			console.Output(string(output))
 			return nil
-		} else if output.MimeType == "application/json" {
+		} else if value.MimeType == "application/json" {
 			var obj interface{}
-			dec := json.NewDecoder(output.Buffer)
+			dec := json.NewDecoder(value.Buffer)
 			if err := dec.Decode(&obj); err != nil {
 				return err
 			}
 			f := colorjson.NewFormatter()
 			f.Indent = 2
 			s, _ := f.Marshal(obj)
+			if hasMultipleOutputs {
+				console.Output(key + ":")
+			}
 			console.Output(string(s))
 			return nil
 		}
 		// Otherwise, fall back to writing file
-		outputPath = "output"
-		extension := mime.ExtensionByType(output.MimeType)
+		outputPath = key
+		extension := mime.ExtensionByType(value.MimeType)
+		if extension != "" {
+			outputPath += extension
+		}
+	} else if hasMultipleOutputs {
+		// If there are multiple outputs, concatenate the given output
+		// filename with the key
+		outputPath += "." + key
+		extension := mime.ExtensionByType(value.MimeType)
 		if extension != "" {
 			outputPath += extension
 		}
@@ -163,6 +190,7 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 	// Ignore @, to make it behave the same as -i
 	outputPath = strings.TrimPrefix(outputPath, "@")
 
+	var err error
 	outputPath, err = homedir.Expand(outputPath)
 	if err != nil {
 		return err
@@ -174,7 +202,7 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 		return err
 	}
 
-	if _, err := io.Copy(outFile, output.Buffer); err != nil {
+	if _, err := io.Copy(outFile, value.Buffer); err != nil {
 		return err
 	}
 

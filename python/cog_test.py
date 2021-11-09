@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from flask.testing import FlaskClient
+from requests_toolbelt.multipart.decoder import MultipartDecoder
 import numpy as np
 from PIL import Image
 
@@ -352,6 +353,7 @@ def test_default_path_input():
     assert resp.status_code == 200
     assert resp.data == b"noneee"
 
+
 def test_path_output_str():
     class Predictor(cog.Predictor):
         def setup(self):
@@ -392,19 +394,19 @@ def test_path_output_image():
     assert resp.content_length == 195894
 
 
-def test_json_output_numpy():
+def test_output_numpy():
     class Predictor(cog.Predictor):
         def setup(self):
             pass
 
         def predict(self):
-            return {"foo": np.float32(1.0)}
+            return np.array([1.0, 2.0])
 
     client = make_client(Predictor())
     resp = client.post("/predict")
     assert resp.status_code == 200
     assert resp.content_type == "application/json"
-    assert resp.data == b'{"foo": 1.0}'
+    assert resp.data == b"[1.0, 2.0]"
 
 
 def test_multiple_arguments():
@@ -475,6 +477,7 @@ def test_type_signature():
         ]
     }
 
+
 def test_yielding_strings_from_generator_predictors():
     class Predictor(cog.Predictor):
         def setup(self):
@@ -491,6 +494,7 @@ def test_yielding_strings_from_generator_predictors():
     assert resp.content_type == "text/plain; charset=utf-8"
     assert resp.data == b"baz"
 
+
 def test_yielding_json_from_generator_predictors():
     class Predictor(cog.Predictor):
         def setup(self):
@@ -498,9 +502,9 @@ def test_yielding_json_from_generator_predictors():
 
         def predict(self):
             predictions = [
-                {"meaning_of_life": 40}, 
-                {"meaning_of_life": 41},
-                {"meaning_of_life": 42}
+                "meaning_of_life: 40",
+                "meaning_of_life: 41",
+                "meaning_of_life: 42",
             ]
             for prediction in predictions:
                 yield prediction
@@ -508,8 +512,8 @@ def test_yielding_json_from_generator_predictors():
     client = make_client(Predictor())
     resp = client.post("/predict")
     assert resp.status_code == 200
-    assert resp.content_type == "application/json"
-    assert resp.data == b'{"meaning_of_life": 42}'
+    assert resp.content_type == "text/plain; charset=utf-8"
+    assert resp.data == b"meaning_of_life: 42"
 
 
 def test_yielding_files_from_generator_predictors():
@@ -528,13 +532,14 @@ def test_yielding_files_from_generator_predictors():
 
     client = make_client(Predictor())
     resp = client.post("/predict")
-    
+
     assert resp.status_code == 200
     # need both image/bmp and image/x-ms-bmp until https://bugs.python.org/issue44211 is fixed
     assert resp.content_type in ["image/bmp", "image/x-ms-bmp"]
     image = Image.open(io.BytesIO(resp.data))
     image_color = Image.Image.getcolors(image)[0][1]
-    assert image_color == (255, 255, 0) # yellow
+    assert image_color == (255, 255, 0)  # yellow
+
 
 def test_timing():
     class PredictorSlow(cog.Predictor):
@@ -563,3 +568,29 @@ def test_timing():
     assert resp.status_code == 200
     assert float(resp.headers["X-Setup-Time"]) < 0.5
     assert float(resp.headers["X-Run-Time"]) < 0.5
+
+
+def test_multiple_outputs():
+    class Predictor(cog.Predictor):
+        def setup(self):
+            self.foo = "foo"
+
+        @cog.input("text", type=str)
+        def predict(self, text):
+            temp_dir = tempfile.mkdtemp()
+            temp_path = os.path.join(temp_dir, "my_file.txt")
+            with open(temp_path, "w") as f:
+                f.write(self.foo + text)
+            return {"output1": Path(temp_path), "output2": "qux"}
+
+    client = make_client(Predictor())
+    resp = client.post("/predict", data={"text": "baz"})
+    assert resp.status_code == 200
+    assert resp.content_type.startswith("multipart/form-data; boundary=")
+    parts = MultipartDecoder(resp.data, resp.content_type).parts
+    assert parts[0].headers[b"Content-Disposition"] == b'form-data; name="output1"; filename="my_file.txt"'
+    assert parts[0].headers[b"Content-Type"] == b'text/plain'
+    assert parts[0].content == b"foobaz"
+    assert parts[1].headers[b"Content-Disposition"] == b'form-data; name="output2"; filename="output-output2.txt"'
+    assert parts[1].headers[b"Content-Type"] == b'text/plain'
+    assert parts[1].content == b"qux"

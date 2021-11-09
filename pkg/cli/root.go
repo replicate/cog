@@ -52,3 +52,8 @@ func setPersistentFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Bool("version", false, "Show version of Cog")
 	_ = cmd.PersistentFlags().MarkHidden("profile")
 }
+
+func addProjectDirFlag(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&projectDirFlag, "project-dir", "", "Project directory, defaults to current directory")
+	_ = cmd.Flags().MarkHidden("project-dir") // this flag is not fully tested, but useful in development
+}

@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/replicate/cog/pkg/docker"
@@ -158,11 +158,22 @@ func (p *Predictor) Predict(inputs Inputs) (*Output, error) {
 	}
 
 	contentType := resp.Header.Get("Content-Type")
-	mimeType := strings.Split(contentType, ";")[0]
+	mimeType, mimeParams, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to parse response mime type %s: %w", contentType, err)
+	}
 
-	buf := new(bytes.Buffer)
-	if _, err := io.Copy(buf, resp.Body); err != nil {
-		return nil, fmt.Errorf("Failed to read response: %w", err)
+	var outputValues map[string]OutputValue
+	if mimeType == "multipart/form-data" {
+		outputValues, err = p.handleMultipleOutputs(resp, mimeParams["boundary"])
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		outputValues, err = p.handleSingleOutput(resp, mimeType)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	setupTime := -1.0
@@ -181,19 +192,58 @@ func (p *Predictor) Predict(inputs Inputs) (*Output, error) {
 			console.Errorf("Failed to parse run time '%s' as float: %s", runTimeStr, err)
 		}
 	}
-
-	output := &Output{
-		Values: map[string]OutputValue{
-			// TODO(andreas): support multiple outputs?
-			"output": {
-				Buffer:   buf,
-				MimeType: mimeType,
-			},
-		},
+	return &Output{
+		Values:    outputValues,
 		SetupTime: setupTime,
 		RunTime:   runTime,
+	}, nil
+}
+
+func (p *Predictor) handleMultipleOutputs(resp *http.Response, boundary string) (map[string]OutputValue, error) {
+	mreader := multipart.NewReader(resp.Body, boundary)
+	outputValues := make(map[string]OutputValue)
+	form, err := mreader.ReadForm(10 << 20) // 10MB
+	if err != nil {
+		return nil, fmt.Errorf("Failed to parse response: %w", err)
 	}
-	return output, nil
+	for key, files := range form.File {
+		file := files[0]
+		buf := new(bytes.Buffer)
+		fileContents, err := file.Open()
+		if err != nil {
+			return nil, fmt.Errorf("Failed to open multi-part file for key %s: %w", key, err)
+		}
+		defer fileContents.Close()
+		if _, err := io.Copy(buf, fileContents); err != nil {
+			return nil, fmt.Errorf("Failed to read response for key %s: %w", key, err)
+		}
+		if err := fileContents.Close(); err != nil {
+			return nil, fmt.Errorf("Failed to close file: %w", err)
+		}
+		mimeType, _, err := mime.ParseMediaType(file.Header["Content-Type"][0])
+		if err != nil {
+			return nil, fmt.Errorf("Failed to parse content type for key %s: %w", key, err)
+		}
+		outputValues[key] = OutputValue{
+			Buffer:   buf,
+			MimeType: mimeType,
+		}
+	}
+	return outputValues, nil
+}
+
+func (p *Predictor) handleSingleOutput(resp *http.Response, mimeType string) (map[string]OutputValue, error) {
+	buf := new(bytes.Buffer)
+	if _, err := io.Copy(buf, resp.Body); err != nil {
+		return nil, fmt.Errorf("Failed to read response: %w", err)
+	}
+
+	return map[string]OutputValue{
+		"output": {
+			Buffer:   buf,
+			MimeType: mimeType,
+		},
+	}, nil
 }
 
 func (p *Predictor) Help() (*HelpResponse, error) {

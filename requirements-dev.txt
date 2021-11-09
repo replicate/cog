@@ -5,5 +5,6 @@ pytest==6.2.4
 PyYAML==5.4.1
 redis==3.5.3
 requests==2.25.1
+requests_toolbelt==0.9.1
 waiting==1.4.1
 wheel==0.36.2

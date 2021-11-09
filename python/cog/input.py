@@ -105,7 +105,7 @@ def _is_numeric_type(typ: Type) -> bool:
 def validate_and_convert_inputs(
     predictor: Predictor, raw_inputs: Dict[str, Any], cleanup_functions: List[Callable]
 ) -> Dict[str, Any]:
-    input_specs = predictor.predict._inputs
+    input_specs = getattr(predictor.predict, "_inputs", [])
     inputs = {}
 
     for input_spec in input_specs:

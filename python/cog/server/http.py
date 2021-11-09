@@ -2,7 +2,9 @@ from pathlib import Path
 import sys
 import time
 import types
+import mimetypes
 
+from requests_toolbelt import MultipartEncoder
 from flask import Flask, send_file, request, jsonify, Response
 
 from ..input import (
@@ -79,7 +81,7 @@ class HTTPServer:
         if isinstance(result, types.GeneratorType):
             last_result = None
             for iteration in enumerate(result):
-                last_result = iteration        
+                last_result = iteration
             # last result is a tuple with (index, value)
             result = last_result[1]
 
@@ -87,6 +89,22 @@ class HTTPServer:
             resp = send_file(str(result))
         elif isinstance(result, str):
             resp = Response(result, mimetype="text/plain")
+        elif isinstance(result, dict):
+            fields = {}
+            for key, value in result.items():
+                if isinstance(value, Path):
+                    filename = value.name
+                    mime_type = mimetypes.guess_type(filename)[0]
+                    fields[key] = (filename, value.open("rb"), mime_type)
+                elif isinstance(value, str):
+                    fields[key] = (f"output-{key}.txt", value, "text/plain")
+                else:
+                    json_str = to_json(value)
+                    fields[key] = (f"output-{key}.json", json_str, "application/json")
+            multipart_encoder = MultipartEncoder(fields)
+            resp = Response(
+                multipart_encoder.to_string(), mimetype=multipart_encoder.content_type
+            )
         else:
             resp = Response(to_json(result), mimetype="application/json")
         resp.headers["X-Setup-Time"] = setup_time
