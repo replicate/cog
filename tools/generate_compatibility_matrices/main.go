@@ -15,10 +15,14 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
+var defaultCUDA = map[string]string{
+	"11.x": "11.2",
+}
+
 func main() {
-	tfOutputPath := flag.String("tf-output", "", "Tensorflow output path")
-	torchOutputPath := flag.String("torch-output", "", "PyTorch output path")
-	cudaImagesOutputPath := flag.String("cuda-images-output", "", "CUDA base images output path")
+	tfOutputPath := flag.String("tf-output", "pkg/config/tf_compatability_matrix.json", "Tensorflow output path")
+	torchOutputPath := flag.String("torch-output", "pkg/config/torch_compatability_matrix.json", "PyTorch output path")
+	cudaImagesOutputPath := flag.String("cuda-images-output", "pkg/config/cuda_base_image_tags.json", "CUDA base images output path")
 	flag.Parse()
 
 	if *tfOutputPath == "" && *torchOutputPath == "" && *cudaImagesOutputPath == "" {
@@ -173,11 +177,14 @@ func fetchCurrentTorchVersions(compats []config.TorchCompatibility) ([]config.To
 		return nil, err
 	}
 
+	// need to get default versions since the default cpu install
+	// doesn't specify versions
 	defaultVersions := map[string]string{}
 	for _, lib := range []string{"torch", "torchvision", "torchaudio"} {
-		latestVersionRe := regexp.MustCompile(lib + `==([0-9]+\.[0-9]+\.[0-9]+)`)
+		latestVersionRe := regexp.MustCompile("stable,pip,linux.+" + lib + `==([0-9]+\.[0-9]+\.[0-9]+)`)
 		latestVersions := latestVersionRe.FindAllStringSubmatch(resp, -1)
 		latestVersion := latestVersions[0][1]
+
 		for _, v := range latestVersions[1:] {
 			if latestVersion != v[1] {
 				return nil, fmt.Errorf("%s versions aren't all the same, has the JS changed?", lib)
@@ -210,10 +217,15 @@ func fetchCurrentTorchVersions(compats []config.TorchCompatibility) ([]config.To
 func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *string) (*config.TorchCompatibility, error) {
 	// e.g. "pip install torch==1.8.0+cpu torchvision==0.9.0+cpu torchaudio==0.8.0 -f https://download.pytorch.org/whl/torch_stable.html"
 
+	if cuda != nil && strings.HasSuffix(*cuda, ".x") {
+		c := defaultCUDA[*cuda]
+		cuda = &c
+	}
+
 	libVersions := map[string]string{}
 
 	s = strings.TrimSpace(s)
-	s = strings.Split(s, "pip install ")[1]
+	s = strings.Split(s, " install ")[1]
 	parts := strings.Split(s, " -f ")
 	libs := strings.Split(parts[0], " ")
 	for _, lib := range libs {
@@ -299,6 +311,8 @@ func parsePreviousTorchVersionsCode(code string, compats []config.TorchCompatibi
 		if strings.HasPrefix(rawArch, "CUDA") {
 			_, c := split2(rawArch, " ")
 			cuda = &c // can't take pointer directly
+		} else if strings.HasPrefix(rawArch, "RocM") {
+			continue
 		} else if rawArch != "CPU only" {
 			return nil, fmt.Errorf("Invalid arch: %s", rawArch)
 		}

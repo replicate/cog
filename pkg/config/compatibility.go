@@ -177,12 +177,12 @@ func latestCUDAFrom(cudas []string) string {
 func latestCuDNNForCUDA(cuda string) string {
 	cuDNNs := []string{}
 	for _, image := range CUDABaseImages {
-		if image.CUDA == cuda {
+		if version.Equal(image.CUDA, cuda) {
 			cuDNNs = append(cuDNNs, image.CuDNN)
 		}
 	}
 	sort.Slice(cuDNNs, func(i, j int) bool {
-		return version.MustVersion(cuDNNs[i]).Greater(version.MustVersion(cuDNNs[j]))
+		return version.Greater(cuDNNs[i], cuDNNs[j])
 	})
 	return cuDNNs[0]
 }
@@ -222,7 +222,7 @@ func versionGreater(a string, b string) (bool, error) {
 
 func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
 	for _, image := range CUDABaseImages {
-		if image.CUDA == cuda && image.CuDNN == cuDNN {
+		if version.Equal(image.CUDA, cuda) && image.CuDNN == cuDNN {
 			return image.ImageTag(), nil
 		}
 	}
@@ -231,7 +231,7 @@ func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
 
 func tfGPUPackage(ver string, cuda string) (name string, cpuVersion string, err error) {
 	for _, compat := range TFCompatibilityMatrix {
-		if compat.TF == ver && compat.CUDA == cuda {
+		if compat.TF == ver && version.Equal(compat.CUDA, cuda) {
 			return splitPythonPackage(compat.TFGPUPackage)
 		}
 	}
