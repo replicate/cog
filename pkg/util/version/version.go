@@ -65,3 +65,15 @@ func (v *Version) Greater(other *Version) bool {
 		return false
 	}
 }
+
+func (v *Version) Equal(other *Version) bool {
+	return v.Major == other.Major && v.Minor == other.Minor && v.Patch == other.Patch
+}
+
+func Equal(v1 string, v2 string) bool {
+	return MustVersion(v1).Equal(MustVersion(v2))
+}
+
+func Greater(v1 string, v2 string) bool {
+	return MustVersion(v1).Greater(MustVersion(v2))
+}

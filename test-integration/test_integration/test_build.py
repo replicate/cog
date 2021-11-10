@@ -125,7 +125,7 @@ build:
             "build": {
                 "python_version": "3.8",
                 "gpu": True,
-                "cuda": "11.0",
+                "cuda": "11.2",
                 "cudnn": "8",
             }
         }
