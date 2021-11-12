@@ -77,5 +77,5 @@ func TestValidatePythonVersionIsRequired(t *testing.T) {
 
 	err := Validate(config, "1.0")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "build Additional property python_versions is not allowed")
+	require.Contains(t, err.Error(), "Additional property python_versions is not allowed")
 }

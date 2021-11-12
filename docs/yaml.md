@@ -109,12 +109,5 @@ For example:
 ```yaml
 predict: "predict.py:HotdogPredictor"
 ```
-## Validating `cog.yaml`
-
-You van use the cli command to validate against a cog.yaml present in the current directory.
-
-```
-    cog validate
-```
 
 See [the Python API documentation for more information](python.md).

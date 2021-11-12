@@ -11,7 +11,17 @@ import (
 )
 
 const (
-	defaultVersion = "1.0"
+	defaultVersion  = "1.0"
+	jsonschemaOneOf = "number_one_of"
+	jsonschemaAnyOf = "number_any_of"
+	errorString     = `There is a problem in your cog.yaml file. 
+%s.
+
+To see what options you can use, take a look at the docs:
+https://github.com/replicate/cog/blob/main/docs/yaml.md
+
+You might also need to upgrade Cog, if this option was added in a
+later version of Cog.`
 )
 
 //go:embed data/config_schema_v1.0.json
@@ -66,15 +76,16 @@ func ValidateSchema(schemaLoader, dataLoader gojsonschema.JSONLoader) error {
 	return nil
 }
 
+/*
+The below code was adopted from docker-ce validator code.
+https://github.com/docker/docker-ce/blob/f76280404059080d79fcda620caf8cef5a4a22f7/components/cli/cli/compose/schema/schema.go
+Which is available under Apache v2 license: https://github.com/docker/docker-ce/blob/master/LICENSE
+*/
+
 func toError(result *gojsonschema.Result) error {
 	err := getMostSpecificError(result.Errors())
 	return err
 }
-
-const (
-	jsonschemaOneOf = "number_one_of"
-	jsonschemaAnyOf = "number_any_of"
-)
 
 func getDescription(err validationError) string {
 	switch err.parent.Type() {
@@ -118,8 +129,8 @@ type validationError struct {
 }
 
 func (err validationError) Error() string {
-	description := getDescription(err)
-	return fmt.Sprintf("%s %s", err.parent.Field(), description)
+	errorDesc := getDescription(err)
+	return fmt.Sprintf(errorString, errorDesc)
 }
 
 func getMostSpecificError(errors []gojsonschema.ResultError) validationError {
