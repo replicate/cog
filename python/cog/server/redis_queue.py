@@ -1,6 +1,3 @@
-import inspect
-import contextlib
-import io
 from io import BytesIO
 import json
 from pathlib import Path
@@ -10,15 +7,16 @@ import sys
 import traceback
 import time
 import types
+import contextlib
 
 import redis
 import requests
 from werkzeug.datastructures import FileStorage
 
-
+from .redis_log_capture import capture_log
 from ..input import InputValidationError, validate_and_convert_inputs
 from ..json import to_json
-from ..predictor import Predictor, run_prediction, load_predictor
+from ..predictor import Predictor, load_predictor
 
 
 class timeout:
@@ -294,52 +292,16 @@ class RedisQueueWorker:
         return resp.json()["url"]
 
     @contextlib.contextmanager
-    def capture_log(self, stage, id):
-        """
-        Send each log line to a redis RPUSH queue in addition to an
-        existing output stream.
-        """
-
-        class QueueLogger(io.IOBase):
-            def __init__(self, redis, queue, old_out):
-                super().__init__()
-                self.redis = redis
-                self.queue = queue
-                self.old_out = old_out
-
-            def write(self, buf):
-                for line in buf.rstrip().splitlines():
-                    self.write_line(line)
-
-            def write_line(self, line):
-                self.redis.rpush(self.queue, self.log_message(line))
-                self.old_out.write(line + "\n")
-
-            def log_message(self, line):
-                timestamp_sec = time.time()
-                return json.dumps(
-                    {
-                        "stage": stage,
-                        "id": id,
-                        "line": line,
-                        "timestamp_sec": timestamp_sec,
-                    }
-                )
-
-        if self.log_queue is None:
+    def capture_log(self, stage, prediction_id):
+        with capture_log(
+            self.redis_host,
+            self.redis_port,
+            self.redis_db,
+            self.log_queue,
+            stage,
+            prediction_id,
+        ):
             yield
-
-        else:
-            old_stdout = sys.stdout
-            old_stderr = sys.stderr
-            try:
-                # TODO(andreas): differentiate stdout/stderr?
-                sys.stdout = QueueLogger(self.redis, self.log_queue, old_stdout)
-                sys.stderr = QueueLogger(self.redis, self.log_queue, old_stderr)
-                yield
-            finally:
-                sys.stdout = old_stdout
-                sys.stderr = old_stderr
 
 
 def _queue_worker_from_argv(
