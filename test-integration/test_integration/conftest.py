@@ -58,10 +58,15 @@ def project_dir(tmpdir_factory):
     with open(tmpdir / "predict.py", "w") as f:
         f.write(
             """
+import logging
+import ctypes
 import sys
 import tempfile
 from pathlib import Path
 import cog
+import time
+
+libc = ctypes.CDLL(None)
 
 class Predictor(cog.Predictor):
     def setup(self):
@@ -72,8 +77,14 @@ class Predictor(cog.Predictor):
     @cog.input("path", type=Path)
     @cog.input("output_file", type=bool, default=False)
     def predict(self, text, path, output_file):
+        logging.warn("writing log message")
+        time.sleep(.1)
+        libc.puts(b"writing from C")
+        time.sleep(.1)
         sys.stderr.write("processing " + text + "\\n")
+        time.sleep(.1)
         sys.stderr.flush()
+        time.sleep(.1)
         with open(path) as f:
             output = self.foo + text + f.read()
         if output_file:

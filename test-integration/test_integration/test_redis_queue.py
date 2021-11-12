@@ -257,8 +257,13 @@ def test_queue_worker(project_dir, docker_image, redis_port, request):
 
         assert setup_log_lines == ["setting up predictor"]
         assert run_log_lines == [
+            "WARNING:root:writing log message",
+            "writing from C",
             "processing bar",
             "successfully processed bar",
+
+            "WARNING:root:writing log message",
+            "writing from C",
             "processing baz",
             "successfully processed file baz",
         ]
