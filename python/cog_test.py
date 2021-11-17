@@ -6,6 +6,7 @@ import tempfile
 import io
 import os
 from pathlib import Path
+import ctypes
 
 import pytest
 from flask.testing import FlaskClient
@@ -498,7 +499,7 @@ def test_yielding_json_from_generator_predictors():
 
         def predict(self):
             predictions = [
-                {"meaning_of_life": 40}, 
+                {"meaning_of_life": 40},
                 {"meaning_of_life": 41},
                 {"meaning_of_life": 42}
             ]
@@ -528,7 +529,7 @@ def test_yielding_files_from_generator_predictors():
 
     client = make_client(Predictor())
     resp = client.post("/predict")
-    
+
     assert resp.status_code == 200
     # need both image/bmp and image/x-ms-bmp until https://bugs.python.org/issue44211 is fixed
     assert resp.content_type in ["image/bmp", "image/x-ms-bmp"]

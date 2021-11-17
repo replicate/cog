@@ -5,13 +5,15 @@ This prints a JSON object describing the inputs of the model.
 """
 import json
 from ..errors import ConfigDoesNotExist, PredictorNotSet
+from ..suppress_output import suppress_output
 
 from ..predictor import load_predictor
 
 if __name__ == "__main__":
     obj = {}
     try:
-        predictor = load_predictor()
+        with suppress_output():
+            predictor = load_predictor()
     except (ConfigDoesNotExist, PredictorNotSet):
         # If there is no cog.yaml or 'predict' has not been set, then there is no type signature.
         # Not an error, there just isn't anything.

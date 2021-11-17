@@ -68,6 +68,12 @@ import time
 
 libc = ctypes.CDLL(None)
 
+# test that we can still capture type signature even if we write
+# a bunch of stuff at import time.
+libc.puts(b"writing some stuff from C at import time\\n")
+sys.stdout.write("writing to stdout at import time\\n")
+sys.stderr.write("writing to stderr at import time\\n")
+
 class Predictor(cog.Predictor):
     def setup(self):
         print("setting up predictor")
