@@ -353,6 +353,7 @@ def test_default_path_input():
     assert resp.status_code == 200
     assert resp.data == b"noneee"
 
+
 def test_path_output_str():
     class Predictor(cog.Predictor):
         def setup(self):
@@ -476,6 +477,7 @@ def test_type_signature():
         ]
     }
 
+
 def test_yielding_strings_from_generator_predictors():
     class Predictor(cog.Predictor):
         def setup(self):
@@ -492,6 +494,7 @@ def test_yielding_strings_from_generator_predictors():
     assert resp.content_type == "text/plain; charset=utf-8"
     assert resp.data == b"baz"
 
+
 def test_yielding_json_from_generator_predictors():
     class Predictor(cog.Predictor):
         def setup(self):
@@ -501,7 +504,7 @@ def test_yielding_json_from_generator_predictors():
             predictions = [
                 {"meaning_of_life": 40},
                 {"meaning_of_life": 41},
-                {"meaning_of_life": 42}
+                {"meaning_of_life": 42},
             ]
             for prediction in predictions:
                 yield prediction
@@ -535,7 +538,8 @@ def test_yielding_files_from_generator_predictors():
     assert resp.content_type in ["image/bmp", "image/x-ms-bmp"]
     image = Image.open(io.BytesIO(resp.data))
     image_color = Image.Image.getcolors(image)[0][1]
-    assert image_color == (255, 255, 0) # yellow
+    assert image_color == (255, 255, 0)  # yellow
+
 
 def test_timing():
     class PredictorSlow(cog.Predictor):
