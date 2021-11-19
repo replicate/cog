@@ -7,6 +7,7 @@ import io
 import os
 from pathlib import Path
 import ctypes
+import unittest.mock
 
 import pytest
 from flask.testing import FlaskClient
@@ -541,30 +542,18 @@ def test_yielding_files_from_generator_predictors():
     assert image_color == (255, 255, 0)  # yellow
 
 
-def test_timing():
-    class PredictorSlow(cog.Predictor):
+@unittest.mock.patch("time.time", return_value=0.0)
+def test_timing(time_mock):
+    class Predictor(cog.Predictor):
         def setup(self):
-            time.sleep(0.5)
+            time_mock.return_value = 1.0
 
         def predict(self):
-            time.sleep(0.5)
+            time_mock.return_value = 3.0
             return ""
 
-    class PredictorFast(cog.Predictor):
-        def setup(self):
-            pass
-
-        def predict(self):
-            return ""
-
-    client = make_client(PredictorSlow())
+    client = make_client(Predictor())
     resp = client.post("/predict")
     assert resp.status_code == 200
-    assert 0.5 < float(resp.headers["X-Setup-Time"]) < 1.0
-    assert 0.5 < float(resp.headers["X-Run-Time"]) < 1.0
-
-    client = make_client(PredictorFast())
-    resp = client.post("/predict")
-    assert resp.status_code == 200
-    assert float(resp.headers["X-Setup-Time"]) < 0.5
-    assert float(resp.headers["X-Run-Time"]) < 0.5
+    assert float(resp.headers["X-Setup-Time"]) == 1.0
+    assert float(resp.headers["X-Run-Time"]) == 2.0
