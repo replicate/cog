@@ -3,6 +3,7 @@ package image
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/util/console"
@@ -34,7 +35,6 @@ type TypeSignature struct {
 
 func GetTypeSignature(imageName string, enableGPU bool) (*TypeSignature, error) {
 	var stdout bytes.Buffer
-	var stderr bytes.Buffer
 
 	// FIXME(bfirsh): we could detect this by reading the config label on the image
 	gpus := ""
@@ -48,18 +48,15 @@ func GetTypeSignature(imageName string, enableGPU bool) (*TypeSignature, error) 
 			"python", "-m", "cog.command.type_signature",
 		},
 		GPUs: gpus,
-	}, nil, &stdout, &stderr)
+	}, nil, &stdout, os.Stderr)
 
 	if enableGPU && err == docker.ErrMissingDeviceDriver {
-		console.Debug(stdout.String())
-		console.Debug(stderr.String())
 		console.Debug("Missing device driver, re-trying without GPU")
 		return GetTypeSignature(imageName, false)
 	}
 
 	if err != nil {
 		console.Info(stdout.String())
-		console.Info(stderr.String())
 		return nil, err
 	}
 	var signature *TypeSignature
@@ -67,7 +64,6 @@ func GetTypeSignature(imageName string, enableGPU bool) (*TypeSignature, error) 
 		// Exit code was 0, but JSON was not returned.
 		// This is verbose, but print so anything that gets printed in Python bubbles up here.
 		console.Info(stdout.String())
-		console.Info(stderr.String())
 		return nil, err
 	}
 	return signature, nil
