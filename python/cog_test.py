@@ -1,12 +1,15 @@
 # pytest cog_test.py
 
+import ctypes
 import time
 import shutil
 import tempfile
 import io
 import os
 from pathlib import Path
-import ctypes
+
+libc = ctypes.CDLL(None)
+
 
 import pytest
 from flask.testing import FlaskClient
@@ -15,6 +18,7 @@ from PIL import Image
 
 import cog
 from cog.server.http import HTTPServer
+from cog.stdout_redirector import stdout_redirector
 
 
 def make_client(version) -> FlaskClient:
@@ -564,3 +568,24 @@ def test_timing():
     assert resp.status_code == 200
     assert float(resp.headers["X-Setup-Time"]) < 0.5
     assert float(resp.headers["X-Run-Time"]) < 0.5
+
+
+def test_stdout_redirector():
+    with tempfile.NamedTemporaryFile() as f:
+        print("before redirecting")
+
+        with stdout_redirector(f):
+            print("foobar")
+            print(12)
+            libc.puts(b"this comes from C")
+            os.system("echo and this is from echo")
+
+        print("after redirecting")
+
+        with open(f.name) as f:
+            assert f.read().splitlines() == [
+                b"foobar",
+                b"12",
+                b"this comes from C",
+                b"and this is from echo",
+            ]

@@ -4,15 +4,16 @@ python -m cog.command.specification
 This prints a JSON object describing the inputs of the model.
 """
 import json
-from ..errors import ConfigDoesNotExist, PredictorNotSet
-from ..suppress_output import suppress_output
+import sys
 
+from ..errors import ConfigDoesNotExist, PredictorNotSet
 from ..predictor import load_predictor
+from ..stdout_redirector import stdout_redirector
 
 if __name__ == "__main__":
     obj = {}
     try:
-        with suppress_output():
+        with stdout_redirector(sys.stderr):
             predictor = load_predictor()
     except (ConfigDoesNotExist, PredictorNotSet):
         # If there is no cog.yaml or 'predict' has not been set, then there is no type signature.
