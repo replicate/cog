@@ -56,7 +56,12 @@ func FromYAML(contents []byte) (*Config, error) {
 		return nil, fmt.Errorf("Failed to parse config yaml: %w", err)
 	}
 	// Everything assumes Build is not nil
-	if config.Build == nil {
+	if string(contents) != "" && config.Build != nil {
+		err := Validate(string(contents), "")
+		if err != nil {
+			return nil, err
+		}
+	} else {
 		config.Build = DefaultConfig().Build
 	}
 	return config, nil
@@ -111,6 +116,10 @@ func (c *Config) ValidateAndCompleteConfig() error {
 	// TODO(andreas): warn if user specifies tensorflow-gpu instead of tensorflow
 	// TODO(andreas): use pypi api to validate that all python versions exist
 
+	err := ValidateConfig(c, "")
+	if err != nil {
+		return err
+	}
 	if c.Predict != "" {
 		if len(strings.Split(c.Predict, ".py:")) != 2 {
 			return fmt.Errorf("'predict' in cog.yaml must be in the form 'predict.py:PredictorClass")

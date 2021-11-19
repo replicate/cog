@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Schema for cog.yaml ",
+  "properties": {
+    "build": {
+      "$id": "#/properties/build",
+      "type": "object",
+      "properties": {
+        "cuda": {
+          "$id": "#/properties/build/properties/cuda",
+          "type": "string"
+        },
+        "gpu": {
+          "$id": "#/properties/build/properties/gpu",
+          "type": "boolean"
+        },
+        "python_version": {
+          "$id": "#/properties/build/properties/python_version",
+          "type": [
+            "string",
+            "number"
+          ]
+        },
+        "python_packages": {
+          "$id": "#/properties/build/properties/python_packages",
+          "type": "array",
+          "additionalItems": true,
+          "items": {
+            "$id": "#/properties/build/properties/python_packages/items",
+            "anyOf": [
+              {
+                "$id": "#/properties/build/properties/python_packages/items/anyOf/0",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "pre_install": {
+          "$id": "#/properties/build/properties/pre_install",
+          "type": "array",
+          "additionalItems": true,
+          "items": {
+            "$id": "#/properties/build/properties/pre_install/items",
+            "anyOf": [
+              {
+                "$id": "#/properties/build/properties/pre_install/items/anyOf/0",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "python_requirements": {
+          "$id": "#/properties/build/properties/python_requirements",
+          "type": "string"
+        },
+        "system_packages": {
+          "$id": "#/properties/build/properties/system_packages",
+          "type": "array",
+          "additionalItems": true,
+          "items": {
+            "$id": "#/properties/build/properties/system_packages/items",
+            "anyOf": [
+              {
+                "$id": "#/properties/build/properties/system_packages/items/anyOf/0",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "run": {
+          "$id": "#/properties/build/properties/run",
+          "type": "array",
+          "additionalItems": true,
+          "items": {
+            "$id": "#/properties/build/properties/run/items",
+            "anyOf": [
+              {
+                "$id": "#/properties/build/properties/run/items/anyOf/0",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "image": {
+      "$id": "#/properties/image",
+      "type": "string"
+    },
+    "predict": {
+      "$id": "#/properties/predict",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}
