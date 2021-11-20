@@ -99,9 +99,13 @@ You also need to define the inputs to your model using the `@cog.input()` decora
 
 For more details about writing your model interface, [take a look at the prediction interface documentation](python.md).
 
-Next, be sure that the `predict` value in your `cog.yaml` file matches that filename and classname of your Python prediction function:
+Next, add the line `predict: "predict.py:Predictor"` to your `cog.yaml`, so it looks something like this:
 
 ```yaml
+build:
+  python_version: "3.8"
+  python_packages:
+    - "torch==1.7.0"
 predict: "predict.py:Predictor"
 ```
 
