@@ -4,7 +4,7 @@
 
 ### Signing your work
 
-Each commit you contribute to Cog must be signed off. It certifies that you wrote the patch, or have the right to contribute it. It is called the [Developer Certificate of Origin](https://developercertificate.org/) and was originally developed for the Linux kernel.
+Each commit you contribute to Cog must be signed off (not to be confused with **[signing](https://git-scm.com/book/en/v2/Git-Tools-Signing-Your-Work)**). It certifies that you wrote the patch, or have the right to contribute it. It is called the [Developer Certificate of Origin](https://developercertificate.org/) and was originally developed for the Linux kernel.
 
 If you can certify the following:
 
@@ -40,7 +40,42 @@ Then add this line to each of your Git commit messages, with your name and email
 Signed-off-by: Sam Smith <sam.smith@example.com>
 ```
 
-You can sign your commit automatically by passing the `-s` option to Git commit: `git commit -s -m "Reticulate splines"`
+### How to sign off your commits
+
+If you're using the `git` CLI, you can sign a commit by passing the `-s` option: `git commit -s -m "Reticulate splines"`
+
+You can also create a git hook which will sign off all your commits automatically. Using hooks also allows you to sign off commits when using non-command-line tools like GitHub Desktop or VS Code.
+
+First, create the hook file and make it executable:
+
+```sh
+cd your/checkout/of/cog
+touch .git/hooks/prepare-commit-msg
+chmod +x .git/hooks/prepare-commit-msg
+```
+
+Then paste the following into the file:
+
+```
+#!/bin/sh
+
+NAME=$(git config user.name)
+EMAIL=$(git config user.email)
+
+if [ -z "$NAME" ]; then
+    echo "empty git config user.name"
+    exit 1
+fi
+
+if [ -z "$EMAIL" ]; then
+    echo "empty git config user.email"
+    exit 1
+fi
+
+git interpret-trailers --if-exists doNothing --trailer \
+    "Signed-off-by: $NAME <$EMAIL>" \
+    --in-place "$1"
+```
 
 ## Development environment
 
