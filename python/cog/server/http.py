@@ -1,9 +1,13 @@
+import inspect
 from pathlib import Path
 import sys
 import time
 import types
+from fastapi import FastAPI
+from typing import Literal, Type
 
 from flask import Flask, send_file, request, jsonify, Response
+from pydantic import BaseModel, Field
 
 from ..input import (
     validate_and_convert_inputs,
@@ -11,6 +15,36 @@ from ..input import (
 )
 from ..json import to_json
 from ..predictor import Predictor, run_prediction, load_predictor
+
+
+def create_app(predictor: Predictor) -> FastAPI:
+    app = FastAPI()
+    app.on_event("startup")(predictor.setup)
+
+    # TODO: convert paths to uri
+    predict_types = inspect.getfullargspec(predictor.predict).annotations
+    InputType = predict_types.get("input")
+    OutputType = predict_types.get("return", Literal[None])
+
+    class Response(BaseModel):
+        status: str = Field(...)
+        output: OutputType = Field(...)
+
+    if InputType:
+
+        @app.post("/predict", response_model=Response)
+        def predict(input: InputType):
+            output = predictor.predict(input)
+            return Response(status="success", output=output)
+
+    else:
+
+        @app.post("/predict", response_model=Response)
+        def predict():
+            output = predictor.predict()
+            return Response(status="success", output=output)
+
+    return app
 
 
 class HTTPServer:

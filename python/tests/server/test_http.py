@@ -1,19 +1,19 @@
-from flask.testing import FlaskClient
 import io
 import os
 from pathlib import Path
 import tempfile
 from unittest import mock
 
+from fastapi.testclient import TestClient
 from PIL import Image
+
 import cog
-from cog.server.http import HTTPServer
+from cog.server.http import create_app
 
 
-def make_client(version) -> FlaskClient:
-    app = HTTPServer(version).make_app()
-    app.config["TESTING"] = True
-    with app.test_client() as client:
+def make_client(predictor: cog.Predictor) -> TestClient:
+    app = create_app(predictor)
+    with TestClient(app) as client:
         return client
 
 

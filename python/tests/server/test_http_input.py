@@ -1,6 +1,7 @@
 import io
 import os
 from pathlib import Path
+from pydantic import BaseModel
 
 import pytest
 
@@ -10,25 +11,27 @@ from .test_http import make_client
 
 def test_no_input():
     class Predictor(cog.Predictor):
-        def predict(self):
+        def predict(self) -> str:
             return "foobar"
 
     client = make_client(Predictor())
     resp = client.post("/predict")
     assert resp.status_code == 200
-    assert resp.data == b"foobar"
+    assert resp.json() == {"status": "success", "output": "foobar"}
 
 
 def test_good_str_input():
+    class Input(BaseModel):
+        text: str
+
     class Predictor(cog.Predictor):
-        @cog.input("text", type=str)
-        def predict(self, text):
-            return text
+        def predict(self, input: Input) -> str:
+            return input.text
 
     client = make_client(Predictor())
-    resp = client.post("/predict", data={"text": "baz"})
+    resp = client.post("/predict", json={"text": "baz"})
     assert resp.status_code == 200
-    assert resp.data == b"baz"
+    assert resp.json() == {"status": "success", "output": "foobaz"}
 
 
 def test_good_int_input():
@@ -168,25 +171,17 @@ def test_default_path_input():
     assert resp.data == b"noneee"
 
 
-@pytest.mark.skip("This should work but doesn't at the moment")
-def test_bad_input_name():
-    with pytest.raises(TypeError):
-
-        class Predictor(cog.Predictor):
-            @cog.input("text", type=str)
-            def predict(self, bad):
-                return "bar"
-
-
 def test_extranous_input_keys():
+    class Input(BaseModel):
+        text: str
+
     class Predictor(cog.Predictor):
-        @cog.input("text", type=str)
-        def predict(self, text):
-            return text
+        def predict(self, input: Input):
+            return input.text
 
     client = make_client(Predictor())
     resp = client.post("/predict", data={"text": "baz", "text2": "qux"})
-    assert resp.status_code == 400
+    assert resp.status_code == 422
 
 
 def test_min_max():
