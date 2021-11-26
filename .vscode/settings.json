@@ -1,11 +1,14 @@
 {
-    "editor.formatOnSave": true,
-    "editor.formatOnType": true,
-    "editor.formatOnPaste": true,
-    "files.insertFinalNewline": true,
-    "files.trimFinalNewlines": true,
-    "go.coverOnTestPackage": false,
-    "go.lintTool": "golangci-lint",
-    "go.formatTool": "goimports",
-    "go.testOnSave": true,
+  "editor.formatOnSave": true,
+  "editor.formatOnType": true,
+  "editor.formatOnPaste": true,
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true,
+  "go.coverOnTestPackage": false,
+  "go.lintTool": "golangci-lint",
+  "go.formatTool": "goimports",
+  "go.testOnSave": true,
+  "python.testing.pytestArgs": ["-vvv", "python"],
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestEnabled": true
 }
