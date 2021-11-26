@@ -1,27 +1,44 @@
+from http.client import HTTPException
 import inspect
-from pathlib import Path
+import json
+import mimetypes
+import pathlib
 import sys
+import tempfile
 import time
 import types
+from urllib.parse import urlparse
 from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from typing import Literal, Type
 
 from flask import Flask, send_file, request, jsonify, Response
+from itsdangerous import base64_decode
 from pydantic import BaseModel, Field
 
 from ..input import (
     validate_and_convert_inputs,
     InputValidationError,
 )
+import cog
 from ..json import to_json
 from ..predictor import Predictor, run_prediction, load_predictor
+
+
+class JSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, cog.File):
+            return cog.File.encode(obj)
+        elif isinstance(obj, cog.Path):
+            return cog.Path.encode(obj)
+        return json.JSONEncoder.default(self, obj)
 
 
 def create_app(predictor: Predictor) -> FastAPI:
     app = FastAPI()
     app.on_event("startup")(predictor.setup)
 
-    # TODO: convert paths to uri
     predict_types = inspect.getfullargspec(predictor.predict).annotations
     InputType = predict_types.get("input")
     OutputType = predict_types.get("return", Literal[None])
@@ -30,19 +47,34 @@ def create_app(predictor: Predictor) -> FastAPI:
         status: str = Field(...)
         output: OutputType = Field(...)
 
+        # class Config:
+        # json_dumps = lambda *args, **kwargs: json.dumps(
+        #     *args, cls=JSONEncoder, **kwargs
+        # )
+        # json_dumps = lambda _: "foo"
+        # json_encoders = {cog.Path: lambda _: "foo"}
+        # json_dumps = lambda _: "foo"
+
+    def create_response(output) -> Response:
+        res = Response(status="success", output=output)
+        # return JSONResponse(
+        #     content=jsonable_encoder(
+        #         res, custom_encoder={cog.File: file_encoder, cog.Path: path_encoder}
+        #     ),
+        # )
+        return res
+
     if InputType:
 
-        @app.post("/predict", response_model=Response)
         def predict(input: InputType):
-            output = predictor.predict(input)
-            return Response(status="success", output=output)
+            return create_response(predictor.predict(input))
 
     else:
 
-        @app.post("/predict", response_model=Response)
         def predict():
-            output = predictor.predict()
-            return Response(status="success", output=output)
+            return create_response(predictor.predict())
+
+    app.post("/predict", response_model=Response)(predict)
 
     return app
 
