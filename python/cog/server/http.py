@@ -8,12 +8,12 @@ import tempfile
 import time
 import types
 from urllib.parse import urlparse
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from typing import Literal, Type
 
-from flask import Flask, send_file, request, jsonify, Response
+from flask import Flask
 from itsdangerous import base64_decode
 from pydantic import BaseModel, Field
 
@@ -43,26 +43,27 @@ def create_app(predictor: Predictor) -> FastAPI:
     InputType = predict_types.get("input")
     OutputType = predict_types.get("return", Literal[None])
 
-    class Response(BaseModel):
+    class ResponseData(BaseModel):
         status: str = Field(...)
         output: OutputType = Field(...)
 
-        # class Config:
-        # json_dumps = lambda *args, **kwargs: json.dumps(
-        #     *args, cls=JSONEncoder, **kwargs
-        # )
-        # json_dumps = lambda _: "foo"
-        # json_encoders = {cog.Path: lambda _: "foo"}
+        class Config:
+            # json_dumps = lambda *args, **kwargs: json.dumps(
+            #     *args, cls=JSONEncoder, **kwargs
+            # )
+            # json_dumps = lambda _: "foo"
+            json_encoders = {cog.Path: lambda _: "foo"}
+
         # json_dumps = lambda _: "foo"
 
-    def create_response(output) -> Response:
-        res = Response(status="success", output=output)
-        # return JSONResponse(
-        #     content=jsonable_encoder(
-        #         res, custom_encoder={cog.File: file_encoder, cog.Path: path_encoder}
-        #     ),
-        # )
-        return res
+    def create_response(output) -> ResponseData:
+        res = ResponseData(status="success", output=output)
+
+        # HACK: https://github.com/tiangolo/fastapi/pull/2061
+        return Response(
+            content=json.dumps(res.dict(), cls=JSONEncoder),
+            media_type="application/json",
+        )
 
     if InputType:
 
@@ -74,7 +75,7 @@ def create_app(predictor: Predictor) -> FastAPI:
         def predict():
             return create_response(predictor.predict())
 
-    app.post("/predict", response_model=Response)(predict)
+    app.post("/predict", response_model=ResponseData)(predict)
 
     return app
 

@@ -164,7 +164,9 @@ def test_path_output_file():
     client = make_client(Predictor())
     res = client.post("/predict")
     assert res.status_code == 200
-    assert res.json() == {}
+    header, b64data = res.json()["output"].split(",", 1)
+    assert header == "data:image/bmp;base64"
+    assert len(base64.b64decode(b64data)) == 195894
 
 
 def test_extranous_input_keys():
