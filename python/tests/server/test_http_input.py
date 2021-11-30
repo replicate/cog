@@ -183,25 +183,29 @@ def test_extranous_input_keys():
 
 
 def test_multiple_arguments():
+    class Input(BaseModel):
+        text: str
+        num1: int
+        num2: int = Field(10)
+        path: cog.Path
+
     class Predictor(cog.Predictor):
-        @cog.input("text", type=str)
-        @cog.input("num1", type=int)
-        @cog.input("num2", type=int, default=10)
-        @cog.input("path", type=Path)
-        def predict(self, text, num1, num2, path):
-            with open(path) as f:
-                path_contents = f.read()
-            return text + " " + str(num1 * num2) + " " + path_contents
+        def predict(self, input: Input) -> str:
+            with open(input.path) as fh:
+                return input.text + " " + str(input.num1 * input.num2) + " " + fh.read()
 
     client = make_client(Predictor())
-    path_data = (io.BytesIO(b"bar"), "foo.txt")
     resp = client.post(
         "/predict",
-        data={"text": "baz", "num1": 5, "path": path_data},
-        content_type="multipart/form-data",
+        json={
+            "text": "baz",
+            "num1": 5,
+            "path": "data:text/plain;base64,"
+            + base64.b64encode(b"wibble").decode("utf-8"),
+        },
     )
     assert resp.status_code == 200
-    assert resp.data == b"baz 50 bar"
+    assert resp.json() == {"output": "baz 50 wibble", "status": "success"}
 
 
 def test_gt_lt():
