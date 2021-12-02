@@ -5,7 +5,7 @@ This guide will walk you through what you can do with Cog by using an example mo
 ## Prerequisites
 
 - **macOS or Linux**. Cog works on macOS and Linux, but does not currently support Windows.
-- **Docker**. Cog uses Docker to create a container for your model. You'll need to [https://docs.docker.com/get-docker/](install Docker) before you can run Cog.
+- **Docker**. Cog uses Docker to create a container for your model. You'll need to [install Docker](https://docs.docker.com/get-docker/) before you can run Cog.
 
 ## Install Cog
 
