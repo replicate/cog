@@ -2,7 +2,7 @@
 
 `cog.yaml` defines how to build a Docker image and how to run predictions on your model inside that image.
 
-It has three keys: [#build](`build`), [#image](`image`), and [#predict](`predict`). It looks a bit like this:
+It has three keys: [`build`](#build), [`image`](#image), and [`predict`](#predict). It looks a bit like this:
 
 ```yaml
 build:
@@ -100,7 +100,7 @@ r8.im is Replicate's registry, but this can be any Docker registry.
 
 If you don't provide this, a name will be generated from the directory name.
 
-## `predictor`
+## `predict`
 
 The pointer to the `cog.Predictor` object in your code, which defines how predictions are run on your model.
 
