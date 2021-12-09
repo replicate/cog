@@ -19,7 +19,7 @@ build:
     # - "torch==1.8.0"
     # - "torchvision==0.9.0"
   
-  # commands run after the enviroment is setup
+  # commands run after the environment is setup
   run:
     # - "echo env is ready!"
     # - "echo another command if needed"
