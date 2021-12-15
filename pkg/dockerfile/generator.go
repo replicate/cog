@@ -139,7 +139,7 @@ func (g *Generator) preamble() string {
 	regexpVariableName := regexp.MustCompile("^[A-Za-z_][A-Za-z0-9_]*$")
 
 	// Parse them into a list of strings. We also preserve the order.
-	// Initialize envVarKeys to a string list
+	// TODO(hangtwenty): Clean up by using an ordered map (maybe from a library)
 	envVarKeys := []string{}
 	envVarMap := make(map[string]string)
 	if len(environmentVariables) > 0 {
@@ -165,15 +165,7 @@ func (g *Generator) preamble() string {
 		// For more context see: https://github.com/replicate/cog/issues/320
 		envVarMap["XDG_CACHE_HOME"] = "/src/.cache"
 	}
-
-	// If XDG_CACHE_HOME is not in envVarKeys, prepend as the first item.
-	needsPrepend := true
-	for _, v := range envVarKeys {
-		if v == "XDG_CACHE_HOME" {
-			needsPrepend = false
-		}
-	}
-	if needsPrepend {
+	if !sliceContains(envVarKeys, "XDG_CACHE_HOME") {
 		envVarKeys = append([]string{"XDG_CACHE_HOME"}, envVarKeys...)
 	}
 
@@ -318,4 +310,14 @@ func filterEmpty(list []string) []string {
 		}
 	}
 	return filtered
+}
+
+// TODO(hangtwenty): De-duplicate this - the same function is in config.go
+func sliceContains(slice []string, s string) bool {
+	for _, el := range slice {
+		if el == s {
+			return true
+		}
+	}
+	return false
 }
