@@ -81,9 +81,11 @@ def load_predictor():
             "Can't run predictions: 'predict' option not found in cog.yaml"
         )
 
-    # TODO: handle predict scripts in subdirectories
     predict_string = config["predict"]
-    module_name, class_name = predict_string.split(".py:", 1)
-    module = importlib.import_module(module_name)
+    module_path, class_name = predict_string.split(":", 1)
+    module_name = os.path.basename(module_path).split(".py", 1)[0]
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
     predictor_class = getattr(module, class_name)
     return predictor_class()

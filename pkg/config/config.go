@@ -124,9 +124,6 @@ func (c *Config) ValidateAndCompleteConfig() error {
 		if len(strings.Split(c.Predict, ".py:")) != 2 {
 			return fmt.Errorf("'predict' in cog.yaml must be in the form 'predict.py:PredictorClass")
 		}
-		if strings.Contains(c.Predict, "/") {
-			return fmt.Errorf("'predict' in cog.yaml cannot be in a subdirectory. It needs to be in the same directory as cog.yaml, in the form 'predict.py:PredictorClass")
-		}
 	}
 
 	if err := c.validatePythonPackagesHaveVersions(); err != nil {
