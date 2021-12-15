@@ -24,7 +24,7 @@ You might also need to upgrade Cog, if this option was added in a
 later version of Cog.`
 )
 
-//go:embed data/config_schema_v1.0.json
+//go:embed data/config_schema_v1.1.json
 var schemaV1 []byte
 
 func getSchema(version string) (gojsonschema.JSONLoader, error) {
