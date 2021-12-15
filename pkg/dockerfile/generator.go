@@ -132,12 +132,11 @@ func (g *Generator) baseImage() (string, error) {
 }
 
 func (g *Generator) preamble() string {
+	// If given, variables should be a list of strings, formatted like `KEY=VALUE`.
 	environmentVariables := g.Config.Build.EnvironmentVariables
 
 	// Regex for valid environment variable names
 	regexpVariableName := regexp.MustCompile("^[A-Za-z_][A-Za-z0-9_]*$")
-
-	// Variables should be a list of strings, formatted like `KEY=VALUE`.
 
 	// Parse them into a list of strings. We also preserve the order.
 	// Initialize envVarKeys to a string list
@@ -164,7 +163,7 @@ func (g *Generator) preamble() string {
 		// everything in /src gets "baked in" to the cog image. So this is great
 		// for caching pretrained models and so on.
 		// For more context see: https://github.com/replicate/cog/issues/320
-		envVarMap["XDG_CACHE_HOME"] = "/src/cog_cache_home"
+		envVarMap["XDG_CACHE_HOME"] = "/src/.cache"
 	}
 
 	// If XDG_CACHE_HOME is not in envVarKeys, prepend as the first item.

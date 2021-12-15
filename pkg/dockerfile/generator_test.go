@@ -68,7 +68,7 @@ FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive \
 	PYTHONUNBUFFERED=1 \
 	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-ENV XDG_CACHE_HOME=/src/cog_cache_home
+ENV XDG_CACHE_HOME=/src/.cache
 ` + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
@@ -135,7 +135,7 @@ FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive \
 	PYTHONUNBUFFERED=1 \
 	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-ENV XDG_CACHE_HOME=/src/cog_cache_home
+ENV XDG_CACHE_HOME=/src/.cache
 ` + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
@@ -207,7 +207,7 @@ FROM nvidia/cuda:11.2.0-cudnn8-devel-ubuntu20.04
 ENV DEBIAN_FRONTEND=noninteractive \
 	PYTHONUNBUFFERED=1 \
 	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-ENV XDG_CACHE_HOME=/src/cog_cache_home
+ENV XDG_CACHE_HOME=/src/.cache
 ` + testInstallPython("3.8") + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
@@ -247,7 +247,7 @@ FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive \
 	PYTHONUNBUFFERED=1 \
 	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-ENV XDG_CACHE_HOME=/src/cog_cache_home
+ENV XDG_CACHE_HOME=/src/.cache
 ` + testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 COPY my-requirements.txt /tmp/requirements.txt
@@ -291,7 +291,7 @@ FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
 ENV DEBIAN_FRONTEND=noninteractive \
 	PYTHONUNBUFFERED=1 \
 	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-ENV XDG_CACHE_HOME=/src/cog_cache_home
+ENV XDG_CACHE_HOME=/src/.cache
 ` + testInstallPython("3.8") +
 		testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
@@ -331,7 +331,7 @@ FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive \
 	PYTHONUNBUFFERED=1 \
 	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-ENV XDG_CACHE_HOME=/src/cog_cache_home
+ENV XDG_CACHE_HOME=/src/.cache
 ` + testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 RUN cowsay moo
