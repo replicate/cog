@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -131,9 +132,75 @@ func (g *Generator) baseImage() (string, error) {
 }
 
 func (g *Generator) preamble() string {
-	return `ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin`
+	environmentVariables := g.Config.Build.EnvironmentVariables
+
+	// Regex for valid environment variable names
+	regexpVariableName := regexp.MustCompile("^[A-Za-z_][A-Za-z0-9_]*$")
+
+	// Variables should be a list of strings, formatted like `KEY=VALUE`.
+	// Parse them into a dict.
+	dict := make(map[string]string)
+	if len(environmentVariables) > 0 {
+		dict = make(map[string]string)
+		for _, v := range environmentVariables {
+			parts := strings.SplitN(v, "=", 2)
+			if len(parts) != 2 {
+				// FIXME: This should log-warning/hint instead of returning junk.
+				return fmt.Sprintf("# ignoring invalid variable: %s", v)
+			}
+
+			// Use a regex to limit the characters allowed in the key.
+			if ok := regexpVariableName.MatchString(parts[0]); !ok {
+				// FIXME: This should log-warning/hint instead of returning junk.
+				parts[0] = "__BAD_FORMAT__"
+				return fmt.Sprintf("# ignoring invalid variable: %s", v)
+			}
+
+			dict[parts[0]] = parts[1]
+		}
+	}
+
+	if _, ok := dict["XDG_CACHE_HOME"]; !ok {
+		// Cog sets a default value for $XDG_CACHE_HOME. Why:
+		// Cog mounts the project directory so anything in there (in /src in the
+		// image) gets retained between runs. $XDG_CACHE_HOME is used by various
+		// libraries including popular ML libraries; so, setting it to a subdirectory
+		// within /src results in retaining the cache between runs. Ultimately,
+		// everything in /src gets "baked in" to the cog image. So this is great
+		// for caching pretrained models and so on.
+		// For more context see: https://github.com/replicate/cog/issues/320
+		dict["XDG_CACHE_HOME"] = "/src/cog_cache_home"
+	}
+
+	// TODO <DELETE>
+	// 	// Format the variables into a list of `ENV KEY=VALUE` strings.
+	// 	// TODO(optimization): It should do first item ENV then the rest "\", as below.
+	// 	// (................): Why: each "ENV" directive creates a layer.
+	// 	var envVarLines []string
+	// 	for k, v := range dict {
+	// 		envVarLines = append(envVarLines, fmt.Sprintf("ENV %s=%s", k, v))
+	// 	}
+
+	// 	return `
+	// ENV DEBIAN_FRONTEND=noninteractive \
+	// 		PYTHONUNBUFFERED=1 \
+	// 		LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+	// ` + strings.Join(envVarLines, "\n")
+	// }
+	// TODO </DELETE>
+
+	// Format the variables into a list of `ENV KEY=VALUE` strings.
+	// TODO(optimization): It should do first item ENV then the rest "\", as below.
+	// (................): Why: each "ENV" directive creates a layer.
+	var envVarLines []string
+	for k, v := range dict {
+		envVarLines = append(envVarLines, fmt.Sprintf("\t%s=%s", k, v))
+	}
+
+	return `ENV DEBIAN_FRONTEND=noninteractive \
+	PYTHONUNBUFFERED=1 \
+	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin \
+` + strings.Join(envVarLines, " \\"+"\n")
 }
 
 func (g *Generator) aptInstalls() (string, error) {

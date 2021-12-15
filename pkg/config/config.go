@@ -15,6 +15,7 @@ import (
 // TODO(andreas): custom cpu/gpu installs
 // TODO(andreas): validate python_requirements
 // TODO(andreas): suggest valid torchvision versions (e.g. if the user wants to use 0.8.0, suggest 0.8.1)
+// (Possibly useful reference code: https://github.com/python-poetry/poetry/blob/master/src/poetry/puzzle/solver.py)
 
 type Build struct {
 	GPU                  bool     `json:"gpu,omitempty" yaml:"gpu"`
@@ -23,6 +24,7 @@ type Build struct {
 	PythonExtraIndexURLs []string `json:"python_extra_index_urls,omitempty" yaml:"python_extra_index_urls"`
 	PythonFindLinks      []string `json:"python_find_links,omitempty" yaml:"python_find_links"`
 	PythonPackages       []string `json:"python_packages,omitempty" yaml:"python_packages"`
+	EnvironmentVariables []string `json:"environment_variables,omitempty" yaml:"environment_variables"`
 	Run                  []string `json:"run,omitempty" yaml:"run"`
 	SystemPackages       []string `json:"system_packages,omitempty" yaml:"system_packages"`
 	PreInstall           []string `json:"pre_install,omitempty" yaml:"pre_install"` // Deprecated, but included for backwards compatibility
