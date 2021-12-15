@@ -172,35 +172,15 @@ func (g *Generator) preamble() string {
 		dict["XDG_CACHE_HOME"] = "/src/cog_cache_home"
 	}
 
-	// TODO <DELETE>
-	// 	// Format the variables into a list of `ENV KEY=VALUE` strings.
-	// 	// TODO(optimization): It should do first item ENV then the rest "\", as below.
-	// 	// (................): Why: each "ENV" directive creates a layer.
-	// 	var envVarLines []string
-	// 	for k, v := range dict {
-	// 		envVarLines = append(envVarLines, fmt.Sprintf("ENV %s=%s", k, v))
-	// 	}
-
-	// 	return `
-	// ENV DEBIAN_FRONTEND=noninteractive \
-	// 		PYTHONUNBUFFERED=1 \
-	// 		LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-	// ` + strings.Join(envVarLines, "\n")
-	// }
-	// TODO </DELETE>
-
-	// Format the variables into a list of `ENV KEY=VALUE` strings.
-	// TODO(optimization): It should do first item ENV then the rest "\", as below.
-	// (................): Why: each "ENV" directive creates a layer.
 	var envVarLines []string
 	for k, v := range dict {
-		envVarLines = append(envVarLines, fmt.Sprintf("\t%s=%s", k, v))
+		envVarLines = append(envVarLines, fmt.Sprintf("ENV %s=%s", k, v))
 	}
 
 	return `ENV DEBIAN_FRONTEND=noninteractive \
 	PYTHONUNBUFFERED=1 \
-	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin \
-` + strings.Join(envVarLines, " \\"+"\n")
+	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+` + strings.Join(envVarLines, "\n")
 }
 
 func (g *Generator) aptInstalls() (string, error) {
