@@ -153,9 +153,10 @@ build:
   environment_variables:
     - TRANSFORMERS_CACHE=/src/custom_huggingface_transformers_cache
     - FOOBAR=foobar
-    - RETICULATING=splines
     - XDG_CACHE_HOME=/src/$FOOBAR
+    - RETICULATING=splines
     - =invalid_doesnt_matter
+    - empty=
 predict: cog_predict.py:Predictor
 `))
 	require.NoError(t, err)
@@ -174,7 +175,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 ENV TRANSFORMERS_CACHE=/src/custom_huggingface_transformers_cache
 ENV FOOBAR=foobar
 ENV XDG_CACHE_HOME=/src/$FOOBAR
-ENV __INVALID__=invalid_doesnt_matter
+ENV RETICULATING=splines
+ENV empty=
 ` + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
