@@ -138,10 +138,13 @@ func (g *Generator) preamble() string {
 	regexpVariableName := regexp.MustCompile("^[A-Za-z_][A-Za-z0-9_]*$")
 
 	// Variables should be a list of strings, formatted like `KEY=VALUE`.
-	// Parse them into a dict.
-	dict := make(map[string]string)
+
+	// Parse them into a list of strings. We also preserve the order.
+	// Initialize envVarKeys to a string list
+	envVarKeys := []string{}
+	envVarMap := make(map[string]string)
 	if len(environmentVariables) > 0 {
-		dict = make(map[string]string)
+		envVarMap = make(map[string]string)
 		for _, v := range environmentVariables {
 			parts := strings.SplitN(v, "=", 2)
 			if len(parts) != 2 {
@@ -153,14 +156,14 @@ func (g *Generator) preamble() string {
 			if ok := regexpVariableName.MatchString(parts[0]); !ok {
 				// FIXME: This should log-warning/hint instead of returning junk.
 				parts[0] = "__BAD_FORMAT__"
-				return fmt.Sprintf("# ignoring invalid variable: %s", v)
 			}
 
-			dict[parts[0]] = parts[1]
+			envVarMap[parts[0]] = parts[1]
+			envVarKeys = append(envVarKeys, parts[0])
 		}
 	}
 
-	if _, ok := dict["XDG_CACHE_HOME"]; !ok {
+	if _, ok := envVarMap["XDG_CACHE_HOME"]; !ok {
 		// Cog sets a default value for $XDG_CACHE_HOME. Why:
 		// Cog mounts the project directory so anything in there (in /src in the
 		// image) gets retained between runs. $XDG_CACHE_HOME is used by various
@@ -169,12 +172,24 @@ func (g *Generator) preamble() string {
 		// everything in /src gets "baked in" to the cog image. So this is great
 		// for caching pretrained models and so on.
 		// For more context see: https://github.com/replicate/cog/issues/320
-		dict["XDG_CACHE_HOME"] = "/src/cog_cache_home"
+		envVarMap["XDG_CACHE_HOME"] = "/src/cog_cache_home"
+	}
+
+	// If XDG_CACHE_HOME is not in envVarKeys, prepend as the first item.
+	needsPrepend := true
+	for _, v := range envVarKeys {
+		if v == "XDG_CACHE_HOME" {
+			needsPrepend = false
+		}
+	}
+	if needsPrepend {
+		envVarKeys = append([]string{"XDG_CACHE_HOME"}, envVarKeys...)
 	}
 
 	var envVarLines []string
-	for k, v := range dict {
-		envVarLines = append(envVarLines, fmt.Sprintf("ENV %s=%s", k, v))
+	for _, envVarName := range envVarKeys {
+		v := envVarMap[envVarName]
+		envVarLines = append(envVarLines, fmt.Sprintf("ENV %s=%s", envVarName, v))
 	}
 
 	return `ENV DEBIAN_FRONTEND=noninteractive \
