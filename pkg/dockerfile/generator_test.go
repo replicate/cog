@@ -76,6 +76,113 @@ COPY . /src`
 	require.Equal(t, expected, actual)
 }
 
+func TestEnvironmentVariables(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "test")
+	require.NoError(t, err)
+
+	conf, err := config.FromYAML([]byte(`
+build:
+  gpu: false
+  environment_variables:
+    - XDG_CACHE_HOME=/src/custom_xdg_cache_home
+    - FOOBAR=foobar
+predict: cog_predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndCompleteConfig())
+
+	gen, err := NewGenerator(conf, tmpDir)
+	require.NoError(t, err)
+	actual, err := gen.Generate()
+	require.NoError(t, err)
+
+	expected := `# syntax = docker/dockerfile:1.2
+FROM python:3.8
+ENV DEBIAN_FRONTEND=noninteractive \
+	PYTHONUNBUFFERED=1 \
+	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV XDG_CACHE_HOME=/src/custom_xdg_cache_home
+ENV FOOBAR=foobar
+` + testInstallCog(gen.relativeTmpDir) + `
+WORKDIR /src
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`
+
+	require.Equal(t, expected, actual)
+}
+
+func TestEnvironmentVariablesEmpty(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "test")
+	require.NoError(t, err)
+
+	conf, err := config.FromYAML([]byte(`
+build:
+  gpu: false
+  environment_variables: []
+predict: cog_predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndCompleteConfig())
+
+	gen, err := NewGenerator(conf, tmpDir)
+	require.NoError(t, err)
+	actual, err := gen.Generate()
+	require.NoError(t, err)
+
+	expected := `# syntax = docker/dockerfile:1.2
+FROM python:3.8
+ENV DEBIAN_FRONTEND=noninteractive \
+	PYTHONUNBUFFERED=1 \
+	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV XDG_CACHE_HOME=/src/cog_cache_home
+` + testInstallCog(gen.relativeTmpDir) + `
+WORKDIR /src
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`
+
+	require.Equal(t, expected, actual)
+}
+
+func TestEnvironmentVariablesMultiple(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "test")
+	require.NoError(t, err)
+
+	conf, err := config.FromYAML([]byte(`
+build:
+  gpu: false
+  environment_variables:
+    - TRANSFORMERS_CACHE=/src/custom_huggingface_transformers_cache
+    - FOOBAR=foobar
+    - RETICULATING=splines
+    - XDG_CACHE_HOME=/src/$FOOBAR
+    - =invalid_doesnt_matter
+predict: cog_predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndCompleteConfig())
+
+	gen, err := NewGenerator(conf, tmpDir)
+	require.NoError(t, err)
+	actual, err := gen.Generate()
+	require.NoError(t, err)
+
+	expected := `# syntax = docker/dockerfile:1.2
+FROM python:3.8
+ENV DEBIAN_FRONTEND=noninteractive \
+	PYTHONUNBUFFERED=1 \
+	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV TRANSFORMERS_CACHE=/src/custom_huggingface_transformers_cache
+ENV FOOBAR=foobar
+ENV XDG_CACHE_HOME=/src/$FOOBAR
+ENV __INVALID__=invalid_doesnt_matter
+` + testInstallCog(gen.relativeTmpDir) + `
+WORKDIR /src
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`
+
+	require.Equal(t, expected, actual)
+}
+
 func TestGenerateEmptyGPU(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
