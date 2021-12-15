@@ -68,6 +68,20 @@
             ]
           }
         },
+        "environment_variables": {
+          "$id": "#/properties/build/properties/environment_variables",
+          "type": "array",
+          "additionalItems": true,
+          "items": {
+            "$id": "#/properties/build/properties/environment_variables/items",
+            "anyOf": [
+              {
+                "$id": "#/properties/build/properties/environment_variables/items/anyOf/0",
+                "type": "string"
+              }
+            ]
+          }
+        },
         "run": {
           "$id": "#/properties/build/properties/run",
           "type": "array",

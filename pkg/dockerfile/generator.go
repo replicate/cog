@@ -147,19 +147,11 @@ func (g *Generator) preamble() string {
 		envVarMap = make(map[string]string)
 		for _, v := range environmentVariables {
 			parts := strings.SplitN(v, "=", 2)
-			if len(parts) != 2 {
-				// FIXME: This should log-warning/hint instead of returning junk.
-				return fmt.Sprintf("# ignoring invalid variable: %s", v)
-			}
 
-			// Use a regex to limit the characters allowed in the key.
-			if ok := regexpVariableName.MatchString(parts[0]); !ok {
-				// FIXME: This should log-warning/hint instead of returning junk.
-				parts[0] = "__BAD_FORMAT__"
+			if ok := regexpVariableName.MatchString(parts[0]) && len(parts) == 2; ok {
+				envVarMap[parts[0]] = parts[1]
+				envVarKeys = append(envVarKeys, parts[0])
 			}
-
-			envVarMap[parts[0]] = parts[1]
-			envVarKeys = append(envVarKeys, parts[0])
 		}
 	}
 
