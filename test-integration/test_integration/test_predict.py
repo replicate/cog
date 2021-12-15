@@ -97,3 +97,44 @@ def test_predict_with_remote_image(tmpdir_factory):
     # lots of docker pull logs are written to stdout before writing the actual output
     # TODO: clean up docker output so cog predict is always clean
     assert out.strip().endswith("hello world")
+
+
+def test_predict_in_subdirectory_with_imports(tmpdir_factory):
+    tmpdir = tmpdir_factory.mktemp("project")
+    subdir = tmpdir.mkdir("my-subdir")
+    with open(subdir / "predict.py", "w") as f:
+        f.write(
+            """
+import cog
+
+from mylib import concat
+
+class Predictor(cog.Predictor):
+    def setup(self):
+        pass
+
+    @cog.input("input", type=str)
+    def predict(self, input):
+        return concat("hello", input)
+        """
+        )
+    with open(tmpdir / "mylib.py", "w") as f:
+        f.write(
+            """
+def concat(a, b):
+    return a + " " + b
+        """
+        )
+    with open(tmpdir / "cog.yaml", "w") as f:
+        cog_yaml = """
+build:
+  python_version: "3.8"
+predict: "my-subdir/predict.py:Predictor"
+        """
+        f.write(cog_yaml)
+
+    result = subprocess.run(
+        ["cog", "predict", "-i", "world"], cwd=tmpdir, check=True, capture_output=True
+    )
+    # stdout should be clean without any log messages so it can be piped to other commands
+    assert result.stdout == b"hello world\n"
