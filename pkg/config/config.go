@@ -56,7 +56,7 @@ func FromYAML(contents []byte) (*Config, error) {
 		return nil, fmt.Errorf("Failed to parse config yaml: %w", err)
 	}
 	// Everything assumes Build is not nil
-	if string(contents) != "" && config.Build != nil {
+	if len(contents) != 0 && config.Build != nil {
 		err := Validate(string(contents), "")
 		if err != nil {
 			return nil, err

@@ -32,7 +32,7 @@ func TestGetConfigShouldLoadFromCustomDir(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 
-	err = ioutil.WriteFile(path.Join(dir, "cog.yaml"), []byte(testConfig), 0644)
+	err = ioutil.WriteFile(path.Join(dir, "cog.yaml"), []byte(testConfig), 0o644)
 	require.NoError(t, err)
 	conf, _, err := GetConfig(dir)
 	require.NoError(t, err)
@@ -55,11 +55,11 @@ func TestFindProjectRootDirShouldFindParentDir(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(projectDir)
 
-	err = ioutil.WriteFile(path.Join(projectDir, "cog.yaml"), []byte(testConfig), 0644)
+	err = ioutil.WriteFile(path.Join(projectDir, "cog.yaml"), []byte(testConfig), 0o644)
 	require.NoError(t, err)
 
 	subdir := path.Join(projectDir, "some/sub/dir")
-	err = os.MkdirAll(subdir, 0700)
+	err = os.MkdirAll(subdir, 0o700)
 	require.NoError(t, err)
 
 	foundDir, err := findProjectRootDir(subdir)
@@ -73,7 +73,7 @@ func TestFindProjectRootDirShouldReturnErrIfNoConfig(t *testing.T) {
 	defer os.RemoveAll(projectDir)
 
 	subdir := path.Join(projectDir, "some/sub/dir")
-	err = os.MkdirAll(subdir, 0700)
+	err = os.MkdirAll(subdir, 0o700)
 	require.NoError(t, err)
 
 	_, err = findProjectRootDir(subdir)

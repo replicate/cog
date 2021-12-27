@@ -169,7 +169,7 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 	}
 
 	// Write to file
-	outFile, err := os.OpenFile(outputPath, os.O_WRONLY|os.O_CREATE, 0755)
+	outFile, err := os.OpenFile(outputPath, os.O_WRONLY|os.O_CREATE, 0o755)
 	if err != nil {
 		return err
 	}
