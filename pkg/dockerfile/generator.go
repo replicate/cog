@@ -32,7 +32,7 @@ type Generator struct {
 
 func NewGenerator(config *config.Config, dir string) (*Generator, error) {
 	rootTmp := path.Join(dir, ".cog/tmp")
-	if err := os.MkdirAll(rootTmp, 0755); err != nil {
+	if err := os.MkdirAll(rootTmp, 0o755); err != nil {
 		return nil, err
 	}
 	// tmpDir ends up being something like dir/.cog/tmp/build123456789
@@ -183,10 +183,10 @@ func (g *Generator) installCog() (string, error) {
 	// Wheel name needs to be full format otherwise pip refuses to install it
 	cogFilename := "cog-0.0.1.dev-py3-none-any.whl"
 	cogPath := filepath.Join(g.tmpDir, cogFilename)
-	if err := os.MkdirAll(filepath.Dir(cogPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cogPath), 0o755); err != nil {
 		return "", fmt.Errorf("Failed to write %s: %w", cogFilename, err)
 	}
-	if err := os.WriteFile(cogPath, cogWheelEmbed, 0644); err != nil {
+	if err := os.WriteFile(cogPath, cogWheelEmbed, 0o644); err != nil {
 		return "", fmt.Errorf("Failed to write %s: %w", cogFilename, err)
 	}
 	return fmt.Sprintf(`COPY %s /tmp/%s

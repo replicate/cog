@@ -90,7 +90,7 @@ func writeTFCompatibilityMatrix(outputPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+	if err := os.WriteFile(outputPath, data, 0o644); err != nil {
 		return err
 	}
 	return nil
@@ -119,7 +119,7 @@ func writeTorchCompatibilityMatrix(outputPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+	if err := os.WriteFile(outputPath, data, 0o644); err != nil {
 		return err
 	}
 	return nil
@@ -153,7 +153,7 @@ func writeCUDABaseImageTags(outputPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+	if err := os.WriteFile(outputPath, data, 0o644); err != nil {
 		return err
 	}
 
