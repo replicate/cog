@@ -1,0 +1,96 @@
+{
+  "projectName": "cog",
+  "projectOwner": "replicate",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 100,
+  "commit": false,
+  "commitConvention": "none",
+  "contributors": [
+    {
+      "login": "bfirsh",
+      "name": "Ben Firshman",
+      "avatar_url": "https://avatars.githubusercontent.com/u/40906?v=4",
+      "profile": "https://fir.sh/",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "andreasjansson",
+      "name": "Andreas Jansson",
+      "avatar_url": "https://avatars.githubusercontent.com/u/713993?v=4",
+      "profile": "https://replicate.ai/",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "zeke",
+      "name": "Zeke Sikelianos",
+      "avatar_url": "https://avatars.githubusercontent.com/u/2289?v=4",
+      "profile": "http://zeke.sikelianos.com/",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "synek",
+      "name": "Rory Byrne",
+      "avatar_url": "https://avatars.githubusercontent.com/u/9436784?v=4",
+      "profile": "https://rory.bio/",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "hangtwenty",
+      "name": "Michael Floering",
+      "avatar_url": "https://avatars.githubusercontent.com/u/2420688?v=4",
+      "profile": "https://github.com/hangtwenty",
+      "contributions": [
+        "code",
+        "doc",
+        "ideas"
+      ]
+    },
+    {
+      "login": "bencevans",
+      "name": "Ben Evans",
+      "avatar_url": "https://avatars.githubusercontent.com/u/638535?v=4",
+      "profile": "https://bencevans.io/",
+      "contributions": [
+        "doc"
+      ]
+    },
+    {
+      "login": "imshashank",
+      "name": "shashank agarwal",
+      "avatar_url": "https://avatars.githubusercontent.com/u/778870?v=4",
+      "profile": "https://shashank.pw/",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "VictorXLR",
+      "name": "VictorXLR",
+      "avatar_url": "https://avatars.githubusercontent.com/u/22397950?v=4",
+      "profile": "https://victorxlr.me/",
+      "contributions": [
+        "code",
+        "doc",
+        "test"
+      ]
+    }
+  ],
+  "contributorsPerLine": 7
+}

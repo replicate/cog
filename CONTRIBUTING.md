@@ -77,6 +77,21 @@ git interpret-trailers --if-exists doNothing --trailer \
     --in-place "$1"
 ```
 
+### Acknowledging contributions
+
+We welcome contributions from everyone, and consider all forms of contribution equally valuable. This includes code, bug reports, feature requests, and documentation. We use [All Contributors](https://allcontributors.org/) to maintain a list of all the people who have contributed to Cog.
+
+To acknowledge a contribution, add a comment to an issue or pull request in the following format:
+
+```
+@allcontributors please add @username for doc,code,ideas
+```
+
+A bot will automatically open a pull requests to add the contributor to the project README.
+
+Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the full list at [allcontributors.org/docs/en/emoji-key](https://allcontributors.org/docs/en/emoji-key)
+
+
 ## Development environment
 
 You'll need to [install Go 1.16](https://golang.org/doc/install). If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
