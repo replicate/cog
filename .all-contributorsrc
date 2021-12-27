@@ -37,7 +37,8 @@
       "profile": "http://zeke.sikelianos.com/",
       "contributions": [
         "code",
-        "doc"
+        "doc",
+        "tool"
       ]
     },
     {
@@ -92,5 +93,6 @@
       ]
     }
   ],
-  "contributorsPerLine": 7
+  "contributorsPerLine": 7,
+  "skipCi": true
 }
