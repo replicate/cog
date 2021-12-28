@@ -109,6 +109,15 @@
       "contributions": [
         "bug"
       ]
+    },
+    {
+      "login": "JimothyJohn",
+      "name": "JimothyJohn",
+      "avatar_url": "https://avatars.githubusercontent.com/u/24216724?v=4",
+      "profile": "https://github.com/JimothyJohn",
+      "contributions": [
+        "bug"
+      ]
     }
   ],
   "contributorsPerLine": 7,
