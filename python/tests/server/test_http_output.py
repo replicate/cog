@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 
 import cog
-from .client import make_client
+from .test_http import make_client
 
 
 def test_path_output_str():
