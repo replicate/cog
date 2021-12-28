@@ -6,6 +6,7 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 from PIL import Image
+from pydantic import BaseModel, Field
 
 import cog
 from cog.server.http import create_app
@@ -22,51 +23,125 @@ def test_setup_is_called():
         def setup(self):
             self.foo = "bar"
 
-        def predict(self):
+        def predict(self) -> str:
             return self.foo
 
     client = make_client(Predictor())
     resp = client.post("/predict")
     assert resp.status_code == 200
-    assert resp.data == b"bar"
+    assert resp.json() == {"status": "success", "output": "bar"}
 
 
-def test_type_signature():
+def test_openapi_specification():
     class Predictor(cog.Predictor):
-        @cog.input("text", type=str, help="Some text")
-        @cog.input("num1", type=int, help="First number")
-        @cog.input("num2", type=int, default=10, help="Second number")
-        @cog.input("path", type=Path, help="A file path")
-        def predict(self, text, num1, num2, path):
+        class Input(BaseModel):
+            text: str = Field(..., title="Some text")
+            number: int = Field(10, title="Some number")
+            path: Path = Field(..., title="Some path")
+
+        def predict(self, input: Input) -> str:
             pass
 
     client = make_client(Predictor())
-    resp = client.get("/type-signature")
+    resp = client.get("/openapi.json")
     assert resp.status_code == 200
-    assert resp.json == {
-        "inputs": [
-            {
-                "name": "text",
-                "type": "str",
-                "help": "Some text",
-            },
-            {
-                "name": "num1",
-                "type": "int",
-                "help": "First number",
-            },
-            {
-                "name": "num2",
-                "type": "int",
-                "help": "Second number",
-                "default": "10",
-            },
-            {
-                "name": "path",
-                "type": "Path",
-                "help": "A file path",
-            },
-        ]
+    assert resp.json() == {
+        "openapi": "3.0.2",
+        "info": {"title": "FastAPI", "version": "0.1.0"},
+        "paths": {
+            "/predict": {
+                "post": {
+                    "summary": "Predict",
+                    "operationId": "predict_predict_post",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Input"}
+                            }
+                        },
+                        "required": True,
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Successful Response",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/ResponseData"
+                                    }
+                                }
+                            },
+                        },
+                        "422": {
+                            "description": "Validation Error",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/HTTPValidationError"
+                                    }
+                                }
+                            },
+                        },
+                    },
+                }
+            }
+        },
+        "components": {
+            "schemas": {
+                "HTTPValidationError": {
+                    "title": "HTTPValidationError",
+                    "type": "object",
+                    "properties": {
+                        "detail": {
+                            "title": "Detail",
+                            "type": "array",
+                            "items": {"$ref": "#/components/schemas/ValidationError"},
+                        }
+                    },
+                },
+                "Input": {
+                    "title": "Input",
+                    "required": ["text", "path"],
+                    "type": "object",
+                    "properties": {
+                        "text": {"title": "Some text", "type": "string"},
+                        "number": {
+                            "title": "Some number",
+                            "type": "integer",
+                            "default": 10,
+                        },
+                        "path": {
+                            "title": "Some path",
+                            "type": "string",
+                            "format": "path",
+                        },
+                    },
+                },
+                "ResponseData": {
+                    "title": "ResponseData",
+                    "required": ["status", "output"],
+                    "type": "object",
+                    "properties": {
+                        "status": {"title": "Status", "type": "string"},
+                        "output": {"title": "Output", "type": "string"},
+                    },
+                },
+                "ValidationError": {
+                    "title": "ValidationError",
+                    "required": ["loc", "msg", "type"],
+                    "type": "object",
+                    "properties": {
+                        "loc": {
+                            "title": "Location",
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "msg": {"title": "Message", "type": "string"},
+                        "type": {"title": "Error Type", "type": "string"},
+                    },
+                },
+            }
+        },
     }
 
 
