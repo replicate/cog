@@ -11,12 +11,10 @@ import contextlib
 
 import redis
 import requests
-from werkzeug.datastructures import FileStorage
 
 from .redis_log_capture import capture_log
-from ..input import InputValidationError, validate_and_convert_inputs
 from ..json import to_json
-from ..predictor import Predictor, load_predictor
+from ..predictor import Predictor, get_predict_types, load_predictor
 
 
 class timeout:
@@ -192,32 +190,21 @@ class RedisQueueWorker:
         inputs = {}
         raw_inputs = message["inputs"]
         prediction_id = message["id"]
+        InputType, OutputType = get_predict_types(self.predictor)
 
-        for k, v in raw_inputs.items():
-            if "value" in v and v["value"] != "":
-                inputs[k] = v["value"]
-            else:
-                file_url = v["file"]["url"]
-                sys.stderr.write(f"Downloading file from {file_url}\n")
-                value_bytes = self.download(file_url)
-                inputs[k] = FileStorage(
-                    stream=BytesIO(value_bytes), filename=v["file"]["name"]
-                )
-        try:
-            inputs = validate_and_convert_inputs(
-                self.predictor, inputs, cleanup_functions
-            )
-        except InputValidationError as e:
-            tb = traceback.format_exc()
-            sys.stderr.write(tb)
-            self.push_error(response_queue, e)
-            return
+        input_obj = InputType(**raw_inputs)
+
+        # except InputValidationError as e:
+        #     tb = traceback.format_exc()
+        #     sys.stderr.write(tb)
+        #     self.push_error(response_queue, e)
+        # return
 
         start_time = time.time()
         with self.capture_log(self.STAGE_RUN, prediction_id), timeout(
             seconds=self.predict_timeout
         ):
-            return_value = self.predictor.predict(**inputs)
+            return_value = self.predictor.predict(input_obj)
         if isinstance(return_value, types.GeneratorType):
             last_result = None
 
@@ -240,6 +227,7 @@ class RedisQueueWorker:
             # push the last result
             self.push_result(response_queue, last_result, status="success")
         else:
+            # FIXME
             if isinstance(return_value, Path):
                 cleanup_functions.append(return_value.unlink)
             self.push_result(response_queue, return_value, status="success")
@@ -260,26 +248,13 @@ class RedisQueueWorker:
         self.redis.rpush(response_queue, message)
 
     def push_result(self, response_queue, result, status):
-        if isinstance(result, Path):
-            message = {
-                "file": {
-                    "url": self.upload_to_temp(result),
-                    "name": result.name,
-                }
-            }
-        elif isinstance(result, str):
-            message = {
-                "value": result,
-            }
-        else:
-            message = {
-                "value": to_json(result),
-            }
-
-        message["status"] = status
+        message = {
+            "output": result,
+            "status": status,
+        }
 
         sys.stderr.write(f"Pushing successful result to {response_queue}\n")
-        self.redis.rpush(response_queue, json.dumps(message))
+        self.redis.rpush(response_queue, to_json(message))
 
     def upload_to_temp(self, path: Path) -> str:
         sys.stderr.write(

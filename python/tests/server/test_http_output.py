@@ -9,6 +9,16 @@ import cog
 from .test_http import make_client
 
 
+def test_return_wrong_type():
+    class Predictor(cog.Predictor):
+        def predict(self) -> int:
+            return "foo"
+
+    client = make_client(Predictor())
+    resp = client.post("/predict")
+    assert resp.status_code == 422
+
+
 def test_path_output_str():
     class Predictor(cog.Predictor):
         @cog.input("text", type=str)

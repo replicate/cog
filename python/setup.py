@@ -16,10 +16,11 @@ setuptools.setup(
     python_requires=">=3.6.0",
     install_requires=[
         # intionally loose. perhaps these should be vendored to not collide with user code?
-        "flask>=2,<3",
+        "fastapi>=0.6,<1",
+        "pydantic>=1,<2",
+        "PyYAML",
         "redis>=3,<4",
         "requests>=2,<3",
-        "PyYAML",
     ],
     packages=setuptools.find_packages(),
 )

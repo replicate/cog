@@ -15,6 +15,7 @@ import ctypes
 import sys
 import tempfile
 from pathlib import Path
+from pydantic import BaseModel, Field
 import cog
 import time
 
@@ -26,34 +27,36 @@ libc.puts(b"writing some stuff from C at import time\\n")
 sys.stdout.write("writing to stdout at import time\\n")
 sys.stderr.write("writing to stderr at import time\\n")
 
+class Input(BaseModel):
+    text: str
+    path: cog.Path
+    output_file: bool = False
+
 class Predictor(cog.Predictor):
     def setup(self):
         print("setting up predictor")
         self.foo = "foo"
 
-    @cog.input("text", type=str)
-    @cog.input("path", type=Path)
-    @cog.input("output_file", type=bool, default=False)
-    def predict(self, text, path, output_file):
+    def predict(self, input: Input) -> str:
         logging.warn("writing log message")
         time.sleep(.1)
         libc.puts(b"writing from C")
         time.sleep(.1)
-        sys.stderr.write("processing " + text + "\\n")
+        sys.stderr.write("processing " + input.text + "\\n")
         time.sleep(.1)
         sys.stderr.flush()
         time.sleep(.1)
-        with open(path) as f:
-            output = self.foo + text + f.read()
-        if output_file:
+        with open(input.path) as f:
+            output = self.foo + input.text + f.read()
+        if input.output_file:
             tmp = tempfile.NamedTemporaryFile(suffix=".txt")
             tmp.close()
             tmp_path = Path(tmp.name)
             with tmp_path.open("w") as f:
                 f.write(output)
-                print("successfully processed file " + text)
+                print("successfully processed file " + input.text)
                 return tmp_path
-        print("successfully processed " + text)
+        print("successfully processed " + input.text)
         return output
         """
         )

@@ -1,5 +1,4 @@
 fastapi==0.70.1
-flask==2.0.1
 numpy==1.21.1
 pillow==8.3.2
 pydantic==1.8.2
