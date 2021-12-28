@@ -91,6 +91,15 @@
         "doc",
         "test"
       ]
+    },
+    {
+      "login": "annahung31",
+      "name": "hung anna",
+      "avatar_url": "https://avatars.githubusercontent.com/u/39179888?v=4",
+      "profile": "https://annahung31.github.io/",
+      "contributions": [
+        "bug"
+      ]
     }
   ],
   "contributorsPerLine": 7,
