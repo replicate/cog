@@ -15,7 +15,6 @@ from .errors import ConfigDoesNotExist, PredictorNotSet
 
 
 class Predictor(ABC):
-    @abstractmethod
     def setup(self):
         pass
 
