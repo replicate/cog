@@ -17,19 +17,28 @@ def make_client(version) -> FlaskClient:
         return client
 
 
-def test_type_signature():
+def test_setup_is_called():
     class Predictor(cog.Predictor):
         def setup(self):
-            self.foo = "foo"
+            self.foo = "bar"
 
+        def predict(self):
+            return self.foo
+
+    client = make_client(Predictor())
+    resp = client.post("/predict")
+    assert resp.status_code == 200
+    assert resp.data == b"bar"
+
+
+def test_type_signature():
+    class Predictor(cog.Predictor):
         @cog.input("text", type=str, help="Some text")
         @cog.input("num1", type=int, help="First number")
         @cog.input("num2", type=int, default=10, help="Second number")
         @cog.input("path", type=Path, help="A file path")
         def predict(self, text, num1, num2, path):
-            with open(path) as f:
-                path_contents = f.read()
-            return self.foo + " " + text + " " + str(num1 * num2) + " " + path_contents
+            pass
 
     client = make_client(Predictor())
     resp = client.get("/type-signature")
@@ -63,9 +72,6 @@ def test_type_signature():
 
 def test_yielding_strings_from_generator_predictors():
     class Predictor(cog.Predictor):
-        def setup(self):
-            pass
-
         def predict(self):
             predictions = ["foo", "bar", "baz"]
             for prediction in predictions:
@@ -80,9 +86,6 @@ def test_yielding_strings_from_generator_predictors():
 
 def test_yielding_json_from_generator_predictors():
     class Predictor(cog.Predictor):
-        def setup(self):
-            pass
-
         def predict(self):
             predictions = [
                 {"meaning_of_life": 40},
@@ -101,9 +104,6 @@ def test_yielding_json_from_generator_predictors():
 
 def test_yielding_files_from_generator_predictors():
     class Predictor(cog.Predictor):
-        def setup(self):
-            pass
-
         def predict(self):
             colors = ["red", "blue", "yellow"]
             for i, color in enumerate(colors):

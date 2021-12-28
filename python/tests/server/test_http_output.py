@@ -11,29 +11,23 @@ from .test_http import make_client
 
 def test_path_output_str():
     class Predictor(cog.Predictor):
-        def setup(self):
-            self.foo = "foo"
-
         @cog.input("text", type=str)
         def predict(self, text):
             temp_dir = tempfile.mkdtemp()
             temp_path = os.path.join(temp_dir, "my_file.txt")
             with open(temp_path, "w") as f:
-                f.write(self.foo + text)
+                f.write(text)
             return Path(temp_path)
 
     client = make_client(Predictor())
     resp = client.post("/predict", data={"text": "baz"})
     assert resp.status_code == 200
     assert resp.content_type == "text/plain; charset=utf-8"
-    assert resp.data == b"foobaz"
+    assert resp.data == b"baz"
 
 
 def test_path_output_image():
     class Predictor(cog.Predictor):
-        def setup(self):
-            pass
-
         def predict(self):
             temp_dir = tempfile.mkdtemp()
             temp_path = os.path.join(temp_dir, "my_file.bmp")
@@ -51,9 +45,6 @@ def test_path_output_image():
 
 def test_json_output_numpy():
     class Predictor(cog.Predictor):
-        def setup(self):
-            pass
-
         def predict(self):
             return {"foo": np.float32(1.0)}
 
