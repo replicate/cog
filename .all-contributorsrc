@@ -100,6 +100,15 @@
       "contributions": [
         "bug"
       ]
+    },
+    {
+      "login": "bwhitman",
+      "name": "Brian Whitman",
+      "avatar_url": "https://avatars.githubusercontent.com/u/76612?v=4",
+      "profile": "http://notes.variogr.am/",
+      "contributions": [
+        "bug"
+      ]
     }
   ],
   "contributorsPerLine": 7,
