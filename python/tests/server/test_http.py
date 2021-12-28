@@ -1,12 +1,20 @@
-import tempfile
+from flask.testing import FlaskClient
 import io
 import os
 from pathlib import Path
+import tempfile
+from unittest import mock
 
 from PIL import Image
 import cog
-from .client import make_client
+from cog.server.http import HTTPServer
 
+
+def make_client(version) -> FlaskClient:
+    app = HTTPServer(version).make_app()
+    app.config["TESTING"] = True
+    with app.test_client() as client:
+        return client
 
 
 def test_type_signature():
@@ -114,3 +122,20 @@ def test_yielding_files_from_generator_predictors():
     image = Image.open(io.BytesIO(resp.data))
     image_color = Image.Image.getcolors(image)[0][1]
     assert image_color == (255, 255, 0)  # yellow
+
+
+@mock.patch("time.time", return_value=0.0)
+def test_timing(time_mock):
+    class Predictor(cog.Predictor):
+        def setup(self):
+            time_mock.return_value = 1.0
+
+        def predict(self):
+            time_mock.return_value = 3.0
+            return ""
+
+    client = make_client(Predictor())
+    resp = client.post("/predict")
+    assert resp.status_code == 200
+    assert float(resp.headers["X-Setup-Time"]) == 1.0
+    assert float(resp.headers["X-Run-Time"]) == 2.0
