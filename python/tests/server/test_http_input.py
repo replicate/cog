@@ -10,11 +10,8 @@ from .test_http import make_client
 
 def test_no_input():
     class Predictor(cog.Predictor):
-        def setup(self):
-            self.foo = "foo"
-
         def predict(self):
-            return self.foo + "bar"
+            return "foobar"
 
     client = make_client(Predictor())
     resp = client.post("/predict")
@@ -24,47 +21,36 @@ def test_no_input():
 
 def test_good_str_input():
     class Predictor(cog.Predictor):
-        def setup(self):
-            self.foo = "foo"
-
         @cog.input("text", type=str)
         def predict(self, text):
-            return self.foo + text
+            return text
 
     client = make_client(Predictor())
     resp = client.post("/predict", data={"text": "baz"})
     assert resp.status_code == 200
-    assert resp.data == b"foobaz"
+    assert resp.data == b"baz"
 
 
 def test_good_int_input():
     class Predictor(cog.Predictor):
-        def setup(self):
-            self.foo = "foo"
-
         @cog.input("num", type=int)
         def predict(self, num):
-            num2 = num ** 3
-            return self.foo + str(num2)
+            return str(num ** 3)
 
     client = make_client(Predictor())
     resp = client.post("/predict", data={"num": 3})
     assert resp.status_code == 200
-    assert resp.data == b"foo27"
+    assert resp.data == b"27"
     resp = client.post("/predict", data={"num": -3})
     assert resp.status_code == 200
-    assert resp.data == b"foo-27"
+    assert resp.data == b"-27"
 
 
 def test_bad_int_input():
     class Predictor(cog.Predictor):
-        def setup(self):
-            self.foo = "foo"
-
         @cog.input("num", type=int)
         def predict(self, num):
-            num2 = num ** 2
-            return self.foo + str(num2)
+            return str(num ** 2)
 
     client = make_client(Predictor())
     resp = client.post("/predict", data={"num": "foo"})
@@ -73,54 +59,42 @@ def test_bad_int_input():
 
 def test_default_int_input():
     class Predictor(cog.Predictor):
-        def setup(self):
-            self.foo = "foo"
-
         @cog.input("num", type=int, default=5)
         def predict(self, num):
-            num2 = num ** 2
-            return self.foo + str(num2)
+            return str(num ** 2)
 
     client = make_client(Predictor())
     resp = client.post("/predict", data={"num": 3})
     assert resp.status_code == 200
-    assert resp.data == b"foo9"
+    assert resp.data == b"9"
     resp = client.post("/predict")
     assert resp.status_code == 200
-    assert resp.data == b"foo25"
+    assert resp.data == b"25"
 
 
 def test_good_float_input():
     class Predictor(cog.Predictor):
-        def setup(self):
-            self.foo = "foo"
-
         @cog.input("num", type=float)
         def predict(self, num):
-            num2 = num ** 3
-            return self.foo + str(num2)
+            return str(num ** 3)
 
     client = make_client(Predictor())
     resp = client.post("/predict", data={"num": 3})
     assert resp.status_code == 200
-    assert resp.data == b"foo27.0"
+    assert resp.data == b"27.0"
     resp = client.post("/predict", data={"num": 3.5})
     assert resp.status_code == 200
-    assert resp.data == b"foo42.875"
+    assert resp.data == b"42.875"
     resp = client.post("/predict", data={"num": -3.5})
     assert resp.status_code == 200
-    assert resp.data == b"foo-42.875"
+    assert resp.data == b"-42.875"
 
 
 def test_bad_float_input():
     class Predictor(cog.Predictor):
-        def setup(self):
-            self.foo = "foo"
-
         @cog.input("num", type=float)
         def predict(self, num):
-            num2 = num ** 2
-            return self.foo + str(num2)
+            return str(num ** 2)
 
     client = make_client(Predictor())
     resp = client.post("/predict", data={"num": "foo"})
@@ -129,34 +103,28 @@ def test_bad_float_input():
 
 def test_good_bool_input():
     class Predictor(cog.Predictor):
-        def setup(self):
-            self.foo = "foo"
-
         @cog.input("flag", type=bool)
         def predict(self, flag):
             if flag:
-                return self.foo + "yes"
+                return "yes"
             else:
-                return self.foo + "no"
+                return "no"
 
     client = make_client(Predictor())
     resp = client.post("/predict", data={"flag": True})
     assert resp.status_code == 200
-    assert resp.data == b"fooyes"
+    assert resp.data == b"yes"
     resp = client.post("/predict", data={"flag": False})
     assert resp.status_code == 200
-    assert resp.data == b"foono"
+    assert resp.data == b"no"
 
 
 def test_good_path_input():
     class Predictor(cog.Predictor):
-        def setup(self):
-            self.foo = "foo"
-
         @cog.input("path", type=Path)
         def predict(self, path):
             with open(path) as f:
-                return self.foo + " " + f.read() + " " + os.path.basename(path)
+                return f.read() + " " + os.path.basename(path)
 
     client = make_client(Predictor())
     path_data = (io.BytesIO(b"bar"), "foo.txt")
@@ -164,18 +132,15 @@ def test_good_path_input():
         "/predict", data={"path": path_data}, content_type="multipart/form-data"
     )
     assert resp.status_code == 200
-    assert resp.data == b"foo bar foo.txt"
+    assert resp.data == b"bar foo.txt"
 
 
 def test_bad_path_input():
     class Predictor(cog.Predictor):
-        def setup(self):
-            self.foo = "foo"
-
         @cog.input("path", type=Path)
         def predict(self, path):
             with open(path) as f:
-                return self.foo + " " + f.read() + " " + os.path.basename(path)
+                return f.read() + " " + os.path.basename(path)
 
     client = make_client(Predictor())
     resp = client.post("/predict", data={"path": "bar"})
@@ -184,15 +149,12 @@ def test_bad_path_input():
 
 def test_default_path_input():
     class Predictor(cog.Predictor):
-        def setup(self):
-            self.foo = "foo"
-
         @cog.input("path", type=Path, default=None)
         def predict(self, path):
             if path is None:
                 return "noneee"
             with open(path) as f:
-                return self.foo + " " + f.read() + " " + os.path.basename(path)
+                return f.read() + " " + os.path.basename(path)
 
     client = make_client(Predictor())
     path_data = (io.BytesIO(b"bar"), "foo.txt")
@@ -200,7 +162,7 @@ def test_default_path_input():
         "/predict", data={"path": path_data}, content_type="multipart/form-data"
     )
     assert resp.status_code == 200
-    assert resp.data == b"foo bar foo.txt"
+    assert resp.data == b"bar foo.txt"
     resp = client.post("/predict", data={})
     assert resp.status_code == 200
     assert resp.data == b"noneee"
@@ -211,22 +173,16 @@ def test_bad_input_name():
     with pytest.raises(TypeError):
 
         class Predictor(cog.Predictor):
-            def setup(self):
-                self.foo = "foo"
-
             @cog.input("text", type=str)
             def predict(self, bad):
-                return self.foo + "bar"
+                return "bar"
 
 
 def test_extranous_input_keys():
     class Predictor(cog.Predictor):
-        def setup(self):
-            self.foo = "foo"
-
         @cog.input("text", type=str)
         def predict(self, text):
-            return self.foo + text
+            return text
 
     client = make_client(Predictor())
     resp = client.post("/predict", data={"text": "baz", "text2": "qux"})
@@ -235,9 +191,6 @@ def test_extranous_input_keys():
 
 def test_min_max():
     class Predictor(cog.Predictor):
-        def setup(self):
-            pass
-
         @cog.input("num1", type=float, min=3, max=10.5)
         @cog.input("num2", type=float, min=-4)
         @cog.input("num3", type=int, max=-4)
@@ -258,9 +211,6 @@ def test_min_max():
 
 def test_good_options():
     class Predictor(cog.Predictor):
-        def setup(self):
-            pass
-
         @cog.input("text", type=str, options=["foo", "bar"])
         @cog.input("num", type=int, options=[1, 2, 3])
         def predict(self, text, num):
@@ -274,9 +224,6 @@ def test_good_options():
 
 def test_bad_options():
     class Predictor(cog.Predictor):
-        def setup(self):
-            pass
-
         @cog.input("text", type=str, options=["foo", "bar"])
         @cog.input("num", type=int, options=[1, 2, 3])
         def predict(self, text, num):
@@ -293,9 +240,6 @@ def test_bad_options_type():
     with pytest.raises(ValueError):
 
         class Predictor(cog.Predictor):
-            def setup(self):
-                pass
-
             @cog.input("text", type=str, options=[])
             def predict(self, text):
                 return text
@@ -303,9 +247,6 @@ def test_bad_options_type():
     with pytest.raises(ValueError):
 
         class Predictor(cog.Predictor):
-            def setup(self):
-                pass
-
             @cog.input("text", type=str, options=["foo"])
             def predict(self, text):
                 return text
@@ -313,9 +254,6 @@ def test_bad_options_type():
     with pytest.raises(ValueError):
 
         class Predictor(cog.Predictor):
-            def setup(self):
-                pass
-
             @cog.input("text", type=Path, options=["foo"])
             def predict(self, text):
                 return text
@@ -323,9 +261,6 @@ def test_bad_options_type():
 
 def test_multiple_arguments():
     class Predictor(cog.Predictor):
-        def setup(self):
-            self.foo = "foo"
-
         @cog.input("text", type=str)
         @cog.input("num1", type=int)
         @cog.input("num2", type=int, default=10)
@@ -333,7 +268,7 @@ def test_multiple_arguments():
         def predict(self, text, num1, num2, path):
             with open(path) as f:
                 path_contents = f.read()
-            return self.foo + " " + text + " " + str(num1 * num2) + " " + path_contents
+            return text + " " + str(num1 * num2) + " " + path_contents
 
     client = make_client(Predictor())
     path_data = (io.BytesIO(b"bar"), "foo.txt")
@@ -343,4 +278,4 @@ def test_multiple_arguments():
         content_type="multipart/form-data",
     )
     assert resp.status_code == 200
-    assert resp.data == b"foo baz 50 bar"
+    assert resp.data == b"baz 50 bar"
