@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from .json import JSON_ENCODERS
 
 
-def create_response(OutputType: Any):
+def get_response_type(OutputType: Any):
     class CogResponse(BaseModel):
         status: str = Field(...)
         output: OutputType = Field(...)

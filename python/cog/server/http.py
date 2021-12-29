@@ -1,7 +1,10 @@
-from fastapi import FastAPI, encoders
+from collections.abc import Generator
+import types
+import typing
+from fastapi import Body, FastAPI, encoders
 
 from ..predictor import Predictor, get_predict_types, load_predictor
-from ..response import create_response
+from ..response import get_response_type
 
 
 orig_jsonable_encoder = encoders.jsonable_encoder
@@ -27,17 +30,28 @@ def create_app(predictor: Predictor) -> FastAPI:
     app.on_event("startup")(predictor.setup)
 
     InputType, OutputType = get_predict_types(predictor)
-    CogResponse = create_response(OutputType)
 
-    if InputType:
+    # We don't support generators for HTTP, so convert it to the type that is yielded
+    if typing.get_origin(OutputType) is Generator:
+        OutputType = typing.get_args(OutputType)[0]
 
-        def predict(input: InputType):
-            return CogResponse(status="success", output=predictor.predict(input))
+    CogResponse = get_response_type(OutputType)
 
-    else:
+    def predict(input: InputType = Body(default=None)):
+        if input is None:
+            output = predictor.predict()
+        else:
+            output = predictor.predict(input)
 
-        def predict():
-            return CogResponse(status="success", output=predictor.predict())
+        # loop over generator function to get the last result
+        if isinstance(output, types.GeneratorType):
+            last_result = None
+            for iteration in enumerate(output):
+                last_result = iteration
+            # last result is a tuple with (index, value)
+            output = last_result[1]
+
+        return CogResponse(status="success", output=output)
 
     app.post("/predict", response_model=CogResponse)(predict)
 

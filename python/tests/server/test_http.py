@@ -1,7 +1,9 @@
+import base64
 import io
 import os
 from pathlib import Path
 import tempfile
+from typing import Generator
 from unittest import mock
 
 from fastapi.testclient import TestClient
@@ -59,7 +61,6 @@ def test_openapi_specification():
                                 "schema": {"$ref": "#/components/schemas/Input"}
                             }
                         },
-                        "required": True,
                     },
                     "responses": {
                         "200": {
@@ -147,7 +148,7 @@ def test_openapi_specification():
 
 def test_yielding_strings_from_generator_predictors():
     class Predictor(cog.Predictor):
-        def predict(self):
+        def predict(self) -> Generator[str, None, None]:
             predictions = ["foo", "bar", "baz"]
             for prediction in predictions:
                 yield prediction
@@ -155,46 +156,26 @@ def test_yielding_strings_from_generator_predictors():
     client = make_client(Predictor())
     resp = client.post("/predict")
     assert resp.status_code == 200
-    assert resp.content_type == "text/plain; charset=utf-8"
-    assert resp.data == b"baz"
-
-
-def test_yielding_json_from_generator_predictors():
-    class Predictor(cog.Predictor):
-        def predict(self):
-            predictions = [
-                {"meaning_of_life": 40},
-                {"meaning_of_life": 41},
-                {"meaning_of_life": 42},
-            ]
-            for prediction in predictions:
-                yield prediction
-
-    client = make_client(Predictor())
-    resp = client.post("/predict")
-    assert resp.status_code == 200
-    assert resp.content_type == "application/json"
-    assert resp.data == b'{"meaning_of_life": 42}'
+    assert resp.json() == {"status": "success", "output": "baz"}
 
 
 def test_yielding_files_from_generator_predictors():
     class Predictor(cog.Predictor):
-        def predict(self):
+        def predict(self) -> Generator[cog.Path, None, None]:
             colors = ["red", "blue", "yellow"]
             for i, color in enumerate(colors):
                 temp_dir = tempfile.mkdtemp()
                 temp_path = os.path.join(temp_dir, f"prediction-{i}.bmp")
                 img = Image.new("RGB", (255, 255), color)
                 img.save(temp_path)
-                yield Path(temp_path)
+                yield cog.Path(temp_path)
 
     client = make_client(Predictor())
     resp = client.post("/predict")
 
     assert resp.status_code == 200
-    # need both image/bmp and image/x-ms-bmp until https://bugs.python.org/issue44211 is fixed
-    assert resp.content_type in ["image/bmp", "image/x-ms-bmp"]
-    image = Image.open(io.BytesIO(resp.data))
+    header, b64data = resp.json()["output"].split(",", 1)
+    image = Image.open(io.BytesIO(base64.b64decode(b64data)))
     image_color = Image.Image.getcolors(image)[0][1]
     assert image_color == (255, 255, 0)  # yellow
 
