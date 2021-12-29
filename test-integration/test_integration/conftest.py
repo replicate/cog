@@ -65,16 +65,22 @@ predict: predict.py:Predictor
 
 
 @pytest.fixture
-def redis_port():
-    container_name = "cog-test-redis-" + random_string(10)
+def redis_port(docker_network):
+    """Start a redis server inside the Docker network.
+
+    Inside the network, it is available at redis:6379
+    Outside the network, it is available at localhost:redis_port
+
+    """
     port = find_free_port()
     with docker_run(
         "redis",
-        name=container_name,
+        hostname="redis",
+        network=docker_network,
         publish=[{"host": port, "container": 6379}],
         detach=True,
     ):
-        wait_for_port(get_local_ip(), port)
+        wait_for_port("localhost", port)
         yield port
 
 
@@ -83,3 +89,11 @@ def docker_image():
     image = "cog-test-" + random_string(10)
     yield image
     subprocess.run(["docker", "rmi", image], check=False)
+
+
+@pytest.fixture
+def docker_network():
+    name = "cog-test-" + random_string(10)
+    subprocess.run(["docker", "network", "create", name])
+    yield name
+    subprocess.run(["docker", "network", "rm", name])

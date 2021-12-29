@@ -39,7 +39,9 @@ def docker_run(
     image,
     name=None,
     detach=False,
+    hostname=None,
     interactive=False,
+    network=None,
     publish: Optional[List[dict]] = None,
     command: Optional[List[str]] = None,
     env: Optional[dict] = None,
@@ -60,6 +62,10 @@ def docker_run(
         cmd += ["--detach"]
     if interactive:
         cmd += ["-i"]
+    if hostname is not None:
+        cmd.extend(["--hostname", network])
+    if network is not None:
+        cmd.extend(["--network", network])
     cmd += [image]
     if command:
         cmd += command

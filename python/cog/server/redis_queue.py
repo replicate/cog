@@ -55,7 +55,6 @@ class RedisQueueWorker:
         redis_host: str,
         redis_port: int,
         input_queue: str,
-        upload_url: str,
         consumer_id: str,
         model_id: Optional[str] = None,
         log_queue: Optional[str] = None,
@@ -66,7 +65,6 @@ class RedisQueueWorker:
         self.redis_host = redis_host
         self.redis_port = redis_port
         self.input_queue = input_queue
-        self.upload_url = upload_url
         self.consumer_id = consumer_id
         self.model_id = model_id
         self.log_queue = log_queue
@@ -232,11 +230,6 @@ class RedisQueueWorker:
                 cleanup_functions.append(return_value.unlink)
             self.push_result(response_queue, return_value, status="success")
 
-    def download(self, url):
-        resp = requests.get(url)
-        resp.raise_for_status()
-        return resp.content
-
     def push_error(self, response_queue, error):
         message = json.dumps(
             {
@@ -257,16 +250,6 @@ class RedisQueueWorker:
         sys.stderr.write(f"Pushing successful result to {response_queue}\n")
         self.redis.rpush(response_queue, response.json())
 
-    def upload_to_temp(self, path: Path) -> str:
-        sys.stderr.write(
-            f"Uploading {path.name} to temporary storage at {self.upload_url}\n"
-        )
-        resp = requests.put(
-            self.upload_url, files={"file": (path.name, path.open("rb"))}
-        )
-        resp.raise_for_status()
-        return resp.json()["url"]
-
     @contextlib.contextmanager
     def capture_log(self, stage, prediction_id):
         with capture_log(
@@ -285,7 +268,7 @@ def _queue_worker_from_argv(
     redis_host,
     redis_port,
     input_queue,
-    upload_url,
+    _,  # upload_url is no longer used
     comsumer_id,
     model_id,
     log_queue,
@@ -303,7 +286,6 @@ def _queue_worker_from_argv(
         redis_host,
         redis_port,
         input_queue,
-        upload_url,
         comsumer_id,
         model_id,
         log_queue,
