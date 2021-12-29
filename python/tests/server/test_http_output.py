@@ -1,3 +1,4 @@
+import base64
 import tempfile
 import os
 from pathlib import Path
@@ -19,47 +20,32 @@ def test_return_wrong_type():
     assert resp.status_code == 422
 
 
-def test_path_output_str():
+def test_path_output_file():
     class Predictor(cog.Predictor):
-        @cog.input("text", type=str)
-        def predict(self, text):
-            temp_dir = tempfile.mkdtemp()
-            temp_path = os.path.join(temp_dir, "my_file.txt")
-            with open(temp_path, "w") as f:
-                f.write(text)
-            return Path(temp_path)
+        def setup(self):
+            pass
 
-    client = make_client(Predictor())
-    resp = client.post("/predict", data={"text": "baz"})
-    assert resp.status_code == 200
-    assert resp.content_type == "text/plain; charset=utf-8"
-    assert resp.data == b"baz"
-
-
-def test_path_output_image():
-    class Predictor(cog.Predictor):
-        def predict(self):
+        def predict(self) -> cog.Path:
             temp_dir = tempfile.mkdtemp()
             temp_path = os.path.join(temp_dir, "my_file.bmp")
             img = Image.new("RGB", (255, 255), "red")
             img.save(temp_path)
-            return Path(temp_path)
+            return cog.Path(temp_path)
 
     client = make_client(Predictor())
-    resp = client.post("/predict")
-    assert resp.status_code == 200
-    # need both image/bmp and image/x-ms-bmp until https://bugs.python.org/issue44211 is fixed
-    assert resp.content_type in ["image/bmp", "image/x-ms-bmp"]
-    assert resp.content_length == 195894
+    res = client.post("/predict")
+    assert res.status_code == 200
+    header, b64data = res.json()["output"].split(",", 1)
+    assert header == "data:image/bmp;base64"
+    assert len(base64.b64decode(b64data)) == 195894
 
 
 def test_json_output_numpy():
     class Predictor(cog.Predictor):
-        def predict(self):
-            return {"foo": np.float32(1.0)}
+        def predict(self) -> np.float:
+            return np.float32(1.0)
 
     client = make_client(Predictor())
     resp = client.post("/predict")
     assert resp.status_code == 200
-    assert resp.content_type == "application/json"
-    assert resp.data == b'{"foo": 1.0}'
+    assert resp.json() == {"output": 1.0, "status": "success"}

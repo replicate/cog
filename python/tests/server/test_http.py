@@ -67,7 +67,7 @@ def test_openapi_specification():
                             "content": {
                                 "application/json": {
                                     "schema": {
-                                        "$ref": "#/components/schemas/ResponseData"
+                                        "$ref": "#/components/schemas/CogResponse"
                                     }
                                 }
                             },
@@ -117,8 +117,8 @@ def test_openapi_specification():
                         },
                     },
                 },
-                "ResponseData": {
-                    "title": "ResponseData",
+                "CogResponse": {
+                    "title": "CogResponse",
                     "required": ["status", "output"],
                     "type": "object",
                     "properties": {

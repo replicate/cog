@@ -1,4 +1,3 @@
-from io import BytesIO
 import json
 from pathlib import Path
 from typing import Optional
@@ -12,9 +11,10 @@ import contextlib
 import redis
 import requests
 
+
 from .redis_log_capture import capture_log
-from ..json import to_json
 from ..predictor import Predictor, get_predict_types, load_predictor
+from ..response import create_response
 
 
 class timeout:
@@ -248,13 +248,14 @@ class RedisQueueWorker:
         self.redis.rpush(response_queue, message)
 
     def push_result(self, response_queue, result, status):
-        message = {
-            "output": result,
-            "status": status,
-        }
+
+        _, OutputType = get_predict_types(predictor)
+        CogResponse = create_response(OutputType)
+
+        response = CogResponse(status=status, output=result)
 
         sys.stderr.write(f"Pushing successful result to {response_queue}\n")
-        self.redis.rpush(response_queue, to_json(message))
+        self.redis.rpush(response_queue, response.json())
 
     def upload_to_temp(self, path: Path) -> str:
         sys.stderr.write(
