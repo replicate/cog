@@ -1,0 +1,7 @@
+#!/bin/bash
+set -e # stop execution if a command or pipeline has an error
+set -x # print statements as they're being executed
+
+make install
+
+cd test-integration && pytest -vvv $@
