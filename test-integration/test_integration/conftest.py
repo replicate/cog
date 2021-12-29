@@ -30,7 +30,6 @@ sys.stderr.write("writing to stderr at import time\\n")
 class Input(BaseModel):
     text: str
     path: cog.Path
-    output_file: bool = False
 
 class Predictor(cog.Predictor):
     def setup(self):
@@ -48,14 +47,6 @@ class Predictor(cog.Predictor):
         time.sleep(.1)
         with open(input.path) as f:
             output = self.foo + input.text + f.read()
-        if input.output_file:
-            tmp = tempfile.NamedTemporaryFile(suffix=".txt")
-            tmp.close()
-            tmp_path = Path(tmp.name)
-            with tmp_path.open("w") as f:
-                f.write(output)
-                print("successfully processed file " + input.text)
-                return tmp_path
         print("successfully processed " + input.text)
         return output
         """
