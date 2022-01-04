@@ -1,6 +1,6 @@
 # Cog: Containers for machine learning
 
-Use Docker for machine learning, without all the pain.
+Put your machine learning model in a standard, production-ready Docker container without having to know how Docker works.
 
 - [What is Cog?](#what-is-cog)
 - [Prerequisites](#prerequisites)
@@ -14,13 +14,13 @@ Use Docker for machine learning, without all the pain.
 
 Cog is an open-source command-line tool that gives you a consistent environment to run your model in – for developing on your laptop, training on GPU machines, and for other people working on the model. Once you've trained your model and you want to share or deploy it, you can bake the model into a Docker image that serves a standard HTTP API and can be deployed anywhere.
 
-Cog does a few handy things beyond normal Docker:
+It does a few neat things:
 
-- **Automatic Docker image.** Define your environment with a simple configuration file, then Cog will generate Dockerfiles with best practices and do all the GPU configuration for you.
-- **Automatic HTTP service.** Cog will generate an HTTP service from the definition of your model, so you don't need to write a Flask server in the right way.
-- **No more CUDA hell.** Cog knows which CUDA/cuDNN/PyTorch/Tensorflow/Python combos are compatible and will pick the right versions for you.
+- **Automatic Docker image.** Define your environment with a simple configuration file, and Cog generates a `Dockerfile` with all the best practices.
+- **Standard, production-ready HTTP and AMQP interface.** Automatically generate APIs for integrating with production systems, battle hardened on Replicate.
+- **No more CUDA hell.** Cog knows which CUDA/cuDNN/PyTorch/Tensorflow/Python combos are compatible and will set it all up correctly for you.
 
-### Develop and train in a consistent environment
+## How it works
 
 Define the Docker environment your model runs in with `cog.yaml`:
 
@@ -33,46 +33,24 @@ build:
   python_version: "3.8"
   python_packages:
     - "torch==1.8.1"
+predict: "predict.py:Predictor"
 ```
 
-Now, you can run commands inside this environment:
-
-```
-$ cog run python train.py
-...
-```
-
-This will:
-
-- Generate a `Dockerfile` with best practices
-- Pick the right CUDA version
-- Build an image
-- Run `python train.py` in the image with the current directory mounted as a volume and GPUs hooked up correctly
-
-<!-- TODO: this doesn't work yet (needs ports etc)
-Or, spin up a Jupyter notebook:
-
-```
-$ cog run jupyter notebook
-```
--->
-
-### Put a trained model in a Docker image
-
-First, you define how predictions are run on your model:
+And define how predictions are run on your model with `predict.py`:
 
 ```python
-import cog
+from cog import Predictor, Input, Path
 import torch
 
-class ColorizationPredictor(cog.Predictor):
+class ColorizationPredictor(Predictor):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
         self.model = torch.load("./weights.pth")
-    
+
     # The arguments and types the model takes as input
-    @cog.input("input", type=cog.Path, help="Grayscale input image")
-    def predict(self, input):
+    def predict(self,
+          input: Path = Input(title="Grayscale input image")
+    ) -> Path:
         """Run a single prediction on the model"""
         processed_input = preprocess(input)
         output = self.model(processed_input)
@@ -97,10 +75,34 @@ $ cog build -t my-colorization-model
 
 $ docker run -d -p 5000:5000 --gpus all my-colorization-model
 
-$ curl http://localhost:5000/predict -X POST -F input=@image.png
+$ curl http://localhost:5000/predictions -X POST \
+   --data '{"input": "https://.../input.jpg"}'
 ```
 
-That's it! Your model will now run forever in this reproducible Docker environment.
+<!-- In development, you can also run arbitrary commands inside the Docker environment:
+
+```
+$ cog run python train.py
+...
+``` -->
+
+<!-- TODO: this doesn't work yet (needs ports etc)
+Or, spin up a Jupyter notebook:
+
+```
+$ cog run jupyter notebook
+```
+-->
+
+## Deploying models to production
+
+Cog does a number of things out of the box to help you deploy models to production:
+
+- **Standard interface.** Put models inside Cog containers, and they'll run anywhere that runs Docker containers.
+- **HTTP prediction server, based on FastAPI.**
+- **Type checking, based on Pydantic.** Cog models define their input and output with JSON Schema, and the HTTP server is defined with OpenAPI.
+- **AMQP RPC interface.** Long-running deep learning models or batch processing is best architected with a queue. Cog models can do this out of the box.
+- **Read/write files from cloud storage.** Files can be read and written directly on Amazon S3 and Google Cloud Storage for efficiency.
 
 ### Why are we building this?
 
@@ -144,10 +146,10 @@ sudo chmod +x /usr/local/bin/cog
 - [Get started with your own model](docs/getting-started-own-model.md)
 - [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's environment
-- [Prediction interface reference](docs/python.md) to learn how the `cog.Predictor` interface works
+- [Prediction interface reference](docs/python.md) to learn how the `Predictor` interface works
 
 ## Need help?
- 
+
 [Join us in #cog on Discord.](https://discord.gg/QmzJApGjyE)
 
 ## Contributors ✨
