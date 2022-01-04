@@ -67,7 +67,7 @@ The next step is to update `predict.py` to define the interface for running pred
 
 ```python
 import cog
-from pathlib import Path
+from cog import Path, Input
 import torch
 
 class Predictor(cog.Predictor):
@@ -75,10 +75,10 @@ class Predictor(cog.Predictor):
         """Load the model into memory to make running multiple predictions efficient"""
         self.net = torch.load("weights.pth")
 
-    # Define the input types for a prediction
-    @cog.input("input", type=Path, help="Image to enlarge")
-    @cog.input("scale", type=float, default=1.5, help="Factor to scale image by")
-    def predict(self, input, scale):
+    def predict(self,
+            image: Path = Input(description="Image to enlarge"),
+            scale: float = Input(description="Factor to scale image by", default=1.5)
+    ) -> Path:
         """Run a single prediction on the model"""
         # ... pre-processing ...
         output = self.net(input)
@@ -88,16 +88,25 @@ class Predictor(cog.Predictor):
 
 Edit your `predict.py` file and fill in the functions with your own model's setup and prediction code. You might need to import parts of your model from another file.
 
-You also need to define the inputs to your model using the `@cog.input()` decorator, as demonstrated above. The first argument maps to the name of the argument in the `predict()` function, and it also takes these other arguments:
+You also need to define the inputs to your model as arguments to the `predict()` function, as demonstrated above. For each argument, you need to annotate with a type. The supported types are:
 
-- `type`: Either `str`, `int`, `float`, `bool`, or `Path` (be sure to add the import, as in the example above). `Path` is used for files. For more complex inputs, save it to a file and use `Path`.
-- `help`: A description of what to pass to this input for users of the model
+- `str`: a string
+- `int`: an integer
+- `float`: a floating point number
+- `bool`: a boolean
+- `cog.File`: a file-like object representing a file
+- `cog.Path`: a path to a file on disk
+
+You can provide more information about the input with the `Input()` function, as shown above. It takes these basic arguments:
+
+- `description`: A description of what to pass to this input for users of the model
 - `default`: A default value to set the input to. If this argument is not passed, the input is required. If it is explicitly set to `None`, the input is optional.
-- `min`: A minimum value for `int` or `float` types.
-- `max`: A maximum value for `int` or `float` types.
-- `options`: A list of values to limit the input to. It can be used with `str`, `int`, and `float` inputs.
+- `gt`: For `int` or `float` types, the value should be greater than this number.
+- `ge`: For `int` or `float` types, the value should be greater than or equal to this number.
+- `lt`: For `int` or `float` types, the value should be less than this number.
+- `le`: For `int` or `float` types, the value should be less than or equal to this number.
 
-For more details about writing your model interface, [take a look at the prediction interface documentation](python.md).
+There are some more advanced options you can pass, too. For more details, [take a look at the prediction interface documentation](python.md).
 
 Next, add the line `predict: "predict.py:Predictor"` to your `cog.yaml`, so it looks something like this:
 
@@ -122,7 +131,7 @@ Written output to output.png
 To pass more inputs to the model, you can add more `-i` options:
 
 ```
-$ cog predict -i input=@input.jpg -i scale=2.0
+$ cog predict -i image=@image.jpg -i scale=2.0
 ```
 
 In this case it is just a number, not a file, so you don't need the `@` prefix.

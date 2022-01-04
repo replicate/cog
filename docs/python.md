@@ -4,18 +4,21 @@ You define how Cog runs predictions on your model by defining a class that inher
 
 ```python
 import cog
-from pathlib import Path
+from cog import Path, Input
 import torch
 
 class ImageScalingPredictor(cog.Predictor):
     def setup(self):
+        """Load the model into memory to make running multiple predictions efficient"""
         self.model = torch.load("weights.pth")
 
-    @cog.input("input", type=Path, help="Image to enlarge")
-    @cog.input("scale", type=float, default=1.5, help="Factor to scale image by")
-    def predict(self, input):
+    def predict(self,
+            image: Path = Input(description="Image to enlarge"),
+            scale: float = Input(description="Factor to scale image by", default=1.5)
+    ) -> Path:
+        """Run a single prediction on the model"""
         # ... pre-processing ...
-        output = self.model(input)
+        output = self.model(image)
         # ... post-processing ...
         return output
 ```
