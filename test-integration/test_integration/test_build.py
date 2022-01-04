@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import subprocess
 from .util import random_string
 
@@ -66,7 +67,8 @@ build:
         subprocess.run(["docker", "rmi", image_name], check=False)
 
 
-def test_build_with_model(project_dir):
+def test_build_with_model():
+    project_dir = Path(__file__).parent / "fixtures/file-project"
     image_name = "cog-test-" + random_string(length=10)
     try:
         subprocess.run(
@@ -86,7 +88,6 @@ def test_build_with_model(project_dir):
             "inputs": [
                 {"name": "text", "type": "str"},
                 {"name": "path", "type": "Path"},
-                {"name": "output_file", "type": "bool", "default": "False"},
             ]
         }
     finally:
