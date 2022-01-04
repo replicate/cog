@@ -1,10 +1,10 @@
 from .predictor import Predictor
-from .types import File, Path
+from .types import File, Input, Path
 
 
 __all__ = [
     "File",
-    "input",
+    "Input",
     "Path",
     "Predictor",
 ]

@@ -4,6 +4,7 @@ import inspect
 import os.path
 from pathlib import Path
 from typing import Literal
+from pydantic import create_model
 
 import yaml
 
@@ -62,7 +63,25 @@ def load_predictor():
 
 
 def get_predict_types(predictor: Predictor):
-    predict_types = inspect.getfullargspec(predictor.predict).annotations
-    InputType = predict_types.get("input")
-    OutputType = predict_types.get("return", Literal[None])
+    signature = inspect.signature(predictor.predict)
+    create_model_kwargs = {}
+
+    for name, parameter in signature.parameters.items():
+        if not parameter.annotation:
+            # TODO: perhaps should throw error if there are arguments not annotated?
+            continue
+
+        # if no default is specified, make it required with "..."
+        if parameter.default is inspect.Signature.empty:
+            default = ...
+        else:
+            default = parameter.default
+
+        create_model_kwargs[name] = (parameter.annotation, default)
+
+    InputType = create_model("Input", **create_model_kwargs)
+    if signature.return_annotation is inspect.Signature.empty:
+        OutputType = Literal[None]
+    else:
+        OutputType = signature.return_annotation
     return InputType, OutputType

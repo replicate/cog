@@ -88,11 +88,8 @@ def test_default_int_input():
 
 
 def test_file_input_data_url():
-    class Input(BaseModel):
-        file: cog.File
-
     class Predictor(cog.Predictor):
-        def predict(self, input: Input) -> str:
+        def predict(self, file: cog.File) -> Path:
             return input.file.read()
 
     client = make_client(Predictor())

@@ -8,6 +8,19 @@ import tempfile
 from typing import Any, BinaryIO
 from urllib.parse import urlparse
 
+from pydantic import Field
+
+
+# TODO: explicitly define arguments to make completion work
+def Input(*args, **kwargs):
+    default = ...
+
+    if "default" in kwargs:
+        default = kwargs["default"]
+        del kwargs["default"]
+
+    return Field(default, *args, **kwargs)
+
 
 def get_filename(url):
     parsed_url = urlparse(url)

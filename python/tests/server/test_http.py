@@ -11,6 +11,8 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 import cog
+from cog import Input
+
 from cog.server.http import create_app
 
 
@@ -36,12 +38,13 @@ def test_setup_is_called():
 
 def test_openapi_specification():
     class Predictor(cog.Predictor):
-        class Input(BaseModel):
-            text: str = Field(..., title="Some text")
-            number: int = Field(10, title="Some number")
-            path: Path = Field(..., title="Some path")
-
-        def predict(self, input: Input) -> str:
+        def predict(
+            self,
+            text: str = Input(title="Some text"),
+            number: int = Input(title="Some number", default=10),
+            path: Path = Input(title="Some path"),
+            image: Path = Input(title="Some path"),
+        ) -> str:
             pass
 
     client = make_client(Predictor())
