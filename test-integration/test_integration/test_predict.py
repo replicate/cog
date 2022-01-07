@@ -79,6 +79,9 @@ predict: "predict.py:Predictor"
         subprocess.run(["docker", "rmi", image_name], check=True)
 
 
+# https://github.com/replicate/cog/commit/28202b12ea40f71d791e840b97a51164e7be3b3c
+# we need to find a better way to test this
+@pytest.mark.skip("incredibly slow")
 def test_predict_with_remote_image(tmpdir_factory):
     image_name = "r8.im/bfirsh/hello-world@sha256:942f3080b0307e926646c6be51f9762991a2d5411b9fd8ee98a6dcc25bcaa9b9"
     subprocess.run(["docker", "rmi", image_name], check=False)
