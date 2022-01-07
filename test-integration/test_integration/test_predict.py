@@ -1,68 +1,30 @@
+from pathlib import Path
+import pytest
 import subprocess
 
 from .util import random_string
 
 
-def test_predict(tmpdir_factory):
-    tmpdir = tmpdir_factory.mktemp("project")
-    with open(tmpdir / "predict.py", "w") as f:
-        f.write(
-            """
-import cog
-
-class Predictor(cog.Predictor):
-    def setup(self):
-        pass
-
-    @cog.input("input", type=str)
-    def predict(self, input):
-        return "hello " + input
-        """
-        )
-    with open(tmpdir / "cog.yaml", "w") as f:
-        cog_yaml = """
-build:
-  python_version: "3.8"
-predict: "predict.py:Predictor"
-        """
-        f.write(cog_yaml)
-
+def test_predict_takes_string_inputs_and_returns_strings_to_stdout():
+    project_dir = Path(__file__).parent / "fixtures/string-project"
     result = subprocess.run(
-        ["cog", "predict", "-i", "world"], cwd=tmpdir, check=True, capture_output=True
+        ["cog", "predict", "-i", "world"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
     )
     # stdout should be clean without any log messages so it can be piped to other commands
     assert result.stdout == b"hello world\n"
 
 
-def test_predict_with_existing_image(tmpdir_factory):
+def test_predict_runs_an_existing_image(tmpdir_factory):
+    project_dir = Path(__file__).parent / "fixtures/string-project"
     image_name = "cog-test-" + random_string(10)
+
     try:
-        tmpdir = tmpdir_factory.mktemp("project")
-        with open(tmpdir / "predict.py", "w") as f:
-            f.write(
-                """
-import cog
-
-class Predictor(cog.Predictor):
-    def setup(self):
-        pass
-
-    @cog.input("input", type=str)
-    def predict(self, input):
-        return "hello " + input
-        """
-            )
-        with open(tmpdir / "cog.yaml", "w") as f:
-            cog_yaml = """
-build:
-  python_version: "3.8"
-predict: "predict.py:Predictor"
-            """
-            f.write(cog_yaml)
-
         subprocess.run(
             ["cog", "build", "-t", image_name],
-            cwd=tmpdir,
+            cwd=project_dir,
             check=True,
         )
 
@@ -103,41 +65,12 @@ def test_predict_with_remote_image(tmpdir_factory):
 
 
 def test_predict_in_subdirectory_with_imports(tmpdir_factory):
-    tmpdir = tmpdir_factory.mktemp("project")
-    subdir = tmpdir.mkdir("my-subdir")
-    with open(subdir / "predict.py", "w") as f:
-        f.write(
-            """
-import cog
-
-from mylib import concat
-
-class Predictor(cog.Predictor):
-    def setup(self):
-        pass
-
-    @cog.input("input", type=str)
-    def predict(self, input):
-        return concat("hello", input)
-        """
-        )
-    with open(tmpdir / "mylib.py", "w") as f:
-        f.write(
-            """
-def concat(a, b):
-    return a + " " + b
-        """
-        )
-    with open(tmpdir / "cog.yaml", "w") as f:
-        cog_yaml = """
-build:
-  python_version: "3.8"
-predict: "my-subdir/predict.py:Predictor"
-        """
-        f.write(cog_yaml)
-
+    project_dir = Path(__file__).parent / "fixtures/subdirectory-project"
     result = subprocess.run(
-        ["cog", "predict", "-i", "world"], cwd=tmpdir, check=True, capture_output=True
+        ["cog", "predict", "-i", "world"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
     )
     # stdout should be clean without any log messages so it can be piped to other commands
     assert result.stdout == b"hello world\n"
