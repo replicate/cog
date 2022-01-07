@@ -94,7 +94,7 @@ class RedisQueueWorker:
 
     def receive_message(self):
         # first, try to autoclaim old messages from pending queue
-        _, raw_messages = self.redis.execute_command(
+        raw_messages = self.redis.execute_command(
             "XAUTOCLAIM",
             self.input_queue,
             self.input_queue,

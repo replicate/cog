@@ -17,7 +17,7 @@ setuptools.setup(
     install_requires=[
         # intionally loose. perhaps these should be vendored to not collide with user code?
         "flask>=2,<3",
-        "redis>=3,<4",
+        "redis>=4,<5",
         "requests>=2,<3",
         "PyYAML",
     ],
