@@ -55,6 +55,9 @@ func generateDockerArgs(options internalRunOptions) []string {
 	if options.Detach {
 		dockerArgs = append(dockerArgs, "--detach")
 	}
+	for _, env := range options.Env {
+		dockerArgs = append(dockerArgs, "--env", env)
+	}
 	if options.GPUs != "" {
 		dockerArgs = append(dockerArgs, "--gpus", options.GPUs)
 	}
