@@ -24,7 +24,7 @@ https://github.com/replicate/cog`,
 		Version: fmt.Sprintf("%s (built %s)", global.Version, global.BuildTime),
 		// This stops errors being printed because we print them in cmd/cog/cog.go
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			if global.Verbose {
+			if global.Debug {
 				console.SetLevel(console.DebugLevel)
 			}
 			cmd.SilenceUsage = true
@@ -47,7 +47,7 @@ https://github.com/replicate/cog`,
 }
 
 func setPersistentFlags(cmd *cobra.Command) {
-	cmd.PersistentFlags().BoolVar(&global.Verbose, "debug", false, "Show debugging output")
+	cmd.PersistentFlags().BoolVar(&global.Debug, "debug", false, "Show debugging output")
 	cmd.PersistentFlags().BoolVar(&global.ProfilingEnabled, "profile", false, "Enable profiling")
 	cmd.PersistentFlags().Bool("version", false, "Show version of Cog")
 	_ = cmd.PersistentFlags().MarkHidden("profile")

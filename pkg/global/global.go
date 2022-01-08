@@ -8,7 +8,7 @@ var (
 	Version               = "dev"
 	Commit                = ""
 	BuildTime             = "none"
-	Verbose               = false
+	Debug                 = false
 	ProfilingEnabled      = false
 	StartupTimeout        = 5 * time.Minute
 	ConfigFilename        = "cog.yaml"
