@@ -1,281 +1,269 @@
-import io
+import base64
+from enum import Enum
 import os
-from pathlib import Path
+import tempfile
 
-import pytest
+from PIL import Image
+from pydantic import BaseModel
+import responses
 
 import cog
+from cog import Input, Path, File
 from .test_http import make_client
 
 
 def test_no_input():
     class Predictor(cog.Predictor):
-        def predict(self):
+        def predict(self) -> str:
             return "foobar"
 
     client = make_client(Predictor())
-    resp = client.post("/predict")
+    resp = client.post("/predictions")
     assert resp.status_code == 200
-    assert resp.data == b"foobar"
+    assert resp.json() == {"status": "success", "output": "foobar"}
 
 
 def test_good_str_input():
     class Predictor(cog.Predictor):
-        @cog.input("text", type=str)
-        def predict(self, text):
+        def predict(self, text: str) -> str:
             return text
 
     client = make_client(Predictor())
-    resp = client.post("/predict", data={"text": "baz"})
+    resp = client.post("/predictions", json={"input": {"text": "baz"}})
     assert resp.status_code == 200
-    assert resp.data == b"baz"
+    assert resp.json() == {"status": "success", "output": "baz"}
 
 
 def test_good_int_input():
     class Predictor(cog.Predictor):
-        @cog.input("num", type=int)
-        def predict(self, num):
-            return str(num ** 3)
+        def predict(self, num: int) -> int:
+            return num ** 3
 
     client = make_client(Predictor())
-    resp = client.post("/predict", data={"num": 3})
+    resp = client.post("/predictions", json={"input": {"num": 3}})
     assert resp.status_code == 200
-    assert resp.data == b"27"
-    resp = client.post("/predict", data={"num": -3})
+    assert resp.json() == {"output": 27, "status": "success"}
+    resp = client.post("/predictions", json={"input": {"num": -3}})
     assert resp.status_code == 200
-    assert resp.data == b"-27"
+    assert resp.json() == {"output": -27, "status": "success"}
 
 
 def test_bad_int_input():
     class Predictor(cog.Predictor):
-        @cog.input("num", type=int)
-        def predict(self, num):
-            return str(num ** 2)
+        def predict(self, num: int) -> int:
+            return num ** 2
 
     client = make_client(Predictor())
-    resp = client.post("/predict", data={"num": "foo"})
-    assert resp.status_code == 400
+    resp = client.post("/predictions", json={"input": {"num": "foo"}})
+    assert resp.json() == {
+        "detail": [
+            {
+                "loc": ["body", "input", "num"],
+                "msg": "value is not a valid integer",
+                "type": "type_error.integer",
+            }
+        ]
+    }
+    assert resp.status_code == 422
 
 
 def test_default_int_input():
     class Predictor(cog.Predictor):
-        @cog.input("num", type=int, default=5)
-        def predict(self, num):
-            return str(num ** 2)
+        def predict(self, num: int = Input(default=5)) -> int:
+            return num ** 2
 
     client = make_client(Predictor())
-    resp = client.post("/predict", data={"num": 3})
+
+    resp = client.post("/predictions", json={"input": {}})
     assert resp.status_code == 200
-    assert resp.data == b"9"
-    resp = client.post("/predict")
+    assert resp.json() == {"output": 25, "status": "success"}
+
+    resp = client.post("/predictions", json={"input": {"num": 3}})
     assert resp.status_code == 200
-    assert resp.data == b"25"
+    assert resp.json() == {"output": 9, "status": "success"}
 
 
-def test_good_float_input():
+def test_file_input_data_url():
     class Predictor(cog.Predictor):
-        @cog.input("num", type=float)
-        def predict(self, num):
-            return str(num ** 3)
+        def predict(self, file: File) -> str:
+            return file.read()
 
     client = make_client(Predictor())
-    resp = client.post("/predict", data={"num": 3})
-    assert resp.status_code == 200
-    assert resp.data == b"27.0"
-    resp = client.post("/predict", data={"num": 3.5})
-    assert resp.status_code == 200
-    assert resp.data == b"42.875"
-    resp = client.post("/predict", data={"num": -3.5})
-    assert resp.status_code == 200
-    assert resp.data == b"-42.875"
-
-
-def test_bad_float_input():
-    class Predictor(cog.Predictor):
-        @cog.input("num", type=float)
-        def predict(self, num):
-            return str(num ** 2)
-
-    client = make_client(Predictor())
-    resp = client.post("/predict", data={"num": "foo"})
-    assert resp.status_code == 400
-
-
-def test_good_bool_input():
-    class Predictor(cog.Predictor):
-        @cog.input("flag", type=bool)
-        def predict(self, flag):
-            if flag:
-                return "yes"
-            else:
-                return "no"
-
-    client = make_client(Predictor())
-    resp = client.post("/predict", data={"flag": True})
-    assert resp.status_code == 200
-    assert resp.data == b"yes"
-    resp = client.post("/predict", data={"flag": False})
-    assert resp.status_code == 200
-    assert resp.data == b"no"
-
-
-def test_good_path_input():
-    class Predictor(cog.Predictor):
-        @cog.input("path", type=Path)
-        def predict(self, path):
-            with open(path) as f:
-                return f.read() + " " + os.path.basename(path)
-
-    client = make_client(Predictor())
-    path_data = (io.BytesIO(b"bar"), "foo.txt")
     resp = client.post(
-        "/predict", data={"path": path_data}, content_type="multipart/form-data"
+        "/predictions",
+        json={
+            "input": {
+                "file": "data:text/plain;base64,"
+                + base64.b64encode(b"bar").decode("utf-8")
+            }
+        },
     )
+    assert resp.json() == {"output": "bar", "status": "success"}
     assert resp.status_code == 200
-    assert resp.data == b"bar foo.txt"
 
 
-def test_bad_path_input():
+@responses.activate
+def test_file_input_with_http_url():
     class Predictor(cog.Predictor):
-        @cog.input("path", type=Path)
-        def predict(self, path):
-            with open(path) as f:
-                return f.read() + " " + os.path.basename(path)
+        def predict(self, file: File) -> str:
+            return file.read()
+
+    responses.add(responses.GET, "http://example.com/foo.txt", body="hello")
 
     client = make_client(Predictor())
-    resp = client.post("/predict", data={"path": "bar"})
-    assert resp.status_code == 400
-
-
-def test_default_path_input():
-    class Predictor(cog.Predictor):
-        @cog.input("path", type=Path, default=None)
-        def predict(self, path):
-            if path is None:
-                return "noneee"
-            with open(path) as f:
-                return f.read() + " " + os.path.basename(path)
-
-    client = make_client(Predictor())
-    path_data = (io.BytesIO(b"bar"), "foo.txt")
     resp = client.post(
-        "/predict", data={"path": path_data}, content_type="multipart/form-data"
+        "/predictions",
+        json={"input": {"file": "http://example.com/foo.txt"}},
     )
+    assert resp.json() == {"output": "hello", "status": "success"}
+
+
+def test_path_input_data_url():
+    class Predictor(cog.Predictor):
+        def predict(self, path: Path) -> str:
+            with open(path) as fh:
+                extension = fh.name.split(".")[-1]
+                return f"{extension} {fh.read()}"
+
+    client = make_client(Predictor())
+    resp = client.post(
+        "/predictions",
+        json={
+            "input": {
+                "path": "data:text/plain;base64,"
+                + base64.b64encode(b"bar").decode("utf-8")
+            }
+        },
+    )
+    assert resp.json() == {"output": "txt bar", "status": "success"}
     assert resp.status_code == 200
-    assert resp.data == b"bar foo.txt"
-    resp = client.post("/predict", data={})
-    assert resp.status_code == 200
-    assert resp.data == b"noneee"
 
 
-@pytest.mark.skip("This should work but doesn't at the moment")
-def test_bad_input_name():
-    with pytest.raises(TypeError):
+@responses.activate
+def test_file_input_with_http_url():
+    class Predictor(cog.Predictor):
+        def predict(self, path: Path) -> str:
+            with open(path) as fh:
+                extension = fh.name.split(".")[-1]
+                return f"{extension} {fh.read()}"
 
-        class Predictor(cog.Predictor):
-            @cog.input("text", type=str)
-            def predict(self, bad):
-                return "bar"
+    responses.add(responses.GET, "http://example.com/foo.txt", body="hello")
+
+    client = make_client(Predictor())
+    resp = client.post(
+        "/predictions",
+        json={"input": {"path": "http://example.com/foo.txt"}},
+    )
+    assert resp.json() == {"output": "txt hello", "status": "success"}
+
+
+def test_file_bad_input():
+    class Predictor(cog.Predictor):
+        def predict(self, file: File) -> str:
+            return file.read()
+
+    client = make_client(Predictor())
+    resp = client.post(
+        "/predictions",
+        json={"input": {"file": "foo"}},
+    )
+    assert resp.status_code == 422
+
+
+def test_path_output_file():
+    class Predictor(cog.Predictor):
+        def predict(self) -> Path:
+            temp_dir = tempfile.mkdtemp()
+            temp_path = os.path.join(temp_dir, "my_file.bmp")
+            img = Image.new("RGB", (255, 255), "red")
+            img.save(temp_path)
+            return Path(temp_path)
+
+    client = make_client(Predictor())
+    res = client.post("/predictions")
+    assert res.status_code == 200
+    header, b64data = res.json()["output"].split(",", 1)
+    # need both image/bmp and image/x-ms-bmp until https://bugs.python.org/issue44211 is fixed
+    assert header in ["data:image/bmp;base64", "data:image/x-ms-bmp;base64"]
+    assert len(base64.b64decode(b64data)) == 195894
 
 
 def test_extranous_input_keys():
+    class Input(BaseModel):
+        text: str
+
     class Predictor(cog.Predictor):
-        @cog.input("text", type=str)
-        def predict(self, text):
-            return text
+        def predict(self, input: Input):
+            return input.text
 
     client = make_client(Predictor())
-    resp = client.post("/predict", data={"text": "baz", "text2": "qux"})
-    assert resp.status_code == 400
-
-
-def test_min_max():
-    class Predictor(cog.Predictor):
-        @cog.input("num1", type=float, min=3, max=10.5)
-        @cog.input("num2", type=float, min=-4)
-        @cog.input("num3", type=int, max=-4)
-        def predict(self, num1, num2, num3):
-            return num1 + num2 + num3
-
-    client = make_client(Predictor())
-    resp = client.post("/predict", data={"num1": 3, "num2": -4, "num3": -4})
-    assert resp.status_code == 200
-    assert resp.data == b"-5.0"
-    resp = client.post("/predict", data={"num1": 2, "num2": -4, "num3": -4})
-    assert resp.status_code == 400
-    resp = client.post("/predict", data={"num1": 3, "num2": -4.1, "num3": -4})
-    assert resp.status_code == 400
-    resp = client.post("/predict", data={"num1": 3, "num2": -4, "num3": -3})
-    assert resp.status_code == 400
-
-
-def test_good_options():
-    class Predictor(cog.Predictor):
-        @cog.input("text", type=str, options=["foo", "bar"])
-        @cog.input("num", type=int, options=[1, 2, 3])
-        def predict(self, text, num):
-            return text + ("a" * num)
-
-    client = make_client(Predictor())
-    resp = client.post("/predict", data={"text": "foo", "num": 2})
-    assert resp.status_code == 200
-    assert resp.data == b"fooaa"
-
-
-def test_bad_options():
-    class Predictor(cog.Predictor):
-        @cog.input("text", type=str, options=["foo", "bar"])
-        @cog.input("num", type=int, options=[1, 2, 3])
-        def predict(self, text, num):
-            return text + ("a" * num)
-
-    client = make_client(Predictor())
-    resp = client.post("/predict", data={"text": "baz", "num": 2})
-    assert resp.status_code == 400
-    resp = client.post("/predict", data={"text": "bar", "num": 4})
-    assert resp.status_code == 400
-
-
-def test_bad_options_type():
-    with pytest.raises(ValueError):
-
-        class Predictor(cog.Predictor):
-            @cog.input("text", type=str, options=[])
-            def predict(self, text):
-                return text
-
-    with pytest.raises(ValueError):
-
-        class Predictor(cog.Predictor):
-            @cog.input("text", type=str, options=["foo"])
-            def predict(self, text):
-                return text
-
-    with pytest.raises(ValueError):
-
-        class Predictor(cog.Predictor):
-            @cog.input("text", type=Path, options=["foo"])
-            def predict(self, text):
-                return text
+    resp = client.post("/predictions", json={"input": {"text": "baz", "text2": "qux"}})
+    assert resp.status_code == 422
 
 
 def test_multiple_arguments():
     class Predictor(cog.Predictor):
-        @cog.input("text", type=str)
-        @cog.input("num1", type=int)
-        @cog.input("num2", type=int, default=10)
-        @cog.input("path", type=Path)
-        def predict(self, text, num1, num2, path):
-            with open(path) as f:
-                path_contents = f.read()
-            return text + " " + str(num1 * num2) + " " + path_contents
+        def predict(
+            self,
+            text: str,
+            path: Path,
+            num1: int,
+            num2: int = Input(default=10),
+        ) -> str:
+            with open(path) as fh:
+                return text + " " + str(num1 * num2) + " " + fh.read()
 
     client = make_client(Predictor())
-    path_data = (io.BytesIO(b"bar"), "foo.txt")
     resp = client.post(
-        "/predict",
-        data={"text": "baz", "num1": 5, "path": path_data},
-        content_type="multipart/form-data",
+        "/predictions",
+        json={
+            "input": {
+                "text": "baz",
+                "num1": 5,
+                "path": "data:text/plain;base64,"
+                + base64.b64encode(b"wibble").decode("utf-8"),
+            }
+        },
     )
     assert resp.status_code == 200
-    assert resp.data == b"baz 50 bar"
+    assert resp.json() == {"output": "baz 50 wibble", "status": "success"}
+
+
+def test_gt_lt():
+    class Predictor(cog.Predictor):
+        def predict(self, num: float = Input(gt=3, lt=10.5)) -> float:
+            return num
+
+    client = make_client(Predictor())
+    resp = client.post("/predictions", json={"input": {"num": 2}})
+    assert resp.json() == {
+        "detail": [
+            {
+                "ctx": {"limit_value": 3},
+                "loc": ["body", "input", "num"],
+                "msg": "ensure this value is greater than 3",
+                "type": "value_error.number.not_gt",
+            }
+        ]
+    }
+    assert resp.status_code == 422
+
+    resp = client.post("/predictions", json={"input": {"num": 5}})
+    assert resp.status_code == 200
+
+
+def test_options():
+    # TODO: choices
+    class Options(Enum):
+        foo = "foo"
+        bar = "bar"
+
+    class Predictor(cog.Predictor):
+        def predict(self, text: Options) -> str:
+            return str(text)
+
+    client = make_client(Predictor())
+    resp = client.post("/predictions", json={"input": {"text": "foo"}})
+    assert resp.status_code == 200
+    resp = client.post("/predictions", json={"input": {"text": "baz", "num": 2}})
+    assert resp.status_code == 422

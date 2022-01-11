@@ -1,0 +1,128 @@
+import io
+import mimetypes
+import os
+import base64
+import pathlib
+import requests
+import shutil
+import tempfile
+from typing import Any, Optional
+from urllib.parse import urlparse
+
+from pydantic import Field
+from pydantic.typing import NoArgAnyCallable
+
+
+def Input(
+    default=...,
+    default_factory: Optional[NoArgAnyCallable] = None,
+    alias: str = None,
+    title: str = None,
+    description: str = None,
+    const: bool = None,
+    gt: float = None,
+    ge: float = None,
+    lt: float = None,
+    le: float = None,
+    multiple_of: float = None,
+    min_items: int = None,
+    max_items: int = None,
+    min_length: int = None,
+    max_length: int = None,
+    allow_mutation: bool = True,
+    regex: str = None,
+    **kwargs: Any,
+):
+    """Input is similar to pydantic.Field, but doesn't require a default value to be the first argument."""
+    return Field(
+        default,
+        default_factory=default_factory,
+        alias=alias,
+        title=title,
+        description=description,
+        const=const,
+        gt=gt,
+        ge=ge,
+        lt=lt,
+        le=le,
+        multiple_of=multiple_of,
+        min_items=min_items,
+        max_items=max_items,
+        min_length=min_length,
+        max_length=max_length,
+        allow_mutation=allow_mutation,
+        regex=regex,
+        **kwargs,
+    )
+
+
+def get_filename(url):
+    parsed_url = urlparse(url)
+    if parsed_url.scheme == "data":
+        header, _ = parsed_url.path.split(",", 1)
+        mime_type, _ = header.split(";", 1)
+        return "file" + mimetypes.guess_extension(mime_type)
+    return os.path.basename(parsed_url.path)
+
+
+class File(io.IOBase):
+    validate_always = True
+
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, value: Any) -> io.IOBase:
+        if isinstance(value, io.IOBase):
+            return value
+
+        parsed_url = urlparse(value)
+        if parsed_url.scheme == "data":
+            # https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URIs
+            # TODO: decode properly. this maybe? https://github.com/fcurella/python-datauri/
+            header, encoded = parsed_url.path.split(",", 1)
+            return io.BytesIO(base64.b64decode(encoded))
+        elif parsed_url.scheme == "http" or parsed_url.scheme == "https":
+            resp = requests.get(value, stream=True)
+            resp.raise_for_status()
+            resp.raw.decode_content = True
+            return resp.raw
+        else:
+            raise ValueError(
+                f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
+            )
+
+    @classmethod
+    def __modify_schema__(cls, field_schema):
+        """Defines what this type should be in openapi.json"""
+        # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
+        field_schema.update(type="string", format="uri")
+
+
+class Path(pathlib.PosixPath):
+    validate_always = True
+
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, value: Any) -> pathlib.Path:
+        if isinstance(value, pathlib.Path):
+            return value
+
+        src = File.validate(value)
+        # TODO: cleanup!
+        temp_dir = tempfile.mkdtemp()
+        temp_path = os.path.join(temp_dir, get_filename(value))
+        with open(temp_path, "wb") as dest:
+            shutil.copyfileobj(src, dest)
+
+        return cls(dest.name)
+
+    @classmethod
+    def __modify_schema__(cls, field_schema):
+        """Defines what this type should be in openapi.json"""
+        # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
+        field_schema.update(type="string", format="uri")

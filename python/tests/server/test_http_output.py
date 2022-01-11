@@ -1,34 +1,31 @@
-import tempfile
+import base64
+import io
 import os
-from pathlib import Path
+import tempfile
 
 import numpy as np
 from PIL import Image
+import responses
+from responses.matchers import multipart_matcher
 
 import cog
+from cog import Path, File
 from .test_http import make_client
 
 
-def test_path_output_str():
+def test_return_wrong_type():
     class Predictor(cog.Predictor):
-        @cog.input("text", type=str)
-        def predict(self, text):
-            temp_dir = tempfile.mkdtemp()
-            temp_path = os.path.join(temp_dir, "my_file.txt")
-            with open(temp_path, "w") as f:
-                f.write(text)
-            return Path(temp_path)
+        def predict(self) -> int:
+            return "foo"
 
-    client = make_client(Predictor())
-    resp = client.post("/predict", data={"text": "baz"})
-    assert resp.status_code == 200
-    assert resp.content_type == "text/plain; charset=utf-8"
-    assert resp.data == b"baz"
+    client = make_client(Predictor(), raise_server_exceptions=False)
+    resp = client.post("/predictions")
+    assert resp.status_code == 500
 
 
-def test_path_output_image():
+def test_path_output_path():
     class Predictor(cog.Predictor):
-        def predict(self):
+        def predict(self) -> Path:
             temp_dir = tempfile.mkdtemp()
             temp_path = os.path.join(temp_dir, "my_file.bmp")
             img = Image.new("RGB", (255, 255), "red")
@@ -36,20 +33,90 @@ def test_path_output_image():
             return Path(temp_path)
 
     client = make_client(Predictor())
-    resp = client.post("/predict")
-    assert resp.status_code == 200
+    res = client.post("/predictions")
+    assert res.status_code == 200
+    header, b64data = res.json()["output"].split(",", 1)
     # need both image/bmp and image/x-ms-bmp until https://bugs.python.org/issue44211 is fixed
-    assert resp.content_type in ["image/bmp", "image/x-ms-bmp"]
-    assert resp.content_length == 195894
+    assert header in ["data:image/bmp;base64", "data:image/x-ms-bmp;base64"]
+    assert len(base64.b64decode(b64data)) == 195894
+
+
+@responses.activate
+def test_output_path_to_http():
+    class Predictor(cog.Predictor):
+        def predict(self) -> Path:
+            temp_dir = tempfile.mkdtemp()
+            temp_path = os.path.join(temp_dir, "file.txt")
+            with open(temp_path, "w") as fh:
+                fh.write("hello")
+            return Path(temp_path)
+
+    fh = io.BytesIO(b"hello")
+    fh.name = "file.txt"
+    responses.add(
+        responses.PUT,
+        "http://example.com/upload/file.txt",
+        status=201,
+        match=[multipart_matcher({"file": fh})],
+    )
+
+    client = make_client(Predictor())
+    res = client.post(
+        "/predictions", json={"output_file_prefix": "http://example.com/upload/"}
+    )
+    assert res.json() == {
+        "status": "success",
+        "output": "http://example.com/upload/file.txt",
+    }
+    assert res.status_code == 200
+
+
+def test_path_output_file():
+    class Predictor(cog.Predictor):
+        def predict(self) -> File:
+            return io.StringIO("hello")
+
+    client = make_client(Predictor())
+    res = client.post("/predictions")
+    assert res.status_code == 200
+    assert res.json() == {
+        "status": "success",
+        "output": "data:application/octet-stream;base64,aGVsbG8=",  # hello
+    }
+
+
+@responses.activate
+def test_output_file_to_http():
+    class Predictor(cog.Predictor):
+        def predict(self) -> File:
+            fh = io.StringIO("hello")
+            fh.name = "foo.txt"
+            return fh
+
+    responses.add(
+        responses.PUT,
+        "http://example.com/upload/foo.txt",
+        status=201,
+        match=[multipart_matcher({"file": ("foo.txt", b"hello")})],
+    )
+
+    client = make_client(Predictor())
+    res = client.post(
+        "/predictions", json={"output_file_prefix": "http://example.com/upload/"}
+    )
+    assert res.json() == {
+        "status": "success",
+        "output": "http://example.com/upload/foo.txt",
+    }
+    assert res.status_code == 200
 
 
 def test_json_output_numpy():
     class Predictor(cog.Predictor):
-        def predict(self):
-            return {"foo": np.float32(1.0)}
+        def predict(self) -> np.float64:
+            return np.float64(1.0)
 
     client = make_client(Predictor())
-    resp = client.post("/predict")
+    resp = client.post("/predictions")
     assert resp.status_code == 200
-    assert resp.content_type == "application/json"
-    assert resp.data == b'{"foo": 1.0}'
+    assert resp.json() == {"output": 1.0, "status": "success"}

@@ -20,8 +20,7 @@ class Predictor(cog.Predictor):
         print("setting up predictor")
         self.foo = "foo"
 
-    @cog.input("text", type=str, default="")
-    def predict(self, text):
+    def predict(self, text: str = "") -> str:
         logging.warn("writing log message")
         time.sleep(0.1)
         libc.puts(b"writing from C")
