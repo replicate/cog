@@ -1,17 +1,19 @@
 from abc import ABC, abstractmethod
+from collections.abc import Generator
 import importlib
+import inspect
 import os.path
 from pathlib import Path
-from typing import Dict, Any
+import typing
+from pydantic import create_model
+from pydantic.fields import FieldInfo
 
+# Added in Python 3.8. Can be from typing if we drop support for <3.8.
+from typing_extensions import Literal, get_origin, get_args
 import yaml
 
 from .errors import ConfigDoesNotExist, PredictorNotSet
-
-
-# TODO(andreas): handle directory input
-# TODO(andreas): handle List[Dict[str, int]], etc.
-# TODO(andreas): model-level documentation
+from .types import Input
 
 
 class Predictor(ABC):
@@ -21,36 +23,6 @@ class Predictor(ABC):
     @abstractmethod
     def predict(self, **kwargs):
         pass
-
-    def get_type_signature(self):
-        """
-        Returns a dict describing the inputs of the model.
-        """
-        from .input import (
-            get_type_name,
-            UNSPECIFIED,
-        )
-
-        inputs = []
-        if hasattr(self.predict, "_inputs"):
-            input_specs = self.predict._inputs
-            for spec in input_specs:
-                arg: Dict[str, Any] = {
-                    "name": spec.name,
-                    "type": get_type_name(spec.type),
-                }
-                if spec.help:
-                    arg["help"] = spec.help
-                if spec.default is not UNSPECIFIED:
-                    arg["default"] = str(spec.default)  # TODO: don't string this
-                if spec.min is not None:
-                    arg["min"] = str(spec.min)  # TODO: don't string this
-                if spec.max is not None:
-                    arg["max"] = str(spec.max)  # TODO: don't string this
-                if spec.options is not None:
-                    arg["options"] = [str(o) for o in spec.options]
-                inputs.append(arg)
-        return {"inputs": inputs}
 
 
 def run_prediction(predictor, inputs, cleanup_functions):
@@ -88,3 +60,47 @@ def load_predictor():
     spec.loader.exec_module(module)
     predictor_class = getattr(module, class_name)
     return predictor_class()
+
+
+def get_input_type(predictor: Predictor):
+    signature = inspect.signature(predictor.predict)
+    create_model_kwargs = {}
+
+    order = 0
+
+    for name, parameter in signature.parameters.items():
+        if not parameter.annotation:
+            # TODO: perhaps should throw error if there are arguments not annotated?
+            continue
+
+        # if no default is specified, create an empty, required input
+        if parameter.default is inspect.Signature.empty:
+            default = Input()
+        else:
+            default = parameter.default
+            # If user hasn't used `Input`, then wrap it in that
+            if not isinstance(default, FieldInfo):
+                default = Input(default=default)
+
+        # Fields aren't ordered, so use this pattern to ensure defined order
+        # https://github.com/go-openapi/spec/pull/116
+        default.extra["x-order"] = order
+        order += 1
+
+        create_model_kwargs[name] = (parameter.annotation, default)
+
+    return create_model("Input", **create_model_kwargs)
+
+
+def get_output_type(predictor: Predictor):
+    signature = inspect.signature(predictor.predict)
+    if signature.return_annotation is inspect.Signature.empty:
+        OutputType = Literal[None]
+    else:
+        OutputType = signature.return_annotation
+
+    # The type that goes in the response is the type that is yielded
+    if get_origin(OutputType) is Generator:
+        OutputType = get_args(OutputType)[0]
+
+    return OutputType

@@ -1,46 +1,44 @@
-import json
+from enum import Enum
+import io
 
-# Based on keepsake.json
+from pydantic import BaseModel
 
-# We load numpy but not torch or tensorflow because numpy loads very fast and
-# they're probably using it anyway
-# fmt: off
+from .types import Path
+
 try:
     import numpy as np  # type: ignore
+
     has_numpy = True
 except ImportError:
     has_numpy = False
-# fmt: on
-
-# Tensorflow takes a solid 10 seconds to import on a modern Macbook Pro, so instead of importing,
-# do this instead
-def _is_tensorflow_tensor(obj):
-    # e.g. __module__='tensorflow.python.framework.ops', __name__='EagerTensor'
-    return (
-        obj.__class__.__module__.split(".")[0] == "tensorflow"
-        and "Tensor" in obj.__class__.__name__
-    )
 
 
-def _is_torch_tensor(obj):
-    return (obj.__class__.__module__, obj.__class__.__name__) == ("torch", "Tensor")
+def encode_json(obj, upload_file):
+    """
+    Returns a JSON-compatible version of the object. It will encode any Pydantic models and custom types.
 
+    When a file is encountered, it will be passed to upload_file. Any paths will be opened and converted to files.
 
-class CustomJSONEncoder(json.JSONEncoder):
-    def default(self, o):
-        if has_numpy:
-            if isinstance(o, np.integer):
-                return int(o)
-            elif isinstance(o, np.floating):
-                return float(o)
-            elif isinstance(o, np.ndarray):
-                return o.tolist()
-        if _is_torch_tensor(o):
-            return o.detach().tolist()
-        if _is_tensorflow_tensor(o):
-            return o.numpy().tolist()
-        return json.JSONEncoder.default(self, o)
-
-
-def to_json(obj):
-    return json.dumps(obj, cls=CustomJSONEncoder)
+    Somewhat based on FastAPI's jsonable_encoder().
+    """
+    if isinstance(obj, BaseModel):
+        return encode_json(obj.dict(exclude_unset=True), upload_file)
+    if isinstance(obj, dict):
+        return {key: encode_json(value, upload_file) for key, value in obj.items()}
+    if isinstance(obj, list):
+        return [encode_json(value, upload_file) for value in obj]
+    if isinstance(obj, Enum):
+        return obj.value
+    if isinstance(obj, Path):
+        with obj.open("rb") as f:
+            return upload_file(f)
+    if isinstance(obj, io.IOBase):
+        return upload_file(obj)
+    if has_numpy:
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+    return obj

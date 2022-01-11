@@ -1,0 +1,5 @@
+build:
+  python_version: "3.8"
+  python_packages:
+    - "pillow==8.3.2"
+predict: "predict.py:Predictor"
