@@ -1,9 +1,12 @@
-flask==2.0.1
+fastapi==0.70.1
 numpy==1.21.1
 pillow==9.0.0
+pydantic==1.8.2
 pytest==6.2.4
 PyYAML==5.4.1
 redis==4.1.0
 requests==2.25.1
-waiting==1.4.1
+responses==0.16.0
+uvicorn[standard]==0.16.0
 wheel==0.36.2
+

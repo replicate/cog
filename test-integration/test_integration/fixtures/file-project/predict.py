@@ -1,15 +1,13 @@
-from pathlib import Path
 import tempfile
 import cog
+from cog import Path
 
 
 class Predictor(cog.Predictor):
     def setup(self):
         self.foo = "foo"
 
-    @cog.input("text", type=str)
-    @cog.input("path", type=Path)
-    def predict(self, text, path):
+    def predict(self, text: str, path: Path) -> Path:
         with open(path) as f:
             output = self.foo + text + f.read()
         tmpdir = Path(tempfile.mkdtemp())

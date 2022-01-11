@@ -1,15 +1,15 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
-	"github.com/TylerBrock/colorjson"
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
+	"github.com/vincent-petithory/dataurl"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
@@ -110,7 +110,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 	// FIXME: will not run on signal
 	defer func() {
-		console.Infof("Stopping container...")
+		console.Debugf("Stopping container...")
 		if err := predictor.Stop(); err != nil {
 			console.Warnf("Failed to stop container: %s", err)
 		}
@@ -122,43 +122,59 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, outputPath string) error {
 	console.Info("Running prediction...")
 	inputs := parseInputFlags(inputFlags)
-	result, err := predictor.Predict(inputs)
+	prediction, err := predictor.Predict(inputs)
+	if err != nil {
+		return err
+	}
+	schema, err := predictor.GetSchema()
 	if err != nil {
 		return err
 	}
 
-	// TODO(andreas): support multiple outputs?
-	output := result.Values["output"]
-
-	// Write to stdout
-	if outputPath == "" {
-		// Is it something we can sensibly write to stdout?
-		if output.MimeType == "text/plain" {
-			output, err := io.ReadAll(output.Buffer)
-			if err != nil {
-				return err
-			}
-			console.Output(string(output))
-			return nil
-		} else if output.MimeType == "application/json" {
-			var obj interface{}
-			dec := json.NewDecoder(output.Buffer)
-			if err := dec.Decode(&obj); err != nil {
-				return err
-			}
-			f := colorjson.NewFormatter()
-			f.Indent = 2
-			s, _ := f.Marshal(obj)
-			console.Output(string(s))
-			return nil
+	// Generate output depending on type in schema
+	var out []byte
+	outputSchema := schema.Components.Schemas["Response"].Value.Properties["output"].Value
+	if outputSchema.Type == "string" && outputSchema.Format == "uri" {
+		dataurlObj, err := dataurl.DecodeString((*prediction.Output).(string))
+		if err != nil {
+			return fmt.Errorf("Failed to decode dataurl: %w", err)
 		}
-		// Otherwise, fall back to writing file
+		out = dataurlObj.Data
 		outputPath = "output"
-		extension := mime.ExtensionByType(output.MimeType)
+		extension := mime.ExtensionByType(dataurlObj.ContentType())
 		if extension != "" {
 			outputPath += extension
 		}
+	} else if outputSchema.Type == "string" {
+		// Handle strings separately because if we encode it to JSON it will be surrounded by quotes.
+		s := (*prediction.Output).(string)
+		out = []byte(s)
+	} else {
+		// Treat everything else as JSON -- ints, floats, bools will all convert correctly.
+		rawJSON, err := json.Marshal(prediction.Output)
+		if err != nil {
+			return fmt.Errorf("Failed to encode prediction output as JSON: %w", err)
+		}
+		var indentedJSON bytes.Buffer
+		if err := json.Indent(&indentedJSON, rawJSON, "", "  "); err != nil {
+			return err
+		}
+		out = indentedJSON.Bytes()
+
+		// FIXME: this stopped working
+		// f := colorjson.NewFormatter()
+		// f.Indent = 2
+		// s, _ := f.Marshal(obj)
+
 	}
+
+	// Write to stdout
+	if outputPath == "" {
+		console.Output(string(out))
+		return nil
+	}
+
+	// Fall back to writing file
 
 	// Ignore @, to make it behave the same as -i
 	outputPath = strings.TrimPrefix(outputPath, "@")
@@ -174,7 +190,10 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 		return err
 	}
 
-	if _, err := io.Copy(outFile, output.Buffer); err != nil {
+	if _, err := outFile.Write(out); err != nil {
+		return err
+	}
+	if err := outFile.Close(); err != nil {
 		return err
 	}
 

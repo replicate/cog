@@ -1,4 +1,6 @@
 from pathlib import Path
+import pathlib
+import shutil
 import pytest
 import subprocess
 
@@ -15,6 +17,62 @@ def test_predict_takes_string_inputs_and_returns_strings_to_stdout():
     )
     # stdout should be clean without any log messages so it can be piped to other commands
     assert result.stdout == b"hello world\n"
+
+
+def test_predict_takes_int_inputs_and_returns_ints_to_stdout():
+    project_dir = Path(__file__).parent / "fixtures/int-project"
+    result = subprocess.run(
+        ["cog", "predict", "-i", "2"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+    )
+    # stdout should be clean without any log messages so it can be piped to other commands
+    assert result.stdout == b"4\n"
+
+
+def test_predict_takes_file_inputs(tmpdir_factory):
+    project_dir = Path(__file__).parent / "fixtures/file-input-project"
+    out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
+    shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
+    with open(out_dir / "input.txt", "w") as fh:
+        fh.write("what up")
+    result = subprocess.run(
+        ["cog", "predict", "-i", "path=@" + str(out_dir / "input.txt")],
+        cwd=out_dir,
+        check=True,
+        capture_output=True,
+    )
+    assert result.stdout == b"what up\n"
+
+
+def test_predict_writes_files_to_files(tmpdir_factory):
+    project_dir = Path(__file__).parent / "fixtures/file-output-project"
+    out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
+    shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
+    result = subprocess.run(
+        ["cog", "predict", "-i", "world", "-o", out_dir / "out.txt"],
+        cwd=out_dir,
+        check=True,
+        capture_output=True,
+    )
+    assert result.stdout == b""
+    with open(out_dir / "output.bmp", "rb") as f:
+        assert len(f.read()) == 195894
+
+
+def test_predict_writes_strings_to_files(tmpdir_factory):
+    project_dir = Path(__file__).parent / "fixtures/string-project"
+    out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
+    result = subprocess.run(
+        ["cog", "predict", "-i", "world", "-o", out_dir / "out.txt"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+    )
+    assert result.stdout == b""
+    with open(out_dir / "out.txt") as f:
+        assert f.read() == "hello world"
 
 
 def test_predict_runs_an_existing_image(tmpdir_factory):

@@ -26,7 +26,7 @@ def test_build_without_predictor(docker_image):
     assert json.loads(labels["org.cogmodel.config"]) == {
         "build": {"python_version": "3.8"}
     }
-    assert json.loads(labels["org.cogmodel.type_signature"]) == {}
+    assert "org.cogmodel.openapi_schema" not in labels
 
 
 def test_build_names_uses_image_option_in_cog_yaml(tmpdir_factory, docker_image):
@@ -64,11 +64,21 @@ def test_build_with_model(docker_image):
         ).stdout
     )
     labels = image[0]["Config"]["Labels"]
-    assert json.loads(labels["org.cogmodel.type_signature"]) == {
-        "inputs": [
-            {"name": "text", "type": "str"},
-            {"name": "path", "type": "Path"},
-        ]
+    schema = json.loads(labels["org.cogmodel.openapi_schema"])
+
+    assert schema["components"]["schemas"]["Input"] == {
+        "title": "Input",
+        "required": ["text", "path"],
+        "type": "object",
+        "properties": {
+            "text": {"title": "Text", "type": "string", "x-order": 0},
+            "path": {
+                "title": "Path",
+                "type": "string",
+                "format": "uri",
+                "x-order": 1,
+            },
+        },
     }
 
 
@@ -107,4 +117,4 @@ build:
             "cudnn": "8",
         }
     }
-    assert json.loads(labels["org.cogmodel.type_signature"]) == {}
+    assert "org.cogmodel.openapi_schema" not in labels
