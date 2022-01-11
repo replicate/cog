@@ -2,9 +2,5 @@ import cog
 
 
 class Predictor(cog.Predictor):
-    def setup(self):
-        pass
-
-    @cog.input("text", type=str)
-    def predict(self, text):
+    def predict(self, text: str):
         raise Exception("over budget")

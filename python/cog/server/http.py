@@ -1,106 +1,102 @@
-from pathlib import Path
-import sys
-import time
+import logging
+import os
 import types
 
-from flask import Flask, send_file, request, jsonify, Response
-
-from ..input import (
-    validate_and_convert_inputs,
-    InputValidationError,
-)
-from ..json import to_json
-from ..predictor import Predictor, run_prediction, load_predictor
+from fastapi import Body, FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ValidationError
+import uvicorn
 
 
-class HTTPServer:
-    def __init__(self, predictor: Predictor):
-        self.predictor = predictor
+from ..files import upload_file
+from ..json import encode_json
+from ..predictor import Predictor, get_input_type, get_output_type, load_predictor
+from ..response import Status, get_response_type
 
-    def make_app(self) -> Flask:
-        start_time = time.time()
-        self.predictor.setup()
-        app = Flask(__name__)
-        setup_time = time.time() - start_time
+logger = logging.getLogger("cog")
 
-        @app.route("/predict", methods=["POST"])
-        @app.route("/infer", methods=["POST"])  # deprecated
-        def handle_request():
-            start_time = time.time()
 
-            cleanup_functions = []
-            try:
-                raw_inputs = {}
-                for key, val in request.form.items():
-                    raw_inputs[key] = val
-                for key, val in request.files.items():
-                    if key in raw_inputs:
-                        return _abort400(
-                            f"Duplicated argument name in form and files: {key}"
-                        )
-                    raw_inputs[key] = val
+def create_app(predictor: Predictor) -> FastAPI:
+    app = FastAPI(
+        title="Cog",  # TODO: mention model name?
+        # version=None # TODO
+    )
+    app.on_event("startup")(predictor.setup)
 
-                if hasattr(self.predictor.predict, "_inputs"):
-                    try:
-                        inputs = validate_and_convert_inputs(
-                            self.predictor, raw_inputs, cleanup_functions
-                        )
-                    except InputValidationError as e:
-                        return _abort400(str(e))
-                else:
-                    inputs = raw_inputs
+    @app.get("/")
+    def root():
+        return {
+            # "cog_version": "", # TODO
+            "docs_url": "/docs",
+            "openapi_url": "/openapi.json",
+        }
 
-                result = run_prediction(self.predictor, inputs, cleanup_functions)
-                run_time = time.time() - start_time
-                return self.create_response(result, setup_time, run_time)
-            finally:
-                for cleanup_function in cleanup_functions:
-                    try:
-                        cleanup_function()
-                    except Exception as e:
-                        sys.stderr.write(f"Cleanup function caught error: {e}")
+    InputType = get_input_type(predictor)
 
-        @app.route("/ping")
-        def ping():
-            return "PONG"
+    class Request(BaseModel):
+        input: InputType = None
+        output_file_prefix: str = None
 
-        @app.route("/type-signature")
-        def type_signature():
-            return jsonify(self.predictor.get_type_signature())
+    def predict(request: Request = Body(default=None)):
+        if request is None or request.input is None:
+            output = predictor.predict()
+        else:
+            output = predictor.predict(**request.input.dict())
+        output_file_prefix = None
+        if request:
+            output_file_prefix = request.output_file_prefix
 
-        return app
-
-    def start_server(self):
-        app = self.make_app()
-        app.run(host="0.0.0.0", port=5000, threaded=False, processes=1)
-
-    def create_response(self, result, setup_time, run_time):
         # loop over generator function to get the last result
-        if isinstance(result, types.GeneratorType):
+        if isinstance(output, types.GeneratorType):
             last_result = None
-            for iteration in enumerate(result):
+            for iteration in enumerate(output):
                 last_result = iteration
             # last result is a tuple with (index, value)
-            result = last_result[1]
+            output = last_result[1]
 
-        if isinstance(result, Path):
-            resp = send_file(str(result))
-        elif isinstance(result, str):
-            resp = Response(result, mimetype="text/plain")
-        else:
-            resp = Response(to_json(result), mimetype="application/json")
-        resp.headers["X-Setup-Time"] = setup_time
-        resp.headers["X-Run-Time"] = run_time
-        return resp
+        OutputType = get_output_type(predictor)
+        Response = get_response_type(OutputType)
 
+        try:
+            response = Response(status=Status.SUCCESS, output=output)
+        except ValidationError as e:
+            logger.error(
+                f"""The return value of predict() was not valid:
 
-def _abort400(message):
-    resp = jsonify({"message": message})
-    resp.status_code = 400
-    return resp
+{e}
+
+Check that your predict function is in this form, where `output_type` is the same as the type you are returning (e.g. `str`):
+
+    def predict(...) -> output_type:
+        ...
+"""
+            )
+            raise HTTPException(status_code=500)
+        encoded_response = encode_json(
+            response, upload_file=lambda fh: upload_file(fh, output_file_prefix)
+        )
+        return JSONResponse(content=encoded_response)
+
+    # response_model is purely for generating schema.
+    # We generate Response again in the request so we can set file output paths correctly, etc.
+    OutputType = get_output_type(predictor)
+    app.post(
+        "/predictions",
+        response_model=get_response_type(OutputType),
+        response_model_exclude_unset=True,
+    )(predict)
+
+    return app
 
 
 if __name__ == "__main__":
     predictor = load_predictor()
-    server = HTTPServer(predictor)
-    server.start_server()
+    app = create_app(predictor)
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=5000,
+        log_level="debug" if os.environ.get("COG_DEBUG") else "warning",
+        # Single worker to safely run on GPUs.
+        workers=1,
+    )

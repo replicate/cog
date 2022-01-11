@@ -38,13 +38,9 @@ func Build(cfg *config.Config, dir, imageName string, progressOutput string) err
 	}
 
 	console.Info("Adding labels to image...")
-	signature, err := GetTypeSignature(imageName, cfg.Build.GPU)
+	schema, err := GenerateOpenAPISchema(imageName, cfg.Build.GPU)
 	if err != nil {
 		return fmt.Errorf("Failed to get type signature: %w", err)
-	}
-	signatureJSON, err := json.Marshal(signature)
-	if err != nil {
-		return fmt.Errorf("Failed to convert type signature to JSON: %w", err)
 	}
 	configJSON, err := json.Marshal(cfg)
 	if err != nil {
@@ -54,10 +50,19 @@ func Build(cfg *config.Config, dir, imageName string, progressOutput string) err
 	// built image to get those. But, the escaping of JSON inside a label inside a Dockerfile was gnarly, and
 	// doesn't seem to be a problem here, so do it here instead.
 	labels := map[string]string{
-		global.LabelNamespace + "cog_version":    global.Version,
-		global.LabelNamespace + "config":         string(bytes.TrimSpace(configJSON)),
-		global.LabelNamespace + "type_signature": string(signatureJSON),
+		global.LabelNamespace + "cog_version": global.Version,
+		global.LabelNamespace + "config":      string(bytes.TrimSpace(configJSON)),
 	}
+
+	// OpenAPI schema is not set if there is no predictor.
+	if len((*schema).(map[string]interface{})) != 0 {
+		schemaJSON, err := json.Marshal(schema)
+		if err != nil {
+			return fmt.Errorf("Failed to convert type signature to JSON: %w", err)
+		}
+		labels[global.LabelNamespace+"openapi_schema"] = string(schemaJSON)
+	}
+
 	if err := docker.BuildAddLabelsToImage(imageName, labels); err != nil {
 		return fmt.Errorf("Failed to add labels to image: %w", err)
 	}
