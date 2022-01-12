@@ -1,4 +1,4 @@
-from io import BytesIO
+import io
 import json
 from pathlib import Path
 from typing import Optional
@@ -9,13 +9,13 @@ import time
 import types
 import contextlib
 
+from pydantic import ValidationError
 import redis
 import requests
-from werkzeug.datastructures import FileStorage
 
 from .redis_log_capture import capture_log
-from ..input import InputValidationError, validate_and_convert_inputs
-from ..json import to_json
+from ..predictor import Predictor, get_input_type, load_predictor
+from ..json import encode_json
 from ..predictor import Predictor, load_predictor
 
 
@@ -76,6 +76,10 @@ class RedisQueueWorker:
         self.redis_db = redis_db
         # TODO: respect max_processing_time in message handling
         self.max_processing_time = 10 * 60  # timeout after 10 minutes
+
+        # Set up types
+        self.InputType = get_input_type(self.predictor)
+
         self.redis = redis.Redis(
             host=self.redis_host, port=self.redis_port, db=self.redis_db
         )
@@ -193,21 +197,16 @@ class RedisQueueWorker:
         raw_inputs = message["inputs"]
         prediction_id = message["id"]
 
+        # Flatten the incoming object. The schema and Pydantic will handle downloading files from URLs (see cog/types.py)
         for k, v in raw_inputs.items():
             if "value" in v and v["value"] != "":
                 inputs[k] = v["value"]
             else:
-                file_url = v["file"]["url"]
-                sys.stderr.write(f"Downloading file from {file_url}\n")
-                value_bytes = self.download(file_url)
-                inputs[k] = FileStorage(
-                    stream=BytesIO(value_bytes), filename=v["file"]["name"]
-                )
+                inputs[k] = v["file"]["url"]
+
         try:
-            inputs = validate_and_convert_inputs(
-                self.predictor, inputs, cleanup_functions
-            )
-        except InputValidationError as e:
+            input_obj = self.InputType(**inputs)
+        except ValidationError as e:
             tb = traceback.format_exc()
             sys.stderr.write(tb)
             self.push_error(response_queue, e)
@@ -217,7 +216,7 @@ class RedisQueueWorker:
         with self.capture_log(self.STAGE_RUN, prediction_id), timeout(
             seconds=self.predict_timeout
         ):
-            return_value = self.predictor.predict(**inputs)
+            return_value = self.predictor.predict(**input_obj.dict())
         if isinstance(return_value, types.GeneratorType):
             last_result = None
 
@@ -260,36 +259,22 @@ class RedisQueueWorker:
         self.redis.rpush(response_queue, message)
 
     def push_result(self, response_queue, result, status):
-        if isinstance(result, Path):
-            message = {
-                "file": {
-                    "url": self.upload_to_temp(result),
-                    "name": result.name,
-                }
-            }
-        elif isinstance(result, str):
-            message = {
-                "value": result,
-            }
-        else:
-            message = {
-                "value": to_json(result),
-            }
+        message = {
+            "value": self.encode_json(result),
+        }
 
         message["status"] = status
 
         sys.stderr.write(f"Pushing successful result to {response_queue}\n")
         self.redis.rpush(response_queue, json.dumps(message))
 
-    def upload_to_temp(self, path: Path) -> str:
-        sys.stderr.write(
-            f"Uploading {path.name} to temporary storage at {self.upload_url}\n"
-        )
-        resp = requests.put(
-            self.upload_url, files={"file": (path.name, path.open("rb"))}
-        )
-        resp.raise_for_status()
-        return resp.json()["url"]
+    def encode_json(self, obj):
+        def upload_file(fh: io.IOBase) -> str:
+            resp = requests.put(self.upload_url, files={"file": fh})
+            resp.raise_for_status()
+            return resp.json()["url"]
+
+        return encode_json(obj, upload_file)
 
     @contextlib.contextmanager
     def capture_log(self, stage, prediction_id):

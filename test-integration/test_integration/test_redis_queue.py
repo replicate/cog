@@ -56,10 +56,7 @@ def test_queue_worker_files(docker_image, docker_network, redis_client, upload_s
         )
         response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {
-            "file": {
-                "name": "output.txt",
-                "url": "http://upload-server:5000/download/output.txt",
-            },
+            "value": "http://upload-server:5000/download/output.txt",
             "status": "success",
         }
 
