@@ -1,66 +1,41 @@
 import json
-import multiprocessing
-from contextlib import contextmanager
-from unittest import mock
-import pytest
 from pathlib import Path
-
-import flask
-import redis
-from flask import Flask, Response, jsonify
 import subprocess
 
-from .util import (
-    docker_run,
-    find_free_port,
-    get_bridge_ip,
-    get_local_ip,
-    random_string,
-    wait_for_port,
-)
+from .util import docker_run, random_string
 
 
-def test_queue_worker_files(docker_image, redis_port, request):
+def test_queue_worker_files(docker_image, docker_network, redis_client, upload_server):
     project_dir = Path(__file__).parent / "fixtures/file-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    input_queue = multiprocessing.Queue()
-    output_queue = multiprocessing.Queue()
-    controller_port = find_free_port()
-    local_ip = get_local_ip()
-    upload_url = f"http://{local_ip}:{controller_port}/upload"
-    redis_host = local_ip
-    worker_name = "test-worker"
-    predict_queue_name = "predict-queue"
-    response_queue_name = "response-queue"
+    with open(upload_server / "input.txt", "w") as f:
+        f.write("test")
 
-    redis_client = redis.Redis(host=redis_host, port=redis_port, db=0)
-
-    with queue_controller(
-        input_queue, output_queue, controller_port, request
-    ), docker_run(
+    with docker_run(
         image=docker_image,
         interactive=True,
+        network=docker_network,
         command=[
             "python",
             "-m",
             "cog.server.redis_queue",
-            redis_host,
-            str(redis_port),
-            predict_queue_name,
-            upload_url,
-            worker_name,
+            "redis",
+            "6379",
+            "predict-queue",
+            "http://upload-server:5000/upload",
+            "test-worker",
             "model_id",
             "logs",
         ],
     ):
         redis_client.xgroup_create(
-            mkstream=True, groupname=predict_queue_name, name=predict_queue_name, id="$"
+            mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
         )
 
         predict_id = random_string(10)
         redis_client.xadd(
-            name=predict_queue_name,
+            name="predict-queue",
             fields={
                 "value": json.dumps(
                     {
@@ -69,67 +44,57 @@ def test_queue_worker_files(docker_image, redis_port, request):
                             "text": {"value": "baz"},
                             "path": {
                                 "file": {
-                                    "name": "myinput.txt",
-                                    "url": f"http://{local_ip}:{controller_port}/download",
+                                    "name": "input.txt",
+                                    "url": "http://upload-server:5000/download/input.txt",
                                 }
                             },
                         },
-                        "response_queue": response_queue_name,
+                        "response_queue": "response-queue",
                     }
                 ),
             },
         )
-        input_queue.put("test")
-        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {
-            "file": {"name": mock.ANY, "url": "uploaded.txt"},
+            "file": {
+                "name": "output.txt",
+                "url": "http://upload-server:5000/download/output.txt",
+            },
             "status": "success",
         }
-        response_contents = output_queue.get()
-        assert response_contents.decode() == "foobaztest"
+
+        with open(upload_server / "output.txt") as f:
+            assert f.read() == "foobaztest"
 
 
-def test_queue_worker_yielding(docker_image, redis_port, request):
+def test_queue_worker_yielding(docker_network, docker_image, redis_client):
     project_dir = Path(__file__).parent / "fixtures/yielding-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    input_queue = multiprocessing.Queue()
-    output_queue = multiprocessing.Queue()
-    controller_port = find_free_port()
-    local_ip = get_local_ip()
-    upload_url = f"http://{local_ip}:{controller_port}/upload"
-    redis_host = local_ip
-    worker_name = "test-worker"
-    predict_queue_name = "predict-queue"
-    response_queue_name = "response-queue"
-
-    redis_client = redis.Redis(host=redis_host, port=redis_port, db=0)
-
-    with queue_controller(
-        input_queue, output_queue, controller_port, request
-    ), docker_run(
+    with docker_run(
         image=docker_image,
         interactive=True,
+        network=docker_network,
         command=[
             "python",
             "-m",
             "cog.server.redis_queue",
-            redis_host,
-            str(redis_port),
-            predict_queue_name,
-            upload_url,
-            worker_name,
+            "redis",
+            "6379",
+            "predict-queue",
+            "",
+            "test-worker",
             "model_id",
             "logs",
         ],
     ):
         redis_client.xgroup_create(
-            mkstream=True, groupname=predict_queue_name, name=predict_queue_name, id="$"
+            mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
         )
 
         predict_id = random_string(10)
         redis_client.xadd(
-            name=predict_queue_name,
+            name="predict-queue",
             fields={
                 "value": json.dumps(
                     {
@@ -137,66 +102,53 @@ def test_queue_worker_yielding(docker_image, redis_port, request):
                         "inputs": {
                             "text": {"value": "bar"},
                         },
-                        "response_queue": response_queue_name,
+                        "response_queue": "response-queue",
                     }
                 ),
             },
         )
 
-        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {"value": "foo", "status": "processing"}
 
-        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {"value": "bar", "status": "processing"}
 
-        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {"value": "baz", "status": "success"}
 
-        response = redis_client.rpop(response_queue_name)
+        response = redis_client.rpop("response-queue")
         assert response == None
 
 
-def test_queue_worker_error(docker_image, redis_port, request):
+def test_queue_worker_error(docker_network, docker_image, redis_client):
     project_dir = Path(__file__).parent / "fixtures/failing-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    input_queue = multiprocessing.Queue()
-    output_queue = multiprocessing.Queue()
-    controller_port = find_free_port()
-    local_ip = get_local_ip()
-    upload_url = f"http://{local_ip}:{controller_port}/upload"
-    redis_host = local_ip
-    worker_name = "test-worker"
-    predict_queue_name = "predict-queue"
-    response_queue_name = "response-queue"
-
-    redis_client = redis.Redis(host=redis_host, port=redis_port, db=0)
-
-    with queue_controller(
-        input_queue, output_queue, controller_port, request
-    ), docker_run(
+    with docker_run(
         image=docker_image,
         interactive=True,
+        network=docker_network,
         command=[
             "python",
             "-m",
             "cog.server.redis_queue",
-            redis_host,
-            str(redis_port),
-            predict_queue_name,
-            upload_url,
-            worker_name,
+            "redis",
+            "6379",
+            "predict-queue",
+            "",
+            "test-worker",
             "model_id",
             "logs",
         ],
     ):
         redis_client.xgroup_create(
-            mkstream=True, groupname=predict_queue_name, name=predict_queue_name, id="$"
+            mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
         )
 
         predict_id = random_string(10)
         redis_client.xadd(
-            name=predict_queue_name,
+            name="predict-queue",
             fields={
                 "value": json.dumps(
                     {
@@ -204,71 +156,58 @@ def test_queue_worker_error(docker_image, redis_port, request):
                         "inputs": {
                             "text": {"value": "bar"},
                         },
-                        "response_queue": response_queue_name,
+                        "response_queue": "response-queue",
                     }
                 ),
             },
         )
 
-        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {"status": "failed", "error": "over budget"}
 
-        response = redis_client.rpop(response_queue_name)
+        response = redis_client.rpop("response-queue")
         assert response == None
 
 
-def test_queue_worker_logging(docker_image, redis_port, request):
+def test_queue_worker_logging(docker_network, docker_image, redis_client):
     project_dir = Path(__file__).parent / "fixtures/logging-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    input_queue = multiprocessing.Queue()
-    output_queue = multiprocessing.Queue()
-    controller_port = find_free_port()
-    local_ip = get_local_ip()
-    upload_url = f"http://{local_ip}:{controller_port}/upload"
-    redis_host = local_ip
-    worker_name = "test-worker"
-    predict_queue_name = "predict-queue"
-    response_queue_name = "response-queue"
-
-    redis_client = redis.Redis(host=redis_host, port=redis_port, db=0)
-
-    with queue_controller(
-        input_queue, output_queue, controller_port, request
-    ), docker_run(
+    with docker_run(
         image=docker_image,
         interactive=True,
+        network=docker_network,
         command=[
             "python",
             "-m",
             "cog.server.redis_queue",
-            redis_host,
-            str(redis_port),
-            predict_queue_name,
-            upload_url,
-            worker_name,
+            "redis",
+            "6379",
+            "predict-queue",
+            "",
+            "test-worker",
             "model_id",
             "logs",
         ],
     ):
         redis_client.xgroup_create(
-            mkstream=True, groupname=predict_queue_name, name=predict_queue_name, id="$"
+            mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
         )
 
         predict_id = random_string(10)
         redis_client.xadd(
-            name=predict_queue_name,
+            name="predict-queue",
             fields={
                 "value": json.dumps(
                     {
                         "id": predict_id,
                         "inputs": {},
-                        "response_queue": response_queue_name,
+                        "response_queue": "response-queue",
                     }
                 ),
             },
         )
-        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {"status": "success", "value": "output"}
 
         setup_log_lines = []
@@ -294,48 +233,35 @@ def test_queue_worker_logging(docker_image, redis_port, request):
         ]
 
 
-def test_queue_worker_timeout(docker_image, redis_port, request):
+def test_queue_worker_timeout(docker_network, docker_image, redis_client):
     project_dir = Path(__file__).parent / "fixtures/timeout-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    input_queue = multiprocessing.Queue()
-    output_queue = multiprocessing.Queue()
-    controller_port = find_free_port()
-    local_ip = get_local_ip()
-    upload_url = f"http://{local_ip}:{controller_port}/upload"
-    redis_host = local_ip
-    worker_name = "test-worker"
-    predict_queue_name = "predict-queue"
-    response_queue_name = "response-queue"
-
-    redis_client = redis.Redis(host=redis_host, port=redis_port, db=0)
-
-    with queue_controller(
-        input_queue, output_queue, controller_port, request
-    ), docker_run(
+    with docker_run(
         image=docker_image,
         interactive=True,
+        network=docker_network,
         command=[
             "python",
             "-m",
             "cog.server.redis_queue",
-            redis_host,
-            str(redis_port),
-            predict_queue_name,
-            upload_url,
-            worker_name,
+            "redis",
+            "6379",
+            "predict-queue",
+            "",
+            "test-worker",
             "model_id",
             "logs",
             "1",  # timeout
         ],
     ):
         redis_client.xgroup_create(
-            mkstream=True, groupname=predict_queue_name, name=predict_queue_name, id="$"
+            mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
         )
 
         predict_id = random_string(10)
         redis_client.xadd(
-            name=predict_queue_name,
+            name="predict-queue",
             fields={
                 "value": json.dumps(
                     {
@@ -343,18 +269,18 @@ def test_queue_worker_timeout(docker_image, redis_port, request):
                         "inputs": {
                             "sleep_time": {"value": 0.5},
                         },
-                        "response_queue": response_queue_name,
+                        "response_queue": "response-queue",
                     }
                 ),
             },
         )
 
-        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {"status": "success", "value": "it worked!"}
 
         predict_id = random_string(10)
         redis_client.xadd(
-            name=predict_queue_name,
+            name="predict-queue",
             fields={
                 "value": json.dumps(
                     {
@@ -362,58 +288,45 @@ def test_queue_worker_timeout(docker_image, redis_port, request):
                         "inputs": {
                             "sleep_time": {"value": 5.0},
                         },
-                        "response_queue": response_queue_name,
+                        "response_queue": "response-queue",
                     }
                 ),
             },
         )
 
-        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {"status": "failed", "error": "Prediction timed out"}
 
 
-def test_queue_worker_yielding_timeout(docker_image, redis_port, request):
+def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_client):
     project_dir = Path(__file__).parent / "fixtures/yielding-timeout-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    input_queue = multiprocessing.Queue()
-    output_queue = multiprocessing.Queue()
-    controller_port = find_free_port()
-    local_ip = get_local_ip()
-    upload_url = f"http://{local_ip}:{controller_port}/upload"
-    redis_host = local_ip
-    worker_name = "test-worker"
-    predict_queue_name = "predict-queue"
-    response_queue_name = "response-queue"
-
-    redis_client = redis.Redis(host=redis_host, port=redis_port, db=0)
-
-    with queue_controller(
-        input_queue, output_queue, controller_port, request
-    ), docker_run(
+    with docker_run(
         image=docker_image,
         interactive=True,
+        network=docker_network,
         command=[
             "python",
             "-m",
             "cog.server.redis_queue",
-            redis_host,
-            str(redis_port),
-            predict_queue_name,
-            upload_url,
-            worker_name,
+            "redis",
+            "6379",
+            "predict-queue",
+            "",
+            "test-worker",
             "model_id",
             "logs",
             "1",  # timeout
         ],
     ):
         redis_client.xgroup_create(
-            mkstream=True, groupname=predict_queue_name, name=predict_queue_name, id="$"
+            mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
         )
 
         predict_id = random_string(10)
         redis_client.xadd(
-            name=predict_queue_name,
+            name="predict-queue",
             fields={
                 "value": json.dumps(
                     {
@@ -422,18 +335,18 @@ def test_queue_worker_yielding_timeout(docker_image, redis_port, request):
                             "sleep_time": {"value": 0.5},
                             "n_iterations": {"value": 1},
                         },
-                        "response_queue": response_queue_name,
+                        "response_queue": "response-queue",
                     }
                 ),
             },
         )
 
-        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {"status": "success", "value": "yield 0"}
 
         predict_id = random_string(10)
         redis_client.xadd(
-            name=predict_queue_name,
+            name="predict-queue",
             fields={
                 "value": json.dumps(
                     {
@@ -442,57 +355,15 @@ def test_queue_worker_yielding_timeout(docker_image, redis_port, request):
                             "sleep_time": {"value": 0.7},
                             "n_iterations": {"value": 10},
                         },
-                        "response_queue": response_queue_name,
+                        "response_queue": "response-queue",
                     }
                 ),
             },
         )
 
         # TODO(andreas): revisit this test design if it starts being flakey
-        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {"value": "yield 0", "status": "processing"}
 
-        response = json.loads(redis_client.brpop(response_queue_name, timeout=10)[1])
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {"status": "failed", "error": "Prediction timed out"}
-
-
-@contextmanager
-def queue_controller(input_queue, output_queue, controller_port, request):
-    controller = QueueController(input_queue, output_queue, controller_port)
-    request.addfinalizer(controller.kill)
-    controller.start()
-    yield controller
-    controller.kill()
-
-
-class QueueController(multiprocessing.Process):
-    def __init__(self, input_queue, output_queue, port):
-        super().__init__()
-        self.input_queue = input_queue
-        self.output_queue = output_queue
-        self.port = port
-
-    def run(self):
-        app = Flask("test-queue-controller")
-
-        @app.route("/", methods=["GET"])
-        def handle_index():
-            return "OK"
-
-        @app.route("/upload", methods=["PUT"])
-        def handle_upload():
-            f = flask.request.files["file"]
-            contents = f.read()
-            self.output_queue.put(contents)
-            return jsonify({"url": "uploaded.txt"})
-
-        @app.route("/download", methods=["GET"])
-        def handle_download():
-            contents = self.input_queue.get()
-            return Response(
-                contents,
-                mimetype="text/plain",
-                headers={"Content-disposition": "attachment; filename=myinput.txt"},
-            )
-
-        app.run(host="0.0.0.0", port=self.port, debug=False)
