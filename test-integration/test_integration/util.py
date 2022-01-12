@@ -38,8 +38,11 @@ def docker_run(
     name=None,
     detach=False,
     interactive=False,
+    network=None,
+    net_alias=None,
     publish: Optional[List[dict]] = None,
     command: Optional[List[str]] = None,
+    volumes: Optional[List[str]] = None,
     env: Optional[dict] = None,
 ):
     if name is None:
@@ -54,10 +57,17 @@ def docker_run(
     if env is not None:
         for key, value in env.items():
             cmd += ["-e", f"{key}={value}"]
+    if volumes is not None:
+        for volume in volumes:
+            cmd += ["--volume", volume]
     if detach:
         cmd += ["--detach"]
     if interactive:
         cmd += ["-i"]
+    if network is not None:
+        cmd.extend(["--network", network])
+    if net_alias is not None:
+        cmd.extend(["--net-alias", net_alias])
     cmd += [image]
     if command:
         cmd += command
@@ -66,21 +76,3 @@ def docker_run(
         yield
     finally:
         subprocess.Popen(["docker", "rm", "--force", name]).wait()
-
-
-def get_local_ip():
-    return socket.gethostbyname(socket.gethostname())
-
-
-def get_bridge_ip():
-    """Return the IP address of the docker bridge network"""
-    cmd = [
-        "docker",
-        "network",
-        "inspect",
-        "bridge",
-        "--format='{{ json (index .IPAM.Config 0).Gateway }}'",
-    ]
-    out, _ = subprocess.Popen(cmd, stdout=subprocess.PIPE).communicate()
-
-    return out.decode().strip().replace('"', "").replace("'", "")

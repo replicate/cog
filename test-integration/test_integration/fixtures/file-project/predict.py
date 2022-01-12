@@ -12,9 +12,7 @@ class Predictor(cog.Predictor):
     def predict(self, text, path):
         with open(path) as f:
             output = self.foo + text + f.read()
-        tmp = tempfile.NamedTemporaryFile(suffix=".txt")
-        tmp.close()
-        tmp_path = Path(tmp.name)
-        with tmp_path.open("w") as f:
-            f.write(output)
-            return tmp_path
+        tmpdir = Path(tempfile.mkdtemp())
+        with open(tmpdir / "output.txt", "w") as fh:
+            fh.write(output)
+        return tmpdir / "output.txt"
