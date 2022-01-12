@@ -72,29 +72,7 @@ jobs:
     name: "Test integration"
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@master
-      - uses: actions/setup-go@v2
-        with:
-          go-version: 1.16
-      - name: Setup Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: 3.8
-      - uses: actions/cache@v2
-        with:
-          path: ~/go/pkg/mod
-          key: go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            go-${{ secrets.CACHE_VERSION }}-
-      - uses: actions/cache@v2
-        with:
-          path: ~/.cache/pip
-          key: pip-${{ hashFiles('**/requirements-dev.txt') }}
-          restore-keys: |
-            pip-${{ secrets.CACHE_VERSION }}-
-      - name: Install Python dependencies
-        run: |
-          pip install -r requirements-dev.txt
+      - uses: actions/checkout@v2
       - name: Test
         run: make test-integration
 

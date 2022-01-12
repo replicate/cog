@@ -40,10 +40,10 @@ test-go: build-dependencies check-fmt vet lint
 	go get gotest.tools/gotestsum
 	go run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
 
-# TODO(bfirsh): use local copy of cog so we don't have to install globally
 .PHONY: test-integration
-test-integration: install
-	cd test-integration/ && $(MAKE)
+test-integration:
+	docker build --platform linux/x86_64 -t cog .
+	docker run --rm --init -it -v /var/run/docker.sock:/var/run/docker.sock -v $(PWD):/$(PWD) --workdir $(PWD)/test-integration cog pytest -vvv 
 
 .PHONY: test-python
 test-python:
