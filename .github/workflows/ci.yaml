@@ -45,8 +45,12 @@ jobs:
         run: make test-go
 
   test-python:
-    name: "Test Python"
+    name: "Test Python ${{ matrix.python-version }}"
     runs-on: ubuntu-20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.7", "3.8", "3.9", "3.10"]
     defaults:
       run:
         shell: bash
@@ -55,7 +59,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v2
         with:
-          python-version: 3.8
+          python-version: ${{ matrix.python-version }}
       - uses: actions/cache@v2
         with:
           path: ~/.cache/pip
