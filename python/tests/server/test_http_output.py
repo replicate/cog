@@ -5,6 +5,7 @@ import tempfile
 
 import numpy as np
 from PIL import Image
+from pydantic import BaseModel
 import responses
 from responses.matchers import multipart_matcher
 
@@ -120,3 +121,24 @@ def test_json_output_numpy():
     resp = client.post("/predictions")
     assert resp.status_code == 200
     assert resp.json() == {"output": 1.0, "status": "success"}
+
+
+def test_complex_output():
+    class Output(BaseModel):
+        text: str
+        file: File
+
+    class Predictor(cog.Predictor):
+        def predict(self) -> Output:
+            return Output(text="hello", file=io.StringIO("hello"))
+
+    client = make_client(Predictor())
+    resp = client.post("/predictions")
+    assert resp.json() == {
+        "output": {
+            "file": "data:application/octet-stream;base64,aGVsbG8=",
+            "text": "hello",
+        },
+        "status": "success",
+    }
+    assert resp.status_code == 200
