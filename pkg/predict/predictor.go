@@ -39,7 +39,9 @@ type Predictor struct {
 
 func NewPredictor(runOptions docker.RunOptions) Predictor {
 	if global.Debug {
-		runOptions.Env = append(runOptions.Env, "COG_DEBUG=1")
+		runOptions.Env = append(runOptions.Env, "COG_LOG_LEVEL=debug")
+	} else {
+		runOptions.Env = append(runOptions.Env, "COG_LOG_LEVEL=warning")
 	}
 	return Predictor{runOptions: runOptions}
 }
