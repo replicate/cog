@@ -96,7 +96,11 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=5000,
-        log_level="debug" if os.environ.get("COG_DEBUG") else "warning",
+        # log level is configurable so we can make it quiet or verbose for `cog predict`
+        # cog predict --debug       # -> debug
+        # cog predict               # -> warning
+        # docker run <image-name>   # -> info (default)
+        log_level=os.environ.get("COG_LOG_LEVEL", "info"),
         # Single worker to safely run on GPUs.
         workers=1,
     )
