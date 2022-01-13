@@ -252,18 +252,13 @@ def test_gt_lt():
     assert resp.status_code == 200
 
 
-def test_options():
-    # TODO: choices
-    class Options(Enum):
-        foo = "foo"
-        bar = "bar"
-
+def test_choices():
     class Predictor(cog.Predictor):
-        def predict(self, text: Options) -> str:
+        def predict(self, text: str = Input(choices=["foo", "bar"])) -> str:
             return str(text)
 
     client = make_client(Predictor())
     resp = client.post("/predictions", json={"input": {"text": "foo"}})
     assert resp.status_code == 200
-    resp = client.post("/predictions", json={"input": {"text": "baz", "num": 2}})
+    resp = client.post("/predictions", json={"input": {"text": "baz"}})
     assert resp.status_code == 422
