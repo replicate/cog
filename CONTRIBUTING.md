@@ -96,7 +96,11 @@ Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the fu
 
 You'll need to [install Go 1.16](https://golang.org/doc/install). If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
 
-Once you have Go installed, then run:
+Install the Python dependencies:
+
+    pip install -r requirements-dev.txt
+
+Once you have Go installed, run:
 
     make install
 
