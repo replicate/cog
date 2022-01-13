@@ -8,7 +8,13 @@
   "go.lintTool": "golangci-lint",
   "go.formatTool": "goimports",
   "go.testOnSave": true,
+  "python.formatting.provider": "black",
+  "python.languageServer": "Pylance",
   "python.testing.pytestArgs": ["-vvv", "python"],
   "python.testing.unittestEnabled": false,
-  "python.testing.pytestEnabled": true
+  "python.testing.pytestEnabled": true,
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.python",
+    "editor.formatOnSave": true
+  },
 }
