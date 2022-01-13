@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Generator
+import enum
 import importlib
 import inspect
 import os.path
@@ -69,7 +70,9 @@ def get_input_type(predictor: Predictor):
     order = 0
 
     for name, parameter in signature.parameters.items():
-        if not parameter.annotation:
+        annotation = parameter.annotation
+
+        if not annotation:
             # TODO: perhaps should throw error if there are arguments not annotated?
             continue
 
@@ -87,7 +90,18 @@ def get_input_type(predictor: Predictor):
         default.extra["x-order"] = order
         order += 1
 
-        create_model_kwargs[name] = (parameter.annotation, default)
+        # Choices!
+        if default.extra.get("choices"):
+            choices = default.extra["choices"]
+            # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
+            del default.extra["choices"]
+            if annotation != str:
+                raise TypeError(
+                    f"The input {name} uses the option choices. Choices can only be used with str types."
+                )
+            annotation = enum.Enum(name, {value: value for value in choices})
+
+        create_model_kwargs[name] = (annotation, default)
 
     return create_model("Input", **create_model_kwargs)
 
