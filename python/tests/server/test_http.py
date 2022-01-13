@@ -6,6 +6,7 @@ from typing import Generator
 from unittest import mock
 
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 from PIL import Image
 import pytest
 
@@ -152,6 +153,10 @@ def test_openapi_specification():
                         "choices": {"$ref": "#/components/schemas/choices"},
                     },
                 },
+                "Output": {
+                    "title": "Output",
+                    "type": "string",
+                },
                 "Request": {
                     "title": "Request",
                     "type": "object",
@@ -169,7 +174,7 @@ def test_openapi_specification():
                     "type": "object",
                     "properties": {
                         "status": {"$ref": "#/components/schemas/Status"},
-                        "output": {"title": "Output", "type": "string"},
+                        "output": {"$ref": "#/components/schemas/Output"},
                         "error": {"title": "Error", "type": "string"},
                     },
                     "description": "The status of a prediction.",
@@ -197,6 +202,150 @@ def test_openapi_specification():
                     "title": "choices",
                     "enum": ["foo", "bar"],
                     "description": "An enumeration.",
+                },
+            }
+        },
+    }
+
+
+def test_openapi_specification_with_custom_user_defined_output_type():
+    # Calling this `MyOutput` to test if cog renames it to `Output` in the schema
+    class MyOutput(BaseModel):
+        foo_number: int = "42"
+        foo_string: str = "meaning of life"
+
+    class Predictor(cog.Predictor):
+        def predict(
+            self,
+        ) -> MyOutput:
+            pass
+
+    client = make_client(Predictor())
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+    print(resp.json())
+
+    assert resp.json() == {
+        "openapi": "3.0.2",
+        "info": {"title": "Cog", "version": "0.1.0"},
+        "paths": {
+            "/": {
+                "get": {
+                    "summary": "Root",
+                    "operationId": "root__get",
+                    "responses": {
+                        "200": {
+                            "description": "Successful Response",
+                            "content": {"application/json": {"schema": {}}},
+                        }
+                    },
+                }
+            },
+            "/predictions": {
+                "post": {
+                    "summary": "Predict",
+                    "operationId": "predict_predictions_post",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Request"}
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Successful Response",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/Response"}
+                                }
+                            },
+                        },
+                        "422": {
+                            "description": "Validation Error",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/HTTPValidationError"
+                                    }
+                                }
+                            },
+                        },
+                    },
+                }
+            },
+        },
+        "components": {
+            "schemas": {
+                "HTTPValidationError": {
+                    "title": "HTTPValidationError",
+                    "type": "object",
+                    "properties": {
+                        "detail": {
+                            "title": "Detail",
+                            "type": "array",
+                            "items": {"$ref": "#/components/schemas/ValidationError"},
+                        }
+                    },
+                },
+                "Input": {"title": "Input", "type": "object", "properties": {}},
+                "MyOutput": {
+                    "title": "MyOutput",
+                    "type": "object",
+                    "properties": {
+                        "foo_number": {
+                            "title": "Foo Number",
+                            "type": "integer",
+                            "default": "42",
+                        },
+                        "foo_string": {
+                            "title": "Foo String",
+                            "type": "string",
+                            "default": "meaning of life",
+                        },
+                    },
+                },
+                "Output": {"$ref": "#/components/schemas/MyOutput", "title": "Output"},
+                "Request": {
+                    "title": "Request",
+                    "type": "object",
+                    "properties": {
+                        "input": {"$ref": "#/components/schemas/Input"},
+                        "output_file_prefix": {
+                            "title": "Output File Prefix",
+                            "type": "string",
+                        },
+                    },
+                },
+                "Response": {
+                    "title": "Response",
+                    "required": ["status"],
+                    "type": "object",
+                    "properties": {
+                        "status": {"$ref": "#/components/schemas/Status"},
+                        "output": {"$ref": "#/components/schemas/Output"},
+                        "error": {"title": "Error", "type": "string"},
+                    },
+                    "description": "The status of a prediction.",
+                },
+                "Status": {
+                    "title": "Status",
+                    "enum": ["processing", "success", "failed"],
+                    "description": "An enumeration.",
+                },
+                "ValidationError": {
+                    "title": "ValidationError",
+                    "required": ["loc", "msg", "type"],
+                    "type": "object",
+                    "properties": {
+                        "loc": {
+                            "title": "Location",
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "msg": {"title": "Message", "type": "string"},
+                        "type": {"title": "Error Type", "type": "string"},
+                    },
                 },
             }
         },

@@ -37,6 +37,18 @@ def create_app(predictor: Predictor) -> FastAPI:
         input: InputType = None
         output_file_prefix: str = None
 
+    # response_model is purely for generating schema.
+    # We generate Response again in the request so we can set file output paths correctly, etc.
+    OutputType = get_output_type(predictor)
+
+    @app.post(
+        "/predictions",
+        response_model=get_response_type(OutputType),
+        response_model_exclude_unset=True,
+    )
+
+    # The signature of this function is used by FastAPI to generate the schema.
+    # The function body is not used to generate the schema.
     def predict(request: Request = Body(default=None)):
         if request is None or request.input is None:
             output = predictor.predict()
@@ -76,15 +88,6 @@ Check that your predict function is in this form, where `output_type` is the sam
             response, upload_file=lambda fh: upload_file(fh, output_file_prefix)
         )
         return JSONResponse(content=encoded_response)
-
-    # response_model is purely for generating schema.
-    # We generate Response again in the request so we can set file output paths correctly, etc.
-    OutputType = get_output_type(predictor)
-    app.post(
-        "/predictions",
-        response_model=get_response_type(OutputType),
-        response_model_exclude_unset=True,
-    )(predict)
 
     return app
 
