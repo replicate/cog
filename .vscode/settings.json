@@ -2,12 +2,23 @@
   "editor.formatOnSave": true,
   "editor.formatOnType": true,
   "editor.formatOnPaste": true,
+  "editor.renderControlCharacters": true,
+  "editor.suggest.localityBonus": true,
   "files.insertFinalNewline": true,
   "files.trimFinalNewlines": true,
+  "[go]": {
+    "editor.defaultFormatter": "golang.go"
+  },
   "go.coverOnTestPackage": false,
   "go.lintTool": "golangci-lint",
   "go.formatTool": "goimports",
   "go.testOnSave": true,
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
   "python.formatting.provider": "black",
   "python.languageServer": "Pylance",
   "python.testing.pytestArgs": ["-vvv", "python"],
@@ -16,5 +27,5 @@
   "[python]": {
     "editor.defaultFormatter": "ms-python.python",
     "editor.formatOnSave": true
-  },
+  }
 }
