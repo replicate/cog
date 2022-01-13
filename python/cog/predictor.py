@@ -6,7 +6,7 @@ import inspect
 import os.path
 from pathlib import Path
 import typing
-from pydantic import create_model
+from pydantic import create_model, BaseModel
 from pydantic.fields import FieldInfo
 
 # Added in Python 3.8. Can be from typing if we drop support for <3.8.
@@ -117,4 +117,8 @@ def get_output_type(predictor: Predictor):
     if get_origin(OutputType) is Generator:
         OutputType = get_args(OutputType)[0]
 
-    return OutputType
+    # Wrap the type in a model so Pydantic can document it in component schema
+    class Output(BaseModel):
+        __root__: OutputType
+
+    return Output
