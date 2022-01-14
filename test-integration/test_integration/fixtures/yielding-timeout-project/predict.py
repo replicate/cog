@@ -1,9 +1,10 @@
-from typing import Generator
-import cog
 import time
+from typing import Generator
+
+from cog import BasePredictor
 
 
-class Predictor(cog.Predictor):
+class Predictor(BasePredictor):
     def predict(
         self, sleep_time: float, n_iterations: int
     ) -> Generator[str, None, None]:

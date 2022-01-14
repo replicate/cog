@@ -9,13 +9,12 @@ from pydantic import BaseModel
 import responses
 from responses.matchers import multipart_matcher
 
-import cog
-from cog import Path, File
+from cog import BasePredictor, Path, File
 from .test_http import make_client
 
 
 def test_return_wrong_type():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self) -> int:
             return "foo"
 
@@ -25,7 +24,7 @@ def test_return_wrong_type():
 
 
 def test_path_output_path():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self) -> Path:
             temp_dir = tempfile.mkdtemp()
             temp_path = os.path.join(temp_dir, "my_file.bmp")
@@ -44,7 +43,7 @@ def test_path_output_path():
 
 @responses.activate
 def test_output_path_to_http():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self) -> Path:
             temp_dir = tempfile.mkdtemp()
             temp_path = os.path.join(temp_dir, "file.txt")
@@ -73,7 +72,7 @@ def test_output_path_to_http():
 
 
 def test_path_output_file():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self) -> File:
             return io.StringIO("hello")
 
@@ -88,7 +87,7 @@ def test_path_output_file():
 
 @responses.activate
 def test_output_file_to_http():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self) -> File:
             fh = io.StringIO("hello")
             fh.name = "foo.txt"
@@ -113,7 +112,7 @@ def test_output_file_to_http():
 
 
 def test_json_output_numpy():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self) -> np.float64:
             return np.float64(1.0)
 
@@ -128,7 +127,7 @@ def test_complex_output():
         text: str
         file: File
 
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self) -> Output:
             return Output(text="hello", file=io.StringIO("hello"))
 

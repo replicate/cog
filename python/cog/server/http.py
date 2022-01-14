@@ -10,13 +10,13 @@ import uvicorn
 
 from ..files import upload_file
 from ..json import encode_json
-from ..predictor import Predictor, get_input_type, get_output_type, load_predictor
+from ..predictor import BasePredictor, get_input_type, get_output_type, load_predictor
 from ..response import Status, get_response_type
 
 logger = logging.getLogger("cog")
 
 
-def create_app(predictor: Predictor) -> FastAPI:
+def create_app(predictor: BasePredictor) -> FastAPI:
     app = FastAPI(
         title="Cog",  # TODO: mention model name?
         # version=None # TODO

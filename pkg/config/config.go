@@ -122,7 +122,7 @@ func (c *Config) ValidateAndCompleteConfig() error {
 	}
 	if c.Predict != "" {
 		if len(strings.Split(c.Predict, ".py:")) != 2 {
-			return fmt.Errorf("'predict' in cog.yaml must be in the form 'predict.py:PredictorClass")
+			return fmt.Errorf("'predict' in cog.yaml must be in the form 'predict.py:Predictor")
 		}
 	}
 
