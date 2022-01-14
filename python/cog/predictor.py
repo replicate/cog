@@ -17,7 +17,7 @@ from .errors import ConfigDoesNotExist, PredictorNotSet
 from .types import Input
 
 
-class Predictor(ABC):
+class BasePredictor(ABC):
     def setup(self):
         pass
 
@@ -63,7 +63,7 @@ def load_predictor():
     return predictor_class()
 
 
-def get_input_type(predictor: Predictor):
+def get_input_type(predictor: BasePredictor):
     signature = inspect.signature(predictor.predict)
     create_model_kwargs = {}
 
@@ -106,7 +106,7 @@ def get_input_type(predictor: Predictor):
     return create_model("Input", **create_model_kwargs)
 
 
-def get_output_type(predictor: Predictor):
+def get_output_type(predictor: BasePredictor):
     signature = inspect.signature(predictor.predict)
     if signature.return_annotation is inspect.Signature.empty:
         OutputType = Literal[None]

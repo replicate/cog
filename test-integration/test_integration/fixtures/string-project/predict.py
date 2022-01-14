@@ -1,6 +1,6 @@
-import cog
+from cog import BasePredictor
 
 
-class Predictor(cog.Predictor):
+class Predictor(BasePredictor):
     def predict(self, input: str) -> str:
         return "hello " + input

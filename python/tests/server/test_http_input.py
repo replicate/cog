@@ -1,5 +1,4 @@
 import base64
-from enum import Enum
 import os
 import tempfile
 
@@ -7,13 +6,12 @@ from PIL import Image
 from pydantic import BaseModel
 import responses
 
-import cog
-from cog import Input, Path, File
+from cog import BasePredictor, Input, Path, File
 from .test_http import make_client
 
 
 def test_no_input():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self) -> str:
             return "foobar"
 
@@ -24,7 +22,7 @@ def test_no_input():
 
 
 def test_good_str_input():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self, text: str) -> str:
             return text
 
@@ -35,7 +33,7 @@ def test_good_str_input():
 
 
 def test_good_int_input():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self, num: int) -> int:
             return num ** 3
 
@@ -49,7 +47,7 @@ def test_good_int_input():
 
 
 def test_bad_int_input():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self, num: int) -> int:
             return num ** 2
 
@@ -68,7 +66,7 @@ def test_bad_int_input():
 
 
 def test_default_int_input():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self, num: int = Input(default=5)) -> int:
             return num ** 2
 
@@ -84,7 +82,7 @@ def test_default_int_input():
 
 
 def test_file_input_data_url():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self, file: File) -> str:
             return file.read()
 
@@ -104,7 +102,7 @@ def test_file_input_data_url():
 
 @responses.activate
 def test_file_input_with_http_url():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self, file: File) -> str:
             return file.read()
 
@@ -119,7 +117,7 @@ def test_file_input_with_http_url():
 
 
 def test_path_input_data_url():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self, path: Path) -> str:
             with open(path) as fh:
                 extension = fh.name.split(".")[-1]
@@ -141,7 +139,7 @@ def test_path_input_data_url():
 
 @responses.activate
 def test_file_input_with_http_url():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self, path: Path) -> str:
             with open(path) as fh:
                 extension = fh.name.split(".")[-1]
@@ -158,7 +156,7 @@ def test_file_input_with_http_url():
 
 
 def test_file_bad_input():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self, file: File) -> str:
             return file.read()
 
@@ -171,7 +169,7 @@ def test_file_bad_input():
 
 
 def test_path_output_file():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self) -> Path:
             temp_dir = tempfile.mkdtemp()
             temp_path = os.path.join(temp_dir, "my_file.bmp")
@@ -192,7 +190,7 @@ def test_extranous_input_keys():
     class Input(BaseModel):
         text: str
 
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self, input: Input):
             return input.text
 
@@ -202,7 +200,7 @@ def test_extranous_input_keys():
 
 
 def test_multiple_arguments():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(
             self,
             text: str,
@@ -230,7 +228,7 @@ def test_multiple_arguments():
 
 
 def test_gt_lt():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self, num: float = Input(gt=3, lt=10.5)) -> float:
             return num
 
@@ -253,7 +251,7 @@ def test_gt_lt():
 
 
 def test_choices():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self, text: str = Input(choices=["foo", "bar"])) -> str:
             return str(text)
 

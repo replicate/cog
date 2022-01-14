@@ -14,9 +14,8 @@ import redis
 import requests
 
 from .redis_log_capture import capture_log
-from ..predictor import Predictor, get_input_type, load_predictor
+from ..predictor import BasePredictor, get_input_type, load_predictor
 from ..json import encode_json
-from ..predictor import Predictor, load_predictor
 
 
 class timeout:
@@ -53,7 +52,7 @@ class RedisQueueWorker:
 
     def __init__(
         self,
-        predictor: Predictor,
+        predictor: BasePredictor,
         redis_host: str,
         redis_port: int,
         input_queue: str,

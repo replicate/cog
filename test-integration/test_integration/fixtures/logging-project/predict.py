@@ -1,10 +1,9 @@
-import logging
 import ctypes
+import logging
 import sys
-import tempfile
-from pathlib import Path
-import cog
 import time
+
+from cog import BasePredictor
 
 libc = ctypes.CDLL(None)
 
@@ -15,7 +14,7 @@ sys.stdout.write("writing to stdout at import time\n")
 sys.stderr.write("writing to stderr at import time\n")
 
 
-class Predictor(cog.Predictor):
+class Predictor(BasePredictor):
     def setup(self):
         print("setting up predictor")
         self.foo = "foo"

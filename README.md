@@ -39,10 +39,10 @@ predict: "predict.py:Predictor"
 And define how predictions are run on your model with `predict.py`:
 
 ```python
-from cog import Predictor, Input, Path
+from cog import BasePredictor, Input, Path
 import torch
 
-class ColorizationPredictor(Predictor):
+class Predictor(BasePredictor):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
         self.model = torch.load("./weights.pth")
