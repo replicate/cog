@@ -60,15 +60,14 @@ Then, we need to write some code to describe how predictions are run on the mode
 
 ```python
 from typing import Any
-import cog
-from cog import Input, Path
+from cog import BasePredictor, Input, Path
 from tensorflow.keras.applications.resnet50 import ResNet50
 from tensorflow.keras.preprocessing import image as keras_image
 from tensorflow.keras.applications.resnet50 import preprocess_input, decode_predictions
 import numpy as np
 
 
-class ResNetPredictor(cog.Predictor):
+class ResNetPredictor(BasePredictor):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
         self.model = ResNet50(weights='resnet50_weights_tf_dim_ordering_tf_kernels.h5')
