@@ -10,20 +10,19 @@ from pydantic import BaseModel
 from PIL import Image
 import pytest
 
-import cog
-from cog import Input, File, Path
+from cog import BasePredictor, Input, File, Path
 
 from cog.server.http import create_app
 
 
-def make_client(predictor: cog.Predictor, **kwargs) -> TestClient:
+def make_client(predictor: BasePredictor, **kwargs) -> TestClient:
     app = create_app(predictor)
     with TestClient(app, **kwargs) as client:
         return client
 
 
 def test_setup_is_called():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def setup(self):
             self.foo = "bar"
 
@@ -37,7 +36,7 @@ def test_setup_is_called():
 
 
 def test_openapi_specification():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(
             self,
             no_default: str,
@@ -214,7 +213,7 @@ def test_openapi_specification_with_custom_user_defined_output_type():
         foo_number: int = "42"
         foo_string: str = "meaning of life"
 
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(
             self,
         ) -> MyOutput:
@@ -353,7 +352,7 @@ def test_openapi_specification_with_custom_user_defined_output_type():
 
 
 def test_yielding_strings_from_generator_predictors():
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def predict(self) -> Generator[str, None, None]:
             predictions = ["foo", "bar", "baz"]
             for prediction in predictions:
@@ -366,8 +365,8 @@ def test_yielding_strings_from_generator_predictors():
 
 
 def test_yielding_files_from_generator_predictors():
-    class Predictor(cog.Predictor):
-        def predict(self) -> Generator[cog.Path, None, None]:
+    class Predictor(BasePredictor):
+        def predict(self) -> Generator[Path, None, None]:
             colors = ["red", "blue", "yellow"]
             for i, color in enumerate(colors):
                 temp_dir = tempfile.mkdtemp()
@@ -390,7 +389,7 @@ def test_yielding_files_from_generator_predictors():
 @pytest.mark.skip
 @mock.patch("time.time", return_value=0.0)
 def test_timing(time_mock):
-    class Predictor(cog.Predictor):
+    class Predictor(BasePredictor):
         def setup(self):
             time_mock.return_value = 1.0
 

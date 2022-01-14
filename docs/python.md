@@ -1,13 +1,12 @@
 # Prediction interface reference
 
-You define how Cog runs predictions on your model by defining a class that inherits from `cog.Predictor`. It looks something like this:
+You define how Cog runs predictions on your model by defining a class that inherits from `BasePredictor`. It looks something like this:
 
 ```python
-import cog
-from cog import Path, Input
+from cog import BasePredictor, Path, Input
 import torch
 
-class ImageScalingPredictor(cog.Predictor):
+class Predictor(BasePredictor):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
         self.model = torch.load("weights.pth")

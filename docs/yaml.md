@@ -12,7 +12,7 @@ build:
   system_packages:
     - "ffmpeg"
     - "libavcodec-dev"
-predict: "predict.py:JazzSoloComposerPredictor"
+predict: "predict.py:Predictor"
 ```
 
 Tip: Run [`cog init`](getting-started-own-model#initialization) to generate an annotated `cog.yaml` file that can be used as a starting point for setting up your model.
@@ -106,12 +106,12 @@ If you don't provide this, a name will be generated from the directory name.
 
 ## `predict`
 
-The pointer to the `cog.Predictor` object in your code, which defines how predictions are run on your model.
+The pointer to the `Predictor` object in your code, which defines how predictions are run on your model.
 
 For example:
 
 ```yaml
-predict: "predict.py:HotdogPredictor"
+predict: "predict.py:Predictor"
 ```
 
 See [the Python API documentation for more information](python.md).

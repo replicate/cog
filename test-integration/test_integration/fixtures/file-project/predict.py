@@ -1,9 +1,8 @@
 import tempfile
-import cog
-from cog import Path
+from cog import BasePredictor, Path
 
 
-class Predictor(cog.Predictor):
+class Predictor(BasePredictor):
     def setup(self):
         self.foo = "foo"
 

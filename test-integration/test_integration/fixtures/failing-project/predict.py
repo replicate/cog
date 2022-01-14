@@ -1,6 +1,6 @@
-import cog
+from cog import BasePredictor
 
 
-class Predictor(cog.Predictor):
+class Predictor(BasePredictor):
     def predict(self, text: str):
         raise Exception("over budget")
