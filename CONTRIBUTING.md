@@ -131,6 +131,39 @@ As much as possible, this is attempting to follow the [Standard Go Project Layou
 - `python/` - The Cog Python library.
 - `test-integration/` - High-level integration tests for Cog.
 
+## Runnings tests
+
+To run the entire test suite:
+
+```sh
+make test
+```
+
+To run just the Golang tests:
+
+```sh
+make test-go
+```
+
+To run just the Python tests:
+
+```sh
+make test-python
+```
+
+To stand up a server for one of the integration tests:
+
+```sh
+make install
+pip install -r requirements-dev.txt
+make test
+cd test-integration/test_integration/fixtures/file-project
+cog build
+docker run -p 5001:5000 --init --platform=linux/amd64 cog-file-project
+```
+
+Then visit [localhost:5001](http://localhost:5001) in your browser.
+
 ## Publishing a release
 
 This project has a [GitHub Actions workflow](https://github.com/replicate/cog/blob/39cfc5c44ab81832886c9139ee130296f1585b28/.github/workflows/ci.yaml#L107) that uses [goreleaser](https://goreleaser.com/quick-start/#quick-start) to facilitate the process of publishing new releases. The release process is triggered by manually creating and pushing a new git tag.
