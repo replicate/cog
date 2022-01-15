@@ -5,11 +5,10 @@ import tempfile
 
 import numpy as np
 from PIL import Image
-from pydantic import BaseModel
 import responses
 from responses.matchers import multipart_matcher
 
-from cog import BasePredictor, Path, File
+from cog import BaseModel, BasePredictor, Path, File
 from .test_http import make_client
 
 

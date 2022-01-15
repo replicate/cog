@@ -1,3 +1,5 @@
+from pydantic import BaseModel
+
 from .predictor import BasePredictor
 from .types import File, Input, Path
 
@@ -5,6 +7,7 @@ from .types import File, Input, Path
 Predictor = BasePredictor
 
 __all__ = [
+    "BaseModel",
     "BasePredictor",
     "File",
     "Input",
