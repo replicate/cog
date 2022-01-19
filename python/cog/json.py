@@ -1,5 +1,6 @@
 from enum import Enum
 import io
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -13,7 +14,7 @@ except ImportError:
     has_numpy = False
 
 
-def encode_json(obj, upload_file):
+def encode_json(obj: Any, upload_file) -> Any:
     """
     Returns a JSON-compatible version of the object. It will encode any Pydantic models and custom types.
 
