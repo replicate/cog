@@ -50,6 +50,9 @@ def create_app(predictor: BasePredictor) -> FastAPI:
     # The signature of this function is used by FastAPI to generate the schema.
     # The function body is not used to generate the schema.
     def predict(request: Request = Body(default=None)):
+        """
+        Run a single prediction on the model.
+        """
         if request is None or request.input is None:
             output = predictor.predict()
         else:

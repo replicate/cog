@@ -5,7 +5,6 @@ import importlib
 import inspect
 import os.path
 from pathlib import Path
-import typing
 from pydantic import create_model, BaseModel
 from pydantic.fields import FieldInfo
 
@@ -19,11 +18,15 @@ from .types import Input
 
 class BasePredictor(ABC):
     def setup(self):
-        pass
+        """
+        An optional method to prepare the model so multiple predictions run efficiently.
+        """
 
     @abstractmethod
     def predict(self, **kwargs):
-        pass
+        """
+        Run a single prediction on the model.
+        """
 
 
 def run_prediction(predictor, inputs, cleanup_functions):
@@ -38,6 +41,10 @@ def run_prediction(predictor, inputs, cleanup_functions):
 
 
 def load_predictor():
+    """
+    Reads cog.yaml and constructs an instance of the user-defined Predictor class.
+    """
+
     # Assumes the working directory is /src
     config_path = os.path.abspath("cog.yaml")
     try:
@@ -64,6 +71,19 @@ def load_predictor():
 
 
 def get_input_type(predictor: BasePredictor):
+    """
+    Creates a Pydantic Input model from the arguments of a Predictor's predict() method.
+
+    class Predictor(BasePredictor):
+        def predict(self, text: str):
+            ...
+
+    programmatically creates a model like this:
+
+    class Input(BaseModel):
+        text: str
+    """
+
     signature = inspect.signature(predictor.predict)
     create_model_kwargs = {}
 
@@ -107,6 +127,10 @@ def get_input_type(predictor: BasePredictor):
 
 
 def get_output_type(predictor: BasePredictor):
+    """
+    Creates a Pydantic Output model from the return type annotation of a Predictor's predict() method.
+    """
+
     signature = inspect.signature(predictor.predict)
     if signature.return_annotation is inspect.Signature.empty:
         OutputType = Literal[None]
