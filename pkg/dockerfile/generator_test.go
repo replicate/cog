@@ -65,9 +65,9 @@ predict: predict.py:Predictor
 
 	expected := `# syntax = docker/dockerfile:1.2
 FROM python:3.8
-ENV DEBIAN_FRONTEND=noninteractive \
-	PYTHONUNBUFFERED=1 \
-	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV XDG_CACHE_HOME=/src/.cache
 ` + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
@@ -99,9 +99,9 @@ predict: cog_predict.py:Predictor
 
 	expected := `# syntax = docker/dockerfile:1.2
 FROM python:3.8
-ENV DEBIAN_FRONTEND=noninteractive \
-	PYTHONUNBUFFERED=1 \
-	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV XDG_CACHE_HOME=/src/custom_xdg_cache_home
 ENV FOOBAR=foobar
 ` + testInstallCog(gen.relativeTmpDir) + `
@@ -132,9 +132,9 @@ predict: cog_predict.py:Predictor
 
 	expected := `# syntax = docker/dockerfile:1.2
 FROM python:3.8
-ENV DEBIAN_FRONTEND=noninteractive \
-	PYTHONUNBUFFERED=1 \
-	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV XDG_CACHE_HOME=/src/.cache
 ` + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
@@ -170,9 +170,9 @@ predict: cog_predict.py:Predictor
 
 	expected := `# syntax = docker/dockerfile:1.2
 FROM python:3.8
-ENV DEBIAN_FRONTEND=noninteractive \
-	PYTHONUNBUFFERED=1 \
-	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV TRANSFORMERS_CACHE=/src/custom_huggingface_transformers_cache
 ENV FOOBAR=foobar
 ENV XDG_CACHE_HOME=/src/$FOOBAR
@@ -204,9 +204,9 @@ predict: predict.py:Predictor
 
 	expected := `# syntax = docker/dockerfile:1.2
 FROM nvidia/cuda:11.2.0-cudnn8-devel-ubuntu20.04
-ENV DEBIAN_FRONTEND=noninteractive \
-	PYTHONUNBUFFERED=1 \
-	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV XDG_CACHE_HOME=/src/.cache
 ` + testInstallPython("3.8") + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
@@ -219,7 +219,6 @@ COPY . /src`
 func TestGenerateFullCPU(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
-
 	conf, err := config.FromYAML([]byte(`
 build:
   gpu: false
@@ -244,9 +243,9 @@ predict: predict.py:Predictor
 
 	expected := `# syntax = docker/dockerfile:1.2
 FROM python:3.8
-ENV DEBIAN_FRONTEND=noninteractive \
-	PYTHONUNBUFFERED=1 \
-	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV XDG_CACHE_HOME=/src/.cache
 ` + testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
@@ -288,9 +287,9 @@ predict: predict.py:Predictor
 
 	expected := `# syntax = docker/dockerfile:1.2
 FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
-ENV DEBIAN_FRONTEND=noninteractive \
-	PYTHONUNBUFFERED=1 \
-	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV XDG_CACHE_HOME=/src/.cache
 ` + testInstallPython("3.8") +
 		testInstallCog(gen.relativeTmpDir) + `
@@ -328,9 +327,9 @@ build:
 
 	expected := `# syntax = docker/dockerfile:1.2
 FROM python:3.8
-ENV DEBIAN_FRONTEND=noninteractive \
-	PYTHONUNBUFFERED=1 \
-	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV XDG_CACHE_HOME=/src/.cache
 ` + testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*

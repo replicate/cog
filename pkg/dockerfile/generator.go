@@ -132,14 +132,27 @@ func (g *Generator) baseImage() (string, error) {
 }
 
 func (g *Generator) preamble() string {
+	envVarLines := g.envVariables()
+
+	return `ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+` + strings.Join(envVarLines, "\n")
+}
+
+func (g *Generator) envVariables() []string {
 	// If given, variables should be a list of strings, formatted like `KEY=VALUE`.
 	environmentVariables := g.Config.Build.BuildEnv
+
+	if len(environmentVariables) > 0 {
+		// Return empty list
+		return []string{}
+	}
 
 	// Regex for valid environment variable names
 	regexpVariableName := regexp.MustCompile("^[A-Za-z_][A-Za-z0-9_]*$")
 
-	// Parse them into a list of strings. We also preserve the order.
-	// TODO(hangtwenty): Clean up by using an ordered map (maybe from a library)
+	// Parse them into a list of strings. Also keep the ordered list of keys.
 	envVarKeys := []string{}
 	envVarMap := make(map[string]string)
 	if len(environmentVariables) > 0 {
@@ -150,19 +163,20 @@ func (g *Generator) preamble() string {
 			if ok := regexpVariableName.MatchString(parts[0]) && len(parts) == 2; ok {
 				envVarMap[parts[0]] = parts[1]
 				envVarKeys = append(envVarKeys, parts[0])
+			} else {
+				fmt.Printf("Ignoring invalid environment variable: %s\n", v)
 			}
 		}
 	}
 
 	if _, ok := envVarMap["XDG_CACHE_HOME"]; !ok {
-		// Cog sets a default value for $XDG_CACHE_HOME. Why:
-		// Cog mounts the project directory so anything in there (in /src in the
-		// image) gets retained between runs. $XDG_CACHE_HOME is used by various
-		// libraries including popular ML libraries; so, setting it to a subdirectory
-		// within /src results in retaining the cache between runs. Ultimately,
-		// everything in /src gets "baked in" to the cog image. So this is great
-		// for caching pretrained models and so on.
-		// For more context see: https://github.com/replicate/cog/issues/320
+		// Cog sets a default value for $XDG_CACHE_HOME. $XDG_CACHE_HOME is a
+		// standard followed by various libraries including PyTorch. Setting it
+		// to a subdirectory within WORKDIR (/src) makes it so that it will cache
+		// between runs, thanks to Cog [re-]mounting the WORKDIR when re-running.
+		// For more context, visit:
+		// - https://github.com/replicate/cog/issues/320#:~:text=default%20value%20for-,%24XDG_CACHE_HOME,-in%20Linux%20environments
+		// - https://pytorch.org/docs/stable/hub.html#:~:text=TORCH_HOME%20is%20set.-,%24XDG_CACHE_HOME,-/torch/hub%2C%20if
 		envVarMap["XDG_CACHE_HOME"] = "/src/.cache"
 	}
 	if !sliceContains(envVarKeys, "XDG_CACHE_HOME") {
@@ -174,11 +188,7 @@ func (g *Generator) preamble() string {
 		v := envVarMap[envVarName]
 		envVarLines = append(envVarLines, fmt.Sprintf("ENV %s=%s", envVarName, v))
 	}
-
-	return `ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + strings.Join(envVarLines, "\n")
+	return envVarLines
 }
 
 func (g *Generator) aptInstalls() (string, error) {
