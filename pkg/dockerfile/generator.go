@@ -175,9 +175,9 @@ func (g *Generator) preamble() string {
 		envVarLines = append(envVarLines, fmt.Sprintf("ENV %s=%s", envVarName, v))
 	}
 
-	return `ENV DEBIAN_FRONTEND=noninteractive \
-	PYTHONUNBUFFERED=1 \
-	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+	return `ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ` + strings.Join(envVarLines, "\n")
 }
 
