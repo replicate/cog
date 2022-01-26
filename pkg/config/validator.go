@@ -14,7 +14,7 @@ const (
 	defaultVersion  = "1.0"
 	jsonschemaOneOf = "number_one_of"
 	jsonschemaAnyOf = "number_any_of"
-	errorString     = `There is a problem in your cog.yaml file. 
+	errorString     = `There is a problem in your cog.yaml file.
 %s.
 
 To see what options you can use, take a look at the docs:

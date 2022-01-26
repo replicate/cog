@@ -77,14 +77,14 @@ COPY . /src`
 	require.Equal(t, expected, actual)
 }
 
-func TestEnvironmentVariables(t *testing.T) {
+func TestBuildEnv(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
 	conf, err := config.FromYAML([]byte(`
 build:
   gpu: false
-  environment_variables:
+  env:
     - XDG_CACHE_HOME=/src/custom_xdg_cache_home
     - FOOBAR=foobar
 predict: cog_predict.py:Predictor
@@ -112,14 +112,14 @@ COPY . /src`
 	require.Equal(t, expected, actual)
 }
 
-func TestEnvironmentVariablesEmpty(t *testing.T) {
+func TestBuildEnvEmpty(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
 	conf, err := config.FromYAML([]byte(`
 build:
   gpu: false
-  environment_variables: []
+  env: []
 predict: cog_predict.py:Predictor
 `))
 	require.NoError(t, err)
@@ -144,14 +144,14 @@ COPY . /src`
 	require.Equal(t, expected, actual)
 }
 
-func TestEnvironmentVariablesMultiple(t *testing.T) {
+func TestBuildEnvMultiple(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 
 	conf, err := config.FromYAML([]byte(`
 build:
   gpu: false
-  environment_variables:
+  env:
     - TRANSFORMERS_CACHE=/src/custom_huggingface_transformers_cache
     - FOOBAR=foobar
     - XDG_CACHE_HOME=/src/$FOOBAR

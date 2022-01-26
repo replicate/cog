@@ -133,7 +133,7 @@ func (g *Generator) baseImage() (string, error) {
 
 func (g *Generator) preamble() string {
 	// If given, variables should be a list of strings, formatted like `KEY=VALUE`.
-	environmentVariables := g.Config.Build.EnvironmentVariables
+	environmentVariables := g.Config.Build.BuildEnv
 
 	// Regex for valid environment variable names
 	regexpVariableName := regexp.MustCompile("^[A-Za-z_][A-Za-z0-9_]*$")

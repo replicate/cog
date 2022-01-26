@@ -24,8 +24,8 @@ type Build struct {
 	PythonExtraIndexURLs []string `json:"python_extra_index_urls,omitempty" yaml:"python_extra_index_urls"`
 	PythonFindLinks      []string `json:"python_find_links,omitempty" yaml:"python_find_links"`
 	PythonPackages       []string `json:"python_packages,omitempty" yaml:"python_packages"`
-	EnvironmentVariables []string `json:"environment_variables,omitempty" yaml:"environment_variables"`
 	Run                  []string `json:"run,omitempty" yaml:"run"`
+	BuildEnv             []string `json:"env,omitempty" yaml:"env"`
 	SystemPackages       []string `json:"system_packages,omitempty" yaml:"system_packages"`
 	PreInstall           []string `json:"pre_install,omitempty" yaml:"pre_install"` // Deprecated, but included for backwards compatibility
 	CUDA                 string   `json:"cuda,omitempty" yaml:"cuda"`
