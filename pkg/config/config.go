@@ -207,7 +207,7 @@ func (c *Config) pythonPackageForArch(pkg string, goos string, goarch string) (a
 func (c *Config) validateAndCompleteCUDA() error {
 	if c.Build.CUDA != "" && c.Build.CuDNN != "" {
 		compatibleCuDNNs := compatibleCuDNNsForCUDA(c.Build.CUDA)
-		if !sliceContains(compatibleCuDNNs, c.Build.CuDNN) {
+		if !slices.ContainsString(compatibleCuDNNs, c.Build.CuDNN) {
 			return fmt.Errorf(`The specified CUDA version %s is not compatible with CuDNN %s.
 Compatible CuDNN versions are: %s`, c.Build.CUDA, c.Build.CuDNN, strings.Join(compatibleCuDNNs, ","))
 		}
@@ -299,13 +299,4 @@ func splitPythonPackage(pkg string) (name string, version string, err error) {
 		return "", "", fmt.Errorf("Package %s is not in the format 'name==version'", pkg)
 	}
 	return parts[0], parts[1], nil
-}
-
-func sliceContains(slice []string, s string) bool {
-	for _, el := range slice {
-		if el == s {
-			return true
-		}
-	}
-	return false
 }

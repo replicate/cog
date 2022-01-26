@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/util/slices"
 )
 
 //go:embed embed/cog.whl
@@ -132,22 +133,21 @@ func (g *Generator) baseImage() (string, error) {
 }
 
 func (g *Generator) preamble() string {
-	envVarLines := g.envVariables()
-
-	return `ENV DEBIAN_FRONTEND=noninteractive
+	preamble := `ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + strings.Join(envVarLines, "\n")
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin`
+
+	envVarLines := g.envVariables()
+	if len(envVarLines) > 0 {
+		preamble += "\n" + strings.Join(envVarLines, "\n")
+	}
+
+	return preamble
 }
 
 func (g *Generator) envVariables() []string {
 	// If given, variables should be a list of strings, formatted like `KEY=VALUE`.
 	environmentVariables := g.Config.Build.BuildEnv
-
-	if len(environmentVariables) > 0 {
-		// Return empty list
-		return []string{}
-	}
 
 	// Regex for valid environment variable names
 	regexpVariableName := regexp.MustCompile("^[A-Za-z_][A-Za-z0-9_]*$")
@@ -179,7 +179,7 @@ func (g *Generator) envVariables() []string {
 		// - https://pytorch.org/docs/stable/hub.html#:~:text=TORCH_HOME%20is%20set.-,%24XDG_CACHE_HOME,-/torch/hub%2C%20if
 		envVarMap["XDG_CACHE_HOME"] = "/src/.cache"
 	}
-	if !sliceContains(envVarKeys, "XDG_CACHE_HOME") {
+	if !slices.ContainsString(envVarKeys, "XDG_CACHE_HOME") {
 		envVarKeys = append([]string{"XDG_CACHE_HOME"}, envVarKeys...)
 	}
 
@@ -321,14 +321,4 @@ func filterEmpty(list []string) []string {
 		}
 	}
 	return filtered
-}
-
-// TODO(hangtwenty): De-duplicate this - the same function is in config.go
-func sliceContains(slice []string, s string) bool {
-	for _, el := range slice {
-		if el == s {
-			return true
-		}
-	}
-	return false
 }
