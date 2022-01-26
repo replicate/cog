@@ -15,7 +15,6 @@ import (
 // TODO(andreas): custom cpu/gpu installs
 // TODO(andreas): validate python_requirements
 // TODO(andreas): suggest valid torchvision versions (e.g. if the user wants to use 0.8.0, suggest 0.8.1)
-// (Possibly useful reference code: https://github.com/python-poetry/poetry/blob/master/src/poetry/puzzle/solver.py)
 
 type Build struct {
 	GPU                  bool     `json:"gpu,omitempty" yaml:"gpu"`
