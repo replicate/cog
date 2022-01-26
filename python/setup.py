@@ -4,9 +4,15 @@ with open("../README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 
+# Open the pyproject.toml file and read the version from there. (Without depending on `toml`)
+with open("../pyproject.toml", "r", encoding="utf-8") as fh:
+    version_line = [line for line in fh if line.startswith("version")][0]
+    version = version_line.split("=")[1].strip().strip('"').strip("'")
+
+
 setuptools.setup(
     name="cog",
-    version="0.0.1",
+    version=version,
     author_email="team@replicate.com",
     description="Containers for machine learning",
     long_description=long_description,
