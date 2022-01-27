@@ -68,15 +68,15 @@
             ]
           }
         },
-        "env": {
-          "$id": "#/properties/build/properties/env",
+        "environment": {
+          "$id": "#/properties/build/properties/environment",
           "type": "array",
           "additionalItems": true,
           "items": {
-            "$id": "#/properties/build/properties/env/items",
+            "$id": "#/properties/build/properties/environment/items",
             "anyOf": [
               {
-                "$id": "#/properties/build/properties/env/items/anyOf/0",
+                "$id": "#/properties/build/properties/environment/items/anyOf/0",
                 "type": "string"
               }
             ]

@@ -10,6 +10,10 @@ import (
 	"github.com/replicate/cog/pkg/config"
 )
 
+//===============================================================================
+// expectation helpers: environment variables
+//-------------------------------------------------------------------------------
+
 func testInstallCog(relativeTmpDir string) string {
 	return fmt.Sprintf(`COPY %s/cog-0.0.1.dev-py3-none-any.whl /tmp/cog-0.0.1.dev-py3-none-any.whl
 RUN --mount=type=cache,target=/root/.cache/pip pip install /tmp/cog-0.0.1.dev-py3-none-any.whl`, relativeTmpDir)
@@ -46,6 +50,28 @@ RUN curl https://pyenv.run | bash && \
 `, version, version)
 }
 
+//===============================================================================
+// expectation helpers: environment variables
+//-------------------------------------------------------------------------------
+
+func testPreamble() string {
+	// Get default environment variables: the hardcoded parts. (Excluding override-able parts.)
+	return `ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+`
+}
+
+func testPreambleDefault() string {
+	// Get default environment variables INCLUDING the override-able parts (like cache home)
+	return testPreamble() + `ENV XDG_CACHE_HOME=/src/.cache
+`
+}
+
+//===============================================================================
+// tests: build.gpu
+//-------------------------------------------------------------------------------
+
 func TestGenerateEmptyCPU(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
@@ -65,120 +91,8 @@ predict: predict.py:Predictor
 
 	expected := `# syntax = docker/dockerfile:1.2
 FROM python:3.8
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-ENV XDG_CACHE_HOME=/src/.cache
-` + testInstallCog(gen.relativeTmpDir) + `
-WORKDIR /src
-CMD ["python", "-m", "cog.server.http"]
-COPY . /src`
-
-	require.Equal(t, expected, actual)
-}
-
-func TestBuildEnv(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "test")
-	require.NoError(t, err)
-
-	conf, err := config.FromYAML([]byte(`
-build:
-  gpu: false
-  env:
-    - XDG_CACHE_HOME=/src/custom_xdg_cache_home
-    - FOOBAR=foobar
-predict: cog_predict.py:Predictor
-`))
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
-
-	gen, err := NewGenerator(conf, tmpDir)
-	require.NoError(t, err)
-	actual, err := gen.Generate()
-	require.NoError(t, err)
-
-	expected := `# syntax = docker/dockerfile:1.2
-FROM python:3.8
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-ENV XDG_CACHE_HOME=/src/custom_xdg_cache_home
-ENV FOOBAR=foobar
-` + testInstallCog(gen.relativeTmpDir) + `
-WORKDIR /src
-CMD ["python", "-m", "cog.server.http"]
-COPY . /src`
-
-	require.Equal(t, expected, actual)
-}
-
-func TestBuildEnvEmpty(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "test")
-	require.NoError(t, err)
-
-	conf, err := config.FromYAML([]byte(`
-build:
-  gpu: false
-  env: []
-predict: cog_predict.py:Predictor
-`))
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
-
-	gen, err := NewGenerator(conf, tmpDir)
-	require.NoError(t, err)
-	actual, err := gen.Generate()
-	require.NoError(t, err)
-
-	expected := `# syntax = docker/dockerfile:1.2
-FROM python:3.8
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-ENV XDG_CACHE_HOME=/src/.cache
-` + testInstallCog(gen.relativeTmpDir) + `
-WORKDIR /src
-CMD ["python", "-m", "cog.server.http"]
-COPY . /src`
-
-	require.Equal(t, expected, actual)
-}
-
-func TestBuildEnvMultiple(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "test")
-	require.NoError(t, err)
-
-	conf, err := config.FromYAML([]byte(`
-build:
-  gpu: false
-  env:
-    - TRANSFORMERS_CACHE=/src/custom_huggingface_transformers_cache
-    - FOOBAR=foobar
-    - XDG_CACHE_HOME=/src/$FOOBAR
-    - RETICULATING=splines
-    - =invalid_doesnt_matter
-    - empty=
-predict: cog_predict.py:Predictor
-`))
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
-
-	gen, err := NewGenerator(conf, tmpDir)
-	require.NoError(t, err)
-	actual, err := gen.Generate()
-	require.NoError(t, err)
-
-	expected := `# syntax = docker/dockerfile:1.2
-FROM python:3.8
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-ENV TRANSFORMERS_CACHE=/src/custom_huggingface_transformers_cache
-ENV FOOBAR=foobar
-ENV XDG_CACHE_HOME=/src/$FOOBAR
-ENV RETICULATING=splines
-ENV empty=
-` + testInstallCog(gen.relativeTmpDir) + `
+` + testPreambleDefault() +
+		testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
@@ -204,11 +118,9 @@ predict: predict.py:Predictor
 
 	expected := `# syntax = docker/dockerfile:1.2
 FROM nvidia/cuda:11.2.0-cudnn8-devel-ubuntu20.04
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-ENV XDG_CACHE_HOME=/src/.cache
-` + testInstallPython("3.8") + testInstallCog(gen.relativeTmpDir) + `
+` + testPreambleDefault() +
+		testInstallPython("3.8") +
+		testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
@@ -243,11 +155,8 @@ predict: predict.py:Predictor
 
 	expected := `# syntax = docker/dockerfile:1.2
 FROM python:3.8
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-ENV XDG_CACHE_HOME=/src/.cache
-` + testInstallCog(gen.relativeTmpDir) + `
+` + testPreambleDefault() +
+		testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 COPY my-requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
@@ -287,11 +196,8 @@ predict: predict.py:Predictor
 
 	expected := `# syntax = docker/dockerfile:1.2
 FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-ENV XDG_CACHE_HOME=/src/.cache
-` + testInstallPython("3.8") +
+` + testPreambleDefault() +
+		testInstallPython("3.8") +
 		testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 COPY my-requirements.txt /tmp/requirements.txt
@@ -302,6 +208,115 @@ WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
+	require.Equal(t, expected, actual)
+}
+
+//===============================================================================
+// tests: build.gpu
+//-------------------------------------------------------------------------------
+
+func TestBuildEnvironmentVariables(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "test")
+	require.NoError(t, err)
+
+	conf, err := config.FromYAML([]byte(`
+build:
+  gpu: false
+  environment:
+    - FOOBAR=foobar
+    - XDG_CACHE_HOME=/src/custom_xdg_cache_home
+predict: cog_predict.py:Predictor
+`))
+	expectPreamble := testPreamble() +
+		`ENV FOOBAR=foobar
+ENV XDG_CACHE_HOME=/src/custom_xdg_cache_home
+`
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndCompleteConfig())
+
+	gen, err := NewGenerator(conf, tmpDir)
+	require.NoError(t, err)
+	actual, err := gen.Generate()
+	require.NoError(t, err)
+
+	expected := `# syntax = docker/dockerfile:1.2
+FROM python:3.8
+` + expectPreamble +
+		testInstallCog(gen.relativeTmpDir) + `
+WORKDIR /src
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`
+
+	require.Equal(t, expected, actual)
+}
+
+func TestBuildEmptyEnvironmentVariables(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "test")
+	require.NoError(t, err)
+
+	conf, err := config.FromYAML([]byte(`
+build:
+  gpu: false
+  environment: []
+predict: cog_predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndCompleteConfig())
+
+	gen, err := NewGenerator(conf, tmpDir)
+	require.NoError(t, err)
+	actual, err := gen.Generate()
+	require.NoError(t, err)
+
+	expected := `# syntax = docker/dockerfile:1.2
+FROM python:3.8
+` + testPreambleDefault() +
+		testInstallCog(gen.relativeTmpDir) + `
+WORKDIR /src
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`
+
+	require.Equal(t, expected, actual)
+}
+
+func TestBuildEnvironmentVariablesMultiple(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "test")
+	require.NoError(t, err)
+
+	conf, err := config.FromYAML([]byte(`
+build:
+  gpu: false
+  environment:
+    - TORCH_HOME=/src/my-pytorch-home
+    - TRANSFORMERS_CACHE=/src/my-huggingface-transformers-cache
+    - FOOBAR=foobar
+    - XDG_CACHE_HOME=/src/$FOOBAR
+    - RETICULATING=splines
+    - lower_case_with_empty_value=
+predict: cog_predict.py:Predictor
+`))
+	expectedPreamble := testPreamble() +
+		`ENV TORCH_HOME=/src/my-pytorch-home
+ENV TRANSFORMERS_CACHE=/src/my-huggingface-transformers-cache
+ENV FOOBAR=foobar
+ENV XDG_CACHE_HOME=/src/$FOOBAR
+ENV RETICULATING=splines
+ENV lower_case_with_empty_value=
+`
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndCompleteConfig())
+
+	gen, err := NewGenerator(conf, tmpDir)
+	require.NoError(t, err)
+	actual, err := gen.Generate()
+	require.NoError(t, err)
+	expected := `# syntax = docker/dockerfile:1.2
+FROM python:3.8
+` + expectedPreamble +
+		testInstallCog(gen.relativeTmpDir) + `
+WORKDIR /src
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`
 	require.Equal(t, expected, actual)
 }
 
@@ -327,11 +342,8 @@ build:
 
 	expected := `# syntax = docker/dockerfile:1.2
 FROM python:3.8
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-ENV XDG_CACHE_HOME=/src/.cache
-` + testInstallCog(gen.relativeTmpDir) + `
+` + testPreambleDefault() +
+		testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 RUN cowsay moo
 WORKDIR /src
