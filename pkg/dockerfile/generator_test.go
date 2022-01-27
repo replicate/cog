@@ -74,19 +74,24 @@ func testGenerate(t *testing.T, conf *config.Config) (*Generator, string) {
 	return gen, actual
 }
 
+func testConfigYaml(t *testing.T, cogYaml string) *config.Config {
+	conf, err := config.FromYAML([]byte(cogYaml))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndCompleteConfig())
+	return conf
+}
+
 //===============================================================================
 // tests: build.gpu
 //-------------------------------------------------------------------------------
 
 func TestGenerateEmptyCPU(t *testing.T) {
-	conf, err := config.FromYAML([]byte(`
+	cogYaml := `
 build:
   gpu: false
 predict: predict.py:Predictor
-`))
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
-
+`
+	conf := testConfigYaml(t, cogYaml)
 	gen, actual := testGenerate(t, conf)
 
 	expected := `# syntax = docker/dockerfile:1.2
@@ -101,14 +106,12 @@ COPY . /src`
 }
 
 func TestGenerateEmptyGPU(t *testing.T) {
-	conf, err := config.FromYAML([]byte(`
+	cogYaml := `
 build:
   gpu: true
 predict: predict.py:Predictor
-`))
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
-
+`
+	conf := testConfigYaml(t, cogYaml)
 	gen, actual := testGenerate(t, conf)
 
 	expected := `# syntax = docker/dockerfile:1.2
@@ -124,7 +127,7 @@ COPY . /src`
 }
 
 func TestGenerateFullCPU(t *testing.T) {
-	conf, err := config.FromYAML([]byte(`
+	cogYaml := `
 build:
   gpu: false
   system_packages:
@@ -137,9 +140,8 @@ build:
   run:
     - "cowsay moo"
 predict: predict.py:Predictor
-`))
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
+`
+	conf := testConfigYaml(t, cogYaml)
 
 	gen, actual := testGenerate(t, conf)
 
@@ -159,7 +161,7 @@ COPY . /src`
 }
 
 func TestGenerateFullGPU(t *testing.T) {
-	conf, err := config.FromYAML([]byte(`
+	cogYaml := `
 build:
   gpu: true
   system_packages:
@@ -172,10 +174,8 @@ build:
   run:
     - "cowsay moo"
 predict: predict.py:Predictor
-`))
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
-
+`
+	conf := testConfigYaml(t, cogYaml)
 	gen, actual := testGenerate(t, conf)
 
 	expected := `# syntax = docker/dockerfile:1.2
@@ -196,30 +196,28 @@ COPY . /src`
 }
 
 //===============================================================================
-// tests: build.gpu
+// tests: build.environment
 //-------------------------------------------------------------------------------
 
 func TestBuildEnvironmentVariables(t *testing.T) {
-	conf, err := config.FromYAML([]byte(`
+	cogYaml := `
 build:
   gpu: false
   environment:
     - FOOBAR=foobar
     - XDG_CACHE_HOME=/src/custom_xdg_cache_home
 predict: cog_predict.py:Predictor
-`))
-	expectPreamble := testPreamble() +
+`
+	conf := testConfigYaml(t, cogYaml)
+	gen, actual := testGenerate(t, conf)
+
+	expectedPreamble := testPreamble() +
 		`ENV FOOBAR=foobar
 ENV XDG_CACHE_HOME=/src/custom_xdg_cache_home
 `
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
-
-	gen, actual := testGenerate(t, conf)
-
 	expected := `# syntax = docker/dockerfile:1.2
 FROM python:3.8
-` + expectPreamble +
+` + expectedPreamble +
 		testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
 CMD ["python", "-m", "cog.server.http"]
@@ -228,18 +226,50 @@ COPY . /src`
 	require.Equal(t, expected, actual)
 }
 
+func TestBuildEnvironmentVariablesMultiple(t *testing.T) {
+	cogYaml := `
+build:
+  gpu: false
+  environment:
+    - EXAMPLE=example
+    - XDG_CACHE_HOME=/src/precached
+    - TORCH_HOME=$XDG_CACHE_HOME/torchy
+    - "PYTORCH_TRANSFORMERS_CACHE=$TORCH_HOME/custom"
+    - TRANSFORMERS_CACHE=$XDG_CACHE_HOME/huggingface
+    - empty_is_ok=
+predict: cog_predict.py:Predictor
+`
+	conf := testConfigYaml(t, cogYaml)
+	gen, actual := testGenerate(t, conf)
+
+	expectedPreamble := testPreamble() +
+		`ENV EXAMPLE=example
+ENV XDG_CACHE_HOME=/src/precached
+ENV TORCH_HOME=$XDG_CACHE_HOME/torchy
+ENV PYTORCH_TRANSFORMERS_CACHE=$TORCH_HOME/custom
+ENV TRANSFORMERS_CACHE=$XDG_CACHE_HOME/huggingface
+ENV empty_is_ok=
+`
+	expected := `# syntax = docker/dockerfile:1.2
+FROM python:3.8
+` + expectedPreamble +
+		testInstallCog(gen.relativeTmpDir) + `
+WORKDIR /src
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`
+	require.Equal(t, expected, actual)
+}
+
 func TestBuildEmptyEnvironmentVariables(t *testing.T) {
-	conf, err := config.FromYAML([]byte(`
+	cogYaml := `
 build:
   gpu: false
   environment: []
 predict: cog_predict.py:Predictor
-`))
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
+`
+	conf := testConfigYaml(t, cogYaml)
 
 	gen, actual := testGenerate(t, conf)
-
 	expected := `# syntax = docker/dockerfile:1.2
 FROM python:3.8
 ` + testPreambleDefault() +
@@ -251,61 +281,23 @@ COPY . /src`
 	require.Equal(t, expected, actual)
 }
 
-func TestBuildEnvironmentVariablesMultiple(t *testing.T) {
-	conf, err := config.FromYAML([]byte(`
-build:
-  gpu: false
-  environment:
-    - EXAMPLE=example
-    - XDG_CACHE_HOME=/src/precached
-    - TORCH_HOME=$XDG_CACHE_HOME/torchy
-    - "PYTORCH_TRANSFORMERS_CACHE=$TORCH_HOME/custom"
-    - TRANSFORMERS_CACHE=$XDG_CACHE_HOME/huggingface
-    - empty_is_ok=
-predict: cog_predict.py:Predictor
-`))
-	expectedPreamble := testPreamble() +
-		`ENV EXAMPLE=example
-ENV XDG_CACHE_HOME=/src/precached
-ENV TORCH_HOME=$XDG_CACHE_HOME/torchy
-ENV PYTORCH_TRANSFORMERS_CACHE=$TORCH_HOME/custom
-ENV TRANSFORMERS_CACHE=$XDG_CACHE_HOME/huggingface
-ENV empty_is_ok=
-`
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
-
-	gen, actual := testGenerate(t, conf)
-
-	expected := `# syntax = docker/dockerfile:1.2
-FROM python:3.8
-` + expectedPreamble +
-		testInstallCog(gen.relativeTmpDir) + `
-WORKDIR /src
-CMD ["python", "-m", "cog.server.http"]
-COPY . /src`
-	require.Equal(t, expected, actual)
-}
-
 func TestBuildEnvironmentInheritCacheHome(t *testing.T) {
 	// Confirm that, even if XDG_CACHE_HOME is not provided,
 	// it still resolves to the default /src/.cache (inside WORKDIR).
 
-	conf, err := config.FromYAML([]byte(`
+	cogYaml := `
 build:
   gpu: false
   environment:  # You don't have to override XDG_CACHE_HOME to "inherit" from it!
     - PYTORCH_PRETRAINED_BERT_CACHE=$XDG_CACHE_HOME/berty
 predict: cog_predict.py:Predictor
-`))
+`
+	conf := testConfigYaml(t, cogYaml)
+	gen, actual := testGenerate(t, conf)
+
 	expectedPreamble := testPreambleDefault() +
 		`ENV PYTORCH_PRETRAINED_BERT_CACHE=$XDG_CACHE_HOME/berty
 `
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
-
-	gen, actual := testGenerate(t, conf)
-
 	expected := `# syntax = docker/dockerfile:1.2
 FROM python:3.8
 ` + expectedPreamble +
@@ -317,16 +309,13 @@ COPY . /src`
 }
 
 func TestBuildInvalidEnvironmentVariables(t *testing.T) {
-	conf, err := config.FromYAML([]byte(`
+	conf := testConfigYaml(t, `
 build:
   gpu: false
   environment:
     - "0=invalid"
 predict: cog_predict.py:Predictor
-`))
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
-
+`)
 	tmpDir, err := os.MkdirTemp("", "test")
 	require.NoError(t, err)
 	gen, err := NewGenerator(conf, tmpDir)
@@ -341,16 +330,14 @@ predict: cog_predict.py:Predictor
 
 // pre_install is deprecated but supported for backwards compatibility
 func TestPreInstall(t *testing.T) {
-	conf, err := config.FromYAML([]byte(`
+	cogYaml := `
 build:
   system_packages:
     - cowsay
   pre_install:
     - "cowsay moo"
-`))
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
-
+`
+	conf := testConfigYaml(t, cogYaml)
 	gen, actual := testGenerate(t, conf)
 
 	expected := `# syntax = docker/dockerfile:1.2
