@@ -167,7 +167,7 @@ func (g *Generator) environmentVariables() ([]string, error) {
 				envVarKeys = append(envVarKeys, parts[0])
 			} else {
 				var ret []string
-				return ret, fmt.Errorf("invalid environment variable format: %s", str)
+				return ret, fmt.Errorf("invalid environment variable: %s", str)
 			}
 		}
 	}
