@@ -2,7 +2,20 @@
 
 Use Docker for machine learning, without all the pain.
 
-Cog gives you a consistent environment to run your model in – for developing on your laptop, training on GPU machines, and for other people working on the model. Then, when the model is trained and you want to share or deploy it, you can bake the model into a Docker image that serves a standard HTTP API.
+- [What is Cog?](#what-is-cog)
+- [Develop and train in a consistent environment](#develop-and-train-in-a-consistent-environment)
+- [Put a trained model in a Docker image](#put-a-trained-model-in-a-docker-image)
+- [Why are we building this?](#why-are-we-building-this)
+- [Prerequisites](#prerequisites)
+- [Install](#install)
+- [Upgrade](#upgrade)
+- [Next steps](#next-steps)
+- [Need help?](#need-help)
+- [Contributors ✨](#contributors-%E2%9C%A8)
+
+## What is Cog?
+
+Cog is an open-source command-line tool that gives you a consistent environment to run your model in – for developing on your laptop, training on GPU machines, and for other people working on the model. Once you've trained your model and you want to share or deploy it, you can bake the model into a Docker image that serves a standard HTTP API and can be deployed anywhere.
 
 Cog does a few handy things beyond normal Docker:
 
