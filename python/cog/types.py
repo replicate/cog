@@ -15,46 +15,28 @@ from pydantic.typing import NoArgAnyCallable
 
 def Input(
     default=...,
-    default_factory: Optional[NoArgAnyCallable] = None,
-    alias: str = None,
-    title: str = None,
     description: str = None,
-    const: bool = None,
     gt: float = None,
     ge: float = None,
     lt: float = None,
     le: float = None,
-    multiple_of: float = None,
-    min_items: int = None,
-    max_items: int = None,
     min_length: int = None,
     max_length: int = None,
-    allow_mutation: bool = True,
     regex: str = None,
     choices: List[str] = None,
-    **kwargs: Any,
 ):
     """Input is similar to pydantic.Field, but doesn't require a default value to be the first argument."""
     return Field(
         default,
-        default_factory=default_factory,
-        alias=alias,
-        title=title,
         description=description,
-        const=const,
         gt=gt,
         ge=ge,
         lt=lt,
         le=le,
-        multiple_of=multiple_of,
-        min_items=min_items,
-        max_items=max_items,
         min_length=min_length,
         max_length=max_length,
-        allow_mutation=allow_mutation,
         regex=regex,
         choices=choices,
-        **kwargs,
     )
 
 
