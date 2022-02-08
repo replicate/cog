@@ -1,5 +1,5 @@
 fastapi==0.70.1
-numpy==1.21.1
+numpy==1.21.5
 pillow==9.0.0
 pydantic==1.8.2
 pytest==6.2.4
