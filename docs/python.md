@@ -90,6 +90,9 @@ The `Input()` function takes these keyword arguments:
 - `ge`: For `int` or `float` types, the value must be greater than or equal to this number.
 - `lt`: For `int` or `float` types, the value must be less than this number.
 - `le`: For `int` or `float` types, the value must be less than or equal to this number.
+- `min_length`: For `str` types, the minimum length of the string.
+- `max_length`: For `str` types, the maximum length of the string.
+- `regex`: For `str` types, the string must match this regular expression.
 - `choices`: A list of possible values for this input.
 
 Each parameter of the `predict()` method must be annotated with a type. The supported types are:

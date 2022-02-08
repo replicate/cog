@@ -11,9 +11,9 @@ class Predictor(BasePredictor):
 
     def predict(
         self,
-        input: Path = Input(title="Grayscale input image"),
+        input: Path = Input(description="Grayscale input image"),
         scale: float = Input(
-            title="Factor to scale image by", gt=0, lt=10, default=1.5
+            description="Factor to scale image by", gt=0, lt=10, default=1.5
         ),
     ) -> Path:
         """Run a single prediction on the model"""
