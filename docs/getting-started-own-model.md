@@ -6,6 +6,7 @@ This guide will show you how to put your own machine learning model in a Docker 
 
 - **macOS or Linux**. Cog works on macOS and Linux, but does not currently support Windows.
 - **Docker**. Cog uses Docker to create a container for your model. You'll need to [install Docker](https://docs.docker.com/get-docker/) before you can run Cog.
+- **Python 3.7 or greater**. Cog currently supports all active branches of Python: 3.7, 3.8, 3.9, 3.10.
 
 ## Initialization
 
