@@ -41,9 +41,9 @@ def test_openapi_specification():
             self,
             no_default: str,
             default_without_input: str = "default",
-            input_with_default: int = Input(title="Some number", default=10),
-            path: Path = Input(title="Some path"),
-            image: File = Input(title="Some path"),
+            input_with_default: int = Input(default=10),
+            path: Path = Input(description="Some path"),
+            image: File = Input(description="Some path"),
             choices: str = Input(choices=["foo", "bar"]),
         ) -> str:
             pass
@@ -133,19 +133,21 @@ def test_openapi_specification():
                             "x-order": 1,
                         },
                         "input_with_default": {
-                            "title": "Some number",
+                            "title": "Input With Default",
                             "type": "integer",
                             "default": 10,
                             "x-order": 2,
                         },
                         "path": {
-                            "title": "Some path",
+                            "title": "Path",
+                            "description": "Some path",
                             "type": "string",
                             "format": "uri",
                             "x-order": 3,
                         },
                         "image": {
-                            "title": "Some path",
+                            "title": "Image",
+                            "description": "Some path",
                             "type": "string",
                             "format": "uri",
                             "x-order": 4,
