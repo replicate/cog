@@ -60,6 +60,10 @@ build:
   python_version: "3.8.1"
 ```
 
+Cog supports all active branches of Python: 3.7, 3.8, 3.9, 3.10.
+
+Note that these are the versions supported **in the Docker container**, not your host machine. You can run any version(s) of Python you wish on your host machine.
+
 ### `run`
 
 A list of setup commands to run in the environment after your system packages and Python packages have been installed. If you're familiar with Docker, it's like a `RUN` instruction in your `Dockerfile`.
