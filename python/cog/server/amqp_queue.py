@@ -28,7 +28,15 @@ class AMQPQueueWorker:
     def __init__(
         self,
         predictor: Predictor,
+        redis_host: str,
+        redis_port: int,
+        input_queue: str,
         upload_url: str,
+        consumer_id: str,
+        model_id: Optional[str] = None,
+        log_queue: Optional[str] = None,
+        predict_timeout: Optional[int] = None,
+        redis_db: int = 0,
     ):
         self.predictor = predictor
         self.upload_url = upload_url
@@ -164,11 +172,25 @@ class AMQPQueueWorker:
 
 def _queue_worker_from_argv(
     predictor,
-    redis_host
+    redis_host,
+    redis_port,
+    input_queue,
+    upload_url,
+    comsumer_id,
+    model_id,
+    log_queue,
+    predict_timeout=None,
 ):
     return AMQPQueueWorker(
         predictor,
-        redis_host
+        redis_host,
+        redis_port,
+        input_queue,
+        upload_url,
+        comsumer_id,
+        model_id,
+        log_queue,
+        predict_timeout,
     )
 
 if __name__ == "__main__":
