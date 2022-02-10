@@ -133,7 +133,20 @@ def get_output_type(predictor: BasePredictor):
 
     signature = inspect.signature(predictor.predict)
     if signature.return_annotation is inspect.Signature.empty:
-        OutputType = Literal[None]
+        raise TypeError(
+            """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
+
+For example:
+
+    from typing import Any
+
+    def predict(
+        self,
+        image: Path = Input(description="Input image"),
+    ) -> Any:
+        ...
+"""
+        )
     else:
         OutputType = signature.return_annotation
 
