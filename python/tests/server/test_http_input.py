@@ -191,7 +191,7 @@ def test_extranous_input_keys():
         text: str
 
     class Predictor(BasePredictor):
-        def predict(self, input: Input):
+        def predict(self, input: Input) -> str:
             return input.text
 
     client = make_client(Predictor())
