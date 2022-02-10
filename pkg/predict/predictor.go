@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -27,6 +28,14 @@ type Response struct {
 	Status status       `json:"status"`
 	Output *interface{} `json:"output"`
 	Error  string       `json:"error"`
+}
+
+type ValidationErrorResponse struct {
+	Detail []struct {
+		Location []string `json:"loc"`
+		Message  string   `json:"msg"`
+		Type     string   `json:"type"`
+	} `json:"detail"`
 }
 
 type Predictor struct {
@@ -131,18 +140,13 @@ func (p *Predictor) Predict(inputs Inputs) (*Response, error) {
 	}
 	defer resp.Body.Close()
 
-	// TODO
-	if resp.StatusCode == http.StatusBadRequest {
-		body := struct {
-			Message string `json:"message"`
-		}{}
-		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-			return nil, fmt.Errorf("/predict call return status 400, and the response body failed to decode: %w", err)
+	if resp.StatusCode == http.StatusUnprocessableEntity {
+		errorResponse := &ValidationErrorResponse{}
+		if err := json.NewDecoder(resp.Body).Decode(errorResponse); err != nil {
+			return nil, fmt.Errorf("/predictions call returned status 422, and the response body failed to decode: %w", err)
 		}
-		if body.Message == "" {
-			return nil, fmt.Errorf("Bad request")
-		}
-		return nil, fmt.Errorf("Bad request: %s", body.Message)
+
+		return nil, buildInputValidationErrorMessage(errorResponse)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -170,4 +174,32 @@ func (p *Predictor) GetSchema() (*openapi3.T, error) {
 		return nil, err
 	}
 	return openapi3.NewLoader().LoadFromData(body)
+}
+
+func buildInputValidationErrorMessage(errorResponse *ValidationErrorResponse) error {
+	errorMessages := []string{}
+
+	for _, validationError := range errorResponse.Detail {
+		if len(validationError.Location) != 3 || validationError.Location[0] != "body" || validationError.Location[1] != "input" {
+			responseBody, _ := json.MarshalIndent(errorResponse, "", "\t")
+			return fmt.Errorf("/predictions call returned status 422, and there was an unexpected message in response:\n\n%s", responseBody)
+		}
+
+		errorMessages = append(errorMessages, fmt.Sprintf("- %s: %s", validationError.Location[2], validationError.Message))
+	}
+
+	return fmt.Errorf(
+		`The inputs you passed to cog predict could not be validated:
+
+%s
+
+You can provide an input with -i. For example:
+
+    cog predict -i blur=3.5
+
+If your input is a local file, you need to prefix the path with @ to tell Cog to read the file contents. For example:
+
+    cog predict -i path=@image.jpg`,
+		strings.Join(errorMessages, "\n"),
+	)
 }
