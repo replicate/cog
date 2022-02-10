@@ -20,6 +20,7 @@ setuptools.setup(
         "redis>=4,<5",
         "requests>=2,<3",
         "PyYAML",
+        "pika>=1.2.0"
     ],
     packages=setuptools.find_packages(),
 )
