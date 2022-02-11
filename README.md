@@ -3,9 +3,6 @@
 Use Docker for machine learning, without all the pain.
 
 - [What is Cog?](#what-is-cog)
-- [Develop and train in a consistent environment](#develop-and-train-in-a-consistent-environment)
-- [Put a trained model in a Docker image](#put-a-trained-model-in-a-docker-image)
-- [Why are we building this?](#why-are-we-building-this)
 - [Prerequisites](#prerequisites)
 - [Install](#install)
 - [Upgrade](#upgrade)
@@ -23,7 +20,7 @@ Cog does a few handy things beyond normal Docker:
 - **Automatic HTTP service.** Cog will generate an HTTP service from the definition of your model, so you don't need to write a Flask server in the right way.
 - **No more CUDA hell.** Cog knows which CUDA/cuDNN/PyTorch/Tensorflow/Python combos are compatible and will pick the right versions for you.
 
-## Develop and train in a consistent environment
+### Develop and train in a consistent environment
 
 Define the Docker environment your model runs in with `cog.yaml`:
 
@@ -60,7 +57,7 @@ $ cog run jupyter notebook
 ```
 -->
 
-## Put a trained model in a Docker image
+### Put a trained model in a Docker image
 
 First, you define how predictions are run on your model:
 
@@ -105,7 +102,7 @@ $ curl http://localhost:5000/predict -X POST -F input=@image.png
 
 That's it! Your model will now run forever in this reproducible Docker environment.
 
-## Why are we building this?
+### Why are we building this?
 
 It's really hard for researchers to ship machine learning models to production.
 
