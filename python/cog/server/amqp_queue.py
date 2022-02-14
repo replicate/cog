@@ -1,3 +1,4 @@
+import os
 from io import BytesIO
 import pika
 import json
@@ -43,12 +44,15 @@ class AMQPQueueWorker:
 
 
     def start(self):
-        print("STARTING AMQP QUEUE")
-        credentials = pika.PlainCredentials('guest', 'guest')
-        parameters = pika.ConnectionParameters('rabbitmq', 5672, '/', credentials)
+        username = 'guest'
+        password = 'guest'
+        host = 'rabbitmq'
+        credentials = pika.PlainCredentials(username, password)
+        parameters = pika.ConnectionParameters(host, 5672, '/', credentials)
+        ## CLOUDAMQP: replace the aboveA line with `parameters = pika.ConnectionParameters(<AMQP URL from cloudamqp.com>)`
         connection = pika.BlockingConnection(parameters)
         channel = connection.channel()
-
+        channel.queue_declare(queue='TEST_QUEUE_NAME')
         keep_running = True  # Just hardcoding for now
         while keep_running:
             try:
