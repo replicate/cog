@@ -186,19 +186,6 @@ def test_path_output_file():
     assert len(base64.b64decode(b64data)) == 195894
 
 
-def test_extranous_input_keys():
-    class Input(BaseModel):
-        text: str
-
-    class Predictor(BasePredictor):
-        def predict(self, input: Input) -> str:
-            return input.text
-
-    client = make_client(Predictor())
-    resp = client.post("/predictions", json={"input": {"text": "baz", "text2": "qux"}})
-    assert resp.status_code == 422
-
-
 def test_multiple_arguments():
     class Predictor(BasePredictor):
         def predict(

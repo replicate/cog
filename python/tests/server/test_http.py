@@ -403,3 +403,24 @@ def test_timing(time_mock):
     assert resp.status_code == 200
     assert float(resp.headers["X-Setup-Time"]) == 1.0
     assert float(resp.headers["X-Run-Time"]) == 2.0
+
+
+def test_untyped_inputs():
+    class Predictor(BasePredictor):
+        def predict(self, input) -> str:
+            return input
+
+    with pytest.raises(TypeError):
+        client = make_client(Predictor())
+
+
+def test_input_with_unsupported_type():
+    class Input(BaseModel):
+        text: str
+
+    class Predictor(BasePredictor):
+        def predict(self, input: Input) -> str:
+            return input.text
+
+    with pytest.raises(TypeError):
+        client = make_client(Predictor())
