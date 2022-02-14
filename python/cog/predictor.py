@@ -13,7 +13,10 @@ from typing_extensions import Literal, get_origin, get_args
 import yaml
 
 from .errors import ConfigDoesNotExist, PredictorNotSet
-from .types import Input
+from .types import Input, Path as CogPath, File as CogFile
+
+
+ALLOWED_INPUT_TYPES = [str, int, float, bool, CogFile, CogPath]
 
 
 class BasePredictor(ABC):
@@ -92,9 +95,14 @@ def get_input_type(predictor: BasePredictor):
     for name, parameter in signature.parameters.items():
         InputType = parameter.annotation
 
-        if not InputType:
-            # TODO: perhaps should throw error if there are arguments not annotated?
-            continue
+        if InputType is inspect.Signature.empty:
+            raise TypeError(
+                f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
+            )
+        elif InputType not in ALLOWED_INPUT_TYPES:
+            raise TypeError(
+                f"Unsupported input type {human_readable_type_name(InputType)} for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
+            )
 
         # if no default is specified, create an empty, required input
         if parameter.default is inspect.Signature.empty:
@@ -159,3 +167,21 @@ For example:
         __root__: OutputType
 
     return Output
+
+
+def human_readable_type_name(t):
+    """
+    Generates a useful-for-humans label for a type. For builtin types, it's just the class name (eg "str" or "int"). For other types, it includes the module (eg "pathlib.Path" or "cog.File").
+
+    The special case for Cog modules is because the type lives in `cog.types` internally, but just `cog` when included as a dependency.
+    """
+    module = t.__module__
+    if module == "builtins":
+        return t.__qualname__
+    elif module.split(".")[0] == "cog":
+        module = "cog"
+    return module + "." + t.__qualname__
+
+
+def readable_types_list(type_list):
+    return ", ".join(human_readable_type_name(t) for t in type_list)
