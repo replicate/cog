@@ -166,6 +166,55 @@ def test_queue_worker_error(docker_network, docker_image, redis_client):
         assert response == None
 
 
+def test_queue_worker_invalid_input(docker_network, docker_image, redis_client):
+    project_dir = Path(__file__).parent / "fixtures/int-project"
+    subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
+
+    with docker_run(
+        image=docker_image,
+        interactive=True,
+        network=docker_network,
+        command=[
+            "python",
+            "-m",
+            "cog.server.redis_queue",
+            "redis",
+            "6379",
+            "predict-queue",
+            "",
+            "test-worker",
+            "model_id",
+            "logs",
+        ],
+    ):
+        redis_client.xgroup_create(
+            mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
+        )
+
+        predict_id = random_string(10)
+        redis_client.xadd(
+            name="predict-queue",
+            fields={
+                "value": json.dumps(
+                    {
+                        "id": predict_id,
+                        "inputs": {
+                            "input": {"value": "not a number"},
+                        },
+                        "response_queue": "response-queue",
+                    }
+                ),
+            },
+        )
+
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        assert "status" in response
+        assert response["status"] == "failed"
+
+        assert "error" in response
+        assert "value is not a valid integer" in response["error"]
+
+
 def test_queue_worker_logging(docker_network, docker_image, redis_client):
     project_dir = Path(__file__).parent / "fixtures/logging-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
