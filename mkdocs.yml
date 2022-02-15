@@ -1,0 +1,36 @@
+site_name: Cog
+repo_name: replicate/cog
+docs_dir: docs/
+nav:
+  - Cog: README.md
+  - Getting Started: getting-started.md
+  - Using your own Model: getting-started-own-model.md
+  - Cog Python API: python.md
+  - YAML Spec: yaml.md
+  - Contributing: CONTRIBUTING.md
+  - License: https://github.com/replicate/cog/blob/main/LICENSE
+
+theme:
+  name: material
+  palette:
+    primary: black
+  favicon: replicate.png
+  logo: replicate.png
+  highlightjs: true
+  hljs_languages:
+  - python
+  - json
+
+markdown_extensions:
+  - toc:
+        permalink: '#'
+  - markdown.extensions.codehilite:
+        guess_lang: true
+  - admonition
+  - codehilite
+  - extra
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+extra_css:
+  - stylesheets/extra.css
