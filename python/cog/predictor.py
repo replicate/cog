@@ -90,9 +90,9 @@ def get_input_type(predictor: BasePredictor):
     order = 0
 
     for name, parameter in signature.parameters.items():
-        annotation = parameter.annotation
+        InputType = parameter.annotation
 
-        if not annotation:
+        if not InputType:
             # TODO: perhaps should throw error if there are arguments not annotated?
             continue
 
@@ -115,13 +115,13 @@ def get_input_type(predictor: BasePredictor):
             choices = default.extra["choices"]
             # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
             del default.extra["choices"]
-            if annotation != str:
+            if InputType != str:
                 raise TypeError(
                     f"The input {name} uses the option choices. Choices can only be used with str types."
                 )
-            annotation = enum.Enum(name, {value: value for value in choices})
+            InputType = enum.Enum(name, {value: value for value in choices})
 
-        create_model_kwargs[name] = (annotation, default)
+        create_model_kwargs[name] = (InputType, default)
 
     return create_model("Input", **create_model_kwargs)
 
