@@ -2,7 +2,18 @@
 
 Put your machine learning model in a standard, production-ready Docker container without having to know how Docker works.
 
-Cog does a few things for you:
+- [What is Cog?](#what-is-cog)
+- [How it works](#how-it-works)
+- [Prerequisites](#prerequisites)
+- [Install](#install)
+- [Upgrade](#upgrade)
+- [Next steps](#next-steps)
+- [Need help?](#need-help)
+- [Contributors ✨](#contributors-%E2%9C%A8)
+
+## What is Cog?
+
+Cog is an open-source command-line tool that gives you a consistent environment to run your model in – for developing on your laptop, training on GPU machines, and for other people working on the model. Once you've trained your model and you want to share or deploy it, you can bake the model into a Docker image that serves a standard HTTP API and can be deployed anywhere.
 
 - **Automatic Docker image.** Define your environment with a simple configuration file, and Cog generates a `Dockerfile` with all the best practices.
 - **Standard, production-ready HTTP and AMQP interface.** Automatically generate APIs for integrating with production systems, battle hardened on Replicate.
@@ -82,7 +93,7 @@ $ cog run jupyter notebook
 ```
 -->
 
-## Deploying models to production
+### Deploying models to production
 
 Cog does a number of things out of the box to help you deploy models to production:
 
@@ -92,7 +103,7 @@ Cog does a number of things out of the box to help you deploy models to producti
 - **AMQP RPC interface.** Long-running deep learning models or batch processing is best architected with a queue. Cog models can do this out of the box.
 - **Read/write files from cloud storage.** Files can be read and written directly on Amazon S3 and Google Cloud Storage for efficiency.
 
-## Why are we building this?
+### Why are we building this?
 
 It's really hard for researchers to ship machine learning models to production.
 
@@ -103,6 +114,11 @@ We are [Andreas](https://github.com/andreasjansson) and [Ben](https://github.com
 We realized that, in addition to Spotify, other companies were also using Docker to build and deploy machine learning models. [Uber](https://eng.uber.com/michelangelo-pyml/), Coinbase, and others have built similar systems. So, we're making an open source version so other people can do this too.
 
 Hit us up if you're interested in using it or want to collaborate with us. [We're on Discord](https://discord.gg/QmzJApGjyE) or email us at [team@replicate.com](mailto:team@replicate.com).
+
+## Prerequisites
+
+- **macOS or Linux**. Cog works on macOS and Linux, but does not currently support Windows.
+- **Docker**. Cog uses Docker to create a container for your model. You'll need to [install Docker](https://docs.docker.com/get-docker/) before you can run Cog.
 
 ## Install
 
@@ -158,6 +174,7 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
     <td align="center"><a href="http://notes.variogr.am/"><img src="https://avatars.githubusercontent.com/u/76612?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Brian Whitman</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Abwhitman" title="Bug reports">🐛</a></td>
     <td align="center"><a href="https://github.com/JimothyJohn"><img src="https://avatars.githubusercontent.com/u/24216724?v=4?s=100" width="100px;" alt=""/><br /><sub><b>JimothyJohn</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3AJimothyJohn" title="Bug reports">🐛</a></td>
     <td align="center"><a href="https://github.com/ericguizzo"><img src="https://avatars.githubusercontent.com/u/26746670?v=4?s=100" width="100px;" alt=""/><br /><sub><b>ericguizzo</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aericguizzo" title="Bug reports">🐛</a></td>
+    <td align="center"><a href="http://www.dominicbaggott.com"><img src="https://avatars.githubusercontent.com/u/74812?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Dominic Baggott</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=evilstreak" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=evilstreak" title="Tests">⚠️</a></td>
   </tr>
 </table>
 

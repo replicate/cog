@@ -127,6 +127,16 @@
       "contributions": [
         "bug"
       ]
+    },
+    {
+      "login": "evilstreak",
+      "name": "Dominic Baggott",
+      "avatar_url": "https://avatars.githubusercontent.com/u/74812?v=4",
+      "profile": "http://www.dominicbaggott.com",
+      "contributions": [
+        "code",
+        "test"
+      ]
     }
   ],
   "contributorsPerLine": 7,
