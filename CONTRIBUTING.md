@@ -142,7 +142,7 @@ Then visit [github.com/replicate/cog/actions](https://github.com/replicate/cog/a
 
 ### Publishing a prerelease
 
-To publish a **prerelease** version, use the same process as a above but append a hyphen and an identifer like `-alpha` or `-beta` to the git tag name. Goreleaser will detect this and mark it as a prerelease in GitHub Releases.
+To publish a prerelease version, append a [SemVer prerelease identifer](https://semver.org/#spec-item-9) like `-alpha` or `-beta` to the git tag name. Goreleaser will detect this and mark it as a prerelease in GitHub Releases.
 
     git checkout some-prerelease-branch
     git fetch --all --tags
