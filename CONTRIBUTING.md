@@ -140,6 +140,15 @@ To publish a new release, run the following in your local checkout of cog:
 
 Then visit [github.com/replicate/cog/actions](https://github.com/replicate/cog/actions) to monitor the release process.
 
+### Publishing a prerelease
+
+To publish a **prerelease** version, use the same process as a above but append a hyphen and an identifer like `-alpha` or `-beta` to the git tag name. Goreleaser will detect this and mark it as a prerelease in GitHub Releases.
+
+    git checkout some-prerelease-branch
+    git fetch --all --tags
+    git tag -a v0.1.0-alpha -m "Prerelease v0.1.0"
+    git push --tags
+
 ## Troubleshooting
 
 ### `invalid command 'bdist_wheel'`
