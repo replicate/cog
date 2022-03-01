@@ -93,12 +93,8 @@ class Path(pathlib.PosixPath):
             return value
 
         src = File.validate(value)
-        # TODO: cleanup!
-        temp_dir = tempfile.mkdtemp()
-        temp_path = os.path.join(temp_dir, get_filename(value))
-        with open(temp_path, "wb") as dest:
-            shutil.copyfileobj(src, dest)
-
+        dest = tempfile.NamedTemporaryFile(suffix=get_filename(value), delete=False)
+        shutil.copyfileobj(src, dest)
         return cls(dest.name)
 
     @classmethod
