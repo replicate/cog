@@ -352,6 +352,36 @@ def test_openapi_specification_with_custom_user_defined_output_type():
     }
 
 
+def test_openapi_specification_with_custom_user_defined_output_type_called_output():
+    # An output object called `Output` needs to be special cased because pydantic tries to dedupe it with the internal `Output`
+    class Output(BaseModel):
+        foo_number: int = "42"
+        foo_string: str = "meaning of life"
+
+    class Predictor(BasePredictor):
+        def predict(
+            self,
+        ) -> Output:
+            pass
+
+    client = make_client(Predictor())
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+
+    assert resp.json()["components"]["schemas"]["Output"] == {
+        "properties": {
+            "foo_number": {"default": "42", "title": "Foo Number", "type": "integer"},
+            "foo_string": {
+                "default": "meaning of life",
+                "title": "Foo String",
+                "type": "string",
+            },
+        },
+        "title": "Output",
+        "type": "object",
+    }
+
+
 def test_yielding_strings_from_generator_predictors():
     class Predictor(BasePredictor):
         def predict(self) -> Generator[str, None, None]:
