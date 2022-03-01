@@ -137,6 +137,25 @@ def test_path_input_data_url():
     assert resp.status_code == 200
 
 
+def test_path_temporary_files_are_removed():
+    class Predictor(BasePredictor):
+        def predict(self, path: Path) -> str:
+            return str(path)
+
+    client = make_client(Predictor())
+    resp = client.post(
+        "/predictions",
+        json={
+            "input": {
+                "path": "data:text/plain;base64,"
+                + base64.b64encode(b"bar").decode("utf-8")
+            }
+        },
+    )
+    temporary_path = resp.json()["output"]
+    assert not os.path.exists(temporary_path)
+
+
 @responses.activate
 def test_file_input_with_http_url():
     class Predictor(BasePredictor):
