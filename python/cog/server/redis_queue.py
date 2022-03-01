@@ -215,7 +215,10 @@ class RedisQueueWorker:
         with self.capture_log(self.STAGE_RUN, prediction_id), timeout(
             seconds=self.predict_timeout
         ):
-            return_value = self.predictor.predict(**input_obj.dict())
+            try:
+                return_value = self.predictor.predict(**input_obj.dict())
+            finally:
+                input_obj.cleanup()
         if isinstance(return_value, types.GeneratorType):
             last_result = None
 

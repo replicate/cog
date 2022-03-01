@@ -56,7 +56,11 @@ def create_app(predictor: BasePredictor) -> FastAPI:
         if request is None or request.input is None:
             output = predictor.predict()
         else:
-            output = predictor.predict(**request.input.dict())
+            try:
+                output = predictor.predict(**request.input.dict())
+            finally:
+                request.input.cleanup()
+
         output_file_prefix = None
         if request:
             output_file_prefix = request.output_file_prefix
@@ -66,6 +70,7 @@ def create_app(predictor: BasePredictor) -> FastAPI:
             last_result = None
             for iteration in enumerate(output):
                 last_result = iteration
+                # TODO: clean up output files
             # last result is a tuple with (index, value)
             output = last_result[1]
 
@@ -90,6 +95,7 @@ Check that your predict function is in this form, where `output_type` is the sam
         encoded_response = encode_json(
             response, upload_file=lambda fh: upload_file(fh, output_file_prefix)
         )
+        # TODO: clean up output files
         return JSONResponse(content=encoded_response)
 
     return app

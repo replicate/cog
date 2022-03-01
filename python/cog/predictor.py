@@ -73,6 +73,22 @@ def load_predictor():
     return predictor_class()
 
 
+# Base class for inputs, constructed dynamically in get_input_type().
+# (This can't be a docstring or it gets passed through to the schema.)
+class BaseInput(BaseModel):
+    def cleanup(self):
+        """
+        Cleanup any temporary files created by the input.
+        """
+        for _, value in self:
+            # Note this is pathlib.Path, which cog.Path is a subclass of. A pathlib.Path object shouldn't make its way here,
+            # but both have an unlink() method, so may as well be safe.
+            if isinstance(value, Path):
+                # This could be missing_ok=True when we drop support for Python 3.7
+                if value.exists():
+                    value.unlink()
+
+
 def get_input_type(predictor: BasePredictor):
     """
     Creates a Pydantic Input model from the arguments of a Predictor's predict() method.
@@ -131,7 +147,7 @@ def get_input_type(predictor: BasePredictor):
 
         create_model_kwargs[name] = (InputType, default)
 
-    return create_model("Input", **create_model_kwargs)
+    return create_model("Input", **create_model_kwargs, __base__=BaseInput)
 
 
 def get_output_type(predictor: BasePredictor):
