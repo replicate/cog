@@ -178,11 +178,14 @@ For example:
     if get_origin(OutputType) is Generator:
         OutputType = get_args(OutputType)[0]
 
-    # Wrap the type in a model so Pydantic can document it in component schema
-    class Output(BaseModel):
-        __root__: OutputType
+    if OutputType.__name__ != "Output":
+        # Wrap the type in a model called "Output" so it is a consistent name in the OpenAPI schema
+        class Output(BaseModel):
+            __root__: OutputType
 
-    return Output
+        OutputType = Output
+
+    return OutputType
 
 
 def human_readable_type_name(t):
