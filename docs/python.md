@@ -11,6 +11,8 @@ Tip: Run [`cog init`](getting-started-own-model#initialization) to generate an a
   - [`Predictor.predict(**kwargs)`](#predictorpredictkwargs)
 - [`Input(**kwargs)`](#inputkwargs)
 - [`Output(BaseModel)`](#outputbasemodel)
+- [`File()`](#file)
+- [`Path()`](#path)
 
 ## `BasePredictor`
 
@@ -54,21 +56,7 @@ This _required_ method is where you call the model that was loaded during `setup
 
 The `predict()` method takes an arbitrary list of named arguments, where each argument name must correspond to an [`Input()`](#inputkwargs) annotation.
 
-`predict()` can return strings, numbers, `pathlib.Path` objects, or lists or dicts of those types. You can also define a custom [`Output()`](#outputbasemodel) for more complex return types.
-
-#### Returning `pathlib.Path` objects
-
-If the output is a `pathlib.Path` object, that will be returned by the built-in HTTP server as a file download.
-
-To output `pathlib.Path` objects the file needs to exist, which means that you probably need to create a temporary file first. This file will automatically be deleted by Cog after it has been returned. For example:
-
-```python
-def predict(self, image: Path = Input(description="Image to enlarge")) -> Path:
-    output = do_some_processing(image)
-    out_path = Path(tempfile.mkdtemp()) / "my-file.txt"
-    out_path.write_text(output)
-    return out_path
-```
+`predict()` can return strings, numbers, [`cog.Path`](#path) objects representing files on disk, or lists or dicts of those types. You can also define a custom [`Output()`](#outputbasemodel) for more complex return types.
 
 ## `Input(**kwargs)`
 
@@ -118,4 +106,46 @@ class Output(BaseModel):
 class Predictor(BasePredictor):
     def predict(self) -> Output:
         return Output(text="hello", file=io.StringIO("hello"))
+```
+
+## `File()`
+
+The `cog.File` object is used to get files in and out of models. It represents a _file handle_.
+
+For models that return a `cog.File` object, the prediction output returned by Cog's built-in HTTP server will be a URL.
+
+```python
+from cog import BasePredictor, File, Input, Path
+from PIL import Image
+
+class Predictor(BasePredictor):
+    def predict(self, source_image: File = Input(description="Image to enlarge")) -> File:
+        pillow_img = Image.open(source_image)
+        upscaled_image = do_some_processing(pillow_img)
+        return File(upscaled_image)
+```
+
+## `Path()`
+
+The `cog.Path` object is used to get files in and out of models. It represents a _path to a file on disk_.
+
+`cog.Path` is a subclass of Python's [`pathlib.Path`](https://docs.python.org/3/library/pathlib.html#basic-use) and can be used as a drop-in replacement.
+
+For models that return a `cog.Path` object, the prediction output returned by Cog's built-in HTTP server will be a URL.
+
+This example takes an input file, resizes it, and returns the resized image:
+
+```python
+import tempfile
+from cog import BasePredictor, Input, Path
+
+class Predictor(BasePredictor):
+    def predict(self, image: Path = Input(description="Image to enlarge")) -> Path:
+        upscaled_image = do_some_processing(image)
+
+        # To output `cog.Path` objects the file needs to exist, so create a temporary file first.
+        # This file will automatically be deleted by Cog after it has been returned.
+        output_path = Path(tempfile.mkdtemp()) / "upscaled.png"
+        upscaled_image.save(output)
+        return Path(output_path)
 ```
