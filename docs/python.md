@@ -110,21 +110,24 @@ class Predictor(BasePredictor):
 
 ## `File()`
 
-The `cog.File` object represents a _file handle_, and can be used for both input and output to a Cog model.
+The `cog.File` object is used to get files in and out of models. It represents a _file handle_.
 
 For models that return a `cog.File` object, the prediction output returned by Cog's built-in HTTP server will be a URL.
 
 ```python
 from cog import BasePredictor, File, Input, Path
+from PIL import Image
 
-def predict(self, image: Path = Input(description="Image to enlarge")) -> File:
-    upscaled_image = do_some_processing(image)
-    return File(upscaled_image)
+class Predictor(BasePredictor):
+    def predict(self, source_image: File = Input(description="Image to enlarge")) -> File:
+        pillow_img = Image.open(source_image)
+        upscaled_image = do_some_processing(pillow_img)
+        return File(upscaled_image)
 ```
 
 ## `Path()`
 
-The `cog.Path` object represents a _path to a file on disk_, and can be used for both input and output to a Cog model.
+The `cog.Path` object is used to get files in and out of models. It represents a _path to a file on disk_.
 
 `cog.Path` is a subclass of Python's [`pathlib.Path`](https://docs.python.org/3/library/pathlib.html#basic-use) and can be used as a drop-in replacement.
 
@@ -136,12 +139,13 @@ This example takes an input file, resizes it, and returns the resized image:
 import tempfile
 from cog import BasePredictor, Input, Path
 
-def predict(self, image: Path = Input(description="Image to enlarge")) -> Path:
-    upscaled_image = do_some_processing(image)
+class Predictor(BasePredictor):
+    def predict(self, image: Path = Input(description="Image to enlarge")) -> Path:
+        upscaled_image = do_some_processing(image)
 
-    # To output `cog.Path` objects the file needs to exist, so create a temporary file first.
-    # This file will automatically be deleted by Cog after it has been returned.
-    output_path = Path(tempfile.mkdtemp()) / "upscaled.png"
-    upscaled_image.save(output)
-    return Path(output_path)
+        # To output `cog.Path` objects the file needs to exist, so create a temporary file first.
+        # This file will automatically be deleted by Cog after it has been returned.
+        output_path = Path(tempfile.mkdtemp()) / "upscaled.png"
+        upscaled_image.save(output)
+        return Path(output_path)
 ```
