@@ -11,6 +11,7 @@ Tip: Run [`cog init`](getting-started-own-model#initialization) to generate an a
   - [`Predictor.predict(**kwargs)`](#predictorpredictkwargs)
 - [`Input(**kwargs)`](#inputkwargs)
 - [`Output(BaseModel)`](#outputbasemodel)
+- [`File()`](#file)
 - [`Path()`](#path)
 
 ## `BasePredictor`
@@ -107,13 +108,27 @@ class Predictor(BasePredictor):
         return Output(text="hello", file=io.StringIO("hello"))
 ```
 
+## `File()`
+
+The `cog.File` object represents a _file handle_, and can be used for both input and output to a Cog model.
+
+For models that return a `cog.File` object, the prediction output returned by Cog's built-in HTTP server will be a URL.
+
+```python
+from cog import BasePredictor, Path
+
+def predict(self, image: Path = Input(description="Image to enlarge")) -> File:
+    upscaled_image = do_some_processing(image)
+    return File(upscaled_image)
+```
+
 ## `Path()`
 
-The `cog.Path` object represents a path to a file on disk, and can be used for both input and output to a Cog model.
+The `cog.Path` object represents a _path to a file on disk_, and can be used for both input and output to a Cog model.
 
-`cog.Path` is a subclass of Python's [`pathlib.PosixPath`](https://docs.python.org/3/library/pathlib.html#basic-use) and can be used as a drop-in replacement.
+`cog.Path` is a subclass of Python's [`pathlib.Path`](https://docs.python.org/3/library/pathlib.html#basic-use) and can be used as a drop-in replacement.
 
-For models that return a `cog.Path` object, the prediction output returned by Cog's built-in HTTP server will be a URL to a hosted file.
+For models that return a `cog.Path` object, the prediction output returned by Cog's built-in HTTP server will be a URL.
 
 This example takes an input file, resizes it, and returns the resized image:
 
