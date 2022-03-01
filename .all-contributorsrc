@@ -137,6 +137,17 @@
         "code",
         "test"
       ]
+    },
+    {
+      "login": "dashstander",
+      "name": "Dashiell Stander",
+      "avatar_url": "https://avatars.githubusercontent.com/u/7449128?v=4",
+      "profile": "https://github.com/dashstander",
+      "contributions": [
+        "bug",
+        "code",
+        "test"
+      ]
     }
   ],
   "contributorsPerLine": 7,
