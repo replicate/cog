@@ -100,9 +100,7 @@ You can provide more information about the input with the `Input()` function, as
 
 - `description`: A description of what to pass to this input for users of the model
 - `default`: A default value to set the input to. If this argument is not passed, the input is required. If it is explicitly set to `None`, the input is optional.
-- `gt`: For `int` or `float` types, the value should be greater than this number.
 - `ge`: For `int` or `float` types, the value should be greater than or equal to this number.
-- `lt`: For `int` or `float` types, the value should be less than this number.
 - `le`: For `int` or `float` types, the value should be less than or equal to this number.
 - `choices`: A list of possible values for this input.
 

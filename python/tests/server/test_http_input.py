@@ -216,7 +216,7 @@ def test_multiple_arguments():
 
 def test_gt_lt():
     class Predictor(BasePredictor):
-        def predict(self, num: float = Input(gt=3, lt=10.5)) -> float:
+        def predict(self, num: float = Input(ge=3.01, le=10.5)) -> float:
             return num
 
     client = make_client(Predictor())
@@ -224,10 +224,10 @@ def test_gt_lt():
     assert resp.json() == {
         "detail": [
             {
-                "ctx": {"limit_value": 3},
+                "ctx": {"limit_value": 3.01},
                 "loc": ["body", "input", "num"],
-                "msg": "ensure this value is greater than 3",
-                "type": "value_error.number.not_gt",
+                "msg": "ensure this value is greater than or equal to 3.01",
+                "type": "value_error.number.not_ge",
             }
         ]
     }

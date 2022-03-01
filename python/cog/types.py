@@ -16,9 +16,7 @@ from pydantic.typing import NoArgAnyCallable
 def Input(
     default=...,
     description: str = None,
-    gt: float = None,
     ge: float = None,
-    lt: float = None,
     le: float = None,
     min_length: int = None,
     max_length: int = None,
@@ -29,9 +27,7 @@ def Input(
     return Field(
         default,
         description=description,
-        gt=gt,
         ge=ge,
-        lt=lt,
         le=le,
         min_length=min_length,
         max_length=max_length,
