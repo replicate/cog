@@ -115,7 +115,7 @@ The `cog.File` object represents a _file handle_, and can be used for both input
 For models that return a `cog.File` object, the prediction output returned by Cog's built-in HTTP server will be a URL.
 
 ```python
-from cog import BasePredictor, File, Path
+from cog import BasePredictor, File, Input, Path
 
 def predict(self, image: Path = Input(description="Image to enlarge")) -> File:
     upscaled_image = do_some_processing(image)
@@ -134,7 +134,7 @@ This example takes an input file, resizes it, and returns the resized image:
 
 ```python
 import tempfile
-from cog import BasePredictor, Path
+from cog import BasePredictor, Input, Path
 
 def predict(self, image: Path = Input(description="Image to enlarge")) -> Path:
     upscaled_image = do_some_processing(image)
