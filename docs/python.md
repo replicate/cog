@@ -78,7 +78,7 @@ Use cog's `Input()` function to define each of the parameters in your `predict()
 class Predictor(BasePredictor):
     def predict(self,
             image: Path = Input(description="Image to enlarge"),
-            scale: float = Input(description="Factor to scale image by", default=1.5, gt=0, lt=10)
+            scale: float = Input(description="Factor to scale image by", default=1.5, ge=1.0, le=10.0)
     ) -> Path:
 ```
 
@@ -86,9 +86,7 @@ The `Input()` function takes these keyword arguments:
 
 - `description`: A description of what to pass to this input for users of the model.
 - `default`: A default value to set the input to. If this argument is not passed, the input is required. If it is explicitly set to `None`, the input is optional.
-- `gt`: For `int` or `float` types, the value must be greater than this number.
 - `ge`: For `int` or `float` types, the value must be greater than or equal to this number.
-- `lt`: For `int` or `float` types, the value must be less than this number.
 - `le`: For `int` or `float` types, the value must be less than or equal to this number.
 - `min_length`: For `str` types, the minimum length of the string.
 - `max_length`: For `str` types, the maximum length of the string.
