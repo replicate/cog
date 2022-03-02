@@ -148,6 +148,16 @@
         "code",
         "test"
       ]
+    },
+    {
+      "login": "Hurricane-eye",
+      "name": "Shuwei Liang",
+      "avatar_url": "https://avatars.githubusercontent.com/u/31437546?v=4",
+      "profile": "https://github.com/Hurricane-eye",
+      "contributions": [
+        "bug",
+        "question"
+      ]
     }
   ],
   "contributorsPerLine": 7,
