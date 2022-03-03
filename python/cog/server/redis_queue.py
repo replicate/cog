@@ -220,8 +220,6 @@ class RedisQueueWorker:
             finally:
                 input_obj.cleanup()
         if isinstance(return_value, types.GeneratorType):
-            last_result = None
-
             while True:
                 # we consume iterator manually to capture log
                 try:
@@ -232,14 +230,12 @@ class RedisQueueWorker:
                 except StopIteration:
                     break
                 # push the previous result, so we can eventually detect the last iteration
-                if last_result is not None:
-                    self.push_result(response_queue, last_result, status="processing")
+                self.push_result(response_queue, result, status="processing")
                 if isinstance(result, Path):
                     cleanup_functions.append(result.unlink)
-                last_result = result
 
             # push the last result
-            self.push_result(response_queue, last_result, status="success")
+            self.push_result(response_queue, result, status="success")
         else:
             if isinstance(return_value, Path):
                 cleanup_functions.append(return_value.unlink)

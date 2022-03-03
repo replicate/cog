@@ -112,6 +112,9 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client):
         assert response == {"value": "bar", "status": "processing"}
 
         response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        assert response == {"value": "baz", "status": "processing"}
+
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {"value": "baz", "status": "success"}
 
         response = redis_client.rpop("response-queue")
@@ -388,6 +391,9 @@ def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_clien
         )
 
         response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        assert response == {"status": "processing", "value": "yield 0"}
+
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {"status": "success", "value": "yield 0"}
 
         predict_id = random_string(10)
@@ -410,6 +416,9 @@ def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_clien
         # TODO(andreas): revisit this test design if it starts being flakey
         response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {"value": "yield 0", "status": "processing"}
+
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        assert response == {"value": "yield 1", "status": "processing"}
 
         response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {"status": "failed", "error": "Prediction timed out"}
