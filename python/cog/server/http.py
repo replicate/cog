@@ -65,15 +65,6 @@ def create_app(predictor: BasePredictor) -> FastAPI:
         if request:
             output_file_prefix = request.output_file_prefix
 
-        # loop over generator function to get the last result
-        if isinstance(output, types.GeneratorType):
-            last_result = None
-            for iteration in enumerate(output):
-                last_result = iteration
-                # TODO: clean up output files
-            # last result is a tuple with (index, value)
-            output = last_result[1]
-
         OutputType = get_output_type(predictor)
         Response = get_response_type(OutputType)
 

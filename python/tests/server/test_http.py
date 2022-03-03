@@ -2,7 +2,7 @@ import base64
 import io
 import os
 import tempfile
-from typing import Generator
+from typing import Iterator
 from unittest import mock
 
 from fastapi.testclient import TestClient
@@ -382,9 +382,29 @@ def test_openapi_specification_with_custom_user_defined_output_type_called_outpu
     }
 
 
+def test_openapi_specification_with_yield():
+    class Predictor(BasePredictor):
+        def predict(
+            self,
+        ) -> Iterator[str]:
+            pass
+
+    client = make_client(Predictor())
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+
+    assert resp.json()["components"]["schemas"]["Output"] == {
+        "title": "Output",
+        "type": "array",
+        "items": {
+            "type": "string",
+        },
+    }
+
+
 def test_yielding_strings_from_generator_predictors():
     class Predictor(BasePredictor):
-        def predict(self) -> Generator[str, None, None]:
+        def predict(self) -> Iterator[str]:
             predictions = ["foo", "bar", "baz"]
             for prediction in predictions:
                 yield prediction
@@ -392,12 +412,12 @@ def test_yielding_strings_from_generator_predictors():
     client = make_client(Predictor())
     resp = client.post("/predictions")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "success", "output": "baz"}
+    assert resp.json() == {"status": "success", "output": ["foo", "bar", "baz"]}
 
 
 def test_yielding_files_from_generator_predictors():
     class Predictor(BasePredictor):
-        def predict(self) -> Generator[Path, None, None]:
+        def predict(self) -> Iterator[Path]:
             colors = ["red", "blue", "yellow"]
             for i, color in enumerate(colors):
                 temp_dir = tempfile.mkdtemp()
@@ -410,10 +430,16 @@ def test_yielding_files_from_generator_predictors():
     resp = client.post("/predictions")
 
     assert resp.status_code == 200
-    header, b64data = resp.json()["output"].split(",", 1)
-    image = Image.open(io.BytesIO(base64.b64decode(b64data)))
-    image_color = Image.Image.getcolors(image)[0][1]
-    assert image_color == (255, 255, 0)  # yellow
+    output = resp.json()["output"]
+
+    def image_color(data_url):
+        header, b64data = data_url.split(",", 1)
+        image = Image.open(io.BytesIO(base64.b64decode(b64data)))
+        return Image.Image.getcolors(image)[0][1]
+
+    assert image_color(output[0]) == (255, 0, 0)  # red
+    assert image_color(output[1]) == (0, 0, 255)  # blue
+    assert image_color(output[2]) == (255, 255, 0)  # yellow
 
 
 # TODO: timing
