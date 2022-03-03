@@ -220,6 +220,8 @@ class RedisQueueWorker:
             finally:
                 input_obj.cleanup()
         if isinstance(return_value, types.GeneratorType):
+            output = []
+
             while True:
                 # we consume iterator manually to capture log
                 try:
@@ -229,16 +231,20 @@ class RedisQueueWorker:
                         result = next(return_value)
                 except StopIteration:
                     break
+                # Encode as JSON here instead of each time we push a result so the file URLs remain consistent
+                result = self.encode_json(result)
+                output.append(result)
                 # push the previous result, so we can eventually detect the last iteration
-                self.push_result(response_queue, result, status="processing")
+                self.push_result(response_queue, output, status="processing")
                 if isinstance(result, Path):
                     cleanup_functions.append(result.unlink)
 
             # push the last result
-            self.push_result(response_queue, result, status="success")
+            self.push_result(response_queue, output, status="success")
         else:
             if isinstance(return_value, Path):
                 cleanup_functions.append(return_value.unlink)
+            return_value = self.encode_json(return_value)
             self.push_result(response_queue, return_value, status="success")
 
     def download(self, url):
@@ -258,7 +264,7 @@ class RedisQueueWorker:
 
     def push_result(self, response_queue, result, status):
         message = {
-            "value": self.encode_json(result),
+            "value": result,
         }
 
         message["status"] = status

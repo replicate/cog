@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from collections.abc import Generator
+from collections.abc import Iterator
 import enum
 import importlib
 import inspect
@@ -7,9 +7,10 @@ import os.path
 from pathlib import Path
 from pydantic import create_model, BaseModel
 from pydantic.fields import FieldInfo
+from typing import List
 
 # Added in Python 3.8. Can be from typing if we drop support for <3.8.
-from typing_extensions import Literal, get_origin, get_args
+from typing_extensions import get_origin, get_args
 import yaml
 
 from .errors import ConfigDoesNotExist, PredictorNotSet
@@ -174,11 +175,11 @@ For example:
     else:
         OutputType = signature.return_annotation
 
-    # The type that goes in the response is the type that is yielded
-    if get_origin(OutputType) is Generator:
-        OutputType = get_args(OutputType)[0]
+    # The type that goes in the response is a list of the yielded type
+    if get_origin(OutputType) is Iterator:
+        OutputType = List[get_args(OutputType)[0]]
 
-    if OutputType.__name__ != "Output":
+    if not hasattr(OutputType, "__name__") or OutputType.__name__ != "Output":
         # Wrap the type in a model called "Output" so it is a consistent name in the OpenAPI schema
         class Output(BaseModel):
             __root__: OutputType
