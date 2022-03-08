@@ -202,6 +202,7 @@ def test_openapi_specification():
                     "title": "choices",
                     "enum": ["foo", "bar"],
                     "description": "An enumeration.",
+                    "type": "string",
                 },
             }
         },
