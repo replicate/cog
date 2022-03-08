@@ -4,7 +4,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
-class Status(enum.Enum):
+class Status(str, enum.Enum):
     PROCESSING = "processing"
     SUCCESS = "success"
     FAILED = "failed"  # FIXME: "failure"?
