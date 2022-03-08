@@ -9,6 +9,7 @@ Tip: Run [`cog init`](getting-started-own-model#initialization) to generate an a
 - [`BasePredictor`](#basepredictor)
   - [`Predictor.setup()`](#predictorsetup)
   - [`Predictor.predict(**kwargs)`](#predictorpredictkwargs)
+    - [Progressive output](#progressive-output)
 - [`Input(**kwargs)`](#inputkwargs)
 - [`Output(BaseModel)`](#outputbasemodel)
 - [`File()`](#file)
@@ -57,6 +58,25 @@ This _required_ method is where you call the model that was loaded during `setup
 The `predict()` method takes an arbitrary list of named arguments, where each argument name must correspond to an [`Input()`](#inputkwargs) annotation.
 
 `predict()` can return strings, numbers, [`cog.Path`](#path) objects representing files on disk, or lists or dicts of those types. You can also define a custom [`Output()`](#outputbasemodel) for more complex return types.
+
+
+#### Progressive output
+
+Cog models can yield output progressively as the `predict()` method is running. For example, an image generation model can yield a series of images as it is being generated.
+
+To support progressive output in your Cog model, add `from typing import Iterator` to your predict.py file. The `typing` package is a part of Python's standard library so it doesn't need to be installed. Then add a return type annotation to the `predict()` method in the form `-> Iterator[<type>]` where `<type>` can be one of `str`, `int`, `float`, `bool`, `cog.File`, or `cog.Path`.
+
+```py
+from cog import BasePredictor, Path
+from typing import Iterator
+
+class Predictor(BasePredictor):
+    def predict(self) -> Iterator[Path]:
+        done = False
+        while not done:
+            output_path, done = do_stuff()
+            yield Path(output_path)
+```
 
 ## `Input(**kwargs)`
 
