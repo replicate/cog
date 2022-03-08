@@ -182,6 +182,7 @@ def test_openapi_specification():
                     "title": "Status",
                     "enum": ["processing", "success", "failed"],
                     "description": "An enumeration.",
+                    "type": "string",
                 },
                 "ValidationError": {
                     "title": "ValidationError",
@@ -332,6 +333,7 @@ def test_openapi_specification_with_custom_user_defined_output_type():
                     "title": "Status",
                     "enum": ["processing", "success", "failed"],
                     "description": "An enumeration.",
+                    "type": "string",
                 },
                 "ValidationError": {
                     "title": "ValidationError",
