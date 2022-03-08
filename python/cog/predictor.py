@@ -144,7 +144,11 @@ def get_input_type(predictor: BasePredictor):
                 raise TypeError(
                     f"The input {name} uses the option choices. Choices can only be used with str types."
                 )
-            InputType = enum.Enum(name, {value: value for value in choices})
+
+            class InputTypeEnum(InputType, enum.Enum):
+                pass
+
+            InputType = InputTypeEnum(name, {value: value for value in choices})
 
         create_model_kwargs[name] = (InputType, default)
 
