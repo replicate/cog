@@ -211,14 +211,13 @@ class RedisQueueWorker:
             self.push_error(response_queue, e)
             return
 
+        cleanup_functions.append(input_obj.cleanup)
+
         start_time = time.time()
         with self.capture_log(self.STAGE_RUN, prediction_id), timeout(
             seconds=self.predict_timeout
         ):
-            try:
-                return_value = self.predictor.predict(**input_obj.dict())
-            finally:
-                input_obj.cleanup()
+            return_value = self.predictor.predict(**input_obj.dict())
         if isinstance(return_value, types.GeneratorType):
             output = []
 
