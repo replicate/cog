@@ -405,6 +405,26 @@ def test_openapi_specification_with_yield():
     }
 
 
+def test_openapi_specification_with_int_choices():
+    class Predictor(BasePredictor):
+        def predict(self, pick_a_number_any_number: int = Input(choices=[1, 2])) -> str:
+            pass
+
+    client = make_client(Predictor())
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+
+    assert resp.json()["components"]["schemas"]["Input"]["properties"][
+        "pick_a_number_any_number"
+    ] == {"$ref": "#/components/schemas/pick_a_number_any_number"}
+    assert resp.json()["components"]["schemas"]["pick_a_number_any_number"] == {
+        "description": "An enumeration.",
+        "enum": [1, 2],
+        "title": "pick_a_number_any_number",
+        "type": "integer",
+    }
+
+
 def test_yielding_strings_from_generator_predictors():
     class Predictor(BasePredictor):
         def predict(self) -> Iterator[str]:
