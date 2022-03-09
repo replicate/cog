@@ -139,6 +139,12 @@ Building Docker image...
 Built resnet:latest
 ```
 
+Once you've built the image, you can optionally view the generated dockerfile to get a sense of what Cog is doing under the hood:
+
+```
+$ cog debug dockerfile
+```
+
 You can run this image with `cog predict` by passing the image name as an argument:
 
 ```
