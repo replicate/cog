@@ -64,6 +64,108 @@ def test_queue_worker_files(docker_image, docker_network, redis_client, upload_s
             assert f.read() == "foobaztest"
 
 
+def test_queue_worker_yielding_file(
+    docker_network, docker_image, redis_client, upload_server
+):
+    project_dir = Path(__file__).parent / "fixtures/yielding-file-project"
+    subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
+
+    with open(upload_server / "input.txt", "w") as f:
+        f.write("test")
+
+    with docker_run(
+        image=docker_image,
+        interactive=True,
+        network=docker_network,
+        command=[
+            "python",
+            "-m",
+            "cog.server.redis_queue",
+            "redis",
+            "6379",
+            "predict-queue",
+            "http://upload-server:5000/upload",
+            "test-worker",
+            "model_id",
+            "logs",
+        ],
+    ):
+        redis_client.xgroup_create(
+            mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
+        )
+
+        predict_id = random_string(10)
+        redis_client.xadd(
+            name="predict-queue",
+            fields={
+                "value": json.dumps(
+                    {
+                        "id": predict_id,
+                        "inputs": {
+                            "path": {
+                                "file": {
+                                    "name": "input.txt",
+                                    "url": "http://upload-server:5000/download/input.txt",
+                                }
+                            },
+                        },
+                        "response_queue": "response-queue",
+                    }
+                ),
+            },
+        )
+
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        assert response == {
+            "value": ["http://upload-server:5000/download/out-0.txt"],
+            "status": "processing",
+        }
+
+        with open(upload_server / "out-0.txt") as f:
+            assert f.read() == "test foo"
+
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        assert response == {
+            "value": [
+                "http://upload-server:5000/download/out-0.txt",
+                "http://upload-server:5000/download/out-1.txt",
+            ],
+            "status": "processing",
+        }
+
+        with open(upload_server / "out-1.txt") as f:
+            assert f.read() == "test bar"
+
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        assert response == {
+            "value": [
+                "http://upload-server:5000/download/out-0.txt",
+                "http://upload-server:5000/download/out-1.txt",
+                "http://upload-server:5000/download/out-2.txt",
+            ],
+            "status": "processing",
+        }
+
+        with open(upload_server / "out-2.txt") as f:
+            assert f.read() == "test baz"
+
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        assert response == {
+            "value": [
+                "http://upload-server:5000/download/out-0.txt",
+                "http://upload-server:5000/download/out-1.txt",
+                "http://upload-server:5000/download/out-2.txt",
+            ],
+            "status": "success",
+        }
+
+        with open(upload_server / "out-2.txt") as f:
+            assert f.read() == "test baz"
+
+        response = redis_client.rpop("response-queue")
+        assert response == None
+
+
 def test_queue_worker_yielding(docker_network, docker_image, redis_client):
     project_dir = Path(__file__).parent / "fixtures/yielding-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
