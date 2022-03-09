@@ -137,6 +137,7 @@ sudo chmod +x /usr/local/bin/cog
 - [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's environment
 - [Prediction interface reference](docs/python.md) to learn how the `Predictor` interface works
+- [HTTP API reference](docs/http.md) to learn how to use the HTTP API that models serve
 
 ## Need help?
 
