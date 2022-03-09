@@ -256,7 +256,7 @@ def test_gt_lt():
     assert resp.status_code == 200
 
 
-def test_choices():
+def test_choices_str():
     class Predictor(BasePredictor):
         def predict(self, text: str = Input(choices=["foo", "bar"])) -> str:
             return str(text)
@@ -265,4 +265,16 @@ def test_choices():
     resp = client.post("/predictions", json={"input": {"text": "foo"}})
     assert resp.status_code == 200
     resp = client.post("/predictions", json={"input": {"text": "baz"}})
+    assert resp.status_code == 422
+
+
+def test_choices_int():
+    class Predictor(BasePredictor):
+        def predict(self, x: int = Input(choices=[1, 2])) -> int:
+            return x ** 2
+
+    client = make_client(Predictor())
+    resp = client.post("/predictions", json={"input": {"x": 1}})
+    assert resp.status_code == 200
+    resp = client.post("/predictions", json={"input": {"x": 3}})
     assert resp.status_code == 422

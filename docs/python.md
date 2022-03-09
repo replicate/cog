@@ -59,7 +59,6 @@ The `predict()` method takes an arbitrary list of named arguments, where each ar
 
 `predict()` can return strings, numbers, [`cog.Path`](#path) objects representing files on disk, or lists or dicts of those types. You can also define a custom [`Output()`](#outputbasemodel) for more complex return types.
 
-
 #### Progressive output
 
 Cog models can yield output progressively as the `predict()` method is running. For example, an image generation model can yield a series of images as it is being generated.
@@ -99,7 +98,7 @@ The `Input()` function takes these keyword arguments:
 - `min_length`: For `str` types, the minimum length of the string.
 - `max_length`: For `str` types, the maximum length of the string.
 - `regex`: For `str` types, the string must match this regular expression.
-- `choices`: A list of possible values for this input.
+- `choices`: For `str` or `int` types, a list of possible values for this input.
 
 Each parameter of the `predict()` method must be annotated with a type. The supported types are:
 
