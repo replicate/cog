@@ -17,7 +17,7 @@ Cog is an open-source command-line tool that gives you a consistent environment 
 It does a few neat things:
 
 - **Automatic Docker image.** Define your environment with a simple configuration file, and Cog generates a `Dockerfile` with all the best practices.
-- **Standard, production-ready HTTP and AMQP interface.** Automatically generate APIs for integrating with production systems, battle hardened on Replicate.
+- **Standard, production-ready HTTP <!--and AMQP -->interface.** Automatically generate APIs for integrating with production systems, battle hardened on Replicate.
 - **No more CUDA hell.** Cog knows which CUDA/cuDNN/PyTorch/Tensorflow/Python combos are compatible and will set it all up correctly for you.
 
 ## How it works
@@ -101,8 +101,9 @@ Cog does a number of things out of the box to help you deploy models to producti
 - **Standard interface.** Put models inside Cog containers, and they'll run anywhere that runs Docker containers.
 - **HTTP prediction server, based on FastAPI.**
 - **Type checking, based on Pydantic.** Cog models define their input and output with JSON Schema, and the HTTP server is defined with OpenAPI.
-- **AMQP RPC interface.** Long-running deep learning models or batch processing is best architected with a queue. Cog models can do this out of the box.
+<!-- - **AMQP RPC interface.** Long-running deep learning models or batch processing is best architected with a queue. Cog models can do this out of the box.
 - **Read/write files from cloud storage.** Files can be read and written directly on Amazon S3 and Google Cloud Storage for efficiency.
+  -->
 
 ### Why are we building this?
 
