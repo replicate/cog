@@ -220,16 +220,24 @@ class RedisQueueWorker:
             return_value = self.predictor.predict(**input_obj.dict())
         if isinstance(return_value, types.GeneratorType):
             output = []
+            done = False
 
-            while True:
+            while not done:
                 # we consume iterator manually to capture log
                 try:
                     with self.capture_log(self.STAGE_RUN, prediction_id), timeout(
                         seconds=self.predict_timeout, elapsed=time.time() - start_time
                     ):
                         result = next(return_value)
-                except StopIteration:
-                    break
+                except StopIteration as e:
+                    # handle returns in generator functions. Returned values, if any, are
+                    # available in StopIteration.value
+                    if e.value is None:
+                        break
+                    else:
+                        result = e.value
+                        done = True
+
                 # Encode as JSON here instead of each time we push a result so the file URLs remain consistent
                 result = self.encode_json(result)
                 output.append(result)
