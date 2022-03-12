@@ -40,6 +40,7 @@ def create_app(predictor: BasePredictor) -> FastAPI:
     # response_model is purely for generating schema.
     # We generate Response again in the request so we can set file output paths correctly, etc.
     OutputType = get_output_type(predictor)
+    Response = get_response_type(OutputType)
 
     @app.post(
         "/predictions",
@@ -53,23 +54,15 @@ def create_app(predictor: BasePredictor) -> FastAPI:
         """
         Run a single prediction on the model.
         """
-        if request is None or request.input is None:
-            output = predictor.predict()
-        else:
-            try:
-                output = predictor.predict(**request.input.dict())
-            finally:
-                request.input.cleanup()
-
-        output_file_prefix = None
-        if request:
-            output_file_prefix = request.output_file_prefix
-
-        OutputType = get_output_type(predictor)
-        Response = get_response_type(OutputType)
-
+        has_input = request is not None and request.input is not None
         try:
+            if has_input:
+                output = predictor.predict(**request.input.dict())
+            else:
+                output = predictor.predict()
+
             response = Response(status=Status.SUCCESS, output=output)
+
         except ValidationError as e:
             logger.error(
                 f"""The return value of predict() was not valid:
@@ -83,6 +76,14 @@ Check that your predict function is in this form, where `output_type` is the sam
 """
             )
             raise HTTPException(status_code=500)
+        finally:
+            if has_input:
+                request.input.cleanup()
+
+        output_file_prefix = None
+        if request:
+            output_file_prefix = request.output_file_prefix
+
         encoded_response = encode_json(
             response, upload_file=lambda fh: upload_file(fh, output_file_prefix)
         )
