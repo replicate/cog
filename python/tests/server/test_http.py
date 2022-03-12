@@ -438,6 +438,27 @@ def test_yielding_strings_from_generator_predictors():
     assert resp.json() == {"status": "success", "output": ["foo", "bar", "baz"]}
 
 
+def test_yielding_strings_from_generator_predictors_file_input():
+    class Predictor(BasePredictor):
+        def predict(self, file: Path) -> Iterator[str]:
+            with file.open() as f:
+                prefix = f.read()
+            predictions = ["foo", "bar", "baz"]
+            for prediction in predictions:
+                yield prefix + " " + prediction
+
+    client = make_client(Predictor())
+    resp = client.post(
+        "/predictions",
+        json={"input": {"file": "data:text/plain; charset=utf-8;base64,aGVsbG8="}},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "status": "success",
+        "output": ["hello foo", "hello bar", "hello baz"],
+    }
+
+
 def test_yielding_files_from_generator_predictors():
     class Predictor(BasePredictor):
         def predict(self) -> Iterator[Path]:
