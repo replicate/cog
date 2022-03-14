@@ -158,6 +158,15 @@
         "bug",
         "question"
       ]
+    },
+    {
+      "login": "ericallam",
+      "name": "Eric Allam",
+      "avatar_url": "https://avatars.githubusercontent.com/u/534?v=4",
+      "profile": "https://github.com/ericallam",
+      "contributions": [
+        "ideas"
+      ]
     }
   ],
   "contributorsPerLine": 7,
