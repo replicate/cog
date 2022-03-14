@@ -181,6 +181,7 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
   </tr>
   <tr>
     <td align="center"><a href="https://github.com/Hurricane-eye"><img src="https://avatars.githubusercontent.com/u/31437546?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Shuwei Liang</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3AHurricane-eye" title="Bug reports">🐛</a> <a href="#question-Hurricane-eye" title="Answering Questions">💬</a></td>
+    <td align="center"><a href="https://github.com/ericallam"><img src="https://avatars.githubusercontent.com/u/534?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Eric Allam</b></sub></a><br /><a href="#ideas-ericallam" title="Ideas, Planning, & Feedback">🤔</a></td>
   </tr>
 </table>
 
