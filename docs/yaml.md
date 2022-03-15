@@ -57,7 +57,7 @@ support using `XDG_CACHE_HOME` to tell them where to put their cache.
  
 PyTorch users do not need to set [`TORCH_HOME`](https://pytorch.org/docs/stable/hub.html#:~:text=TORCH_HOME) because [PyTorch respects `XDG_CACHE_HOME`](https://pytorch.org/docs/stable/hub.html#:~:text=XDG_CACHE_HOME) and Cog sets `XDG_CACHE_HOME` by default. But if you want to, you can set `TORCH_HOME`, or any environment variables you want.
 
-If you need to store additional files inside `/src/.cache`, go ahead! You can refer to `XDG_CACHE_HOME` in the `environment` directive like so:
+If you need to store additional files inside `/src/.cache`, that's easy too:
 
 ```yaml
 build:
@@ -77,7 +77,7 @@ Whatever is within `/src/` when you do `cog push` will get "baked" into the imag
 In other words, if your `predict.py` downloads data to `/src/.cache` or `$XDG_CACHE_HOME`, you could do `cog predict` once locally before you do `cog push`.
 
 It is somewhat common for Cog users to make their `predict.py` fetch data before the prediction really begins. If you want to do it this way,
-just make sure it is saving the data within `/src/` or `/src/.cache/`.
+just make sure it is saving the data within `/src/`, `/src/.cache/`, or a subdirectory.
 
 If you have a separate preparation script to be run on the host machine, it's up to you how to do it. 
 We'd recommend using the same environment variable(s) in that script and your `cog.yaml`.
