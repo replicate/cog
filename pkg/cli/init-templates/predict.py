@@ -13,7 +13,7 @@ class Predictor(BasePredictor):
         self,
         input: Path = Input(description="Grayscale input image"),
         scale: float = Input(
-            description="Factor to scale image by", gt=0, lt=10, default=1.5
+            description="Factor to scale image by", ge=0, le=10, default=1.5
         ),
     ) -> Path:
         """Run a single prediction on the model"""
