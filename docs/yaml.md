@@ -67,16 +67,10 @@ build:
     - SUBDIR_EXAMPLE=$XDG_CACHE_HOME/subdir_example
 ```
 
-... which would be equivalent to:
+In that case `SUBDIR_EXAMPLE` would be set to `/src/.cache/subdir_example`.
 
-```yaml
-build:
-  environment:
-    - SUBDIR_EXAMPLE=/src/.cache/subdir_example
-```
-
-If you need to set a custom value for `XDG_CACHE_DIR`, you can.
-(If you define your own `XDG_CACHE_DIR` then cog will not define a default.)
+If you need to set a custom value for `XDG_CACHE_HOME`, you can.
+(If you define your own `XDG_CACHE_HOME` then cog will not define a default.)
 Just make sure you point it to `/src/` or a subdirectory thereof.
 
 ```yaml
