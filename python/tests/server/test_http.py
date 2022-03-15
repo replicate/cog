@@ -45,6 +45,7 @@ def test_openapi_specification():
             path: Path = Input(description="Some path"),
             image: File = Input(description="Some path"),
             choices: str = Input(choices=["foo", "bar"]),
+            int_choices: int = Input(choices=[3, 4, 5]),
         ) -> str:
             pass
 
@@ -118,7 +119,13 @@ def test_openapi_specification():
                 },
                 "Input": {
                     "title": "Input",
-                    "required": ["no_default", "path", "image", "choices"],
+                    "required": [
+                        "no_default",
+                        "path",
+                        "image",
+                        "choices",
+                        "int_choices",
+                    ],
                     "type": "object",
                     "properties": {
                         "no_default": {
@@ -153,6 +160,7 @@ def test_openapi_specification():
                             "x-order": 4,
                         },
                         "choices": {"$ref": "#/components/schemas/choices"},
+                        "int_choices": {"$ref": "#/components/schemas/int_choices"},
                     },
                 },
                 "Output": {"title": "Output", "type": "string"},
@@ -203,6 +211,12 @@ def test_openapi_specification():
                     "enum": ["foo", "bar"],
                     "description": "An enumeration.",
                     "type": "string",
+                },
+                "int_choices": {
+                    "description": "An enumeration.",
+                    "enum": [3, 4, 5],
+                    "title": "int_choices",
+                    "type": "integer",
                 },
             }
         },
