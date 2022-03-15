@@ -52,11 +52,11 @@ As with [`ENV`](https://docs.docker.com/engine/reference/builder/#env), variable
 Cog already re-uses `/src/` across invocations; so, if we tell libraries to cache inside of `/src/`, the cached files will be persisted across invocations.
 
 You do not need to set `XDG_CACHE_HOME` yourself, as `cog` now sets the default of `XDG_CACHE_HOME=/src/.cache`.
-Caching between runs will "just work" for some libraries, including PyTorch and HF.
+Caching between runs will "just work" for some libraries, including PyTorch.
 
 With PyTorch, you _could_ set [`TORCH_HOME`](https://pytorch.org/docs/stable/hub.html#:~:text=TORCH_HOME) to a subdirectory of `/src/`, but you do not need to.
-We recommend you rely on [`XDG_CACHE_HOME`, which PyTorch also respects](https://pytorch.org/docs/stable/hub.html#:~:text=XDG_CACHE_HOME).
-Other popular libraries [like HF](https://huggingface.co/transformers/v4.0.1/installation.html#caching-models) also support `XDG_CACHE_HOME` for telling them where to cache,
+We recommend you rely on `XDG_CACHE_HOME`, [which PyTorch also respects](https://pytorch.org/docs/stable/hub.html#:~:text=XDG_CACHE_HOME).
+Other popular libraries [such as HF](https://huggingface.co/transformers/v4.0.1/installation.html#caching-models) also support `XDG_CACHE_HOME` for telling them where to cache,
 because [it's part of a standard](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html#:~:text=%24XDG_CACHE_HOME%20defines%20the%20base%20directory%20relative%20to%20which%20user%2Dspecific%20non%2Dessential%20data%20files%20should%20be%20stored.%20If%20%24XDG_CACHE_HOME%20is%20either%20not%20set%20or%20empty%2C%20a%20default%20equal%20to%20%24HOME/.cache%20should%20be%20used.).
 
 If you need to store additional files inside `/src/.cache`, go ahead! You can refer to `XDG_CACHE_HOME` in the `environment` directive like so:
