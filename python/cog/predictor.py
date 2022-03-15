@@ -140,15 +140,17 @@ def get_input_type(predictor: BasePredictor):
             choices = default.extra["choices"]
             # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
             del default.extra["choices"]
-            if InputType not in [str, int]:
+            if InputType == str:
+                class StringEnum(str, enum.Enum):
+                    pass
+                InputType = StringEnum(name, {value: value for value in choices})
+            elif InputType == int:
+                InputType = enum.IntEnum(name, {str(value): value for value in choices})
+            else:
                 raise TypeError(
                     f"The input {name} uses the option choices. Choices can only be used with str or int types."
                 )
 
-            class InputTypeEnum(InputType, enum.Enum):
-                pass
-
-            InputType = InputTypeEnum(name, {str(value): value for value in choices})
 
         create_model_kwargs[name] = (InputType, default)
 
