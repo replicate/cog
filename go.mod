@@ -26,7 +26,7 @@ require (
 	github.com/xeonx/timeago v1.0.0-rc4
 	golang.org/x/sys v0.0.0-20220111092808-5a964db01320
 	golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b // indirect
-	golang.org/x/tools v0.1.9
+	golang.org/x/tools v0.1.10
 	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools/gotestsum v1.7.0
 	sigs.k8s.io/yaml v1.3.0
