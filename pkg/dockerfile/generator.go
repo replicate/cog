@@ -177,8 +177,8 @@ func (g *Generator) environmentVariables() ([]string, error) {
 		// libraries including PyTorch, to set a default caching directory, etc.
 		// Pointing to a subdir within WORKDIR makes it so that it will cache
 		// between runs, thanks to cog mounting the WORKDIR on re-run. Reference:
-		// - https://github.com/replicate/cog/issues/320#:~:text=default%20value%20for-,%24XDG_CACHE_HOME,-in%20Linux%20environments
-		// - https://pytorch.org/docs/stable/hub.html#:~:text=TORCH_HOME%20is%20set.-,%24XDG_CACHE_HOME,-/torch/hub%2C%20if
+		// - https://github.com/replicate/cog/issues/320#:~:text=XDG_CACHE_HOME
+		// - https://pytorch.org/docs/stable/hub.html#:~:text=XDG_CACHE_HOME
 		envVars["XDG_CACHE_HOME"] = "/src/.cache"
 	}
 	if !slices.ContainsString(envVarKeys, "XDG_CACHE_HOME") {
