@@ -76,10 +76,12 @@ Whatever is within `/src/` when you do `cog push` will get "baked" into the imag
 
 In other words, if your `predict.py` downloads data to `/src/.cache` or `$XDG_CACHE_HOME`, you could do `cog predict` once locally before you do `cog push`.
 
+It is somewhat common for Cog users to make their `predict.py` fetch data before the prediction really begins. If you want to do it this way,
+just make sure it is saving the data within `/src/` or `/src/.cache/`, then it can be reused between runs.
+
 If you have a separate preparation script to be run on the host machine, it's up to you how to do it. 
 We'd recommend using the same environment variable(s) in that script and your `cog.yaml`.
-On your host, make sure the data winds up in the working directory that corresponds to `/src/` or `/src/.cache/`.
-Often, Cog users make their `predict.py` get-or-fetch data; in such a case, they can run one prediction, verify the output, then do `cog push`.
+On your host, you'd just make sure the data winds up in the working directory, corresponding to `/src/` or `/src/.cache/`.
 
 **Warning:** You should **not** copy the whole `~/.cache` directory from your host, as it could contain sensitive/unrelated files. Copy only what you need.
 
