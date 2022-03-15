@@ -27,6 +27,87 @@ This stanza describes how to build the Docker image your model runs in. It conta
 
 Cog automatically picks the correct version of CUDA to install, but this lets you override it for whatever reason.
 
+### `environment`
+
+Set environment variables in the Dockerfile using [`ENV` instructions](https://docs.docker.com/engine/reference/builder/#env). These will be set in the Docker image, so your `predict.py` and imported libraries will be able to use them.
+
+For example:
+
+```yaml
+build:
+  environment:
+    - SOME_DIR=/src/example
+    - ANOTHER_DIR=$SOME_DIR/weights
+    - DEBUG=
+```
+
+That example would set `$SOME_DIR` to the string `/src/example` and `$ANOTHER_DIR` to `/src/example/weights`.  `DEBUG` would be set to an empty string.
+
+As with [`ENV`](https://docs.docker.com/engine/reference/builder/#env), variables can include previously-defined variables.
+
+<details>
+<summary>Telling libraries where to cache things</summary>
+
+Cog already re-uses `/src/` across invocations; so, if we tell libraries to cache inside of `/src/`, the cached files will be persisted across invocations.
+
+With PyTorch, you _could_ set [`TORCH_HOME`](https://pytorch.org/docs/stable/hub.html#:~:text=TORCH_HOME) to a subdirectory of `/src/`, but you do not need to. We recommend you rely on [`XDG_CACHE_HOME`, which PyTorch also respects](https://pytorch.org/docs/stable/hub.html#:~:text=XDG_CACHE_HOME). Other popular libraries [like HF](https://huggingface.co/transformers/v4.0.1/installation.html#caching-models) also support `XDG_CACHE_HOME` for telling them where to cache, because [it's part of a standard](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html#:~:text=%24XDG_CACHE_HOME%20defines%20the%20base%20directory%20relative%20to%20which%20user%2Dspecific%20non%2Dessential%20data%20files%20should%20be%20stored.%20If%20%24XDG_CACHE_HOME%20is%20either%20not%20set%20or%20empty%2C%20a%20default%20equal%20to%20%24HOME/.cache%20should%20be%20used.).
+
+You do not need to set `XDG_CACHE_HOME` yourself, as `cog` now sets the default of `XDG_CACHE_HOME=/src/.cache`. Caching between runs will "just work" for some libraries, including PyTorch and HF.
+
+If you need to store additional files inside `/src/.cache`, go ahead! You can refer to `XDG_CACHE_HOME` in the `environment` directive like so:
+
+```yaml
+build:
+  environment:
+    - SUBDIR_EXAMPLE=$XDG_CACHE_HOME/subdir_example
+```
+
+... which would be equivalent to:
+
+```yaml
+build:
+  environment:
+    - SUBDIR_EXAMPLE=/src/.cache/subdir_example
+```
+
+If you need to set a custom value for `XDG_CACHE_DIR`, you can.
+(If you define your own `XDG_CACHE_DIR` then cog will not define a default.)
+Just make sure you point it to `/src/` or a subdirectory thereof.
+
+```yaml
+build:
+  environment:
+    - XDG_CACHE_HOME=/src/cached_data
+    - SUBDIR_EXAMPLE=$XDG_CACHE_HOME/subdir_example
+```
+
+</details>
+
+<details>
+<summary>How to pre-cache data for faster runs of cog predict</summary>
+
+Whatever is within `/src/` when you do `cog push` will get "baked" into the image, so you can use this feature to "pre-cache" data. Pre-caching can help your model start faster by skipping data downloads. Just store/read data within `/src/` or `/src/.cache`.
+
+In other words, if your `predict.py` downloads data to `/src/.cache` or `$XDG_CACHE_HOME`, you could do `cog predict` once locally before you do `cog push`.
+
+If you have a separate preparation script to be run on the host machine, it's up to you how to do it. We'd recommend using the same environment variable in that script and your `cog.yaml`. On your host, make sure it winds up in the working directory that corresponds to `/src/` or `/src/.cache/`.
+
+**Warning:** You should **not** copy the whole `~/.cache` directory from your host, as it could contain unrelated or sensitive files. Copy only what you need.
+</details>
+
+<details>
+<summary>Remember to git-ignore .cache</summary>
+
+You may already have `.cache` in your `.gitignore`. If not, you can add it easily:
+
+```shell
+git ignore .cache
+git add .gitignore
+git commit -m "Ignore .cache"
+```
+
+</details>
+
 ### `gpu`
 
 Enable GPUs for this model. When enabled, the [nvidia-docker](https://github.com/NVIDIA/nvidia-docker) base image will be used, and Cog will automatically figure out what versions of CUDA and cuDNN to use based on the version of Python, PyTorch, and Tensorflow that you are using.
