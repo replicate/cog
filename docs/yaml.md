@@ -54,14 +54,8 @@ This is because `cog` now sets the default of `XDG_CACHE_HOME=/src/.cache`. You 
 [PyTorch](https://pytorch.org/docs/stable/hub.html#:~:text=XDG_CACHE_HOME) and many popular libraries [such as HF](https://huggingface.co/transformers/v4.0.1/installation.html#caching-models)
 support using `XDG_CACHE_HOME` to tell them where to put their cache.
 [It's part of a standard](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html#:~:text=%24XDG_CACHE_HOME%20defines%20the%20base%20directory%20relative%20to%20which%20user%2Dspecific%20non%2Dessential%20data%20files%20should%20be%20stored.%20If%20%24XDG_CACHE_HOME%20is%20either%20not%20set%20or%20empty%2C%20a%20default%20equal%20to%20%24HOME/.cache%20should%20be%20used.)
-
-Here's an example of setting [`TORCH_HOME`](https://pytorch.org/docs/stable/hub.html#:~:text=TORCH_HOME) if you must:
-
-```yaml
-build:
-  environment:
-    - TORCH_HOME=/src/.cache/torch
-```
+ 
+PyTorch users do not need to set [`TORCH_HOME`](https://pytorch.org/docs/stable/hub.html#:~:text=TORCH_HOME) because `XDG_CACHE_HOME` is already set. But you can set `TORCH_HOME` or any environment variable you want.
 
 If you need to store additional files inside `/src/.cache`, go ahead! You can refer to `XDG_CACHE_HOME` in the `environment` directive like so:
 
@@ -72,17 +66,6 @@ build:
 ```
 
 In that case `$EXAMPLE` would be set to `/src/.cache/example`.
-
-If you need to set a custom value for `XDG_CACHE_HOME`, you can.
-
-```yaml
-build:
-  environment:
-    - XDG_CACHE_HOME=/src/cached_data
-    - EXAMPLE=$XDG_CACHE_HOME/example  # => /src/cached_data/subdir_example
-```
-
-In that case `$SUBDIR_EXAMPLE` would be set to `/src/cached_data/example`. You may want to git-ignore `/src/cached_data`.
 
 </details>
 
