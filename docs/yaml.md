@@ -55,7 +55,7 @@ This is because Cog now sets the default of `XDG_CACHE_HOME=/src/.cache`. You ca
 support using `XDG_CACHE_HOME` to tell them where to put their cache.
 (`XDG_CACHE_HOME` is part of [a standard.](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html#:~:text=%24XDG_CACHE_HOME%20defines%20the%20base%20directory%20relative%20to%20which%20user%2Dspecific%20non%2Dessential%20data%20files%20should%20be%20stored.%20If%20%24XDG_CACHE_HOME%20is%20either%20not%20set%20or%20empty%2C%20a%20default%20equal%20to%20%24HOME/.cache%20should%20be%20used.))
  
-PyTorch users do not need to set [`TORCH_HOME`](https://pytorch.org/docs/stable/hub.html#:~:text=TORCH_HOME) because [PyTorch respects `XDG_CACHE_HOME`](https://pytorch.org/docs/stable/hub.html#:~:text=XDG_CACHE_HOME) and Cog sets `XDG_CACHE_HOME`. But if you really want to, you can set `TORCH_HOME` or any environment variable you want.
+PyTorch users do not need to set [`TORCH_HOME`](https://pytorch.org/docs/stable/hub.html#:~:text=TORCH_HOME) because [PyTorch respects `XDG_CACHE_HOME`](https://pytorch.org/docs/stable/hub.html#:~:text=XDG_CACHE_HOME) and Cog sets `XDG_CACHE_HOME` by default. But if you want to, you can set `TORCH_HOME`, or any environment variables you want.
 
 If you need to store additional files inside `/src/.cache`, go ahead! You can refer to `XDG_CACHE_HOME` in the `environment` directive like so:
 
@@ -65,7 +65,7 @@ build:
     - EXAMPLE=$XDG_CACHE_HOME/example
 ```
 
-In that case `$EXAMPLE` would be set to `/src/.cache/example`. The default gets interpolated.
+In that case `$EXAMPLE` would be set to `/src/.cache/example`. The default value of `XDG_CACHE_HOME` is `/src/.cache`.
 
 </details>
 
