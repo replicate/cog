@@ -50,7 +50,7 @@ That example would set `$SOME_DIR` to the string `/src/example` and `$ANOTHER_DI
 Cog already re-uses `/src/` across invocations; so, if we tell libraries to cache inside of `/src/`, the cached files will be persisted across invocations.
 
 Caching between runs will "just work" for some libraries, including PyTorch.
-This is because `cog` now sets the default of `XDG_CACHE_HOME=/src/.cache`. You can override it if needed.
+This is because Cog now sets the default of `XDG_CACHE_HOME=/src/.cache`. You can override it if needed.
 [PyTorch](https://pytorch.org/docs/stable/hub.html#:~:text=XDG_CACHE_HOME) and many popular libraries [such as HF](https://huggingface.co/transformers/v4.0.1/installation.html#caching-models)
 support using `XDG_CACHE_HOME` to tell them where to put their cache.
 (`XDG_CACHE_HOME` is part of [a standard.](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html#:~:text=%24XDG_CACHE_HOME%20defines%20the%20base%20directory%20relative%20to%20which%20user%2Dspecific%20non%2Dessential%20data%20files%20should%20be%20stored.%20If%20%24XDG_CACHE_HOME%20is%20either%20not%20set%20or%20empty%2C%20a%20default%20equal%20to%20%24HOME/.cache%20should%20be%20used.))
