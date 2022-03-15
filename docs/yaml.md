@@ -29,8 +29,8 @@ Cog automatically picks the correct version of CUDA to install, but this lets yo
 
 ### `environment`
 
-Set environment variables in the Dockerfile using [`ENV` instructions](https://docs.docker.com/engine/reference/builder/#env).
-These will be set in the Docker image, so your `predict.py` and imported libraries will be able to use them.
+An optional list of environment variables. They will be set in the Dockerfile using [`ENV` instructions](https://docs.docker.com/engine/reference/builder/#env).
+These are set in the Docker container, so your `predict.py` and imported libraries will be able to use them.
 
 For example:
 
