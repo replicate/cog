@@ -37,42 +37,47 @@ For example:
 ```yaml
 build:
   environment:
-    - SOME_DIR=/src/example
-    - ANOTHER_DIR=$SOME_DIR/weights
-    - DEBUG=
+    - MY_DATA_DIR=/src/data
+    - FINETUNED_MODELS=$MY_DATA_DIR/finetuned
 ```
 
-That example would set `$SOME_DIR` to the string `/src/example` and `$ANOTHER_DIR` to `/src/example/weights`.  `DEBUG` would be set to an empty string.
+In that example, `FINETUNED_MODELS` would be set to `/src/data/finetuned`. Variables can reference other variables, and order is significant.
 
 <details>
-<summary>Telling libraries where to cache things</summary>
+<summary>Default cache directory</summary>
 
-Cog already re-uses `/src/` across invocations; so, if we tell libraries to cache inside of `/src/`, the cached files will be persisted across invocations.
+Cog sets `XDG_CACHE_HOME` by default. The default value is `/src/.cache`.
+Cog re-uses `/src/` across invocations.
 
-Caching between runs will "just work" for some libraries, including PyTorch.
-This is because Cog now sets the default of `XDG_CACHE_HOME=/src/.cache`. You can override it if needed.
-[PyTorch](https://pytorch.org/docs/stable/hub.html#:~:text=XDG_CACHE_HOME) and many popular libraries [such as HF](https://huggingface.co/transformers/v4.0.1/installation.html#caching-models)
-support using `XDG_CACHE_HOME` to tell them where to put their cache.
-(`XDG_CACHE_HOME` is part of [a standard.](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html#:~:text=%24XDG_CACHE_HOME%20defines%20the%20base%20directory%20relative%20to%20which%20user%2Dspecific%20non%2Dessential%20data%20files%20should%20be%20stored.%20If%20%24XDG_CACHE_HOME%20is%20either%20not%20set%20or%20empty%2C%20a%20default%20equal%20to%20%24HOME/.cache%20should%20be%20used.))
- 
-PyTorch users do not need to set [`TORCH_HOME`](https://pytorch.org/docs/stable/hub.html#:~:text=TORCH_HOME) because [PyTorch respects `XDG_CACHE_HOME`](https://pytorch.org/docs/stable/hub.html#:~:text=XDG_CACHE_HOME) and Cog sets `XDG_CACHE_HOME` by default. But if you want to, you can set `TORCH_HOME`, or any environment variables you want.
+Many popular libraries, such as [PyTorch](https://pytorch.org/docs/stable/hub.html#:~:text=XDG_CACHE_HOME) and [HF](https://huggingface.co/transformers/v4.0.1/installation.html#caching-models),
+use [`XDG_CACHE_HOME`][1] to define where they cache data. As a result, you don't have to set [`TORCH_HOME`](https://pytorch.org/docs/stable/hub.html#:~:text=TORCH_HOME)
+or `TRANSFORMERS_CACHE`. They will default to subdirectories of `XDG_CACHE_HOME` (`/src/.cache`) and Cog will re-use these files across runs.
 
-If you need to store additional files inside `/src/.cache`, that's easy too:
+You can refer to `XDG_CACHE_HOME` even if you do not define it. This is valid:
 
 ```yaml
 build:
   environment:
-    - EXAMPLE=$XDG_CACHE_HOME/example
+    - FINETUNED_MODELS=$XDG_CACHE_HOME/finetuned
 ```
 
-In that case `$EXAMPLE` would be set to `/src/.cache/example`. The default value of `XDG_CACHE_HOME` is `/src/.cache`.
+In that case `FINETUNED_MODELS` would be set to `/src/.cache/finetuned`. You can also override `XDG_CACHE_HOME` if desired. For example:
+
+```yaml
+build:
+  environment:
+    - XDG_CACHE_HOME=/src/pretrained
+    - FINETUNED_MODELS=$XDG_CACHE_HOME/finetuned
+```
+
+[1]: https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html#:~:text=%24XDG_CACHE_HOME%20defines%20the%20base%20directory%20relative%20to%20which%20user%2Dspecific%20non%2Dessential%20data%20files%20should%20be%20stored.%20If%20%24XDG_CACHE_HOME%20is%20either%20not%20set%20or%20empty%2C%20a%20default%20equal%20to%20%24HOME/.cache%20should%20be%20used.
 
 </details>
 
 <details>
 <summary>You can pre-cache before you do cog push</summary>
 
-The contents of the `/src/` directory are included in the published image when you do `cog push`, so you can use this feature to "pre-cache" data. Pre-caching can help your model start faster by skipping data downloads. Just store/read data within `/src/` or `/src/.cache`.
+The contents of the `/src/` directory are included in the published image when you do `cog push`, so you can use this feature to "pre-cache" data. Pre-caching can help your model start faster by skipping data downloads.
 
 In other words, if your `predict.py` downloads data to `/src/.cache` or `$XDG_CACHE_HOME`, you could do `cog predict` once locally before you do `cog push`.
 
@@ -81,7 +86,8 @@ just make sure it is saving the data within `/src/`, `/src/.cache/`, or a subdir
 
 If you have a separate preparation script to be run on the host machine, it's up to you how to do it. 
 We'd recommend using the same environment variable(s) in that script and your `cog.yaml`.
-On your host, you'd just make sure the data winds up in the working directory, corresponding to `/src/` or `/src/.cache/`.
+On your host, you'd just make sure the data winds up in the working directory,
+corresponding to `/src/` or `/src/.cache/`.
 
 **Warning:** You should **not** copy the whole `~/.cache` directory from your host, as it could contain sensitive/unrelated files. Copy only what you need.
 
@@ -90,7 +96,7 @@ On your host, you'd just make sure the data winds up in the working directory, c
 <details>
 <summary>Tip: git ignore .cache</summary>
 
-You may already have `.cache` in your `.gitignore`. If not, you can add it easily:
+You may already have `.cache` in your `.gitignore`. If not, you can add it:
 
 ```shell
 git ignore .cache
