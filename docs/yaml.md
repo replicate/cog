@@ -72,7 +72,7 @@ In that case `$EXAMPLE` would be set to `/src/.cache/example`. The default value
 <details>
 <summary>You can pre-cache before you do cog push</summary>
 
-Whatever is within `/src/` when you do `cog push` will get "baked" into the image, so you can use this feature to "pre-cache" data. Pre-caching can help your model start faster by skipping data downloads. Just store/read data within `/src/` or `/src/.cache`.
+The contents of the `/src/` directory are included in the published image when you do `cog push`, so you can use this feature to "pre-cache" data. Pre-caching can help your model start faster by skipping data downloads. Just store/read data within `/src/` or `/src/.cache`.
 
 In other words, if your `predict.py` downloads data to `/src/.cache` or `$XDG_CACHE_HOME`, you could do `cog predict` once locally before you do `cog push`.
 
