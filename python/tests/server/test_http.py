@@ -72,7 +72,7 @@ def test_openapi_specification():
             "/predictions": {
                 "post": {
                     "summary": "Predict",
-                    "description": "Run a single prediction on the model.",
+                    "description": "Run a single prediction on the model",
                     "operationId": "predict_predictions_post",
                     "requestBody": {
                         "content": {
@@ -260,7 +260,7 @@ def test_openapi_specification_with_custom_user_defined_output_type():
             "/predictions": {
                 "post": {
                     "summary": "Predict",
-                    "description": "Run a single prediction on the model.",
+                    "description": "Run a single prediction on the model",
                     "operationId": "predict_predictions_post",
                     "requestBody": {
                         "content": {

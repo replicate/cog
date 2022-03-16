@@ -54,7 +54,7 @@ def create_app(predictor: BasePredictor) -> FastAPI:
     # The function body is not used to generate the schema.
     def predict(request: Request = Body(default=None)):
         """
-        Run a single prediction on the model.
+        Run a single prediction on the model
         """
         has_input = request is not None and request.input is not None
         try:
