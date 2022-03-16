@@ -34,6 +34,8 @@ def create_app(predictor: BasePredictor) -> FastAPI:
     InputType = get_input_type(predictor)
 
     class Request(BaseModel):
+        """The request body for a prediction"""
+
         input: InputType = None
         output_file_prefix: str = None
 

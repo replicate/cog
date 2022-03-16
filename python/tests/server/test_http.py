@@ -174,6 +174,7 @@ def test_openapi_specification():
                             "type": "string",
                         },
                     },
+                    "description": "The request body for a prediction",
                 },
                 "Response": {
                     "title": "Response",
@@ -184,7 +185,7 @@ def test_openapi_specification():
                         "output": {"$ref": "#/components/schemas/Output"},
                         "error": {"title": "Error", "type": "string"},
                     },
-                    "description": "The status of a prediction.",
+                    "description": "The response body for a prediction",
                 },
                 "Status": {
                     "title": "Status",
@@ -332,6 +333,7 @@ def test_openapi_specification_with_custom_user_defined_output_type():
                             "type": "string",
                         },
                     },
+                    "description": "The request body for a prediction",
                 },
                 "Response": {
                     "title": "Response",
@@ -342,7 +344,7 @@ def test_openapi_specification_with_custom_user_defined_output_type():
                         "output": {"$ref": "#/components/schemas/Output"},
                         "error": {"title": "Error", "type": "string"},
                     },
-                    "description": "The status of a prediction.",
+                    "description": "The response body for a prediction",
                 },
                 "Status": {
                     "title": "Status",

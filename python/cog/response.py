@@ -12,7 +12,7 @@ class Status(str, enum.Enum):
 
 def get_response_type(OutputType: Any):
     class Response(BaseModel):
-        """The status of a prediction."""
+        """The response body for a prediction"""
 
         status: Status = Field(...)
         output: OutputType = None
