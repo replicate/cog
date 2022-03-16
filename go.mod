@@ -20,7 +20,7 @@ require (
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/spf13/cobra v1.4.0
 	github.com/stretchr/objx v0.2.0 // indirect
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.7.1
 	github.com/vincent-petithory/dataurl v1.0.0
 	github.com/xeipuuv/gojsonschema v1.2.0
 	github.com/xeonx/timeago v1.0.0-rc4
