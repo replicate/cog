@@ -118,3 +118,24 @@ build:
         }
     }
     assert "org.cogmodel.openapi_schema" not in labels
+
+
+def test_build_with_cog_init_templates(tmpdir_factory, docker_image):
+    tmpdir = tmpdir_factory.mktemp("projectz")
+
+    subprocess.run(
+        ["cog", "init"],
+        cwd=tmpdir,
+        capture_output=True,
+        check=True,
+    )
+
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=tmpdir,
+        capture_output=True,
+        check=True,
+    )
+
+    assert build_process.returncode == 0
+    assert "Image built as cog-" in build_process.stderr.decode()
