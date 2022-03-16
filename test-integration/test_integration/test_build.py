@@ -121,7 +121,7 @@ build:
 
 
 def test_build_with_cog_init_templates(tmpdir_factory, docker_image):
-    tmpdir = tmpdir_factory.mktemp("projectz")
+    tmpdir = tmpdir_factory.mktemp("project")
 
     subprocess.run(
         ["cog", "init"],
