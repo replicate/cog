@@ -29,7 +29,7 @@ class BasePredictor(ABC):
     @abstractmethod
     def predict(self, **kwargs):
         """
-        Run a single prediction on the model.
+        Run a single prediction on the model
         """
 
 
@@ -141,8 +141,10 @@ def get_input_type(predictor: BasePredictor):
             # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
             del default.extra["choices"]
             if InputType == str:
+
                 class StringEnum(str, enum.Enum):
                     pass
+
                 InputType = StringEnum(name, {value: value for value in choices})
             elif InputType == int:
                 InputType = enum.IntEnum(name, {str(value): value for value in choices})
@@ -150,7 +152,6 @@ def get_input_type(predictor: BasePredictor):
                 raise TypeError(
                     f"The input {name} uses the option choices. Choices can only be used with str or int types."
                 )
-
 
         create_model_kwargs[name] = (InputType, default)
 
