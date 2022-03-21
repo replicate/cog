@@ -29,8 +29,7 @@ def test_build_without_predictor(docker_image):
     assert "org.cogmodel.openapi_schema" not in labels
 
 
-def test_build_names_uses_image_option_in_cog_yaml(tmpdir_factory, docker_image):
-    tmpdir = tmpdir_factory.mktemp("project")
+def test_build_names_uses_image_option_in_cog_yaml(tmpdir, docker_image):
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = f"""
 image: {docker_image}
@@ -82,8 +81,7 @@ def test_build_with_model(docker_image):
     }
 
 
-def test_build_gpu_model_on_cpu(tmpdir_factory, docker_image):
-    tmpdir = tmpdir_factory.mktemp("project")
+def test_build_gpu_model_on_cpu(tmpdir, docker_image):
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
 build:
@@ -120,9 +118,7 @@ build:
     assert "org.cogmodel.openapi_schema" not in labels
 
 
-def test_build_with_cog_init_templates(tmpdir_factory, docker_image):
-    tmpdir = tmpdir_factory.mktemp("project")
-
+def test_build_with_cog_init_templates(tmpdir, docker_image):
     subprocess.run(
         ["cog", "init"],
         cwd=tmpdir,
