@@ -306,14 +306,14 @@ func parsePreviousTorchVersionsCode(code string, compats []config.TorchCompatibi
 			// conda install etc
 			continue
 		}
-		rawArch := heading[2:]
+		rawArch := strings.ToLower(heading[2:])
 		var cuda *string
-		if strings.HasPrefix(rawArch, "CUDA") {
+		if strings.HasPrefix(rawArch, "cuda") {
 			_, c := split2(rawArch, " ")
 			cuda = &c // can't take pointer directly
-		} else if strings.HasPrefix(rawArch, "RocM") {
+		} else if strings.HasPrefix(rawArch, "rocm") {
 			continue
-		} else if rawArch != "CPU only" {
+		} else if rawArch != "cpu only" {
 			return nil, fmt.Errorf("Invalid arch: %s", rawArch)
 		}
 		compat, err := parseTorchInstallString(install, supportedLibrarySet, cuda)
