@@ -1,8 +1,10 @@
 # Cog: Containers for machine learning
 
-Put your machine learning model in a standard, production-ready Docker container without having to know how Docker works.
+Put your machine learning model in a standard, production-ready container without having to know how Docker works.
 
-- [What is Cog?](#what-is-cog)
+Deploy these containers on your own infrastructure, or to [Replicate](https://replicate.com).
+
+- [How it works](#how-it-works)
 - [Prerequisites](#prerequisites)
 - [Install](#install)
 - [Upgrade](#upgrade)
@@ -10,15 +12,22 @@ Put your machine learning model in a standard, production-ready Docker container
 - [Need help?](#need-help)
 - [Contributors ✨](#contributors-%E2%9C%A8)
 
-## What is Cog?
+## Automatic Docker image
 
-Cog is an open-source command-line tool that gives you a consistent environment to run your model in – for developing on your laptop, training on GPU machines, and for other people working on the model. Once you've trained your model and you want to share or deploy it, you can bake the model into a Docker image that serves a standard HTTP API and can be deployed anywhere.
+- **No more Docker hell.** `Dockerfile`s are bewildering. With Cog, define your environment with a simple configuration file, and it will generate an image with all the best practices: Nvidia base images, efficient caching of dependencies, installing specific Python versions, sensible environment variable defaults, and so on.
 
-It does a few neat things:
-
-- **Automatic Docker image.** Define your environment with a simple configuration file, and Cog generates a `Dockerfile` with all the best practices.
-- **Standard, production-ready HTTP <!--and AMQP -->interface.** Automatically generate APIs for integrating with production systems, battle hardened on Replicate.
 - **No more CUDA hell.** Cog knows which CUDA/cuDNN/PyTorch/Tensorflow/Python combos are compatible and will set it all up correctly for you.
+
+## Standard, production-ready interface
+
+Cog automatically generates a production-ready Docker image that serves a standard HTTP API and Redis queue-based API.
+
+- **Generate a production-ready Docker image.**
+- **Standard interface.** Consolidates the interfaces around your machine learnings.
+- **HTTP prediction server, based on FastAPI.**
+- **Type checking, based on Pydantic.** Cog models define their input and output with JSON Schema, and the HTTP server is defined with OpenAPI.
+- **Queue-based interface.** Long-running deep learning models or batch processing is best architected with a queue. Cog models can do this out of the box. Redis is currently supported, with more in the pipeline.
+- **Read/write files from cloud storage.** Files can be read and written directly on Amazon S3 and Google Cloud Storage for efficiency.
 
 ## How it works
 
@@ -94,28 +103,17 @@ $ cog run jupyter notebook
 ```
 -->
 
-## Deploying models to production
-
-Cog does a number of things out of the box to help you deploy models to production:
-
-- **Standard interface.** Put models inside Cog containers, and they'll run anywhere that runs Docker containers.
-- **HTTP prediction server, based on FastAPI.**
-- **Type checking, based on Pydantic.** Cog models define their input and output with JSON Schema, and the HTTP server is defined with OpenAPI.
-<!-- - **AMQP RPC interface.** Long-running deep learning models or batch processing is best architected with a queue. Cog models can do this out of the box.
-- **Read/write files from cloud storage.** Files can be read and written directly on Amazon S3 and Google Cloud Storage for efficiency.
-  -->
-
-### Why are we building this?
+## Why are we building this?
 
 It's really hard for researchers to ship machine learning models to production.
 
 Part of the solution is Docker, but it is so complex to get it to work: Dockerfiles, pre-/post-processing, Flask servers, CUDA versions. More often than not the researcher has to sit down with an engineer to get the damn thing deployed.
 
-We are [Andreas](https://github.com/andreasjansson) and [Ben](https://github.com/bfirsh), and we're trying to fix this. Andreas used to work at Spotify, where he built tools for building and deploying ML models with Docker. Ben worked at Docker, where he created [Docker Compose](https://github.com/docker/compose).
+[Andreas](https://github.com/andreasjansson) and [Ben](https://github.com/bfirsh) created Cog. Andreas used to work at Spotify, where he built tools for building and deploying ML models with Docker. Ben worked at Docker, where he created [Docker Compose](https://github.com/docker/compose).
 
 We realized that, in addition to Spotify, other companies were also using Docker to build and deploy machine learning models. [Uber](https://eng.uber.com/michelangelo-pyml/), Coinbase, and others have built similar systems. So, we're making an open source version so other people can do this too.
 
-Hit us up if you're interested in using it or want to collaborate with us. [We're on Discord](https://discord.gg/QmzJApGjyE) or email us at [team@replicate.com](mailto:team@replicate.com).
+Hit us up if you're interested in using it or want to collaborate with us. [We're on Discord](https://discord.gg/replicate) or email us at [team@replicate.com](mailto:team@replicate.com).
 
 ## Prerequisites
 
