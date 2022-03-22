@@ -1,27 +1,24 @@
 # Cog: Containers for machine learning
 
-Cog is an open-source tool that lets you build, package, and run machine learning models in a standard, production-ready container.
+Cog is an open-source tool that lets you build, ship, and run machine learning models in a standard, production-ready container.
 
 You can deploy your packaged model to your own infrastructure, or to [Replicate](https://replicate.com/).
 
 ## Highlights
 
-- 📦 **Docker containers without the pain.** Writing your own `Dockerfile` can be a bewildering process. Cog lets you define your environment with a [simple configuration file](docs/yaml.md) and generates a Docker image with all the best practices: Nvidia base images, efficient caching of dependencies, installing specific Python versions, sensible environment variable defaults, and so on.
+- 📦 **Docker containers without the pain.** Writing your own `Dockerfile` can be a bewildering process. With Cog, you define your environment with a [simple configuration file](#how-it-works) and it generates a Docker image with all the best practices: Nvidia base images, efficient caching of dependencies, installing specific Python versions, sensible environment variable defaults, and so on.
 
-- ⚡️ **No more CUDA hell.** Cog knows which CUDA/cuDNN/PyTorch/Tensorflow/Python combos are compatible and will set it all up correctly for you.
+- 🤬️ **No more CUDA hell.** Cog knows which CUDA/cuDNN/PyTorch/Tensorflow/Python combos are compatible and will set it all up correctly for you.
 
-- ↔ **Standard interface.** Use Python's built-in type annotations to define the inputs and outputs to your model.
+- ✅ **Define the inputs and outputs for your model with standard Python.** Then, Cog generates an OpenAPI schema and validates the inputs and outputs with Pydantic.
 
-- ✅ **Type checking, based on Pydantic.** Cog models define their input and output with JSON Schema, and the HTTP server is defined with OpenAPI.
+- 🎁 **Automatic HTTP prediction server**: Your model's types are used to dynamically generate a RESTful HTTP API using [FastAPI](https://fastapi.tiangolo.com/).
 
-- 🎁 **Built-in HTTP prediction server**: The OpenAPI schema dervied from your model is used to dynamically generate a RESTful HTTP API using [FastAPI](https://fastapi.tiangolo.com/).
+- 🥞 **Automatic queue worker.** Long-running deep learning models or batch processing is best architected with a queue. Cog models do this out of the box. Redis is currently supported, with more in the pipeline.
 
-- 🥞 **Queue-based interface.** Long-running deep learning models or batch processing is best architected with a queue. Cog models can do this out of the box. Redis is currently supported, with more in the pipeline.
+- ☁️ **Cloud storage.** Files can be read and written directly to Amazon S3 and Google Cloud Storage.
 
-- ☁️ **Cloud storage.** Bring your own backend. Files can be read and written directly on Amazon S3 and Google Cloud Storage.
-
-- 🚀 **Ready for deployment**. Deploy your containerized model on your own infrastructure, or to [Replicate](https://replicate.com).
-
+- 🚀 **Ready for production.** Deploy your model anywhere that Docker images run. Your own infrastructure, or [Replicate](https://replicate.com).
 
 ## How it works
 
