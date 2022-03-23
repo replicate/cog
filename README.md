@@ -1,6 +1,6 @@
 # Cog: Containers for machine learning
 
-Cog is an open-source tool that lets you build, ship, and run machine learning models in a standard, production-ready container.
+Cog is an open-source tool that lets you package machine learning models in a standard, production-ready container.
 
 You can deploy your packaged model to your own infrastructure, or to [Replicate](https://replicate.com/).
 
