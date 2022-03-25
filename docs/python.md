@@ -12,6 +12,7 @@ Tip: Run [`cog init`](getting-started-own-model#initialization) to generate an a
     - [Progressive output](#progressive-output)
 - [`Input(**kwargs)`](#inputkwargs)
 - [`Output(BaseModel)`](#outputbasemodel)
+- [Input and output types](#input-and-output-types)
 - [`File()`](#file)
 - [`Path()`](#path)
 
@@ -100,32 +101,69 @@ The `Input()` function takes these keyword arguments:
 - `regex`: For `str` types, the string must match this regular expression.
 - `choices`: For `str` or `int` types, a list of possible values for this input.
 
-Each parameter of the `predict()` method must be annotated with a type. The supported types are:
+Each parameter of the `predict()` method must be annotated with a type like `str`, `int`, `float`, `bool`, etc. See [Input and output types](#input-and-output-types) for the full list of supported types.
+
+## `Output(BaseModel)`
+
+Cog predictors can return a simple data type like a string, number, float, or boolean. Use Python's `-> <type>` syntax to annotate the return type.
+
+Here's an example of a predictor that returns a string:
+
+```py
+from cog import BasePredictor
+
+class SimpleOutputPredictor(BasePredictor):
+    def predict(self) -> str:
+        return "hello"
+```
+
+The example above returns a JSON object in the following format:
+
+```json
+{
+  "output": "hello",
+  "status": "success"
+}
+```
+
+To return a complex object with multiple values, you can optionally use cog's `Output()` function to define the object returned by your `predict()` method:
+
+```py
+from cog import BasePredictor, BaseModel, File
+
+class Output(BaseModel):
+    file: File
+    text: str
+
+class ComplexOutputPredictor(BasePredictor):
+    def predict(self) -> Output:
+        return Output(text="hello", file=io.StringIO("hello"))
+```
+
+The example above returns a JSON object in the following format:
+
+```json
+{
+  "output": {
+    "file": "data:application/octet-stream;base64,aGVsbG8=",
+    "text": "hello"
+  },
+  "status": "success"
+}
+```
+
+Each of the Output object's properties must be one of the supported output types. For the full list, see [Input and output types](#input-and-output-types).
+
+## Input and output types
+
+Each parameter of the `predict()` method must be annotated with a type. The method's return type must also be annotated. The supported types are:
 
 - `str`: a string
 - `int`: an integer
 - `float`: a floating point number
 - `bool`: a boolean
-- `cog.File`: a file-like object representing a file
-- `cog.Path`: a path to a file on disk
-
-## `Output(BaseModel)`
-
-Your `predict()` method can return a simple data type like a string or a number, or a more complex object with multiple values.
-
-You can optionally use cog's `Output()` function to define the object returned by your `predict()` method:
-
-```py
-from cog import BasePredictor, BaseModel
-
-class Output(BaseModel):
-    text: str
-    file: File
-
-class Predictor(BasePredictor):
-    def predict(self) -> Output:
-        return Output(text="hello", file=io.StringIO("hello"))
-```
+- [`cog.File`](#file): a file-like object representing a file
+- [`cog.Path`](#path): a path to a file on disk
 
 ## `File()`
 
