@@ -117,21 +117,42 @@ class SimpleOutputPredictor(BasePredictor):
         return "hello"
 ```
 
+The example above returns a JSON object in the following format:
+
+```json
+{
+  "output": "hello",
+  "status": "success"
+}
+```
+
 To return a complex object with multiple values, you can optionally use cog's `Output()` function to define the object returned by your `predict()` method:
 
 ```py
 from cog import BasePredictor, BaseModel, File
 
 class Output(BaseModel):
-    text: str
     file: File
+    text: str
 
 class ComplexOutputPredictor(BasePredictor):
     def predict(self) -> Output:
         return Output(text="hello", file=io.StringIO("hello"))
 ```
 
-For the full list of supported output types, see [Input and output types](#input-and-output-types).
+The example above returns a JSON object in the following format:
+
+```json
+{
+  "output": {
+    "file": "data:application/octet-stream;base64,aGVsbG8=",
+    "text": "hello"
+  },
+  "status": "success"
+}
+```
+
+Each of the Output object's properties must be one of the supported output types. For the full list, see [Input and output types](#input-and-output-types).
 
 ## Input and output types
 
