@@ -11,7 +11,7 @@ Tip: Run [`cog init`](getting-started-own-model#initialization) to generate an a
   - [`Predictor.predict(**kwargs)`](#predictorpredictkwargs)
     - [Progressive output](#progressive-output)
 - [`Input(**kwargs)`](#inputkwargs)
-- [`Output(BaseModel)`](#outputbasemodel)
+- [Output](#output)
 - [Input and output types](#input-and-output-types)
 - [`File()`](#file)
 - [`Path()`](#path)
@@ -103,7 +103,7 @@ The `Input()` function takes these keyword arguments:
 
 Each parameter of the `predict()` method must be annotated with a type like `str`, `int`, `float`, `bool`, etc. See [Input and output types](#input-and-output-types) for the full list of supported types.
 
-## `Output(BaseModel)`
+## Output
 
 Cog predictors can return a simple data type like a string, number, float, or boolean. Use Python's `-> <type>` syntax to annotate the return type.
 
@@ -112,21 +112,12 @@ Here's an example of a predictor that returns a string:
 ```py
 from cog import BasePredictor
 
-class SimpleOutputPredictor(BasePredictor):
+class Predictor(BasePredictor):
     def predict(self) -> str:
         return "hello"
 ```
 
-The example above returns a JSON object in the following format:
-
-```json
-{
-  "output": "hello",
-  "status": "success"
-}
-```
-
-To return a complex object with multiple values, you can optionally use cog's `Output()` function to define the object returned by your `predict()` method:
+To return a complex object with multiple values, you can define an `Output` object with multiple fields to return from your `predict()` method:
 
 ```py
 from cog import BasePredictor, BaseModel, File
@@ -135,24 +126,12 @@ class Output(BaseModel):
     file: File
     text: str
 
-class ComplexOutputPredictor(BasePredictor):
+class Predictor(BasePredictor):
     def predict(self) -> Output:
         return Output(text="hello", file=io.StringIO("hello"))
 ```
 
-The example above returns a JSON object in the following format:
-
-```json
-{
-  "output": {
-    "file": "data:application/octet-stream;base64,aGVsbG8=",
-    "text": "hello"
-  },
-  "status": "success"
-}
-```
-
-Each of the Output object's properties must be one of the supported output types. For the full list, see [Input and output types](#input-and-output-types).
+Each of the output object's properties must be one of the supported output types. For the full list, see [Input and output types](#input-and-output-types).
 
 ## Input and output types
 
