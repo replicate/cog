@@ -101,6 +101,7 @@ func (g *Generator) GenerateBase() (string, error) {
 		pipInstalls,
 		run,
 		`WORKDIR /src`,
+		`EXPOSE 5000`,
 		`CMD ["python", "-m", "cog.server.http"]`,
 	}), "\n"), nil
 }
