@@ -263,7 +263,7 @@ class RedisQueueWorker:
 
     def push_result(self, response_queue, result, status):
         message = {
-            "value": result,
+            "output": result,
         }
 
         message["status"] = status
