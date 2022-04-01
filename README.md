@@ -79,18 +79,21 @@ $ curl http://localhost:5000/predictions -X POST \
    --data '{"input": "https://.../input.jpg"}'
 ```
 
-<!-- In development, you can also run arbitrary commands inside the Docker environment:
+<!-- NOTE (bfirsh): Development environment instructions intentionally left out of readme for now, so as not to confuse the "ship a model to production" message.
+ 
+In development, you can also run arbitrary commands inside the Docker environment:
 
 ```
 $ cog run python train.py
 ...
-``` -->
+```
 
 Or, [spin up a Jupyter notebook](docs/notebooks.md):
 
 ```
-$ cog run -p 8000 jupyter notebook --allow-root --ip=0.0.0.0
+$ cog run -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
 ```
+ -->
 
 ## Why are we building this?
 
