@@ -215,7 +215,9 @@ func fetchCurrentTorchVersions(compats []config.TorchCompatibility) ([]config.To
 }
 
 func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *string) (*config.TorchCompatibility, error) {
-	// e.g. "pip install torch==1.8.0+cpu torchvision==0.9.0+cpu torchaudio==0.8.0 -f https://download.pytorch.org/whl/torch_stable.html"
+	// for example:
+	// pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
+	// pip install torch==1.8.0+cpu torchvision==0.9.0+cpu torchaudio==0.8.0 -f https://download.pytorch.org/whl/torch_stable.html
 
 	if cuda != nil && strings.HasSuffix(*cuda, ".x") {
 		c := defaultCUDA[*cuda]
@@ -224,26 +226,41 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 
 	libVersions := map[string]string{}
 
-	s = strings.TrimSpace(s)
-	s = strings.Split(s, " install ")[1]
-	parts := strings.Split(s, " -f ")
-	libs := strings.Split(parts[0], " ")
-	for _, lib := range libs {
-		libParts := strings.Split(lib, "==")
+	indexURL := ""
+	skipNext := false
+
+	// Simple parser for pip install strings
+	fields := strings.Fields(s)
+	for i, item := range fields {
+		// Ideally we want to be able to consume the next token, but golang has no simple way of doing that without constructing a channel
+		if skipNext {
+			skipNext = false
+			continue
+		}
+		switch item {
+		case "pip", "pip3", "install":
+			continue
+		case "-f":
+			indexURL = fields[i+1]
+			skipNext = true
+			continue
+		case "--extra-index-url":
+			// Torch 1.11 seems to be the same on PyPi and PyTorch's PyPi repo for all CUDA versions, so just install from PyPi
+			skipNext = true
+			continue
+		}
+
+		libParts := strings.Split(item, "==")
 		libName := libParts[0]
 		if _, ok := defaultVersions[libName]; !ok {
-			return nil, fmt.Errorf("Unknown library: %s", libName)
+			return nil, fmt.Errorf("Unknown token when parsing torch string: %s", item)
 		}
 		if len(libParts) == 1 {
 			libVersions[libName] = defaultVersions[libName]
 		} else {
 			libVersions[libName] = libParts[1]
 		}
-	}
 
-	indexURL := ""
-	if len(parts) > 1 {
-		indexURL = parts[1]
 	}
 
 	torch, ok := libVersions["torch"]
