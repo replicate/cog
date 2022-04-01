@@ -91,7 +91,6 @@ A bot will automatically open a pull requests to add the contributor to the proj
 
 Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the full list at [allcontributors.org/docs/en/emoji-key](https://allcontributors.org/docs/en/emoji-key)
 
-
 ## Development environment
 
 You'll need to [install Go 1.16](https://golang.org/doc/install). If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
@@ -130,6 +129,18 @@ As much as possible, this is attempting to follow the [Standard Go Project Layou
 - `pkg/util/` - Various packages that aren't part of Cog. They could reasonably be separate re-usable projects.
 - `python/` - The Cog Python library.
 - `test-integration/` - High-level integration tests for Cog.
+
+## Concepts
+
+There are a few concepts used throughout Cog that might be helpful to understand.
+
+- **Config**: The `cog.yaml` file.
+- **Image**: Represents a built Docker image that serves the Cog API, containing a **model**.
+- **Input**: Input from a **prediction**, as key/value JSON object.
+- **Model**: A user's machine learning model, consisting of code and weights.
+- **Output**: Output from a **prediction**, as arbitrarily complex JSON object.
+- **Prediction**: A single run of the model, that takes **input** and produces **output**.
+- **Predictor**: Defines how Cog runs **predictions** on a **model**.
 
 ## Runnings tests
 
