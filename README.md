@@ -86,13 +86,11 @@ $ cog run python train.py
 ...
 ``` -->
 
-<!-- TODO: this doesn't work yet (needs ports etc)
-Or, spin up a Jupyter notebook:
+Or, [spin up a Jupyter notebook](docs/notebooks.md):
 
 ```
-$ cog run jupyter notebook
+$ cog run -p 8000 jupyter notebook ...
 ```
--->
 
 ## Why are we building this?
 
