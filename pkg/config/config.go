@@ -135,6 +135,11 @@ func (c *Config) ValidateAndCompleteConfig() error {
 			return err
 		}
 	}
+
+	if len(c.Build.PythonPackages) > 0 && c.Build.PythonRequirements != "" {
+		return fmt.Errorf("Only one of python_packages or python_requirements can be set in your cog.yaml, not both")
+	}
+
 	return nil
 }
 
