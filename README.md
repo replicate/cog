@@ -79,20 +79,21 @@ $ curl http://localhost:5000/predictions -X POST \
    --data '{"input": "https://.../input.jpg"}'
 ```
 
-<!-- In development, you can also run arbitrary commands inside the Docker environment:
+<!-- NOTE (bfirsh): Development environment instructions intentionally left out of readme for now, so as not to confuse the "ship a model to production" message.
+ 
+In development, you can also run arbitrary commands inside the Docker environment:
 
 ```
 $ cog run python train.py
 ...
-``` -->
+```
 
-<!-- TODO: this doesn't work yet (needs ports etc)
-Or, spin up a Jupyter notebook:
+Or, [spin up a Jupyter notebook](docs/notebooks.md):
 
 ```
-$ cog run jupyter notebook
+$ cog run -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
 ```
--->
+ -->
 
 ## Why are we building this?
 
@@ -134,6 +135,7 @@ sudo chmod +x /usr/local/bin/cog
 
 - [Get started with an example model](docs/getting-started.md)
 - [Get started with your own model](docs/getting-started-own-model.md)
+- [Using Cog with notebooks](docs/notebooks.md)
 - [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's environment
 - [Prediction interface reference](docs/python.md) to learn how the `Predictor` interface works
