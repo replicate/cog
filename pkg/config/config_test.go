@@ -6,6 +6,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestPythonPackagesAndRequirementsCantBeUsedTogether(t *testing.T) {
+	config := &Config{
+		Build: &Build{
+			PythonVersion: "3.8",
+			PythonPackages: []string{
+				"replicate==1.0.0",
+			},
+			PythonRequirements: "requirements.txt",
+		},
+	}
+	err := config.ValidateAndCompleteConfig()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Only one of python_packages or python_requirements can be set in your cog.yaml, not both")
+}
+
 func TestValidateAndCompleteCUDAForAllTF(t *testing.T) {
 	for _, compat := range TFCompatibilityMatrix {
 		config := &Config{
