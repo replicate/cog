@@ -152,5 +152,6 @@ For more details, [see the `gpu` section of the `cog.yaml` reference](yaml.md#gp
 
 Next, you might want to take a look at:
 
+- [A guide explaining how to deploy a model.](deploy.md)
 - [The reference for `cog.yaml`](yaml.md)
 - [The reference for the Python library](python.md)
