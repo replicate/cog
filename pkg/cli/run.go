@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
@@ -8,6 +9,10 @@ import (
 	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/spf13/cobra"
+)
+
+var (
+	runPorts []string
 )
 
 func newRunCommand() *cobra.Command {
@@ -21,6 +26,10 @@ func newRunCommand() *cobra.Command {
 
 	flags := cmd.Flags()
 	// Flags after first argment are considered args and passed to command
+
+	// This is called `publish` for consistency with `docker run`
+	cmd.Flags().StringArrayVarP(&runPorts, "publish", "p", []string{}, "Publish a container's port to the host, e.g. -p 8000")
+
 	flags.SetInterspersed(false)
 
 	return cmd
@@ -42,13 +51,24 @@ func run(cmd *cobra.Command, args []string) error {
 		gpus = "all"
 	}
 
-	console.Info("")
-	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
-	return docker.Run(docker.RunOptions{
+	runOptions := docker.RunOptions{
 		Args:    args,
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: []docker.Volume{{Source: projectDir, Destination: "/src"}},
 		Workdir: "/src",
-	})
+	}
+
+	for _, portString := range runPorts {
+		port, err := strconv.Atoi(portString)
+		if err != nil {
+			return err
+		}
+
+		runOptions.Ports = append(runOptions.Ports, docker.Port{HostPort: port, ContainerPort: port})
+	}
+
+	console.Info("")
+	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
+	return docker.Run(runOptions)
 }
