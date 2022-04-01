@@ -1,6 +1,6 @@
 # Notebooks
 
-Cog plays nicely with Juptyer notebooks.
+Cog plays nicely with Jupyter notebooks.
 
 ## Run a notebook
 
