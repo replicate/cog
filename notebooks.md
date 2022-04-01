@@ -4,7 +4,7 @@ Cog plays nicely with Jupyter notebooks.
 
 ## Run a notebook
 
-Cog can run notebooks with the following command:
+Cog can run notebooks in the environment you've defined in [`cog.yaml`](yaml.md) with the following command:
 
 ```sh
 cog run -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
