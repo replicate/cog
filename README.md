@@ -89,7 +89,7 @@ $ cog run python train.py
 Or, [spin up a Jupyter notebook](docs/notebooks.md):
 
 ```
-$ cog run -p 8000 jupyter notebook ...
+$ cog run -p 8000 jupyter notebook --allow-root --ip=0.0.0.0
 ```
 
 ## Why are we building this?
