@@ -174,6 +174,23 @@ func latestCUDAFrom(cudas []string) string {
 	return latest
 }
 
+// resolveMinorToPatch takes a minor version string (e.g. 11.1) and resolves it to its full patch version (11.1.1)
+// If no patch version exists, it returns the plain old minor version (e.g. 10.3)
+func resolveMinorToPatch(minor string) (string, error) {
+	patch := ""
+	for _, image := range CUDABaseImages {
+		if version.EqualMinor(minor, image.CUDA) {
+			if patch == "" || version.Greater(image.CUDA, patch) {
+				patch = image.CUDA
+			}
+		}
+	}
+	if patch == "" {
+		return "", fmt.Errorf("CUDA version %s could not be found", minor)
+	}
+	return patch, nil
+}
+
 func latestCuDNNForCUDA(cuda string) string {
 	cuDNNs := []string{}
 	for _, image := range CUDABaseImages {
