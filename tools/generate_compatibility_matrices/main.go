@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"regexp"
 	"strconv"
@@ -160,6 +161,31 @@ func writeCUDABaseImageTags(outputPath string) error {
 	return nil
 }
 
+type pypiResponse struct {
+	Info struct {
+		Version string `json:"version"`
+	} `json:"info"`
+}
+
+// Need to get latest versions because PyTorch doesn't specify versions for latest
+func fetchDefaultVersions() (map[string]string, error) {
+	fmt.Println("Fetching default versions...")
+	defaultVersions := map[string]string{}
+	for _, lib := range []string{"torch", "torchvision", "torchaudio"} {
+		res, err := http.Get("https://pypi.org/pypi/" + lib + "/json")
+		if err != nil {
+			return nil, err
+		}
+		var body pypiResponse
+		defer res.Body.Close()
+		if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+			return nil, err
+		}
+		defaultVersions[lib] = body.Info.Version
+	}
+	return defaultVersions, nil
+}
+
 func fetchCurrentTorchVersions(compats []config.TorchCompatibility) ([]config.TorchCompatibility, error) {
 	url := "https://pytorch.org/assets/quick-start-module.js"
 
@@ -177,20 +203,9 @@ func fetchCurrentTorchVersions(compats []config.TorchCompatibility) ([]config.To
 		return nil, err
 	}
 
-	// need to get default versions since the default cpu install
-	// doesn't specify versions
-	defaultVersions := map[string]string{}
-	for _, lib := range []string{"torch", "torchvision", "torchaudio"} {
-		latestVersionRe := regexp.MustCompile("stable,pip,linux.+" + lib + `==([0-9]+\.[0-9]+\.[0-9]+)`)
-		latestVersions := latestVersionRe.FindAllStringSubmatch(resp, -1)
-		latestVersion := latestVersions[0][1]
-
-		for _, v := range latestVersions[1:] {
-			if latestVersion != v[1] {
-				return nil, fmt.Errorf("%s versions aren't all the same, has the JS changed?", lib)
-			}
-		}
-		defaultVersions[lib] = latestVersion
+	defaultVersions, err := fetchDefaultVersions()
+	if err != nil {
+		return nil, err
 	}
 
 	for key, val := range obj {
