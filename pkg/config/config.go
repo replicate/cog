@@ -246,6 +246,10 @@ Compatible cuDNN version is: %s`,
 				return fmt.Errorf("Cog couldn't automatically determine a CUDA version for torch==%s. You need to set the 'cuda' option in cog.yaml to set what version to use. You might be able to find this out from https://pytorch.org/", torchVersion)
 			}
 			c.Build.CUDA = latestCUDAFrom(torchCUDAs)
+			c.Build.CUDA, err = resolveMinorToPatch(c.Build.CUDA)
+			if err != nil {
+				return err
+			}
 			console.Debugf("Setting CUDA to version %s from Torch version", c.Build.CUDA)
 		} else if !slices.ContainsString(torchCUDAs, c.Build.CUDA) {
 			// TODO: can we suggest a CUDA version known to be compatible?
