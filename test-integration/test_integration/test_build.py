@@ -22,7 +22,7 @@ def test_build_without_predictor(docker_image):
         ).stdout
     )
     labels = image[0]["Config"]["Labels"]
-    assert len(labels["run.cog.cog_version"]) > 0
+    assert len(labels["run.cog.version"]) > 0
     assert json.loads(labels["run.cog.config"]) == {"build": {"python_version": "3.8"}}
     assert "run.cog.openapi_schema" not in labels
 
@@ -115,7 +115,7 @@ build:
     )
     labels = image[0]["Config"]["Labels"]
 
-    assert len(labels["run.cog.cog_version"]) > 0
+    assert len(labels["run.cog.version"]) > 0
     assert json.loads(labels["run.cog.config"]) == {
         "build": {
             "python_version": "3.8",
