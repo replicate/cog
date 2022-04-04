@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
 	"regexp"
 	"strconv"
@@ -161,31 +160,6 @@ func writeCUDABaseImageTags(outputPath string) error {
 	return nil
 }
 
-type pypiResponse struct {
-	Info struct {
-		Version string `json:"version"`
-	} `json:"info"`
-}
-
-// Need to get latest versions because PyTorch doesn't specify versions for latest
-func fetchDefaultVersions() (map[string]string, error) {
-	fmt.Println("Fetching default versions...")
-	defaultVersions := map[string]string{}
-	for _, lib := range []string{"torch", "torchvision", "torchaudio"} {
-		res, err := http.Get("https://pypi.org/pypi/" + lib + "/json")
-		if err != nil {
-			return nil, err
-		}
-		var body pypiResponse
-		defer res.Body.Close()
-		if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
-			return nil, err
-		}
-		defaultVersions[lib] = body.Info.Version
-	}
-	return defaultVersions, nil
-}
-
 func fetchCurrentTorchVersions(compats []config.TorchCompatibility) ([]config.TorchCompatibility, error) {
 	url := "https://pytorch.org/assets/quick-start-module.js"
 
@@ -203,9 +177,20 @@ func fetchCurrentTorchVersions(compats []config.TorchCompatibility) ([]config.To
 		return nil, err
 	}
 
-	defaultVersions, err := fetchDefaultVersions()
-	if err != nil {
-		return nil, err
+	// need to get default versions since the default cpu install
+	// doesn't specify versions
+	defaultVersions := map[string]string{}
+	for _, lib := range []string{"torch", "torchvision", "torchaudio"} {
+		latestVersionRe := regexp.MustCompile("stable,pip,linux.+" + lib + `==([0-9]+\.[0-9]+\.[0-9]+)`)
+		latestVersions := latestVersionRe.FindAllStringSubmatch(resp, -1)
+		latestVersion := latestVersions[0][1]
+
+		for _, v := range latestVersions[1:] {
+			if latestVersion != v[1] {
+				return nil, fmt.Errorf("%s versions aren't all the same, has the JS changed?", lib)
+			}
+		}
+		defaultVersions[lib] = latestVersion
 	}
 
 	for key, val := range obj {
@@ -230,9 +215,7 @@ func fetchCurrentTorchVersions(compats []config.TorchCompatibility) ([]config.To
 }
 
 func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *string) (*config.TorchCompatibility, error) {
-	// for example:
-	// pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
-	// pip install torch==1.8.0+cpu torchvision==0.9.0+cpu torchaudio==0.8.0 -f https://download.pytorch.org/whl/torch_stable.html
+	// e.g. "pip install torch==1.8.0+cpu torchvision==0.9.0+cpu torchaudio==0.8.0 -f https://download.pytorch.org/whl/torch_stable.html"
 
 	if cuda != nil && strings.HasSuffix(*cuda, ".x") {
 		c := defaultCUDA[*cuda]
@@ -241,41 +224,26 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 
 	libVersions := map[string]string{}
 
-	indexURL := ""
-	skipNext := false
-
-	// Simple parser for pip install strings
-	fields := strings.Fields(s)
-	for i, item := range fields {
-		// Ideally we want to be able to consume the next token, but golang has no simple way of doing that without constructing a channel
-		if skipNext {
-			skipNext = false
-			continue
-		}
-		switch item {
-		case "pip", "pip3", "install":
-			continue
-		case "-f":
-			indexURL = fields[i+1]
-			skipNext = true
-			continue
-		case "--extra-index-url":
-			// Torch 1.11 seems to be the same on PyPi and PyTorch's PyPi repo for all CUDA versions, so just install from PyPi
-			skipNext = true
-			continue
-		}
-
-		libParts := strings.Split(item, "==")
+	s = strings.TrimSpace(s)
+	s = strings.Split(s, " install ")[1]
+	parts := strings.Split(s, " -f ")
+	libs := strings.Split(parts[0], " ")
+	for _, lib := range libs {
+		libParts := strings.Split(lib, "==")
 		libName := libParts[0]
 		if _, ok := defaultVersions[libName]; !ok {
-			return nil, fmt.Errorf("Unknown token when parsing torch string: %s", item)
+			return nil, fmt.Errorf("Unknown library: %s", libName)
 		}
 		if len(libParts) == 1 {
 			libVersions[libName] = defaultVersions[libName]
 		} else {
 			libVersions[libName] = libParts[1]
 		}
+	}
 
+	indexURL := ""
+	if len(parts) > 1 {
+		indexURL = parts[1]
 	}
 
 	torch, ok := libVersions["torch"]
@@ -289,7 +257,7 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 	torchaudio := libVersions["torchaudio"]
 
 	// TODO(andreas): maybe scrape this from https://pytorch.org/get-started/locally/
-	pythons := []string{"3.6", "3.7", "3.8", "3.9", "3.10"}
+	pythons := []string{"3.6", "3.7", "3.8", "3.9"}
 
 	return &config.TorchCompatibility{
 		Torch:       torch,
@@ -338,14 +306,14 @@ func parsePreviousTorchVersionsCode(code string, compats []config.TorchCompatibi
 			// conda install etc
 			continue
 		}
-		rawArch := strings.ToLower(heading[2:])
+		rawArch := heading[2:]
 		var cuda *string
-		if strings.HasPrefix(rawArch, "cuda") {
+		if strings.HasPrefix(rawArch, "CUDA") {
 			_, c := split2(rawArch, " ")
 			cuda = &c // can't take pointer directly
-		} else if strings.HasPrefix(rawArch, "rocm") {
+		} else if strings.HasPrefix(rawArch, "RocM") {
 			continue
-		} else if rawArch != "cpu only" {
+		} else if rawArch != "CPU only" {
 			return nil, fmt.Errorf("Invalid arch: %s", rawArch)
 		}
 		compat, err := parseTorchInstallString(install, supportedLibrarySet, cuda)
