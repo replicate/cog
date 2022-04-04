@@ -50,8 +50,8 @@ func Build(cfg *config.Config, dir, imageName string, progressOutput string) err
 	// built image to get those. But, the escaping of JSON inside a label inside a Dockerfile was gnarly, and
 	// doesn't seem to be a problem here, so do it here instead.
 	labels := map[string]string{
-		global.LabelNamespace + "cog_version": global.Version,
-		global.LabelNamespace + "config":      string(bytes.TrimSpace(configJSON)),
+		global.LabelNamespace + "version": global.Version,
+		global.LabelNamespace + "config":  string(bytes.TrimSpace(configJSON)),
 		// Backwards compatibility. Remove for 1.0.
 		"org.cogmodel.deprecated":  "The org.cogmodel labels are deprecated. Use run.cog.",
 		"org.cogmodel.cog_version": global.Version,
