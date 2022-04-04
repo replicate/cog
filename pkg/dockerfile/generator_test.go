@@ -70,6 +70,7 @@ ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ` + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
+EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -99,6 +100,7 @@ ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ` + testInstallPython("3.8") + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
+EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -143,6 +145,7 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.
 RUN --mount=type=cache,target=/root/.cache/pip pip install -f https://download.pytorch.org/whl/torch_stable.html   torch==1.5.1+cpu pandas==1.2.0.12
 RUN cowsay moo
 WORKDIR /src
+EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 	require.Equal(t, expected, actual)
@@ -187,6 +190,7 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.
 RUN --mount=type=cache,target=/root/.cache/pip pip install   torch==1.5.1 pandas==1.2.0.12
 RUN cowsay moo
 WORKDIR /src
+EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -222,6 +226,7 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 RUN cowsay moo
 WORKDIR /src
+EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 	require.Equal(t, expected, actual)

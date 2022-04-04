@@ -100,8 +100,9 @@ func (g *Generator) GenerateBase() (string, error) {
 		pythonRequirements,
 		pipInstalls,
 		run,
-		g.workdir(),
-		g.command(),
+		`WORKDIR /src`,
+		`EXPOSE 5000`,
+		`CMD ["python", "-m", "cog.server.http"]`,
 	}), "\n"), nil
 }
 
@@ -112,7 +113,7 @@ func (g *Generator) Generate() (string, error) {
 	}
 	return strings.Join(filterEmpty([]string{
 		base,
-		g.copyCode(),
+		`COPY . /src`,
 	}), "\n"), nil
 }
 
@@ -225,18 +226,6 @@ func (g *Generator) pipInstalls() (string, error) {
 	}
 
 	return "RUN --mount=type=cache,target=/root/.cache/pip pip install " + findLinks + " " + extraIndexURLs + " " + strings.Join(packages, " "), nil
-}
-
-func (g *Generator) copyCode() string {
-	return `COPY . /src`
-}
-
-func (g *Generator) command() string {
-	return `CMD ["python", "-m", "cog.server.http"]`
-}
-
-func (g *Generator) workdir() string {
-	return "WORKDIR /src"
 }
 
 func (g *Generator) run() (string, error) {
