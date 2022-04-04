@@ -14,5 +14,5 @@ var (
 	ConfigFilename        = "cog.yaml"
 	ReplicateRegistryHost = "r8.im"
 	ReplicateWebsiteHost  = "replicate.com"
-	LabelNamespace        = "org.cogmodel."
+	LabelNamespace        = "run.cog."
 )

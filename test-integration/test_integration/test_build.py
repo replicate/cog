@@ -22,6 +22,11 @@ def test_build_without_predictor(docker_image):
         ).stdout
     )
     labels = image[0]["Config"]["Labels"]
+    assert len(labels["run.cog.cog_version"]) > 0
+    assert json.loads(labels["run.cog.config"]) == {"build": {"python_version": "3.8"}}
+    assert "run.cog.openapi_schema" not in labels
+
+    # Deprecated. Remove for 1.0.
     assert len(labels["org.cogmodel.cog_version"]) > 0
     assert json.loads(labels["org.cogmodel.config"]) == {
         "build": {"python_version": "3.8"}
@@ -63,7 +68,10 @@ def test_build_with_model(docker_image):
         ).stdout
     )
     labels = image[0]["Config"]["Labels"]
-    schema = json.loads(labels["org.cogmodel.openapi_schema"])
+    schema = json.loads(labels["run.cog.openapi_schema"])
+
+    # Backwards compatibility
+    assert "org.cogmodel.openapi_schema" in labels
 
     assert schema["components"]["schemas"]["Input"] == {
         "title": "Input",
@@ -106,6 +114,19 @@ build:
         ).stdout
     )
     labels = image[0]["Config"]["Labels"]
+
+    assert len(labels["run.cog.cog_version"]) > 0
+    assert json.loads(labels["run.cog.config"]) == {
+        "build": {
+            "python_version": "3.8",
+            "gpu": True,
+            "cuda": "11.2",
+            "cudnn": "8",
+        }
+    }
+    assert "run.cog.openapi_schema" not in labels
+
+    # Deprecated. Remove for 1.0.
     assert len(labels["org.cogmodel.cog_version"]) > 0
     assert json.loads(labels["org.cogmodel.config"]) == {
         "build": {
