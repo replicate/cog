@@ -52,6 +52,10 @@ func Build(cfg *config.Config, dir, imageName string, progressOutput string) err
 	labels := map[string]string{
 		global.LabelNamespace + "cog_version": global.Version,
 		global.LabelNamespace + "config":      string(bytes.TrimSpace(configJSON)),
+		// Backwards compatibility. Remove for 1.0.
+		"org.cogmodel.deprecated":  "The org.cogmodel labels are deprecated. Use run.cog.",
+		"org.cogmodel.cog_version": global.Version,
+		"org.cogmodel.config":      string(bytes.TrimSpace(configJSON)),
 	}
 
 	// OpenAPI schema is not set if there is no predictor.
@@ -61,6 +65,7 @@ func Build(cfg *config.Config, dir, imageName string, progressOutput string) err
 			return fmt.Errorf("Failed to convert type signature to JSON: %w", err)
 		}
 		labels[global.LabelNamespace+"openapi_schema"] = string(schemaJSON)
+		labels["org.cogmodel.openapi_schema"] = string(schemaJSON)
 	}
 
 	if err := docker.BuildAddLabelsToImage(imageName, labels); err != nil {

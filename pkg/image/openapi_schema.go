@@ -7,6 +7,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -58,7 +59,11 @@ func GetOpenAPISchema(imageName string) (*openapi3.T, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Failed to inspect %s: %w", imageName, err)
 	}
-	schemaString := image.Config.Labels["org.cogmodel.openapi_schema"]
+	schemaString := image.Config.Labels[global.LabelNamespace+"openapi_schema"]
+	if schemaString == "" {
+		// Deprecated. Remove for 1.0.
+		schemaString = image.Config.Labels["org.cogmodel.openapi_schema"]
+	}
 	if schemaString == "" {
 		return nil, fmt.Errorf("Image %s does not appear to be a Cog model", imageName)
 	}
