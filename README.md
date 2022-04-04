@@ -76,7 +76,7 @@ $ cog build -t my-colorization-model
 $ docker run -d -p 5000:5000 --gpus all my-colorization-model
 
 $ curl http://localhost:5000/predictions -X POST \
-   --data '{"input": "https://.../input.jpg"}'
+    --data '{"input": {"image": "https://.../input.jpg"}}'
 ```
 
 <!-- NOTE (bfirsh): Development environment instructions intentionally left out of readme for now, so as not to confuse the "ship a model to production" message.
@@ -137,6 +137,7 @@ sudo chmod +x /usr/local/bin/cog
 - [Get started with your own model](docs/getting-started-own-model.md)
 - [Using Cog with notebooks](docs/notebooks.md)
 - [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
+- [Deploy models with Cog](docs/deploy.md)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's environment
 - [Prediction interface reference](docs/python.md) to learn how the `Predictor` interface works
 - [HTTP API reference](docs/http.md) to learn how to use the HTTP API that models serve

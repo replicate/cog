@@ -1,26 +1,6 @@
 # HTTP API
 
-When a Cog Docker image is run, it serves an HTTP API for making predictions.
-
-First, build your model:
-
-    cog build -t my-model
-
-Then, start the Docker container:
-
-    docker run -d -p 5000:5000 my-model
-
-    # If your model uses a GPU:
-    docker run -d -p 5000:5000 --gpus all my-model
-
-    # if you're on an M1 Mac:
-    docker run -d -p 5000:5000 --platform=linux/amd64 my-model
-
-Port 5000 is now serving the API:
-
-    curl http://localhost:5000
-
-To view the API documentation in browser for the model that is running, open [http://localhost:5000/docs](http://localhost:5000/docs).
+When a Cog Docker image is run, it serves an HTTP API for making predictions. For more information, take a look at [the documentation for deploying models](deploy.md).
 
 ## `GET /openapi.json`
 

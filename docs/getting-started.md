@@ -156,7 +156,8 @@ Or, you can run it with Docker directly, and it'll serve an HTTP server:
 ```
 $ docker run -d -p 5000:5000 --gpus all resnet
 
-$ curl http://localhost:5000/predict -X POST -F input=@image.png
+$ curl http://localhost:5000/predictions -X POST \
+    --data '{"input": {"image": "https://.../input.jpg"}}'
 ```
 
 As a shorthand, you can add the image name as an extra line in `cog.yaml`:
@@ -181,5 +182,6 @@ The Docker image is now accessible to anyone or any system that has access to th
 Those are the basics! Next, you might want to take a look at:
 
 - [A guide to help you set up your own model on Cog.](getting-started-own-model.md)
+- [A guide explaining how to deploy a model.](deploy.md)
 - [Reference for `cog.yaml`](yaml.md)
 - [Reference for the Python library](python.md)
