@@ -1,3 +1,4 @@
+from time import sleep
 from typing import Iterator
 
 from cog import BasePredictor, Path
@@ -10,6 +11,7 @@ class Predictor(BasePredictor):
 
         predictions = ["foo", "bar", "baz"]
         for i, prediction in enumerate(predictions):
+            sleep(0.5)
             out_path = Path(f"/tmp/out-{i}.txt")
             with out_path.open("w") as f:
                 f.write(prefix + " " + prediction)
