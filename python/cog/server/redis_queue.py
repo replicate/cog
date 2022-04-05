@@ -17,6 +17,7 @@ from .redis_log_capture import capture_log
 from ..predictor import BasePredictor, get_input_type, load_predictor
 from ..json import encode_json
 from ..response import Status
+from .runner import PredictionRunner
 
 
 class timeout:
@@ -195,7 +196,6 @@ class RedisQueueWorker:
     def handle_message(self, response_queue, message, cleanup_functions):
         inputs = {}
         raw_inputs = message["inputs"]
-        prediction_id = message["id"]
 
         # Flatten the incoming object. The schema and Pydantic will handle downloading files from URLs (see cog/types.py)
         for k, v in raw_inputs.items():
@@ -215,37 +215,74 @@ class RedisQueueWorker:
         cleanup_functions.append(input_obj.cleanup)
 
         start_time = time.time()
-        with self.capture_log(self.STAGE_RUN, prediction_id), timeout(
-            seconds=self.predict_timeout
-        ):
-            return_value = self.predictor.predict(**input_obj.dict())
-        if isinstance(return_value, types.GeneratorType):
-            output = []
 
-            while True:
-                # we consume iterator manually to capture log
-                try:
-                    with self.capture_log(self.STAGE_RUN, prediction_id), timeout(
-                        seconds=self.predict_timeout, elapsed=time.time() - start_time
-                    ):
-                        result = next(return_value)
-                except StopIteration:
-                    break
-                # Encode as JSON here instead of each time we push a result so the file URLs remain consistent
-                result = self.encode_json(result)
-                output.append(result)
-                # push the previous result, so we can eventually detect the last iteration
-                self.push_result(response_queue, output, status="processing")
-                if isinstance(result, Path):
-                    cleanup_functions.append(result.unlink)
+        runner = PredictionRunner(self.predictor)
 
-            # push the last result
-            self.push_result(response_queue, output, status=Status.SUCCEEDED)
-        else:
-            if isinstance(return_value, Path):
-                cleanup_functions.append(return_value.unlink)
-            return_value = self.encode_json(return_value)
-            self.push_result(response_queue, return_value, status=Status.SUCCEEDED)
+        with timeout(seconds=self.predict_timeout):
+            runner.run(**input_obj.dict())
+
+            logs = []
+            response = {
+                "status": Status.PROCESSING,
+                "output": None,
+                "logs": logs,
+            }
+
+            # just send logs until output starts
+            while runner.is_processing() and not runner.has_output_waiting():
+                if runner.has_logs_waiting():
+                    logs.extend(runner.read_logs())
+                    self.redis.rpush(response_queue, json.dumps(response))
+
+            if runner.error() is not None:
+                raise runner.error()
+
+            if runner.is_output_generator():
+                output = response["output"] = []
+
+                while runner.is_processing():
+                    if runner.has_output_waiting() or runner.has_logs_waiting():
+                        new_output = [self.encode_json(o) for o in runner.read_output()]
+                        new_logs = runner.read_logs()
+
+                        # sometimes it'll say there's output when there's none
+                        if new_output == [] and new_logs == []:
+                            continue
+
+                        output.extend(new_output)
+                        logs.extend(new_logs)
+
+                        # we could `time.sleep(0.1)` and check `is_processing()`
+                        # here to give the predictor subprocess a chance to exit
+                        # so we don't send a double message for final output, at
+                        # the cost of extra latency
+                        self.redis.rpush(response_queue, json.dumps(response))
+
+                if runner.error() is not None:
+                    raise runner.error()
+
+                response["status"] = Status.SUCCEEDED
+                output.extend(self.encode_json(o) for o in runner.read_output())
+                logs.extend(runner.read_logs())
+                self.redis.rpush(response_queue, json.dumps(response))
+
+            else:
+                # just send logs until output ends
+                while runner.is_processing():
+                    if runner.has_logs_waiting():
+                        logs.extend(runner.read_logs())
+                        self.redis.rpush(response_queue, json.dumps(response))
+
+                if runner.error() is not None:
+                    raise runner.error()
+
+                output = runner.read_output()
+                assert len(output) == 1
+
+                response["status"] = Status.SUCCEEDED
+                response["output"] = self.encode_json(output[0])
+                logs.extend(runner.read_logs())
+                self.redis.rpush(response_queue, json.dumps(response))
 
     def download(self, url):
         resp = requests.get(url)
@@ -261,16 +298,6 @@ class RedisQueueWorker:
         )
         sys.stderr.write(f"Pushing error to {response_queue}\n")
         self.redis.rpush(response_queue, message)
-
-    def push_result(self, response_queue, result, status):
-        message = {
-            "output": result,
-        }
-
-        message["status"] = status
-
-        sys.stderr.write(f"Pushing successful result to {response_queue}\n")
-        self.redis.rpush(response_queue, json.dumps(message))
 
     def encode_json(self, obj):
         def upload_file(fh: io.IOBase) -> str:
