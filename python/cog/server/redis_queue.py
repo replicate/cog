@@ -16,6 +16,7 @@ import requests
 from .redis_log_capture import capture_log
 from ..predictor import BasePredictor, get_input_type, load_predictor
 from ..json import encode_json
+from ..response import Status
 
 
 class timeout:
@@ -239,12 +240,12 @@ class RedisQueueWorker:
                     cleanup_functions.append(result.unlink)
 
             # push the last result
-            self.push_result(response_queue, output, status="success")
+            self.push_result(response_queue, output, status=Status.SUCCEEDED)
         else:
             if isinstance(return_value, Path):
                 cleanup_functions.append(return_value.unlink)
             return_value = self.encode_json(return_value)
-            self.push_result(response_queue, return_value, status="success")
+            self.push_result(response_queue, return_value, status=Status.SUCCEEDED)
 
     def download(self, url):
         resp = requests.get(url)

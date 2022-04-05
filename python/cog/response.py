@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 
 class Status(str, enum.Enum):
     PROCESSING = "processing"
-    SUCCESS = "success"
-    FAILED = "failed"  # FIXME: "failure"?
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
 
 
 def get_response_type(OutputType: Any):

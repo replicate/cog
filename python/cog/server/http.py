@@ -63,7 +63,7 @@ def create_app(predictor: BasePredictor) -> FastAPI:
             else:
                 output = predictor.predict()
 
-            response = Response(status=Status.SUCCESS, output=output)
+            response = Response(status=Status.SUCCEEDED, output=output)
 
         except ValidationError as e:
             logger.error(

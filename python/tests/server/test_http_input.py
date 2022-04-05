@@ -18,7 +18,7 @@ def test_no_input():
     client = make_client(Predictor())
     resp = client.post("/predictions")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "success", "output": "foobar"}
+    assert resp.json() == {"status": "succeeded", "output": "foobar"}
 
 
 def test_good_str_input():
@@ -29,7 +29,7 @@ def test_good_str_input():
     client = make_client(Predictor())
     resp = client.post("/predictions", json={"input": {"text": "baz"}})
     assert resp.status_code == 200
-    assert resp.json() == {"status": "success", "output": "baz"}
+    assert resp.json() == {"status": "succeeded", "output": "baz"}
 
 
 def test_good_int_input():
@@ -40,10 +40,10 @@ def test_good_int_input():
     client = make_client(Predictor())
     resp = client.post("/predictions", json={"input": {"num": 3}})
     assert resp.status_code == 200
-    assert resp.json() == {"output": 27, "status": "success"}
+    assert resp.json() == {"output": 27, "status": "succeeded"}
     resp = client.post("/predictions", json={"input": {"num": -3}})
     assert resp.status_code == 200
-    assert resp.json() == {"output": -27, "status": "success"}
+    assert resp.json() == {"output": -27, "status": "succeeded"}
 
 
 def test_bad_int_input():
@@ -74,11 +74,11 @@ def test_default_int_input():
 
     resp = client.post("/predictions", json={"input": {}})
     assert resp.status_code == 200
-    assert resp.json() == {"output": 25, "status": "success"}
+    assert resp.json() == {"output": 25, "status": "succeeded"}
 
     resp = client.post("/predictions", json={"input": {"num": 3}})
     assert resp.status_code == 200
-    assert resp.json() == {"output": 9, "status": "success"}
+    assert resp.json() == {"output": 9, "status": "succeeded"}
 
 
 def test_file_input_data_url():
@@ -96,7 +96,7 @@ def test_file_input_data_url():
             }
         },
     )
-    assert resp.json() == {"output": "bar", "status": "success"}
+    assert resp.json() == {"output": "bar", "status": "succeeded"}
     assert resp.status_code == 200
 
 
@@ -113,7 +113,7 @@ def test_file_input_with_http_url():
         "/predictions",
         json={"input": {"file": "http://example.com/foo.txt"}},
     )
-    assert resp.json() == {"output": "hello", "status": "success"}
+    assert resp.json() == {"output": "hello", "status": "succeeded"}
 
 
 def test_path_input_data_url():
@@ -133,7 +133,7 @@ def test_path_input_data_url():
             }
         },
     )
-    assert resp.json() == {"output": "txt bar", "status": "success"}
+    assert resp.json() == {"output": "txt bar", "status": "succeeded"}
     assert resp.status_code == 200
 
 
@@ -171,7 +171,7 @@ def test_file_input_with_http_url():
         "/predictions",
         json={"input": {"path": "http://example.com/foo.txt"}},
     )
-    assert resp.json() == {"output": "txt hello", "status": "success"}
+    assert resp.json() == {"output": "txt hello", "status": "succeeded"}
 
 
 def test_file_bad_input():
@@ -230,7 +230,7 @@ def test_multiple_arguments():
         },
     )
     assert resp.status_code == 200
-    assert resp.json() == {"output": "baz 50 wibble", "status": "success"}
+    assert resp.json() == {"output": "baz 50 wibble", "status": "succeeded"}
 
 
 def test_gt_lt():

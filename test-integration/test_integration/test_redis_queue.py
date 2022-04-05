@@ -57,7 +57,7 @@ def test_queue_worker_files(docker_image, docker_network, redis_client, upload_s
         response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {
             "output": "http://upload-server:5000/download/output.txt",
-            "status": "success",
+            "status": "succeeded",
         }
 
         with open(upload_server / "output.txt") as f:
@@ -156,7 +156,7 @@ def test_queue_worker_yielding_file(
                 "http://upload-server:5000/download/out-1.txt",
                 "http://upload-server:5000/download/out-2.txt",
             ],
-            "status": "success",
+            "status": "succeeded",
         }
 
         with open(upload_server / "out-2.txt") as f:
@@ -217,7 +217,7 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client):
         assert response == {"output": ["foo", "bar", "baz"], "status": "processing"}
 
         response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
-        assert response == {"output": ["foo", "bar", "baz"], "status": "success"}
+        assert response == {"output": ["foo", "bar", "baz"], "status": "succeeded"}
 
         response = redis_client.rpop("response-queue")
         assert response == None
@@ -359,7 +359,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client):
             },
         )
         response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
-        assert response == {"status": "success", "output": "output"}
+        assert response == {"status": "succeeded", "output": "output"}
 
         setup_log_lines = []
         run_log_lines = []
@@ -427,7 +427,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client):
         )
 
         response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
-        assert response == {"status": "success", "output": "it worked!"}
+        assert response == {"status": "succeeded", "output": "it worked!"}
 
         predict_id = random_string(10)
         redis_client.xadd(
@@ -496,7 +496,7 @@ def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_clien
         assert response == {"status": "processing", "output": ["yield 0"]}
 
         response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
-        assert response == {"status": "success", "output": ["yield 0"]}
+        assert response == {"status": "succeeded", "output": ["yield 0"]}
 
         predict_id = random_string(10)
         redis_client.xadd(
