@@ -64,7 +64,7 @@ def test_output_path_to_http():
         "/predictions", json={"output_file_prefix": "http://example.com/upload/"}
     )
     assert res.json() == {
-        "status": "success",
+        "status": "succeeded",
         "output": "http://example.com/upload/file.txt",
     }
     assert res.status_code == 200
@@ -79,7 +79,7 @@ def test_path_output_file():
     res = client.post("/predictions")
     assert res.status_code == 200
     assert res.json() == {
-        "status": "success",
+        "status": "succeeded",
         "output": "data:application/octet-stream;base64,aGVsbG8=",  # hello
     }
 
@@ -104,7 +104,7 @@ def test_output_file_to_http():
         "/predictions", json={"output_file_prefix": "http://example.com/upload/"}
     )
     assert res.json() == {
-        "status": "success",
+        "status": "succeeded",
         "output": "http://example.com/upload/foo.txt",
     }
     assert res.status_code == 200
@@ -118,7 +118,7 @@ def test_json_output_numpy():
     client = make_client(Predictor())
     resp = client.post("/predictions")
     assert resp.status_code == 200
-    assert resp.json() == {"output": 1.0, "status": "success"}
+    assert resp.json() == {"output": 1.0, "status": "succeeded"}
 
 
 def test_complex_output():
@@ -137,6 +137,6 @@ def test_complex_output():
             "file": "data:application/octet-stream;base64,aGVsbG8=",
             "text": "hello",
         },
-        "status": "success",
+        "status": "succeeded",
     }
     assert resp.status_code == 200

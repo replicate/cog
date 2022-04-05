@@ -15,7 +15,7 @@ Make a single prediction. The request body should be a JSON object with the foll
 
 The response is a JSON object with the following fields:
 
-- `status`: Either `success` or `failed`.
+- `status`: Either `succeeded` or `failed`.
 - `output`: The return value of the `predict()` function.
 - `error`: If `status` is `failed`, the error message.
 
@@ -32,7 +32,7 @@ For example:
 Responds with:
 
     {
-        "status": "success",
+        "status": "succeeded",
         "output": "data:image/png;base64,..."
     }
 

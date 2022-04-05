@@ -32,7 +32,7 @@ def test_setup_is_called():
     client = make_client(Predictor())
     resp = client.post("/predictions")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "success", "output": "bar"}
+    assert resp.json() == {"status": "succeeded", "output": "bar"}
 
 
 def test_openapi_specification():
@@ -189,7 +189,7 @@ def test_openapi_specification():
                 },
                 "Status": {
                     "title": "Status",
-                    "enum": ["processing", "success", "failed"],
+                    "enum": ["processing", "succeeded", "failed"],
                     "description": "An enumeration.",
                     "type": "string",
                 },
@@ -348,7 +348,7 @@ def test_openapi_specification_with_custom_user_defined_output_type():
                 },
                 "Status": {
                     "title": "Status",
-                    "enum": ["processing", "success", "failed"],
+                    "enum": ["processing", "succeeded", "failed"],
                     "description": "An enumeration.",
                     "type": "string",
                 },
@@ -451,7 +451,7 @@ def test_yielding_strings_from_generator_predictors():
     client = make_client(Predictor())
     resp = client.post("/predictions")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "success", "output": ["foo", "bar", "baz"]}
+    assert resp.json() == {"status": "succeeded", "output": ["foo", "bar", "baz"]}
 
 
 def test_yielding_strings_from_generator_predictors_file_input():
@@ -470,7 +470,7 @@ def test_yielding_strings_from_generator_predictors_file_input():
     )
     assert resp.status_code == 200
     assert resp.json() == {
-        "status": "success",
+        "status": "succeeded",
         "output": ["hello foo", "hello bar", "hello baz"],
     }
 
