@@ -1,6 +1,7 @@
 import base64
 import io
 
+import numpy as np
 import responses
 from responses.matchers import multipart_matcher
 
@@ -111,6 +112,17 @@ def test_json_output_numpy(client, match):
     resp = client.post("/predictions")
     assert resp.status_code == 200
     assert resp.json() == match({"output": 1.0, "status": "succeeded"})
+
+
+def test_numpy_ndarray_output():
+    class Predictor(BasePredictor):
+        def predict(self) -> np.ndarray:
+            return np.array([[1, 2], [3, 4]])
+
+    client = make_client(Predictor())
+    resp = client.post("/predictions")
+    assert resp.status_code == 200
+    assert resp.json() == {"output": [[1, 2], [3, 4]], "status": "success"}
 
 
 @uses_predictor("output_complex")
