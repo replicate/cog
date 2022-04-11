@@ -28,7 +28,7 @@ require (
 	golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b // indirect
 	golang.org/x/tools v0.1.10
 	gopkg.in/yaml.v2 v2.4.0
-	gotest.tools/gotestsum v1.7.0
+	gotest.tools/gotestsum v1.8.0
 	sigs.k8s.io/yaml v1.3.0
 )
 
