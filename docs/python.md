@@ -103,6 +103,19 @@ The `Input()` function takes these keyword arguments:
 
 Each parameter of the `predict()` method must be annotated with a type like `str`, `int`, `float`, `bool`, etc. See [Input and output types](#input-and-output-types) for the full list of supported types.
 
+Using the `Input` function is recommended because it provides better documentation and validation constraints to the users of your model, but it is not strictly required. You can also specify default values for your parameters using plain Python, or omit default assignment entirely:
+
+```py
+class Predictor(BasePredictor):
+    def predict(self, 
+        prompt: str = "default prompt", # this is valid
+        iterations: int                 # also valid
+    ) -> str:
+        for x in (iterations or 1:)
+            return "hello, " + prompt
+
+```
+
 ## Output
 
 Cog predictors can return a simple data type like a string, number, float, or boolean. Use Python's `-> <type>` syntax to annotate the return type.
