@@ -17,7 +17,7 @@ from .errors import ConfigDoesNotExist, PredictorNotSet
 from .types import Input, Path as CogPath, File as CogFile
 
 
-ALLOWED_INPUT_TYPES = [str, int, float, bool, CogFile, CogPath]
+ALLOWED_INPUT_TYPES = [str, int, float, bool, CogFile, CogPath, List[str]]
 
 
 class BasePredictor(ABC):
@@ -112,6 +112,9 @@ def get_input_type(predictor: BasePredictor):
     for name, parameter in signature.parameters.items():
         InputType = parameter.annotation
 
+        print("InputType:", InputType)
+        print("parameter:", parameter)
+
         if InputType is inspect.Signature.empty:
             raise TypeError(
                 f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
@@ -203,8 +206,11 @@ def human_readable_type_name(t):
     The special case for Cog modules is because the type lives in `cog.types` internally, but just `cog` when included as a dependency.
     """
     module = t.__module__
+
     if module == "builtins":
         return t.__qualname__
+    elif module == "typing":
+        return str(t)
     elif module.split(".")[0] == "cog":
         module = "cog"
     return module + "." + t.__qualname__
