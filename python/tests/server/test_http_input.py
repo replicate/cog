@@ -259,7 +259,8 @@ def test_gt_lt():
 def test_choices_str():
     class Predictor(BasePredictor):
         def predict(self, text: str = Input(choices=["foo", "bar"])) -> str:
-            return str(text)
+            assert type(text) == str
+            return text
 
     client = make_client(Predictor())
     resp = client.post("/predictions", json={"input": {"text": "foo"}})
