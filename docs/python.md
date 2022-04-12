@@ -111,9 +111,7 @@ class Predictor(BasePredictor):
         prompt: str = "default prompt", # this is valid
         iterations: int                 # also valid
     ) -> str:
-        for x in (iterations or 1:)
-            return "hello, " + prompt
-
+        # ...
 ```
 
 ## Output
