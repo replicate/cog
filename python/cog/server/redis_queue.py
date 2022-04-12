@@ -235,7 +235,10 @@ class RedisQueueWorker:
                     self.redis.rpush(response_queue, json.dumps(response))
 
             if runner.error() is not None:
-                raise runner.error()
+                response["status"] = Status.FAILED
+                response["error"] = str(runner.error())
+                self.redis.rpush(response_queue, json.dumps(response))
+                return
 
             if runner.is_output_generator():
                 output = response["output"] = []
@@ -259,7 +262,10 @@ class RedisQueueWorker:
                         self.redis.rpush(response_queue, json.dumps(response))
 
                 if runner.error() is not None:
-                    raise runner.error()
+                    response["status"] = Status.FAILED
+                    response["error"] = str(runner.error())
+                    self.redis.rpush(response_queue, json.dumps(response))
+                    return
 
                 response["status"] = Status.SUCCEEDED
                 output.extend(self.encode_json(o) for o in runner.read_output())
@@ -274,7 +280,10 @@ class RedisQueueWorker:
                         self.redis.rpush(response_queue, json.dumps(response))
 
                 if runner.error() is not None:
-                    raise runner.error()
+                    response["status"] = Status.FAILED
+                    response["error"] = str(runner.error())
+                    self.redis.rpush(response_queue, json.dumps(response))
+                    return
 
                 output = runner.read_output()
                 assert len(output) == 1
