@@ -77,6 +77,11 @@ def load_predictor():
 # Base class for inputs, constructed dynamically in get_input_type().
 # (This can't be a docstring or it gets passed through to the schema.)
 class BaseInput(BaseModel):
+    class Config:
+        # When using `choices`, the type is converted into an enum to validate
+        # But, after validation, we want to pass the actual value to predict(), not the enum object
+        use_enum_values = True
+
     def cleanup(self):
         """
         Cleanup any temporary files created by the input.
