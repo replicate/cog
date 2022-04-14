@@ -76,11 +76,12 @@ $ cog build -t my-colorization-model
 $ docker run -d -p 5000:5000 --gpus all my-colorization-model
 
 $ curl http://localhost:5000/predictions -X POST \
-    --data '{"input": {"image": "https://.../input.jpg"}}'
+    -H 'Content-Type: application/json' \
+    -d '{"input": {"image": "https://.../input.jpg"}}'
 ```
 
 <!-- NOTE (bfirsh): Development environment instructions intentionally left out of readme for now, so as not to confuse the "ship a model to production" message.
- 
+
 In development, you can also run arbitrary commands inside the Docker environment:
 
 ```

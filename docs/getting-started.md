@@ -101,7 +101,7 @@ predict: "predict.py:Predictor"
 
 Let's grab an image to test the model with:
 
-    curl https://upload.wikimedia.org/wikipedia/commons/4/4d/Cat_November_2010-1a.jpg > input.jpg
+    curl https://gist.githubusercontent.com/bfirsh/3c2115692682ae260932a67d93fd94a8/raw/56b19f53f7643bb6c0b822c410c366c3a6244de2/mystery.jpg > input.jpg
 
 Now, let's run the model using Cog:
 
@@ -159,7 +159,8 @@ Or, you can run it with Docker directly, and it'll serve an HTTP server:
 $ docker run -d -p 5000:5000 --gpus all resnet
 
 $ curl http://localhost:5000/predictions -X POST \
-    --data '{"input": {"image": "https://.../input.jpg"}}'
+    -H 'Content-Type: application/json' \
+    -d '{"input": {"image": "https://gist.githubusercontent.com/bfirsh/3c2115692682ae260932a67d93fd94a8/raw/56b19f53f7643bb6c0b822c410c366c3a6244de2/mystery.jpg"}}'
 ```
 
 As a shorthand, you can add the image name as an extra line in `cog.yaml`:
