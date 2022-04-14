@@ -492,19 +492,6 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client):
         response = redis_client.rpop("response-queue")
         assert response == None
 
-        setup_logs = []
-        while True:
-            raw_entry = redis_client.lpop("logs")
-            if not raw_entry:
-                break
-            setup_logs.append(raw_entry)
-
-        assert len(setup_logs) == 1
-        log_entry = json.loads(setup_logs[0])
-        assert log_entry["stage"] == "setup"
-        assert log_entry["id"] == "model_id"
-        assert log_entry["line"] == "setting up predictor"
-
 
 def test_queue_worker_timeout(docker_network, docker_image, redis_client):
     project_dir = Path(__file__).parent / "fixtures/timeout-project"
