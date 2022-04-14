@@ -145,7 +145,7 @@ sudo chmod +x /usr/local/bin/cog
 
 ## Need help?
 
-[Join us in #cog on Discord.](https://discord.gg/QmzJApGjyE)
+[Join us in #cog on Discord.](https://discord.gg/replicate)
 
 ## Contributors ✨
 
