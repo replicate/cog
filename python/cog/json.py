@@ -1,5 +1,6 @@
 from enum import Enum
 import io
+from types import GeneratorType
 from typing import Any
 
 from pydantic import BaseModel
@@ -26,7 +27,7 @@ def encode_json(obj: Any, upload_file) -> Any:
         return encode_json(obj.dict(exclude_unset=True), upload_file)
     if isinstance(obj, dict):
         return {key: encode_json(value, upload_file) for key, value in obj.items()}
-    if isinstance(obj, list):
+    if isinstance(obj, (list, set, frozenset, GeneratorType, tuple)):
         return [encode_json(value, upload_file) for value in obj]
     if isinstance(obj, Enum):
         return obj.value

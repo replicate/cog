@@ -9,6 +9,11 @@ import numpy as np
 from pydantic import BaseModel
 
 
+def test_encode_json_recursively_encodes_tuples():
+    result = encode_json((np.float32(0.1), np.float32(0.2)), None)
+    assert type(result[0]) == float
+
+
 def test_encode_json_encodes_pydantic_models():
     class Model(BaseModel):
         text: str
