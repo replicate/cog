@@ -8,27 +8,63 @@ from .log_capture import capture_log
 
 
 class PredictionRunner:
+    PREDICTION_DONE = 1
+
     def __init__(self, predictor):
-        """
-        The parameter `predictor` must have been set up already.
-        """
         self.predictor = predictor
         self.logs_pipe_reader, self.logs_pipe_writer = multiprocessing.Pipe(
             duplex=False
         )
+        (
+            self.prediction_input_pipe_reader,
+            self.prediction_input_pipe_writer,
+        ) = multiprocessing.Pipe(duplex=False)
+        self.predictor_pipe_reader, self.predictor_pipe_writer = multiprocessing.Pipe(
+            duplex=False
+        )
+        self.error_pipe_reader, self.error_pipe_writer = multiprocessing.Pipe(
+            duplex=False
+        )
+        self.done_pipe_reader, self.done_pipe_writer = multiprocessing.Pipe(
+            duplex=False
+        )
+
+    def setup(self):
+        """
+        Sets up the predictor in a subprocess. To start a prediction after
+        setup call `run()`.
+        """
+        self.predictor_process = multiprocessing.Process(
+            target=self._start_predictor_process
+        )
+        self.predictor_process.start()
+
+    def _start_predictor_process(self):
+        self.predictor.setup()
+
+        while True:
+            try:
+                prediction_input = self.prediction_input_pipe_reader.recv()
+                self._run_prediction(prediction_input)
+            except EOFError:
+                continue
 
     def run(self, **prediction_input):
         """
-        Starts running a prediction using subprocesses and returns two pipes --
-        one for prediction output, and one for log output.
+        Starts running a prediction in the predictor subprocess, using the
+        inputs provided in `prediction_input`.
 
-        The subprocesses will send prediction output and logs to the pipes as
-        soon as they're available. You can check if the pipes have any data
-        using `poll()`, and read it using `recv()`.
+        The subprocess will send prediction output and logs to pipes as soon as
+        they're available. You can check if the pipes have any data using
+        `has_output_waiting()` and `has_logs_waiting()`. You can read data from
+        the pipes using `read_output()` and `read_logs()`.
 
         Use `is_processing()` to check whether more data is expected in the
         pipe for prediction output.
         """
+        # We're starting processing!
+        self._is_processing = True
+
         # We don't know whether or not we've got a generator (progressive
         # output) until we start getting output from the model
         self._is_output_generator = None
@@ -36,22 +72,22 @@ class PredictionRunner:
         # We haven't encountered an error yet
         self._error = None
 
-        self.predictor_pipe_reader, predictor_pipe_writer = multiprocessing.Pipe(
-            duplex=False
-        )
-        self.error_pipe_reader, error_pipe_writer = multiprocessing.Pipe(duplex=False)
-        self.predictor_process = multiprocessing.Process(
-            target=self._run_prediction,
-            args=[prediction_input, predictor_pipe_writer, error_pipe_writer],
-        )
-        self.predictor_process.start()
+        # Send prediction input through the pipe to the predictor subprocess
+        self.prediction_input_pipe_writer.send(prediction_input)
 
     def is_processing(self):
         """
         Returns True if the subprocess running the prediction is still
         processing.
         """
-        return self.predictor_process is not None and self.predictor_process.is_alive()
+        if self.done_pipe_reader.poll():
+            try:
+                if self.done_pipe_reader.recv() == self.PREDICTION_DONE:
+                    self._is_processing = False
+            except EOFError:
+                pass
+
+        return self._is_processing
 
     def has_output_waiting(self):
         return self.predictor_pipe_reader.poll()
@@ -94,32 +130,40 @@ class PredictionRunner:
 
         return self._is_output_generator
 
-    def _run_prediction(
-        self, prediction_input, predictor_pipe_writer, error_pipe_writer
-    ):
+    def _run_prediction(self, prediction_input):
         """
         Sends a boolean first, to indicate whether the output is a generator.
         After that it sends the output(s).
 
         If the predictor raises an exception it'll send it to the error pipe
         writer and then exit.
+
+        When the prediction is finished it'll send a token to the done pipe.
         """
+        # Empty all the pipes before we start sending more messages to them
+        drain_pipe(self.logs_pipe_reader)
+        drain_pipe(self.predictor_pipe_reader)
+        drain_pipe(self.error_pipe_reader)
+        drain_pipe(self.done_pipe_reader)
+
         with capture_log(self.logs_pipe_writer):
             try:
                 output = self.predictor.predict(**prediction_input)
 
                 if isinstance(output, types.GeneratorType):
-                    predictor_pipe_writer.send(True)
+                    self.predictor_pipe_writer.send(True)
                     while True:
                         try:
-                            predictor_pipe_writer.send(next(output))
+                            self.predictor_pipe_writer.send(next(output))
                         except StopIteration:
                             break
                 else:
-                    predictor_pipe_writer.send(False)
-                    predictor_pipe_writer.send(output)
+                    self.predictor_pipe_writer.send(False)
+                    self.predictor_pipe_writer.send(output)
             except Exception as e:
-                error_pipe_writer.send(e)
+                self.error_pipe_writer.send(e)
+
+        self.done_pipe_writer.send(self.PREDICTION_DONE)
 
     def error(self):
         """
@@ -133,3 +177,15 @@ class PredictionRunner:
                 pass
 
         return self._error
+
+
+def drain_pipe(pipe_reader):
+    """
+    Reads all available messages from a pipe and discards them. This serves to
+    clear the pipe for future usage.
+    """
+    while pipe_reader.poll():
+        try:
+            pipe_reader.recv()
+        except EOFError:
+            break

@@ -65,7 +65,7 @@ class RedisQueueWorker:
         predict_timeout: Optional[int] = None,
         redis_db: int = 0,
     ):
-        self.predictor = predictor
+        self.runner = PredictionRunner(predictor)
         self.redis_host = redis_host
         self.redis_port = redis_port
         self.input_queue = input_queue
@@ -79,7 +79,7 @@ class RedisQueueWorker:
         self.max_processing_time = 10 * 60  # timeout after 10 minutes
 
         # Set up types
-        self.InputType = get_input_type(self.predictor)
+        self.InputType = get_input_type(predictor)
 
         self.redis = redis.Redis(
             host=self.redis_host, port=self.redis_port, db=self.redis_db
@@ -135,8 +135,7 @@ class RedisQueueWorker:
         start_time = time.time()
 
         # TODO(bfirsh): setup should time out too, but we don't display these logs to the user, so don't timeout to avoid confusion
-        with self.capture_log(self.STAGE_SETUP, self.model_id):
-            self.predictor.setup()
+        self.runner.setup()
 
         setup_time = time.time() - start_time
         self.redis.xadd(
@@ -216,10 +215,8 @@ class RedisQueueWorker:
 
         start_time = time.time()
 
-        runner = PredictionRunner(self.predictor)
-
         with timeout(seconds=self.predict_timeout):
-            runner.run(**input_obj.dict())
+            self.runner.run(**input_obj.dict())
 
             logs = []
             response = {
@@ -229,24 +226,29 @@ class RedisQueueWorker:
             }
 
             # just send logs until output starts
-            while runner.is_processing() and not runner.has_output_waiting():
-                if runner.has_logs_waiting():
-                    logs.extend(runner.read_logs())
+            while self.runner.is_processing() and not self.runner.has_output_waiting():
+                if self.runner.has_logs_waiting():
+                    logs.extend(self.runner.read_logs())
                     self.redis.rpush(response_queue, json.dumps(response))
 
-            if runner.error() is not None:
+            if self.runner.error() is not None:
                 response["status"] = Status.FAILED
-                response["error"] = str(runner.error())
+                response["error"] = str(self.runner.error())
                 self.redis.rpush(response_queue, json.dumps(response))
                 return
 
-            if runner.is_output_generator():
+            if self.runner.is_output_generator():
                 output = response["output"] = []
 
-                while runner.is_processing():
-                    if runner.has_output_waiting() or runner.has_logs_waiting():
-                        new_output = [self.encode_json(o) for o in runner.read_output()]
-                        new_logs = runner.read_logs()
+                while self.runner.is_processing():
+                    if (
+                        self.runner.has_output_waiting()
+                        or self.runner.has_logs_waiting()
+                    ):
+                        new_output = [
+                            self.encode_json(o) for o in self.runner.read_output()
+                        ]
+                        new_logs = self.runner.read_logs()
 
                         # sometimes it'll say there's output when there's none
                         if new_output == [] and new_logs == []:
@@ -261,36 +263,36 @@ class RedisQueueWorker:
                         # the cost of extra latency
                         self.redis.rpush(response_queue, json.dumps(response))
 
-                if runner.error() is not None:
+                if self.runner.error() is not None:
                     response["status"] = Status.FAILED
-                    response["error"] = str(runner.error())
+                    response["error"] = str(self.runner.error())
                     self.redis.rpush(response_queue, json.dumps(response))
                     return
 
                 response["status"] = Status.SUCCEEDED
-                output.extend(self.encode_json(o) for o in runner.read_output())
-                logs.extend(runner.read_logs())
+                output.extend(self.encode_json(o) for o in self.runner.read_output())
+                logs.extend(self.runner.read_logs())
                 self.redis.rpush(response_queue, json.dumps(response))
 
             else:
                 # just send logs until output ends
-                while runner.is_processing():
-                    if runner.has_logs_waiting():
-                        logs.extend(runner.read_logs())
+                while self.runner.is_processing():
+                    if self.runner.has_logs_waiting():
+                        logs.extend(self.runner.read_logs())
                         self.redis.rpush(response_queue, json.dumps(response))
 
-                if runner.error() is not None:
+                if self.runner.error() is not None:
                     response["status"] = Status.FAILED
-                    response["error"] = str(runner.error())
+                    response["error"] = str(self.runner.error())
                     self.redis.rpush(response_queue, json.dumps(response))
                     return
 
-                output = runner.read_output()
+                output = self.runner.read_output()
                 assert len(output) == 1
 
                 response["status"] = Status.SUCCEEDED
                 response["output"] = self.encode_json(output[0])
-                logs.extend(runner.read_logs())
+                logs.extend(self.runner.read_logs())
                 self.redis.rpush(response_queue, json.dumps(response))
 
     def download(self, url):
