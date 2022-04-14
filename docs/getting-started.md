@@ -46,7 +46,9 @@ Then, you can run any command inside this environment. For example, to get a Pyt
     Type "help", "copyright", "credits" or "license" for more information.
     >>>
 
-Inside this environment you can do anything – run a Jupyter notebook, your training script, your evaluation script, and so on.
+(Hit Ctrl-D to exit the Python shell.)
+
+Inside this Docker environment you can do anything – run a Jupyter notebook, your training script, your evaluation script, and so on.
 
 ## Run predictions on a model
 
@@ -67,7 +69,7 @@ from tensorflow.keras.applications.resnet50 import preprocess_input, decode_pred
 import numpy as np
 
 
-class ResNetPredictor(BasePredictor):
+class Predictor(BasePredictor):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
         self.model = ResNet50(weights='resnet50_weights_tf_dim_ordering_tf_kernels.h5')
@@ -94,7 +96,7 @@ build:
   python_packages:
     - pillow==8.3.1
     - tensorflow==2.5.0
-predict: "predict.py:ResNetPredictor"
+predict: "predict.py:Predictor"
 ```
 
 Let's grab an image to test the model with:
@@ -104,7 +106,7 @@ Let's grab an image to test the model with:
 Now, let's run the model using Cog:
 
 ```
-$ cog predict -i @input.jpg
+$ cog predict -i image=@input.jpg
 ...
 [
   [
@@ -148,7 +150,7 @@ $ cog debug dockerfile
 You can run this image with `cog predict` by passing the image name as an argument:
 
 ```
-$ cog predict resnet:latest -i @input.jpg
+$ cog predict resnet -i image=@input.jpg
 ```
 
 Or, you can run it with Docker directly, and it'll serve an HTTP server:
