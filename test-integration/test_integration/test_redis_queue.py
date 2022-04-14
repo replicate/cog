@@ -637,3 +637,58 @@ def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_clien
 
         response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
         assert response == {"status": "failed", "error": "Prediction timed out"}
+
+
+def test_queue_worker_complex_output(docker_network, docker_image, redis_client):
+    project_dir = Path(__file__).parent / "fixtures/complex-output-project"
+    subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
+
+    with docker_run(
+        image=docker_image,
+        interactive=True,
+        network=docker_network,
+        command=[
+            "python",
+            "-m",
+            "cog.server.redis_queue",
+            "redis",
+            "6379",
+            "predict-queue",
+            "",
+            "test-worker",
+            "model_id",
+            "logs",
+        ],
+    ):
+        redis_client.xgroup_create(
+            mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
+        )
+
+        predict_id = random_string(10)
+        redis_client.xadd(
+            name="predict-queue",
+            fields={
+                "value": json.dumps(
+                    {
+                        "id": predict_id,
+                        "inputs": {
+                            "name": {"value": "world"},
+                        },
+                        "response_queue": "response-queue",
+                    }
+                ),
+            },
+        )
+
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        assert response == {
+            "status": "succeeded",
+            "output": {
+                "hello": "hello world",
+                "goodbye": "goodbye world",
+            },
+            "logs": [],
+        }
+
+        response = redis_client.rpop("response-queue")
+        assert response == None

@@ -4,6 +4,8 @@ import sys
 import time
 import types
 
+from pydantic import BaseModel
+
 from .log_capture import capture_log
 
 
@@ -154,12 +156,14 @@ class PredictionRunner:
                     self.predictor_pipe_writer.send(True)
                     while True:
                         try:
-                            self.predictor_pipe_writer.send(next(output))
+                            self.predictor_pipe_writer.send(
+                                next(make_pickleable(output))
+                            )
                         except StopIteration:
                             break
                 else:
                     self.predictor_pipe_writer.send(False)
-                    self.predictor_pipe_writer.send(output)
+                    self.predictor_pipe_writer.send(make_pickleable(output))
             except Exception as e:
                 self.error_pipe_writer.send(e)
 
@@ -189,3 +193,32 @@ def drain_pipe(pipe_reader):
             pipe_reader.recv()
         except EOFError:
             break
+
+
+def make_pickleable(obj):
+    """
+    Returns a version of `obj` which can be pickled and therefore sent through
+    the pipe to the main process.
+
+    If the predictor uses a custom output like:
+
+        class Output(BaseModel):
+            text: str
+
+    then the output can't be sent through the pipe because:
+
+    > Can't pickle <class 'predict.Output'>: it's not the same object as
+    > 'predict.Output'
+
+    The way we're getting around this here will only work for singly-nested
+    outputs. If there's a complex object inside a complex object, it's likely
+    to fall over.
+
+    A better fix for this would be to work out why the pickling process is
+    getting a different class when loading `Output`, so the pickling Just
+    Works.
+    """
+    if isinstance(obj, BaseModel):
+        return obj.dict(exclude_unset=True)
+    else:
+        return obj
