@@ -13,7 +13,6 @@ from pydantic import ValidationError
 import redis
 import requests
 
-from .redis_log_capture import capture_log
 from ..predictor import BasePredictor, get_input_type, load_predictor
 from ..json import encode_json
 from ..response import Status
@@ -175,10 +174,6 @@ class RedisQueueWorker:
                     )
                     sys.stderr.write(f"Run time: {run_time:.2f}\n")
                 except Exception as e:
-                    tb = traceback.format_exc()
-
-                    with self.capture_log(self.STAGE_RUN, prediction_id):
-                        sys.stderr.write(f"{tb}\n")
                     self.push_error(response_queue, e)
                     self.redis.xack(self.input_queue, self.input_queue, message_id)
                     self.redis.xdel(self.input_queue, message_id)
@@ -317,18 +312,6 @@ class RedisQueueWorker:
             return resp.json()["url"]
 
         return encode_json(obj, upload_file)
-
-    @contextlib.contextmanager
-    def capture_log(self, stage, prediction_id):
-        with capture_log(
-            self.redis_host,
-            self.redis_port,
-            self.redis_db,
-            self.log_queue,
-            stage,
-            prediction_id,
-        ):
-            yield
 
 
 def _queue_worker_from_argv(
