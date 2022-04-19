@@ -189,10 +189,10 @@ class RedisQueueWorker:
 
     def handle_message(self, response_queue, message, cleanup_functions):
         inputs = {}
-        raw_inputs = message["inputs"]
+        raw_input = message["input"]
 
         # Flatten the incoming object. The schema and Pydantic will handle downloading files from URLs (see cog/types.py)
-        for k, v in raw_inputs.items():
+        for k, v in raw_input.items():
             if "value" in v and v["value"] != "":
                 inputs[k] = v["value"]
             else:
