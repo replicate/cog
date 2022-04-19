@@ -40,7 +40,7 @@ def test_queue_worker_files(docker_image, docker_network, redis_client, upload_s
                 "value": json.dumps(
                     {
                         "id": predict_id,
-                        "inputs": {
+                        "input": {
                             "text": {"value": "baz"},
                             "path": {
                                 "file": {
@@ -102,7 +102,7 @@ def test_queue_worker_yielding_file(
                 "value": json.dumps(
                     {
                         "id": predict_id,
-                        "inputs": {
+                        "input": {
                             "path": {
                                 "file": {
                                     "name": "input.txt",
@@ -200,7 +200,7 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client):
                 "value": json.dumps(
                     {
                         "id": predict_id,
-                        "inputs": {
+                        "input": {
                             "text": {"value": "bar"},
                         },
                         "response_queue": "response-queue",
@@ -259,7 +259,7 @@ def test_queue_worker_error(docker_network, docker_image, redis_client):
                 "value": json.dumps(
                     {
                         "id": predict_id,
-                        "inputs": {
+                        "input": {
                             "text": {"value": "bar"},
                         },
                         "response_queue": "response-queue",
@@ -312,7 +312,7 @@ def test_queue_worker_error_after_output(docker_network, docker_image, redis_cli
                 "value": json.dumps(
                     {
                         "id": predict_id,
-                        "inputs": {
+                        "input": {
                             "text": {"value": "bar"},
                         },
                         "response_queue": "response-queue",
@@ -379,7 +379,7 @@ def test_queue_worker_invalid_input(docker_network, docker_image, redis_client):
                 "value": json.dumps(
                     {
                         "id": predict_id,
-                        "inputs": {
+                        "input": {
                             "input": {"value": "not a number"},
                         },
                         "response_queue": "response-queue",
@@ -428,7 +428,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client):
                 "value": json.dumps(
                     {
                         "id": predict_id,
-                        "inputs": {},
+                        "input": {},
                         "response_queue": "response-queue",
                     }
                 ),
@@ -526,7 +526,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client):
                 "value": json.dumps(
                     {
                         "id": predict_id,
-                        "inputs": {
+                        "input": {
                             "sleep_time": {"value": 0.5},
                         },
                         "response_queue": "response-queue",
@@ -545,7 +545,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client):
                 "value": json.dumps(
                     {
                         "id": predict_id,
-                        "inputs": {
+                        "input": {
                             "sleep_time": {"value": 5.0},
                         },
                         "response_queue": "response-queue",
@@ -591,7 +591,7 @@ def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_clien
                 "value": json.dumps(
                     {
                         "id": predict_id,
-                        "inputs": {
+                        "input": {
                             "sleep_time": {"value": 0.5},
                             "n_iterations": {"value": 1},
                         },
@@ -614,7 +614,7 @@ def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_clien
                 "value": json.dumps(
                     {
                         "id": predict_id,
-                        "inputs": {
+                        "input": {
                             "sleep_time": {"value": 0.4},
                             "n_iterations": {"value": 10},
                         },
@@ -671,7 +671,7 @@ def test_queue_worker_complex_output(docker_network, docker_image, redis_client)
                 "value": json.dumps(
                     {
                         "id": predict_id,
-                        "inputs": {
+                        "input": {
                             "name": {"value": "world"},
                         },
                         "response_queue": "response-queue",
