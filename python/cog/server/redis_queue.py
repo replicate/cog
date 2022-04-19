@@ -153,11 +153,8 @@ class RedisQueueWorker:
                     continue
 
                 message = json.loads(message_json)
-                prediction_id = message["id"]
                 response_queue = message["response_queue"]
-                sys.stderr.write(
-                    f"Received message {prediction_id} on {self.input_queue}\n"
-                )
+                sys.stderr.write(f"Received message on {self.input_queue}\n")
                 cleanup_functions = []
                 try:
                     start_time = time.time()
