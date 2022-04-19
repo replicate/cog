@@ -188,18 +188,8 @@ class RedisQueueWorker:
                 sys.stderr.write(f"Failed to handle message: {tb}\n")
 
     def handle_message(self, response_queue, message, cleanup_functions):
-        inputs = {}
-        raw_input = message["input"]
-
-        # Flatten the incoming object. The schema and Pydantic will handle downloading files from URLs (see cog/types.py)
-        for k, v in raw_input.items():
-            if "value" in v and v["value"] != "":
-                inputs[k] = v["value"]
-            else:
-                inputs[k] = v["file"]["url"]
-
         try:
-            input_obj = self.InputType(**inputs)
+            input_obj = self.InputType(**message["input"])
         except ValidationError as e:
             tb = traceback.format_exc()
             sys.stderr.write(tb)
