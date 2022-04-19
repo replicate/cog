@@ -1,3 +1,4 @@
+from enum import Enum
 import multiprocessing
 import os
 import sys
@@ -11,6 +12,11 @@ from .log_capture import capture_log
 
 class PredictionRunner:
     PREDICTION_DONE = 1
+
+    class OutputType(Enum):
+        NOT_STARTED = 0
+        SINGLE = 1
+        GENERATOR = 2
 
     def __init__(self, predictor):
         self.predictor = predictor
@@ -69,7 +75,7 @@ class PredictionRunner:
 
         # We don't know whether or not we've got a generator (progressive
         # output) until we start getting output from the model
-        self._is_output_generator = None
+        self._is_output_generator = self.OutputType.NOT_STARTED
 
         # We haven't encountered an error yet
         self._error = None
@@ -95,7 +101,7 @@ class PredictionRunner:
         return self.predictor_pipe_reader.poll()
 
     def read_output(self):
-        if self.is_output_generator() is None:
+        if self._is_output_generator is self.OutputType.NOT_STARTED:
             return []
 
         output = []
@@ -123,14 +129,19 @@ class PredictionRunner:
         Returns `True` if the output is a generator, `False` if it's not, and
         `None` if we don't know yet.
         """
-        if self._is_output_generator is None:
+        if self._is_output_generator is self.OutputType.NOT_STARTED:
             if self.has_output_waiting():
                 # if there's output waiting use the first one to set whether
                 # we've got a generator, with a safety check
                 self._is_output_generator = self.predictor_pipe_reader.recv()
-                assert isinstance(self._is_output_generator, bool)
+                assert isinstance(self._is_output_generator, self.OutputType)
 
-        return self._is_output_generator
+        if self._is_output_generator is self.OutputType.NOT_STARTED:
+            return None
+        elif self._is_output_generator is self.OutputType.SINGLE:
+            return False
+        elif self._is_output_generator is self.OutputType.GENERATOR:
+            return True
 
     def _run_prediction(self, prediction_input):
         """
@@ -153,7 +164,7 @@ class PredictionRunner:
                 output = self.predictor.predict(**prediction_input)
 
                 if isinstance(output, types.GeneratorType):
-                    self.predictor_pipe_writer.send(True)
+                    self.predictor_pipe_writer.send(self.OutputType.GENERATOR)
                     while True:
                         try:
                             self.predictor_pipe_writer.send(
@@ -162,7 +173,7 @@ class PredictionRunner:
                         except StopIteration:
                             break
                 else:
-                    self.predictor_pipe_writer.send(False)
+                    self.predictor_pipe_writer.send(self.OutputType.SINGLE)
                     self.predictor_pipe_writer.send(make_pickleable(output))
             except Exception as e:
                 self.error_pipe_writer.send(e)
