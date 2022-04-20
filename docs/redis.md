@@ -1,5 +1,7 @@
 # Redis queue API
 
+> **Note:** The queue API is experimental and subject to change, but it's ready to use if you like living on the edge!
+
 Long-running deep learning models or batch processing is best architected as a queue. Cog has a built-in queue worker that can process predictions from a Redis queue, and return the output back to the queue.
 
 The request queue is implemented with [Redis streams](https://redis.io/topics/streams-intro).
