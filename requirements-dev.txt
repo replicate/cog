@@ -1,6 +1,6 @@
 fastapi==0.70.1
 numpy==1.21.5
-pillow==9.0.0
+pillow==9.0.1
 pydantic==1.8.2
 pytest==6.2.4
 PyYAML==5.4.1
