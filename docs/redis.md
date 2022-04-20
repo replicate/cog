@@ -11,7 +11,7 @@ The entrypoint to run a Cog model against a queue is `cog.server.redis_queue`. Y
 - `redis_host`: the host your redis server is running on.
 - `redis_port`: the port your redis server is listening on.
 - `input_queue`: the queue the Cog model will listen to for prediction requests. This queue should already exist.
-- `upload_url`: the endpoint Cog will `PUT` output files to. <!-- link to file handling documentation -->
+- `upload_url`: the endpoint Cog will `PUT` output files to. (Note: this will change in the near future. [See this pull request for more details.](https://github.com/replicate/cog/issues/496))
 - `consumer_id`: The name the Cog model will use to identify itself in the Redis group (also called "consumer name" by Redis).
 - `model_id`: a unique ID for the Cog model, used to label setup logs.
 - `log_queue`: the queue the Cog model should send setup logs to (prediction logs are sent as part of prediction responses).
