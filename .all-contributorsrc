@@ -167,6 +167,15 @@
       "contributions": [
         "ideas"
       ]
+    },
+    {
+      "login": "iperdomo",
+      "name": "Iván Perdomo",
+      "avatar_url": "https://avatars.githubusercontent.com/u/178474?v=4",
+      "profile": "https://perdomo.me",
+      "contributions": [
+        "bug"
+      ]
     }
   ],
   "contributorsPerLine": 7,
