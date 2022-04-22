@@ -12,7 +12,6 @@ build:
     - "jupyterlab==3.3.4"
 ```
 
-Then run `cog build` to install dependencies and build the Docker image.
 
 ## Run a notebook
 
