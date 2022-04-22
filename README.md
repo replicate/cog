@@ -88,14 +88,13 @@ In development, you can also run arbitrary commands inside the Docker environmen
 $ cog run python train.py
 ...
 ```
- -->
-
 
 Or, [spin up a Jupyter notebook](docs/notebooks.md):
 
 ```
 $ cog run -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
 ```
+-->
 
 ## Why are we building this?
 
