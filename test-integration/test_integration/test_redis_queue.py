@@ -502,7 +502,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client):
             "test-worker",
             "model_id",
             "logs",
-            "1",  # timeout
+            "2",  # timeout
         ],
     ):
         redis_client.xgroup_create(
@@ -517,7 +517,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client):
                     {
                         "id": predict_id,
                         "input": {
-                            "sleep_time": 0.5,
+                            "sleep_time": 0.1,
                         },
                         "response_queue": "response-queue",
                     }
@@ -567,7 +567,7 @@ def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_clien
             "test-worker",
             "model_id",
             "logs",
-            "1",  # timeout
+            "2",  # timeout
         ],
     ):
         redis_client.xgroup_create(
@@ -582,7 +582,7 @@ def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_clien
                     {
                         "id": predict_id,
                         "input": {
-                            "sleep_time": 0.5,
+                            "sleep_time": 0.1,
                             "n_iterations": 1,
                         },
                         "response_queue": "response-queue",
@@ -605,7 +605,7 @@ def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_clien
                     {
                         "id": predict_id,
                         "input": {
-                            "sleep_time": 0.4,
+                            "sleep_time": 0.8,
                             "n_iterations": 10,
                         },
                         "response_queue": "response-queue",

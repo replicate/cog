@@ -75,7 +75,13 @@ def capture_log(logs_dest):
             os.close(old_fds[out_name])
 
 
-class LogProcess(multiprocessing.Process):
+# `multiprocessing.get_context("fork")` returns the same API as
+# `multiprocessing`, but will use the fork method when creating any subprocess.
+# Although fork is the default, we need this here because the log process gets
+# created from the predictor subprocess, which is set to use the spawn method.
+# As currently written, this log process relies on shared state in a way that
+# doesn't work with the spawn method.
+class LogProcess(multiprocessing.get_context("fork").Process):
     def __init__(
         self,
         logs_dest,

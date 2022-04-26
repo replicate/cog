@@ -64,7 +64,7 @@ class RedisQueueWorker:
         predict_timeout: Optional[int] = None,
         redis_db: int = 0,
     ):
-        self.runner = PredictionRunner(predictor)
+        self.runner = PredictionRunner()
         self.redis_host = redis_host
         self.redis_port = redis_port
         self.input_queue = input_queue
