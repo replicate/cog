@@ -7,6 +7,7 @@ import types
 
 from pydantic import BaseModel
 
+from ..predictor import load_predictor
 from .log_capture import capture_log
 
 
@@ -18,8 +19,7 @@ class PredictionRunner:
         SINGLE = 1
         GENERATOR = 2
 
-    def __init__(self, predictor):
-        self.predictor = predictor
+    def __init__(self):
         self.logs_pipe_reader, self.logs_pipe_writer = multiprocessing.Pipe(
             duplex=False
         )
@@ -42,12 +42,20 @@ class PredictionRunner:
         Sets up the predictor in a subprocess. To start a prediction after
         setup call `run()`.
         """
-        self.predictor_process = multiprocessing.Process(
+        # `multiprocessing.get_context("spawn")` returns the same API as
+        # `multiprocessing`, but will use the spawn method when creating any
+        # subprocess. Using the spawn method for the predictor subprocess is
+        # useful for compatibility with CUDA, which cannot run in a process
+        # that gets forked. If we can guarantee that all initialization happens
+        # within the subprocess, we could probably get away with using fork
+        # here instead.
+        self.predictor_process = multiprocessing.get_context("spawn").Process(
             target=self._start_predictor_process
         )
         self.predictor_process.start()
 
     def _start_predictor_process(self):
+        self.predictor = load_predictor()
         self.predictor.setup()
 
         while True:
