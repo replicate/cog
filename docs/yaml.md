@@ -10,8 +10,8 @@ build:
   python_packages:
     - pytorch==1.4.0
   system_packages:
-    - "ffmpeg"
-    - "libavcodec-dev"
+    - "ffmpeg=7:4.3.3-0+deb11u1"
+    - "libavcodec-dev=7:4.3.3-0+deb11u1"
 predict: "predict.py:Predictor"
 ```
 
@@ -86,8 +86,19 @@ A list of Ubuntu APT packages to install. For example:
 ```yaml
 build:
   system_packages:
-    - "ffmpeg"
-    - "libavcodec-dev"
+    - "ffmpeg=7:4.3.3-0+deb11u1"
+    - "libavcodec-dev=7:4.3.3-0+deb11u1"
+```
+
+It's a good practice to _pin_ the version of your package installed with `apt-get`.
+See: https://docs.docker.com/develop/develop-images/dockerfile_best-practices/#apt-get
+
+To know the package available version you can execute, `apt-cache show <package-name>`, e.g.
+
+```bash
+# docker run --rm <image> bash -c "apt-get update -qq && apt-cache show <package-name> | grep Version"
+$ docker run --rm python:3.8 bash -c "apt-get update -qq && apt-cache show libgl1-mesa-glx | grep Version"
+Version: 20.3.5-1
 ```
 
 ## `image`
