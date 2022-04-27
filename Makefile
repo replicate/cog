@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-COG_VERSION ?= dev
+COG_VERSION ?= $(shell git describe --tags --match 'v*' --abbrev=0)+dev
 RELEASE_DIR := release
 GOOS := $(shell go env GOOS)
 GOARCH := $(shell go env GOARCH)
