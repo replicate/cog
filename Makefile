@@ -50,6 +50,7 @@ test-integration: install
 test-python:
 	cd python/ && pytest -vv
 
+
 .PHONY: test
 test: test-go test-python test-integration
 
@@ -74,6 +75,7 @@ check-fmt:
 .PHONY: lint
 lint:
 	go run github.com/golangci/golangci-lint/cmd/golangci-lint run ./...
+	mypy python/cog 
 
 .PHONY: mod-tidy
 mod-tidy:
