@@ -21,7 +21,7 @@ def Input(
     min_length: int = None,
     max_length: int = None,
     regex: str = None,
-    choices: List[str] = None,
+    choices: List[str | int] = None,
 ):
     """Input is similar to pydantic.Field, but doesn't require a default value to be the first argument."""
     return Field(
