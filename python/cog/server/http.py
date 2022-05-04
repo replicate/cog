@@ -1,11 +1,14 @@
 import logging
 import os
 import types
+from typing import Any, Optional
 
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
-import uvicorn
+
+# https://github.com/encode/uvicorn/issues/998
+import uvicorn  # type: ignore
 
 
 from ..files import upload_file
@@ -24,7 +27,7 @@ def create_app(predictor: BasePredictor) -> FastAPI:
     app.on_event("startup")(predictor.setup)
 
     @app.get("/")
-    def root():
+    def root() -> Any:
         return {
             # "cog_version": "", # TODO
             "docs_url": "/docs",
@@ -36,8 +39,8 @@ def create_app(predictor: BasePredictor) -> FastAPI:
     class Request(BaseModel):
         """The request body for a prediction"""
 
-        input: InputType = None
-        output_file_prefix: str = None
+        input: Optional[InputType] = None  # type: ignore
+        output_file_prefix: Optional[str] = None
 
     # response_model is purely for generating schema.
     # We generate Response again in the request so we can set file output paths correctly, etc.
@@ -52,13 +55,12 @@ def create_app(predictor: BasePredictor) -> FastAPI:
 
     # The signature of this function is used by FastAPI to generate the schema.
     # The function body is not used to generate the schema.
-    def predict(request: Request = Body(default=None)):
+    def predict(request: Request = Body(default=None)) -> Any:
         """
         Run a single prediction on the model
         """
-        has_input = request is not None and request.input is not None
         try:
-            if has_input:
+            if request is not None and request.input is not None:
                 output = predictor.predict(**request.input.dict())
             else:
                 output = predictor.predict()
@@ -79,7 +81,7 @@ Check that your predict function is in this form, where `output_type` is the sam
             )
             raise HTTPException(status_code=500)
         finally:
-            if has_input:
+            if request is not None and request.input is not None:
                 request.input.cleanup()
 
         output_file_prefix = None

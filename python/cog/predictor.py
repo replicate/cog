@@ -1,13 +1,13 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 import enum
-import importlib
+import importlib.util
 import inspect
 import os.path
 from pathlib import Path
 from pydantic import create_model, BaseModel
 from pydantic.fields import FieldInfo
-from typing import List
+from typing import Any, Callable, Dict, List, Type
 
 # Added in Python 3.8. Can be from typing if we drop support for <3.8.
 from typing_extensions import get_origin, get_args
@@ -21,19 +21,21 @@ ALLOWED_INPUT_TYPES = [str, int, float, bool, CogFile, CogPath]
 
 
 class BasePredictor(ABC):
-    def setup(self):
+    def setup(self) -> None:
         """
         An optional method to prepare the model so multiple predictions run efficiently.
         """
 
     @abstractmethod
-    def predict(self, **kwargs):
+    def predict(self, **kwargs: Any) -> Any:
         """
         Run a single prediction on the model
         """
 
 
-def run_prediction(predictor, inputs, cleanup_functions):
+def run_prediction(
+    predictor: BasePredictor, inputs: Dict[Any, Any], cleanup_functions: List[Callable]
+) -> Any:
     """
     Run the predictor on the inputs, and append resulting paths
     to cleanup functions for removal.
@@ -44,7 +46,7 @@ def run_prediction(predictor, inputs, cleanup_functions):
     return result
 
 
-def load_predictor():
+def load_predictor() -> BasePredictor:
     """
     Reads cog.yaml and constructs an instance of the user-defined Predictor class.
     """
@@ -68,7 +70,9 @@ def load_predictor():
     module_path, class_name = predict_string.split(":", 1)
     module_name = os.path.basename(module_path).split(".py", 1)[0]
     spec = importlib.util.spec_from_file_location(module_name, module_path)
+    assert spec is not None
     module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
     spec.loader.exec_module(module)
     predictor_class = getattr(module, class_name)
     return predictor_class()
@@ -82,7 +86,7 @@ class BaseInput(BaseModel):
         # But, after validation, we want to pass the actual value to predict(), not the enum object
         use_enum_values = True
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """
         Cleanup any temporary files created by the input.
         """
@@ -95,7 +99,7 @@ class BaseInput(BaseModel):
                     value.unlink()
 
 
-def get_input_type(predictor: BasePredictor):
+def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
     """
     Creates a Pydantic Input model from the arguments of a Predictor's predict() method.
 
@@ -150,9 +154,11 @@ def get_input_type(predictor: BasePredictor):
                 class StringEnum(str, enum.Enum):
                     pass
 
-                InputType = StringEnum(name, {value: value for value in choices})
+                InputType = StringEnum(  # type: ignore
+                    name, {value: value for value in choices}
+                )
             elif InputType == int:
-                InputType = enum.IntEnum(name, {str(value): value for value in choices})
+                InputType = enum.IntEnum(name, {str(value): value for value in choices})  # type: ignore
             else:
                 raise TypeError(
                     f"The input {name} uses the option choices. Choices can only be used with str or int types."
@@ -160,10 +166,17 @@ def get_input_type(predictor: BasePredictor):
 
         create_model_kwargs[name] = (InputType, default)
 
-    return create_model("Input", **create_model_kwargs, __base__=BaseInput)
+    return create_model(
+        "Input",
+        __config__=None,
+        __base__=BaseInput,
+        __module__=__name__,
+        __validators__=None,
+        **create_model_kwargs,
+    )
 
 
-def get_output_type(predictor: BasePredictor):
+def get_output_type(predictor: BasePredictor) -> Type[BaseModel]:
     """
     Creates a Pydantic Output model from the return type annotation of a Predictor's predict() method.
     """
@@ -189,19 +202,19 @@ For example:
 
     # The type that goes in the response is a list of the yielded type
     if get_origin(OutputType) is Iterator:
-        OutputType = List[get_args(OutputType)[0]]
+        OutputType = List[get_args(OutputType)[0]]  # type: ignore
 
     if not hasattr(OutputType, "__name__") or OutputType.__name__ != "Output":
         # Wrap the type in a model called "Output" so it is a consistent name in the OpenAPI schema
         class Output(BaseModel):
-            __root__: OutputType
+            __root__: OutputType  # type: ignore
 
         OutputType = Output
 
     return OutputType
 
 
-def human_readable_type_name(t):
+def human_readable_type_name(t: Type) -> str:
     """
     Generates a useful-for-humans label for a type. For builtin types, it's just the class name (eg "str" or "int"). For other types, it includes the module (eg "pathlib.Path" or "cog.File").
 
@@ -215,5 +228,5 @@ def human_readable_type_name(t):
     return module + "." + t.__qualname__
 
 
-def readable_types_list(type_list):
+def readable_types_list(type_list: List[Type]) -> str:
     return ", ".join(human_readable_type_name(t) for t in type_list)

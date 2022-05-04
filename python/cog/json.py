@@ -1,7 +1,7 @@
 from enum import Enum
 import io
 from types import GeneratorType
-from typing import Any
+from typing import Any, Callable
 
 from pydantic import BaseModel
 
@@ -15,7 +15,7 @@ except ImportError:
     has_numpy = False
 
 
-def encode_json(obj: Any, upload_file) -> Any:
+def encode_json(obj: Any, upload_file: Callable[[io.IOBase], str]) -> Any:
     """
     Returns a JSON-compatible version of the object. It will encode any Pydantic models and custom types.
 
