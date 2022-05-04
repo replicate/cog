@@ -1,10 +1,11 @@
 import os
 import sys
 from contextlib import contextmanager
+from typing import Iterator
 
 
 @contextmanager
-def suppress_output():
+def suppress_output() -> Iterator[None]:
     null_out = open(os.devnull, "w")
     null_err = open(os.devnull, "w")
     out_fd = sys.stdout.fileno()

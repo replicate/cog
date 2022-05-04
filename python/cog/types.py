@@ -6,7 +6,7 @@ import pathlib
 import requests
 import shutil
 import tempfile
-from typing import Any, List, Optional
+from typing import Any, Callable, Dict, Iterator, List, Union
 from urllib.parse import urlparse
 
 from pydantic import Field
@@ -14,15 +14,15 @@ from pydantic.typing import NoArgAnyCallable
 
 
 def Input(
-    default=...,
+    default: Any = ...,
     description: str = None,
     ge: float = None,
     le: float = None,
     min_length: int = None,
     max_length: int = None,
     regex: str = None,
-    choices: List[str | int] = None,
-):
+    choices: List[Union[str, int]] = None,
+) -> Any:
     """Input is similar to pydantic.Field, but doesn't require a default value to be the first argument."""
     return Field(
         default,
@@ -36,12 +36,15 @@ def Input(
     )
 
 
-def get_filename(url):
+def get_filename(url: str) -> str:
     parsed_url = urlparse(url)
     if parsed_url.scheme == "data":
         header, _ = parsed_url.path.split(",", 1)
         mime_type, _ = header.split(";", 1)
-        return "file" + mimetypes.guess_extension(mime_type)
+        extension = mimetypes.guess_extension(mime_type)
+        if extension is None:
+            return "file"
+        return "file" + extension
     return os.path.basename(parsed_url.path)
 
 
@@ -49,7 +52,7 @@ class File(io.IOBase):
     validate_always = True
 
     @classmethod
-    def __get_validators__(cls):
+    def __get_validators__(cls) -> Iterator[Any]:
         yield cls.validate
 
     @classmethod
@@ -74,7 +77,7 @@ class File(io.IOBase):
             )
 
     @classmethod
-    def __modify_schema__(cls, field_schema):
+    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
         """Defines what this type should be in openapi.json"""
         # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
         field_schema.update(type="string", format="uri")
@@ -84,7 +87,7 @@ class Path(pathlib.PosixPath):
     validate_always = True
 
     @classmethod
-    def __get_validators__(cls):
+    def __get_validators__(cls) -> Iterator[Any]:
         yield cls.validate
 
     @classmethod
@@ -98,7 +101,7 @@ class Path(pathlib.PosixPath):
         return cls(dest.name)
 
     @classmethod
-    def __modify_schema__(cls, field_schema):
+    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
         """Defines what this type should be in openapi.json"""
         # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
         field_schema.update(type="string", format="uri")

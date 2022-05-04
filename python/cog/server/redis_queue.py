@@ -1,7 +1,7 @@
 import io
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 import signal
 import sys
 import traceback
@@ -22,17 +22,22 @@ from .runner import PredictionRunner
 class timeout:
     """A context manager that times out after a given number of seconds."""
 
-    def __init__(self, seconds, elapsed=None, error_message="Prediction timed out"):
+    def __init__(
+        self,
+        seconds: Optional[int],
+        elapsed: Optional[int] = None,
+        error_message: str = "Prediction timed out",
+    ) -> None:
         if elapsed is None or seconds is None:
             self.seconds = seconds
         else:
             self.seconds = seconds - int(elapsed)
         self.error_message = error_message
 
-    def handle_timeout(self, signum, frame):
+    def handle_timeout(self, signum: Any, frame: Any) -> None:
         raise TimeoutError(self.error_message)
 
-    def __enter__(self):
+    def __enter__(self) -> None:
         if self.seconds is not None:
             if self.seconds <= 0:
                 self.handle_timeout(None, None)
@@ -40,7 +45,7 @@ class timeout:
                 signal.signal(signal.SIGALRM, self.handle_timeout)
                 signal.alarm(self.seconds)
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, type: Any, value: Any, traceback: Any) -> None:
         if self.seconds is not None:
             signal.alarm(0)
 
@@ -92,11 +97,11 @@ class RedisQueueWorker:
             f"Connected to Redis: {self.redis_host}:{self.redis_port} (db {self.redis_db})\n"
         )
 
-    def signal_exit(self, signum, frame):
+    def signal_exit(self, signum: Any, frame: Any) -> None:
         self.should_exit = True
         sys.stderr.write("Caught SIGTERM, exiting...\n")
 
-    def receive_message(self):
+    def receive_message(self) -> Tuple[Optional[str], Optional[str]]:
         # first, try to autoclaim old messages from pending queue
         raw_messages = self.redis.execute_command(
             "XAUTOCLAIM",
@@ -129,7 +134,7 @@ class RedisQueueWorker:
         key, raw_message = raw_messages[0][1][0]
         return key.decode(), raw_message[b"value"].decode()
 
-    def start(self):
+    def start(self) -> None:
         signal.signal(signal.SIGTERM, self.signal_exit)
         start_time = time.time()
 
@@ -155,7 +160,7 @@ class RedisQueueWorker:
                 message = json.loads(message_json)
                 response_queue = message["response_queue"]
                 sys.stderr.write(f"Received message on {self.input_queue}\n")
-                cleanup_functions = []
+                cleanup_functions: List[Callable] = []
                 try:
                     start_time = time.time()
                     self.handle_message(response_queue, message, cleanup_functions)
@@ -184,7 +189,12 @@ class RedisQueueWorker:
                 tb = traceback.format_exc()
                 sys.stderr.write(f"Failed to handle message: {tb}\n")
 
-    def handle_message(self, response_queue, message, cleanup_functions):
+    def handle_message(
+        self,
+        response_queue: str,
+        message: Dict[str, Any],
+        cleanup_functions: List[Callable],
+    ) -> None:
         try:
             input_obj = self.InputType(**message["input"])
         except ValidationError as e:
@@ -200,7 +210,7 @@ class RedisQueueWorker:
         with timeout(seconds=self.predict_timeout):
             self.runner.run(**input_obj.dict())
 
-            logs = []
+            logs: List[str] = []
             response = {
                 "status": Status.PROCESSING,
                 "output": None,
@@ -215,7 +225,7 @@ class RedisQueueWorker:
 
             if self.runner.error() is not None:
                 response["status"] = Status.FAILED
-                response["error"] = str(self.runner.error())
+                response["error"] = str(self.runner.error())  # type: ignore
                 self.redis.rpush(response_queue, json.dumps(response))
                 return
 
@@ -247,7 +257,7 @@ class RedisQueueWorker:
 
                 if self.runner.error() is not None:
                     response["status"] = Status.FAILED
-                    response["error"] = str(self.runner.error())
+                    response["error"] = str(self.runner.error())  # type: ignore
                     self.redis.rpush(response_queue, json.dumps(response))
                     return
 
@@ -265,7 +275,7 @@ class RedisQueueWorker:
 
                 if self.runner.error() is not None:
                     response["status"] = Status.FAILED
-                    response["error"] = str(self.runner.error())
+                    response["error"] = str(self.runner.error())  # type: ignore
                     self.redis.rpush(response_queue, json.dumps(response))
                     return
 
@@ -277,12 +287,12 @@ class RedisQueueWorker:
                 logs.extend(self.runner.read_logs())
                 self.redis.rpush(response_queue, json.dumps(response))
 
-    def download(self, url):
+    def download(self, url: str) -> bytes:
         resp = requests.get(url)
         resp.raise_for_status()
         return resp.content
 
-    def push_error(self, response_queue, error):
+    def push_error(self, response_queue: str, error: Any) -> None:
         message = json.dumps(
             {
                 "status": "failed",
@@ -292,7 +302,7 @@ class RedisQueueWorker:
         sys.stderr.write(f"Pushing error to {response_queue}\n")
         self.redis.rpush(response_queue, message)
 
-    def encode_json(self, obj):
+    def encode_json(self, obj: Any) -> Any:
         def upload_file(fh: io.IOBase) -> str:
             resp = requests.put(self.upload_url, files={"file": fh})
             resp.raise_for_status()
@@ -302,33 +312,35 @@ class RedisQueueWorker:
 
 
 def _queue_worker_from_argv(
-    predictor,
-    redis_host,
-    redis_port,
-    input_queue,
-    upload_url,
-    comsumer_id,
-    model_id,
-    log_queue,
-    predict_timeout=None,
-):
+    predictor: BasePredictor,
+    redis_host: str,
+    redis_port: str,
+    input_queue: str,
+    upload_url: str,
+    comsumer_id: str,
+    model_id: str,
+    log_queue: str,
+    predict_timeout: Optional[str] = None,
+) -> RedisQueueWorker:
     """
     Construct a RedisQueueWorker object from sys.argv, taking into account optional arguments and types.
 
     This is intensely fragile. This should be kwargs or JSON or something like that.
     """
     if predict_timeout is not None:
-        predict_timeout = int(predict_timeout)
+        predict_timeout_int = int(predict_timeout)
+    else:
+        predict_timeout_int = None
     return RedisQueueWorker(
         predictor,
         redis_host,
-        redis_port,
+        int(redis_port),
         input_queue,
         upload_url,
         comsumer_id,
         model_id,
         log_queue,
-        predict_timeout,
+        predict_timeout_int,
     )
 
 

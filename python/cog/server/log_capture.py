@@ -1,12 +1,14 @@
 import sys
+from typing import Dict, Iterator
 import uuid
 import multiprocessing
+from multiprocessing.connection import Connection
 import os
 import contextlib
 
 
 @contextlib.contextmanager
-def capture_log(logs_dest):
+def capture_log(logs_dest: Connection) -> Iterator[None]:
     """
     Send each line from stdout and stderr to a pipe in addition to the existing
     output stream.
@@ -81,21 +83,21 @@ def capture_log(logs_dest):
 # created from the predictor subprocess, which is set to use the spawn method.
 # As currently written, this log process relies on shared state in a way that
 # doesn't work with the spawn method.
-class LogProcess(multiprocessing.get_context("fork").Process):
+class LogProcess(multiprocessing.get_context("fork").Process):  # type: ignore
     def __init__(
         self,
-        logs_dest,
-        pipe_reader,
-        old_out_fd,
-        done_token,
-    ):
+        logs_dest: Connection,
+        pipe_reader: Connection,
+        old_out_fd: int,
+        done_token: str,
+    ) -> None:
         super(LogProcess, self).__init__()
         self.logs_dest = logs_dest
         self.pipe_reader = pipe_reader
         self.old_out_fd = old_out_fd
         self.done_token = done_token
 
-    def run(self):
+    def run(self) -> None:
         # open the original stdout/stderr. we "tee" to both the original
         # stdout/stderr as well as the redis queue
         self.old_out = os.fdopen(self.old_out_fd, "w")

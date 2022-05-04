@@ -1,5 +1,5 @@
 import enum
-from typing import Any
+from typing import Optional, Type, Any
 
 from pydantic import BaseModel, Field
 
@@ -10,13 +10,13 @@ class Status(str, enum.Enum):
     FAILED = "failed"
 
 
-def get_response_type(OutputType: Any):
+def get_response_type(OutputType: Type[BaseModel]) -> Any:
     class Response(BaseModel):
         """The response body for a prediction"""
 
         status: Status = Field(...)
-        output: OutputType = None
-        error: str = None
+        output: Optional[OutputType] = None  # type: ignore
+        error: Optional[str] = None
 
         class Config:
             arbitrary_types_allowed = True

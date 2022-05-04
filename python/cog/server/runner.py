@@ -1,9 +1,8 @@
-from enum import Enum
 import multiprocessing
-import os
-import sys
-import time
 import types
+from enum import Enum
+from multiprocessing.connection import Connection
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -19,7 +18,7 @@ class PredictionRunner:
         SINGLE = 1
         GENERATOR = 2
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.logs_pipe_reader, self.logs_pipe_writer = multiprocessing.Pipe(
             duplex=False
         )
@@ -37,7 +36,7 @@ class PredictionRunner:
             duplex=False
         )
 
-    def setup(self):
+    def setup(self) -> None:
         """
         Sets up the predictor in a subprocess. To start a prediction after
         setup call `run()`.
@@ -54,7 +53,7 @@ class PredictionRunner:
         )
         self.predictor_process.start()
 
-    def _start_predictor_process(self):
+    def _start_predictor_process(self) -> None:
         self.predictor = load_predictor()
         self.predictor.setup()
 
@@ -65,7 +64,7 @@ class PredictionRunner:
             except EOFError:
                 continue
 
-    def run(self, **prediction_input):
+    def run(self, **prediction_input: Dict[str, Any]) -> None:
         """
         Starts running a prediction in the predictor subprocess, using the
         inputs provided in `prediction_input`.
@@ -91,7 +90,7 @@ class PredictionRunner:
         # Send prediction input through the pipe to the predictor subprocess
         self.prediction_input_pipe_writer.send(prediction_input)
 
-    def is_processing(self):
+    def is_processing(self) -> bool:
         """
         Returns True if the subprocess running the prediction is still
         processing.
@@ -105,10 +104,10 @@ class PredictionRunner:
 
         return self._is_processing
 
-    def has_output_waiting(self):
+    def has_output_waiting(self) -> bool:
         return self.predictor_pipe_reader.poll()
 
-    def read_output(self):
+    def read_output(self) -> List[Any]:
         if self._is_output_generator is self.OutputType.NOT_STARTED:
             return []
 
@@ -120,10 +119,10 @@ class PredictionRunner:
                 break
         return output
 
-    def has_logs_waiting(self):
+    def has_logs_waiting(self) -> bool:
         return self.logs_pipe_reader.poll()
 
-    def read_logs(self):
+    def read_logs(self) -> List[str]:
         logs = []
         while self.has_logs_waiting():
             try:
@@ -132,7 +131,7 @@ class PredictionRunner:
                 break
         return logs
 
-    def is_output_generator(self):
+    def is_output_generator(self) -> Optional[bool]:
         """
         Returns `True` if the output is a generator, `False` if it's not, and
         `None` if we don't know yet.
@@ -151,7 +150,7 @@ class PredictionRunner:
         elif self._is_output_generator is self.OutputType.GENERATOR:
             return True
 
-    def _run_prediction(self, prediction_input):
+    def _run_prediction(self, prediction_input: Dict[str, Any]) -> None:
         """
         Sends a boolean first, to indicate whether the output is a generator.
         After that it sends the output(s).
@@ -188,7 +187,7 @@ class PredictionRunner:
 
         self.done_pipe_writer.send(self.PREDICTION_DONE)
 
-    def error(self):
+    def error(self) -> Optional[str]:
         """
         Returns the error encountered by the predictor, if one exists.
         """
@@ -202,7 +201,7 @@ class PredictionRunner:
         return self._error
 
 
-def drain_pipe(pipe_reader):
+def drain_pipe(pipe_reader: Connection) -> None:
     """
     Reads all available messages from a pipe and discards them. This serves to
     clear the pipe for future usage.
@@ -214,7 +213,7 @@ def drain_pipe(pipe_reader):
             break
 
 
-def make_pickleable(obj):
+def make_pickleable(obj: Any) -> Any:
     """
     Returns a version of `obj` which can be pickled and therefore sent through
     the pipe to the main process.
