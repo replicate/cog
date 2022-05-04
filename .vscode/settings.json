@@ -27,5 +27,7 @@
   "[python]": {
     "editor.defaultFormatter": "ms-python.python",
     "editor.formatOnSave": true
-  }
+  },
+  "python.linting.mypyEnabled": true,
+  "python.linting.mypyArgs": ["--show-column-numbers", "--no-pretty"]
 }
