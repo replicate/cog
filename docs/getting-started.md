@@ -11,18 +11,21 @@ This guide will walk you through what you can do with Cog by using an example mo
 
 First, install Cog:
 
-```sh
+```bash
 sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
 sudo chmod +x /usr/local/bin/cog
+
 ```
 
 ## Create a project
 
 Let's make a directory to work in:
 
-    mkdir cog-quickstart
-    cd cog-quickstart
+```bash
+mkdir cog-quickstart
+cd cog-quickstart
 
+```
 ## Run commands
 
 The simplest thing you can do with Cog is run a command inside a Docker environment.
@@ -34,18 +37,22 @@ build:
   python_version: "3.8"
 ```
 
-Then, you can run any command inside this environment. For example, to get a Python shell:
+Then, you can run any command inside this environment. For example, enter
+```bash
+cog run python
 
-    $ cog run python
-    ✓ Building Docker image from cog.yaml... Successfully built 8f54020c8981
-    Running 'python' in Docker with the current directory mounted as a volume...
-    ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+```
+and you'll get an interactive Python shell:
+```none
+✓ Building Docker image from cog.yaml... Successfully built 8f54020c8981
+Running 'python' in Docker with the current directory mounted as a volume...
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    Python 3.8.10 (default, May 12 2021, 23:32:14)
-    [GCC 9.3.0] on linux
-    Type "help", "copyright", "credits" or "license" for more information.
-    >>>
-
+Python 3.8.10 (default, May 12 2021, 23:32:14)
+[GCC 9.3.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>>
+```
 (Hit Ctrl-D to exit the Python shell.)
 
 Inside this Docker environment you can do anything – run a Jupyter notebook, your training script, your evaluation script, and so on.
@@ -56,10 +63,15 @@ Let's pretend we've trained a model. With Cog, we can define how to run predicti
 
 First, run this to get some pre-trained model weights:
 
-    curl -O https://storage.googleapis.com/tensorflow/keras-applications/resnet/resnet50_weights_tf_dim_ordering_tf_kernels.h5
+```bash
+WEIGHTS_URL=https://storage.googleapis.com/tensorflow/keras-applications/resnet/resnet50_weights_tf_dim_ordering_tf_kernels.h5
+curl -O $WEIGHTS_URL
 
-Then, we need to write some code to describe how predictions are run on the model. Save this to `predict.py`:
+```
 
+Then, we need to write some code to describe how predictions are run on the model.
+
+Save this to `predict.py`:
 ```python
 from typing import Any
 from cog import BasePredictor, Input, Path
@@ -101,13 +113,19 @@ predict: "predict.py:Predictor"
 
 Let's grab an image to test the model with:
 
-    curl https://gist.githubusercontent.com/bfirsh/3c2115692682ae260932a67d93fd94a8/raw/56b19f53f7643bb6c0b822c410c366c3a6244de2/mystery.jpg > input.jpg
-
-Now, let's run the model using Cog:
+```bash
+IMAGE_URL=https://gist.githubusercontent.com/bfirsh/3c2115692682ae260932a67d93fd94a8/raw/56b19f53f7643bb6c0b822c410c366c3a6244de2/mystery.jpg
+curl $IMAGE_URL > input.jpg
 
 ```
-$ cog predict -i image=@input.jpg
-...
+Now, let's run the model using Cog:
+
+```bash
+cog predict -i image=@input.jpg
+
+```
+If you see the following output
+```
 [
   [
     "n02123159",
@@ -126,8 +144,7 @@ $ cog predict -i image=@input.jpg
   ]
 ]
 ```
-
-Looks like it worked!
+then it worked!
 
 Note: The first time you run `cog predict`, the build process will be triggered to generate a Docker container that can run your model. The next time you run `cog predict` the pre-built container will be used.
 
@@ -135,35 +152,42 @@ Note: The first time you run `cog predict`, the build process will be triggered 
 
 We can bake your model's code, the trained weights, and the Docker environment into a Docker image. This image serves predictions with an HTTP server, and can be deployed to anywhere that Docker runs to serve real-time predictions.
 
-```
-$ cog build -t resnet
-Building Docker image...
-Built resnet:latest
+```bash
+cog build -t resnet
+# Building Docker image...
+# Built resnet:latest
+
 ```
 
 Once you've built the image, you can optionally view the generated dockerfile to get a sense of what Cog is doing under the hood:
 
-```
-$ cog debug dockerfile
+```bash
+cog debug dockerfile
 ```
 
-You can run this image with `cog predict` by passing the image name as an argument:
+You can run this image with `cog predict` by passing the filename as an argument:
 
-```
-$ cog predict resnet -i image=@input.jpg
+```bash
+cog predict resnet -i image=@input.jpg
+
 ```
 
 Or, you can run it with Docker directly, and it'll serve an HTTP server:
 
-```
-$ docker run -d -p 5000:5000 --gpus all resnet
+```bash
+docker run -d --rm -p 5000:5000 resnet
 
-$ curl http://localhost:5000/predictions -X POST \
+```
+
+We can send inputs directly with `curl`:
+```bash
+curl http://localhost:5000/predictions -X POST \
     -H 'Content-Type: application/json' \
     -d '{"input": {"image": "https://gist.githubusercontent.com/bfirsh/3c2115692682ae260932a67d93fd94a8/raw/56b19f53f7643bb6c0b822c410c366c3a6244de2/mystery.jpg"}}'
+
 ```
 
-As a shorthand, you can add the image name as an extra line in `cog.yaml`:
+As a shorthand, you can add the Docker image's name as an extra line in `cog.yaml`:
 
 ```yaml
 image: "r8.im/replicate/resnet"
@@ -171,11 +195,12 @@ image: "r8.im/replicate/resnet"
 
 Once you've done this, you can use `cog push` to build and push the image to a Docker registry:
 
-```
-$ cog push
-Building r8.im/replicate/resnet...
-Pushing r8.im/replicate/resnet...
-Pushed!
+```bash
+cog push
+# Building r8.im/replicate/resnet...
+# Pushing r8.im/replicate/resnet...
+# Pushed!
+
 ```
 
 The Docker image is now accessible to anyone or any system that has access to this Docker registry.
