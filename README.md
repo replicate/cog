@@ -178,6 +178,7 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
     <td align="center"><a href="https://github.com/Hurricane-eye"><img src="https://avatars.githubusercontent.com/u/31437546?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Shuwei Liang</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3AHurricane-eye" title="Bug reports">🐛</a> <a href="#question-Hurricane-eye" title="Answering Questions">💬</a></td>
     <td align="center"><a href="https://github.com/ericallam"><img src="https://avatars.githubusercontent.com/u/534?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Eric Allam</b></sub></a><br /><a href="#ideas-ericallam" title="Ideas, Planning, & Feedback">🤔</a></td>
     <td align="center"><a href="https://perdomo.me"><img src="https://avatars.githubusercontent.com/u/178474?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Iván Perdomo</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aiperdomo" title="Bug reports">🐛</a></td>
+    <td align="center"><a href="http://charlesfrye.github.io"><img src="https://avatars.githubusercontent.com/u/10442975?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Charles Frye</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=charlesfrye" title="Documentation">📖</a></td>
   </tr>
 </table>
 
