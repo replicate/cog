@@ -103,13 +103,13 @@ def test_predict_runs_an_existing_image(tmpdir_factory):
 # we need to find a better way to test this
 @pytest.mark.skip("incredibly slow")
 def test_predict_with_remote_image(tmpdir_factory):
-    image_name = "r8.im/bfirsh/hello-world@sha256:942f3080b0307e926646c6be51f9762991a2d5411b9fd8ee98a6dcc25bcaa9b9"
+    image_name = "r8.im/replicate/hello-world@sha256:5c7d5dc6dd8bf75c1acaa8565735e7986bc5b66206b55cca93cb72c9bf15ccaa"
     subprocess.run(["docker", "rmi", image_name], check=False)
 
     # Run in another directory to ensure it doesn't use cog.yaml
     another_directory = tmpdir_factory.mktemp("project")
     result = subprocess.run(
-        ["cog", "predict", image_name, "-i", "world"],
+        ["cog", "predict", image_name, "-i", "text=world"],
         cwd=another_directory,
         check=True,
         capture_output=True,
