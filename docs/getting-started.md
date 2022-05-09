@@ -106,8 +106,8 @@ We also need to point Cog at this, and tell it what Python dependencies to insta
 build:
   python_version: "3.8"
   python_packages:
-    - pillow==8.3.1
-    - tensorflow==2.5.0
+    - pillow==9.1.0
+    - tensorflow==2.8.0
 predict: "predict.py:Predictor"
 ```
 
