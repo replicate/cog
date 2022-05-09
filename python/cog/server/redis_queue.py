@@ -1,3 +1,4 @@
+import datetime
 import io
 import json
 import os
@@ -191,10 +192,18 @@ class RedisQueueWorker:
                     sys.stderr.write(
                         f"Received message {message_id} on {self.input_queue}\n"
                     )
+                    # create this here so it's available during exception handling
+                    response: Dict[str, Any] = {
+                        "status": Status.PROCESSING,
+                        "output": None,
+                        "logs": [],
+                    }
                     cleanup_functions: List[Callable] = []
                     try:
                         start_time = time.time()
-                        self.handle_message(response_queue, message, cleanup_functions)
+                        self.handle_message(
+                            response_queue, response, message, cleanup_functions
+                        )
                         self.redis.xack(self.input_queue, self.input_queue, message_id)
                         self.redis.xdel(
                             self.input_queue, message_id
@@ -207,7 +216,12 @@ class RedisQueueWorker:
                         )
                         sys.stderr.write(f"Run time for {message_id}: {run_time:.2f}\n")
                     except Exception as e:
-                        self.push_error(response_queue, e)
+                        response["status"] = Status.FAILED
+                        response["error"] = str(e)
+                        response["x-experimental-timestamps"][
+                            "completed_at"
+                        ] = datetime.datetime.now().isoformat()
+                        self.push_message(response_queue, response)
                         self.redis.xack(self.input_queue, self.input_queue, message_id)
                         self.redis.xdel(self.input_queue, message_id)
                     finally:
@@ -226,6 +240,7 @@ class RedisQueueWorker:
     def handle_message(
         self,
         response_queue: str,
+        response: Dict[str, Any],
         message: Dict[str, Any],
         cleanup_functions: List[Callable],
     ) -> None:
@@ -236,7 +251,9 @@ class RedisQueueWorker:
         except ValidationError as e:
             tb = traceback.format_exc()
             sys.stderr.write(tb)
-            self.push_error(response_queue, e)
+            response["status"] = Status.FAILED
+            response["error"] = str(e)
+            self.push_message(response_queue, response)
             span.record_exception(e)
             span.set_status(TraceStatus(status_code=StatusCode.ERROR))
             return
@@ -246,25 +263,28 @@ class RedisQueueWorker:
         with timeout(seconds=self.predict_timeout):
             self.runner.run(**input_obj.dict())
 
-            logs: List[str] = []
-            response = {
-                "status": Status.PROCESSING,
-                "output": None,
-                "logs": logs,
+            response["x-experimental-timestamps"] = {
+                "started_at": datetime.datetime.now().isoformat()
             }
 
-            self.redis.rpush(response_queue, json.dumps(response))
+            logs: List[str] = []
+            response["logs"] = logs
+
+            self.push_message(response_queue, response)
 
             # just send logs until output starts
             while self.runner.is_processing() and not self.runner.has_output_waiting():
                 if self.runner.has_logs_waiting():
                     logs.extend(self.runner.read_logs())
-                    self.redis.rpush(response_queue, json.dumps(response))
+                    self.push_message(response_queue, response)
 
             if self.runner.error() is not None:
                 response["status"] = Status.FAILED
                 response["error"] = str(self.runner.error())  # type: ignore
-                self.redis.rpush(response_queue, json.dumps(response))
+                response["x-experimental-timestamps"][
+                    "completed_at"
+                ] = datetime.datetime.now().isoformat()
+                self.push_message(response_queue, response)
                 span.record_exception(self.runner.error())
                 span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                 return
@@ -297,12 +317,15 @@ class RedisQueueWorker:
                         # here to give the predictor subprocess a chance to exit
                         # so we don't send a double message for final output, at
                         # the cost of extra latency
-                        self.redis.rpush(response_queue, json.dumps(response))
+                        self.push_message(response_queue, response)
 
                 if self.runner.error() is not None:
                     response["status"] = Status.FAILED
                     response["error"] = str(self.runner.error())  # type: ignore
-                    self.redis.rpush(response_queue, json.dumps(response))
+                    response["x-experimental-timestamps"][
+                        "completed_at"
+                    ] = datetime.datetime.now().isoformat()
+                    self.push_message(response_queue, response)
                     span.record_exception(self.runner.error())
                     span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                     return
@@ -310,21 +333,27 @@ class RedisQueueWorker:
                 span.add_event("received final output")
 
                 response["status"] = Status.SUCCEEDED
+                response["x-experimental-timestamps"][
+                    "completed_at"
+                ] = datetime.datetime.now().isoformat()
                 output.extend(self.upload_files(o) for o in self.runner.read_output())
                 logs.extend(self.runner.read_logs())
-                self.redis.rpush(response_queue, json.dumps(response))
+                self.push_message(response_queue, response)
 
             else:
                 # just send logs until output ends
                 while self.runner.is_processing():
                     if self.runner.has_logs_waiting():
                         logs.extend(self.runner.read_logs())
-                        self.redis.rpush(response_queue, json.dumps(response))
+                        self.push_message(response_queue, response)
 
                 if self.runner.error() is not None:
                     response["status"] = Status.FAILED
                     response["error"] = str(self.runner.error())  # type: ignore
-                    self.redis.rpush(response_queue, json.dumps(response))
+                    response["x-experimental-timestamps"][
+                        "completed_at"
+                    ] = datetime.datetime.now().isoformat()
+                    self.push_message(response_queue, response)
                     span.record_exception(self.runner.error())
                     span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                     return
@@ -333,24 +362,20 @@ class RedisQueueWorker:
                 assert len(output) == 1
 
                 response["status"] = Status.SUCCEEDED
+                response["x-experimental-timestamps"][
+                    "completed_at"
+                ] = datetime.datetime.now().isoformat()
                 response["output"] = self.upload_files(output[0])
                 logs.extend(self.runner.read_logs())
-                self.redis.rpush(response_queue, json.dumps(response))
+                self.push_message(response_queue, response)
 
     def download(self, url: str) -> bytes:
         resp = requests.get(url)
         resp.raise_for_status()
         return resp.content
 
-    def push_error(self, response_queue: str, error: Any) -> None:
-        message = json.dumps(
-            {
-                "status": "failed",
-                "error": str(error),
-            }
-        )
-        sys.stderr.write(f"Pushing error to {response_queue}\n")
-        self.redis.rpush(response_queue, message)
+    def push_message(self, response_queue: str, response: Any) -> None:
+        self.redis.rpush(response_queue, json.dumps(response))
 
     def upload_files(self, obj: Any) -> Any:
         def upload_file(fh: io.IOBase) -> str:

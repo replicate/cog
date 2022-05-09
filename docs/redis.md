@@ -100,6 +100,14 @@ Alternatively, to get the latest state whilst clearing the queue you can use the
 
     redis:6379> RPOP my-response-queue 1000
 
+### Experimental properties
+
+The response may also include experimental properties, prefixed with `x-experimental-`. Experimental properties may change or be removed in any version, not just major versions that would ordinarily be used to indicate a breaking change. Any such change will be documented in release notes.
+
+Current experimental properties are:
+
+- `x-experimental-timestamps`: the time the prediction started and finished.
+
 ## Telemetry
 
 Cog's queue worker is instrumented using [OpenTelemetry](https://opentelemetry.io). For setup it sends:
