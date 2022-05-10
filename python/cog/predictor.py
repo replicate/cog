@@ -110,13 +110,16 @@ def get_input_type(predictor: BasePredictor):
     """
 
     signature = inspect.signature(predictor.predict)
+    input_types = typing.get_type_hints(predictor.predict)
+    if 'return' in input_types:
+        del input_types['return']
     create_model_kwargs = {}
 
     order = 0
 
-    for name, parameter in signature.parameters.items():
-        InputType = parameter.annotation
-
+    for name, InputType in input_types.items():
+        if name == 'return':
+            continue
         if InputType is inspect.Signature.empty:
             raise TypeError(
                 f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
@@ -126,6 +129,7 @@ def get_input_type(predictor: BasePredictor):
                 f"Unsupported input type {human_readable_type_name(InputType)} for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
             )
 
+        parameter = signaturee.parameters[name]
         # if no default is specified, create an empty, required input
         if parameter.default is inspect.Signature.empty:
             default = Input()
@@ -167,9 +171,8 @@ def get_output_type(predictor: BasePredictor):
     """
     Creates a Pydantic Output model from the return type annotation of a Predictor's predict() method.
     """
-
-    signature = inspect.signature(predictor.predict)
-    if signature.return_annotation is inspect.Signature.empty:
+    OutputType = typing.get_type_hints(predictor.predict).get('return')
+    if OutputType is None:
         raise TypeError(
             """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
 
@@ -184,8 +187,6 @@ For example:
         ...
 """
         )
-    else:
-        OutputType = signature.return_annotation
 
     # The type that goes in the response is a list of the yielded type
     if get_origin(OutputType) is Iterator:
