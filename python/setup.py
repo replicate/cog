@@ -21,7 +21,7 @@ setuptools.setup(
         "PyYAML",
         "redis>=4,<5",
         "requests>=2,<3",
-        "typing_extensions>=3.7.4",
+        "typing_extensions>=4.1.0",
         "uvicorn[standard]>=0.12,<1",
     ],
     packages=setuptools.find_packages(),
