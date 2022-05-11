@@ -130,7 +130,7 @@ def get_input_type(predictor: BasePredictor):
                 f"Unsupported input type {human_readable_type_name(InputType)} for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
             )
 
-        parameter = signaturee.parameters[name]
+        parameter = signature.parameters[name]
         # if no default is specified, create an empty, required input
         if parameter.default is inspect.Signature.empty:
             default = Input()
