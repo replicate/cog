@@ -186,6 +186,16 @@
       "contributions": [
         "doc"
       ]
+    },
+    {
+      "login": "phamquiluan",
+      "name": "Luan Pham",
+      "avatar_url": "https://avatars.githubusercontent.com/u/24642166?v=4",
+      "profile": "https://github.com/phamquiluan",
+      "contributions": [
+        "bug",
+        "doc"
+      ]
     }
   ],
   "contributorsPerLine": 7,
