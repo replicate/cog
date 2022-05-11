@@ -7,6 +7,7 @@ import os.path
 from pathlib import Path
 from pydantic import create_model, BaseModel
 from pydantic.fields import FieldInfo
+import typing
 from typing import List
 
 # Added in Python 3.8. Can be from typing if we drop support for <3.8.
@@ -111,14 +112,14 @@ def get_input_type(predictor: BasePredictor):
 
     signature = inspect.signature(predictor.predict)
     input_types = typing.get_type_hints(predictor.predict)
-    if 'return' in input_types:
-        del input_types['return']
+    if "return" in input_types:
+        del input_types["return"]
     create_model_kwargs = {}
 
     order = 0
 
     for name, InputType in input_types.items():
-        if name == 'return':
+        if name == "return":
             continue
         if InputType is inspect.Signature.empty:
             raise TypeError(
@@ -171,7 +172,7 @@ def get_output_type(predictor: BasePredictor):
     """
     Creates a Pydantic Output model from the return type annotation of a Predictor's predict() method.
     """
-    OutputType = typing.get_type_hints(predictor.predict).get('return')
+    OutputType = typing.get_type_hints(predictor.predict).get("return")
     if OutputType is None:
         raise TypeError(
             """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
