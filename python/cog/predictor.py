@@ -118,14 +118,14 @@ def get_input_type(predictor: BasePredictor):
 
     order = 0
 
-    for name, InputType in input_types.items():
-        if name == "return":
-            continue
-        if InputType is inspect.Signature.empty:
+    for name in signature:
+        if name not in input_types:
             raise TypeError(
                 f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
             )
-        elif InputType not in ALLOWED_INPUT_TYPES:
+
+    for name, InputType in input_types.items():
+        if InputType not in ALLOWED_INPUT_TYPES:
             raise TypeError(
                 f"Unsupported input type {human_readable_type_name(InputType)} for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
             )
