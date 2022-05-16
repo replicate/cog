@@ -135,8 +135,8 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia
 	if g.Config.Build.GPU {
 		// Temporary hack until base images are updated
 		// https://github.com/NVIDIA/nvidia-docker/issues/1631
-		lines = append(lines, `RUN rm -f /etc/apt/sources.list.d/cuda.list && \
-    rm -f /etc/apt/sources.list.d/nvidia-ml.list && \
+		lines = append(lines, `RUN rm /etc/apt/sources.list.d/cuda.list && \
+    rm /etc/apt/sources.list.d/nvidia-ml.list && \
     apt-key del 7fa2af80`)
 	}
 
