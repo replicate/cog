@@ -225,7 +225,11 @@ def human_readable_type_name(t: Type) -> str:
         return t.__qualname__
     elif module.split(".")[0] == "cog":
         module = "cog"
-    return module + "." + t.__qualname__
+    
+    try:
+        return module + "." + t.__qualname__
+    except:
+        return str(t)
 
 
 def readable_types_list(type_list: List[Type]) -> str:
