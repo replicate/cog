@@ -228,7 +228,7 @@ def human_readable_type_name(t: Type) -> str:
     
     try:
         return module + "." + t.__qualname__
-    except:
+    except AttributeError:
         return str(t)
 
 
