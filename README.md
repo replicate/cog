@@ -180,6 +180,7 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
     <td align="center"><a href="https://perdomo.me"><img src="https://avatars.githubusercontent.com/u/178474?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Iván Perdomo</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aiperdomo" title="Bug reports">🐛</a></td>
     <td align="center"><a href="http://charlesfrye.github.io"><img src="https://avatars.githubusercontent.com/u/10442975?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Charles Frye</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=charlesfrye" title="Documentation">📖</a></td>
     <td align="center"><a href="https://github.com/phamquiluan"><img src="https://avatars.githubusercontent.com/u/24642166?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Luan Pham</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aphamquiluan" title="Bug reports">🐛</a> <a href="https://github.com/replicate/cog/commits?author=phamquiluan" title="Documentation">📖</a></td>
+    <td align="center"><a href="https://github.com/TommyDew42"><img src="https://avatars.githubusercontent.com/u/46992350?v=4?s=100" width="100px;" alt=""/><br /><sub><b>TommyDew</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=TommyDew42" title="Code">💻</a></td>
   </tr>
 </table>
 
