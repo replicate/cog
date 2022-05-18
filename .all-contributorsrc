@@ -196,6 +196,15 @@
         "bug",
         "doc"
       ]
+    },
+    {
+      "login": "TommyDew42",
+      "name": "TommyDew",
+      "avatar_url": "https://avatars.githubusercontent.com/u/46992350?v=4",
+      "profile": "https://github.com/TommyDew42",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
