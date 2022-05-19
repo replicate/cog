@@ -149,7 +149,7 @@ def test_predict_many_inputs(tmpdir_factory):
     with open(out_dir / "image.jpg", "w") as fh:
         fh.write("")
     cmd = ["cog", "predict"]
-    # In no name is specified, it defaults to the first
+    # If no name is specified, it defaults to the first
     cmd += ["-i", "hello"]
     for k, v in inputs.items():
         cmd += ["-i", f"{k}={v}"]
