@@ -370,7 +370,7 @@ def test_queue_worker_invalid_input(docker_network, docker_image, redis_client):
                     {
                         "id": predict_id,
                         "input": {
-                            "input": "not a number",
+                            "num": "not a number",
                         },
                         "response_queue": "response-queue",
                     }
