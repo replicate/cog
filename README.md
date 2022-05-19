@@ -53,7 +53,7 @@ class Predictor(BasePredictor):
     ) -> Path:
         """Run a single prediction on the model"""
         processed_image = preprocess(image)
-        output = self.model(processed_input)
+        output = self.model(processed_image)
         return postprocess(output)
 ```
 
