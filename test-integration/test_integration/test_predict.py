@@ -51,7 +51,7 @@ def test_predict_writes_files_to_files(tmpdir_factory):
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
     shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
     result = subprocess.run(
-        ["cog", "predict", "-i", "world", "-o", out_dir / "out.txt"],
+        ["cog", "predict", "-o", out_dir / "out.txt"],
         cwd=out_dir,
         check=True,
         capture_output=True,
@@ -139,7 +139,6 @@ def test_predict_many_inputs(tmpdir_factory):
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
     shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
     inputs = {
-        "no_default": "hello",
         "path": "@path.txt",
         "image": "@image.jpg",
         "choices": "foo",
@@ -150,6 +149,8 @@ def test_predict_many_inputs(tmpdir_factory):
     with open(out_dir / "image.jpg", "w") as fh:
         fh.write("")
     cmd = ["cog", "predict"]
+    # In no name is specified, it defaults to the first
+    cmd += ["-i", "hello"]
     for k, v in inputs.items():
         cmd += ["-i", f"{k}={v}"]
 
