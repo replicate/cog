@@ -27,6 +27,13 @@ This stanza describes how to build the Docker image your model runs in. It conta
 
 Cog automatically picks the correct version of CUDA to install, but this lets you override it for whatever reason.
 
+For example:
+
+```yaml
+build:
+  cuda: "11.1"
+```
+
 ### `gpu`
 
 Enable GPUs for this model. When enabled, the [nvidia-docker](https://github.com/NVIDIA/nvidia-docker) base image will be used, and Cog will automatically figure out what versions of CUDA and cuDNN to use based on the version of Python, PyTorch, and Tensorflow that you are using.
