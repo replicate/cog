@@ -119,7 +119,7 @@ predict: "predict.py:Predictor"
 That's it! To test this works, try running a prediction on the model:
 
 ```
-$ cog predict -i input=@input.jpg
+$ cog predict -i image=@input.jpg
 ✓ Building Docker image from cog.yaml... Successfully built 664ef88bc1f4
 ✓ Model running in Docker image 664ef88bc1f4
 
