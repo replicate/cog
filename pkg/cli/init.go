@@ -78,7 +78,7 @@ func initCommand(args []string) error {
 	}
 	console.Infof("✅ Created %s", predictPyPath)
 
-	console.Infof("\nDone! For next steps, check out the docs at https://github.com/replicate/cog/tree/main/docs")
+	console.Infof("\nDone! For next steps, check out the docs at https://cog.run/docs/getting-started")
 
 	return nil
 }
