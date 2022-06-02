@@ -6,6 +6,8 @@ Long-running deep learning models or batch processing is best architected as a q
 
 The request queue is implemented with [Redis streams](https://redis.io/topics/streams-intro).
 
+See [github.com/replicate/cog-redis-example](https://github.com/replicate/cog-redis-example), which contains a Docker Compose setup for running a Cog model with the built-in Redis worker.
+
 ## Start up the model
 
 The entrypoint to run a Cog model against a queue is `cog.server.redis_queue`. You need to provide the following positional arguments:
