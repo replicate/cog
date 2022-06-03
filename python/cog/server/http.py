@@ -1,3 +1,5 @@
+from anyio import CapacityLimiter
+from anyio.lowlevel import RunVar
 import logging
 import os
 import types
@@ -24,7 +26,15 @@ def create_app(predictor: BasePredictor) -> FastAPI:
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
     )
-    app.on_event("startup")(predictor.setup)
+
+    @app.on_event("startup")
+    def startup() -> None:
+        # Only run a single thread because our predictor is not async and will block.
+        # This is also a sensible default for GPU models.
+        # https://github.com/tiangolo/fastapi/issues/4221
+        RunVar("_default_thread_limiter").set(CapacityLimiter(1))  # type: ignore
+
+        predictor.setup()
 
     @app.get("/")
     def root() -> Any:
@@ -109,6 +119,6 @@ if __name__ == "__main__":
         # cog predict               # -> warning
         # docker run <image-name>   # -> info (default)
         log_level=os.environ.get("COG_LOG_LEVEL", "info"),
-        # Single worker to safely run on GPUs.
+        # This is the default, but to be explicit: only run a single worker
         workers=1,
     )
