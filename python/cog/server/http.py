@@ -1,3 +1,6 @@
+from anyio import CapacityLimiter
+from anyio.lowlevel import RunVar
+import argparse
 import logging
 import os
 import types
@@ -13,18 +16,30 @@ import uvicorn  # type: ignore
 
 from ..files import upload_file
 from ..json import encode_json
-from ..predictor import BasePredictor, get_input_type, get_output_type, load_predictor
+from ..predictor import (
+    BasePredictor,
+    get_input_type,
+    get_output_type,
+    load_config,
+    load_predictor,
+)
 from ..response import Status, get_response_type
 
 logger = logging.getLogger("cog")
 
 
-def create_app(predictor: BasePredictor) -> FastAPI:
+def create_app(predictor: BasePredictor, threads: int = 1) -> FastAPI:
     app = FastAPI(
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
     )
-    app.on_event("startup")(predictor.setup)
+
+    @app.on_event("startup")
+    def startup() -> None:
+        # https://github.com/tiangolo/fastapi/issues/4221
+        RunVar("_default_thread_limiter").set(CapacityLimiter(threads))  # type: ignore
+
+        predictor.setup()
 
     @app.get("/")
     def root() -> Any:
@@ -98,9 +113,27 @@ Check that your predict function is in this form, where `output_type` is the sam
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Cog HTTP server")
+    parser.add_argument(
+        "--threads",
+        dest="threads",
+        type=int,
+        default=None,
+        help="Number of worker processes. Defaults to number of CPUs, or 1 if using a GPU.",
+    )
+    args = parser.parse_args()
+
     config = load_config()
+
+    threads = args.threads
+    if threads is None:
+        if config.get("build", {}).get("gpu", False):
+            threads = 1
+        else:
+            threads = os.cpu_count()
+
     predictor = load_predictor(config)
-    app = create_app(predictor)
+    app = create_app(predictor, threads=threads)
     uvicorn.run(
         app,
         host="0.0.0.0",
@@ -110,6 +143,6 @@ if __name__ == "__main__":
         # cog predict               # -> warning
         # docker run <image-name>   # -> info (default)
         log_level=os.environ.get("COG_LOG_LEVEL", "info"),
-        # Single worker to safely run on GPUs.
+        # This is the default, but to be explicit: only run a single worker
         workers=1,
     )
