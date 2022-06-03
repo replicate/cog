@@ -46,11 +46,11 @@ def run_prediction(
     return result
 
 
-def load_predictor() -> BasePredictor:
+# TODO: make config a TypedDict
+def load_config() -> Dict[str, Any]:
     """
-    Reads cog.yaml and constructs an instance of the user-defined Predictor class.
+    Reads cog.yaml and returns it as a dict.
     """
-
     # Assumes the working directory is /src
     config_path = os.path.abspath("cog.yaml")
     try:
@@ -60,6 +60,13 @@ def load_predictor() -> BasePredictor:
         raise ConfigDoesNotExist(
             f"Could not find {config_path}",
         )
+    return config
+
+
+def load_predictor(config: Dict[str, Any]) -> BasePredictor:
+    """
+    Constructs an instance of the user-defined Predictor class from a config.
+    """
 
     if "predict" not in config:
         raise PredictorNotSet(
@@ -225,7 +232,7 @@ def human_readable_type_name(t: Type) -> str:
         return t.__qualname__
     elif module.split(".")[0] == "cog":
         module = "cog"
-    
+
     try:
         return module + "." + t.__qualname__
     except AttributeError:

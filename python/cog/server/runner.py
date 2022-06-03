@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
-from ..predictor import load_predictor
+from ..predictor import load_config, load_predictor
 from .log_capture import capture_log
 
 
@@ -54,7 +54,8 @@ class PredictionRunner:
         self.predictor_process.start()
 
     def _start_predictor_process(self) -> None:
-        self.predictor = load_predictor()
+        config = load_config()
+        self.predictor = load_predictor(config)
         self.predictor.setup()
 
         while True:

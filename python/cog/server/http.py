@@ -98,7 +98,8 @@ Check that your predict function is in this form, where `output_type` is the sam
 
 
 if __name__ == "__main__":
-    predictor = load_predictor()
+    config = load_config()
+    predictor = load_predictor(config)
     app = create_app(predictor)
     uvicorn.run(
         app,
