@@ -13,7 +13,7 @@ from pydantic import ValidationError
 import redis
 import requests
 
-from ..predictor import BasePredictor, get_input_type, load_predictor
+from ..predictor import BasePredictor, get_input_type, load_predictor, load_config
 from ..json import encode_json
 from ..response import Status
 from .runner import PredictionRunner
@@ -345,7 +345,8 @@ def _queue_worker_from_argv(
 
 
 if __name__ == "__main__":
-    predictor = load_predictor()
+    config = load_config()
+    predictor = load_predictor(config)
 
     worker = _queue_worker_from_argv(predictor, *sys.argv[1:])
     worker.start()
