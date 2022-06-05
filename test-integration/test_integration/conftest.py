@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import subprocess
 import pytest
@@ -5,6 +6,10 @@ import pytest
 import redis
 
 from .util import random_string, find_free_port, docker_run, wait_for_port
+
+
+def pytest_sessionstart(session):
+    os.environ["COG_NO_UPDATE_CHECK"] = "1"
 
 
 @pytest.fixture
