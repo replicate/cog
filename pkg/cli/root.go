@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/update"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -28,6 +29,9 @@ https://github.com/replicate/cog`,
 				console.SetLevel(console.DebugLevel)
 			}
 			cmd.SilenceUsage = true
+			if err := update.DisplayAndCheckForRelease(); err != nil {
+				console.Debugf("%s", err)
+			}
 		},
 		SilenceErrors: true,
 	}
