@@ -159,7 +159,9 @@ class RedisQueueWorker:
 
                 message = json.loads(message_json)
                 response_queue = message["response_queue"]
-                sys.stderr.write(f"Received message on {self.input_queue}\n")
+                sys.stderr.write(
+                    f"Received message {message_id} on {self.input_queue}\n"
+                )
                 cleanup_functions: List[Callable] = []
                 try:
                     start_time = time.time()
@@ -174,7 +176,7 @@ class RedisQueueWorker:
                         fields={"duration": run_time},
                         maxlen=self.stats_queue_length,
                     )
-                    sys.stderr.write(f"Run time: {run_time:.2f}\n")
+                    sys.stderr.write(f"Run time for {message_id}: {run_time:.2f}\n")
                 except Exception as e:
                     self.push_error(response_queue, e)
                     self.redis.xack(self.input_queue, self.input_queue, message_id)
@@ -187,7 +189,7 @@ class RedisQueueWorker:
                             sys.stderr.write(f"Cleanup function caught error: {e}")
             except Exception as e:
                 tb = traceback.format_exc()
-                sys.stderr.write(f"Failed to handle message: {tb}\n")
+                sys.stderr.write(f"Failed to handle message {message_id}: {tb}\n")
 
     def handle_message(
         self,
