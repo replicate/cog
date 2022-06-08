@@ -11,7 +11,7 @@ from .log_capture import capture_log
 
 
 class PredictionRunner:
-    PREDICTION_DONE = 1
+    PROCESSING_DONE = 1
 
     class OutputType(Enum):
         NOT_STARTED = 0
@@ -38,8 +38,8 @@ class PredictionRunner:
 
     def setup(self) -> None:
         """
-        Sets up the predictor in a subprocess. To start a prediction after
-        setup call `run()`.
+        Sets up the predictor in a subprocess. Blocks until the predictor has
+        finished setup. To start a prediction after setup call `run()`.
         """
         # `multiprocessing.get_context("spawn")` returns the same API as
         # `multiprocessing`, but will use the spawn method when creating any
@@ -51,12 +51,21 @@ class PredictionRunner:
         self.predictor_process = multiprocessing.get_context("spawn").Process(
             target=self._start_predictor_process
         )
+
+        self._is_processing = True
         self.predictor_process.start()
+
+        # poll with an infinite timeout to avoid burning resources in the loop
+        while self.done_pipe_reader.poll(timeout=None) and self.is_processing():
+            pass
 
     def _start_predictor_process(self) -> None:
         config = load_config()
         self.predictor = load_predictor(config)
         self.predictor.setup()
+
+        # tell the main process we've finished setup
+        self.done_pipe_writer.send(self.PROCESSING_DONE)
 
         while True:
             try:
@@ -98,7 +107,7 @@ class PredictionRunner:
         """
         if self.done_pipe_reader.poll():
             try:
-                if self.done_pipe_reader.recv() == self.PREDICTION_DONE:
+                if self.done_pipe_reader.recv() == self.PROCESSING_DONE:
                     self._is_processing = False
             except EOFError:
                 pass
@@ -186,7 +195,7 @@ class PredictionRunner:
             except Exception as e:
                 self.error_pipe_writer.send(e)
 
-        self.done_pipe_writer.send(self.PREDICTION_DONE)
+        self.done_pipe_writer.send(self.PROCESSING_DONE)
 
     def error(self) -> Optional[str]:
         """
