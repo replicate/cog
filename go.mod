@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/anaskhan96/soup v1.2.5
-	github.com/docker/cli v20.10.16+incompatible
+	github.com/docker/cli v20.10.17+incompatible
 	github.com/docker/docker v20.10.17+incompatible
 	github.com/getkin/kin-openapi v0.96.0
 	github.com/golangci/golangci-lint v1.46.2
