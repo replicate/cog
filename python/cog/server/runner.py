@@ -1,4 +1,5 @@
 import multiprocessing
+import os
 import types
 from enum import Enum
 from multiprocessing.connection import Connection
@@ -8,6 +9,12 @@ from pydantic import BaseModel
 
 from ..predictor import load_config, load_predictor
 from .log_capture import capture_log
+
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace import NonRecordingSpan, SpanContext
 
 
 class PredictionRunner:
@@ -41,15 +48,18 @@ class PredictionRunner:
         Sets up the predictor in a subprocess. Blocks until the predictor has
         finished setup. To start a prediction after setup call `run()`.
         """
+        span = trace.get_current_span()
+        span.add_event("spawning predictor process")
         # `multiprocessing.get_context("spawn")` returns the same API as
-        # `multiprocessing`, but will use the spawn method when creating any
-        # subprocess. Using the spawn method for the predictor subprocess is
-        # useful for compatibility with CUDA, which cannot run in a process
-        # that gets forked. If we can guarantee that all initialization happens
-        # within the subprocess, we could probably get away with using fork
-        # here instead.
+        # `multiprocessing`, but will use the spawn method when creating
+        # any subprocess. Using the spawn method for the predictor
+        # subprocess is useful for compatibility with CUDA, which cannot
+        # run in a process that gets forked. If we can guarantee that all
+        # initialization happens within the subprocess, we could probably
+        # get away with using fork here instead.
         self.predictor_process = multiprocessing.get_context("spawn").Process(
-            target=self._start_predictor_process
+            target=self._start_predictor_process,
+            kwargs={"span_context": span.get_span_context()},
         )
 
         self._is_processing = True
@@ -59,18 +69,35 @@ class PredictionRunner:
         while self.done_pipe_reader.poll(timeout=None) and self.is_processing():
             pass
 
-    def _start_predictor_process(self) -> None:
-        config = load_config()
-        self.predictor = load_predictor(config)
-        self.predictor.setup()
+    def _start_predictor_process(self, span_context: SpanContext = None) -> None:
+        # Enable OpenTelemetry if the env vars are present. If this block isn't
+        # run, all the opentelemetry calls are no-ops. We have to initialize
+        # this here again because we're running a new process.
+        if "OTEL_SERVICE_NAME" in os.environ:
+            trace.set_tracer_provider(TracerProvider())
+            span_processor = BatchSpanProcessor(OTLPSpanExporter())
+            trace.get_tracer_provider().add_span_processor(span_processor)
 
-        # tell the main process we've finished setup
-        self.done_pipe_writer.send(self.PROCESSING_DONE)
+        tracer = trace.get_tracer("cog")
+        with tracer.start_as_current_span(
+            name="PredictionRunner._start_predictor_process",
+            context=trace.set_span_in_context(NonRecordingSpan(span_context)),
+        ) as span:
+            config = load_config()
+            self.predictor = load_predictor(config)
+            with tracer.start_as_current_span(name="predictor.setup"):
+                self.predictor.setup()
+
+            # tell the main process we've finished setup
+            self.done_pipe_writer.send(self.PROCESSING_DONE)
 
         while True:
             try:
-                prediction_input = self.prediction_input_pipe_reader.recv()
-                self._run_prediction(prediction_input)
+                message = self.prediction_input_pipe_reader.recv()
+                self._run_prediction(
+                    prediction_input=message["prediction_input"],
+                    span_context=message["span_context"],
+                )
             except EOFError:
                 continue
 
@@ -97,8 +124,14 @@ class PredictionRunner:
         # We haven't encountered an error yet
         self._error = None
 
-        # Send prediction input through the pipe to the predictor subprocess
-        self.prediction_input_pipe_writer.send(prediction_input)
+        # Send prediction input through the pipe to the predictor subprocess.
+        # Include the current span context to link up the opentelemetry trace.
+        self.prediction_input_pipe_writer.send(
+            {
+                "prediction_input": prediction_input,
+                "span_context": trace.get_current_span().get_span_context(),
+            }
+        )
 
     def is_processing(self) -> bool:
         """
@@ -160,7 +193,11 @@ class PredictionRunner:
         elif self._is_output_generator is self.OutputType.GENERATOR:
             return True
 
-    def _run_prediction(self, prediction_input: Dict[str, Any]) -> None:
+    def _run_prediction(
+        self,
+        prediction_input: Dict[str, Any],
+        span_context: SpanContext = None,
+    ) -> None:
         """
         Sends a boolean first, to indicate whether the output is a generator.
         After that it sends the output(s).
@@ -178,7 +215,12 @@ class PredictionRunner:
 
         with capture_log(self.logs_pipe_writer):
             try:
-                output = self.predictor.predict(**prediction_input)
+                tracer = trace.get_tracer("cog")
+                with tracer.start_as_current_span(
+                    name="predictor.predict",
+                    context=trace.set_span_in_context(NonRecordingSpan(span_context)),
+                ) as span:
+                    output = self.predictor.predict(**prediction_input)
 
                 if isinstance(output, types.GeneratorType):
                     self.predictor_pipe_writer.send(self.OutputType.GENERATOR)

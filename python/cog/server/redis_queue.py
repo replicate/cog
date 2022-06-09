@@ -1,5 +1,6 @@
 import io
 import json
+import os
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 import signal
@@ -17,6 +18,13 @@ from ..predictor import BasePredictor, get_input_type, load_predictor, load_conf
 from ..json import encode_json
 from ..response import Status
 from .runner import PredictionRunner
+
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace import Status as TraceStatus, StatusCode
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 
 class timeout:
@@ -92,6 +100,7 @@ class RedisQueueWorker:
         self.setup_time_queue = input_queue + self.SETUP_TIME_QUEUE_SUFFIX
         self.predict_time_queue = input_queue + self.RUN_TIME_QUEUE_SUFFIX
         self.stats_queue_length = 100
+        self.tracer = trace.get_tracer("cog")
 
         sys.stderr.write(
             f"Connected to Redis: {self.redis_host}:{self.redis_port} (db {self.redis_db})\n"
@@ -135,19 +144,20 @@ class RedisQueueWorker:
         return key.decode(), raw_message[b"value"].decode()
 
     def start(self) -> None:
-        signal.signal(signal.SIGTERM, self.signal_exit)
-        start_time = time.time()
+        with self.tracer.start_as_current_span(name="redis_queue.setup") as span:
+            signal.signal(signal.SIGTERM, self.signal_exit)
+            start_time = time.time()
 
-        # TODO(bfirsh): setup should time out too, but we don't display these logs to the user, so don't timeout to avoid confusion
-        self.runner.setup()
+            # TODO(bfirsh): setup should time out too, but we don't display these logs to the user, so don't timeout to avoid confusion
+            self.runner.setup()
 
-        setup_time = time.time() - start_time
-        self.redis.xadd(
-            self.setup_time_queue,
-            fields={"duration": setup_time},
-            maxlen=self.stats_queue_length,
-        )
-        sys.stderr.write(f"Setup time: {setup_time:.2f}\n")
+            setup_time = time.time() - start_time
+            self.redis.xadd(
+                self.setup_time_queue,
+                fields={"duration": setup_time},
+                maxlen=self.stats_queue_length,
+            )
+            sys.stderr.write(f"Setup time: {setup_time:.2f}\n")
 
         sys.stderr.write(f"Waiting for message on {self.input_queue}\n")
         while not self.should_exit:
@@ -158,35 +168,51 @@ class RedisQueueWorker:
                     continue
 
                 message = json.loads(message_json)
-                response_queue = message["response_queue"]
-                sys.stderr.write(
-                    f"Received message {message_id} on {self.input_queue}\n"
-                )
-                cleanup_functions: List[Callable] = []
-                try:
-                    start_time = time.time()
-                    self.handle_message(response_queue, message, cleanup_functions)
-                    self.redis.xack(self.input_queue, self.input_queue, message_id)
-                    self.redis.xdel(
-                        self.input_queue, message_id
-                    )  # xdel to be able to get stream size
-                    run_time = time.time() - start_time
-                    self.redis.xadd(
-                        self.predict_time_queue,
-                        fields={"duration": run_time},
-                        maxlen=self.stats_queue_length,
+
+                # Check whether the incoming message includes details of an
+                # OpenTelemetry trace, to make distributed tracing work. The
+                # value should look like:
+                #
+                #     00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
+                if "traceparent" in message:
+                    context = TraceContextTextMapPropagator().extract(
+                        {"traceparent": message["traceparent"]}
                     )
-                    sys.stderr.write(f"Run time for {message_id}: {run_time:.2f}\n")
-                except Exception as e:
-                    self.push_error(response_queue, e)
-                    self.redis.xack(self.input_queue, self.input_queue, message_id)
-                    self.redis.xdel(self.input_queue, message_id)
-                finally:
-                    for cleanup_function in cleanup_functions:
-                        try:
-                            cleanup_function()
-                        except Exception as e:
-                            sys.stderr.write(f"Cleanup function caught error: {e}")
+                else:
+                    context = None
+
+                with self.tracer.start_as_current_span(
+                    name="redis_queue.process_message", context=context
+                ) as span:
+                    response_queue = message["response_queue"]
+                    sys.stderr.write(
+                        f"Received message {message_id} on {self.input_queue}\n"
+                    )
+                    cleanup_functions: List[Callable] = []
+                    try:
+                        start_time = time.time()
+                        self.handle_message(response_queue, message, cleanup_functions)
+                        self.redis.xack(self.input_queue, self.input_queue, message_id)
+                        self.redis.xdel(
+                            self.input_queue, message_id
+                        )  # xdel to be able to get stream size
+                        run_time = time.time() - start_time
+                        self.redis.xadd(
+                            self.predict_time_queue,
+                            fields={"duration": run_time},
+                            maxlen=self.stats_queue_length,
+                        )
+                        sys.stderr.write(f"Run time for {message_id}: {run_time:.2f}\n")
+                    except Exception as e:
+                        self.push_error(response_queue, e)
+                        self.redis.xack(self.input_queue, self.input_queue, message_id)
+                        self.redis.xdel(self.input_queue, message_id)
+                    finally:
+                        for cleanup_function in cleanup_functions:
+                            try:
+                                cleanup_function()
+                            except Exception as e:
+                                sys.stderr.write(f"Cleanup function caught error: {e}")
             except Exception as e:
                 tb = traceback.format_exc()
                 sys.stderr.write(f"Failed to handle message {message_id}: {tb}\n")
@@ -197,12 +223,16 @@ class RedisQueueWorker:
         message: Dict[str, Any],
         cleanup_functions: List[Callable],
     ) -> None:
+        span = trace.get_current_span()
+
         try:
             input_obj = self.InputType(**message["input"])
         except ValidationError as e:
             tb = traceback.format_exc()
             sys.stderr.write(tb)
             self.push_error(response_queue, e)
+            span.record_exception(e)
+            span.set_status(TraceStatus(status_code=StatusCode.ERROR))
             return
 
         cleanup_functions.append(input_obj.cleanup)
@@ -227,7 +257,11 @@ class RedisQueueWorker:
                 response["status"] = Status.FAILED
                 response["error"] = str(self.runner.error())  # type: ignore
                 self.redis.rpush(response_queue, json.dumps(response))
+                span.record_exception(self.runner.error())
+                span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                 return
+
+            span.add_event("received first output")
 
             if self.runner.is_output_generator():
                 output = response["output"] = []
@@ -259,7 +293,11 @@ class RedisQueueWorker:
                     response["status"] = Status.FAILED
                     response["error"] = str(self.runner.error())  # type: ignore
                     self.redis.rpush(response_queue, json.dumps(response))
+                    span.record_exception(self.runner.error())
+                    span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                     return
+
+                span.add_event("received final output")
 
                 response["status"] = Status.SUCCEEDED
                 output.extend(self.encode_json(o) for o in self.runner.read_output())
@@ -277,6 +315,8 @@ class RedisQueueWorker:
                     response["status"] = Status.FAILED
                     response["error"] = str(self.runner.error())  # type: ignore
                     self.redis.rpush(response_queue, json.dumps(response))
+                    span.record_exception(self.runner.error())
+                    span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                     return
 
                 output = self.runner.read_output()
@@ -345,6 +385,13 @@ def _queue_worker_from_argv(
 
 
 if __name__ == "__main__":
+    # Enable OpenTelemetry if the env vars are present. If this block isn't
+    # run, all the opentelemetry calls are no-ops.
+    if "OTEL_SERVICE_NAME" in os.environ:
+        trace.set_tracer_provider(TracerProvider())
+        span_processor = BatchSpanProcessor(OTLPSpanExporter())
+        trace.get_tracer_provider().add_span_processor(span_processor)
+
     config = load_config()
     predictor = load_predictor(config)
 

@@ -17,6 +17,8 @@ setuptools.setup(
     install_requires=[
         # intentionally loose. perhaps these should be vendored to not collide with user code?
         "fastapi>=0.6,<1",
+        "opentelemetry-exporter-otlp>=1.11.1,<2",
+        "opentelemetry-sdk>=1.11.1,<2",
         "pydantic>=1,<2",
         "PyYAML",
         "redis>=4,<5",
