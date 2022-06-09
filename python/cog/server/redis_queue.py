@@ -215,7 +215,7 @@ class RedisQueueWorker:
                                 sys.stderr.write(f"Cleanup function caught error: {e}")
             except Exception as e:
                 tb = traceback.format_exc()
-                sys.stderr.write(f"Failed to handle message {message_id}: {tb}\n")
+                sys.stderr.write(f"Failed to handle message: {tb}\n")
 
     def handle_message(
         self,
