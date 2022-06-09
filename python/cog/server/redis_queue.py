@@ -207,8 +207,6 @@ class RedisQueueWorker:
 
         cleanup_functions.append(input_obj.cleanup)
 
-        start_time = time.time()
-
         with timeout(seconds=self.predict_timeout):
             self.runner.run(**input_obj.dict())
 
