@@ -99,3 +99,31 @@ Because each message is a complete snapshot of the current state, you can use th
 Alternatively, to get the latest state whilst clearing the queue you can use the `RPOP` command with a count:
 
     redis:6379> RPOP my-response-queue 1000
+
+## Telemetry
+
+Cog's queue worker is instrumented using [OpenTelemetry](https://opentelemetry.io). For setup it sends:
+
+- a span when the queue worker starts
+- an event when it spawns the predictor subprocess
+- a span when the predictor subprocess starts
+- a span wrapping your `setup()` method
+
+For each prediction it sends:
+
+- a span when the request is received
+- a span wrapping your `predict()` method
+- an event when the first output is received from your `predict()` method
+- for progressive output, an event when the final output is received from your `predict()` method
+
+If the runner encounters an error during the prediction it will record it and set the span's status to error.
+
+### Configuration
+
+Telemetry is enabled when the `OTEL_SERVICE_NAME` environment variable is set. The OTLP exporter also needs to be [configured via environment variables][1].
+
+[1]: https://opentelemetry-python.readthedocs.io/en/latest/sdk/environment_variables.html
+
+If a `traceparent` parameter is provided with the prediction request, Cog will use that value as the parent for the prediction spans. This allows spans from Cog to show up in distributed traces. The parameter should be in the W3C format, eg:
+
+    00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
