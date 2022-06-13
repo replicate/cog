@@ -20,9 +20,9 @@ from ..response import Status
 from .runner import PredictionRunner
 
 from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter  # type: ignore
+from opentelemetry.sdk.trace import TracerProvider  # type: ignore
+from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore
 from opentelemetry.trace import Status as TraceStatus, StatusCode
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 

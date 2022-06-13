@@ -11,9 +11,9 @@ from ..predictor import load_config, load_predictor
 from .log_capture import capture_log
 
 from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter  # type: ignore
+from opentelemetry.sdk.trace import TracerProvider  # type: ignore
+from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore
 from opentelemetry.trace import NonRecordingSpan, SpanContext
 
 
