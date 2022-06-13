@@ -167,6 +167,7 @@ class RedisQueueWorker:
                     # tight loop in order to respect self.should_exit
                     continue
 
+                time_in_queue = calculate_time_in_queue(message_id)  # type: ignore
                 message = json.loads(message_json)
 
                 # Check whether the incoming message includes details of an
@@ -182,7 +183,9 @@ class RedisQueueWorker:
                     context = None
 
                 with self.tracer.start_as_current_span(
-                    name="redis_queue.process_message", context=context
+                    name="redis_queue.process_message",
+                    context=context,
+                    attributes={"time_in_queue": time_in_queue},
                 ) as span:
                     response_queue = message["response_queue"]
                     sys.stderr.write(
@@ -349,6 +352,16 @@ class RedisQueueWorker:
             return resp.json()["url"]
 
         return encode_json(obj, upload_file)
+
+
+def calculate_time_in_queue(message_id: str) -> float:
+    """
+    Calculate how long a message spent in the queue based on the timestamp in
+    the message ID.
+    """
+    now = time.time()
+    queue_time = int(message_id[:13]) / 1000.0
+    return now - queue_time
 
 
 def _queue_worker_from_argv(
