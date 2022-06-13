@@ -248,5 +248,7 @@ def make_pickleable(obj: Any) -> Any:
     """
     if isinstance(obj, BaseModel):
         return obj.dict(exclude_unset=True)
+    elif isinstance(obj, List):
+        return [make_pickleable(item) for item in obj]
     else:
         return obj
