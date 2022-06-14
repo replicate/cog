@@ -5,12 +5,12 @@ import importlib.util
 import inspect
 import os.path
 from pathlib import Path
-from pydantic import create_model, BaseModel
+from pydantic import create_model, BaseModel, Field
 from pydantic.fields import FieldInfo
 from typing import Any, Callable, Dict, List, Type
 
 # Added in Python 3.8. Can be from typing if we drop support for <3.8.
-from typing_extensions import get_origin, get_args
+from typing_extensions import get_origin, get_args, Annotated
 import yaml
 
 from .errors import ConfigDoesNotExist, PredictorNotSet
@@ -209,7 +209,9 @@ For example:
 
     # The type that goes in the response is a list of the yielded type
     if get_origin(OutputType) is Iterator:
-        OutputType = List[get_args(OutputType)[0]]  # type: ignore
+        # Annotated allows us to attach Field annotations to the list, which we use to mark that this is an iterator
+        # https://pydantic-docs.helpmanual.io/usage/schema/#typingannotated-fields
+        OutputType = Annotated[List[get_args(OutputType)[0]], Field(**{"x-cog-array-type": "iterator"})]  # type: ignore
 
     if not hasattr(OutputType, "__name__") or OutputType.__name__ != "Output":
         # Wrap the type in a model called "Output" so it is a consistent name in the OpenAPI schema

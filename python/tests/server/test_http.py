@@ -2,7 +2,7 @@ import base64
 import io
 import os
 import tempfile
-from typing import Iterator
+from typing import Iterator, List
 from unittest import mock
 
 from fastapi.testclient import TestClient
@@ -406,6 +406,27 @@ def test_openapi_specification_with_yield():
         def predict(
             self,
         ) -> Iterator[str]:
+            pass
+
+    client = make_client(Predictor())
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+
+    assert resp.json()["components"]["schemas"]["Output"] == {
+        "title": "Output",
+        "type": "array",
+        "items": {
+            "type": "string",
+        },
+        "x-cog-array-type": "iterator",
+    }
+
+
+def test_openapi_specification_with_list():
+    class Predictor(BasePredictor):
+        def predict(
+            self,
+        ) -> List[str]:
             pass
 
     client = make_client(Predictor())
