@@ -12,6 +12,7 @@ Tip: Run [`cog init`](getting-started-own-model#initialization) to generate an a
     - [Progressive output](#progressive-output)
 - [`Input(**kwargs)`](#inputkwargs)
 - [Output](#output)
+    - [Optional properties](#optional-output-properties)
 - [Input and output types](#input-and-output-types)
 - [`File()`](#file)
 - [`Path()`](#path)
@@ -143,6 +144,26 @@ class Predictor(BasePredictor):
 ```
 
 Each of the output object's properties must be one of the supported output types. For the full list, see [Input and output types](#input-and-output-types).
+
+### Optional properties
+
+To conditionally omit properties from the Output object, define them using `typing.Optional`:
+
+```py
+from cog import BaseModel, BasePredictor, Path
+from typing import Optional
+
+class Output(BaseModel):
+    score: Optional[float]
+    file: Optional[Path]
+
+class Predictor(BasePredictor):
+    def predict(self) -> Output:
+        if condition:
+            return Output(score=1.5)
+        else:
+            return Output(file=io.StringIO("hello"))
+```
 
 ## Input and output types
 
