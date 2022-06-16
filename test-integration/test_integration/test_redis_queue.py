@@ -49,7 +49,7 @@ def test_queue_worker_files(docker_image, docker_network, redis_client, upload_s
                 ),
             },
         )
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "succeeded",
             "output": "http://upload-server:5000/download/output.txt",
@@ -106,7 +106,7 @@ def test_queue_worker_yielding_file(
             },
         )
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "processing",
             "output": ["http://upload-server:5000/download/out-0.txt"],
@@ -116,7 +116,7 @@ def test_queue_worker_yielding_file(
         with open(upload_server / "out-0.txt") as f:
             assert f.read() == "test foo"
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "processing",
             "output": [
@@ -129,7 +129,7 @@ def test_queue_worker_yielding_file(
         with open(upload_server / "out-1.txt") as f:
             assert f.read() == "test bar"
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "processing",
             "output": [
@@ -143,7 +143,7 @@ def test_queue_worker_yielding_file(
         with open(upload_server / "out-2.txt") as f:
             assert f.read() == "test baz"
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "succeeded",
             "output": [
@@ -199,14 +199,14 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client):
             },
         )
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "processing",
             "output": ["foo", "bar", "baz"],
             "logs": [],
         }
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "succeeded",
             "output": ["foo", "bar", "baz"],
@@ -258,7 +258,7 @@ def test_queue_worker_error(docker_network, docker_image, redis_client):
             },
         )
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "failed",
             "output": None,
@@ -311,21 +311,21 @@ def test_queue_worker_error_after_output(docker_network, docker_image, redis_cli
             },
         )
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "processing",
             "output": ["hello bar"],
             "logs": [],
         }
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "processing",
             "output": ["hello bar"],
             "logs": ["a printed log message"],
         }
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "failed",
             "output": ["hello bar"],
@@ -378,7 +378,7 @@ def test_queue_worker_invalid_input(docker_network, docker_image, redis_client):
             },
         )
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert "status" in response
         assert response["status"] == "failed"
 
@@ -425,7 +425,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client):
             },
         )
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "processing",
             "output": None,
@@ -434,7 +434,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client):
             ],
         }
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "processing",
             "output": None,
@@ -444,7 +444,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client):
             ],
         }
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "processing",
             "output": None,
@@ -455,7 +455,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client):
             ],
         }
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "processing",
             "output": None,
@@ -467,7 +467,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client):
             ],
         }
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "succeeded",
             "output": "output",
@@ -525,7 +525,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client):
             },
         )
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {"status": "succeeded", "output": "it worked!", "logs": []}
 
         predict_id = random_string(10)
@@ -544,7 +544,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client):
             },
         )
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {"status": "failed", "error": "Prediction timed out"}
 
 
@@ -591,10 +591,10 @@ def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_clien
             },
         )
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {"status": "processing", "output": ["yield 0"], "logs": []}
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {"status": "succeeded", "output": ["yield 0"], "logs": []}
 
         predict_id = random_string(10)
@@ -615,17 +615,17 @@ def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_clien
         )
 
         # TODO(andreas): revisit this test design if it starts being flakey
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {"status": "processing", "output": ["yield 0"], "logs": []}
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "processing",
             "output": ["yield 0", "yield 1"],
             "logs": [],
         }
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {"status": "failed", "error": "Prediction timed out"}
 
 
@@ -670,7 +670,7 @@ def test_queue_worker_complex_output(docker_network, docker_image, redis_client)
             },
         )
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "status": "succeeded",
             "output": {
