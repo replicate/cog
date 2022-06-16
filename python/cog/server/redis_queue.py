@@ -253,6 +253,8 @@ class RedisQueueWorker:
                 "logs": logs,
             }
 
+            self.redis.rpush(response_queue, json.dumps(response))
+
             # just send logs until output starts
             while self.runner.is_processing() and not self.runner.has_output_waiting():
                 if self.runner.has_logs_waiting():
