@@ -220,6 +220,9 @@ class RedisQueueWorker:
                 tb = traceback.format_exc()
                 sys.stderr.write(f"Failed to handle message: {tb}\n")
 
+        sys.stderr.write("Closing runner, bye bye!\n")
+        self.runner.close()
+
     def handle_message(
         self,
         response_queue: str,
@@ -270,6 +273,7 @@ class RedisQueueWorker:
                 output = response["output"] = []
 
                 while self.runner.is_processing():
+                    # TODO: restructure this to avoid the tight CPU-eating loop
                     if (
                         self.runner.has_output_waiting()
                         or self.runner.has_logs_waiting()
