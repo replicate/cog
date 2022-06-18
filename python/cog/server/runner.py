@@ -19,6 +19,7 @@ from opentelemetry.trace import NonRecordingSpan, SpanContext
 
 class PredictionRunner:
     PROCESSING_DONE = 1
+    EXIT_SENTINEL = "exit"
 
     class OutputType(Enum):
         NOT_STARTED = 0
@@ -94,6 +95,10 @@ class PredictionRunner:
         while True:
             try:
                 message = self.prediction_input_pipe_reader.recv()
+
+                if message == PredictionRunner.EXIT_SENTINEL:
+                    break
+
                 self._run_prediction(
                     prediction_input=message["prediction_input"],
                     span_context=message["span_context"],
@@ -252,6 +257,12 @@ class PredictionRunner:
 
         return self._error
 
+    def close(self) -> None:
+        """
+        Exit the runner gracefully.
+        """
+        self.prediction_input_pipe_writer.send(PredictionRunner.EXIT_SENTINEL)
+        self.predictor_process.join()
 
 def drain_pipe(pipe_reader: Connection) -> None:
     """
