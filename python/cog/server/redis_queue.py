@@ -160,13 +160,29 @@ class RedisQueueWorker:
             sys.stderr.write(f"Setup time: {setup_time:.2f}\n")
 
         sys.stderr.write(f"Waiting for message on {self.input_queue}\n")
+        consecutive_failures = 0
         while not self.should_exit:
             try:
                 message_id, message_json = self.receive_message()
-                if message_json is None:
-                    # tight loop in order to respect self.should_exit
+                consecutive_failures = 0
+            except:
+                # Give up and exit after a few retries. The cost of running
+                # `setup()` is significant, so we don't want to exit due to an
+                # intermittent error. But, we do want to crash if we can't
+                # connect to Redis, so the failure becomes evident.
+                consecutive_failures += 1
+                if consecutive_failures > 10:
+                    sys.stderr.write("Failed to receive message from Redis; giving up")
+                    break
+                else:
+                    sys.stderr.write("Failed to receive message from Redis; retrying")
                     continue
 
+            if message_json is None:
+                # tight loop in order to respect self.should_exit
+                continue
+
+            try:
                 time_in_queue = calculate_time_in_queue(message_id)  # type: ignore
                 message = json.loads(message_json)
 
