@@ -19,6 +19,7 @@ setuptools.setup(
         "fastapi>=0.6,<1",
         "opentelemetry-exporter-otlp>=1.11.1,<2",
         "opentelemetry-sdk>=1.11.1,<2",
+        "protobuf<=3.20",
         "pydantic>=1,<2",
         "PyYAML",
         "redis>=4,<5",
