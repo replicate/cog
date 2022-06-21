@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
+
+from ..json import make_encodeable
 from ..predictor import load_config, load_predictor
 from .log_capture import capture_log
 
@@ -232,13 +234,13 @@ class PredictionRunner:
                     while True:
                         try:
                             self.predictor_pipe_writer.send(
-                                next(make_pickleable(output))
+                                make_encodeable(next(output))
                             )
                         except StopIteration:
                             break
                 else:
                     self.predictor_pipe_writer.send(self.OutputType.SINGLE)
-                    self.predictor_pipe_writer.send(make_pickleable(output))
+                    self.predictor_pipe_writer.send(make_encodeable(output))
             except Exception as e:
                 self.error_pipe_writer.send(e)
 
@@ -264,6 +266,7 @@ class PredictionRunner:
         self.prediction_input_pipe_writer.send(PredictionRunner.EXIT_SENTINEL)
         self.predictor_process.join()
 
+
 def drain_pipe(pipe_reader: Connection) -> None:
     """
     Reads all available messages from a pipe and discards them. This serves to
@@ -274,34 +277,3 @@ def drain_pipe(pipe_reader: Connection) -> None:
             pipe_reader.recv()
         except EOFError:
             break
-
-
-def make_pickleable(obj: Any) -> Any:
-    """
-    Returns a version of `obj` which can be pickled and therefore sent through
-    the pipe to the main process.
-
-    If the predictor uses a custom output like:
-
-        class Output(BaseModel):
-            text: str
-
-    then the output can't be sent through the pipe because:
-
-    > Can't pickle <class 'predict.Output'>: it's not the same object as
-    > 'predict.Output'
-
-    The way we're getting around this here will only work for singly-nested
-    outputs. If there's a complex object inside a complex object, it's likely
-    to fall over.
-
-    A better fix for this would be to work out why the pickling process is
-    getting a different class when loading `Output`, so the pickling Just
-    Works.
-    """
-    if isinstance(obj, BaseModel):
-        return obj.dict(exclude_unset=True)
-    elif isinstance(obj, List):
-        return [make_pickleable(item) for item in obj]
-    else:
-        return obj

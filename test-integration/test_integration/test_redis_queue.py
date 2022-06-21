@@ -762,6 +762,85 @@ def test_queue_worker_complex_output(docker_network, docker_image, redis_client)
         assert response == None
 
 
+# Testing make_pickable works with sufficiently complex things.
+# We're also testing uploading files because that is a separate code path in the make redis worker.
+# Shame this is an integration test but want to make sure this works for erlich without loads of manual testing.
+# Maybe this can be removed when we have better unit test coverage for redis things.
+def test_queue_worker_yielding_list_of_complex_output(
+    docker_network, docker_image, redis_client, upload_server
+):
+    project_dir = (
+        Path(__file__).parent / "fixtures/yielding-list-of-complex-output-project"
+    )
+    subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
+
+    with docker_run(
+        image=docker_image,
+        interactive=True,
+        network=docker_network,
+        command=[
+            "python",
+            "-m",
+            "cog.server.redis_queue",
+            "redis",
+            "6379",
+            "predict-queue",
+            "http://upload-server:5000/upload",
+            "test-worker",
+            "model_id",
+            "logs",
+        ],
+    ):
+        redis_client.xgroup_create(
+            mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
+        )
+
+        predict_id = random_string(10)
+        redis_client.xadd(
+            name="predict-queue",
+            fields={
+                "value": json.dumps(
+                    {
+                        "id": predict_id,
+                        "input": {},
+                        "response_queue": "response-queue",
+                    }
+                ),
+            },
+        )
+
+        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        assert response == {
+            "status": "processing",
+            "output": None,
+            "logs": [],
+        }
+
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        assert response == {
+            "status": "processing",
+            "output": [
+                [{"file": "http://upload-server:5000/download/file", "text": "hello"}]
+            ],
+            "logs": [],
+        }
+
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        assert response == {
+            "status": "succeeded",
+            "output": [
+                [{"file": "http://upload-server:5000/download/file", "text": "hello"}]
+            ],
+            "logs": [],
+        }
+
+        response = redis_client.rpop("response-queue")
+        assert response == None
+
+        with open(upload_server / "file") as f:
+            assert f.read() == "hello"
+
+
 # the worker shouldn't start taking jobs until the runner has finished setup
 def test_queue_worker_setup(docker_network, docker_image, redis_client):
     project_dir = Path(__file__).parent / "fixtures/long-setup-project"
