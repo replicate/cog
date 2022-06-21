@@ -15,7 +15,7 @@ import redis
 import requests
 
 from ..predictor import BasePredictor, get_input_type, load_predictor, load_config
-from ..json import make_encodeable, upload_files
+from ..json import upload_files
 from ..response import Status
 from .runner import PredictionRunner
 
@@ -280,8 +280,9 @@ class RedisQueueWorker:
                         self.runner.has_output_waiting()
                         or self.runner.has_logs_waiting()
                     ):
+                        # Object has already passed through `make_encodeable()` in the Runner, so all we need to do here is upload the files
                         new_output = [
-                            self.encode_json(o) for o in self.runner.read_output()
+                            self.upload_files(o) for o in self.runner.read_output()
                         ]
                         new_logs = self.runner.read_logs()
 
@@ -309,7 +310,7 @@ class RedisQueueWorker:
                 span.add_event("received final output")
 
                 response["status"] = Status.SUCCEEDED
-                output.extend(self.encode_json(o) for o in self.runner.read_output())
+                output.extend(self.upload_files(o) for o in self.runner.read_output())
                 logs.extend(self.runner.read_logs())
                 self.redis.rpush(response_queue, json.dumps(response))
 
@@ -332,7 +333,7 @@ class RedisQueueWorker:
                 assert len(output) == 1
 
                 response["status"] = Status.SUCCEEDED
-                response["output"] = self.encode_json(output[0])
+                response["output"] = self.upload_files(output[0])
                 logs.extend(self.runner.read_logs())
                 self.redis.rpush(response_queue, json.dumps(response))
 
@@ -351,14 +352,13 @@ class RedisQueueWorker:
         sys.stderr.write(f"Pushing error to {response_queue}\n")
         self.redis.rpush(response_queue, message)
 
-    def encode_json(self, obj: Any) -> Any:
+    def upload_files(self, obj: Any) -> Any:
         def upload_file(fh: io.IOBase) -> str:
             resp = requests.put(self.upload_url, files={"file": fh})
             resp.raise_for_status()
             return resp.json()["url"]
 
-        encoded_object = make_encodeable(obj)
-        return upload_files(encoded_object, upload_file)
+        return upload_files(obj, upload_file)
 
 
 def calculate_time_in_queue(message_id: str) -> float:
