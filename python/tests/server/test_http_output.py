@@ -2,6 +2,7 @@ import base64
 import io
 import os
 import tempfile
+from typing import Iterator, List
 
 import numpy as np
 from PIL import Image
@@ -137,6 +138,23 @@ def test_complex_output():
             "file": "data:application/octet-stream;base64,aGVsbG8=",
             "text": "hello",
         },
+        "status": "succeeded",
+    }
+    assert resp.status_code == 200
+
+
+def test_iterator_of_list_of_complex_output():
+    class Output(BaseModel):
+        text: str
+
+    class Predictor(BasePredictor):
+        def predict(self) -> Iterator[List[Output]]:
+            yield [Output(text="hello")]
+
+    client = make_client(Predictor())
+    resp = client.post("/predictions")
+    assert resp.json() == {
+        "output": [[{"text": "hello"}]],
         "status": "succeeded",
     }
     assert resp.status_code == 200
