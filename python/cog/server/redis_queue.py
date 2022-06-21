@@ -15,7 +15,7 @@ import redis
 import requests
 
 from ..predictor import BasePredictor, get_input_type, load_predictor, load_config
-from ..json import encode_json
+from ..json import make_encodeable, upload_files
 from ..response import Status
 from .runner import PredictionRunner
 
@@ -357,7 +357,8 @@ class RedisQueueWorker:
             resp.raise_for_status()
             return resp.json()["url"]
 
-        return encode_json(obj, upload_file)
+        encoded_object = make_encodeable(obj)
+        return upload_files(encoded_object, upload_file)
 
 
 def calculate_time_in_queue(message_id: str) -> float:
