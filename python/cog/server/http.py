@@ -15,7 +15,7 @@ import uvicorn  # type: ignore
 
 
 from ..files import upload_file
-from ..json import encode_json
+from ..json import make_encodeable, upload_files
 from ..predictor import (
     BasePredictor,
     get_input_type,
@@ -103,8 +103,9 @@ Check that your predict function is in this form, where `output_type` is the sam
         if request:
             output_file_prefix = request.output_file_prefix
 
-        encoded_response = encode_json(
-            response, upload_file=lambda fh: upload_file(fh, output_file_prefix)
+        encoded_response = make_encodeable(response)
+        encoded_response = upload_files(
+            encoded_response, upload_file=lambda fh: upload_file(fh, output_file_prefix)
         )
         # TODO: clean up output files
         return JSONResponse(content=encoded_response)
