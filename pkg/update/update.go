@@ -26,15 +26,23 @@ func DisplayAndCheckForRelease() error {
 		return fmt.Errorf("update check disabled")
 	}
 
-	state, err := loadState()
+	s, err := loadState()
 	if err != nil {
 		return err
 	}
-	if time.Since(state.LastChecked) > time.Hour {
+
+	if s.Version != global.Version {
+		console.Debugf("Resetting update message because Cog has been upgraded")
+		if err := writeState(&state{Message: "", LastChecked: time.Now(), Version: global.Version}); err != nil {
+			return err
+		}
+	}
+
+	if time.Since(s.LastChecked) > time.Hour {
 		startCheckingForRelease()
 	}
-	if state.Message != "" {
-		console.Info(state.Message)
+	if s.Message != "" {
+		console.Info(s.Message)
 		console.Info("")
 	}
 	return nil
@@ -50,7 +58,7 @@ func startCheckingForRelease() {
 			if r == nil {
 				break
 			}
-			if err := writeState(&state{Message: r.Message, LastChecked: time.Now()}); err != nil {
+			if err := writeState(&state{Message: r.Message, LastChecked: time.Now(), Version: global.Version}); err != nil {
 				console.Debugf("Failed to write state: %s", err)
 			}
 
