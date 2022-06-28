@@ -16,6 +16,7 @@ import (
 type state struct {
 	Message     string    `json:"message"`
 	LastChecked time.Time `json:"lastChecked"`
+	Version     string    `json:"version"`
 }
 
 // loadState loads the update check state from disk, returning defaults if it does not exist
