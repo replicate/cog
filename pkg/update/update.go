@@ -36,6 +36,7 @@ func DisplayAndCheckForRelease() error {
 		if err := writeState(&state{Message: "", LastChecked: time.Now(), Version: global.Version}); err != nil {
 			return err
 		}
+		return nil
 	}
 
 	if time.Since(s.LastChecked) > time.Hour {
