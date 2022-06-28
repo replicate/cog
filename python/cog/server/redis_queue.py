@@ -124,7 +124,8 @@ class RedisQueueWorker:
             1,
         )
         # format: [[b'1619393873567-0', [b'mykey', b'myval']]]
-        if raw_messages and raw_messages[0] is not None:
+        # since redis==4.3.4 an empty response from xautoclaim is indicated by [[b'0-0', []]]
+        if raw_messages and raw_messages[0] is not None and len(raw_messages[0]) == 2:
             key, raw_message = raw_messages[0]
             assert raw_message[0] == b"value"
             return key.decode(), raw_message[1].decode()
