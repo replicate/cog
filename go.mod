@@ -16,7 +16,7 @@ require (
 	github.com/stretchr/testify v1.8.0
 	github.com/vincent-petithory/dataurl v1.0.0
 	github.com/xeipuuv/gojsonschema v1.2.0
-	github.com/xeonx/timeago v1.0.0-rc4
+	github.com/xeonx/timeago v1.0.0-rc5
 	golang.org/x/sys v0.0.0-20220422013727-9388b58f7150
 	golang.org/x/tools v0.1.11-0.20220316014157-77aa08bb151a
 	gopkg.in/yaml.v2 v2.4.0
