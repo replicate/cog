@@ -74,7 +74,7 @@ class WebsocketQueueWorker:
     ):
         self.runner = PredictionRunner()
         self.websocket_url = websocket_url
-        self.websocket_auth = websocket_auth
+        self.websocket_auth = os.getenv("REPLICATE_WEBSOCKET_AUTH")
         self.upload_url = upload_url
         self.model_id = model_id
         self.predict_timeout = predict_timeout
@@ -110,8 +110,9 @@ class WebsocketQueueWorker:
                 on_message=self.on_message,
                 on_error=self.on_error,
                 on_close=self.on_close,
-                cookie=self.websocket_auth,
             )
+            if self.websocket_auth:
+                self.ws.cookie = self.websocket_auth
 
         self.ws.run_forever(dispatcher=rel)
         rel.signal(2, rel.abort)
@@ -316,7 +317,6 @@ def calculate_time_in_queue(message_id: str) -> float:
 def _queue_worker_from_argv(
     predictor: BasePredictor,
     websocket_url: str,
-    websocket_auth: str,
     upload_url: str,
     model_id: str,
     predict_timeout: Optional[str] = None,
@@ -333,7 +333,6 @@ def _queue_worker_from_argv(
     return WebsocketQueueWorker(
         predictor,
         websocket_url,
-        websocket_auth,
         upload_url,
         model_id,
         predict_timeout_int,
