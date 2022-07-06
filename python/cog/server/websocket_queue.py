@@ -67,7 +67,6 @@ class WebsocketQueueWorker:
         self,
         predictor: BasePredictor,
         websocket_url: str,
-        websocket_auth: str,
         upload_url: str,
         model_id: Optional[str] = None,
         predict_timeout: Optional[int] = None,
