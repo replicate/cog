@@ -101,7 +101,6 @@ class WebsocketQueueWorker:
             setup_time = time.time() - start_time
             sys.stderr.write(f"Setup time: {setup_time:.2f}\n")
 
-            websocket.enableTrace(True)
             sys.stderr.write(f"Connecting to {self.websocket_url}\n")
             self.ws = websocket.WebSocketApp(
                 self.websocket_url,
