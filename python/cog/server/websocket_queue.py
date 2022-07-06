@@ -68,12 +68,14 @@ class WebsocketQueueWorker:
         predictor: BasePredictor,
         websocket_url: str,
         websocket_auth: str,
-        model_id: Optional[str] = None,        
-        predict_timeout: Optional[int] = None,        
+        upload_url: str,
+        model_id: Optional[str] = None,
+        predict_timeout: Optional[int] = None,
     ):
         self.runner = PredictionRunner()
-        self.websocket_url = websocket_url,
-        self.websocket_auth = websocket_auth,
+        self.websocket_url = websocket_url
+        self.websocket_auth = websocket_auth
+        self.upload_url = upload_url
         self.model_id = model_id
         self.predict_timeout = predict_timeout
         # TODO: respect max_processing_time in message handling
@@ -98,52 +100,49 @@ class WebsocketQueueWorker:
             self.runner.setup()
 
             setup_time = time.time() - start_time
-            sys.stderr.write(f"Setup time: {setup_time:.2f}\n")        
+            sys.stderr.write(f"Setup time: {setup_time:.2f}\n")
 
             websocket.enableTrace(True)
+            sys.stderr.write(f"Connecting to {self.websocket_url}\n")
             self.ws = websocket.WebSocketApp(
                 self.websocket_url,
                 on_open=self.on_open,
                 on_message=self.on_message,
                 on_error=self.on_error,
                 on_close=self.on_close,
-                cookie=self.websocket_auth
+                cookie=self.websocket_auth,
             )
-        
+
         self.ws.run_forever(dispatcher=rel)
         rel.signal(2, rel.abort)
         rel.dispatch()
-        
 
-    def on_open(self, ws, message_json):
-      sys.stderr.write(f"Waiting for message on {self.websocket_url}\n")
+    def on_open(self, ws: websocket) -> None:
+        sys.stderr.write(f"Waiting for message on {self.websocket_url}\n")
 
-    def on_close(self, ws, cloe_status_code, close_msg):
-      sys.stderr.write(f"Websocket connection closed")
-      # Todo - reconnect
-      sys.stderr.write("Closing runner, bye bye!\n")
-      self.runner.close()
-      
+    def on_close(self, ws: websocket, close_status_code: int, close_msg: str) -> None:
+        sys.stderr.write(f"Websocket connection closed\n")
+        # Todo - reconnect
+        sys.stderr.write("Closing runner, bye bye!\n")
+        self.runner.close()
 
-    def on_error(self, ws, error):
-      sys.stderror.write(f"Websocket error: {error}")
+    def on_error(self, ws: websocket, error: str) -> None:
+        sys.stderr.write(f"Websocket error: {error}\n")
 
-    def on_message(self, ws, message_json):
-        if message_json is None:            
+    def on_message(self, ws: websocket, message_json: str) -> None:
+        if message_json is None:
             return
 
-        time_in_queue = calculate_time_in_queue(message_id)  # type: ignore
         message = json.loads(message_json)
-        message_id = message.id
+        message_id = message["id"]
+        time_in_queue = calculate_time_in_queue(message_id)  # type: ignore
         # Check whether the incoming message includes details of an
         # OpenTelemetry trace, to make distributed tracing work. The
         # value should look like:
         #
         #     00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
         if "traceparent" in message:
-            context = TraceContextTextMapPropagator().extract(
-                {"traceparent": message["traceparent"]}
-            )
+            context = TraceContextTextMapPropagator().extract({"traceparent": message["traceparent"]})
         else:
             context = None
 
@@ -151,31 +150,20 @@ class WebsocketQueueWorker:
             name="websocket_queue.process_message",
             context=context,
             attributes={"time_in_queue": time_in_queue},
-        ) as span:            
-            sys.stderr.write(
-                f"Received message {message_id} on {self.websocket_url}\n"
-            )
+        ) as span:
+            sys.stderr.write(f"Received message {message_id} on {self.websocket_url}\n")
             # create this here so it's available during exception handling
-            response: Dict[str, Any] = {
-                "status": Status.PROCESSING,
-                "output": None,
-                "logs": [],
-                "id": message_id
-            }
+            response: Dict[str, Any] = {"status": Status.PROCESSING, "output": None, "logs": [], "id": message_id}
             cleanup_functions: List[Callable] = []
             try:
                 start_time = time.time()
-                self.handle_message(
-                    response, message, cleanup_functions
-                )
+                self.handle_message(response, message, cleanup_functions)
                 run_time = time.time() - start_time
                 sys.stderr.write(f"Run time for {message_id}: {run_time:.2f}\n")
             except Exception as e:
                 response["status"] = Status.FAILED
                 response["error"] = str(e)
-                response["x-experimental-timestamps"][
-                    "completed_at"
-                ] = datetime.datetime.now().isoformat()
+                response["x-experimental-timestamps"]["completed_at"] = datetime.datetime.now().isoformat()
                 self.push_message(json.dumps(response))
             finally:
                 for cleanup_function in cleanup_functions:
@@ -185,7 +173,7 @@ class WebsocketQueueWorker:
                         sys.stderr.write(f"Cleanup function caught error: {e}")
 
     def handle_message(
-        self,        
+        self,
         response: Dict[str, Any],
         message: Dict[str, Any],
         cleanup_functions: List[Callable],
@@ -209,9 +197,7 @@ class WebsocketQueueWorker:
         with timeout(seconds=self.predict_timeout):
             self.runner.run(**input_obj.dict())
 
-            response["x-experimental-timestamps"] = {
-                "started_at": datetime.datetime.now().isoformat()
-            }
+            response["x-experimental-timestamps"] = {"started_at": datetime.datetime.now().isoformat()}
 
             logs: List[str] = []
             response["logs"] = logs
@@ -227,9 +213,7 @@ class WebsocketQueueWorker:
             if self.runner.error() is not None:
                 response["status"] = Status.FAILED
                 response["error"] = str(self.runner.error())  # type: ignore
-                response["x-experimental-timestamps"][
-                    "completed_at"
-                ] = datetime.datetime.now().isoformat()
+                response["x-experimental-timestamps"]["completed_at"] = datetime.datetime.now().isoformat()
                 self.push_message(response)
                 span.record_exception(self.runner.error())
                 span.set_status(TraceStatus(status_code=StatusCode.ERROR))
@@ -242,14 +226,9 @@ class WebsocketQueueWorker:
 
                 while self.runner.is_processing():
                     # TODO: restructure this to avoid the tight CPU-eating loop
-                    if (
-                        self.runner.has_output_waiting()
-                        or self.runner.has_logs_waiting()
-                    ):
+                    if self.runner.has_output_waiting() or self.runner.has_logs_waiting():
                         # Object has already passed through `make_encodeable()` in the Runner, so all we need to do here is upload the files
-                        new_output = [
-                            self.upload_files(o) for o in self.runner.read_output()
-                        ]
+                        new_output = [self.upload_files(o) for o in self.runner.read_output()]
                         new_logs = self.runner.read_logs()
 
                         # sometimes it'll say there's output when there's none
@@ -268,9 +247,7 @@ class WebsocketQueueWorker:
                 if self.runner.error() is not None:
                     response["status"] = Status.FAILED
                     response["error"] = str(self.runner.error())  # type: ignore
-                    response["x-experimental-timestamps"][
-                        "completed_at"
-                    ] = datetime.datetime.now().isoformat()
+                    response["x-experimental-timestamps"]["completed_at"] = datetime.datetime.now().isoformat()
                     self.push_message(response)
                     span.record_exception(self.runner.error())
                     span.set_status(TraceStatus(status_code=StatusCode.ERROR))
@@ -279,9 +256,7 @@ class WebsocketQueueWorker:
                 span.add_event("received final output")
 
                 response["status"] = Status.SUCCEEDED
-                response["x-experimental-timestamps"][
-                    "completed_at"
-                ] = datetime.datetime.now().isoformat()
+                response["x-experimental-timestamps"]["completed_at"] = datetime.datetime.now().isoformat()
                 output.extend(self.upload_files(o) for o in self.runner.read_output())
                 logs.extend(self.runner.read_logs())
                 self.push_message(response)
@@ -296,9 +271,7 @@ class WebsocketQueueWorker:
                 if self.runner.error() is not None:
                     response["status"] = Status.FAILED
                     response["error"] = str(self.runner.error())  # type: ignore
-                    response["x-experimental-timestamps"][
-                        "completed_at"
-                    ] = datetime.datetime.now().isoformat()
+                    response["x-experimental-timestamps"]["completed_at"] = datetime.datetime.now().isoformat()
                     self.push_message(response)
                     span.record_exception(self.runner.error())
                     span.set_status(TraceStatus(status_code=StatusCode.ERROR))
@@ -308,9 +281,7 @@ class WebsocketQueueWorker:
                 assert len(output) == 1
 
                 response["status"] = Status.SUCCEEDED
-                response["x-experimental-timestamps"][
-                    "completed_at"
-                ] = datetime.datetime.now().isoformat()
+                response["x-experimental-timestamps"]["completed_at"] = datetime.datetime.now().isoformat()
                 response["output"] = self.upload_files(output[0])
                 logs.extend(self.runner.read_logs())
                 self.push_message(response)
@@ -362,9 +333,9 @@ def _queue_worker_from_argv(
     return WebsocketQueueWorker(
         predictor,
         websocket_url,
-        websocket_auth,        
-        upload_url,        
-        model_id,        
+        websocket_auth,
+        upload_url,
+        model_id,
         predict_timeout_int,
     )
 
