@@ -8,3 +8,7 @@ class ConfigDoesNotExist(CogError):
 
 class PredictorNotSet(CogError):
     """Exception raised when 'predict' is not set in cog.yaml when it needs to be."""
+
+
+class IrrecoverablePredictorFailure(CogError):
+    """Exception raised by a predictor when it cannot run any more predictions."""

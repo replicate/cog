@@ -1,5 +1,6 @@
 import multiprocessing
 import os
+import sys
 import traceback
 import types
 from enum import Enum
@@ -9,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 
+from ..errors import IrrecoverablePredictorFailure
 from ..json import make_encodeable
 from ..predictor import load_config, load_predictor
 from .log_capture import capture_log
@@ -246,6 +248,11 @@ class PredictionRunner:
                     traceback.print_exc()
                     self.error_pipe_writer.send(e)
 
+                    # an irrecoverable error means we can't reuse this predictor again
+                    if type(e) == IrrecoverablePredictorFailure:
+                        self.done_pipe_writer.send(self.PROCESSING_DONE)
+                        sys.exit()
+
         self.done_pipe_writer.send(self.PROCESSING_DONE)
 
     def error(self) -> Optional[str]:
@@ -267,6 +274,9 @@ class PredictionRunner:
         """
         self.prediction_input_pipe_writer.send(PredictionRunner.EXIT_SENTINEL)
         self.predictor_process.join()
+
+    def is_alive(self) -> bool:
+        return self.predictor_process.is_alive()
 
 
 def drain_pipe(pipe_reader: Connection) -> None:

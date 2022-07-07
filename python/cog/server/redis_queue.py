@@ -162,7 +162,7 @@ class RedisQueueWorker:
             sys.stderr.write(f"Setup time: {setup_time:.2f}\n")
 
         sys.stderr.write(f"Waiting for message on {self.input_queue}\n")
-        while not self.should_exit:
+        while not self.should_exit and self.runner.is_alive():
             try:
                 message_id, message_json = self.receive_message()
                 if message_json is None:

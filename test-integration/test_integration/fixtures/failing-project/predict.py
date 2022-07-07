@@ -1,6 +1,10 @@
 from cog import BasePredictor
+from cog.errors import IrrecoverablePredictorFailure
 
 
 class Predictor(BasePredictor):
-    def predict(self, text: str) -> str:
-        raise Exception("over budget")
+    def predict(self, irrecoverable: bool) -> str:
+        if irrecoverable:
+            raise IrrecoverablePredictorFailure("irrecoverable error")
+        else:
+            raise Exception("over budget")

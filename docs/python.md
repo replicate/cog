@@ -16,6 +16,7 @@ Tip: Run [`cog init`](getting-started-own-model#initialization) to generate an a
 - [Input and output types](#input-and-output-types)
 - [`File()`](#file)
 - [`Path()`](#path)
+- [Error handling](#error-handling)
 
 ## `BasePredictor`
 
@@ -216,4 +217,22 @@ class Predictor(BasePredictor):
         output_path = Path(tempfile.mkdtemp()) / "upscaled.png"
         upscaled_image.save(output)
         return Path(output_path)
+```
+
+## Error handling
+
+If your predictor encounters an error, Cog will catch it and handle it gracefully. You can generally ignore error handling and trust Cog to do the right thing.
+
+If your predictor is being run by the queue worker, it will returned a failed prediction along with the error message, and then prepare to pick up the next prediction request. If your predictor has encountered an error so serious that it cannot finish the current prediction, nor will it be able to finish any future prediction, it needs to terminate.
+
+It can signal this by raising an `IrrecoverablePredictorFailure`, which will cause the queue worker to shut down gracefully:
+
+```python
+from cog import BasePredictor
+from cog.errors import IrrecoverablePredictorFailure
+
+class Predictor(BasePredictor):
+    def predict(self) -> str:
+        # do some work, encounter a fatal error
+        raise IrrecoverablePredictorFailure("memory corrupted")
 ```

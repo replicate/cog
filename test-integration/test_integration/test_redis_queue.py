@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+from time import sleep
 import unittest.mock as mock
 
 from .util import docker_run, random_string
@@ -316,7 +317,7 @@ def test_queue_worker_error(docker_network, docker_image, redis_client):
                     {
                         "id": predict_id,
                         "input": {
-                            "text": "bar",
+                            "irrecoverable": False,
                         },
                         "response_queue": "response-queue",
                     }
@@ -457,6 +458,97 @@ def test_queue_worker_error_after_output(docker_network, docker_image, redis_cli
 
         response = redis_client.rpop("response-queue")
         assert response == None
+
+
+def test_queue_worker_irrecoverable_error(docker_network, docker_image, redis_client):
+    project_dir = Path(__file__).parent / "fixtures/failing-project"
+    subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
+
+    with docker_run(
+        image=docker_image,
+        interactive=True,
+        network=docker_network,
+        command=[
+            "python",
+            "-m",
+            "cog.server.redis_queue",
+            "redis",
+            "6379",
+            "predict-queue",
+            "",
+            "test-worker",
+            "model_id",
+            "logs",
+        ],
+    ):
+        redis_client.xgroup_create(
+            mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
+        )
+
+        predict_id = random_string(10)
+        redis_client.xadd(
+            name="predict-queue",
+            fields={
+                "value": json.dumps(
+                    {
+                        "id": predict_id,
+                        "input": {
+                            "irrecoverable": True,
+                        },
+                        "response_queue": "response-queue",
+                    }
+                ),
+            },
+        )
+
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        assert response == {
+            "x-experimental-timestamps": {
+                "started_at": mock.ANY,
+            },
+            "status": "processing",
+            "output": None,
+            "logs": [],
+        }
+
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        assert response == {
+            "x-experimental-timestamps": {
+                "started_at": mock.ANY,
+            },
+            "status": "processing",
+            "output": None,
+            "logs": mock.ANY,  # includes a stack trace
+        }
+
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        assert response == {
+            "x-experimental-timestamps": {
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
+            },
+            "status": "failed",
+            "output": None,
+            "logs": mock.ANY,  # includes a stack trace
+            "error": "irrecoverable error",
+        }
+        assert "Traceback (most recent call last):" in response["logs"]
+
+        response = redis_client.rpop("response-queue")
+        assert response == None
+
+        tries = 0
+        while (
+            docker_image
+            in subprocess.check_output(["docker", "ps"], universal_newlines=True)
+            and tries < 10
+        ):
+            tries += 1
+            sleep(1)
+
+        assert docker_image not in subprocess.check_output(
+            ["docker", "ps"], universal_newlines=True
+        )
 
 
 def test_queue_worker_invalid_input(docker_network, docker_image, redis_client):
