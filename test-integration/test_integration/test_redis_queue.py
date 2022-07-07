@@ -511,17 +511,17 @@ def test_queue_worker_irrecoverable_error(docker_network, docker_image, redis_cl
             "logs": [],
         }
 
+        # There's a timing issue, depending on whether this is run on its own
+        # or with other tests -- solo it's quick enough to send these logs out
+        # before sending the final error response; jointly, it's not.
+        #
+        # We don't actually care whether or not an intermediate response is
+        # generated, only the final response. So if it's intermediate, just
+        # grab another.
         response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
-        assert response == {
-            "x-experimental-timestamps": {
-                "started_at": mock.ANY,
-            },
-            "status": "processing",
-            "output": None,
-            "logs": mock.ANY,  # includes a stack trace
-        }
+        if response["status"] == "processing":
+            response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
