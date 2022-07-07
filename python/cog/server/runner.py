@@ -1,5 +1,6 @@
 import multiprocessing
 import os
+import traceback
 import types
 from enum import Enum
 from multiprocessing.connection import Connection
@@ -242,6 +243,7 @@ class PredictionRunner:
                         self.predictor_pipe_writer.send(self.OutputType.SINGLE)
                         self.predictor_pipe_writer.send(make_encodeable(output))
                 except Exception as e:
+                    traceback.print_exc()
                     self.error_pipe_writer.send(e)
 
         self.done_pipe_writer.send(self.PROCESSING_DONE)
