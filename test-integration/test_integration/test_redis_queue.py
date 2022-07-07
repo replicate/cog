@@ -338,11 +338,22 @@ def test_queue_worker_error(docker_network, docker_image, redis_client):
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
+            },
+            "status": "processing",
+            "output": None,
+            "logs": mock.ANY,  # includes a stack trace
+        }
+        assert "Traceback (most recent call last):" in response["logs"]
+
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        assert response == {
+            "x-experimental-timestamps": {
+                "started_at": mock.ANY,
                 "completed_at": mock.ANY,
             },
             "status": "failed",
             "output": None,
-            "logs": [],
+            "logs": mock.ANY,  # includes a stack trace
             "error": "over budget",
         }
 
@@ -425,11 +436,22 @@ def test_queue_worker_error_after_output(docker_network, docker_image, redis_cli
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
+            },
+            "status": "processing",
+            "output": ["hello bar"],
+            "logs": mock.ANY,  # includes a stack trace
+        }
+        assert "Traceback (most recent call last):" in response["logs"]
+
+        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        assert response == {
+            "x-experimental-timestamps": {
+                "started_at": mock.ANY,
                 "completed_at": mock.ANY,
             },
             "status": "failed",
             "output": ["hello bar"],
-            "logs": ["a printed log message"],
+            "logs": mock.ANY,  # includes a stack trace
             "error": "mid run error",
         }
 
