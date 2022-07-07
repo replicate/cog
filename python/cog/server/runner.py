@@ -221,28 +221,28 @@ class PredictionRunner:
         drain_pipe(self.done_pipe_reader)
 
         with capture_log(self.logs_pipe_writer):
-            try:
-                tracer = trace.get_tracer("cog")
-                with tracer.start_as_current_span(
-                    name="predictor.predict",
-                    context=trace.set_span_in_context(NonRecordingSpan(span_context)),
-                ) as span:
+            tracer = trace.get_tracer("cog")
+            with tracer.start_as_current_span(
+                name="predictor.predict",
+                context=trace.set_span_in_context(NonRecordingSpan(span_context)),
+            ) as span:
+                try:
                     output = self.predictor.predict(**prediction_input)
 
-                if isinstance(output, types.GeneratorType):
-                    self.predictor_pipe_writer.send(self.OutputType.GENERATOR)
-                    while True:
-                        try:
-                            self.predictor_pipe_writer.send(
-                                make_encodeable(next(output))
-                            )
-                        except StopIteration:
-                            break
-                else:
-                    self.predictor_pipe_writer.send(self.OutputType.SINGLE)
-                    self.predictor_pipe_writer.send(make_encodeable(output))
-            except Exception as e:
-                self.error_pipe_writer.send(e)
+                    if isinstance(output, types.GeneratorType):
+                        self.predictor_pipe_writer.send(self.OutputType.GENERATOR)
+                        while True:
+                            try:
+                                self.predictor_pipe_writer.send(
+                                    make_encodeable(next(output))
+                                )
+                            except StopIteration:
+                                break
+                    else:
+                        self.predictor_pipe_writer.send(self.OutputType.SINGLE)
+                        self.predictor_pipe_writer.send(make_encodeable(output))
+                except Exception as e:
+                    self.error_pipe_writer.send(e)
 
         self.done_pipe_writer.send(self.PROCESSING_DONE)
 
