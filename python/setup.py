@@ -23,11 +23,10 @@ setuptools.setup(
         "pydantic>=1,<2",
         "PyYAML",
         "redis>=4,<5",
-        "rel>=0.4.7",
         "requests>=2,<3",
         "typing_extensions>=4.1.0",
         "uvicorn[standard]>=0.12,<1",
-        "websocket-client>=1.3.3",
+        "websockets>=10.3",
     ],
     packages=setuptools.find_packages(),
 )

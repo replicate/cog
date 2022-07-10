@@ -8,12 +8,13 @@ import signal
 import sys
 import traceback
 import time
-import types
-import contextlib
 
 from pydantic import ValidationError
-import websocket, rel
+
+import asyncio
+from websockets import client
 import requests
+
 
 from ..predictor import BasePredictor, get_input_type, load_predictor, load_config
 from ..json import upload_files
@@ -59,7 +60,7 @@ class timeout:
             signal.alarm(0)
 
 
-class WebsocketQueueWorker:
+class WebsocketWorker:
     STAGE_SETUP = "setup"
     STAGE_RUN = "run"
 
@@ -79,6 +80,7 @@ class WebsocketQueueWorker:
         self.predict_timeout = predict_timeout
         # TODO: respect max_processing_time in message handling
         self.max_processing_time = 10 * 60  # timeout after 10 minutes
+        self.running = False
 
         # Set up types
         self.InputType = get_input_type(predictor)
@@ -90,8 +92,8 @@ class WebsocketQueueWorker:
         self.should_exit = True
         sys.stderr.write("Caught SIGTERM, exiting...\n")
 
-    def start(self) -> None:
-        with self.tracer.start_as_current_span(name="websocket_queue.setup") as span:
+    async def run(self) -> None:
+        with self.tracer.start_as_current_span(name="websocket_client.setup") as span:
             signal.signal(signal.SIGTERM, self.signal_exit)
             start_time = time.time()
 
@@ -100,35 +102,24 @@ class WebsocketQueueWorker:
 
             setup_time = time.time() - start_time
             sys.stderr.write(f"Setup time: {setup_time:.2f}\n")
+        await self.ws_run()
 
-            sys.stderr.write(f"Connecting to {self.websocket_url}\n")
-            self.ws = websocket.WebSocketApp(
-                self.websocket_url,
-                on_open=self.on_open,
-                on_message=self.on_message,
-                on_error=self.on_error,
-                on_close=self.on_close,
-            )
-            if self.websocket_auth:
-                self.ws.cookie = self.websocket_auth
+    async def ws_run(self) -> None:
+        sys.stderr.write(f"Connecting to {self.websocket_url}\n")
 
-        self.ws.run_forever(dispatcher=rel)
-        rel.signal(2, rel.abort)
-        rel.dispatch()
+        async for websocket in client.connect(self.websocket_url):
+            try:
+                sys.stderr.write(f"Connected\n")
+                async for message in websocket:
+                    if message is str:
+                        sys.stderr.write("processing job")
+                        await self.process_message(websocket, str(message))
+                    else:
+                        sys.stderr.write(f"Ignoring binary payload")
+            except:
+                sys.stderr.write("Websocket error, will reconnect")
 
-    def on_open(self, ws: websocket) -> None:
-        sys.stderr.write(f"Waiting for message on {self.websocket_url}\n")
-
-    def on_close(self, ws: websocket, close_status_code: int, close_msg: str) -> None:
-        sys.stderr.write(f"Websocket connection closed\n")
-        # Todo - reconnect
-        sys.stderr.write("Closing runner, bye bye!\n")
-        self.runner.close()
-
-    def on_error(self, ws: websocket, error: str) -> None:
-        sys.stderr.write(f"Websocket error: {error}\n")
-
-    def on_message(self, ws: websocket, message_json: str) -> None:
+    async def process_message(self, ws: client.WebSocketClientProtocol, message_json: str) -> None:
         if message_json is None:
             return
 
@@ -146,7 +137,7 @@ class WebsocketQueueWorker:
             context = None
 
         with self.tracer.start_as_current_span(
-            name="websocket_queue.process_message",
+            name="websocket_client.process_message",
             context=context,
             attributes={"time_in_queue": time_in_queue},
         ) as span:
@@ -154,17 +145,33 @@ class WebsocketQueueWorker:
             # create this here so it's available during exception handling
             response: Dict[str, Any] = {"status": Status.PROCESSING, "output": None, "logs": [], "id": message_id}
             cleanup_functions: List[Callable] = []
+
+            # This should be protected against on the server side
+            if self.running:
+                error = "Worker is already processing a job, cannot accept another"
+                sys.stderr.write(error)
+                response["status"] = Status.FAILED
+                response["error"] = error
+                self.push_message(response)
+                span.set_status(TraceStatus(status_code=StatusCode.ERROR))
+                return
+            self.running = True
             try:
                 start_time = time.time()
                 self.handle_message(response, message, cleanup_functions)
                 run_time = time.time() - start_time
+                if not response["metrics"]:
+                    response["metrics"] = {}
+                response["metrics"]["predict_time"] = run_time
                 sys.stderr.write(f"Run time for {message_id}: {run_time:.2f}\n")
+                self.push_message(response)
             except Exception as e:
                 response["status"] = Status.FAILED
                 response["error"] = str(e)
                 response["x-experimental-timestamps"]["completed_at"] = datetime.datetime.now().isoformat()
                 self.push_message(json.dumps(response))
             finally:
+                self.running = False
                 for cleanup_function in cleanup_functions:
                     try:
                         cleanup_function()
@@ -283,7 +290,6 @@ class WebsocketQueueWorker:
                 response["x-experimental-timestamps"]["completed_at"] = datetime.datetime.now().isoformat()
                 response["output"] = self.upload_files(output[0])
                 logs.extend(self.runner.read_logs())
-                self.push_message(response)
 
     def download(self, url: str) -> bytes:
         resp = requests.get(url)
@@ -307,20 +313,23 @@ def calculate_time_in_queue(message_id: str) -> float:
     Calculate how long a message spent in the queue based on the timestamp in
     the message ID.
     """
-    now = time.time()
-    queue_time = int(message_id[:13]) / 1000.0
-    return now - queue_time
+    try:
+        now = time.time()
+        queue_time = int(message_id[:13]) / 1000.0
+        return now - queue_time
+    except:
+        return 0
 
 
-def _queue_worker_from_argv(
+def _websocket_worker_from_argv(
     predictor: BasePredictor,
     websocket_url: str,
     upload_url: str,
     model_id: str,
     predict_timeout: Optional[str] = None,
-) -> WebsocketQueueWorker:
+) -> WebsocketWorker:
     """
-    Construct a WebsocketQueueWorker object from sys.argv, taking into account optional arguments and types.
+    Construct a WebsocketWorker object from sys.argv, taking into account optional arguments and types.
 
     This is intensely fragile. This should be kwargs or JSON or something like that.
     """
@@ -328,13 +337,17 @@ def _queue_worker_from_argv(
         predict_timeout_int = int(predict_timeout)
     else:
         predict_timeout_int = None
-    return WebsocketQueueWorker(
+    return WebsocketWorker(
         predictor,
         websocket_url,
         upload_url,
         model_id,
         predict_timeout_int,
     )
+
+
+async def start(worker: WebsocketWorker):
+    await worker.run()
 
 
 if __name__ == "__main__":
@@ -348,5 +361,5 @@ if __name__ == "__main__":
     config = load_config()
     predictor = load_predictor(config)
 
-    worker = _queue_worker_from_argv(predictor, *sys.argv[1:])
-    worker.start()
+    worker = _websocket_worker_from_argv(predictor, *sys.argv[1:])
+    asyncio.run(start(worker))
