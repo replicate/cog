@@ -111,11 +111,11 @@ class WebsocketWorker:
             try:
                 sys.stderr.write(f"Connected\n")
                 async for message in websocket:
-                    if message is str:
+                    if isinstance(message, str):
                         sys.stderr.write("processing job")
                         await self.process_message(websocket, str(message))
                     else:
-                        sys.stderr.write(f"Ignoring binary payload")
+                        sys.stderr.write("Ignoring binary payload")
             except:
                 sys.stderr.write("Websocket error, will reconnect")
 
