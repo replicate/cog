@@ -160,9 +160,7 @@ class WebsocketWorker:
                 start_time = time.time()
                 await self.handle_message(websocket, response, message, cleanup_functions)
                 run_time = time.time() - start_time
-                if not response["metrics"]:
-                    response["metrics"] = {}
-                response["metrics"]["predict_time"] = run_time
+                response["metrics"] = {"predict_time": run_time}
                 sys.stderr.write(f"Run time for {message_id}: {run_time:.2f}\n")
                 await self.push_message(websocket, response)
             except Exception as e:
