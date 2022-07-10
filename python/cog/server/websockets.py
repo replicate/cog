@@ -158,7 +158,7 @@ class WebsocketWorker:
             self.running = True
             try:
                 start_time = time.time()
-                await self.handle_message(response, websocket, message, cleanup_functions)
+                await self.handle_message(websocket, response, message, cleanup_functions)
                 run_time = time.time() - start_time
                 if not response["metrics"]:
                     response["metrics"] = {}
