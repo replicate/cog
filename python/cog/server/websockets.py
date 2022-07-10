@@ -119,7 +119,7 @@ class WebsocketWorker:
             except:
                 sys.stderr.write("Websocket error, will reconnect")
 
-    async def process_message(self, ws: client.WebSocketClientProtocol, message_json: str) -> None:
+    async def process_message(self, websocket: client.WebSocketClientProtocol, message_json: str) -> None:
         if message_json is None:
             return
 
@@ -152,24 +152,24 @@ class WebsocketWorker:
                 sys.stderr.write(error)
                 response["status"] = Status.FAILED
                 response["error"] = error
-                self.push_message(response)
+                await self.push_message(websocket, response)
                 span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                 return
             self.running = True
             try:
                 start_time = time.time()
-                self.handle_message(response, message, cleanup_functions)
+                await self.handle_message(response, websocket, message, cleanup_functions)
                 run_time = time.time() - start_time
                 if not response["metrics"]:
                     response["metrics"] = {}
                 response["metrics"]["predict_time"] = run_time
                 sys.stderr.write(f"Run time for {message_id}: {run_time:.2f}\n")
-                self.push_message(response)
+                await self.push_message(websocket, response)
             except Exception as e:
                 response["status"] = Status.FAILED
                 response["error"] = str(e)
                 response["x-experimental-timestamps"]["completed_at"] = datetime.datetime.now().isoformat()
-                self.push_message(json.dumps(response))
+                await self.push_message(websocket, response)
             finally:
                 self.running = False
                 for cleanup_function in cleanup_functions:
@@ -178,8 +178,9 @@ class WebsocketWorker:
                     except Exception as e:
                         sys.stderr.write(f"Cleanup function caught error: {e}")
 
-    def handle_message(
+    async def handle_message(
         self,
+        websocket: client.WebSocketClientProtocol,
         response: Dict[str, Any],
         message: Dict[str, Any],
         cleanup_functions: List[Callable],
@@ -193,7 +194,7 @@ class WebsocketWorker:
             sys.stderr.write(tb)
             response["status"] = Status.FAILED
             response["error"] = str(e)
-            self.push_message(response)
+            await self.push_message(websocket, response)
             span.record_exception(e)
             span.set_status(TraceStatus(status_code=StatusCode.ERROR))
             return
@@ -208,19 +209,19 @@ class WebsocketWorker:
             logs: List[str] = []
             response["logs"] = logs
 
-            self.push_message(response)
+            await self.push_message(websocket, response)
 
             # just send logs until output starts
             while self.runner.is_processing() and not self.runner.has_output_waiting():
                 if self.runner.has_logs_waiting():
                     logs.extend(self.runner.read_logs())
-                    self.push_message(response)
+                    await self.push_message(websocket, response)
 
             if self.runner.error() is not None:
                 response["status"] = Status.FAILED
                 response["error"] = str(self.runner.error())  # type: ignore
                 response["x-experimental-timestamps"]["completed_at"] = datetime.datetime.now().isoformat()
-                self.push_message(response)
+                await self.push_message(websocket, response)
                 span.record_exception(self.runner.error())
                 span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                 return
@@ -248,13 +249,13 @@ class WebsocketWorker:
                         # here to give the predictor subprocess a chance to exit
                         # so we don't send a double message for final output, at
                         # the cost of extra latency
-                        self.push_message(response)
+                        await self.push_message(websocket, response)
 
                 if self.runner.error() is not None:
                     response["status"] = Status.FAILED
                     response["error"] = str(self.runner.error())  # type: ignore
                     response["x-experimental-timestamps"]["completed_at"] = datetime.datetime.now().isoformat()
-                    self.push_message(response)
+                    await self.push_message(websocket, response)
                     span.record_exception(self.runner.error())
                     span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                     return
@@ -265,20 +266,20 @@ class WebsocketWorker:
                 response["x-experimental-timestamps"]["completed_at"] = datetime.datetime.now().isoformat()
                 output.extend(self.upload_files(o) for o in self.runner.read_output())
                 logs.extend(self.runner.read_logs())
-                self.push_message(response)
+                await self.push_message(websocket, response)
 
             else:
                 # just send logs until output ends
                 while self.runner.is_processing():
                     if self.runner.has_logs_waiting():
                         logs.extend(self.runner.read_logs())
-                        self.push_message(response)
+                        await self.push_message(websocket, response)
 
                 if self.runner.error() is not None:
                     response["status"] = Status.FAILED
                     response["error"] = str(self.runner.error())  # type: ignore
                     response["x-experimental-timestamps"]["completed_at"] = datetime.datetime.now().isoformat()
-                    self.push_message(response)
+                    await self.push_message(websocket, response)
                     span.record_exception(self.runner.error())
                     span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                     return
@@ -296,8 +297,8 @@ class WebsocketWorker:
         resp.raise_for_status()
         return resp.content
 
-    def push_message(self, response: Any) -> None:
-        self.ws.send(json.dumps(response))
+    async def push_message(self, websocket: client.WebSocketClientProtocol, response: Any) -> None:
+        await websocket.send(json.dumps(response))
 
     def upload_files(self, obj: Any) -> Any:
         def upload_file(fh: io.IOBase) -> str:
