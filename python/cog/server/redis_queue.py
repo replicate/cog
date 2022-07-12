@@ -57,8 +57,12 @@ class RedisQueueWorker:
         self.log_queue = log_queue
         self.predict_timeout = predict_timeout
         self.redis_db = redis_db
-        # TODO: respect max_processing_time in message handling
-        self.max_processing_time = 10 * 60  # timeout after 10 minutes
+        if self.predict_timeout is not None:
+            # 30s grace period allows final responses to be sent and job to be acked
+            self.autoclaim_messages_after = self.predict_timeout + 30
+        else:
+            # retry after 10 minutes by default
+            self.autoclaim_messages_after = 10 * 60
 
         # Set up types
         self.InputType = get_input_type(predictor)
@@ -87,7 +91,7 @@ class RedisQueueWorker:
             self.input_queue,
             self.input_queue,
             self.consumer_id,
-            str(self.max_processing_time * 1000),
+            str(self.autoclaim_messages_after * 1000),
             "0-0",
             "COUNT",
             1,
