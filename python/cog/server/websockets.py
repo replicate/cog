@@ -8,13 +8,13 @@ import signal
 import sys
 import traceback
 import time
+from hyperlink import URL
 
 from pydantic import ValidationError
 
-import asyncio
+import asyncio, requests, uuid
+from requests import session
 from websockets import client
-import requests
-
 
 from ..predictor import BasePredictor, get_input_type, load_predictor, load_config
 from ..json import upload_files
@@ -81,6 +81,7 @@ class WebsocketWorker:
         # TODO: respect max_processing_time in message handling
         self.max_processing_time = 10 * 60  # timeout after 10 minutes
         self.running = False
+        self.session_id = uuid.uuid4()
 
         # Set up types
         self.InputType = get_input_type(predictor)
@@ -105,19 +106,21 @@ class WebsocketWorker:
         await self.ws_run()
 
     async def ws_run(self) -> None:
-        sys.stderr.write(f"Connecting to {self.websocket_url}\n")
+        url: URL = URL.from_text(self.websocket_url)
+        url = url.set("session_id", str(self.session_id))
+        sys.stderr.write(f"Connecting to {url.asText()}\n")
 
-        async for websocket in client.connect(self.websocket_url):
+        async for websocket in client.connect(url.asText()):
             try:
                 sys.stderr.write(f"Connected\n")
                 async for message in websocket:
                     if isinstance(message, str):
-                        sys.stderr.write("processing job")
-                        await self.process_message(websocket, str(message))
+                        sys.stderr.write("processing job\n")
+                        await self.process_message(websocket, message)
                     else:
-                        sys.stderr.write("Ignoring binary payload")
+                        sys.stderr.write("Ignoring binary payload\n")
             except:
-                sys.stderr.write("Websocket error, will reconnect")
+                sys.stderr.write("Websocket error, will reconnect\n")
 
     async def process_message(self, websocket: client.WebSocketClientProtocol, message_json: str) -> None:
         if message_json is None:
@@ -264,7 +267,6 @@ class WebsocketWorker:
                 response["x-experimental-timestamps"]["completed_at"] = datetime.datetime.now().isoformat()
                 output.extend(self.upload_files(o) for o in self.runner.read_output())
                 logs.extend(self.runner.read_logs())
-                await self.push_message(websocket, response)
 
             else:
                 # just send logs until output ends
@@ -345,7 +347,7 @@ def _websocket_worker_from_argv(
     )
 
 
-async def start(worker: WebsocketWorker):
+async def start(worker: WebsocketWorker) -> None:
     await worker.run()
 
 
