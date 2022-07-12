@@ -28,37 +28,6 @@ from opentelemetry.trace import Status as TraceStatus, StatusCode
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 
-class timeout:
-    """A context manager that times out after a given number of seconds."""
-
-    def __init__(
-        self,
-        seconds: Optional[int],
-        elapsed: Optional[int] = None,
-        error_message: str = "Prediction timed out",
-    ) -> None:
-        if elapsed is None or seconds is None:
-            self.seconds = seconds
-        else:
-            self.seconds = seconds - int(elapsed)
-        self.error_message = error_message
-
-    def handle_timeout(self, signum: Any, frame: Any) -> None:
-        raise TimeoutError(self.error_message)
-
-    def __enter__(self) -> None:
-        if self.seconds is not None:
-            if self.seconds <= 0:
-                self.handle_timeout(None, None)
-            else:
-                signal.signal(signal.SIGALRM, self.handle_timeout)
-                signal.alarm(self.seconds)
-
-    def __exit__(self, type: Any, value: Any, traceback: Any) -> None:
-        if self.seconds is not None:
-            signal.alarm(0)
-
-
 class RedisQueueWorker:
     SETUP_TIME_QUEUE_SUFFIX = "-setup-time"
     RUN_TIME_QUEUE_SUFFIX = "-run-time"
@@ -78,7 +47,7 @@ class RedisQueueWorker:
         predict_timeout: Optional[int] = None,
         redis_db: int = 0,
     ):
-        self.runner = PredictionRunner()
+        self.runner = PredictionRunner(predict_timeout=predict_timeout)
         self.redis_host = redis_host
         self.redis_port = redis_port
         self.input_queue = input_queue
@@ -261,20 +230,85 @@ class RedisQueueWorker:
 
         cleanup_functions.append(input_obj.cleanup)
 
-        with timeout(seconds=self.predict_timeout):
-            self.runner.run(**input_obj.dict())
+        self.runner.run(**input_obj.dict())
 
-            response["x-experimental-timestamps"] = {
-                "started_at": datetime.datetime.now().isoformat()
-            }
+        response["x-experimental-timestamps"] = {
+            "started_at": datetime.datetime.now().isoformat()
+        }
 
-            logs: List[str] = []
-            response["logs"] = logs
+        logs: List[str] = []
+        response["logs"] = logs
 
+        self.push_message(response_queue, response)
+
+        # just send logs until output starts
+        while self.runner.is_processing() and not self.runner.has_output_waiting():
+            if self.runner.has_logs_waiting():
+                logs.extend(self.runner.read_logs())
+                self.push_message(response_queue, response)
+
+        if self.runner.error() is not None:
+            response["status"] = Status.FAILED
+            response["error"] = str(self.runner.error())  # type: ignore
+            response["x-experimental-timestamps"][
+                "completed_at"
+            ] = datetime.datetime.now().isoformat()
+            self.push_message(response_queue, response)
+            span.record_exception(self.runner.error())
+            span.set_status(TraceStatus(status_code=StatusCode.ERROR))
+            return
+
+        span.add_event("received first output")
+
+        if self.runner.is_output_generator():
+            output = response["output"] = []
+
+            while self.runner.is_processing():
+                # TODO: restructure this to avoid the tight CPU-eating loop
+                if self.runner.has_output_waiting() or self.runner.has_logs_waiting():
+                    # Object has already passed through `make_encodeable()` in the Runner, so all we need to do here is upload the files
+                    new_output = [
+                        self.upload_files(o) for o in self.runner.read_output()
+                    ]
+                    new_logs = self.runner.read_logs()
+
+                    # sometimes it'll say there's output when there's none
+                    if new_output == [] and new_logs == []:
+                        continue
+
+                    output.extend(new_output)
+                    logs.extend(new_logs)
+
+                    # we could `time.sleep(0.1)` and check `is_processing()`
+                    # here to give the predictor subprocess a chance to exit
+                    # so we don't send a double message for final output, at
+                    # the cost of extra latency
+                    self.push_message(response_queue, response)
+
+            if self.runner.error() is not None:
+                response["status"] = Status.FAILED
+                response["error"] = str(self.runner.error())  # type: ignore
+                response["x-experimental-timestamps"][
+                    "completed_at"
+                ] = datetime.datetime.now().isoformat()
+                self.push_message(response_queue, response)
+                span.record_exception(self.runner.error())
+                span.set_status(TraceStatus(status_code=StatusCode.ERROR))
+                return
+
+            span.add_event("received final output")
+
+            response["status"] = Status.SUCCEEDED
+            response["x-experimental-timestamps"][
+                "completed_at"
+            ] = datetime.datetime.now().isoformat()
+            output.extend(self.upload_files(o) for o in self.runner.read_output())
+            logs.extend(self.runner.read_logs())
             self.push_message(response_queue, response)
 
-            # just send logs until output starts
-            while self.runner.is_processing() and not self.runner.has_output_waiting():
+        else:
+            # just send logs until output ends
+            while self.runner.is_processing():
                 if self.runner.has_logs_waiting():
                     logs.extend(self.runner.read_logs())
                     self.push_message(response_queue, response)
@@ -290,85 +324,16 @@ class RedisQueueWorker:
                 span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                 return
 
-            span.add_event("received first output")
+            output = self.runner.read_output()
+            assert len(output) == 1
 
-            if self.runner.is_output_generator():
-                output = response["output"] = []
-
-                while self.runner.is_processing():
-                    # TODO: restructure this to avoid the tight CPU-eating loop
-                    if (
-                        self.runner.has_output_waiting()
-                        or self.runner.has_logs_waiting()
-                    ):
-                        # Object has already passed through `make_encodeable()` in the Runner, so all we need to do here is upload the files
-                        new_output = [
-                            self.upload_files(o) for o in self.runner.read_output()
-                        ]
-                        new_logs = self.runner.read_logs()
-
-                        # sometimes it'll say there's output when there's none
-                        if new_output == [] and new_logs == []:
-                            continue
-
-                        output.extend(new_output)
-                        logs.extend(new_logs)
-
-                        # we could `time.sleep(0.1)` and check `is_processing()`
-                        # here to give the predictor subprocess a chance to exit
-                        # so we don't send a double message for final output, at
-                        # the cost of extra latency
-                        self.push_message(response_queue, response)
-
-                if self.runner.error() is not None:
-                    response["status"] = Status.FAILED
-                    response["error"] = str(self.runner.error())  # type: ignore
-                    response["x-experimental-timestamps"][
-                        "completed_at"
-                    ] = datetime.datetime.now().isoformat()
-                    self.push_message(response_queue, response)
-                    span.record_exception(self.runner.error())
-                    span.set_status(TraceStatus(status_code=StatusCode.ERROR))
-                    return
-
-                span.add_event("received final output")
-
-                response["status"] = Status.SUCCEEDED
-                response["x-experimental-timestamps"][
-                    "completed_at"
-                ] = datetime.datetime.now().isoformat()
-                output.extend(self.upload_files(o) for o in self.runner.read_output())
-                logs.extend(self.runner.read_logs())
-                self.push_message(response_queue, response)
-
-            else:
-                # just send logs until output ends
-                while self.runner.is_processing():
-                    if self.runner.has_logs_waiting():
-                        logs.extend(self.runner.read_logs())
-                        self.push_message(response_queue, response)
-
-                if self.runner.error() is not None:
-                    response["status"] = Status.FAILED
-                    response["error"] = str(self.runner.error())  # type: ignore
-                    response["x-experimental-timestamps"][
-                        "completed_at"
-                    ] = datetime.datetime.now().isoformat()
-                    self.push_message(response_queue, response)
-                    span.record_exception(self.runner.error())
-                    span.set_status(TraceStatus(status_code=StatusCode.ERROR))
-                    return
-
-                output = self.runner.read_output()
-                assert len(output) == 1
-
-                response["status"] = Status.SUCCEEDED
-                response["x-experimental-timestamps"][
-                    "completed_at"
-                ] = datetime.datetime.now().isoformat()
-                response["output"] = self.upload_files(output[0])
-                logs.extend(self.runner.read_logs())
-                self.push_message(response_queue, response)
+            response["status"] = Status.SUCCEEDED
+            response["x-experimental-timestamps"][
+                "completed_at"
+            ] = datetime.datetime.now().isoformat()
+            response["output"] = self.upload_files(output[0])
+            logs.extend(self.runner.read_logs())
+            self.push_message(response_queue, response)
 
     def download(self, url: str) -> bytes:
         resp = requests.get(url)
