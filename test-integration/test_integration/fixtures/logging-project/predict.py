@@ -20,6 +20,7 @@ class Predictor(BasePredictor):
         self.foo = "foo"
 
     def predict(self, text: str = "") -> str:
+        time.sleep(0.1)
         logging.warn("writing log message")
         time.sleep(0.1)
         libc.puts(b"writing from C")
@@ -29,4 +30,5 @@ class Predictor(BasePredictor):
         sys.stderr.flush()
         time.sleep(0.1)
         print("writing with print")
+        time.sleep(0.1)
         return "output"

@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import time
 import unittest.mock as mock
 
 from .util import docker_run, random_string
@@ -52,7 +53,9 @@ def test_queue_worker_files(docker_image, docker_network, redis_client, upload_s
             },
         )
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        responses = response_iterator(redis_client, "response-queue")
+
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -62,7 +65,7 @@ def test_queue_worker_files(docker_image, docker_network, redis_client, upload_s
             "logs": [],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -132,7 +135,9 @@ def test_queue_worker_yielding_file(
             },
         )
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        responses = response_iterator(redis_client, "response-queue")
+
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -142,7 +147,7 @@ def test_queue_worker_yielding_file(
             "logs": [],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -155,7 +160,7 @@ def test_queue_worker_yielding_file(
         with open(upload_server / "out-0.txt") as f:
             assert f.read() == "test foo"
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -171,24 +176,8 @@ def test_queue_worker_yielding_file(
         with open(upload_server / "out-1.txt") as f:
             assert f.read() == "test bar"
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
-        assert response == {
-            "x-experimental-timestamps": {
-                "started_at": mock.ANY,
-            },
-            "status": "processing",
-            "output": [
-                "http://upload-server:5000/download/out-0.txt",
-                "http://upload-server:5000/download/out-1.txt",
-                "http://upload-server:5000/download/out-2.txt",
-            ],
-            "logs": [],
-        }
-
-        with open(upload_server / "out-2.txt") as f:
-            assert f.read() == "test baz"
-
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        next(responses)  # discard the intermediate response
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -203,8 +192,8 @@ def test_queue_worker_yielding_file(
             "logs": [],
         }
 
-        response = redis_client.rpop("response-queue")
-        assert response == None
+        with open(upload_server / "out-2.txt") as f:
+            assert f.read() == "test baz"
 
 
 def test_queue_worker_yielding(docker_network, docker_image, redis_client):
@@ -248,7 +237,9 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client):
             },
         )
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        responses = response_iterator(redis_client, "response-queue")
+
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -258,7 +249,7 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client):
             "logs": [],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -268,7 +259,7 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client):
             "logs": [],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -278,9 +269,6 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client):
             "output": ["foo", "bar", "baz"],
             "logs": [],
         }
-
-        response = redis_client.rpop("response-queue")
-        assert response == None
 
 
 def test_queue_worker_error(docker_network, docker_image, redis_client):
@@ -324,7 +312,9 @@ def test_queue_worker_error(docker_network, docker_image, redis_client):
             },
         )
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        responses = response_iterator(redis_client, "response-queue")
+
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -334,18 +324,8 @@ def test_queue_worker_error(docker_network, docker_image, redis_client):
             "logs": [],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
-        assert response == {
-            "x-experimental-timestamps": {
-                "started_at": mock.ANY,
-            },
-            "status": "processing",
-            "output": None,
-            "logs": mock.ANY,  # includes a stack trace
-        }
-        assert "Traceback (most recent call last):" in response["logs"]
-
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        next(responses)  # discard the intermediate response
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -356,9 +336,7 @@ def test_queue_worker_error(docker_network, docker_image, redis_client):
             "logs": mock.ANY,  # includes a stack trace
             "error": "over budget",
         }
-
-        response = redis_client.rpop("response-queue")
-        assert response == None
+        assert "Traceback (most recent call last):" in response["logs"]
 
 
 def test_queue_worker_error_after_output(docker_network, docker_image, redis_client):
@@ -402,7 +380,9 @@ def test_queue_worker_error_after_output(docker_network, docker_image, redis_cli
             },
         )
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        responses = response_iterator(redis_client, "response-queue")
+
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -412,7 +392,7 @@ def test_queue_worker_error_after_output(docker_network, docker_image, redis_cli
             "logs": [],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -422,7 +402,7 @@ def test_queue_worker_error_after_output(docker_network, docker_image, redis_cli
             "logs": [],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -432,18 +412,8 @@ def test_queue_worker_error_after_output(docker_network, docker_image, redis_cli
             "logs": ["a printed log message"],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
-        assert response == {
-            "x-experimental-timestamps": {
-                "started_at": mock.ANY,
-            },
-            "status": "processing",
-            "output": ["hello bar"],
-            "logs": mock.ANY,  # includes a stack trace
-        }
-        assert "Traceback (most recent call last):" in response["logs"]
-
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        next(responses)  # discard the intermediate response
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -454,9 +424,7 @@ def test_queue_worker_error_after_output(docker_network, docker_image, redis_cli
             "logs": mock.ANY,  # includes a stack trace
             "error": "mid run error",
         }
-
-        response = redis_client.rpop("response-queue")
-        assert response == None
+        assert "Traceback (most recent call last):" in response["logs"]
 
 
 def test_queue_worker_invalid_input(docker_network, docker_image, redis_client):
@@ -500,11 +468,15 @@ def test_queue_worker_invalid_input(docker_network, docker_image, redis_client):
             },
         )
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
-        assert "status" in response
-        assert response["status"] == "failed"
+        responses = response_iterator(redis_client, "response-queue")
 
-        assert "error" in response
+        response = next(responses)
+        assert response == {
+            "status": "failed",
+            "output": None,
+            "logs": [],
+            "error": mock.ANY,
+        }
         assert "value is not a valid integer" in response["error"]
 
 
@@ -547,7 +519,9 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client):
             },
         )
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        responses = response_iterator(redis_client, "response-queue")
+
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -557,7 +531,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client):
             "logs": [],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -569,7 +543,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client):
             ],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -582,7 +556,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client):
             ],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -596,7 +570,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client):
             ],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -611,7 +585,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client):
             ],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -626,9 +600,6 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client):
                 "writing with print",
             ],
         }
-
-        response = redis_client.rpop("response-queue")
-        assert response == None
 
 
 def test_queue_worker_timeout(docker_network, docker_image, redis_client):
@@ -673,7 +644,9 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client):
             },
         )
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        responses = response_iterator(redis_client, "response-queue")
+
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -683,7 +656,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client):
             "logs": [],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -710,7 +683,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client):
             },
         )
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -720,7 +693,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client):
             "logs": [],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -748,7 +721,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client):
             },
         )
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -758,7 +731,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client):
             "logs": [],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -813,7 +786,9 @@ def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_clien
             },
         )
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        responses = response_iterator(redis_client, "response-queue")
+
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -823,17 +798,8 @@ def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_clien
             "logs": [],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
-        assert response == {
-            "x-experimental-timestamps": {
-                "started_at": mock.ANY,
-            },
-            "status": "processing",
-            "output": ["yield 0"],
-            "logs": [],
-        }
-
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        next(responses)  # discard the intermediate response
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -861,7 +827,7 @@ def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_clien
             },
         )
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -872,7 +838,7 @@ def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_clien
         }
 
         # TODO(andreas): revisit this test design if it starts being flakey
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -882,7 +848,7 @@ def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_clien
             "logs": [],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -892,7 +858,7 @@ def test_queue_worker_yielding_timeout(docker_image, docker_network, redis_clien
             "logs": [],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -946,7 +912,9 @@ def test_queue_worker_complex_output(docker_network, docker_image, redis_client)
             },
         )
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        responses = response_iterator(redis_client, "response-queue")
+
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -956,7 +924,7 @@ def test_queue_worker_complex_output(docker_network, docker_image, redis_client)
             "logs": [],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -969,9 +937,6 @@ def test_queue_worker_complex_output(docker_network, docker_image, redis_client)
             },
             "logs": [],
         }
-
-        response = redis_client.rpop("response-queue")
-        assert response == None
 
 
 # Testing make_pickable works with sufficiently complex things.
@@ -1021,7 +986,9 @@ def test_queue_worker_yielding_list_of_complex_output(
             },
         )
 
-        response = json.loads(redis_client.brpop("response-queue", timeout=10)[1])
+        responses = response_iterator(redis_client, "response-queue")
+
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -1031,7 +998,7 @@ def test_queue_worker_yielding_list_of_complex_output(
             "logs": [],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -1043,7 +1010,7 @@ def test_queue_worker_yielding_list_of_complex_output(
             "logs": [],
         }
 
-        response = json.loads(redis_client.blpop("response-queue", timeout=10)[1])
+        response = next(responses)
         assert response == {
             "x-experimental-timestamps": {
                 "started_at": mock.ANY,
@@ -1055,9 +1022,6 @@ def test_queue_worker_yielding_list_of_complex_output(
             ],
             "logs": [],
         }
-
-        response = redis_client.rpop("response-queue")
-        assert response == None
 
         with open(upload_server / "file") as f:
             assert f.read() == "hello"
@@ -1131,8 +1095,6 @@ def test_queue_worker_setup(docker_network, docker_image, redis_client):
             },
         )
 
-        import time
-
         # give it about five seconds to get properly into setup
         time.sleep(5)
         predictions_in_progress = redis_client.xpending(
@@ -1146,3 +1108,20 @@ def test_queue_worker_setup(docker_network, docker_image, redis_client):
             name="predict-queue", groupname="predict-queue"
         )["pending"]
         assert predictions_in_progress == 1
+
+
+def response_iterator(redis_client, response_queue, timeout=10):
+    redis_client.config_set("notify-keyspace-events", "KEA")
+    channel = redis_client.pubsub()
+    channel.subscribe(f"__keyspace@0__:{response_queue}")
+
+    while True:
+        start = time.time()
+
+        while time.time() - start < timeout:
+            message = channel.get_message()
+            if message and message["data"] == b"set":
+                yield json.loads(redis_client.get(response_queue))
+            time.sleep(0.01)
+
+        raise TimeoutError("Timed out waiting for Redis message")
