@@ -11,7 +11,7 @@ class Predictor(BasePredictor):
 
         predictions = ["foo", "bar", "baz"]
         for i, prediction in enumerate(predictions):
-            sleep(0.5)
+            sleep(0.2)  # sleep to help test timing
             out_path = Path(f"/tmp/out-{i}.txt")
             with out_path.open("w") as f:
                 f.write(prefix + " " + prediction)

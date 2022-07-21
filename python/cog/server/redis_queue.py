@@ -345,7 +345,7 @@ class RedisQueueWorker:
         return resp.content
 
     def push_message(self, response_queue: str, response: Any) -> None:
-        self.redis.rpush(response_queue, json.dumps(response))
+        self.redis.set(response_queue, json.dumps(response))
 
     def upload_files(self, obj: Any) -> Any:
         def upload_file(fh: io.IOBase) -> str:

@@ -92,13 +92,15 @@ If the model yields [progressive output](python.md#progressive-output) then a mi
         ]
     }
 
-Because each message is a complete snapshot of the current state, you can use the `LRANGE` command to get the latest state from the end of the queue:
+The response is written to a string key using `SET`. Because each message is a complete snapshot of the current state, the previous snapshots are not needed. You can read the values using the `GET` command:
 
-    redis:6379> LRANGE my-response-queue -1 -1
+    redis:6379> GET my-response-queue
 
-Alternatively, to get the latest state whilst clearing the queue you can use the `RPOP` command with a count:
+To get notified of updates to the value, you can `SUBSCRIBE` to [keyspace notifications] for the key:
 
-    redis:6379> RPOP my-response-queue 1000
+    redis:6379> SUBSCRIBE __keyspace@0__:my-response-queue
+
+[keyspace notifications]: https://redis.io/docs/manual/keyspace-notifications/
 
 ### Experimental properties
 
