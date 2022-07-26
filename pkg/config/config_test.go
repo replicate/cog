@@ -19,7 +19,7 @@ func TestPythonPackagesAndRequirementsCantBeUsedTogether(t *testing.T) {
 			PythonRequirements: "requirements.txt",
 		},
 	}
-	err := config.ValidateAndCompleteConfig("")
+	err := config.ValidateAndComplete("")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Only one of python_packages or python_requirements can be set in your cog.yaml, not both")
 }
@@ -40,7 +40,7 @@ foo==1.0.0`), 0o644)
 			PythonRequirements: "requirements.txt",
 		},
 	}
-	err = config.ValidateAndCompleteConfig(tmpDir)
+	err = config.ValidateAndComplete(tmpDir)
 	require.NoError(t, err)
 	require.Equal(t, "11.0.3", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
@@ -70,7 +70,7 @@ func TestValidateAndCompleteCUDAForAllTF(t *testing.T) {
 			},
 		}
 
-		err := config.ValidateAndCompleteConfig("")
+		err := config.ValidateAndComplete("")
 		require.NoError(t, err)
 		require.Equal(t, compat.CUDA, config.Build.CUDA)
 		require.Equal(t, compat.CuDNN, config.Build.CuDNN)
@@ -90,7 +90,7 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 			},
 		}
 
-		err := config.ValidateAndCompleteConfig("")
+		err := config.ValidateAndComplete("")
 		require.NoError(t, err)
 		require.NotEqual(t, "", config.Build.CUDA)
 		require.NotEqual(t, "", config.Build.CuDNN)
@@ -115,7 +115,7 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 				},
 			},
 		}
-		err := config.ValidateAndCompleteConfig("")
+		err := config.ValidateAndComplete("")
 		require.NoError(t, err)
 		require.Equal(t, tt.cuda, config.Build.CUDA)
 		require.Equal(t, tt.cuDNN, config.Build.CuDNN)
@@ -138,7 +138,7 @@ func TestUnsupportedTorch(t *testing.T) {
 			},
 		},
 	}
-	err = config.ValidateAndCompleteConfig("")
+	err = config.ValidateAndComplete("")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Cog doesn't know what CUDA version is compatible with torch==0.4.1.")
 
@@ -152,7 +152,7 @@ func TestUnsupportedTorch(t *testing.T) {
 			},
 		},
 	}
-	err = config.ValidateAndCompleteConfig("")
+	err = config.ValidateAndComplete("")
 	require.NoError(t, err)
 	require.Equal(t, "9.1", config.Build.CUDA)
 	require.Equal(t, "7", config.Build.CuDNN)
@@ -211,7 +211,7 @@ func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 			CUDA: "10.1",
 		},
 	}
-	err := config.ValidateAndCompleteConfig("")
+	err := config.ValidateAndComplete("")
 	require.NoError(t, err)
 	require.Equal(t, "10.1", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
@@ -243,7 +243,7 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 			CUDA: "10.1",
 		},
 	}
-	err := config.ValidateAndCompleteConfig("")
+	err := config.ValidateAndComplete("")
 	require.NoError(t, err)
 
 	packages, indexURLs, err := config.PythonPackagesForArch("", "")
@@ -271,7 +271,7 @@ func TestPythonPackagesForArchTensorflowGPU(t *testing.T) {
 			CUDA: "10.0",
 		},
 	}
-	err := config.ValidateAndCompleteConfig("")
+	err := config.ValidateAndComplete("")
 	require.NoError(t, err)
 	require.Equal(t, "10.0", config.Build.CUDA)
 	require.Equal(t, "7", config.Build.CuDNN)
@@ -298,7 +298,7 @@ func TestCUDABaseImageTag(t *testing.T) {
 		},
 	}
 
-	err := config.ValidateAndCompleteConfig("")
+	err := config.ValidateAndComplete("")
 	require.NoError(t, err)
 
 	imageTag, err := config.CUDABaseImageTag()
