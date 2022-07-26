@@ -144,7 +144,7 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia
 ` + testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
-RUN --mount=type=cache,target=/root/.cache/pip pip install -f https://download.pytorch.org/whl/torch_stable.html  -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
@@ -155,7 +155,8 @@ COPY . /src`
 	requirements, err := ioutil.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
 
-	require.Equal(t, `torch==1.5.1+cpu
+	require.Equal(t, `--find-links https://download.pytorch.org/whl/torch_stable.html
+torch==1.5.1+cpu
 pandas==1.2.0.12`, string(requirements))
 }
 
@@ -196,7 +197,7 @@ RUN rm -f /etc/apt/sources.list.d/cuda.list && \
 		testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
-RUN --mount=type=cache,target=/root/.cache/pip pip install  -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
@@ -264,5 +265,5 @@ build:
 	actual, err := gen.Generate()
 	require.NoError(t, err)
 	fmt.Println(actual)
-	require.Contains(t, actual, `pip install  -r /tmp/requirements.txt`)
+	require.Contains(t, actual, `pip install -r /tmp/requirements.txt`)
 }

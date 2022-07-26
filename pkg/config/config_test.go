@@ -44,17 +44,16 @@ foo==1.0.0`), 0o644)
 	require.Equal(t, "11.0.3", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 
-	packages, indexURLs, err := config.PythonRequirementsForArch("", "")
+	requirements, err := config.PythonRequirementsForArch("", "")
 	require.NoError(t, err)
-	expectedPackages := []string{
+	expected := []string{
+		"--find-links https://download.pytorch.org/whl/torch_stable.html",
 		"torch==1.7.1+cu110",
 		"torchvision==0.8.2+cu110",
 		"torchaudio==0.7.2",
 		"foo==1.0.0",
 	}
-	expectedIndexURLs := []string{"https://download.pytorch.org/whl/torch_stable.html"}
-	require.Equal(t, expectedPackages, packages)
-	require.Equal(t, expectedIndexURLs, indexURLs)
+	require.Equal(t, expected, requirements)
 }
 
 func TestValidateAndCompleteCUDAForAllTF(t *testing.T) {
@@ -215,17 +214,16 @@ func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 	require.Equal(t, "10.1", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 
-	packages, indexURLs, err := config.PythonRequirementsForArch("", "")
+	requirements, err := config.PythonRequirementsForArch("", "")
 	require.NoError(t, err)
-	expectedPackages := []string{
+	expected := []string{
+		"--find-links https://download.pytorch.org/whl/torch_stable.html",
 		"torch==1.7.1+cu101",
 		"torchvision==0.8.2+cu101",
 		"torchaudio==0.7.2",
 		"foo==1.0.0",
 	}
-	expectedIndexURLs := []string{"https://download.pytorch.org/whl/torch_stable.html"}
-	require.Equal(t, expectedPackages, packages)
-	require.Equal(t, expectedIndexURLs, indexURLs)
+	require.Equal(t, expected, requirements)
 }
 
 func TestPythonPackagesForArchTorchCPU(t *testing.T) {
@@ -245,17 +243,16 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 	err := config.ValidateAndComplete("")
 	require.NoError(t, err)
 
-	packages, indexURLs, err := config.PythonRequirementsForArch("", "")
+	requirements, err := config.PythonRequirementsForArch("", "")
 	require.NoError(t, err)
-	expectedPackages := []string{
+	expected := []string{
+		"--find-links https://download.pytorch.org/whl/torch_stable.html",
 		"torch==1.7.1+cpu",
 		"torchvision==0.8.2+cpu",
 		"torchaudio==0.7.2",
 		"foo==1.0.0",
 	}
-	expectedIndexURLs := []string{"https://download.pytorch.org/whl/torch_stable.html"}
-	require.Equal(t, expectedPackages, packages)
-	require.Equal(t, expectedIndexURLs, indexURLs)
+	require.Equal(t, expected, requirements)
 }
 
 func TestPythonPackagesForArchTensorflowGPU(t *testing.T) {
@@ -275,15 +272,13 @@ func TestPythonPackagesForArchTensorflowGPU(t *testing.T) {
 	require.Equal(t, "10.0", config.Build.CUDA)
 	require.Equal(t, "7", config.Build.CuDNN)
 
-	packages, indexURLs, err := config.PythonRequirementsForArch("", "")
+	requirements, err := config.PythonRequirementsForArch("", "")
 	require.NoError(t, err)
-	expectedPackages := []string{
+	expected := []string{
 		"tensorflow_gpu==1.15.0",
 		"foo==1.0.0",
 	}
-	expectedIndexURLs := []string{}
-	require.Equal(t, expectedPackages, packages)
-	require.Equal(t, expectedIndexURLs, indexURLs)
+	require.Equal(t, expected, requirements)
 }
 
 func TestCUDABaseImageTag(t *testing.T) {
