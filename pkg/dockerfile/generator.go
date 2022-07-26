@@ -227,15 +227,8 @@ func (g *Generator) pipInstalls() (string, error) {
 	for _, indexURL := range indexURLs {
 		findLinks += "-f " + indexURL + " "
 	}
-	for _, indexURL := range g.Config.Build.PythonFindLinks {
-		findLinks += "-f " + indexURL + " "
-	}
-	extraIndexURLs := ""
-	for _, indexURL := range g.Config.Build.PythonExtraIndexURLs {
-		extraIndexURLs += "--extra-index-url=" + indexURL
-	}
 
-	return "RUN --mount=type=cache,target=/root/.cache/pip pip install " + findLinks + " " + extraIndexURLs + " " + strings.Join(packages, " "), nil
+	return "RUN --mount=type=cache,target=/root/.cache/pip pip install " + findLinks + " " + strings.Join(packages, " "), nil
 }
 
 func (g *Generator) run() (string, error) {

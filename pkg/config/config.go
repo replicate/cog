@@ -17,17 +17,15 @@ import (
 // TODO(andreas): suggest valid torchvision versions (e.g. if the user wants to use 0.8.0, suggest 0.8.1)
 
 type Build struct {
-	GPU                  bool     `json:"gpu,omitempty" yaml:"gpu"`
-	PythonVersion        string   `json:"python_version,omitempty" yaml:"python_version"`
-	PythonRequirements   string   `json:"python_requirements,omitempty" yaml:"python_requirements"`
-	PythonExtraIndexURLs []string `json:"python_extra_index_urls,omitempty" yaml:"python_extra_index_urls"`
-	PythonFindLinks      []string `json:"python_find_links,omitempty" yaml:"python_find_links"`
-	PythonPackages       []string `json:"python_packages,omitempty" yaml:"python_packages"`
-	Run                  []string `json:"run,omitempty" yaml:"run"`
-	SystemPackages       []string `json:"system_packages,omitempty" yaml:"system_packages"`
-	PreInstall           []string `json:"pre_install,omitempty" yaml:"pre_install"` // Deprecated, but included for backwards compatibility
-	CUDA                 string   `json:"cuda,omitempty" yaml:"cuda"`
-	CuDNN                string   `json:"cudnn,omitempty" yaml:"cudnn"`
+	GPU                bool     `json:"gpu,omitempty" yaml:"gpu"`
+	PythonVersion      string   `json:"python_version,omitempty" yaml:"python_version"`
+	PythonRequirements string   `json:"python_requirements,omitempty" yaml:"python_requirements"`
+	PythonPackages     []string `json:"python_packages,omitempty" yaml:"python_packages"`
+	Run                []string `json:"run,omitempty" yaml:"run"`
+	SystemPackages     []string `json:"system_packages,omitempty" yaml:"system_packages"`
+	PreInstall         []string `json:"pre_install,omitempty" yaml:"pre_install"` // Deprecated, but included for backwards compatibility
+	CUDA               string   `json:"cuda,omitempty" yaml:"cuda"`
+	CuDNN              string   `json:"cudnn,omitempty" yaml:"cudnn"`
 }
 
 type Example struct {
