@@ -253,7 +253,7 @@ func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
 func tfGPUPackage(ver string, cuda string) (name string, cpuVersion string, err error) {
 	for _, compat := range TFCompatibilityMatrix {
 		if compat.TF == ver && version.Equal(compat.CUDA, cuda) {
-			return splitPythonPackage(compat.TFGPUPackage)
+			return splitPinnedPythonRequirement(compat.TFGPUPackage)
 		}
 	}
 	// We've already warned user if they're doing something stupid in validateAndCompleteCUDA(), so fail silently

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v2"
@@ -97,10 +98,8 @@ func (c *Config) cudaFromTF() (tfVersion string, tfCUDA string, tfCuDNN string, 
 
 func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 	for _, pkg := range c.Build.pythonRequirementsContent {
-		pkgName, version, err := splitPythonPackage(pkg)
+		pkgName, version, err := splitPinnedPythonRequirement(pkg)
 		if err != nil {
-			// this should be caught by validation earlier
-			console.Warnf("Python package %s is malformed.", pkg)
 			return "", false
 		}
 		if pkgName == name {
@@ -150,10 +149,6 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 		c.Build.pythonRequirementsContent = c.Build.PythonPackages
 	}
 
-	if err := c.validatePythonPackagesHaveVersions(); err != nil {
-		return err
-	}
-
 	if c.Build.GPU {
 		if err := c.validateAndCompleteCUDA(); err != nil {
 			return err
@@ -194,9 +189,10 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string) (string, 
 // pythonPackageForArch takes a package==version line and
 // returns a package==version and index URL resolved to the correct GPU package for the given OS and architecture
 func (c *Config) pythonPackageForArch(pkg string, goos string, goarch string) (actualPackage string, indexURL string, err error) {
-	name, version, err := splitPythonPackage(pkg)
+	name, version, err := splitPinnedPythonRequirement(pkg)
 	if err != nil {
-		return "", "", err
+		// It's not pinned, so just return the line verbatim
+		return pkg, "", nil
 	}
 	if name == "tensorflow" {
 		if c.Build.GPU {
@@ -324,34 +320,15 @@ Compatible cuDNN version is: %s`,
 	return nil
 }
 
-func (c *Config) validatePythonPackagesHaveVersions() error {
-	packagesWithoutVersions := []string{}
-	for _, pkg := range c.Build.pythonRequirementsContent {
-		_, _, err := splitPythonPackage(pkg)
-		if err != nil {
-			packagesWithoutVersions = append(packagesWithoutVersions, pkg)
-		}
-	}
-	if len(packagesWithoutVersions) > 0 {
-		return fmt.Errorf(`All Python packages must have pinned versions, e.g. mypkg==1.0.0.
-The following packages are missing pinned versions: %s`, strings.Join(packagesWithoutVersions, ","))
-	}
-	return nil
-}
+// splitPythonPackage returns the name and version from a requirements.txt line in the form name==version
+func splitPinnedPythonRequirement(requirement string) (name string, version string, err error) {
+	pinnedPackageRe := regexp.MustCompile(`^([a-zA-Z0-9\-_]+)==([\d\.]+)$`)
 
-func splitPythonPackage(pkg string) (name string, version string, err error) {
-	if strings.HasPrefix(pkg, "git+") {
-		return pkg, "", nil
+	match := pinnedPackageRe.FindStringSubmatch(requirement)
+	if match == nil {
+		return "", "", fmt.Errorf("Package %s is not in the format 'name==version'", requirement)
 	}
-
-	if !strings.Contains(pkg, "==") {
-		return "", "", fmt.Errorf("Package %s is not in the format 'name==version'", pkg)
-	}
-	parts := strings.Split(pkg, "==")
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("Package %s is not in the format 'name==version'", pkg)
-	}
-	return parts[0], parts[1], nil
+	return match[1], match[2], nil
 }
 
 func sliceContains(slice []string, s string) bool {
