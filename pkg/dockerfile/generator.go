@@ -197,7 +197,7 @@ func (g *Generator) installCog() (string, error) {
 }
 
 func (g *Generator) pipInstalls() (string, error) {
-	packages, indexURLs, err := g.Config.PythonPackagesForArch(g.GOOS, g.GOARCH)
+	packages, indexURLs, err := g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH)
 	if err != nil {
 		return "", err
 	}
