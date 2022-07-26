@@ -163,7 +163,8 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 	return nil
 }
 
-func (c *Config) PythonPackagesForArch(goos string, goarch string) (packages []string, indexURLs []string, err error) {
+// PythonRequirementsForArch returns a requirements.txt file with all the GPU packages resolved for given OS and architecture.
+func (c *Config) PythonRequirementsForArch(goos string, goarch string) (packages []string, indexURLs []string, err error) {
 	packages = []string{}
 	indexURLSet := map[string]bool{}
 	for _, pkg := range c.Build.pythonRequirementsContent {
@@ -183,6 +184,8 @@ func (c *Config) PythonPackagesForArch(goos string, goarch string) (packages []s
 	return packages, indexURLs, nil
 }
 
+// pythonPackageForArch takes a package==version line and
+// returns a package==version and index URL resolved to the correct GPU package for the given OS and architecture
 func (c *Config) pythonPackageForArch(pkg string, goos string, goarch string) (actualPackage string, indexURL string, err error) {
 	name, version, err := splitPythonPackage(pkg)
 	if err != nil {
