@@ -143,13 +143,20 @@ ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ` + testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-RUN --mount=type=cache,target=/root/.cache/pip pip install -f https://download.pytorch.org/whl/torch_stable.html  torch==1.5.1+cpu pandas==1.2.0.12
+COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -f https://download.pytorch.org/whl/torch_stable.html  -r /tmp/requirements.txt
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 	require.Equal(t, expected, actual)
+
+	requirements, err := ioutil.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
+	require.NoError(t, err)
+
+	require.Equal(t, `torch==1.5.1+cpu
+pandas==1.2.0.12`, string(requirements))
 }
 
 func TestGenerateFullGPU(t *testing.T) {
@@ -188,7 +195,8 @@ RUN rm -f /etc/apt/sources.list.d/cuda.list && \
 ` + testInstallPython("3.8") +
 		testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-RUN --mount=type=cache,target=/root/.cache/pip pip install  torch==1.5.1 pandas==1.2.0.12
+COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install  -r /tmp/requirements.txt
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
@@ -196,6 +204,11 @@ CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, actual)
+
+	requirements, err := ioutil.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
+	require.NoError(t, err)
+	require.Equal(t, `torch==1.5.1
+pandas==1.2.0.12`, string(requirements))
 }
 
 // pre_install is deprecated but supported for backwards compatibility
@@ -251,5 +264,5 @@ build:
 	actual, err := gen.Generate()
 	require.NoError(t, err)
 	fmt.Println(actual)
-	require.Contains(t, actual, `pip install  torch==1.0.0`)
+	require.Contains(t, actual, `pip install  -r /tmp/requirements.txt`)
 }

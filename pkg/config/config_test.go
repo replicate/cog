@@ -1,7 +1,6 @@
 package config
 
 import (
-	"io/ioutil"
 	"os"
 	"path"
 	"testing"
@@ -27,7 +26,7 @@ func TestPythonPackagesAndRequirementsCantBeUsedTogether(t *testing.T) {
 func TestPythonRequirementsResolvesPythonPackagesAndCudaVersions(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cog-test")
 	require.NoError(t, err)
-	err = ioutil.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`torch==1.7.1
+	err = os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`torch==1.7.1
 torchvision==0.8.2
 torchaudio==0.7.2
 foo==1.0.0`), 0o644)
