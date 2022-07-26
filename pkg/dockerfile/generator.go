@@ -205,12 +205,18 @@ func (g *Generator) pipInstalls() (string, error) {
 		return "", nil
 	}
 
+	lines, containerPath, err := g.writeTemp("requirements.txt", []byte(strings.Join(packages, "\n")))
+	if err != nil {
+		return "", err
+	}
+
 	findLinks := ""
 	for _, indexURL := range indexURLs {
 		findLinks += "-f " + indexURL + " "
 	}
 
-	return "RUN --mount=type=cache,target=/root/.cache/pip pip install " + findLinks + " " + strings.Join(packages, " "), nil
+	lines = append(lines, "RUN --mount=type=cache,target=/root/.cache/pip pip install "+findLinks+" -r "+containerPath)
+	return strings.Join(lines, "\n"), nil
 }
 
 func (g *Generator) run() (string, error) {
