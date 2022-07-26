@@ -34,20 +34,12 @@ func TestGetConfigShouldLoadFromCustomDir(t *testing.T) {
 
 	err = ioutil.WriteFile(path.Join(dir, "cog.yaml"), []byte(testConfig), 0o644)
 	require.NoError(t, err)
+	err = ioutil.WriteFile(path.Join(dir, "requirements.txt"), []byte("torch==1.0.0"), 0o644)
+	require.NoError(t, err)
 	conf, _, err := GetConfig(dir)
 	require.NoError(t, err)
-	want := &Config{
-		Predict: "predict.py:SomePredictor",
-		Build: &Build{
-			PythonVersion:      "3.8",
-			PythonRequirements: "requirements.txt",
-			SystemPackages: []string{
-				"libgl1-mesa-glx",
-				"libglib2.0-0",
-			},
-		},
-	}
-	require.Equal(t, want, conf)
+	require.Equal(t, conf.Predict, "predict.py:SomePredictor")
+	require.Equal(t, conf.Build.PythonVersion, "3.8")
 }
 
 func TestFindProjectRootDirShouldFindParentDir(t *testing.T) {
