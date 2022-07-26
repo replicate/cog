@@ -188,15 +188,12 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get insta
 func (g *Generator) installCog() (string, error) {
 	// Wheel name needs to be full format otherwise pip refuses to install it
 	cogFilename := "cog-0.0.1.dev-py3-none-any.whl"
-	cogPath := filepath.Join(g.tmpDir, cogFilename)
-	if err := os.MkdirAll(filepath.Dir(cogPath), 0o755); err != nil {
-		return "", fmt.Errorf("Failed to write %s: %w", cogFilename, err)
+	lines, containerPath, err := g.writeTemp(cogFilename, cogWheelEmbed)
+	if err != nil {
+		return "", err
 	}
-	if err := os.WriteFile(cogPath, cogWheelEmbed, 0o644); err != nil {
-		return "", fmt.Errorf("Failed to write %s: %w", cogFilename, err)
-	}
-	return fmt.Sprintf(`COPY %s /tmp/%s
-RUN --mount=type=cache,target=/root/.cache/pip pip install /tmp/%s`, path.Join(g.relativeTmpDir, cogFilename), cogFilename, cogFilename), nil
+	lines = append(lines, fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install %s", containerPath))
+	return strings.Join(lines, "\n"), nil
 }
 
 func (g *Generator) pipInstalls() (string, error) {
@@ -233,6 +230,19 @@ This is the offending line: %s`, run)
 		lines = append(lines, "RUN "+run)
 	}
 	return strings.Join(lines, "\n"), nil
+}
+
+// writeTemp writes a temporary file that can be used as part of the build process
+// It returns the lines to add to Dockerfile to make it available and the filename it ends up as inside the container
+func (g *Generator) writeTemp(filename string, contents []byte) ([]string, string, error) {
+	path := filepath.Join(g.tmpDir, filename)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return []string{}, "", fmt.Errorf("Failed to write %s: %w", filename, err)
+	}
+	if err := os.WriteFile(path, contents, 0o644); err != nil {
+		return []string{}, "", fmt.Errorf("Failed to write %s: %w", filename, err)
+	}
+	return []string{fmt.Sprintf("COPY %s /tmp/%s", filepath.Join(g.relativeTmpDir, filename), filename)}, "/tmp/" + filename, nil
 }
 
 func filterEmpty(list []string) []string {
