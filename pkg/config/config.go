@@ -110,7 +110,7 @@ func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 	return "", false
 }
 
-func (c *Config) ValidateAndCompleteConfig(projectDir string) error {
+func (c *Config) ValidateAndComplete(projectDir string) error {
 	// TODO(andreas): return all errors at once, rather than
 	// whack-a-mole one at a time with errs := []error{}, etc.
 

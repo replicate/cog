@@ -57,7 +57,7 @@ build:
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig(""))
+	require.NoError(t, conf.ValidateAndComplete(""))
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
@@ -88,7 +88,7 @@ build:
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig(""))
+	require.NoError(t, conf.ValidateAndComplete(""))
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
 	actual, err := gen.Generate()
@@ -129,7 +129,7 @@ build:
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig(""))
+	require.NoError(t, conf.ValidateAndComplete(""))
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
@@ -170,7 +170,7 @@ build:
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig(""))
+	require.NoError(t, conf.ValidateAndComplete(""))
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
@@ -211,7 +211,7 @@ build:
     - "cowsay moo"
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig(""))
+	require.NoError(t, conf.ValidateAndComplete(""))
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
@@ -244,7 +244,7 @@ build:
   python_requirements: "my-requirements.txt"
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig(tmpDir))
+	require.NoError(t, conf.ValidateAndComplete(tmpDir))
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
