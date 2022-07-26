@@ -43,7 +43,7 @@ func GetConfig(customDir string) (*Config, string, error) {
 		return nil, "", err
 	}
 
-	err = config.ValidateAndCompleteConfig()
+	err = config.ValidateAndCompleteConfig(rootDir)
 
 	return config, rootDir, err
 }

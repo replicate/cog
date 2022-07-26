@@ -72,11 +72,6 @@ func (g *Generator) GenerateBase() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	pythonRequirements, err := g.pythonRequirements()
-	if err != nil {
-		return "", err
-
-	}
 	pipInstalls, err := g.pipInstalls()
 	if err != nil {
 		return "", err
@@ -97,7 +92,6 @@ func (g *Generator) GenerateBase() (string, error) {
 		installPython,
 		installCog,
 		aptInstalls,
-		pythonRequirements,
 		pipInstalls,
 		run,
 		`WORKDIR /src`,
@@ -203,15 +197,6 @@ func (g *Generator) installCog() (string, error) {
 	}
 	return fmt.Sprintf(`COPY %s /tmp/%s
 RUN --mount=type=cache,target=/root/.cache/pip pip install /tmp/%s`, path.Join(g.relativeTmpDir, cogFilename), cogFilename, cogFilename), nil
-}
-
-func (g *Generator) pythonRequirements() (string, error) {
-	reqs := g.Config.Build.PythonRequirements
-	if reqs == "" {
-		return "", nil
-	}
-	return fmt.Sprintf(`COPY %s /tmp/requirements.txt
-RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt`, reqs), nil
 }
 
 func (g *Generator) pipInstalls() (string, error) {
