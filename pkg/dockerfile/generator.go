@@ -197,15 +197,15 @@ func (g *Generator) installCog() (string, error) {
 }
 
 func (g *Generator) pipInstalls() (string, error) {
-	packages, err := g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH)
+	requirements, err := g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH)
 	if err != nil {
 		return "", err
 	}
-	if len(packages) == 0 {
+	if strings.Trim(requirements, "") == "" {
 		return "", nil
 	}
 
-	lines, containerPath, err := g.writeTemp("requirements.txt", []byte(strings.Join(packages, "\n")))
+	lines, containerPath, err := g.writeTemp("requirements.txt", []byte(requirements))
 	if err != nil {
 		return "", err
 	}
