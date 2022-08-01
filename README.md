@@ -110,7 +110,7 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 
 ## Prerequisites
 
-- **macOS or Linux**. Cog works on macOS and Linux, but does not currently support Windows.
+- **macOS, Linux or Windows 11**. Cog works on macOS, Linux and Windows 11 with [WSL 2](docs/wsl2/wsl2.md)
 - **Docker**. Cog uses Docker to create a container for your model. You'll need to [install Docker](https://docs.docker.com/get-docker/) before you can run Cog.
 
 ## Install
@@ -137,6 +137,7 @@ sudo chmod +x /usr/local/bin/cog
 - [Get started with an example model](docs/getting-started.md)
 - [Get started with your own model](docs/getting-started-own-model.md)
 - [Using Cog with notebooks](docs/notebooks.md)
+- [Using Cog with Windows 11](docs/wsl2/wsl2.md)
 - [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
 - [Deploy models with Cog](docs/deploy.md)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's environment
