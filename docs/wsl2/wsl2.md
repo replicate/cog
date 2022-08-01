@@ -12,7 +12,17 @@
 
 Running cog on Windows is now possible thanks to WSL 2. Follow this guide to enable WSL 2 and GPU passthrough on Windows 11. 
 
-Windows 10 is not officially supported, as you need to be on an insider build in order to use GPU passthrough.
+**Windows 10 is not officially supported, as you need to be on an insider build in order to use GPU passthrough.**
+
+## 0. Prerequisites
+
+Before beginning installation, make sure you have:
+
+- Windows 11.
+- NVIDIA GPU.
+  - RTX 2000/3000 series
+  - Kesler/Tesla/Volta/Ampere series
+  - Other configurations are not guaranteed to work.
 
 ## 1. Install the GPU driver
 
