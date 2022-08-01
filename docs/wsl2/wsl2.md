@@ -43,15 +43,15 @@ Run the following powershell command to enable the Windows Subsystem for Linux a
 dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
 ```
 
-If you see an error about permissions, make sure the terminal you are using is run as an administrator and that you have an account with adminstrator level priveleges.
+If you see an error about permissions, make sure the terminal you are using is run as an administrator and that you have an account with administrator-level privileges.
 
-### 2.2. Unlock Virtualization
+### 2.2. Unlock virtualization
 
 ```powershell
 dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
 ```
 
-If this command fails, make sure to [enable virtualization capabilities](https://docs.microsoft.com/en-us/windows/wsl/troubleshooting#error-0x80370102-the-virtual-machine-could-not-be-started-because-a-required-feature-is-not-installed) in your computer's BIOS/UEFI. A successful output will print `The operation completed succesfully.`
+If this command fails, make sure to [enable virtualization capabilities](https://docs.microsoft.com/en-us/windows/wsl/troubleshooting#error-0x80370102-the-virtual-machine-could-not-be-started-because-a-required-feature-is-not-installed) in your computer's BIOS/UEFI. A successful output will print `The operation completed successfully.`
 
 ![Output from running the above commands successfully. Should read "The operation completed successfully".](images/enable_feature_success.png)
 
@@ -79,7 +79,7 @@ The version we are interested in is `Linux version 5.10.102.1`. At this point, y
 
 If you can't get the correct kernel version to show:
 
-Open `Settings` -> `Windows Update` -> `Advanced options` and ensure `Receive updates for other Microsoft products` is enabled. Then go to  `Windows Update` again and click `Check for updates`.
+Open `Settings` → `Windows Update` → `Advanced options` and ensure `Receive updates for other Microsoft products` is enabled. Then go to  `Windows Update` again and click `Check for updates`.
 
 ## 4. Configure WSL 2
 
@@ -125,7 +125,7 @@ sudo apt-get -y install cuda
 
 Download and install [Docker Desktop for Windows](https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe). It has WSL 2 support built in by default.
 
-Once installed, run `Docker Desktop`, you can ignore the first-run tutorial. Go to **Settings > General** and ensure **Use the WSL 2 based engine** has a checkmark next to it. Click **Apply & Restart**.
+Once installed, run `Docker Desktop`, you can ignore the first-run tutorial. Go to **Settings → General** and ensure **Use the WSL 2 based engine** has a checkmark next to it. Click **Apply & Restart**.
 
 !["Use the WSL 2 based engine" is checked in this interface](images/wsl2-enable.png)
 
