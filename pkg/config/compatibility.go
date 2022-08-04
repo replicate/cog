@@ -138,7 +138,7 @@ func cudaFromTF(ver string) (cuda string, cuDNN string, err error) {
 			return compat.CUDA, compat.CuDNN, nil
 		}
 	}
-	return "", "", fmt.Errorf("tensorflow==%s doesn't have any compatible CUDA versions", ver)
+	return "", "", nil
 }
 
 func compatibleCuDNNsForCUDA(cuda string) []string {
@@ -256,7 +256,8 @@ func tfGPUPackage(ver string, cuda string) (name string, cpuVersion string, err 
 			return splitPythonPackage(compat.TFGPUPackage)
 		}
 	}
-	return "", "", fmt.Errorf("No matching tensorflow GPU package for version %s and CUDA %s", ver, cuda)
+	// We've already warned user if they're doing something stupid in validateAndCompleteCUDA(), so fail silently
+	return "", "", nil
 }
 
 func torchCPUPackage(ver string, goos string, goarch string) (name string, cpuVersion string, indexURL string, err error) {
