@@ -107,7 +107,7 @@ func TestUnsupportedTorch(t *testing.T) {
 	config = &Config{
 		Build: &Build{
 			GPU:           true,
-			CUDA:          "9.2",
+			CUDA:          "9.1",
 			PythonVersion: "3.8",
 			PythonPackages: []string{
 				"torch==0.4.1",
@@ -116,7 +116,8 @@ func TestUnsupportedTorch(t *testing.T) {
 	}
 	err = config.validateAndCompleteCUDA()
 	require.NoError(t, err)
-	require.Equal(t, "9.2", config.Build.CUDA)
+	require.Equal(t, "9.1", config.Build.CUDA)
+	require.Equal(t, "7", config.Build.CuDNN)
 
 }
 
@@ -217,7 +218,7 @@ func TestCUDABaseImageTag(t *testing.T) {
 		Build: &Build{
 			PythonVersion: "3.8",
 			PythonPackages: []string{
-				"tensorflow==1.8.0",
+				"tensorflow==1.13.1",
 			},
 		},
 	}
@@ -227,7 +228,7 @@ func TestCUDABaseImageTag(t *testing.T) {
 
 	imageTag, err := config.CUDABaseImageTag()
 	require.NoError(t, err)
-	require.Equal(t, "nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04", imageTag)
+	require.Equal(t, "nvidia/cuda:10.0-cudnn7-devel-ubuntu18.04", imageTag)
 }
 
 func TestBlankBuild(t *testing.T) {

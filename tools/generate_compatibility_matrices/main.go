@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -149,6 +150,8 @@ func writeCUDABaseImageTags(outputPath string) error {
 			tags = append(tags, tag)
 		}
 	}
+
+	sort.Sort(sort.Reverse(sort.StringSlice(tags)))
 
 	data, err := json.MarshalIndent(tags, "", "  ")
 	if err != nil {
