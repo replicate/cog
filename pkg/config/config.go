@@ -262,7 +262,10 @@ Compatible cuDNN version is: %s`,
 		}
 
 		if c.Build.CuDNN == "" {
-			c.Build.CuDNN = latestCuDNNForCUDA(c.Build.CUDA)
+			c.Build.CuDNN, err = latestCuDNNForCUDA(c.Build.CUDA)
+			if err != nil {
+				return err
+			}
 			console.Debugf("Setting CuDNN to version %s", c.Build.CUDA)
 		}
 	} else {
@@ -271,7 +274,10 @@ Compatible cuDNN version is: %s`,
 			console.Debugf("Setting CUDA to version %s", c.Build.CUDA)
 		}
 		if c.Build.CuDNN == "" {
-			c.Build.CuDNN = latestCuDNNForCUDA(c.Build.CUDA)
+			c.Build.CuDNN, err = latestCuDNNForCUDA(c.Build.CUDA)
+			if err != nil {
+				return err
+			}
 			console.Debugf("Setting CuDNN to version %s", c.Build.CUDA)
 		}
 	}
