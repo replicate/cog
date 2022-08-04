@@ -191,7 +191,7 @@ func resolveMinorToPatch(minor string) (string, error) {
 	return patch, nil
 }
 
-func latestCuDNNForCUDA(cuda string) string {
+func latestCuDNNForCUDA(cuda string) (string, error) {
 	cuDNNs := []string{}
 	for _, image := range CUDABaseImages {
 		if version.Equal(image.CUDA, cuda) {
@@ -201,7 +201,11 @@ func latestCuDNNForCUDA(cuda string) string {
 	sort.Slice(cuDNNs, func(i, j int) bool {
 		return version.Greater(cuDNNs[i], cuDNNs[j])
 	})
-	return cuDNNs[0]
+	if len(cuDNNs) == 0 {
+		// TODO: return a list of supported cuda versions
+		return "", fmt.Errorf("CUDA %s is not supported by Cog", cuda)
+	}
+	return cuDNNs[0], nil
 }
 
 func latestTF() TFCompatibility {

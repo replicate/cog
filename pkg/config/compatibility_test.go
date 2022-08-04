@@ -7,7 +7,8 @@ import (
 )
 
 func TestLatestCuDNNForCUDA(t *testing.T) {
-	actual := latestCuDNNForCUDA("10.2")
+	actual, err := latestCuDNNForCUDA("10.2")
+	require.NoError(t, err)
 	require.Equal(t, "8", actual)
 }
 
