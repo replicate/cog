@@ -121,6 +121,44 @@ func TestUnsupportedTorch(t *testing.T) {
 
 }
 
+func TestUnsupportedTensorflow(t *testing.T) {
+	// Ensure version is not known by Cog
+	cuda, cudnn, err := cudaFromTF("0.4.1")
+	require.NoError(t, err)
+	require.Equal(t, cuda, "")
+	require.Equal(t, cudnn, "")
+
+	// Unknown versions require cuda
+	config := &Config{
+		Build: &Build{
+			GPU:           true,
+			PythonVersion: "3.8",
+			PythonPackages: []string{
+				"tensorflow==0.4.1",
+			},
+		},
+	}
+	err = config.validateAndCompleteCUDA()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Cog couldn't automatically determine a CUDA version for tensorflow==0.4.1.")
+
+	config = &Config{
+		Build: &Build{
+			GPU:           true,
+			CUDA:          "9.1",
+			PythonVersion: "3.8",
+			PythonPackages: []string{
+				"tensorflow==0.4.1",
+			},
+		},
+	}
+	err = config.validateAndCompleteCUDA()
+	require.NoError(t, err)
+	require.Equal(t, "9.1", config.Build.CUDA)
+	require.Equal(t, "7", config.Build.CuDNN)
+
+}
+
 func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 	config := &Config{
 		Build: &Build{

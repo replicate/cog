@@ -230,17 +230,26 @@ Compatible CuDNN versions are: %s`, c.Build.CUDA, c.Build.CuDNN, strings.Join(co
 
 	if tfVersion != "" {
 		if c.Build.CUDA == "" {
+			if tfCuDNN == "" {
+				return fmt.Errorf("Cog couldn't automatically determine a CUDA version for tensorflow==%s. You need to set the 'cuda' option in cog.yaml to set what version to use. You might be able to find this out from https://www.tensorflow.org/", tfVersion)
+			}
 			console.Debugf("Setting CUDA to version %s from Tensorflow version", tfCUDA)
 			c.Build.CUDA = tfCUDA
 		} else if tfCUDA != c.Build.CUDA {
-			return fmt.Errorf(`The specified CUDA version %s is not compatible with tensorflow==%s.
-Compatible CUDA version is: %s`,
-				c.Build.CUDA, tfVersion, tfCUDA)
+			// TODO: can we suggest a CUDA version known to be compatible?
+			console.Warnf("Cog doesn't know if CUDA %s is compatible with Tensorflow %s. This might cause CUDA problems.", c.Build.CUDA, tfVersion)
 		}
-		if c.Build.CuDNN == "" {
+		if c.Build.CuDNN == "" && tfCuDNN != "" {
 			console.Debugf("Setting CuDNN to version %s from Tensorflow version", tfCuDNN)
 			c.Build.CuDNN = tfCuDNN
+		} else if c.Build.CuDNN == "" {
+			c.Build.CuDNN, err = latestCuDNNForCUDA(c.Build.CUDA)
+			if err != nil {
+				return err
+			}
+			console.Debugf("Setting CuDNN to version %s", c.Build.CUDA)
 		} else if tfCuDNN != c.Build.CuDNN {
+			console.Warnf("Cog doesn't know if cuDNN %s is compatible with Tensorflow %s. This might cause CUDA problems.", c.Build.CuDNN, tfVersion)
 			return fmt.Errorf(`The specified cuDNN version %s is not compatible with tensorflow==%s.
 Compatible cuDNN version is: %s`,
 				c.Build.CuDNN, tfVersion, tfCuDNN)
