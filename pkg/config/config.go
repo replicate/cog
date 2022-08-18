@@ -231,7 +231,7 @@ Compatible CuDNN versions are: %s`, c.Build.CUDA, c.Build.CuDNN, strings.Join(co
 	if tfVersion != "" {
 		if c.Build.CUDA == "" {
 			if tfCuDNN == "" {
-				return fmt.Errorf("Cog couldn't automatically determine a CUDA version for tensorflow==%s. You need to set the 'cuda' option in cog.yaml to set what version to use. You might be able to find this out from https://www.tensorflow.org/", tfVersion)
+				return fmt.Errorf("Cog doesn't know what CUDA version is compatible with tensorflow==%s. You might need to upgrade Cog: https://github.com/replicate/cog#upgrade\n\nIf that doesn't work, you need to set the 'cuda' option in cog.yaml to set what version to use. You might be able to find this out from https://www.tensorflow.org/", tfVersion)
 			}
 			console.Debugf("Setting CUDA to version %s from Tensorflow version", tfCUDA)
 			c.Build.CUDA = tfCUDA
@@ -257,7 +257,7 @@ Compatible cuDNN version is: %s`,
 	} else if torchVersion != "" {
 		if c.Build.CUDA == "" {
 			if len(torchCUDAs) == 0 {
-				return fmt.Errorf("Cog couldn't automatically determine a CUDA version for torch==%s. You need to set the 'cuda' option in cog.yaml to set what version to use. You might be able to find this out from https://pytorch.org/", torchVersion)
+				return fmt.Errorf("Cog doesn't know what CUDA version is compatible with torch==%s. You might need to upgrade Cog: https://github.com/replicate/cog#upgrade\n\nIf that doesn't work, you need to set the 'cuda' option in cog.yaml to set what version to use. You might be able to find this out from https://pytorch.org/", torchVersion)
 			}
 			c.Build.CUDA = latestCUDAFrom(torchCUDAs)
 			c.Build.CUDA, err = resolveMinorToPatch(c.Build.CUDA)
