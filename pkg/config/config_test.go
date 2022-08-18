@@ -102,7 +102,7 @@ func TestUnsupportedTorch(t *testing.T) {
 	}
 	err = config.validateAndCompleteCUDA()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "Cog couldn't automatically determine a CUDA version for torch==0.4.1.")
+	require.Contains(t, err.Error(), "Cog doesn't know what CUDA version is compatible with torch==0.4.1.")
 
 	config = &Config{
 		Build: &Build{
@@ -140,7 +140,7 @@ func TestUnsupportedTensorflow(t *testing.T) {
 	}
 	err = config.validateAndCompleteCUDA()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "Cog couldn't automatically determine a CUDA version for tensorflow==0.4.1.")
+	require.Contains(t, err.Error(), "Cog doesn't know what CUDA version is compatible with tensorflow==0.4.1.")
 
 	config = &Config{
 		Build: &Build{
