@@ -76,6 +76,28 @@ def test_predict_writes_files_to_files_with_custom_name(tmpdir_factory):
         assert len(f.read()) == 195894
 
 
+def test_predict_writes_multiple_files_to_files(tmpdir_factory):
+    project_dir = Path(__file__).parent / "fixtures/file-list-output-project"
+    out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
+    shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
+    result = subprocess.run(
+        [
+            "cog",
+            "predict",
+        ],
+        cwd=out_dir,
+        check=True,
+        capture_output=True,
+    )
+    assert result.stdout == b""
+    with open(out_dir / "output.0.txt", "r") as f:
+        assert f.read() == "foo"
+    with open(out_dir / "output.1.txt", "r") as f:
+        assert f.read() == "bar"
+    with open(out_dir / "output.2.txt", "r") as f:
+        assert f.read() == "baz"
+
+
 def test_predict_writes_strings_to_files(tmpdir_factory):
     project_dir = Path(__file__).parent / "fixtures/string-project"
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))

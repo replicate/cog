@@ -139,6 +139,12 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 	// Generate output depending on type in schema
 	var out []byte
 	outputSchema := schema.Components.Schemas["Response"].Value.Properties["output"].Value
+
+	// Multiple outputs!
+	if outputSchema.Type == "array" && outputSchema.Items.Value != nil && outputSchema.Items.Value.Type == "string" && outputSchema.Items.Value.Format == "uri" {
+		return handleMultipleFileOutput(prediction, outputSchema)
+	}
+
 	if outputSchema.Type == "string" && outputSchema.Format == "uri" {
 		dataurlObj, err := dataurl.DecodeString((*prediction.Output).(string))
 		if err != nil {
@@ -186,7 +192,11 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 	// Ignore @, to make it behave the same as -i
 	outputPath = strings.TrimPrefix(outputPath, "@")
 
-	outputPath, err = homedir.Expand(outputPath)
+	return writeOutput(outputPath, out)
+}
+
+func writeOutput(outputPath string, output []byte) error {
+	outputPath, err := homedir.Expand(outputPath)
 	if err != nil {
 		return err
 	}
@@ -197,14 +207,36 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 		return err
 	}
 
-	if _, err := outFile.Write(out); err != nil {
+	if _, err := outFile.Write(output); err != nil {
 		return err
 	}
 	if err := outFile.Close(); err != nil {
 		return err
 	}
-
 	console.Infof("Written output to %s", outputPath)
+	return nil
+}
+
+func handleMultipleFileOutput(prediction *predict.Response, outputSchema *openapi3.Schema) error {
+	outputs, ok := (*prediction.Output).([]interface{})
+	if !ok {
+		return fmt.Errorf("Failed to decode output")
+	}
+
+	for i, output := range outputs {
+		outputString := output.(string)
+		dataurlObj, err := dataurl.DecodeString(outputString)
+		if err != nil {
+			return fmt.Errorf("Failed to decode dataurl: %w", err)
+		}
+		out := dataurlObj.Data
+		extension := mime.ExtensionByType(dataurlObj.ContentType())
+		outputPath := fmt.Sprintf("output.%d%s", i, extension)
+		if err := writeOutput(outputPath, out); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
