@@ -12,7 +12,8 @@ Tip: Run [`cog init`](getting-started-own-model#initialization) to generate an a
     - [Progressive output](#progressive-output)
 - [`Input(**kwargs)`](#inputkwargs)
 - [Output](#output)
-    - [Optional properties](#optional-output-properties)
+    - [Returning an object](#returning-an-object)
+    - [Returning a list](#returning-a-list)
 - [Input and output types](#input-and-output-types)
 - [`File()`](#file)
 - [`Path()`](#path)
@@ -79,6 +80,8 @@ class Predictor(BasePredictor):
             yield Path(output_path)
 ```
 
+
+
 ## `Input(**kwargs)`
 
 Use cog's `Input()` function to define each of the parameters in your `predict()` method:
@@ -129,7 +132,9 @@ class Predictor(BasePredictor):
         return "hello"
 ```
 
-To return a complex object with multiple values, you can define an `Output` object with multiple fields to return from your `predict()` method:
+### Returning an object
+
+To return a complex object with multiple values, define an `Output` object with multiple fields to return from your `predict()` method:
 
 ```py
 from cog import BasePredictor, BaseModel, File
@@ -144,6 +149,27 @@ class Predictor(BasePredictor):
 ```
 
 Each of the output object's properties must be one of the supported output types. For the full list, see [Input and output types](#input-and-output-types).
+
+### Returning a list
+
+The `predict()` method can return a list of any of the supported output types. Here's an example that outputs multiple files:
+
+```py
+from cog import BasePredictor, Path
+
+class Predictor(BasePredictor):
+    def predict(self) -> List[Path]:
+        predictions = ["foo", "bar", "baz"]
+        output = []
+        for i, prediction in enumerate(predictions):
+            out_path = Path(f"/tmp/out-{i}.txt")
+            with out_path.open("w") as f:
+                f.write(prediction)
+            output.append(out_path)
+        return output
+```
+
+Files are named in the format `output.<index>.<extension>`, e.g. `output.0.txt`, `output.1.txt`, and `output.2.txt` from the example above.
 
 ### Optional properties
 
