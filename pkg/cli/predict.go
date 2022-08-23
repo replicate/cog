@@ -145,10 +145,12 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 			return fmt.Errorf("Failed to decode dataurl: %w", err)
 		}
 		out = dataurlObj.Data
-		outputPath = "output"
-		extension := mime.ExtensionByType(dataurlObj.ContentType())
-		if extension != "" {
-			outputPath += extension
+		if outputPath == "" {
+			outputPath = "output"
+			extension := mime.ExtensionByType(dataurlObj.ContentType())
+			if extension != "" {
+				outputPath += extension
+			}
 		}
 	} else if outputSchema.Type == "string" {
 		// Handle strings separately because if we encode it to JSON it will be surrounded by quotes.
