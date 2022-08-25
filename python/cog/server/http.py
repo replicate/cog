@@ -95,6 +95,8 @@ Check that your predict function is in this form, where `output_type` is the sam
 """
             )
             raise HTTPException(status_code=500)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
         finally:
             if request is not None and request.input is not None:
                 request.input.cleanup()
