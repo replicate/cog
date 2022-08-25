@@ -195,7 +195,7 @@ def create_app(
             response = PredictionResponse(**async_result.get().dict())
         except ValidationError as e:
             _log_invalid_output(e)
-            raise HTTPException(status_code=500) from e
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
         response_object = response.dict()
         response_object["output"] = upload_files(
