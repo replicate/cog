@@ -126,9 +126,9 @@ jobs:
           # clean package built for go client
           rm -rf python/dist
           # set version
-          sed -i -E "s/0.0.1/${GITHUB_REF_NAME:1}/" setup.py
+          sed -i -E "s/0.0.1/${GITHUB_REF_NAME:1}/" python/setup.py
           # build package
-          python setup.py bdist_wheel
+          cd python && python setup.py bdist_wheel
       - name: Push Python package
         uses: pypa/gh-action-pypi-publish@master
         with:
