@@ -170,6 +170,25 @@ type pypiResponse struct {
 	} `json:"info"`
 }
 
+func fetchTorchVersions() ([]config.TorchCompatibility, error) {
+	compats := []config.TorchCompatibility{}
+	linkRe := regexp.MustCompile(``)
+
+	url := "https://download.pytorch.org/whl/torch_stable.html"
+	resp, err := soup.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to download %s: %w", url, err)
+	}
+	doc := soup.HTMLParse(resp)
+	links := doc.FindAll("a")
+	for _, link := range links {
+		href := link.Attrs()["href"]
+
+	}
+
+	return compats, nil
+}
+
 // Need to get latest versions because PyTorch doesn't specify versions for latest
 func fetchDefaultVersions() (map[string]string, error) {
 	fmt.Println("Fetching default versions...")
