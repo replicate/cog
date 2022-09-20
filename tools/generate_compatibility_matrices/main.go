@@ -127,28 +127,51 @@ func writeTorchCompatibilityMatrix(outputPath string) error {
 	return nil
 }
 
-func writeCUDABaseImageTags(outputPath string) error {
-	console.Infof("Writing CUDA base images to %s...", outputPath)
-	url := "https://hub.docker.com/v2/repositories/nvidia/cuda/tags/?page_size=1000&name=devel-ubuntu&ordering=last_updated"
+func getCUDABaseImageTags(url string) ([]string, error) {
+	tags := []string{}
+
 	resp, err := soup.Get(url)
 	if err != nil {
-		return fmt.Errorf("Failed to download %s: %w", url, err)
+		return tags, fmt.Errorf("Failed to download %s: %w", url, err)
 	}
+
 	var results struct {
+		Next    *string
 		Results []struct {
 			Name string `json:"name"`
 		} `json:"results"`
 	}
 	if err := json.Unmarshal([]byte(resp), &results); err != nil {
-		return fmt.Errorf("Failed parse CUDA images json: %w", err)
+		return tags, fmt.Errorf("Failed parse CUDA images json: %w", err)
 	}
 
-	tags := []string{}
 	for _, result := range results.Results {
 		tag := result.Name
 		if strings.Contains(tag, "-cudnn") && !strings.HasSuffix(tag, "-rc") {
 			tags = append(tags, tag)
 		}
+	}
+
+	// recursive case for pagination
+	if results.Next != nil {
+		nextURL := *results.Next
+		nextTags, err := getCUDABaseImageTags(nextURL)
+		if err != nil {
+			return tags, err
+		}
+		tags = append(tags, nextTags...)
+	}
+
+	return tags, nil
+}
+
+func writeCUDABaseImageTags(outputPath string) error {
+	console.Infof("Writing CUDA base images to %s...", outputPath)
+	url := "https://hub.docker.com/v2/repositories/nvidia/cuda/tags/?page_size=1000&name=devel-ubuntu&ordering=last_updated"
+
+	tags, err := getCUDABaseImageTags(url)
+	if err != nil {
+		return err
 	}
 
 	sort.Sort(sort.Reverse(sort.StringSlice(tags)))
