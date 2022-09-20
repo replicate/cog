@@ -3,6 +3,7 @@ import os
 import signal
 import traceback
 import types
+from contextlib import nullcontext
 from enum import Enum
 from multiprocessing.connection import Connection
 from typing import Any, Dict, List, Optional
@@ -138,11 +139,12 @@ class PredictionRunner:
                 self._run_prediction(
                     prediction_input=message["prediction_input"],
                     span_context=message["span_context"],
+                    return_logs=message["return_logs"],
                 )
             except EOFError:
                 continue
 
-    def run(self, **prediction_input: Dict[str, Any]) -> None:
+    def run(self, return_logs: bool, **prediction_input: Dict[str, Any]) -> None:
         """
         Starts running a prediction in the predictor subprocess, using the
         inputs provided in `prediction_input`.
@@ -171,6 +173,7 @@ class PredictionRunner:
             {
                 "prediction_input": prediction_input,
                 "span_context": trace.get_current_span().get_span_context(),
+                "return_logs": return_logs,
             }
         )
 
@@ -237,6 +240,7 @@ class PredictionRunner:
     def _run_prediction(
         self,
         prediction_input: Dict[str, Any],
+        return_logs: bool,
         span_context: SpanContext = None,
     ) -> None:
         """
@@ -254,7 +258,7 @@ class PredictionRunner:
         drain_pipe(self.error_pipe_reader)
         drain_pipe(self.done_pipe_reader)
 
-        with capture_log(self.logs_pipe_writer):
+        with capture_log(self.logs_pipe_writer) if return_logs else nullcontext():
             tracer = trace.get_tracer("cog")
             with tracer.start_as_current_span(
                 name="predictor.predict",

@@ -42,7 +42,8 @@ After starting, [the `setup()` method of the predictor](python.md#predictorsetup
 The message body should be a JSON object with the following fields:
 
 - `input`: a JSON object with the same keys as the [arguments to the `predict()` function](python.md). Any `File` or `Path` inputs are passed as URLs.
-- `response_queue`: the Redis queue Cog will send responses to
+- `response_queue`: the Redis queue Cog will send responses to.
+- `return_logs`: a boolean indicating whether or not to return logs with the response. Defaults to false.
 
 You can enqueue the request using the `XADD` command:
 

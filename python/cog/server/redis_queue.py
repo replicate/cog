@@ -170,7 +170,6 @@ class RedisQueueWorker:
                     response: Dict[str, Any] = {
                         "status": Status.PROCESSING,
                         "output": None,
-                        "logs": [],
                     }
                     cleanup_functions: List[Callable] = []
                     try:
@@ -234,14 +233,17 @@ class RedisQueueWorker:
 
         cleanup_functions.append(input_obj.cleanup)
 
-        self.runner.run(**input_obj.dict())
+        return_logs = bool(message.get("return_logs", False))
+
+        self.runner.run(return_logs, **input_obj.dict())
 
         response["x-experimental-timestamps"] = {
             "started_at": datetime.datetime.now().isoformat()
         }
 
         logs: List[str] = []
-        response["logs"] = logs
+        if return_logs:
+            response["logs"] = logs
 
         self.push_message(response_queue, response)
 
