@@ -121,3 +121,17 @@ jobs:
           args: release --rm-dist
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Python package
+        run: |
+          # clean package built for go client
+          rm -rf python/dist
+          # set version
+          sed -i -E "s/0.0.1/${GITHUB_REF_NAME:1}/" setup.py
+          # build package
+          python setup.py bdist_wheel
+      - name: Push Python package
+        uses: pypa/gh-action-pypi-publish@master
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_TOKEN }}
+          packages_dir: python/dist
