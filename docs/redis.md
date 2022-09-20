@@ -42,7 +42,11 @@ After starting, [the `setup()` method of the predictor](python.md#predictorsetup
 The message body should be a JSON object with the following fields:
 
 - `input`: a JSON object with the same keys as the [arguments to the `predict()` function](python.md). Any `File` or `Path` inputs are passed as URLs.
-- `response_queue`: the Redis queue Cog will send responses to
+- `webhook`: the URL Cog will send responses to.
+
+There's also one deprecated field:
+
+- `response_queue`: the Redis key to send responses to; ignored if `webhook` is set.
 
 You can enqueue the request using the `XADD` command:
 
@@ -50,11 +54,12 @@ You can enqueue the request using the `XADD` command:
 
 ## Get a prediction response
 
-The model will send a message to the queue every time something happens:
+The model will send a POST request to the webhook endpoint every time something happens:
 
-- when the model generates some logs
-- when the model returns some output
-- when the model finishes running
+- when the prediction starts running
+- when the prediction generates some logs
+- when the prediction returns some output
+- when the prediction finishes running
 
 The message body is a JSON object with the following fields:
 
@@ -92,7 +97,11 @@ If the model yields [progressive output](python.md#progressive-output) then a mi
         ]
     }
 
-The response is written to a string key using `SET`. Because each message is a complete snapshot of the current state, the previous snapshots are not needed. You can read the values using the `GET` command:
+### Redis responses
+
+Note: this section documents a deprecated feature, which will be removed in a future version of Cog.
+
+If you set `response_queue`, then the response is written to a string key using `SET`. This is instead of sending webhooks, as documented above. Because each message is a complete snapshot of the current state, the previous snapshots are not needed. You can read the values using the `GET` command:
 
     redis:6379> GET my-response-queue
 

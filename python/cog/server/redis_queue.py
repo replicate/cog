@@ -162,7 +162,13 @@ class RedisQueueWorker:
                     context=context,
                     attributes={"time_in_queue": time_in_queue},
                 ) as span:
-                    response_queue = message["response_queue"]
+                    webhook = message.get("webhook")
+                    if webhook is not None:
+                        send_response = self.webhook_caller(webhook)
+                    else:
+                        redis_key = message["response_queue"]
+                        send_response = self.redis_setter(redis_key)
+
                     sys.stderr.write(
                         f"Received message {message_id} on {self.input_queue}\n"
                     )
@@ -176,7 +182,7 @@ class RedisQueueWorker:
                     try:
                         start_time = time.time()
                         self.handle_message(
-                            response_queue, response, message, cleanup_functions
+                            send_response, response, message, cleanup_functions
                         )
                         self.redis.xack(self.input_queue, self.input_queue, message_id)
                         self.redis.xdel(
@@ -195,7 +201,7 @@ class RedisQueueWorker:
                         response["x-experimental-timestamps"][
                             "completed_at"
                         ] = datetime.datetime.now().isoformat()
-                        self.push_message(response_queue, response)
+                        send_response(response)
                         self.redis.xack(self.input_queue, self.input_queue, message_id)
                         self.redis.xdel(self.input_queue, message_id)
                     finally:
@@ -213,7 +219,7 @@ class RedisQueueWorker:
 
     def handle_message(
         self,
-        response_queue: str,
+        send_response: Callable,
         response: Dict[str, Any],
         message: Dict[str, Any],
         cleanup_functions: List[Callable],
@@ -227,7 +233,7 @@ class RedisQueueWorker:
             sys.stderr.write(tb)
             response["status"] = Status.FAILED
             response["error"] = str(e)
-            self.push_message(response_queue, response)
+            send_response(response)
             span.record_exception(e)
             span.set_status(TraceStatus(status_code=StatusCode.ERROR))
             return
@@ -243,13 +249,13 @@ class RedisQueueWorker:
         logs: List[str] = []
         response["logs"] = logs
 
-        self.push_message(response_queue, response)
+        send_response(response)
 
         # just send logs until output starts
         while self.runner.is_processing() and not self.runner.has_output_waiting():
             if self.runner.has_logs_waiting():
                 logs.extend(self.runner.read_logs())
-                self.push_message(response_queue, response)
+                send_response(response)
 
         if self.runner.error() is not None:
             response["status"] = Status.FAILED
@@ -257,7 +263,7 @@ class RedisQueueWorker:
             response["x-experimental-timestamps"][
                 "completed_at"
             ] = datetime.datetime.now().isoformat()
-            self.push_message(response_queue, response)
+            send_response(response)
             span.record_exception(self.runner.error())
             span.set_status(TraceStatus(status_code=StatusCode.ERROR))
             return
@@ -287,7 +293,7 @@ class RedisQueueWorker:
                     # here to give the predictor subprocess a chance to exit
                     # so we don't send a double message for final output, at
                     # the cost of extra latency
-                    self.push_message(response_queue, response)
+                    send_response(response)
 
             if self.runner.error() is not None:
                 response["status"] = Status.FAILED
@@ -295,7 +301,7 @@ class RedisQueueWorker:
                 response["x-experimental-timestamps"][
                     "completed_at"
                 ] = datetime.datetime.now().isoformat()
-                self.push_message(response_queue, response)
+                send_response(response)
                 span.record_exception(self.runner.error())
                 span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                 return
@@ -308,14 +314,14 @@ class RedisQueueWorker:
             ] = datetime.datetime.now().isoformat()
             output.extend(self.upload_files(o) for o in self.runner.read_output())
             logs.extend(self.runner.read_logs())
-            self.push_message(response_queue, response)
+            send_response(response)
 
         else:
             # just send logs until output ends
             while self.runner.is_processing():
                 if self.runner.has_logs_waiting():
                     logs.extend(self.runner.read_logs())
-                    self.push_message(response_queue, response)
+                    send_response(response)
 
             if self.runner.error() is not None:
                 response["status"] = Status.FAILED
@@ -323,7 +329,7 @@ class RedisQueueWorker:
                 response["x-experimental-timestamps"][
                     "completed_at"
                 ] = datetime.datetime.now().isoformat()
-                self.push_message(response_queue, response)
+                send_response(response)
                 span.record_exception(self.runner.error())
                 span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                 return
@@ -337,15 +343,24 @@ class RedisQueueWorker:
             ] = datetime.datetime.now().isoformat()
             response["output"] = self.upload_files(output[0])
             logs.extend(self.runner.read_logs())
-            self.push_message(response_queue, response)
+            send_response(response)
 
     def download(self, url: str) -> bytes:
         resp = requests.get(url)
         resp.raise_for_status()
         return resp.content
 
-    def push_message(self, response_queue: str, response: Any) -> None:
-        self.redis.set(response_queue, json.dumps(response))
+    def webhook_caller(self, webhook: str) -> Callable:
+        def caller(response: Any) -> None:
+            requests.post(webhook, json=response)
+
+        return caller
+
+    def redis_setter(self, redis_key: str) -> Callable:
+        def setter(response: Any) -> None:
+            self.redis.set(redis_key, json.dumps(response))
+
+        return setter
 
     def upload_files(self, obj: Any) -> Any:
         def upload_file(fh: io.IOBase) -> str:
