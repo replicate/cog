@@ -1,5 +1,61 @@
 [
   {
+    "Torch": "1.12.1",
+    "Torchvision": "0.13.1",
+    "Torchaudio": "0.12.1",
+    "IndexURL": "",
+    "CUDA": "11.3",
+    "Pythons": [
+      "3.6",
+      "3.7",
+      "3.8",
+      "3.9",
+      "3.10"
+    ]
+  },
+  {
+    "Torch": "1.12.1",
+    "Torchvision": "0.13.1",
+    "Torchaudio": "0.12.1",
+    "IndexURL": "",
+    "CUDA": null,
+    "Pythons": [
+      "3.6",
+      "3.7",
+      "3.8",
+      "3.9",
+      "3.10"
+    ]
+  },
+  {
+    "Torch": "1.12.1",
+    "Torchvision": "0.13.1",
+    "Torchaudio": "0.12.1",
+    "IndexURL": "",
+    "CUDA": "11.6",
+    "Pythons": [
+      "3.6",
+      "3.7",
+      "3.8",
+      "3.9",
+      "3.10"
+    ]
+  },
+  {
+    "Torch": "1.12.1",
+    "Torchvision": "0.13.1",
+    "Torchaudio": "0.12.1",
+    "IndexURL": "",
+    "CUDA": "10.2",
+    "Pythons": [
+      "3.6",
+      "3.7",
+      "3.8",
+      "3.9",
+      "3.10"
+    ]
+  },
+  {
     "Torch": "1.12.0",
     "Torchvision": "0.13.0",
     "Torchaudio": "0.12.0",

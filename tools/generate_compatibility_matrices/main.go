@@ -18,7 +18,8 @@ import (
 )
 
 var defaultCUDA = map[string]string{
-	"11.x": "11.2",
+	"11.x": "11.3",
+	"11.y": "11.6",
 }
 
 func main() {
@@ -260,7 +261,7 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 	// pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
 	// pip install torch==1.8.0+cpu torchvision==0.9.0+cpu torchaudio==0.8.0 -f https://download.pytorch.org/whl/torch_stable.html
 
-	if cuda != nil && strings.HasSuffix(*cuda, ".x") {
+	if cuda != nil && (strings.HasSuffix(*cuda, ".x") || strings.HasSuffix(*cuda, ".y")) {
 		c := defaultCUDA[*cuda]
 		cuda = &c
 	}
