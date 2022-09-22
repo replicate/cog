@@ -198,9 +198,9 @@ class RedisQueueWorker:
                     except Exception as e:
                         response["status"] = Status.FAILED
                         response["error"] = str(e)
-                        response["x-experimental-timestamps"][
-                            "completed_at"
-                        ] = datetime.datetime.now().isoformat()
+                        response["completed_at"] = (
+                            datetime.datetime.now().isoformat() + "Z"
+                        )
                         send_response(response)
                         self.redis.xack(self.input_queue, self.input_queue, message_id)
                         self.redis.xdel(self.input_queue, message_id)
@@ -242,9 +242,7 @@ class RedisQueueWorker:
 
         self.runner.run(**input_obj.dict())
 
-        response["x-experimental-timestamps"] = {
-            "started_at": datetime.datetime.now().isoformat()
-        }
+        response["started_at"] = datetime.datetime.now().isoformat() + "Z"
 
         logs: List[str] = []
         response["logs"] = logs
@@ -260,9 +258,7 @@ class RedisQueueWorker:
         if self.runner.error() is not None:
             response["status"] = Status.FAILED
             response["error"] = str(self.runner.error())  # type: ignore
-            response["x-experimental-timestamps"][
-                "completed_at"
-            ] = datetime.datetime.now().isoformat()
+            response["completed_at"] = datetime.datetime.now().isoformat() + "Z"
             send_response(response)
             span.record_exception(self.runner.error())
             span.set_status(TraceStatus(status_code=StatusCode.ERROR))
@@ -298,9 +294,7 @@ class RedisQueueWorker:
             if self.runner.error() is not None:
                 response["status"] = Status.FAILED
                 response["error"] = str(self.runner.error())  # type: ignore
-                response["x-experimental-timestamps"][
-                    "completed_at"
-                ] = datetime.datetime.now().isoformat()
+                response["completed_at"] = datetime.datetime.now().isoformat() + "Z"
                 send_response(response)
                 span.record_exception(self.runner.error())
                 span.set_status(TraceStatus(status_code=StatusCode.ERROR))
@@ -309,9 +303,7 @@ class RedisQueueWorker:
             span.add_event("received final output")
 
             response["status"] = Status.SUCCEEDED
-            response["x-experimental-timestamps"][
-                "completed_at"
-            ] = datetime.datetime.now().isoformat()
+            response["completed_at"] = datetime.datetime.now().isoformat() + "Z"
             output.extend(self.upload_files(o) for o in self.runner.read_output())
             logs.extend(self.runner.read_logs())
             send_response(response)
@@ -326,9 +318,7 @@ class RedisQueueWorker:
             if self.runner.error() is not None:
                 response["status"] = Status.FAILED
                 response["error"] = str(self.runner.error())  # type: ignore
-                response["x-experimental-timestamps"][
-                    "completed_at"
-                ] = datetime.datetime.now().isoformat()
+                response["completed_at"] = datetime.datetime.now().isoformat() + "Z"
                 send_response(response)
                 span.record_exception(self.runner.error())
                 span.set_status(TraceStatus(status_code=StatusCode.ERROR))
@@ -338,9 +328,7 @@ class RedisQueueWorker:
             assert len(output) == 1
 
             response["status"] = Status.SUCCEEDED
-            response["x-experimental-timestamps"][
-                "completed_at"
-            ] = datetime.datetime.now().isoformat()
+            response["completed_at"] = datetime.datetime.now().isoformat() + "Z"
             response["output"] = self.upload_files(output[0])
             logs.extend(self.runner.read_logs())
             send_response(response)

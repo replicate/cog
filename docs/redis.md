@@ -67,6 +67,8 @@ The message body is a JSON object with the following fields:
 - `output`: The return value of the `predict()` function.
 - `logs`: A list of any logs sent to stdout or stderr during the prediction.
 - `error`: If `status` is `failed`, the error message.
+- `started_at`: An ISO8601/RFC3339 timestamp of when the prediction started.
+- `completed_at`: An ISO8601/RFC3339 timestamp of when the prediction finished.
 
 For example, a message early in the prediction might look like:
 
@@ -76,7 +78,8 @@ For example, a message early in the prediction might look like:
         "logs": [
             "Creating model and diffusion.",
             "Done creating model and diffusion."
-        ]
+        ],
+        "started_at": "2022-09-22T14:31:17Z"
     }
 
 If the model yields [progressive output](python.md#progressive-output) then a mid-prediction message might look like:
@@ -94,7 +97,8 @@ If the model yields [progressive output](python.md#progressive-output) then a mi
             "Iteration: 0, loss: -0.767578125",
             "Iteration: 20, loss: -1.2333984375",
             "Iteration: 40, loss: -1.380859375"
-        ]
+        ],
+        "started_at": "2022-09-22T14:31:17Z"
     }
 
 ### Redis responses
@@ -110,14 +114,6 @@ To get notified of updates to the value, you can `SUBSCRIBE` to [keyspace notifi
     redis:6379> SUBSCRIBE __keyspace@0__:my-response-queue
 
 [keyspace notifications]: https://redis.io/docs/manual/keyspace-notifications/
-
-### Experimental properties
-
-The response may also include experimental properties, prefixed with `x-experimental-`. Experimental properties may change or be removed in any version, not just major versions that would ordinarily be used to indicate a breaking change. Any such change will be documented in release notes.
-
-Current experimental properties are:
-
-- `x-experimental-timestamps`: the time the prediction started and finished.
 
 ## Telemetry
 
