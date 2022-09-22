@@ -172,18 +172,18 @@ class RedisQueueWorker:
                     sys.stderr.write(
                         f"Received message {message_id} on {self.input_queue}\n"
                     )
-                    # create this here so it's available during exception handling
-                    response: Dict[str, Any] = {
-                        "status": Status.PROCESSING,
-                        "output": None,
-                        "logs": [],
-                    }
+
+                    # use the request message as the basis of our response so
+                    # that we echo back any additional fields sent to us
+                    response = message
+                    response["status"] = Status.PROCESSING
+                    response["output"] = None
+                    response["logs"] = []
+
                     cleanup_functions: List[Callable] = []
                     try:
                         start_time = time.time()
-                        self.handle_message(
-                            send_response, response, message, cleanup_functions
-                        )
+                        self.handle_message(send_response, response, cleanup_functions)
                         self.redis.xack(self.input_queue, self.input_queue, message_id)
                         self.redis.xdel(
                             self.input_queue, message_id
@@ -221,7 +221,6 @@ class RedisQueueWorker:
         self,
         send_response: Callable,
         response: Dict[str, Any],
-        message: Dict[str, Any],
         cleanup_functions: List[Callable],
     ) -> None:
         span = trace.get_current_span()
@@ -229,7 +228,7 @@ class RedisQueueWorker:
         started_at = datetime.datetime.now()
 
         try:
-            input_obj = self.InputType(**message["input"])
+            input_obj = self.InputType(**response["input"])
         except ValidationError as e:
             tb = traceback.format_exc()
             sys.stderr.write(tb)
