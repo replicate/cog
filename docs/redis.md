@@ -102,6 +102,8 @@ If the model yields [progressive output](python.md#progressive-output) then a mi
         "started_at": "2022-09-22T14:31:17Z"
     }
 
+Additionally, Cog will include in the response any fields which sent as part of the request, including `input` and `webhook`.
+
 ### Redis responses
 
 Note: this section documents a deprecated feature, which will be removed in a future version of Cog.

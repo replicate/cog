@@ -47,10 +47,21 @@ def test_queue_worker_files(
             "logs",
         ],
     ):
+        predict_id = random_string(10)
+        webhook_url = httpserver.url_for("/webhook").replace(
+            "localhost", "host.docker.internal"
+        )
+
         # we expect a webhook on starting
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "text": "baz",
+                    "path": "http://upload-server:5000/download/input.txt",
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": None,
                 "status": "processing",
@@ -69,6 +80,12 @@ def test_queue_worker_files(
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "text": "baz",
+                    "path": "http://upload-server:5000/download/input.txt",
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": "http://upload-server:5000/download/output.txt",
                 "status": "succeeded",
@@ -84,11 +101,6 @@ def test_queue_worker_files(
         redis_client.xgroup_create(
             mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
         )
-
-        webhook_url = httpserver.url_for("/webhook").replace(
-            "localhost", "host.docker.internal"
-        )
-        predict_id = random_string(10)
 
         with httpserver.wait(timeout=15) as waiting:
             redis_client.xadd(
@@ -150,9 +162,19 @@ def test_queue_worker_yielding_file(
             "logs",
         ],
     ):
+        predict_id = random_string(10)
+        webhook_url = httpserver.url_for("/webhook").replace(
+            "localhost", "host.docker.internal"
+        )
+
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "path": "http://upload-server:5000/download/input.txt",
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": None,
                 "status": "processing",
@@ -164,6 +186,11 @@ def test_queue_worker_yielding_file(
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "path": "http://upload-server:5000/download/input.txt",
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": ["http://upload-server:5000/download/out-0.txt"],
                 "status": "processing",
@@ -175,6 +202,11 @@ def test_queue_worker_yielding_file(
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "path": "http://upload-server:5000/download/input.txt",
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": [
                     "http://upload-server:5000/download/out-0.txt",
@@ -189,6 +221,11 @@ def test_queue_worker_yielding_file(
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "path": "http://upload-server:5000/download/input.txt",
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": [
                     "http://upload-server:5000/download/out-0.txt",
@@ -204,6 +241,11 @@ def test_queue_worker_yielding_file(
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "path": "http://upload-server:5000/download/input.txt",
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": [
                     "http://upload-server:5000/download/out-0.txt",
@@ -222,11 +264,6 @@ def test_queue_worker_yielding_file(
 
         redis_client.xgroup_create(
             mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
-        )
-
-        predict_id = random_string(10)
-        webhook_url = httpserver.url_for("/webhook").replace(
-            "localhost", "host.docker.internal"
         )
 
         with httpserver.wait(timeout=15) as waiting:
@@ -277,9 +314,19 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client, https
             "logs",
         ],
     ):
+        predict_id = random_string(10)
+        webhook_url = httpserver.url_for("/webhook").replace(
+            "localhost", "host.docker.internal"
+        )
+
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "text": "bar",
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": None,
                 "status": "processing",
@@ -291,6 +338,11 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client, https
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "text": "bar",
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": ["foo", "bar", "baz"],
                 "status": "processing",
@@ -302,6 +354,11 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client, https
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "text": "bar",
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": ["foo", "bar", "baz"],
                 "status": "succeeded",
@@ -316,11 +373,6 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client, https
 
         redis_client.xgroup_create(
             mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
-        )
-
-        predict_id = random_string(10)
-        webhook_url = httpserver.url_for("/webhook").replace(
-            "localhost", "host.docker.internal"
         )
 
         with httpserver.wait(timeout=15) as waiting:
@@ -364,9 +416,19 @@ def test_queue_worker_error(docker_network, docker_image, redis_client, httpserv
             "logs",
         ],
     ):
+        predict_id = random_string(10)
+        webhook_url = httpserver.url_for("/webhook").replace(
+            "localhost", "host.docker.internal"
+        )
+
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "text": "bar",
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": None,
                 "status": "processing",
@@ -382,6 +444,11 @@ def test_queue_worker_error(docker_network, docker_image, redis_client, httpserv
         httpserver.expect_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "text": "bar",
+                },
+                "webhook": webhook_url,
                 "logs": mock.ANY,  # includes a stack trace
                 "output": None,
                 "status": "processing",
@@ -399,6 +466,11 @@ def test_queue_worker_error(docker_network, docker_image, redis_client, httpserv
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "text": "bar",
+                },
+                "webhook": webhook_url,
                 "error": "over budget",
                 "logs": mock.ANY,  # might include a stack trace (see above)
                 "output": None,
@@ -411,11 +483,6 @@ def test_queue_worker_error(docker_network, docker_image, redis_client, httpserv
 
         redis_client.xgroup_create(
             mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
-        )
-
-        predict_id = random_string(10)
-        webhook_url = httpserver.url_for("/webhook").replace(
-            "localhost", "host.docker.internal"
         )
 
         with httpserver.wait(timeout=15) as waiting:
@@ -461,9 +528,19 @@ def test_queue_worker_error_after_output(
             "logs",
         ],
     ):
+        predict_id = random_string(10)
+        webhook_url = httpserver.url_for("/webhook").replace(
+            "localhost", "host.docker.internal"
+        )
+
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "text": "bar",
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": None,
                 "status": "processing",
@@ -475,6 +552,11 @@ def test_queue_worker_error_after_output(
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "text": "bar",
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": ["hello bar"],
                 "status": "processing",
@@ -486,6 +568,11 @@ def test_queue_worker_error_after_output(
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "text": "bar",
+                },
+                "webhook": webhook_url,
                 "logs": ["a printed log message"],
                 "output": ["hello bar"],
                 "status": "processing",
@@ -500,6 +587,11 @@ def test_queue_worker_error_after_output(
         httpserver.expect_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "text": "bar",
+                },
+                "webhook": webhook_url,
                 "logs": mock.ANY,  # includes a stack trace
                 "output": ["hello bar"],
                 "status": "processing",
@@ -517,6 +609,11 @@ def test_queue_worker_error_after_output(
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "text": "bar",
+                },
+                "webhook": webhook_url,
                 "error": "mid run error",
                 "logs": mock.ANY,  # might include a stack trace
                 "output": ["hello bar"],
@@ -529,11 +626,6 @@ def test_queue_worker_error_after_output(
 
         redis_client.xgroup_create(
             mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
-        )
-
-        predict_id = random_string(10)
-        webhook_url = httpserver.url_for("/webhook").replace(
-            "localhost", "host.docker.internal"
         )
 
         with httpserver.wait(timeout=15) as waiting:
@@ -582,6 +674,11 @@ def test_queue_worker_invalid_input(
             "logs",
         ],
     ):
+        predict_id = random_string(10)
+        webhook_url = httpserver.url_for("/webhook").replace(
+            "localhost", "host.docker.internal"
+        )
+
         final_response = None
 
         def capture_final_response(request):
@@ -591,6 +688,11 @@ def test_queue_worker_invalid_input(
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "num": "not a number",
+                },
+                "webhook": webhook_url,
                 "error": mock.ANY,
                 "logs": [],
                 "output": None,
@@ -601,11 +703,6 @@ def test_queue_worker_invalid_input(
 
         redis_client.xgroup_create(
             mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
-        )
-
-        predict_id = random_string(10)
-        webhook_url = httpserver.url_for("/webhook").replace(
-            "localhost", "host.docker.internal"
         )
 
         with httpserver.wait(timeout=15) as waiting:
@@ -651,9 +748,17 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client, httpse
             "logs",
         ],
     ):
+        predict_id = random_string(10)
+        webhook_url = httpserver.url_for("/webhook").replace(
+            "localhost", "host.docker.internal"
+        )
+
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {},
+                "webhook": webhook_url,
                 "logs": [],
                 "output": None,
                 "status": "processing",
@@ -665,6 +770,9 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client, httpse
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {},
+                "webhook": webhook_url,
                 "logs": [
                     "WARNING:root:writing log message",
                 ],
@@ -678,6 +786,9 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client, httpse
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {},
+                "webhook": webhook_url,
                 "logs": [
                     "WARNING:root:writing log message",
                     "writing from C",
@@ -692,6 +803,9 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client, httpse
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {},
+                "webhook": webhook_url,
                 "logs": [
                     "WARNING:root:writing log message",
                     "writing from C",
@@ -707,6 +821,9 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client, httpse
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {},
+                "webhook": webhook_url,
                 "logs": [
                     "WARNING:root:writing log message",
                     "writing from C",
@@ -723,6 +840,9 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client, httpse
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {},
+                "webhook": webhook_url,
                 "logs": [
                     "WARNING:root:writing log message",
                     "writing from C",
@@ -742,11 +862,6 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client, httpse
 
         redis_client.xgroup_create(
             mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
-        )
-
-        predict_id = random_string(10)
-        webhook_url = httpserver.url_for("/webhook").replace(
-            "localhost", "host.docker.internal"
         )
 
         with httpserver.wait(timeout=15) as waiting:
@@ -789,9 +904,19 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
             "2",  # timeout
         ],
     ):
+        predict_id = random_string(10)
+        webhook_url = httpserver.url_for("/webhook").replace(
+            "localhost", "host.docker.internal"
+        )
+
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "sleep_time": 0.1,
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": None,
                 "status": "processing",
@@ -803,6 +928,11 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "sleep_time": 0.1,
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": "it worked after 0.1 seconds!",
                 "status": "succeeded",
@@ -817,11 +947,6 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
 
         redis_client.xgroup_create(
             mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
-        )
-
-        predict_id = random_string(10)
-        webhook_url = httpserver.url_for("/webhook").replace(
-            "localhost", "host.docker.internal"
         )
 
         with httpserver.wait(timeout=15) as waiting:
@@ -843,9 +968,16 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
         # check we received all the webhooks
         assert waiting.result
 
+        predict_id = random_string(10)
+
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "sleep_time": 3.0,
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": None,
                 "status": "processing",
@@ -857,6 +989,11 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "sleep_time": 3.0,
+                },
+                "webhook": webhook_url,
                 "error": "Prediction timed out",
                 "logs": [],
                 "output": None,
@@ -866,8 +1003,6 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
             },
             method="POST",
         )
-
-        predict_id = random_string(10)
 
         with httpserver.wait(timeout=15) as waiting:
             redis_client.xadd(
@@ -888,9 +1023,16 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
         # check we received all the webhooks
         assert waiting.result
 
+        predict_id = random_string(10)
+
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "sleep_time": 0.2,
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": None,
                 "status": "processing",
@@ -902,6 +1044,11 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "sleep_time": 0.2,
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": "it worked after 0.2 seconds!",
                 "status": "succeeded",
@@ -913,8 +1060,6 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
             },
             method="POST",
         )
-
-        predict_id = random_string(10)
 
         with httpserver.wait(timeout=15) as waiting:
             redis_client.xadd(
@@ -960,9 +1105,20 @@ def test_queue_worker_yielding_timeout(
             "2",  # timeout
         ],
     ):
+        predict_id = random_string(10)
+        webhook_url = httpserver.url_for("/webhook").replace(
+            "localhost", "host.docker.internal"
+        )
+
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "sleep_time": 0.1,
+                    "n_iterations": 1,
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": None,
                 "status": "processing",
@@ -974,6 +1130,12 @@ def test_queue_worker_yielding_timeout(
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "sleep_time": 0.1,
+                    "n_iterations": 1,
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": ["yield 0"],
                 "status": "processing",
@@ -985,6 +1147,12 @@ def test_queue_worker_yielding_timeout(
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "sleep_time": 0.1,
+                    "n_iterations": 1,
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": ["yield 0"],
                 "status": "succeeded",
@@ -999,11 +1167,6 @@ def test_queue_worker_yielding_timeout(
 
         redis_client.xgroup_create(
             mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
-        )
-
-        predict_id = random_string(10)
-        webhook_url = httpserver.url_for("/webhook").replace(
-            "localhost", "host.docker.internal"
         )
 
         with httpserver.wait(timeout=15) as waiting:
@@ -1026,9 +1189,17 @@ def test_queue_worker_yielding_timeout(
         # check we received all the webhooks
         assert waiting.result
 
+        predict_id = random_string(10)
+
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "sleep_time": 0.8,
+                    "n_iterations": 10,
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": None,
                 "status": "processing",
@@ -1040,6 +1211,12 @@ def test_queue_worker_yielding_timeout(
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "sleep_time": 0.8,
+                    "n_iterations": 10,
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": ["yield 0"],
                 "status": "processing",
@@ -1051,6 +1228,12 @@ def test_queue_worker_yielding_timeout(
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "sleep_time": 0.8,
+                    "n_iterations": 10,
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": ["yield 0", "yield 1"],
                 "status": "processing",
@@ -1062,6 +1245,12 @@ def test_queue_worker_yielding_timeout(
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "sleep_time": 0.8,
+                    "n_iterations": 10,
+                },
+                "webhook": webhook_url,
                 "error": "Prediction timed out",
                 "logs": [],
                 "output": ["yield 0", "yield 1"],
@@ -1071,8 +1260,6 @@ def test_queue_worker_yielding_timeout(
             },
             method="POST",
         )
-
-        predict_id = random_string(10)
 
         with httpserver.wait(timeout=15) as waiting:
             redis_client.xadd(
@@ -1118,9 +1305,19 @@ def test_queue_worker_complex_output(
             "logs",
         ],
     ):
+        predict_id = random_string(10)
+        webhook_url = httpserver.url_for("/webhook").replace(
+            "localhost", "host.docker.internal"
+        )
+
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "name": "world",
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": None,
                 "status": "processing",
@@ -1132,6 +1329,11 @@ def test_queue_worker_complex_output(
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {
+                    "name": "world",
+                },
+                "webhook": webhook_url,
                 "logs": [],
                 "output": {
                     "hello": "hello world",
@@ -1149,11 +1351,6 @@ def test_queue_worker_complex_output(
 
         redis_client.xgroup_create(
             mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
-        )
-
-        predict_id = random_string(10)
-        webhook_url = httpserver.url_for("/webhook").replace(
-            "localhost", "host.docker.internal"
         )
 
         with httpserver.wait(timeout=15) as waiting:
@@ -1205,9 +1402,17 @@ def test_queue_worker_yielding_list_of_complex_output(
             "logs",
         ],
     ):
+        predict_id = random_string(10)
+        webhook_url = httpserver.url_for("/webhook").replace(
+            "localhost", "host.docker.internal"
+        )
+
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {},
+                "webhook": webhook_url,
                 "logs": [],
                 "output": None,
                 "status": "processing",
@@ -1219,6 +1424,9 @@ def test_queue_worker_yielding_list_of_complex_output(
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {},
+                "webhook": webhook_url,
                 "logs": [],
                 "output": [
                     [
@@ -1237,6 +1445,9 @@ def test_queue_worker_yielding_list_of_complex_output(
         httpserver.expect_oneshot_request(
             "/webhook",
             json={
+                "id": predict_id,
+                "input": {},
+                "webhook": webhook_url,
                 "logs": [],
                 "output": [
                     [
@@ -1258,11 +1469,6 @@ def test_queue_worker_yielding_list_of_complex_output(
 
         redis_client.xgroup_create(
             mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
-        )
-
-        predict_id = random_string(10)
-        webhook_url = httpserver.url_for("/webhook").replace(
-            "localhost", "host.docker.internal"
         )
 
         with httpserver.wait(timeout=15) as waiting:
@@ -1418,6 +1624,11 @@ def test_queue_worker_redis_responses(docker_network, docker_image, redis_client
 
         response = next(responses)
         assert response == {
+            "id": predict_id,
+            "input": {
+                "num": 42,
+            },
+            "response_queue": "response-queue",
             "logs": [],
             "output": None,
             "status": "processing",
@@ -1426,6 +1637,11 @@ def test_queue_worker_redis_responses(docker_network, docker_image, redis_client
 
         response = next(responses)
         assert response == {
+            "id": predict_id,
+            "input": {
+                "num": 42,
+            },
+            "response_queue": "response-queue",
             "logs": [],
             "output": 84,
             "status": "succeeded",
