@@ -54,9 +54,7 @@ def test_queue_worker_files(
                 "logs": [],
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -74,10 +72,8 @@ def test_queue_worker_files(
                 "logs": [],
                 "output": "http://upload-server:5000/download/output.txt",
                 "status": "succeeded",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                    "completed_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
             },
             method="POST",
         ).respond_with_handler(capture_final_response)
@@ -112,12 +108,12 @@ def test_queue_worker_files(
         assert waiting.result
 
         assert re.match(
-            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{6}",
-            final_response["x-experimental-timestamps"]["started_at"],
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{6}Z",
+            final_response["started_at"],
         )
         assert re.match(
-            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{6}",
-            final_response["x-experimental-timestamps"]["completed_at"],
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{6}Z",
+            final_response["completed_at"],
         )
 
         with open(upload_server / "output.txt") as f:
@@ -156,9 +152,7 @@ def test_queue_worker_yielding_file(
                 "logs": [],
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -169,9 +163,7 @@ def test_queue_worker_yielding_file(
                 "logs": [],
                 "output": ["http://upload-server:5000/download/out-0.txt"],
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -185,9 +177,7 @@ def test_queue_worker_yielding_file(
                     "http://upload-server:5000/download/out-1.txt",
                 ],
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -202,9 +192,7 @@ def test_queue_worker_yielding_file(
                     "http://upload-server:5000/download/out-2.txt",
                 ],
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -219,10 +207,8 @@ def test_queue_worker_yielding_file(
                     "http://upload-server:5000/download/out-2.txt",
                 ],
                 "status": "succeeded",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                    "completed_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
             },
             method="POST",
         )
@@ -290,9 +276,7 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client, https
                 "logs": [],
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -303,9 +287,7 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client, https
                 "logs": [],
                 "output": ["foo", "bar", "baz"],
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -316,10 +298,8 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client, https
                 "logs": [],
                 "output": ["foo", "bar", "baz"],
                 "status": "succeeded",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                    "completed_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
             },
             method="POST",
         )
@@ -380,9 +360,7 @@ def test_queue_worker_error(docker_network, docker_image, redis_client, httpserv
                 "logs": [],
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -397,9 +375,7 @@ def test_queue_worker_error(docker_network, docker_image, redis_client, httpserv
                 "logs": mock.ANY,  # includes a stack trace
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         ).respond_with_data("OK")
@@ -417,10 +393,8 @@ def test_queue_worker_error(docker_network, docker_image, redis_client, httpserv
                 "logs": mock.ANY,  # might include a stack trace (see above)
                 "output": None,
                 "status": "failed",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                    "completed_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
             },
             method="POST",
         ).respond_with_handler(capture_final_response)
@@ -483,9 +457,7 @@ def test_queue_worker_error_after_output(
                 "logs": [],
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -496,9 +468,7 @@ def test_queue_worker_error_after_output(
                 "logs": [],
                 "output": ["hello bar"],
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -509,9 +479,7 @@ def test_queue_worker_error_after_output(
                 "logs": ["a printed log message"],
                 "output": ["hello bar"],
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -525,9 +493,7 @@ def test_queue_worker_error_after_output(
                 "logs": mock.ANY,  # includes a stack trace
                 "output": ["hello bar"],
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         ).respond_with_data("OK")
@@ -545,10 +511,8 @@ def test_queue_worker_error_after_output(
                 "logs": mock.ANY,  # might include a stack trace
                 "output": ["hello bar"],
                 "status": "failed",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                    "completed_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
             },
             method="POST",
         ).respond_with_handler(capture_final_response)
@@ -683,9 +647,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client, httpse
                 "logs": [],
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -698,9 +660,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client, httpse
                 ],
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -714,9 +674,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client, httpse
                 ],
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -731,9 +689,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client, httpse
                 ],
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -749,9 +705,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client, httpse
                 ],
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -767,10 +721,8 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client, httpse
                 ],
                 "output": "output",
                 "status": "succeeded",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                    "completed_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
             },
             method="POST",
         )
@@ -830,9 +782,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
                 "logs": [],
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -843,10 +793,8 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
                 "logs": [],
                 "output": "it worked after 0.1 seconds!",
                 "status": "succeeded",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                    "completed_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
             },
             method="POST",
         )
@@ -885,9 +833,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
                 "logs": [],
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -899,10 +845,8 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
                 "logs": [],
                 "output": None,
                 "status": "failed",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                    "completed_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
             },
             method="POST",
         )
@@ -934,9 +878,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
                 "logs": [],
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -947,10 +889,8 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
                 "logs": [],
                 "output": "it worked after 0.2 seconds!",
                 "status": "succeeded",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                    "completed_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
             },
             method="POST",
         )
@@ -1007,9 +947,7 @@ def test_queue_worker_yielding_timeout(
                 "logs": [],
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -1020,9 +958,7 @@ def test_queue_worker_yielding_timeout(
                 "logs": [],
                 "output": ["yield 0"],
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -1033,10 +969,8 @@ def test_queue_worker_yielding_timeout(
                 "logs": [],
                 "output": ["yield 0"],
                 "status": "succeeded",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                    "completed_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
             },
             method="POST",
         )
@@ -1076,9 +1010,7 @@ def test_queue_worker_yielding_timeout(
                 "logs": [],
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -1089,9 +1021,7 @@ def test_queue_worker_yielding_timeout(
                 "logs": [],
                 "output": ["yield 0"],
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -1102,9 +1032,7 @@ def test_queue_worker_yielding_timeout(
                 "logs": [],
                 "output": ["yield 0", "yield 1"],
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -1116,10 +1044,8 @@ def test_queue_worker_yielding_timeout(
                 "logs": [],
                 "output": ["yield 0", "yield 1"],
                 "status": "failed",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                    "completed_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
             },
             method="POST",
         )
@@ -1176,9 +1102,7 @@ def test_queue_worker_complex_output(
                 "logs": [],
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -1192,10 +1116,8 @@ def test_queue_worker_complex_output(
                     "goodbye": "goodbye world",
                 },
                 "status": "succeeded",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                    "completed_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
             },
             method="POST",
         )
@@ -1264,9 +1186,7 @@ def test_queue_worker_yielding_list_of_complex_output(
                 "logs": [],
                 "output": None,
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -1284,9 +1204,7 @@ def test_queue_worker_yielding_list_of_complex_output(
                     ]
                 ],
                 "status": "processing",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
             },
             method="POST",
         )
@@ -1304,10 +1222,8 @@ def test_queue_worker_yielding_list_of_complex_output(
                     ]
                 ],
                 "status": "succeeded",
-                "x-experimental-timestamps": {
-                    "started_at": mock.ANY,
-                    "completed_at": mock.ANY,
-                },
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
             },
             method="POST",
         )
@@ -1477,9 +1393,7 @@ def test_queue_worker_redis_responses(docker_network, docker_image, redis_client
             "logs": [],
             "output": None,
             "status": "processing",
-            "x-experimental-timestamps": {
-                "started_at": mock.ANY,
-            },
+            "started_at": mock.ANY,
         }
 
         response = next(responses)
@@ -1487,10 +1401,8 @@ def test_queue_worker_redis_responses(docker_network, docker_image, redis_client
             "logs": [],
             "output": 84,
             "status": "succeeded",
-            "x-experimental-timestamps": {
-                "started_at": mock.ANY,
-                "completed_at": mock.ANY,
-            },
+            "started_at": mock.ANY,
+            "completed_at": mock.ANY,
         }
 
 
