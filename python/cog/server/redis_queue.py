@@ -226,6 +226,8 @@ class RedisQueueWorker:
     ) -> None:
         span = trace.get_current_span()
 
+        started_at = datetime.datetime.now()
+
         try:
             input_obj = self.InputType(**message["input"])
         except ValidationError as e:
@@ -242,7 +244,7 @@ class RedisQueueWorker:
 
         self.runner.run(**input_obj.dict())
 
-        response["started_at"] = datetime.datetime.now().isoformat() + "Z"
+        response["started_at"] = started_at.isoformat() + "Z"
 
         logs: List[str] = []
         response["logs"] = logs
@@ -303,7 +305,11 @@ class RedisQueueWorker:
             span.add_event("received final output")
 
             response["status"] = Status.SUCCEEDED
-            response["completed_at"] = datetime.datetime.now().isoformat() + "Z"
+            completed_at = datetime.datetime.now()
+            response["completed_at"] = completed_at.isoformat() + "Z"
+            response["metrics"] = {
+                "predict_time": (completed_at - started_at).total_seconds()
+            }
             output.extend(self.upload_files(o) for o in self.runner.read_output())
             logs.extend(self.runner.read_logs())
             send_response(response)
@@ -328,7 +334,11 @@ class RedisQueueWorker:
             assert len(output) == 1
 
             response["status"] = Status.SUCCEEDED
-            response["completed_at"] = datetime.datetime.now().isoformat() + "Z"
+            completed_at = datetime.datetime.now()
+            response["completed_at"] = completed_at.isoformat() + "Z"
+            response["metrics"] = {
+                "predict_time": (completed_at - started_at).total_seconds()
+            }
             response["output"] = self.upload_files(output[0])
             logs.extend(self.runner.read_logs())
             send_response(response)
