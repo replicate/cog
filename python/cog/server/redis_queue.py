@@ -198,8 +198,8 @@ class RedisQueueWorker:
                     except Exception as e:
                         response["status"] = Status.FAILED
                         response["error"] = str(e)
-                        response["completed_at"] = (
-                            datetime.datetime.now().isoformat() + "Z"
+                        response["completed_at"] = format_datetime(
+                            datetime.datetime.now()
                         )
                         send_response(response)
                         self.redis.xack(self.input_queue, self.input_queue, message_id)
@@ -243,7 +243,7 @@ class RedisQueueWorker:
 
         self.runner.run(**input_obj.dict())
 
-        response["started_at"] = started_at.isoformat() + "Z"
+        response["started_at"] = format_datetime(started_at)
 
         logs: List[str] = []
         response["logs"] = logs
@@ -259,7 +259,7 @@ class RedisQueueWorker:
         if self.runner.error() is not None:
             response["status"] = Status.FAILED
             response["error"] = str(self.runner.error())  # type: ignore
-            response["completed_at"] = datetime.datetime.now().isoformat() + "Z"
+            response["completed_at"] = format_datetime(datetime.datetime.now())
             send_response(response)
             span.record_exception(self.runner.error())
             span.set_status(TraceStatus(status_code=StatusCode.ERROR))
@@ -295,7 +295,7 @@ class RedisQueueWorker:
             if self.runner.error() is not None:
                 response["status"] = Status.FAILED
                 response["error"] = str(self.runner.error())  # type: ignore
-                response["completed_at"] = datetime.datetime.now().isoformat() + "Z"
+                response["completed_at"] = format_datetime(datetime.datetime.now())
                 send_response(response)
                 span.record_exception(self.runner.error())
                 span.set_status(TraceStatus(status_code=StatusCode.ERROR))
@@ -305,7 +305,7 @@ class RedisQueueWorker:
 
             response["status"] = Status.SUCCEEDED
             completed_at = datetime.datetime.now()
-            response["completed_at"] = completed_at.isoformat() + "Z"
+            response["completed_at"] = format_datetime(completed_at)
             response["metrics"] = {
                 "predict_time": (completed_at - started_at).total_seconds()
             }
@@ -323,7 +323,7 @@ class RedisQueueWorker:
             if self.runner.error() is not None:
                 response["status"] = Status.FAILED
                 response["error"] = str(self.runner.error())  # type: ignore
-                response["completed_at"] = datetime.datetime.now().isoformat() + "Z"
+                response["completed_at"] = format_datetime(datetime.datetime.now())
                 send_response(response)
                 span.record_exception(self.runner.error())
                 span.set_status(TraceStatus(status_code=StatusCode.ERROR))
@@ -334,7 +334,7 @@ class RedisQueueWorker:
 
             response["status"] = Status.SUCCEEDED
             completed_at = datetime.datetime.now()
-            response["completed_at"] = completed_at.isoformat() + "Z"
+            response["completed_at"] = format_datetime(completed_at)
             response["metrics"] = {
                 "predict_time": (completed_at - started_at).total_seconds()
             }
@@ -376,6 +376,14 @@ def calculate_time_in_queue(message_id: str) -> float:
     now = time.time()
     queue_time = int(message_id[:13]) / 1000.0
     return now - queue_time
+
+
+def format_datetime(timestamp: datetime.datetime) -> str:
+    """
+    Formats a datetime in ISO8601 with a trailing Z, so it's also RFC3339 for
+    easier parsing by things like Golang.
+    """
+    return timestamp.isoformat() + "Z"
 
 
 def _queue_worker_from_argv(
