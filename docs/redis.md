@@ -69,6 +69,7 @@ The message body is a JSON object with the following fields:
 - `error`: If `status` is `failed`, the error message.
 - `started_at`: An ISO8601/RFC3339 timestamp of when the prediction started.
 - `completed_at`: An ISO8601/RFC3339 timestamp of when the prediction finished.
+- `metrics.predict_time`: If succeeded, the time in seconds the prediction took to finish.
 
 For example, a message early in the prediction might look like:
 

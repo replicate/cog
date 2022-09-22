@@ -74,6 +74,9 @@ def test_queue_worker_files(
                 "status": "succeeded",
                 "started_at": mock.ANY,
                 "completed_at": mock.ANY,
+                "metrics": {
+                    "predict_time": mock.ANY,
+                },
             },
             method="POST",
         ).respond_with_handler(capture_final_response)
@@ -115,6 +118,7 @@ def test_queue_worker_files(
             r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{6}Z",
             final_response["completed_at"],
         )
+        assert type(final_response["metrics"]["predict_time"]) == float
 
         with open(upload_server / "output.txt") as f:
             assert f.read() == "foobaztest"
@@ -209,6 +213,9 @@ def test_queue_worker_yielding_file(
                 "status": "succeeded",
                 "started_at": mock.ANY,
                 "completed_at": mock.ANY,
+                "metrics": {
+                    "predict_time": mock.ANY,
+                },
             },
             method="POST",
         )
@@ -300,6 +307,9 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client, https
                 "status": "succeeded",
                 "started_at": mock.ANY,
                 "completed_at": mock.ANY,
+                "metrics": {
+                    "predict_time": mock.ANY,
+                },
             },
             method="POST",
         )
@@ -723,6 +733,9 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client, httpse
                 "status": "succeeded",
                 "started_at": mock.ANY,
                 "completed_at": mock.ANY,
+                "metrics": {
+                    "predict_time": mock.ANY,
+                },
             },
             method="POST",
         )
@@ -795,6 +808,9 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
                 "status": "succeeded",
                 "started_at": mock.ANY,
                 "completed_at": mock.ANY,
+                "metrics": {
+                    "predict_time": mock.ANY,
+                },
             },
             method="POST",
         )
@@ -891,6 +907,9 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
                 "status": "succeeded",
                 "started_at": mock.ANY,
                 "completed_at": mock.ANY,
+                "metrics": {
+                    "predict_time": mock.ANY,
+                },
             },
             method="POST",
         )
@@ -971,6 +990,9 @@ def test_queue_worker_yielding_timeout(
                 "status": "succeeded",
                 "started_at": mock.ANY,
                 "completed_at": mock.ANY,
+                "metrics": {
+                    "predict_time": mock.ANY,
+                },
             },
             method="POST",
         )
@@ -1118,6 +1140,9 @@ def test_queue_worker_complex_output(
                 "status": "succeeded",
                 "started_at": mock.ANY,
                 "completed_at": mock.ANY,
+                "metrics": {
+                    "predict_time": mock.ANY,
+                },
             },
             method="POST",
         )
@@ -1224,6 +1249,9 @@ def test_queue_worker_yielding_list_of_complex_output(
                 "status": "succeeded",
                 "started_at": mock.ANY,
                 "completed_at": mock.ANY,
+                "metrics": {
+                    "predict_time": mock.ANY,
+                },
             },
             method="POST",
         )
@@ -1403,6 +1431,9 @@ def test_queue_worker_redis_responses(docker_network, docker_image, redis_client
             "status": "succeeded",
             "started_at": mock.ANY,
             "completed_at": mock.ANY,
+            "metrics": {
+                "predict_time": mock.ANY,
+            },
         }
 
 
