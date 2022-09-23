@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -31,6 +32,7 @@ func newLoginCommand() *cobra.Command {
 		Args:       cobra.MaximumNArgs(0),
 	}
 
+	cmd.Flags().Bool("token-stdin", false, "Pass login token on stdin instead of opening a browser. You can find your Replicate login token at https://replicate.com/auth/token")
 	cmd.Flags().String("registry", global.ReplicateRegistryHost, "Registry host")
 	_ = cmd.Flags().MarkHidden("registry")
 
@@ -42,29 +44,22 @@ func login(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	url, err := getDisplayTokenURL(registryHost)
+	tokenStdin, err := cmd.Flags().GetBool("token-stdin")
 	if err != nil {
 		return err
 	}
-	console.Infof("This command will authenticate Docker with Replicate's '%s' Docker registry. You will need a Replicate account.", registryHost)
-	console.Info("")
 
-	// TODO(bfirsh): if you have defined a registry in cog.yaml that is not r8.im, suggest to use 'docker login'
-
-	console.Info("Hit enter to get started. A browser will open with an authentication token that you need to paste here.")
-	if _, err := bufio.NewReader(os.Stdin).ReadString('\n'); err != nil {
-		return err
-	}
-
-	console.Info("If it didn't open automatically, open this URL in a web browser:")
-	console.Info(url)
-	maybeOpenBrowser(url)
-
-	console.Info("")
-	console.Info("Once you've signed in, copy the authentication token from that web page, paste it here, then hit enter:")
-	token, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil {
-		return err
+	var token string
+	if tokenStdin {
+		token, err = readTokenFromStdin()
+		if err != nil {
+			return err
+		}
+	} else {
+		token, err = readTokenInteractively(registryHost)
+		if err != nil {
+			return err
+		}
 	}
 	token = strings.TrimSpace(token)
 
@@ -80,6 +75,42 @@ func login(cmd *cobra.Command, args []string) error {
 	console.Infof("You've successfully authenticated as %s! You can now use the '%s' registry.", username, registryHost)
 
 	return nil
+}
+
+func readTokenFromStdin() (string, error) {
+	tokenBytes, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return "", fmt.Errorf("Failed to read token from stdin: %w", err)
+	}
+	return string(tokenBytes), nil
+}
+
+func readTokenInteractively(registryHost string) (string, error) {
+	url, err := getDisplayTokenURL(registryHost)
+	if err != nil {
+		return "", err
+	}
+	console.Infof("This command will authenticate Docker with Replicate's '%s' Docker registry. You will need a Replicate account.", registryHost)
+	console.Info("")
+
+	// TODO(bfirsh): if you have defined a registry in cog.yaml that is not r8.im, suggest to use 'docker login'
+
+	console.Info("Hit enter to get started. A browser will open with an authentication token that you need to paste here.")
+	if _, err := bufio.NewReader(os.Stdin).ReadString('\n'); err != nil {
+		return "", err
+	}
+
+	console.Info("If it didn't open automatically, open this URL in a web browser:")
+	console.Info(url)
+	maybeOpenBrowser(url)
+
+	console.Info("")
+	console.Info("Once you've signed in, copy the authentication token from that web page, paste it here, then hit enter:")
+	token, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 func getDisplayTokenURL(registryHost string) (string, error) {
