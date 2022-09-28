@@ -87,7 +87,7 @@ def test_queue_worker_files(
                 },
                 "webhook": webhook_url,
                 "logs": [],
-                "output": "http://upload-server:5000/download/output.txt",
+                "output": "http://upload-server:5000/files/output.txt",
                 "status": "succeeded",
                 "started_at": mock.ANY,
                 "completed_at": mock.ANY,
@@ -111,7 +111,7 @@ def test_queue_worker_files(
                             "id": predict_id,
                             "input": {
                                 "text": "baz",
-                                "path": "http://upload-server:5000/download/input.txt",
+                                "path": "http://upload-server:5000/files/input.txt",
                             },
                             "webhook": webhook_url,
                         }
@@ -192,7 +192,7 @@ def test_queue_worker_yielding_file(
                 },
                 "webhook": webhook_url,
                 "logs": [],
-                "output": ["http://upload-server:5000/download/out-0.txt"],
+                "output": ["http://upload-server:5000/files/out-0.txt"],
                 "status": "processing",
                 "started_at": mock.ANY,
             },
@@ -209,8 +209,8 @@ def test_queue_worker_yielding_file(
                 "webhook": webhook_url,
                 "logs": [],
                 "output": [
-                    "http://upload-server:5000/download/out-0.txt",
-                    "http://upload-server:5000/download/out-1.txt",
+                    "http://upload-server:5000/files/out-0.txt",
+                    "http://upload-server:5000/files/out-1.txt",
                 ],
                 "status": "processing",
                 "started_at": mock.ANY,
@@ -228,9 +228,9 @@ def test_queue_worker_yielding_file(
                 "webhook": webhook_url,
                 "logs": [],
                 "output": [
-                    "http://upload-server:5000/download/out-0.txt",
-                    "http://upload-server:5000/download/out-1.txt",
-                    "http://upload-server:5000/download/out-2.txt",
+                    "http://upload-server:5000/files/out-0.txt",
+                    "http://upload-server:5000/files/out-1.txt",
+                    "http://upload-server:5000/files/out-2.txt",
                 ],
                 "status": "processing",
                 "started_at": mock.ANY,
@@ -248,9 +248,9 @@ def test_queue_worker_yielding_file(
                 "webhook": webhook_url,
                 "logs": [],
                 "output": [
-                    "http://upload-server:5000/download/out-0.txt",
-                    "http://upload-server:5000/download/out-1.txt",
-                    "http://upload-server:5000/download/out-2.txt",
+                    "http://upload-server:5000/files/out-0.txt",
+                    "http://upload-server:5000/files/out-1.txt",
+                    "http://upload-server:5000/files/out-2.txt",
                 ],
                 "status": "succeeded",
                 "started_at": mock.ANY,
@@ -274,7 +274,7 @@ def test_queue_worker_yielding_file(
                         {
                             "id": predict_id,
                             "input": {
-                                "path": "http://upload-server:5000/download/input.txt",
+                                "path": "http://upload-server:5000/files/input.txt",
                             },
                             "webhook": webhook_url,
                         }
@@ -1431,7 +1431,7 @@ def test_queue_worker_yielding_list_of_complex_output(
                 "output": [
                     [
                         {
-                            "file": "http://upload-server:5000/download/file",
+                            "file": "http://upload-server:5000/files/file",
                             "text": "hello",
                         }
                     ]
@@ -1452,7 +1452,7 @@ def test_queue_worker_yielding_list_of_complex_output(
                 "output": [
                     [
                         {
-                            "file": "http://upload-server:5000/download/file",
+                            "file": "http://upload-server:5000/files/file",
                             "text": "hello",
                         }
                     ]

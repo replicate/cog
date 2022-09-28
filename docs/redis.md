@@ -15,7 +15,7 @@ The entrypoint to run a Cog model against a queue is `cog.server.redis_queue`. Y
 - `redis_host`: the host your redis server is running on.
 - `redis_port`: the port your redis server is listening on.
 - `input_queue`: the queue the Cog model will listen to for prediction requests. This queue should already exist.
-- `upload_url`: the endpoint Cog will `PUT` output files to. (Note: this will change in the near future. [See this pull request for more details.](https://github.com/replicate/cog/issues/496))
+- `upload_url`: the endpoint base Cog will `PUT` output files to. See below for more details.
 - `consumer_id`: The name the Cog model will use to identify itself in the Redis group (also called "consumer name" by Redis).
 - `model_id`: a unique ID for the Cog model, used to label setup logs.
 - `log_queue`: the queue the Cog model should send setup logs to (prediction logs are sent as part of prediction responses).
@@ -36,6 +36,12 @@ For example:
         120
 
 After starting, [the `setup()` method of the predictor](python.md#predictorsetup) is called. When setup is finished the model will start polling the input queue for prediction request messages.
+
+### File uploads
+
+Cog will make a PUT request to the `upload_url` provided, with the filename appended. For example, if you provide an `upload_url` of `https://example.com/upload/` then Cog might send a PUT request to `https://example.com/upload/output.png`. After the PUT request is finished, it will include the final URL it sent to as the value in the output.
+
+It respects redirects, so you probably want to issue a 307 redirect to a unique URL that Cog can PUT the file to. This also gives an opportunity to sign the URL, if you need to provide permissions, for example to a GCS or S3 bucket. Cog will strip query strings from the final URL, to get rid of any signing information that might be included.
 
 ## Enqueue a prediction
 

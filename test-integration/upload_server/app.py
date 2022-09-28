@@ -1,7 +1,7 @@
 import os
 
 import flask
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, redirect, request, send_from_directory
 
 app = Flask("upload_server")
 
@@ -11,15 +11,21 @@ def handle_index():
     return "OK"
 
 
-@app.route("/upload", methods=["PUT"])
-def handle_upload():
-    f = flask.request.files["file"]
-    f.save(os.path.join("/uploads", f.filename))
-    return jsonify({"url": "http://upload-server:5000/download/{}".format(f.filename)})
+@app.route("/upload/<name>", methods=["PUT"])
+def redirect_upload(name):
+    print("I'm in here!", name)
+    return redirect(f"/files/{name}", 307)
 
 
-@app.route("/download/<name>")
-def download(name):
+@app.route("/files/<name>", methods=["PUT"])
+def upload_file(name):
+    with open(os.path.join("/uploads", name), "wb") as f:
+        f.write(request.get_data())
+    return "OK"
+
+
+@app.route("/files/<name>", methods=["GET"])
+def download_file(name):
     return send_from_directory("/uploads", name)
 
 
