@@ -2,8 +2,10 @@ import datetime
 import io
 import json
 import os
+from mimetypes import guess_type
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 import signal
 import sys
 import traceback
@@ -19,6 +21,7 @@ from ..predictor import BasePredictor, get_input_type, load_predictor, load_conf
 from ..json import upload_files
 from ..response import Status
 from .runner import PredictionRunner
+from ..files import guess_filename
 
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter  # type: ignore
@@ -361,9 +364,20 @@ class RedisQueueWorker:
 
     def upload_files(self, obj: Any) -> Any:
         def upload_file(fh: io.IOBase) -> str:
-            resp = requests.put(self.upload_url, files={"file": fh})
+            filename = guess_filename(fh)
+            content_type, _ = guess_type(filename)
+
+            resp = requests.put(
+                ensure_trailing_slash(self.upload_url) + filename,
+                fh,  # type: ignore
+                headers={"Content-type": content_type},
+            )
             resp.raise_for_status()
-            return resp.json()["url"]
+
+            # strip any signing gubbins from the URL
+            final_url = urlparse(resp.url)._replace(query="").geturl()
+
+            return final_url
 
         return upload_files(obj, upload_file)
 
@@ -378,12 +392,23 @@ def calculate_time_in_queue(message_id: str) -> float:
     return now - queue_time
 
 
+
 def format_datetime(timestamp: datetime.datetime) -> str:
     """
     Formats a datetime in ISO8601 with a trailing Z, so it's also RFC3339 for
     easier parsing by things like Golang.
     """
     return timestamp.isoformat() + "Z"
+
+
+def ensure_trailing_slash(url: str) -> str:
+    """
+    Adds a trailing slash to `url` if not already present, and then returns it.
+    """
+    if url.endswith("/"):
+        return url
+    else:
+        return url + "/"
 
 
 def _queue_worker_from_argv(

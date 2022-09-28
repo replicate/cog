@@ -28,3 +28,9 @@ def upload_file(fh: io.IOBase, output_file_prefix: str = None) -> str:
         mime_type = "application/octet-stream"
     s = encoded_body.decode("utf-8")
     return f"data:{mime_type};base64,{s}"
+
+
+def guess_filename(obj: io.IOBase) -> str:
+    """Tries to guess the filename of the given object."""
+    name = getattr(obj, "name", "file")
+    return os.path.basename(name)
