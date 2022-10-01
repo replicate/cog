@@ -81,6 +81,10 @@ func initServeSignals() {
 	serveSignalHandler(<-captureSignal)
 }
 
+// FIXME(ja): I think we should invert this logic!
+// the endpoints for the predictor are well defined
+// request to /predict and /openapi.json should go to the predictor
+// otherwize, attempt to serve static files
 func staticMiddleware(next http.Handler) http.Handler {
 	fs := http.FileServer(http.Dir(serveStatic))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
