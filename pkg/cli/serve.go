@@ -11,9 +11,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -52,72 +49,21 @@ the model on that.`,
 
 // FIXME(ja): 99% of this is copied from cmdPredict
 func cmdServe(cmd *cobra.Command, args []string) error {
-	imageName := ""
-	volumes := []docker.Volume{}
-	gpus := ""
+	var err error
 
-	if len(args) == 0 {
-		// Build image
+	servePredictor, err = buildOrLoadPredictor(args)
 
-		cfg, projectDir, err := config.GetConfig(projectDirFlag)
-		if err != nil {
-			return err
-		}
-
-		if imageName, err = image.BuildBase(cfg, projectDir, buildProgressOutput); err != nil {
-			return err
-		}
-
-		// Base image doesn't have /src in it, so mount as volume
-		volumes = append(volumes, docker.Volume{
-			Source:      projectDir,
-			Destination: "/src",
-		})
-
-		if cfg.Build.GPU {
-			gpus = "all"
-		}
-
-	} else {
-		// Use existing image
-		imageName = args[0]
-
-		exists, err := docker.ImageExists(imageName)
-		if err != nil {
-			return fmt.Errorf("Failed to determine if %s exists: %w", imageName, err)
-		}
-		if !exists {
-			console.Infof("Pulling image: %s", imageName)
-			if err := docker.Pull(imageName); err != nil {
-				return fmt.Errorf("Failed to pull %s: %w", imageName, err)
-			}
-		}
-		conf, err := image.GetConfig(imageName)
-		if err != nil {
-			return err
-		}
-		if conf.Build.GPU {
-			gpus = "all"
-		}
-	}
-
-	console.Info("")
-	console.Infof("Starting Docker image %s and running setup()...", imageName)
-
-	predictor := predict.NewPredictor(docker.RunOptions{
-		GPUs:    gpus,
-		Image:   imageName,
-		Volumes: volumes,
-	})
-	if err := predictor.Start(os.Stderr); err != nil {
+	if err != nil {
 		return err
 	}
+	defer func() {
+		console.Debugf("Stopping container...")
+		if err := servePredictor.Stop(); err != nil {
+			console.Warnf("Failed to stop container: %s", err)
+		}
+	}()
 
-	servePredictor = &predictor
-
-	reallyServeHTTP()
-
-	return nil
+	return reallyServeHTTP()
 }
 
 // FIXME(ja): this pattern might be useful in predict commands
@@ -134,7 +80,7 @@ func initServeSignals() {
 	serveSignalHandler(<-captureSignal)
 }
 
-func reallyServeHTTP() {
+func reallyServeHTTP() error {
 	console.Info("")
 
 	if serveDisableCors {
@@ -177,11 +123,7 @@ func reallyServeHTTP() {
 	go initServeSignals()
 
 	listenAddr := fmt.Sprintf("%s:%d", serveHost, servePort)
-
 	console.Infof("Serving model on %s ...", listenAddr)
 
-	err := http.ListenAndServe(listenAddr, nil)
-	if err != nil {
-		console.Warnf("Failed to start server: %s", err)
-	}
+	return http.ListenAndServe(listenAddr, nil)
 }

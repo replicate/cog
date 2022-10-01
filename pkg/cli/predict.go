@@ -47,7 +47,7 @@ the prediction on that.`,
 	return cmd
 }
 
-func cmdPredict(cmd *cobra.Command, args []string) error {
+func buildOrLoadPredictor(args []string) (*predict.Predictor, error) {
 	imageName := ""
 	volumes := []docker.Volume{}
 	gpus := ""
@@ -57,11 +57,11 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 		cfg, projectDir, err := config.GetConfig(projectDirFlag)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if imageName, err = image.BuildBase(cfg, projectDir, buildProgressOutput); err != nil {
-			return err
+			return nil, err
 		}
 
 		// Base image doesn't have /src in it, so mount as volume
@@ -80,17 +80,17 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 		exists, err := docker.ImageExists(imageName)
 		if err != nil {
-			return fmt.Errorf("Failed to determine if %s exists: %w", imageName, err)
+			return nil, fmt.Errorf("Failed to determine if %s exists: %w", imageName, err)
 		}
 		if !exists {
 			console.Infof("Pulling image: %s", imageName)
 			if err := docker.Pull(imageName); err != nil {
-				return fmt.Errorf("Failed to pull %s: %w", imageName, err)
+				return nil, fmt.Errorf("Failed to pull %s: %w", imageName, err)
 			}
 		}
 		conf, err := image.GetConfig(imageName)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if conf.Build.GPU {
 			gpus = "all"
@@ -106,6 +106,16 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		Volumes: volumes,
 	})
 	if err := predictor.Start(os.Stderr); err != nil {
+		return nil, err
+	}
+
+	return &predictor, nil
+}
+
+func cmdPredict(cmd *cobra.Command, args []string) error {
+	predictor, err := buildOrLoadPredictor(args)
+
+	if err != nil {
 		return err
 	}
 
@@ -117,7 +127,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	return predictIndividualInputs(predictor, inputFlags, outPath)
+	return predictIndividualInputs(*predictor, inputFlags, outPath)
 }
 
 func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, outputPath string) error {
