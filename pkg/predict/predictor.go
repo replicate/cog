@@ -80,7 +80,7 @@ func (p *Predictor) Start(logsWriter io.Writer) error {
 }
 
 func (p *Predictor) waitForContainerReady() error {
-	url := fmt.Sprintf("http://localhost:%d/", p.port)
+	url := p.GetUrl("/")
 
 	start := time.Now()
 	for {
@@ -114,6 +114,10 @@ func (p *Predictor) Stop() error {
 	return docker.Stop(p.containerID)
 }
 
+func (p *Predictor) GetUrl(path string) string {
+	return fmt.Sprintf("http://localhost:%d%s", p.port, path)
+}
+
 func (p *Predictor) Predict(inputs Inputs) (*Response, error) {
 	inputMap, err := inputs.toMap()
 	if err != nil {
@@ -125,7 +129,7 @@ func (p *Predictor) Predict(inputs Inputs) (*Response, error) {
 		return nil, err
 	}
 
-	url := fmt.Sprintf("http://localhost:%d/predictions", p.port)
+	url := p.GetUrl("/predictions")
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create HTTP request to %s: %w", url, err)
@@ -161,7 +165,7 @@ func (p *Predictor) Predict(inputs Inputs) (*Response, error) {
 }
 
 func (p *Predictor) GetSchema() (*openapi3.T, error) {
-	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/openapi.json", p.port))
+	resp, err := http.Get(p.GetUrl("/openapi.json"))
 	if err != nil {
 		return nil, err
 	}
