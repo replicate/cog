@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -17,8 +16,6 @@ import (
 )
 
 var (
-	// inputFlags []string
-	// outPath    string
 	serveHost        = "0.0.0.0"
 	servePort        = 5000
 	servePredictor   *predict.Predictor
@@ -81,28 +78,6 @@ func initServeSignals() {
 	serveSignalHandler(<-captureSignal)
 }
 
-// FIXME(ja): I think we should invert this logic!
-// the endpoints for the predictor are well defined
-// request to /predict and /openapi.json should go to the predictor
-// otherwize, attempt to serve static files
-func staticMiddleware(next http.Handler) http.Handler {
-	fs := http.FileServer(http.Dir(serveStatic))
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p := r.URL.Path
-		if r.URL.Path == "/" {
-			p = "/index.html"
-		}
-		filepath := filepath.Join(serveStatic, filepath.Clean(p))
-
-		// if file exists, serve it - otherwise call next handler
-		if _, err := os.Stat(filepath); err == nil {
-			fs.ServeHTTP(w, r)
-		} else {
-			next.ServeHTTP(w, r)
-		}
-	})
-}
-
 func predictHandler(w http.ResponseWriter, r *http.Request) {
 
 	if serveDisableCors {
@@ -143,22 +118,15 @@ func reallyServeHTTP() error {
 		console.Info("CORS is disabled")
 	}
 
-	// FIXME(ja): this needs cleaned up before merge
-	// my middleware fu is weak on covid vax brain
-
-	h := http.HandlerFunc(predictHandler)
-
 	mux := http.NewServeMux()
 
 	if serveStatic != "" {
-		console.Infof("Serving static files from %s", serveStatic)
-		if _, err := os.Stat(serveStatic); err != nil {
-			return err
-		}
-		mux.Handle("/", staticMiddleware(h))
-
+		mux.HandleFunc("/predictions", predictHandler)
+		mux.HandleFunc("/docs", predictHandler)
+		mux.HandleFunc("/openapi.json", predictHandler)
+		mux.Handle("/", http.FileServer(http.Dir(serveStatic)))
 	} else {
-		mux.Handle("/", h)
+		mux.HandleFunc("/", predictHandler)
 	}
 
 	go initServeSignals()
