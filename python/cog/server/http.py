@@ -7,6 +7,7 @@ import types
 from typing import Any, Optional
 
 from fastapi import Body, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
 
@@ -33,6 +34,15 @@ def create_app(predictor: BasePredictor, threads: int = 1) -> FastAPI:
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
     )
+
+    if "DISABLE_CORS" in os.environ:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     @app.on_event("startup")
     def startup() -> None:
