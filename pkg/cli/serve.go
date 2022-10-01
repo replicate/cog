@@ -155,7 +155,7 @@ func reallyServeHTTP() {
 			}
 		}
 
-		base := servePredictor.GetUrl("")
+		base := servePredictor.GetURL("")
 		u, err := url.Parse(base + r.URL.Path)
 
 		if err != nil {
