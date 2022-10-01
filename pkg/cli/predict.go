@@ -12,9 +12,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vincent-petithory/dataurl"
 
-	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/mime"
@@ -47,85 +44,14 @@ the prediction on that.`,
 	return cmd
 }
 
-func buildOrLoadPredictor(args []string) (*predict.Predictor, error) {
-	imageName := ""
-	volumes := []docker.Volume{}
-	gpus := ""
-
-	if len(args) == 0 {
-		// Build image
-
-		cfg, projectDir, err := config.GetConfig(projectDirFlag)
-		if err != nil {
-			return nil, err
-		}
-
-		if imageName, err = image.BuildBase(cfg, projectDir, buildProgressOutput); err != nil {
-			return nil, err
-		}
-
-		// Base image doesn't have /src in it, so mount as volume
-		volumes = append(volumes, docker.Volume{
-			Source:      projectDir,
-			Destination: "/src",
-		})
-
-		if cfg.Build.GPU {
-			gpus = "all"
-		}
-
-	} else {
-		// Use existing image
-		imageName = args[0]
-
-		exists, err := docker.ImageExists(imageName)
-		if err != nil {
-			return nil, fmt.Errorf("Failed to determine if %s exists: %w", imageName, err)
-		}
-		if !exists {
-			console.Infof("Pulling image: %s", imageName)
-			if err := docker.Pull(imageName); err != nil {
-				return nil, fmt.Errorf("Failed to pull %s: %w", imageName, err)
-			}
-		}
-		conf, err := image.GetConfig(imageName)
-		if err != nil {
-			return nil, err
-		}
-		if conf.Build.GPU {
-			gpus = "all"
-		}
-	}
-
-	console.Info("")
-	console.Infof("Starting Docker image %s and running setup()...", imageName)
-
-	predictor := predict.NewPredictor(docker.RunOptions{
-		GPUs:    gpus,
-		Image:   imageName,
-		Volumes: volumes,
-	})
-	if err := predictor.Start(os.Stderr); err != nil {
-		return nil, err
-	}
-
-	return &predictor, nil
-}
-
 func cmdPredict(cmd *cobra.Command, args []string) error {
-	predictor, err := buildOrLoadPredictor(args)
 
-	if err != nil {
+	if err := buildOrLoadPredictor(args); err != nil {
 		return err
 	}
 
-	// FIXME: will not run on signal
-	defer func() {
-		console.Debugf("Stopping container...")
-		if err := predictor.Stop(); err != nil {
-			console.Warnf("Failed to stop container: %s", err)
-		}
-	}()
+	go catchSIGINT()
+	defer stopPredictor()
 
 	return predictIndividualInputs(*predictor, inputFlags, outPath)
 }

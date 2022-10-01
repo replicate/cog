@@ -5,20 +5,15 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
 var (
 	serveHost        = "0.0.0.0"
 	servePort        = 5000
-	servePredictor   *predict.Predictor
 	serveDisableCors = false
 	serveStatic      string
 )
@@ -47,35 +42,19 @@ the model on that.`,
 }
 
 func cmdServe(cmd *cobra.Command, args []string) error {
-	var err error
 
-	servePredictor, err = buildOrLoadPredictor(args)
-
-	if err != nil {
+	if err := buildOrLoadPredictor(args); err != nil {
 		return err
 	}
+
 	defer func() {
 		console.Debugf("Stopping container...")
-		if err := servePredictor.Stop(); err != nil {
+		if err := predictor.Stop(); err != nil {
 			console.Warnf("Failed to stop container: %s", err)
 		}
 	}()
 
 	return reallyServeHTTP()
-}
-
-// FIXME(ja): this pattern might be useful in predict commands
-func serveSignalHandler(signal os.Signal) {
-	if err := servePredictor.Stop(); err != nil {
-		console.Warnf("Failed to stop container: %s", err)
-	}
-	os.Exit(0)
-}
-
-func initServeSignals() {
-	captureSignal := make(chan os.Signal, 1)
-	signal.Notify(captureSignal, syscall.SIGINT)
-	serveSignalHandler(<-captureSignal)
 }
 
 func predictHandler(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +71,7 @@ func predictHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	base := servePredictor.GetURL("")
+	base := predictor.GetURL("")
 	u, err := url.Parse(base + r.URL.Path)
 
 	if err != nil {
@@ -129,7 +108,8 @@ func reallyServeHTTP() error {
 		mux.HandleFunc("/", predictHandler)
 	}
 
-	go initServeSignals()
+	go catchSIGINT()
+	defer stopPredictor()
 
 	listenAddr := fmt.Sprintf("%s:%d", serveHost, servePort)
 	console.Infof("Serving model on %s ...", listenAddr)
