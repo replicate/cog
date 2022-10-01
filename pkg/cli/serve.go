@@ -21,9 +21,10 @@ import (
 var (
 	// inputFlags []string
 	// outPath    string
-	serveHost      = "0.0.0.0"
-	servePort      = 5000
-	servePredictor *predict.Predictor
+	serveHost        = "0.0.0.0"
+	servePort        = 5000
+	servePredictor   *predict.Predictor
+	serveDisableCors = false
 )
 
 func newServeCommand() *cobra.Command {
@@ -45,7 +46,7 @@ the model on that.`,
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
 	cmd.Flags().IntVarP(&servePort, "port", "p", 5000, "Port to serve on")
 	cmd.Flags().StringVarP(&serveHost, "host", "H", "0.0.0.0", "Host to listen on")
-
+	cmd.Flags().BoolVar(&serveDisableCors, "disable-cors", false, "Disable CORS allows SPA to run on different host")
 	return cmd
 }
 
@@ -134,17 +135,24 @@ func initServeSignals() {
 }
 
 func reallyServeHTTP() {
+	console.Info("")
+
+	if serveDisableCors {
+		console.Info("CORS is disabled")
+	}
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 
-		// always say yes to CORS
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "*")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		if serveDisableCors {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "*")
+			w.Header().Set("Access-Control-Allow-Headers", "*")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
 
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
 		}
 
 		base := servePredictor.GetUrl("")
@@ -170,7 +178,6 @@ func reallyServeHTTP() {
 
 	listenAddr := fmt.Sprintf("%s:%d", serveHost, servePort)
 
-	console.Info("")
 	console.Infof("Serving model on %s ...", listenAddr)
 
 	err := http.ListenAndServe(listenAddr, nil)
