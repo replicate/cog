@@ -121,8 +121,6 @@ func cmdServe(cmd *cobra.Command, args []string) error {
 
 // FIXME(ja): this pattern might be useful in predict commands
 func serveSignalHandler(signal os.Signal) {
-	fmt.Printf("\nCaught signal: %+v\n", signal)
-
 	if err := servePredictor.Stop(); err != nil {
 		console.Warnf("Failed to stop container: %s", err)
 	}

@@ -72,7 +72,11 @@ func (p *Predictor) Start(logsWriter io.Writer) error {
 	}
 	go func() {
 		if err := docker.ContainerLogsFollow(p.containerID, logsWriter); err != nil {
-			console.Warnf("Error getting container logs: %s", err)
+
+			// err is a cmd.Run error, which we should ignore if ctrl-c was pressed
+			if !strings.Contains(err.Error(), "signal: interrupt") {
+				console.Warnf("Error getting container logs: %s", err)
+			}
 		}
 	}()
 
