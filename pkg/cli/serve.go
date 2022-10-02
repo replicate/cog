@@ -80,6 +80,7 @@ func reallyServeHTTP() error {
 	mux := http.NewServeMux()
 
 	if serveStatic != "" {
+		console.Infof("Serving static files from %s", serveStatic)
 		mux.HandleFunc("/predictions", predictHandler)
 		mux.HandleFunc("/docs", predictHandler)
 		mux.HandleFunc("/openapi.json", predictHandler)
@@ -89,13 +90,14 @@ func reallyServeHTTP() error {
 	}
 
 	listenAddr := fmt.Sprintf("%s:%d", serveHost, servePort)
-	console.Infof("Serving model on %s ...", listenAddr)
 
 	if serveDisableCors {
 		console.Info("CORS is disabled")
+		console.Infof("Serving model on %s ...", listenAddr)
 		return http.ListenAndServe(listenAddr, CORS(mux))
 	}
 
+	console.Infof("Serving model on %s ...", listenAddr)
 	return http.ListenAndServe(listenAddr, mux)
 }
 
