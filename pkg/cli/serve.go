@@ -59,18 +59,6 @@ func cmdServe(cmd *cobra.Command, args []string) error {
 
 func predictHandler(w http.ResponseWriter, r *http.Request) {
 
-	if serveDisableCors {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "*")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-	}
-
 	base := predictor.GetURL("")
 	u, err := url.Parse(base + r.URL.Path)
 
@@ -93,10 +81,6 @@ func predictHandler(w http.ResponseWriter, r *http.Request) {
 func reallyServeHTTP() error {
 	console.Info("")
 
-	if serveDisableCors {
-		console.Info("CORS is disabled")
-	}
-
 	mux := http.NewServeMux()
 
 	if serveStatic != "" {
@@ -114,5 +98,24 @@ func reallyServeHTTP() error {
 	listenAddr := fmt.Sprintf("%s:%d", serveHost, servePort)
 	console.Infof("Serving model on %s ...", listenAddr)
 
+	if serveDisableCors {
+		console.Info("CORS is disabled")
+		return http.ListenAndServe(listenAddr, CORS(mux))
+	}
+
 	return http.ListenAndServe(listenAddr, mux)
+}
+
+func CORS(m *http.ServeMux) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		if r.Method == "OPTIONS" {
+			w.Header().Set("Access-Control-Allow-Methods", "*")
+			w.Header().Set("Access-Control-Allow-Headers", "*")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			return
+		} else {
+			m.ServeHTTP(w, r)
+		}
+	})
 }
