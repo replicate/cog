@@ -47,12 +47,8 @@ func cmdServe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	defer func() {
-		console.Debugf("Stopping container...")
-		if err := predictor.Stop(); err != nil {
-			console.Warnf("Failed to stop container: %s", err)
-		}
-	}()
+	go catchSIGINT()
+	defer stopPredictor()
 
 	return reallyServeHTTP()
 }
@@ -91,9 +87,6 @@ func reallyServeHTTP() error {
 	} else {
 		mux.HandleFunc("/", predictHandler)
 	}
-
-	go catchSIGINT()
-	defer stopPredictor()
 
 	listenAddr := fmt.Sprintf("%s:%d", serveHost, servePort)
 	console.Infof("Serving model on %s ...", listenAddr)
