@@ -109,8 +109,7 @@ func CORS(m *http.ServeMux) http.Handler {
 			w.Header().Set("Access-Control-Allow-Headers", "*")
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			return
-		} else {
-			m.ServeHTTP(w, r)
 		}
+		m.ServeHTTP(w, r)
 	})
 }
