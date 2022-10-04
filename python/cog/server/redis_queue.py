@@ -181,7 +181,7 @@ class RedisQueueWorker:
                     response = message
                     response["status"] = Status.PROCESSING
                     response["output"] = None
-                    response["logs"] = []
+                    response["logs"] = ""
 
                     cleanup_functions: List[Callable] = []
                     try:
@@ -248,15 +248,14 @@ class RedisQueueWorker:
 
         response["started_at"] = format_datetime(started_at)
 
-        logs: List[str] = []
-        response["logs"] = logs
+        response["logs"] = ""
 
         send_response(response)
 
         # just send logs until output starts
         while self.runner.is_processing() and not self.runner.has_output_waiting():
             if self.runner.has_logs_waiting():
-                logs.extend(self.runner.read_logs())
+                response["logs"] += self.runner.read_logs()
                 send_response(response)
 
         if self.runner.error() is not None:
@@ -283,11 +282,11 @@ class RedisQueueWorker:
                     new_logs = self.runner.read_logs()
 
                     # sometimes it'll say there's output when there's none
-                    if new_output == [] and new_logs == []:
+                    if new_output == [] and new_logs == "":
                         continue
 
                     output.extend(new_output)
-                    logs.extend(new_logs)
+                    response["logs"] += new_logs
 
                     # we could `time.sleep(0.1)` and check `is_processing()`
                     # here to give the predictor subprocess a chance to exit
@@ -313,14 +312,14 @@ class RedisQueueWorker:
                 "predict_time": (completed_at - started_at).total_seconds()
             }
             output.extend(self.upload_files(o) for o in self.runner.read_output())
-            logs.extend(self.runner.read_logs())
+            response["logs"] += self.runner.read_logs()
             send_response(response)
 
         else:
             # just send logs until output ends
             while self.runner.is_processing():
                 if self.runner.has_logs_waiting():
-                    logs.extend(self.runner.read_logs())
+                    response["logs"] += self.runner.read_logs()
                     send_response(response)
 
             if self.runner.error() is not None:
@@ -342,7 +341,7 @@ class RedisQueueWorker:
                 "predict_time": (completed_at - started_at).total_seconds()
             }
             response["output"] = self.upload_files(output[0])
-            logs.extend(self.runner.read_logs())
+            response["logs"] += self.runner.read_logs()
             send_response(response)
 
     def download(self, url: str) -> bytes:

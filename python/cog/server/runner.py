@@ -206,11 +206,11 @@ class PredictionRunner:
     def has_logs_waiting(self) -> bool:
         return self.logs_pipe_reader.poll()
 
-    def read_logs(self) -> List[str]:
-        logs = []
+    def read_logs(self) -> str:
+        logs = ""
         while self.has_logs_waiting():
             try:
-                logs.append(self.logs_pipe_reader.recv())
+                logs += self.logs_pipe_reader.recv() + "\n"
             except EOFError:
                 break
         return logs
