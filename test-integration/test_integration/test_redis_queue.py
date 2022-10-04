@@ -59,7 +59,7 @@ def test_queue_worker_files(
                 "id": predict_id,
                 "input": {
                     "text": "baz",
-                    "path": "http://upload-server:5000/download/input.txt",
+                    "path": "http://upload-server:5000/files/input.txt",
                 },
                 "webhook": webhook_url,
                 "logs": [],
@@ -83,7 +83,7 @@ def test_queue_worker_files(
                 "id": predict_id,
                 "input": {
                     "text": "baz",
-                    "path": "http://upload-server:5000/download/input.txt",
+                    "path": "http://upload-server:5000/files/input.txt",
                 },
                 "webhook": webhook_url,
                 "logs": [],
@@ -172,7 +172,7 @@ def test_queue_worker_yielding_file(
             json={
                 "id": predict_id,
                 "input": {
-                    "path": "http://upload-server:5000/download/input.txt",
+                    "path": "http://upload-server:5000/files/input.txt",
                 },
                 "webhook": webhook_url,
                 "logs": [],
@@ -188,7 +188,7 @@ def test_queue_worker_yielding_file(
             json={
                 "id": predict_id,
                 "input": {
-                    "path": "http://upload-server:5000/download/input.txt",
+                    "path": "http://upload-server:5000/files/input.txt",
                 },
                 "webhook": webhook_url,
                 "logs": [],
@@ -204,7 +204,7 @@ def test_queue_worker_yielding_file(
             json={
                 "id": predict_id,
                 "input": {
-                    "path": "http://upload-server:5000/download/input.txt",
+                    "path": "http://upload-server:5000/files/input.txt",
                 },
                 "webhook": webhook_url,
                 "logs": [],
@@ -223,7 +223,7 @@ def test_queue_worker_yielding_file(
             json={
                 "id": predict_id,
                 "input": {
-                    "path": "http://upload-server:5000/download/input.txt",
+                    "path": "http://upload-server:5000/files/input.txt",
                 },
                 "webhook": webhook_url,
                 "logs": [],
@@ -243,7 +243,7 @@ def test_queue_worker_yielding_file(
             json={
                 "id": predict_id,
                 "input": {
-                    "path": "http://upload-server:5000/download/input.txt",
+                    "path": "http://upload-server:5000/files/input.txt",
                 },
                 "webhook": webhook_url,
                 "logs": [],
