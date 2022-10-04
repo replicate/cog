@@ -98,6 +98,7 @@ func (g *Generator) GenerateBase() (string, error) {
 		installCog,
 		aptInstalls,
 		pythonRequirements,
+		g.installSieve(),
 		pipInstalls,
 		run,
 		`WORKDIR /src`,
@@ -204,6 +205,14 @@ func (g *Generator) installCog() (string, error) {
 	}
 	return fmt.Sprintf(`COPY %s /tmp/%s
 RUN --mount=type=cache,target=/root/.cache/pip pip install /tmp/%s`, path.Join(g.relativeTmpDir, cogFilename), cogFilename, cogFilename), nil
+}
+func (g *Generator) installSieve() string {
+	sieveInternal := ""
+	sieveExternal := ""
+	format := "COPY %s /tmp/%s\n RUN --mount=type=cache,target=/root/.cache/pip pip install /tmp/%s"
+	line1 := fmt.Sprintf(format, sieveInternal, sieveInternal, sieveInternal)
+	line2 := fmt.Sprintf(format, sieveExternal, sieveExternal, sieveExternal)
+	return fmt.Sprintf("%s\n%s", line1, line2)
 }
 
 func (g *Generator) pythonRequirements() (string, error) {
