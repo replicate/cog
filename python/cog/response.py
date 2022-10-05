@@ -9,6 +9,10 @@ class Status(str, enum.Enum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
 
+    @staticmethod
+    def is_terminal(status):
+        return status in (Status.SUCCEEDED, Status.FAILED)
+
 
 def get_response_type(OutputType: Type[BaseModel]) -> Any:
     class Response(BaseModel):
