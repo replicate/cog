@@ -52,6 +52,10 @@ class timeout:
             signal.alarm(0)
 
 
+class CancelPredictionException(Exception):
+    pass
+
+
 class PredictionRunner:
     PROCESSING_DONE = 1
     EXIT_SENTINEL = "exit"
@@ -254,6 +258,11 @@ class PredictionRunner:
         drain_pipe(self.error_pipe_reader)
         drain_pipe(self.done_pipe_reader)
 
+        def cancel(_signum: Any, _frame: Any) -> None:
+            raise CancelPredictionException()
+
+        signal.signal(signal.SIGUSR1, cancel)
+
         with capture_log(self.logs_pipe_writer):
             tracer = trace.get_tracer("cog")
             with tracer.start_as_current_span(
@@ -276,6 +285,9 @@ class PredictionRunner:
                         else:
                             self.predictor_pipe_writer.send(self.OutputType.SINGLE)
                             self.predictor_pipe_writer.send(make_encodeable(output))
+                except CancelPredictionException:
+                    # it we've been canceled, just stop and wait for cleanup
+                    pass
                 except Exception as e:
                     # if it timed out there's no stack trace
                     if type(e) != TimeoutError:
@@ -303,6 +315,12 @@ class PredictionRunner:
         """
         self.prediction_input_pipe_writer.send(PredictionRunner.EXIT_SENTINEL)
         self.predictor_process.join()
+
+    def cancel(self) -> None:
+        """
+        Cancel the active prediction.
+        """
+        os.kill(self.predictor_process.pid, signal.SIGUSR1)  # type: ignore
 
 
 def drain_pipe(pipe_reader: Connection) -> None:

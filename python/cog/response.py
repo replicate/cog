@@ -8,6 +8,7 @@ class Status(str, enum.Enum):
     PROCESSING = "processing"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    CANCELED = "canceled"
 
 
 def get_response_type(OutputType: Type[BaseModel]) -> Any:
