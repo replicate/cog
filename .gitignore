@@ -11,3 +11,4 @@ python/build
 .projections.json
 .venv/
 .idea/
+.DS_Store
