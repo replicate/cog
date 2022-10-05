@@ -10,7 +10,7 @@ class Status(str, enum.Enum):
     FAILED = "failed"
 
     @staticmethod
-    def is_terminal(status):
+    def is_terminal(status: "Status") -> bool:
         return status in (Status.SUCCEEDED, Status.FAILED)
 
 
