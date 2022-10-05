@@ -8,6 +8,7 @@ class Status(str, enum.Enum):
     PROCESSING = "processing"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    CANCELED = "canceled"
 
     @staticmethod
     def is_terminal(status: "Status") -> bool:

@@ -189,7 +189,7 @@ def test_openapi_specification():
                 },
                 "Status": {
                     "title": "Status",
-                    "enum": ["processing", "succeeded", "failed"],
+                    "enum": ["processing", "succeeded", "failed", "canceled"],
                     "description": "An enumeration.",
                     "type": "string",
                 },
@@ -348,7 +348,7 @@ def test_openapi_specification_with_custom_user_defined_output_type():
                 },
                 "Status": {
                     "title": "Status",
-                    "enum": ["processing", "succeeded", "failed"],
+                    "enum": ["processing", "succeeded", "failed", "canceled"],
                     "description": "An enumeration.",
                     "type": "string",
                 },

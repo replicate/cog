@@ -1648,6 +1648,98 @@ def test_queue_worker_redis_responses(docker_network, docker_image, redis_client
         }
 
 
+def test_queue_worker_cancel(docker_network, docker_image, redis_client, httpserver):
+    project_dir = Path(__file__).parent / "fixtures/timeout-project"
+    subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
+
+    with docker_run(
+        image=docker_image,
+        interactive=True,
+        network=docker_network,
+        command=[
+            "python",
+            "-m",
+            "cog.server.redis_queue",
+            "redis",
+            "6379",
+            "predict-queue",
+            "",
+            "test-worker",
+            "model_id",
+            "logs",
+        ],
+    ):
+        predict_id = random_string(10)
+        webhook_url = httpserver.url_for("/webhook").replace(
+            "localhost", "host.docker.internal"
+        )
+
+        httpserver.expect_oneshot_request(
+            "/webhook",
+            json={
+                "id": predict_id,
+                "input": {
+                    "sleep_time": 30,
+                },
+                "webhook": webhook_url,
+                "logs": "",
+                "output": None,
+                "status": "processing",
+                "started_at": mock.ANY,
+                "cancel_key": "cancel-key",
+            },
+            method="POST",
+        )
+
+        redis_client.xgroup_create(
+            mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
+        )
+
+        with httpserver.wait(timeout=15) as waiting:
+            redis_client.xadd(
+                name="predict-queue",
+                fields={
+                    "value": json.dumps(
+                        {
+                            "id": predict_id,
+                            "input": {
+                                "sleep_time": 30,
+                            },
+                            "webhook": webhook_url,
+                            "cancel_key": "cancel-key",
+                        }
+                    ),
+                },
+            )
+
+        # check we receive the initial webhook
+        assert waiting.result
+
+        httpserver.expect_oneshot_request(
+            "/webhook",
+            json={
+                "id": predict_id,
+                "input": {
+                    "sleep_time": 30,
+                },
+                "webhook": webhook_url,
+                "logs": "",
+                "output": None,
+                "status": "canceled",
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
+                "cancel_key": "cancel-key",
+            },
+            method="POST",
+        )
+
+        with httpserver.wait(timeout=5) as waiting:
+            redis_client.set("cancel-key", 1, ex=5)
+
+        # check we receive the "canceled" webhook
+        assert waiting.result
+
+
 def response_iterator(redis_client, response_queue, timeout=10):
     redis_client.config_set("notify-keyspace-events", "KEA")
     channel = redis_client.pubsub()

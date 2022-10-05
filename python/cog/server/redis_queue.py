@@ -177,6 +177,8 @@ class RedisQueueWorker:
                         f"Received message {message_id} on {self.input_queue}\n"
                     )
 
+                    should_cancel = self.cancelation_checker(message.get("cancel_key"))
+
                     # use the request message as the basis of our response so
                     # that we echo back any additional fields sent to us
                     response = message
@@ -187,7 +189,9 @@ class RedisQueueWorker:
                     cleanup_functions: List[Callable] = []
                     try:
                         start_time = time.time()
-                        self.handle_message(send_response, response, cleanup_functions)
+                        self.handle_message(
+                            send_response, response, cleanup_functions, should_cancel
+                        )
                         self.redis.xack(self.input_queue, self.input_queue, message_id)
                         self.redis.xdel(
                             self.input_queue, message_id
@@ -226,6 +230,7 @@ class RedisQueueWorker:
         send_response: Callable,
         response: Dict[str, Any],
         cleanup_functions: List[Callable],
+        should_cancel: Callable,
     ) -> None:
         span = trace.get_current_span()
 
@@ -255,6 +260,13 @@ class RedisQueueWorker:
 
         # just send logs until output starts
         while self.runner.is_processing() and not self.runner.has_output_waiting():
+            if should_cancel():
+                self.runner.cancel()
+                response["status"] = Status.CANCELED
+                response["completed_at"] = format_datetime(datetime.datetime.now())
+                send_response(response)
+                return
+
             if self.runner.has_logs_waiting():
                 response["logs"] += self.runner.read_logs()
                 send_response(response)
@@ -275,6 +287,13 @@ class RedisQueueWorker:
 
             while self.runner.is_processing():
                 # TODO: restructure this to avoid the tight CPU-eating loop
+                if should_cancel():
+                    self.runner.cancel()
+                    response["status"] = Status.CANCELED
+                    response["completed_at"] = format_datetime(datetime.datetime.now())
+                    send_response(response)
+                    return
+
                 if self.runner.has_output_waiting() or self.runner.has_logs_waiting():
                     # Object has already passed through `make_encodeable()` in the Runner, so all we need to do here is upload the files
                     new_output = [
@@ -319,6 +338,13 @@ class RedisQueueWorker:
         else:
             # just send logs until output ends
             while self.runner.is_processing():
+                if should_cancel():
+                    self.runner.cancel()
+                    response["status"] = Status.CANCELED
+                    response["completed_at"] = format_datetime(datetime.datetime.now())
+                    send_response(response)
+                    return
+
                 if self.runner.has_logs_waiting():
                     response["logs"] += self.runner.read_logs()
                     send_response(response)
@@ -366,6 +392,12 @@ class RedisQueueWorker:
             self.redis.set(redis_key, json.dumps(response))
 
         return setter
+
+    def cancelation_checker(self, redis_key: str) -> Callable:
+        def checker() -> bool:
+            return redis_key is not None and self.redis.exists(redis_key) > 0
+
+        return checker
 
     def upload_files(self, obj: Any) -> Any:
         def upload_file(fh: io.IOBase) -> str:
