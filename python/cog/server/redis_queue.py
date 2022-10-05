@@ -22,6 +22,7 @@ from ..json import upload_files
 from ..response import Status
 from .runner import PredictionRunner
 from ..files import guess_filename
+from .response_throttler import ResponseThrottler
 
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter  # type: ignore
@@ -350,8 +351,12 @@ class RedisQueueWorker:
         return resp.content
 
     def webhook_caller(self, webhook: str) -> Callable:
+        throttler = ResponseThrottler()
+
         def caller(response: Any) -> None:
-            requests.post(webhook, json=response)
+            if throttler.should_send_response(response):
+                requests.post(webhook, json=response)
+                throttler.update_last_sent_response_time()
 
         return caller
 
@@ -389,7 +394,6 @@ def calculate_time_in_queue(message_id: str) -> float:
     now = time.time()
     queue_time = int(message_id[:13]) / 1000.0
     return now - queue_time
-
 
 
 def format_datetime(timestamp: datetime.datetime) -> str:
