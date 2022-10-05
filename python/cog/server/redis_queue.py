@@ -351,7 +351,8 @@ class RedisQueueWorker:
         return resp.content
 
     def webhook_caller(self, webhook: str) -> Callable:
-        throttler = ResponseThrottler()
+        response_interval = float(os.environ.get("COG_THROTTLE_RESPONSE_INTERVAL", 0))
+        throttler = ResponseThrottler(response_interval=response_interval)
 
         def caller(response: Any) -> None:
             if throttler.should_send_response(response):
