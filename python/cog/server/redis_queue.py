@@ -44,6 +44,7 @@ class RedisQueueWorker:
         redis_host: str,
         redis_port: int,
         input_queue: str,
+        redis_password: str,
         upload_url: str,
         consumer_id: str,
         model_id: Optional[str] = None,
@@ -61,6 +62,7 @@ class RedisQueueWorker:
         self.log_queue = log_queue
         self.predict_timeout = predict_timeout
         self.redis_db = redis_db
+        self.redis_password = redis_password
         if self.predict_timeout is not None:
             # 30s grace period allows final responses to be sent and job to be acked
             self.autoclaim_messages_after = self.predict_timeout + 30
@@ -72,7 +74,7 @@ class RedisQueueWorker:
         self.InputType = get_input_type(predictor)
 
         self.redis = redis.Redis(
-            host=self.redis_host, port=self.redis_port, db=self.redis_db
+            host=self.redis_host, port=self.redis_port, db=self.redis_db, password=self.redis_password
         )
         self.should_exit = False
         self.setup_time_queue = input_queue + self.SETUP_TIME_QUEUE_SUFFIX
