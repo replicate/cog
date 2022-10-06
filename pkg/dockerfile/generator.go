@@ -211,8 +211,8 @@ func (g *Generator) installCython() string {
 	return "RUN --mount=type=cache,target=/root/.cache/pip pip install cython"
 }
 func (g *Generator) installSieve() string {
-	sieveInternal := "sieve_internal-0.0.1-py3-none-any.whl"
-	sieveExternal := "sieve-0.0.1-py3-none-any.whl"
+	sieveInternal := "spatula-0.0.1-py3-none-any.whl"
+	sieveExternal := "sievedata-0.0.1.1-py3-none-any.whl"
 	format := "COPY %s /tmp/%s\n RUN --mount=type=cache,target=/root/.cache/pip pip install /tmp/%s"
 	line1 := fmt.Sprintf(format, sieveInternal, sieveInternal, sieveInternal)
 	line2 := fmt.Sprintf(format, sieveExternal, sieveExternal, sieveExternal)
