@@ -44,11 +44,11 @@ class RedisQueueWorker:
         redis_host: str,
         redis_port: int,
         input_queue: str,
-        redis_password: str,
         upload_url: str,
         consumer_id: str,
         model_id: Optional[str] = None,
         log_queue: Optional[str] = None,
+        redis_password: Optional[str] = None,
         predict_timeout: Optional[int] = None,
         redis_db: int = 0,
     ):
@@ -60,9 +60,9 @@ class RedisQueueWorker:
         self.consumer_id = consumer_id
         self.model_id = model_id
         self.log_queue = log_queue
+        self.redis_password = redis_password
         self.predict_timeout = predict_timeout
         self.redis_db = redis_db
-        self.redis_password = redis_password
         if self.predict_timeout is not None:
             # 30s grace period allows final responses to be sent and job to be acked
             self.autoclaim_messages_after = self.predict_timeout + 30
