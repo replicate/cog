@@ -918,7 +918,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
                 "started_at": mock.ANY,
             },
             method="POST",
-        )
+        ).respond_with_data("OK")
 
         httpserver.expect_oneshot_request(
             "/webhook",
@@ -938,7 +938,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
                 },
             },
             method="POST",
-        )
+        ).respond_with_data("OK")
 
         redis_client.xgroup_create(
             mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
@@ -979,7 +979,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
                 "started_at": mock.ANY,
             },
             method="POST",
-        )
+        ).respond_with_data("OK")
 
         httpserver.expect_oneshot_request(
             "/webhook",
@@ -997,7 +997,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
                 "completed_at": mock.ANY,
             },
             method="POST",
-        )
+        ).respond_with_data("OK")
 
         with httpserver.wait(timeout=15) as waiting:
             redis_client.xadd(
@@ -1034,7 +1034,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
                 "started_at": mock.ANY,
             },
             method="POST",
-        )
+        ).respond_with_data("OK")
 
         httpserver.expect_oneshot_request(
             "/webhook",
@@ -1054,7 +1054,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
                 },
             },
             method="POST",
-        )
+        ).respond_with_data("OK")
 
         with httpserver.wait(timeout=15) as waiting:
             redis_client.xadd(
@@ -1120,7 +1120,7 @@ def test_queue_worker_yielding_timeout(
                 "started_at": mock.ANY,
             },
             method="POST",
-        )
+        ).respond_with_data("OK")
 
         httpserver.expect_oneshot_request(
             "/webhook",
@@ -1137,7 +1137,7 @@ def test_queue_worker_yielding_timeout(
                 "started_at": mock.ANY,
             },
             method="POST",
-        )
+        ).respond_with_data("OK")
 
         httpserver.expect_oneshot_request(
             "/webhook",
@@ -1158,7 +1158,7 @@ def test_queue_worker_yielding_timeout(
                 },
             },
             method="POST",
-        )
+        ).respond_with_data("OK")
 
         redis_client.xgroup_create(
             mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
@@ -1201,7 +1201,7 @@ def test_queue_worker_yielding_timeout(
                 "started_at": mock.ANY,
             },
             method="POST",
-        )
+        ).respond_with_data("OK")
 
         httpserver.expect_oneshot_request(
             "/webhook",
@@ -1218,7 +1218,7 @@ def test_queue_worker_yielding_timeout(
                 "started_at": mock.ANY,
             },
             method="POST",
-        )
+        ).respond_with_data("OK")
 
         httpserver.expect_oneshot_request(
             "/webhook",
@@ -1235,7 +1235,7 @@ def test_queue_worker_yielding_timeout(
                 "started_at": mock.ANY,
             },
             method="POST",
-        )
+        ).respond_with_data("OK")
 
         httpserver.expect_oneshot_request(
             "/webhook",
@@ -1254,7 +1254,7 @@ def test_queue_worker_yielding_timeout(
                 "completed_at": mock.ANY,
             },
             method="POST",
-        )
+        ).respond_with_data("OK")
 
         with httpserver.wait(timeout=15) as waiting:
             redis_client.xadd(
@@ -1572,6 +1572,118 @@ def test_queue_worker_setup(docker_network, docker_image, redis_client, httpserv
             name="predict-queue", groupname="predict-queue"
         )["pending"]
         assert predictions_in_progress == 1
+
+
+def test_queue_worker_webhook_retries(
+    docker_network, docker_image, redis_client, httpserver
+):
+    project_dir = Path(__file__).parent / "fixtures/int-project"
+    subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
+
+    with docker_run(
+        image=docker_image,
+        interactive=True,
+        network=docker_network,
+        command=[
+            "python",
+            "-m",
+            "cog.server.redis_queue",
+            "redis",
+            "6379",
+            "predict-queue",
+            "",
+            "test-worker",
+            "model_id",
+            "logs",
+        ],
+    ):
+        predict_id = random_string(10)
+        webhook_url = httpserver.url_for("/webhook").replace(
+            "localhost", "host.docker.internal"
+        )
+
+        # respond with an error to the initial response -- it shouldn't be retried
+        httpserver.expect_oneshot_request(
+            "/webhook",
+            json={
+                "id": predict_id,
+                "input": {
+                    "num": 8,
+                },
+                "webhook": webhook_url,
+                "logs": "",
+                "output": None,
+                "status": "processing",
+                "started_at": mock.ANY,
+            },
+            method="POST",
+        ).respond_with_data("error", status=500)
+
+        # respond with an error to the terminal response ...
+        httpserver.expect_oneshot_request(
+            "/webhook",
+            json={
+                "id": predict_id,
+                "input": {
+                    "num": 8,
+                },
+                "webhook": webhook_url,
+                "logs": "",
+                "output": 16,
+                "status": "succeeded",
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
+                "metrics": {
+                    "predict_time": mock.ANY,
+                },
+            },
+            method="POST",
+        ).respond_with_data("error", status=500)
+
+        # ... it should be retried several times
+        for x in range(3):
+            httpserver.expect_oneshot_request(
+                "/webhook",
+                json={
+                    "id": predict_id,
+                    "input": {
+                        "num": 8,
+                    },
+                    "webhook": webhook_url,
+                    "logs": "",
+                    "output": 16,
+                    "status": "succeeded",
+                    "started_at": mock.ANY,
+                    "completed_at": mock.ANY,
+                    "metrics": {
+                        "predict_time": mock.ANY,
+                    },
+                },
+                method="POST",
+            )
+
+        redis_client.xgroup_create(
+            mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
+        )
+
+        with httpserver.wait(timeout=30) as waiting:
+            redis_client.xadd(
+                name="predict-queue",
+                fields={
+                    "value": json.dumps(
+                        {
+                            "id": predict_id,
+                            "input": {
+                                "num": 8,
+                            },
+                            "webhook": webhook_url,
+                        }
+                    ),
+                },
+            )
+
+        # check we received all the webhooks
+        assert waiting.result
 
 
 def test_queue_worker_redis_responses(docker_network, docker_image, redis_client):

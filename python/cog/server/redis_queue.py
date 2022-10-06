@@ -16,6 +16,8 @@ import contextlib
 from pydantic import ValidationError
 import redis
 import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 from ..predictor import BasePredictor, get_input_type, load_predictor, load_config
 from ..json import upload_files
@@ -380,9 +382,29 @@ class RedisQueueWorker:
         response_interval = float(os.environ.get("COG_THROTTLE_RESPONSE_INTERVAL", 0))
         throttler = ResponseThrottler(response_interval=response_interval)
 
+        # This session will retry requests up to 12 times, with exponential
+        # backoff. In total it'll try for up to roughly 320 seconds, providing
+        # resilience through temporary networking and availability issues.
+        session = requests.Session()
+        adapter = HTTPAdapter(
+            max_retries=Retry(
+                total=12,
+                backoff_factor=0.1,
+                status_forcelist=[429, 500, 502, 503, 504],
+                allowed_methods=["POST"],
+            )
+        )
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+
         def caller(response: Any) -> None:
             if throttler.should_send_response(response):
-                requests.post(webhook, json=response)
+                if Status.is_terminal(response["status"]):
+                    # For terminal updates, retry persistently
+                    session.post(webhook, json=response)
+                else:
+                    # For other requests, don't retry
+                    requests.post(webhook, json=response)
                 throttler.update_last_sent_response_time()
 
         return caller
