@@ -3,6 +3,7 @@ import time
 from cog.server.response_throttler import ResponseThrottler
 from cog.response import Status
 
+
 def test_zero_interval():
     throttler = ResponseThrottler(response_interval=0)
 
