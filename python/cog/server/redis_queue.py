@@ -48,8 +48,8 @@ class RedisQueueWorker:
         consumer_id: str,
         model_id: Optional[str] = None,
         log_queue: Optional[str] = None,
-        redis_password: Optional[str] = None,
         predict_timeout: Optional[int] = None,
+        redis_password: Optional[str] = None,
         redis_db: int = 0,
     ):
         self.runner = PredictionRunner(predict_timeout=predict_timeout)
@@ -60,8 +60,8 @@ class RedisQueueWorker:
         self.consumer_id = consumer_id
         self.model_id = model_id
         self.log_queue = log_queue
-        self.redis_password = redis_password
         self.predict_timeout = predict_timeout
+        self.redis_password = redis_password
         self.redis_db = redis_db
         if self.predict_timeout is not None:
             # 30s grace period allows final responses to be sent and job to be acked
