@@ -1,4 +1,3 @@
-from __future__ import annotations
 import enum
 from typing import Optional, Type, Any
 
@@ -11,7 +10,7 @@ class Status(str, enum.Enum):
     FAILED = "failed"
 
     @staticmethod
-    def is_terminal(status: Status) -> bool:
+    def is_terminal(status: "Status") -> bool:
         return status in (Status.SUCCEEDED, Status.FAILED)
 
 
