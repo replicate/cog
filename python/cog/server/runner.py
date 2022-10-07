@@ -286,7 +286,7 @@ class PredictionRunner:
                             self.predictor_pipe_writer.send(self.OutputType.SINGLE)
                             self.predictor_pipe_writer.send(make_encodeable(output))
                 except CancelPredictionException:
-                    # it we've been canceled, just stop and wait for cleanup
+                    # we've been canceled, just stop and wait for cleanup
                     pass
                 except Exception as e:
                     # if it timed out there's no stack trace
