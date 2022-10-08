@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/mitchellh/go-homedir"
@@ -105,6 +107,19 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		Image:   imageName,
 		Volumes: volumes,
 	})
+
+	go func() {
+		captureSignal := make(chan os.Signal, 1)
+		signal.Notify(captureSignal, syscall.SIGINT)
+
+		<-captureSignal
+
+		console.Info("Stopping container...")
+		if err := predictor.Stop(); err != nil {
+			console.Warnf("Failed to stop container: %s", err)
+		}
+	}()
+
 	if err := predictor.Start(os.Stderr); err != nil {
 		return err
 	}
