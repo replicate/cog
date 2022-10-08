@@ -1,3 +1,4 @@
+import sys
 import multiprocessing
 import os
 import signal
@@ -320,6 +321,7 @@ class PredictionRunner:
         """
         Cancel the active prediction.
         """
+        print("Caught cancel signal, exiting", file=sys.stderr)
         os.kill(self.predictor_process.pid, signal.SIGUSR1)  # type: ignore
 
 
