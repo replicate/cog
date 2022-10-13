@@ -1729,18 +1729,10 @@ def test_queue_worker_redis_responses(docker_network, docker_image, redis_client
 
         responses = response_iterator(redis_client, "response-queue")
 
+        # Discard the initial response -- depending on the speed of the test
+        # runner, the second response can come before we've had a chance to
+        # read it. This asserts a response happened, but not what it contains.
         response = next(responses)
-        assert response == {
-            "id": predict_id,
-            "input": {
-                "num": 42,
-            },
-            "response_queue": "response-queue",
-            "logs": "",
-            "output": None,
-            "status": "processing",
-            "started_at": mock.ANY,
-        }
 
         response = next(responses)
         assert response == {
