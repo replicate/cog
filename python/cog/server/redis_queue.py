@@ -368,7 +368,20 @@ class RedisQueueWorker:
         return resp.content
 
     def webhook_caller(self, webhook: str) -> Callable:
-        response_interval = float(os.environ.get("COG_THROTTLE_RESPONSE_INTERVAL", 0))
+        # Response throttling allows us to only send non-terminal
+        # responses at some interval, in order to alleviate the
+        # webhook traffic for chatty models. It's controlled from
+        # Redis so it can quickly be turned on and off. If the key
+        # "cog-throttle-response-interval" is not set, it defaults to
+        # 0 (no throttling).
+        response_interval_bytes = self.redis.get("cog-throttle-response-interval")
+        if response_interval_bytes:
+            try:
+                response_interval = int(response_interval_bytes.decode())
+            except ValueError:
+                response_interval = 0
+        else:
+            response_interval = 0
         throttler = ResponseThrottler(response_interval=response_interval)
 
         # This session will retry requests up to 12 times, with exponential
