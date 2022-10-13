@@ -285,6 +285,7 @@ class RedisQueueWorker:
         span.add_event("received first output")
 
         if self.runner.is_output_generator():
+            sys.stderr.write("expecting generator output")
             output = response["output"] = []
 
             while self.runner.is_processing():
@@ -338,8 +339,11 @@ class RedisQueueWorker:
             send_response(response)
 
         else:
+            sys.stderr.write("expecting single output")
             # just send logs until output ends
             while self.runner.is_processing():
+                sys.stderr.write("prediction is still processing")
+                time.sleep(0.1)
                 if should_cancel():
                     self.runner.cancel()
                     response["status"] = Status.CANCELED
@@ -351,6 +355,8 @@ class RedisQueueWorker:
                     response["logs"] += self.runner.read_logs()
                     send_response(response)
 
+            sys.stderr.write("prediction done processing")
+
             if self.runner.error() is not None:
                 response["status"] = Status.FAILED
                 response["error"] = str(self.runner.error())  # type: ignore
@@ -360,8 +366,10 @@ class RedisQueueWorker:
                 span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                 return
 
+            sys.stderr.write("about to read output")
             output = self.runner.read_output()
             assert len(output) == 1
+            sys.stderr.write("did read output")
 
             response["status"] = Status.SUCCEEDED
             completed_at = datetime.datetime.now()

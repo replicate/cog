@@ -272,7 +272,9 @@ class PredictionRunner:
             ) as span:
                 try:
                     with timeout(seconds=self.predict_timeout):
+                        print("about to run predict(...)", file=sys.stderr)
                         output = self.predictor.predict(**prediction_input)
+                        print("ran predict(...)", file=sys.stderr)
 
                         if isinstance(output, types.GeneratorType):
                             self.predictor_pipe_writer.send(self.OutputType.GENERATOR)
@@ -284,8 +286,13 @@ class PredictionRunner:
                                 except StopIteration:
                                     break
                         else:
+                            print("writing output type", file=sys.stderr)
                             self.predictor_pipe_writer.send(self.OutputType.SINGLE)
-                            self.predictor_pipe_writer.send(make_encodeable(output))
+                            print("encoding output", file=sys.stderr)
+                            to_send = make_encodeable(output)
+                            print("writing output", file=sys.stderr)
+                            self.predictor_pipe_writer.send(to_send)
+                            print("wrote output", file=sys.stderr)
                 except CancelPredictionException:
                     # we've been canceled, just stop and wait for cleanup
                     pass
@@ -295,6 +302,7 @@ class PredictionRunner:
                         traceback.print_exc()
                     self.error_pipe_writer.send(e)
 
+        print("all done", file=sys.stderr)
         self.done_pipe_writer.send(self.PROCESSING_DONE)
 
     def error(self) -> Optional[str]:
