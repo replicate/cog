@@ -6,6 +6,8 @@ import traceback
 import types
 from enum import Enum
 from multiprocessing.connection import Connection
+from multiprocessing import Queue
+from queue import Empty
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
@@ -74,15 +76,13 @@ class PredictionRunner:
             self.prediction_input_pipe_reader,
             self.prediction_input_pipe_writer,
         ) = multiprocessing.Pipe(duplex=False)
-        self.predictor_pipe_reader, self.predictor_pipe_writer = multiprocessing.Pipe(
-            duplex=False
-        )
         self.error_pipe_reader, self.error_pipe_writer = multiprocessing.Pipe(
             duplex=False
         )
         self.done_pipe_reader, self.done_pipe_writer = multiprocessing.Pipe(
             duplex=False
         )
+        self.predictor_queue = Queue()
         self.predict_timeout = predict_timeout
 
     def setup(self) -> None:
@@ -194,17 +194,17 @@ class PredictionRunner:
         return self._is_processing
 
     def has_output_waiting(self) -> bool:
-        return self.predictor_pipe_reader.poll()
+        return not self.predictor_queue.empty()
 
     def read_output(self) -> List[Any]:
         if self._is_output_generator is self.OutputType.NOT_STARTED:
             return []
 
         output = []
-        while self.has_output_waiting():
+        while True:
             try:
-                output.append(self.predictor_pipe_reader.recv())
-            except EOFError:
+                output.append(self.predictor_queue.get(False))
+            except (Empty, ValueError):  # Empty => queue empty, ValueError => queue closed.
                 break
         return output
 
@@ -226,11 +226,15 @@ class PredictionRunner:
         `None` if we don't know yet.
         """
         if self._is_output_generator is self.OutputType.NOT_STARTED:
-            if self.has_output_waiting():
-                # if there's output waiting use the first one to set whether
-                # we've got a generator, with a safety check
-                self._is_output_generator = self.predictor_pipe_reader.recv()
-                assert isinstance(self._is_output_generator, self.OutputType)
+            # use the first message on the queue to set whether we've got a
+            # generator, with a safety check
+            try:
+                msg = self.predictor_queue.get(False)
+            except Empty:
+                pass
+            else:
+                assert isinstance(msg, self.OutputType)
+                self._is_output_generator = msg
 
         if self._is_output_generator is self.OutputType.NOT_STARTED:
             return None
@@ -255,9 +259,9 @@ class PredictionRunner:
         """
         # Empty all the pipes before we start sending more messages to them
         drain_pipe(self.logs_pipe_reader)
-        drain_pipe(self.predictor_pipe_reader)
         drain_pipe(self.error_pipe_reader)
         drain_pipe(self.done_pipe_reader)
+        drain_queue(self.predictor_queue)
 
         def cancel(_signum: Any, _frame: Any) -> None:
             raise CancelPredictionException()
@@ -277,21 +281,21 @@ class PredictionRunner:
                         print("ran predict(...)", file=sys.stderr)
 
                         if isinstance(output, types.GeneratorType):
-                            self.predictor_pipe_writer.send(self.OutputType.GENERATOR)
+                            self.predictor_queue.put(self.OutputType.GENERATOR)
                             while True:
                                 try:
-                                    self.predictor_pipe_writer.send(
+                                    self.predictor_queue.put(
                                         make_encodeable(next(output))
                                     )
                                 except StopIteration:
                                     break
                         else:
                             print("writing output type", file=sys.stderr)
-                            self.predictor_pipe_writer.send(self.OutputType.SINGLE)
+                            self.predictor_queue.put(self.OutputType.SINGLE)
                             print("encoding output", file=sys.stderr)
                             to_send = make_encodeable(output)
                             print("writing output", file=sys.stderr)
-                            self.predictor_pipe_writer.send(to_send)
+                            self.predictor_queue.put(to_send)
                             print("wrote output", file=sys.stderr)
                 except CancelPredictionException:
                     # we've been canceled, just stop and wait for cleanup
@@ -342,4 +346,15 @@ def drain_pipe(pipe_reader: Connection) -> None:
         try:
             pipe_reader.recv()
         except EOFError:
+            break
+
+def drain_queue(queue: Queue) -> None:
+    """
+    Reads all available messages from a queue and discards them. This serves to
+    clear the queue for future usage.
+    """
+    while True:
+        try:
+            queue.get(False)
+        except Empty:
             break
