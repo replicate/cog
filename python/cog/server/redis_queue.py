@@ -338,19 +338,6 @@ class RedisQueueWorker:
             send_response(response)
 
         else:
-            # just send logs until output ends
-            while self.runner.is_processing():
-                if should_cancel():
-                    self.runner.cancel()
-                    response["status"] = Status.CANCELED
-                    response["completed_at"] = format_datetime(datetime.datetime.now())
-                    send_response(response)
-                    return
-
-                if self.runner.has_logs_waiting():
-                    response["logs"] += self.runner.read_logs()
-                    send_response(response)
-
             if self.runner.error() is not None:
                 response["status"] = Status.FAILED
                 response["error"] = str(self.runner.error())  # type: ignore
@@ -361,6 +348,8 @@ class RedisQueueWorker:
                 return
 
             output = self.runner.read_output()
+            while len(output) == 0:
+                output = self.runner.read_output()
             assert len(output) == 1
 
             response["status"] = Status.SUCCEEDED
