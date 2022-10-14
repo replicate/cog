@@ -262,6 +262,8 @@ class RedisQueueWorker:
 
         # just send logs until output starts
         while self.runner.is_processing() and not self.runner.has_output_waiting():
+            # TODO: restructure this to avoid the tight CPU-eating loop
+            # TODO: DRY this up
             if should_cancel():
                 self.runner.cancel()
                 response["status"] = Status.CANCELED
@@ -272,6 +274,15 @@ class RedisQueueWorker:
             if self.runner.has_logs_waiting():
                 response["logs"] += self.runner.read_logs()
                 send_response(response)
+
+            if not self.runner.is_alive():
+                response["status"] = Status.FAILED
+                response["error"] = "Prediction failed for an unknown reason. It might have run out of memory?"
+                response["completed_at"] = format_datetime(datetime.datetime.now())
+                send_response(response)
+                span.add_event(name="exception", attributes={"exception.type": "unhandled_error"})
+                span.set_status(TraceStatus(status_code=StatusCode.ERROR))
+                return
 
         if self.runner.error() is not None:
             response["status"] = Status.FAILED
@@ -315,6 +326,15 @@ class RedisQueueWorker:
                     # so we don't send a double message for final output, at
                     # the cost of extra latency
                     send_response(response)
+
+                if not self.runner.is_alive():
+                    response["status"] = Status.FAILED
+                    response["error"] = "Prediction failed for an unknown reason. It might have run out of memory?"
+                    response["completed_at"] = format_datetime(datetime.datetime.now())
+                    send_response(response)
+                    span.add_event(name="exception", attributes={"exception.type": "unhandled_error"})
+                    span.set_status(TraceStatus(status_code=StatusCode.ERROR))
+                    return
 
             if self.runner.error() is not None:
                 response["status"] = Status.FAILED

@@ -651,6 +651,118 @@ def test_queue_worker_error_after_output(
         # assert "Traceback (most recent call last):" in final_response["logs"]
 
 
+def test_queue_worker_unhandled_error(
+    docker_network, docker_image, redis_client, httpserver
+):
+    project_dir = Path(__file__).parent / "fixtures/unhandled-error-project"
+    subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
+
+    with docker_run(
+        image=docker_image,
+        interactive=True,
+        network=docker_network,
+        command=[
+            "python",
+            "-m",
+            "cog.server.redis_queue",
+            "redis",
+            "6379",
+            "predict-queue",
+            "",
+            "test-worker",
+            "model_id",
+            "logs",
+        ],
+    ):
+        predict_id = random_string(10)
+        webhook_url = httpserver.url_for("/webhook").replace(
+            "localhost", "host.docker.internal"
+        )
+
+        httpserver.expect_oneshot_request(
+            "/webhook",
+            json={
+                "id": predict_id,
+                "input": {
+                    "text": "bar",
+                },
+                "webhook": webhook_url,
+                "logs": "",
+                "output": None,
+                "status": "processing",
+                "started_at": mock.ANY,
+            },
+            method="POST",
+        )
+
+        # There's a timing issue with this test. Locally, this request doesn't
+        # make it, because the stack trace logs never come through. On GitHub
+        # actions, the stack trace logs *do* come through. Set up a request
+        # handler which can be, but does not have to be, called.
+        httpserver.expect_request(
+            "/webhook",
+            json={
+                "id": predict_id,
+                "input": {
+                    "text": "bar",
+                },
+                "webhook": webhook_url,
+                "logs": mock.ANY,  # includes a stack trace
+                "output": None,
+                "status": "processing",
+                "started_at": mock.ANY,
+            },
+            method="POST",
+        ).respond_with_data("OK")
+
+        final_response = None
+
+        def capture_final_response(request):
+            nonlocal final_response
+            final_response = request.get_json()
+
+        httpserver.expect_oneshot_request(
+            "/webhook",
+            json={
+                "id": predict_id,
+                "input": {
+                    "text": "bar",
+                },
+                "webhook": webhook_url,
+                "error": "Prediction failed for an unknown reason. It might have run out of memory?",
+                "logs": mock.ANY,  # might include a stack trace (see above)
+                "output": None,
+                "status": "failed",
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
+            },
+            method="POST",
+        ).respond_with_handler(capture_final_response)
+
+        redis_client.xgroup_create(
+            mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
+        )
+
+        with httpserver.wait(timeout=15) as waiting:
+            redis_client.xadd(
+                name="predict-queue",
+                fields={
+                    "value": json.dumps(
+                        {
+                            "id": predict_id,
+                            "input": {
+                                "text": "bar",
+                            },
+                            "webhook": webhook_url,
+                        }
+                    ),
+                },
+            )
+
+        # check we received all the webhooks
+        assert waiting.result
+
+
 def test_queue_worker_invalid_input(
     docker_network, docker_image, redis_client, httpserver
 ):
