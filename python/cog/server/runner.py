@@ -193,6 +193,13 @@ class PredictionRunner:
 
         return self._is_processing
 
+    def is_alive(self) -> bool:
+        """
+        Returns True if the subprocess running the prediction is still
+        alive, i.e. has not died of OOM or some other unhandled error.
+        """
+        return len(multiprocessing.active_children()) > 0
+
     def has_output_waiting(self) -> bool:
         return self.predictor_pipe_reader.poll()
 
