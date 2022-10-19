@@ -16,6 +16,8 @@ import contextlib
 from pydantic import ValidationError
 import redis
 import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 from ..predictor import BasePredictor, get_input_type, load_predictor, load_config
 from ..json import upload_files
@@ -179,6 +181,8 @@ class RedisQueueWorker:
                         f"Received message {message_id} on {self.input_queue}\n"
                     )
 
+                    should_cancel = self.cancelation_checker(message.get("cancel_key"))
+
                     # use the request message as the basis of our response so
                     # that we echo back any additional fields sent to us
                     response = message
@@ -189,7 +193,9 @@ class RedisQueueWorker:
                     cleanup_functions: List[Callable] = []
                     try:
                         start_time = time.time()
-                        self.handle_message(send_response, response, cleanup_functions)
+                        self.handle_message(
+                            send_response, response, cleanup_functions, should_cancel
+                        )
                         self.redis.xack(self.input_queue, self.input_queue, message_id)
                         self.redis.xdel(
                             self.input_queue, message_id
@@ -228,6 +234,7 @@ class RedisQueueWorker:
         send_response: Callable,
         response: Dict[str, Any],
         cleanup_functions: List[Callable],
+        should_cancel: Callable,
     ) -> None:
         span = trace.get_current_span()
 
@@ -257,9 +264,27 @@ class RedisQueueWorker:
 
         # just send logs until output starts
         while self.runner.is_processing() and not self.runner.has_output_waiting():
+            # TODO: restructure this to avoid the tight CPU-eating loop
+            # TODO: DRY this up
+            if should_cancel():
+                self.runner.cancel()
+                response["status"] = Status.CANCELED
+                response["completed_at"] = format_datetime(datetime.datetime.now())
+                send_response(response)
+                return
+
             if self.runner.has_logs_waiting():
                 response["logs"] += self.runner.read_logs()
                 send_response(response)
+
+            if not self.runner.is_alive():
+                response["status"] = Status.FAILED
+                response["error"] = "Prediction failed for an unknown reason. It might have run out of memory?"
+                response["completed_at"] = format_datetime(datetime.datetime.now())
+                send_response(response)
+                span.add_event(name="exception", attributes={"exception.type": "unhandled_error"})
+                span.set_status(TraceStatus(status_code=StatusCode.ERROR))
+                return
 
         if self.runner.error() is not None:
             response["status"] = Status.FAILED
@@ -277,6 +302,13 @@ class RedisQueueWorker:
 
             while self.runner.is_processing():
                 # TODO: restructure this to avoid the tight CPU-eating loop
+                if should_cancel():
+                    self.runner.cancel()
+                    response["status"] = Status.CANCELED
+                    response["completed_at"] = format_datetime(datetime.datetime.now())
+                    send_response(response)
+                    return
+
                 if self.runner.has_output_waiting() or self.runner.has_logs_waiting():
                     # Object has already passed through `make_encodeable()` in the Runner, so all we need to do here is upload the files
                     new_output = [
@@ -296,6 +328,15 @@ class RedisQueueWorker:
                     # so we don't send a double message for final output, at
                     # the cost of extra latency
                     send_response(response)
+
+                if not self.runner.is_alive():
+                    response["status"] = Status.FAILED
+                    response["error"] = "Prediction failed for an unknown reason. It might have run out of memory?"
+                    response["completed_at"] = format_datetime(datetime.datetime.now())
+                    send_response(response)
+                    span.add_event(name="exception", attributes={"exception.type": "unhandled_error"})
+                    span.set_status(TraceStatus(status_code=StatusCode.ERROR))
+                    return
 
             if self.runner.error() is not None:
                 response["status"] = Status.FAILED
@@ -319,12 +360,6 @@ class RedisQueueWorker:
             send_response(response)
 
         else:
-            # just send logs until output ends
-            while self.runner.is_processing():
-                if self.runner.has_logs_waiting():
-                    response["logs"] += self.runner.read_logs()
-                    send_response(response)
-
             if self.runner.error() is not None:
                 response["status"] = Status.FAILED
                 response["error"] = str(self.runner.error())  # type: ignore
@@ -335,6 +370,8 @@ class RedisQueueWorker:
                 return
 
             output = self.runner.read_output()
+            while len(output) == 0:
+                output = self.runner.read_output()
             assert len(output) == 1
 
             response["status"] = Status.SUCCEEDED
@@ -356,9 +393,29 @@ class RedisQueueWorker:
         response_interval = float(os.environ.get("COG_THROTTLE_RESPONSE_INTERVAL", 0))
         throttler = ResponseThrottler(response_interval=response_interval)
 
+        # This session will retry requests up to 12 times, with exponential
+        # backoff. In total it'll try for up to roughly 320 seconds, providing
+        # resilience through temporary networking and availability issues.
+        session = requests.Session()
+        adapter = HTTPAdapter(
+            max_retries=Retry(
+                total=12,
+                backoff_factor=0.1,
+                status_forcelist=[429, 500, 502, 503, 504],
+                allowed_methods=["POST"],
+            )
+        )
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+
         def caller(response: Any) -> None:
             if throttler.should_send_response(response):
-                requests.post(webhook, json=response)
+                if Status.is_terminal(response["status"]):
+                    # For terminal updates, retry persistently
+                    session.post(webhook, json=response)
+                else:
+                    # For other requests, don't retry
+                    requests.post(webhook, json=response)
                 throttler.update_last_sent_response_time()
 
         return caller
@@ -368,6 +425,12 @@ class RedisQueueWorker:
             self.redis.set(redis_key, json.dumps(response))
 
         return setter
+
+    def cancelation_checker(self, redis_key: str) -> Callable:
+        def checker() -> bool:
+            return redis_key is not None and self.redis.exists(redis_key) > 0
+
+        return checker
 
     def upload_files(self, obj: Any) -> Any:
         def upload_file(fh: io.IOBase) -> str:

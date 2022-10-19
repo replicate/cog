@@ -1,3 +1,4 @@
+import sys
 import multiprocessing
 import os
 import signal
@@ -50,6 +51,10 @@ class timeout:
     def __exit__(self, type: Any, value: Any, traceback: Any) -> None:
         if self.seconds is not None:
             signal.alarm(0)
+
+
+class CancelPredictionException(Exception):
+    pass
 
 
 class PredictionRunner:
@@ -188,6 +193,13 @@ class PredictionRunner:
 
         return self._is_processing
 
+    def is_alive(self) -> bool:
+        """
+        Returns True if the subprocess running the prediction is still
+        alive, i.e. has not died of OOM or some other unhandled error.
+        """
+        return len(multiprocessing.active_children()) > 0
+
     def has_output_waiting(self) -> bool:
         return self.predictor_pipe_reader.poll()
 
@@ -254,6 +266,11 @@ class PredictionRunner:
         drain_pipe(self.error_pipe_reader)
         drain_pipe(self.done_pipe_reader)
 
+        def cancel(_signum: Any, _frame: Any) -> None:
+            raise CancelPredictionException()
+
+        signal.signal(signal.SIGUSR1, cancel)
+
         with capture_log(self.logs_pipe_writer):
             tracer = trace.get_tracer("cog")
             with tracer.start_as_current_span(
@@ -276,6 +293,9 @@ class PredictionRunner:
                         else:
                             self.predictor_pipe_writer.send(self.OutputType.SINGLE)
                             self.predictor_pipe_writer.send(make_encodeable(output))
+                except CancelPredictionException:
+                    # we've been canceled, just stop and wait for cleanup
+                    pass
                 except Exception as e:
                     # if it timed out there's no stack trace
                     if type(e) != TimeoutError:
@@ -303,6 +323,13 @@ class PredictionRunner:
         """
         self.prediction_input_pipe_writer.send(PredictionRunner.EXIT_SENTINEL)
         self.predictor_process.join()
+
+    def cancel(self) -> None:
+        """
+        Cancel the active prediction.
+        """
+        print("Caught cancel signal, exiting", file=sys.stderr)
+        os.kill(self.predictor_process.pid, signal.SIGUSR1)  # type: ignore
 
 
 def drain_pipe(pipe_reader: Connection) -> None:
