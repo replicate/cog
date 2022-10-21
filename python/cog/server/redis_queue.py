@@ -282,6 +282,7 @@ class RedisQueueWorker:
                 send_response(response)
                 span.add_event(name="exception", attributes={"exception.type": "unhandled_error"})
                 span.set_status(TraceStatus(status_code=StatusCode.ERROR))
+                self.should_exit = True
                 return
 
         if self.runner.error() is not None:
@@ -334,6 +335,7 @@ class RedisQueueWorker:
                     send_response(response)
                     span.add_event(name="exception", attributes={"exception.type": "unhandled_error"})
                     span.set_status(TraceStatus(status_code=StatusCode.ERROR))
+                    self.should_exit = True
                     return
 
             if self.runner.error() is not None:
