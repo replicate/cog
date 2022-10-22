@@ -51,6 +51,7 @@ class RedisQueueWorker:
         model_id: Optional[str] = None,
         log_queue: Optional[str] = None,
         predict_timeout: Optional[int] = None,
+        redis_username: Optional[str] = None,
         redis_password: Optional[str] = None,
         redis_db: int = 0,
     ):
@@ -63,6 +64,7 @@ class RedisQueueWorker:
         self.model_id = model_id
         self.log_queue = log_queue
         self.predict_timeout = predict_timeout
+        self.redis_username = redis_username
         self.redis_password = redis_password
         self.redis_db = redis_db
         if self.predict_timeout is not None:
@@ -78,6 +80,14 @@ class RedisQueueWorker:
         self.redis = redis.Redis(
             host=self.redis_host, port=self.redis_port, db=self.redis_db, password=self.redis_password
         )
+
+        if redis_username is not None and redis_password is not None:
+            self.redis_url = f"redis://[[{self.redis_username}]:[{self.redis_password}]]@{self.redis_host}:{self.redis_port}/{self.redis_db}"
+        else:
+            self.redis_url = f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
+
+        self.redis = redis.Redis(from_url=self.redis_url)
+
         self.should_exit = False
         self.setup_time_queue = input_queue + self.SETUP_TIME_QUEUE_SUFFIX
         self.predict_time_queue = input_queue + self.RUN_TIME_QUEUE_SUFFIX
@@ -479,7 +489,6 @@ def ensure_trailing_slash(url: str) -> str:
     else:
         return url + "/"
 
-
 def _queue_worker_from_argv(
     predictor: BasePredictor,
     redis_host: str,
@@ -490,6 +499,9 @@ def _queue_worker_from_argv(
     model_id: str,
     log_queue: str,
     predict_timeout: Optional[str] = None,
+    redis_username: Optional[str] = None,
+    redis_password: Optional[str] = None,
+    redis_db: int = 0,
 ) -> RedisQueueWorker:
     """
     Construct a RedisQueueWorker object from sys.argv, taking into account optional arguments and types.
@@ -510,6 +522,9 @@ def _queue_worker_from_argv(
         model_id,
         log_queue,
         predict_timeout_int,
+        redis_username,
+        redis_password,
+        redis_db
     )
 
 
