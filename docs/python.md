@@ -2,7 +2,7 @@
 
 This document defines the API of the `cog` Python module, which is used to define the interface for running predictions on your model.
 
-Tip: Run [`cog init`](getting-started-own-model#initialization) to generate an annotated `predict.py` file that can be used as a starting point for setting up your model.
+Tip: Run [`cog init`](getting-started-own-model.md#initialization) to generate an annotated `predict.py` file that can be used as a starting point for setting up your model.
 
 ## Contents
 
