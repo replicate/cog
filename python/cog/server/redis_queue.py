@@ -8,6 +8,7 @@ import sys
 import time
 import traceback
 import types
+from argparse import ArgumentParser
 from mimetypes import guess_type
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -457,5 +458,37 @@ if __name__ == "__main__":
     config = load_config()
     predictor_ref = get_predictor_ref(config)
 
-    worker = _queue_worker_from_argv(predictor_ref, *sys.argv[1:])
+    parser = ArgumentParser()
+
+    # accept positional arguments for backwards compatibility
+    # TODO remove this in a future version of Cog
+    parser.add_argument("positional_args", nargs="*")
+
+    parser.add_argument("--redis-host")
+    parser.add_argument("--redis-port", type=int)
+    parser.add_argument("--input-queue")
+    parser.add_argument("--upload-url")
+    parser.add_argument("--consumer-id")
+    parser.add_argument("--model-id")
+    parser.add_argument("--predict-timeout", type=int)
+
+    args = parser.parse_args()
+
+    if len(args.positional_args) > 0:
+        sys.stderr.write(
+            "Positional arguments for queue worker are deprecated. Switch to flag arguments."
+        )
+        worker = _queue_worker_from_argv(predictor_ref, *args.positional_args)
+    else:
+        worker = RedisQueueWorker(
+            predictor_ref=predictor_ref,
+            redis_host=args.redis_host,
+            redis_port=args.redis_port,
+            input_queue=args.input_queue,
+            upload_url=args.upload_url,
+            consumer_id=args.consumer_id,
+            model_id=args.model_id,
+            predict_timeout=args.predict_timeout,
+        )
+
     worker.start()
