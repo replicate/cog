@@ -15,7 +15,7 @@ func testInstallCog(relativeTmpDir string) string {
 RUN --mount=type=cache,target=/root/.cache/pip pip install /tmp/cog-0.0.1.dev-py3-none-any.whl`, relativeTmpDir)
 }
 
-func testInstallPython(version string) string {
+func testInstallPython(version string, opensslPackage string) string {
 	return fmt.Sprintf(`ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy --no-install-recommends \
 	make \
@@ -34,7 +34,7 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get insta
 	tk-dev \
 	libffi-dev \
 	liblzma-dev \
-	python-openssl \
+	%s \
 	git \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
@@ -43,7 +43,7 @@ RUN curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
 	pip install "wheel<1"
-`, version, version)
+`, opensslPackage, version, version)
 }
 
 func TestGenerateEmptyCPU(t *testing.T) {
@@ -101,7 +101,74 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia
 RUN rm -f /etc/apt/sources.list.d/cuda.list && \
     rm -f /etc/apt/sources.list.d/nvidia-ml.list && \
     apt-key del 7fa2af80
-` + testInstallPython("3.8") + testInstallCog(gen.relativeTmpDir) + `
+` + testInstallPython("3.8", "python-openssl") + testInstallCog(gen.relativeTmpDir) + `
+WORKDIR /src
+EXPOSE 5000
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`
+
+	require.Equal(t, expected, actual)
+}
+
+func TestGenerateUbuntu2004GPU(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "test")
+	require.NoError(t, err)
+
+	conf, err := config.FromYAML([]byte(`
+build:
+  gpu: true
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndCompleteConfig())
+	gen, err := NewGenerator(conf, tmpDir)
+	require.NoError(t, err)
+	actual, err := gen.Generate()
+	require.NoError(t, err)
+
+	expected := `# syntax = docker/dockerfile:1.2
+FROM nvidia/cuda:11.2.0-cudnn8-devel-ubuntu20.04
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+RUN rm -f /etc/apt/sources.list.d/cuda.list && \
+    rm -f /etc/apt/sources.list.d/nvidia-ml.list && \
+    apt-key del 7fa2af80
+` + testInstallPython("3.8", "python-openssl") + testInstallCog(gen.relativeTmpDir) + `
+WORKDIR /src
+EXPOSE 5000
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`
+
+	require.Equal(t, expected, actual)
+}
+
+func TestGenerateUbuntu2204GPU(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "test")
+	require.NoError(t, err)
+
+	conf, err := config.FromYAML([]byte(`
+build:
+  gpu: true
+  cuda: "11.7.1"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndCompleteConfig())
+	gen, err := NewGenerator(conf, tmpDir)
+	require.NoError(t, err)
+	actual, err := gen.Generate()
+	require.NoError(t, err)
+
+	expected := `# syntax = docker/dockerfile:1.2
+FROM nvidia/cuda:11.7.1-cudnn8-devel-ubuntu22.04
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+RUN rm -f /etc/apt/sources.list.d/cuda.list && \
+    rm -f /etc/apt/sources.list.d/nvidia-ml.list && \
+    apt-key del 7fa2af80
+` + testInstallPython("3.8", "python3-openssl") + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -184,7 +251,7 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia
 RUN rm -f /etc/apt/sources.list.d/cuda.list && \
     rm -f /etc/apt/sources.list.d/nvidia-ml.list && \
     apt-key del 7fa2af80
-` + testInstallPython("3.8") +
+` + testInstallPython("3.8", "python-openssl") +
 		testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=cache,target=/root/.cache/pip pip install   torch==1.5.1 pandas==1.2.0.12
