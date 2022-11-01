@@ -122,6 +122,17 @@ def test_json_output_numpy():
     assert resp.json() == {"output": 1.0, "status": "succeeded"}
 
 
+def test_numpy_ndarray_output():
+    class Predictor(BasePredictor):
+        def predict(self) -> np.ndarray:
+            return np.array([[1, 2], [3, 4]])
+
+    client = make_client(Predictor())
+    resp = client.post("/predictions")
+    assert resp.status_code == 200
+    assert resp.json() == {"output": [[1, 2], [3, 4]], "status": "success"}
+
+
 def test_complex_output():
     class Output(BaseModel):
         text: str

@@ -2,6 +2,7 @@ import base64
 import os
 import tempfile
 
+import numpy as np
 from PIL import Image
 from pydantic import BaseModel
 import responses
@@ -279,3 +280,14 @@ def test_choices_int():
     assert resp.status_code == 200
     resp = client.post("/predictions", json={"input": {"x": 3}})
     assert resp.status_code == 422
+
+
+def test_numpy_ndarray_input():
+    class Predictor(BasePredictor):
+        def predict(self, array: np.ndarray):
+            assert array == np.array([[1, 2], [3, 4]])
+
+    client = make_client(Predictor())
+    resp = client.post("/predictions", json={"input": [[1, 2], [3, 4]]})
+    assert resp.status_code == 200
+    assert resp.json() == {"output": None, "status": "success"}
