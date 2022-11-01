@@ -8,7 +8,7 @@ import subprocess
 import time
 import unittest.mock as mock
 
-from .util import docker_run, random_string
+from .util import docker_run, docker_is_alive, random_string
 
 
 @pytest.fixture(scope="session")
@@ -1684,6 +1684,37 @@ def test_queue_worker_setup(docker_network, docker_image, redis_client, httpserv
             name="predict-queue", groupname="predict-queue"
         )["pending"]
         assert predictions_in_progress == 1
+
+
+def test_queue_worker_setup_fails(
+    docker_network, docker_image, redis_client, httpserver
+):
+    project_dir = Path(__file__).parent / "fixtures/failing-setup-project"
+    subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
+
+    with docker_run(
+        image=docker_image,
+        interactive=True,
+        network=docker_network,
+        command=[
+            "python",
+            "-m",
+            "cog.server.redis_queue",
+            "redis",
+            "6379",
+            "predict-queue",
+            "",
+            "test-worker",
+            "model_id",
+            "logs",
+        ],
+    ) as container_name:
+
+        start = time.time()
+        while docker_is_alive(container_name) and time.time() - start < 5:
+            time.sleep(0.1)
+
+        assert not docker_is_alive(container_name)
 
 
 def test_queue_worker_webhook_retries(

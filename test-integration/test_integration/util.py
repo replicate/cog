@@ -32,6 +32,16 @@ def random_string(length):
     return "".join(random.choice(string.ascii_lowercase) for i in range(length))
 
 
+def docker_is_alive(container_name):
+    try:
+        output = subprocess.check_output(
+            ["docker", "inspect", "-f", "'{{.State.Running}}'", container_name]
+        ).trim()
+        return output == "true"
+    except subprocess.CalledProcessError:
+        return False
+
+
 @contextmanager
 def docker_run(
     image,
@@ -73,6 +83,6 @@ def docker_run(
         cmd += command
     try:
         subprocess.Popen(cmd)
-        yield
+        yield name
     finally:
         subprocess.Popen(["docker", "rm", "--force", name]).wait()
