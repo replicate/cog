@@ -181,7 +181,6 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get insta
 	tk-dev \
 	libffi-dev \
 	liblzma-dev \
-	python-openssl \
 	git \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
