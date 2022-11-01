@@ -2,6 +2,7 @@ import sys
 import multiprocessing
 import os
 import signal
+import time
 import traceback
 import types
 from enum import Enum
@@ -107,9 +108,10 @@ class PredictionRunner:
         self._is_processing = True
         self.predictor_process.start()
 
-        # poll with an infinite timeout to avoid burning resources in the loop
-        while self.done_pipe_reader.poll(timeout=None) and self.is_processing():
-            pass
+        while self.is_processing():
+            if not self.is_alive():
+                raise RuntimeError("Predictor process died unexpectedly during setup")
+            time.sleep(0.1)
 
     def _start_predictor_process(self, span_context: SpanContext = None) -> None:
         # Enable OpenTelemetry if the env vars are present. If this block isn't
