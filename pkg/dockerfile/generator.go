@@ -63,7 +63,7 @@ func (g *Generator) GenerateBase() (string, error) {
 	}
 	installPython := ""
 	if g.Config.Build.GPU {
-		installPython, err = g.installPython()
+		installPython, err = g.installPythonCUDA()
 		if err != nil {
 			return "", err
 		}
@@ -158,7 +158,7 @@ func (g *Generator) aptInstalls() (string, error) {
 		" && rm -rf /var/lib/apt/lists/*", nil
 }
 
-func (g *Generator) installPython() (string, error) {
+func (g *Generator) installPythonCUDA() (string, error) {
 	// TODO: check that python version is valid
 
 	py := g.Config.Build.PythonVersion
