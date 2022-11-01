@@ -63,7 +63,7 @@ func (g *Generator) GenerateBase() (string, error) {
 	}
 	installPython := ""
 	if g.Config.Build.GPU {
-		installPython, err = g.installPythonCUDA(baseImage)
+		installPython, err = installPythonCUDA(g.Config.Build.PythonVersion)
 		if err != nil {
 			return "", err
 		}
@@ -158,30 +158,10 @@ func (g *Generator) aptInstalls() (string, error) {
 		" && rm -rf /var/lib/apt/lists/*", nil
 }
 
-func ubuntuVersionFromCudaContainer(containerImage string) string {
-	parts := strings.Split(containerImage, "-")
-	if len(parts) < 1 {
-		return "unknown"
-	}
-	version := parts[len(parts)-1]
-
-	if strings.HasPrefix(version, "ubuntu") {
-		return version[6:]
-	}
-	return "unknown"
-}
-
-func (g *Generator) installPythonCUDA(baseImage string) (string, error) {
+func installPythonCUDA(pythonVersion string) (string, error) {
 	// TODO: check that python version is valid
 
-	py := g.Config.Build.PythonVersion
-
-	opensslPackage := "python-openssl"
-	if ubuntuVersionFromCudaContainer(baseImage) == "22.04" {
-		opensslPackage = "python3-openssl"
-	}
-
-	return fmt.Sprintf(`ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
+	return `ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy --no-install-recommends \
 	make \
 	build-essential \
@@ -199,15 +179,14 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get insta
 	tk-dev \
 	libffi-dev \
 	liblzma-dev \
-	%s \
 	git \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
-`, opensslPackage) + fmt.Sprintf(`RUN curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash && \
+` + fmt.Sprintf(`RUN curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash && \
 	git clone https://github.com/momo-lab/pyenv-install-latest.git "$(pyenv root)"/plugins/pyenv-install-latest && \
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
-	pip install "wheel<1"`, py, py), nil
+	pip install "wheel<1"`, pythonVersion, pythonVersion), nil
 }
 
 func (g *Generator) installCog() (string, error) {
