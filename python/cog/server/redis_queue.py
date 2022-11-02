@@ -3,15 +3,12 @@ import io
 import json
 import os
 from mimetypes import guess_type
-from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 import signal
 import sys
 import traceback
 import time
-import types
-import contextlib
 
 from pydantic import ValidationError
 import redis
@@ -19,9 +16,16 @@ import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
-from ..predictor import BasePredictor, get_input_type, load_predictor, load_config
+from ..predictor import (
+    BasePredictor,
+    get_input_type,
+    get_output_type,
+    load_predictor,
+    load_config,
+)
+from ..prediction import BasePrediction, Metrics, get_prediction_type, Status
 from ..json import upload_files
-from ..response import Status
+from ..response import get_response_type
 from .runner import PredictionRunner
 from ..files import guess_filename
 from .response_throttler import ResponseThrottler
@@ -72,6 +76,8 @@ class RedisQueueWorker:
 
         # Set up types
         self.InputType = get_input_type(predictor)
+        self.OutputType = get_output_type(predictor)
+        self.Prediction = get_prediction_type(self.InputType, self.OutputType)
 
         self.redis = redis.Redis(
             host=self.redis_host, port=self.redis_port, db=self.redis_db
@@ -149,16 +155,26 @@ class RedisQueueWorker:
                     continue
 
                 time_in_queue = calculate_time_in_queue(message_id)  # type: ignore
-                message = json.loads(message_json)
+                try:
+                    prediction = self.Prediction(**json.loads(message_json))
+                except ValidationError as e:
+                    tb = traceback.format_exc()
+                    sys.stderr.write(tb)
+                    prediction.status = Status.FAILED
+                    prediction.error = str(e)
+                    send_response(prediction)
+                    span.record_exception(e)
+                    span.set_status(TraceStatus(status_code=StatusCode.ERROR))
+                    return
 
                 # Check whether the incoming message includes details of an
                 # OpenTelemetry trace, to make distributed tracing work. The
                 # value should look like:
                 #
                 #     00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
-                if "traceparent" in message:
+                if prediction.traceparent is not None:
                     context = TraceContextTextMapPropagator().extract(
-                        {"traceparent": message["traceparent"]}
+                        {"traceparent": prediction.traceparent}
                     )
                 else:
                     context = None
@@ -168,31 +184,23 @@ class RedisQueueWorker:
                     context=context,
                     attributes={"time_in_queue": time_in_queue},
                 ) as span:
-                    webhook = message.get("webhook")
-                    if webhook is not None:
-                        send_response = self.webhook_caller(webhook)
-                    else:
-                        redis_key = message["response_queue"]
-                        send_response = self.redis_setter(redis_key)
-
+                    send_response = self.webhook_caller(prediction.webhook)
                     sys.stderr.write(
                         f"Received message {message_id} on {self.input_queue}\n"
                     )
 
-                    should_cancel = self.cancelation_checker(message.get("cancel_key"))
+                    # TODO: move to extensions
+                    should_cancel = self.cancelation_checker(prediction.cancel_key)
 
-                    # use the request message as the basis of our response so
-                    # that we echo back any additional fields sent to us
-                    response = message
-                    response["status"] = Status.PROCESSING
-                    response["output"] = None
-                    response["logs"] = ""
+                    prediction.status = Status.PROCESSING
+                    prediction.output = None
+                    prediction.logs = ""
 
                     cleanup_functions: List[Callable] = []
                     try:
                         start_time = time.time()
                         self.handle_message(
-                            send_response, response, cleanup_functions, should_cancel
+                            send_response, prediction, cleanup_functions, should_cancel
                         )
                         self.redis.xack(self.input_queue, self.input_queue, message_id)
                         self.redis.xdel(
@@ -206,12 +214,10 @@ class RedisQueueWorker:
                         )
                         sys.stderr.write(f"Run time for {message_id}: {run_time:.2f}\n")
                     except Exception as e:
-                        response["status"] = Status.FAILED
-                        response["error"] = str(e)
-                        response["completed_at"] = format_datetime(
-                            datetime.datetime.now()
-                        )
-                        send_response(response)
+                        prediction.status = Status.FAILED
+                        prediction.error = str(e)
+                        prediction.completed_at = datetime.datetime.now()
+                        send_response(prediction)
                         self.redis.xack(self.input_queue, self.input_queue, message_id)
                         self.redis.xdel(self.input_queue, message_id)
                     finally:
@@ -230,35 +236,21 @@ class RedisQueueWorker:
     def handle_message(
         self,
         send_response: Callable,
-        response: Dict[str, Any],
+        prediction: BasePrediction,
         cleanup_functions: List[Callable],
         should_cancel: Callable,
     ) -> None:
         span = trace.get_current_span()
 
         started_at = datetime.datetime.now()
+        cleanup_functions.append(prediction.input.cleanup)
 
-        try:
-            input_obj = self.InputType(**response["input"])
-        except ValidationError as e:
-            tb = traceback.format_exc()
-            sys.stderr.write(tb)
-            response["status"] = Status.FAILED
-            response["error"] = str(e)
-            send_response(response)
-            span.record_exception(e)
-            span.set_status(TraceStatus(status_code=StatusCode.ERROR))
-            return
+        self.runner.run(**prediction.input.dict())
 
-        cleanup_functions.append(input_obj.cleanup)
+        prediction.started_at = started_at
+        prediction.logs = ""
 
-        self.runner.run(**input_obj.dict())
-
-        response["started_at"] = format_datetime(started_at)
-
-        response["logs"] = ""
-
-        send_response(response)
+        send_response(prediction)
 
         # just send logs until output starts
         while self.runner.is_processing() and not self.runner.has_output_waiting():
@@ -266,30 +258,32 @@ class RedisQueueWorker:
             # TODO: DRY this up
             if should_cancel():
                 self.runner.cancel()
-                response["status"] = Status.CANCELED
-                response["completed_at"] = format_datetime(datetime.datetime.now())
-                send_response(response)
+                prediction.status = Status.CANCELED
+                prediction.completed_at = datetime.datetime.now()
+                send_response(prediction)
                 return
 
             if self.runner.has_logs_waiting():
-                response["logs"] += self.runner.read_logs()
-                send_response(response)
+                prediction.logs += self.runner.read_logs()
+                send_response(prediction)
 
             if not self.runner.is_alive():
-                response["status"] = Status.FAILED
-                response["error"] = "Prediction failed for an unknown reason. It might have run out of memory?"
-                response["completed_at"] = format_datetime(datetime.datetime.now())
-                send_response(response)
-                span.add_event(name="exception", attributes={"exception.type": "unhandled_error"})
+                prediction.status = Status.FAILED
+                prediction.error = "Prediction failed for an unknown reason. It might have run out of memory?"
+                prediction.completed_at = datetime.datetime.now()
+                send_response(prediction)
+                span.add_event(
+                    name="exception", attributes={"exception.type": "unhandled_error"}
+                )
                 span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                 self.should_exit = True
                 return
 
         if self.runner.error() is not None:
-            response["status"] = Status.FAILED
-            response["error"] = str(self.runner.error())  # type: ignore
-            response["completed_at"] = format_datetime(datetime.datetime.now())
-            send_response(response)
+            prediction.status = Status.FAILED
+            prediction.error = str(self.runner.error())  # type: ignore
+            prediction.completed_at = datetime.datetime.now()
+            send_response(prediction)
             span.record_exception(self.runner.error())
             span.set_status(TraceStatus(status_code=StatusCode.ERROR))
             return
@@ -297,15 +291,15 @@ class RedisQueueWorker:
         span.add_event("received first output")
 
         if self.runner.is_output_generator():
-            output = response["output"] = []
+            output = prediction.output = []
 
             while self.runner.is_processing():
                 # TODO: restructure this to avoid the tight CPU-eating loop
                 if should_cancel():
                     self.runner.cancel()
-                    response["status"] = Status.CANCELED
-                    response["completed_at"] = format_datetime(datetime.datetime.now())
-                    send_response(response)
+                    prediction.status = Status.CANCELED
+                    prediction.completed_at = datetime.datetime.now()
+                    send_response(prediction)
                     return
 
                 if self.runner.has_output_waiting() or self.runner.has_logs_waiting():
@@ -320,51 +314,54 @@ class RedisQueueWorker:
                         continue
 
                     output.extend(new_output)
-                    response["logs"] += new_logs
+                    prediction.logs += new_logs
 
                     # we could `time.sleep(0.1)` and check `is_processing()`
                     # here to give the predictor subprocess a chance to exit
                     # so we don't send a double message for final output, at
                     # the cost of extra latency
-                    send_response(response)
+                    send_response(prediction)
 
                 if not self.runner.is_alive():
-                    response["status"] = Status.FAILED
-                    response["error"] = "Prediction failed for an unknown reason. It might have run out of memory?"
-                    response["completed_at"] = format_datetime(datetime.datetime.now())
-                    send_response(response)
-                    span.add_event(name="exception", attributes={"exception.type": "unhandled_error"})
+                    prediction.status = Status.FAILED
+                    prediction.error = "Prediction failed for an unknown reason. It might have run out of memory?"
+                    prediction.completed_at = datetime.datetime.now()
+                    send_response(prediction)
+                    span.add_event(
+                        name="exception",
+                        attributes={"exception.type": "unhandled_error"},
+                    )
                     span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                     self.should_exit = True
                     return
 
             if self.runner.error() is not None:
-                response["status"] = Status.FAILED
-                response["error"] = str(self.runner.error())  # type: ignore
-                response["completed_at"] = format_datetime(datetime.datetime.now())
-                send_response(response)
+                prediction.status = Status.FAILED
+                prediction.error = str(self.runner.error())  # type: ignore
+                prediction.completed_at = datetime.datetime.now()
+                send_response(prediction)
                 span.record_exception(self.runner.error())
                 span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                 return
 
             span.add_event("received final output")
 
-            response["status"] = Status.SUCCEEDED
+            prediction.status = Status.SUCCEEDED
             completed_at = datetime.datetime.now()
-            response["completed_at"] = format_datetime(completed_at)
-            response["metrics"] = {
-                "predict_time": (completed_at - started_at).total_seconds()
-            }
+            prediction.completed_at = datetime.datetime.now()
+            prediction.metrics = Metrics(
+                predict_time=(prediction.completed_at - started_at).total_seconds()
+            )
             output.extend(self.upload_files(o) for o in self.runner.read_output())
-            response["logs"] += self.runner.read_logs()
-            send_response(response)
+            prediction.logs += self.runner.read_logs()
+            send_response(prediction)
 
         else:
             if self.runner.error() is not None:
-                response["status"] = Status.FAILED
-                response["error"] = str(self.runner.error())  # type: ignore
-                response["completed_at"] = format_datetime(datetime.datetime.now())
-                send_response(response)
+                prediction.status = Status.FAILED
+                prediction.error = str(self.runner.error())  # type: ignore
+                prediction.completed_at = datetime.datetime.now()
+                send_response(prediction)
                 span.record_exception(self.runner.error())
                 span.set_status(TraceStatus(status_code=StatusCode.ERROR))
                 return
@@ -374,15 +371,14 @@ class RedisQueueWorker:
                 output = self.runner.read_output()
             assert len(output) == 1
 
-            response["status"] = Status.SUCCEEDED
-            completed_at = datetime.datetime.now()
-            response["completed_at"] = format_datetime(completed_at)
-            response["metrics"] = {
-                "predict_time": (completed_at - started_at).total_seconds()
-            }
-            response["output"] = self.upload_files(output[0])
-            response["logs"] += self.runner.read_logs()
-            send_response(response)
+            prediction.status = Status.SUCCEEDED
+            prediction.completed_at = datetime.datetime.now()
+            prediction.metrics = Metrics(
+                predict_time=(prediction.completed_at - started_at).total_seconds()
+            )
+            prediction.output = self.upload_files(output[0])
+            prediction.logs += self.runner.read_logs()
+            send_response(prediction)
 
     def download(self, url: str) -> bytes:
         resp = requests.get(url)
@@ -408,9 +404,13 @@ class RedisQueueWorker:
         session.mount("http://", adapter)
         session.mount("https://", adapter)
 
-        def caller(response: Any) -> None:
-            if throttler.should_send_response(response):
-                if Status.is_terminal(response["status"]):
+        def caller(prediction: BasePrediction) -> None:
+            if throttler.should_send_response(prediction):
+                response = prediction.json(exclude_none=True)
+                print(response)
+                if prediction.status is not None and Status.is_terminal(
+                    prediction.status
+                ):
                     # For terminal updates, retry persistently
                     session.post(webhook, json=response)
                 else:
