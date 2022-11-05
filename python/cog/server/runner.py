@@ -120,6 +120,11 @@ class PredictionRunner:
             span_processor = BatchSpanProcessor(OTLPSpanExporter())
             trace.get_tracer_provider().add_span_processor(span_processor)
 
+        def cancel(_signum: Any, _frame: Any) -> None:
+            raise CancelPredictionException()
+
+        signal.signal(signal.SIGUSR1, cancel)
+
         tracer = trace.get_tracer("cog")
         with tracer.start_as_current_span(
             name="PredictionRunner._start_predictor_process",
@@ -144,8 +149,14 @@ class PredictionRunner:
                     prediction_input=message["prediction_input"],
                     span_context=message["span_context"],
                 )
+
             except EOFError:
                 continue
+            except CancelPredictionException:
+                # we've been canceled, just stop and wait for cleanup
+                pass
+
+            self.done_pipe_writer.send(self.PROCESSING_DONE)
 
     def run(self, **prediction_input: Dict[str, Any]) -> None:
         """
@@ -266,11 +277,6 @@ class PredictionRunner:
         drain_pipe(self.error_pipe_reader)
         drain_pipe(self.done_pipe_reader)
 
-        def cancel(_signum: Any, _frame: Any) -> None:
-            raise CancelPredictionException()
-
-        signal.signal(signal.SIGUSR1, cancel)
-
         with capture_log(self.logs_pipe_writer):
             tracer = trace.get_tracer("cog")
             with tracer.start_as_current_span(
@@ -294,15 +300,13 @@ class PredictionRunner:
                             self.predictor_pipe_writer.send(self.OutputType.SINGLE)
                             self.predictor_pipe_writer.send(make_encodeable(output))
                 except CancelPredictionException:
-                    # we've been canceled, just stop and wait for cleanup
-                    pass
+                    # reraise cancellations to be handled in _start_predictor_process
+                    raise
                 except Exception as e:
                     # if it timed out there's no stack trace
                     if type(e) != TimeoutError:
                         traceback.print_exc()
                     self.error_pipe_writer.send(e)
-
-        self.done_pipe_writer.send(self.PROCESSING_DONE)
 
     def error(self) -> Optional[str]:
         """
