@@ -335,21 +335,22 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client, https
             method="POST",
         )
 
-        httpserver.expect_oneshot_request(
-            "/webhook",
-            json={
-                "id": predict_id,
-                "input": {
-                    "text": "bar",
+        for output in [["foo"], ["foo", "bar"], ["foo", "bar", "baz"]]:
+            httpserver.expect_oneshot_request(
+                "/webhook",
+                json={
+                    "id": predict_id,
+                    "input": {
+                        "text": "bar",
+                    },
+                    "webhook": webhook_url,
+                    "logs": "",
+                    "output": output,
+                    "status": "processing",
+                    "started_at": mock.ANY,
                 },
-                "webhook": webhook_url,
-                "logs": "",
-                "output": ["foo", "bar", "baz"],
-                "status": "processing",
-                "started_at": mock.ANY,
-            },
-            method="POST",
-        )
+                method="POST",
+            )
 
         httpserver.expect_oneshot_request(
             "/webhook",
@@ -729,7 +730,7 @@ def test_queue_worker_unhandled_error(
                     "text": "bar",
                 },
                 "webhook": webhook_url,
-                "error": "Prediction failed for an unknown reason. It might have run out of memory?",
+                "error": "Prediction failed for an unknown reason. It might have run out of memory? (exitcode 1)",
                 "logs": mock.ANY,  # might include a stack trace (see above)
                 "output": None,
                 "status": "failed",

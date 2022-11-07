@@ -1,37 +1,45 @@
+import contextlib
 import datetime
 import io
 import json
 import os
+import signal
+import sys
+import time
+import traceback
+import types
 from mimetypes import guess_type
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
-import signal
-import sys
-import traceback
-import time
-import types
-import contextlib
 
-from pydantic import ValidationError
 import redis
 import requests
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+    OTLPSpanExporter,
+)  # type: ignore
+from opentelemetry.sdk.trace import TracerProvider  # type: ignore
+from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore
+from opentelemetry.trace import Status as TraceStatus
+from opentelemetry.trace import StatusCode
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+from pydantic import ValidationError
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
-from ..predictor import BasePredictor, get_input_type, load_predictor, load_config
-from ..json import upload_files
-from ..response import Status
-from .runner import PredictionRunner
 from ..files import guess_filename
+from ..json import upload_files
+from ..predictor import (
+    get_input_type,
+    get_predictor_ref,
+    load_config,
+    load_predictor_from_ref,
+)
+from ..response import Status
+from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
 from .response_throttler import ResponseThrottler
-
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter  # type: ignore
-from opentelemetry.sdk.trace import TracerProvider  # type: ignore
-from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore
-from opentelemetry.trace import Status as TraceStatus, StatusCode
-from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+from .worker import Worker
 
 
 class RedisQueueWorker:
@@ -42,7 +50,7 @@ class RedisQueueWorker:
 
     def __init__(
         self,
-        predictor: BasePredictor,
+        predictor_ref: str,
         redis_host: str,
         redis_port: int,
         input_queue: str,
@@ -53,7 +61,7 @@ class RedisQueueWorker:
         predict_timeout: Optional[int] = None,
         redis_db: int = 0,
     ):
-        self.runner = PredictionRunner(predict_timeout=predict_timeout)
+        self.worker = Worker(predictor_ref)
         self.redis_host = redis_host
         self.redis_port = redis_port
         self.input_queue = input_queue
@@ -71,6 +79,7 @@ class RedisQueueWorker:
             self.autoclaim_messages_after = 10 * 60
 
         # Set up types
+        predictor = load_predictor_from_ref(predictor_ref)
         self.InputType = get_input_type(predictor)
 
         self.redis = redis.Redis(
@@ -130,7 +139,9 @@ class RedisQueueWorker:
             start_time = time.time()
 
             # TODO(bfirsh): setup should time out too, but we don't display these logs to the user, so don't timeout to avoid confusion
-            self.runner.setup()
+            for event in self.worker.setup():
+                # TODO: send worker logs somewhere useful!
+                pass
 
             setup_time = time.time() - start_time
             self.redis.xadd(
@@ -224,8 +235,8 @@ class RedisQueueWorker:
                 tb = traceback.format_exc()
                 sys.stderr.write(f"Failed to handle message: {tb}\n")
 
-        sys.stderr.write("Closing runner, bye bye!\n")
-        self.runner.close()
+        sys.stderr.write("Shutting down worker: bye bye!\n")
+        self.worker.shutdown()
 
     def handle_message(
         self,
@@ -235,7 +246,6 @@ class RedisQueueWorker:
         should_cancel: Callable,
     ) -> None:
         span = trace.get_current_span()
-
         started_at = datetime.datetime.now()
 
         try:
@@ -249,139 +259,94 @@ class RedisQueueWorker:
             span.record_exception(e)
             span.set_status(TraceStatus(status_code=StatusCode.ERROR))
             return
-
-        cleanup_functions.append(input_obj.cleanup)
-
-        self.runner.run(**input_obj.dict())
+        finally:
+            cleanup_functions.append(input_obj.cleanup)
 
         response["started_at"] = format_datetime(started_at)
-
         response["logs"] = ""
 
         send_response(response)
 
-        # just send logs until output starts
-        while self.runner.is_processing() and not self.runner.has_output_waiting():
-            # TODO: restructure this to avoid the tight CPU-eating loop
-            # TODO: DRY this up
-            if should_cancel():
-                self.runner.cancel()
+        timed_out = False
+        was_canceled = False
+        done_event = None
+        output_type = None
+
+        try:
+            for event in self.worker.predict(payload=input_obj.dict(), poll=0.1):
+                if not was_canceled and should_cancel():
+                    was_canceled = True
+                    self.worker.cancel()
+
+                if not timed_out and self.predict_timeout:
+                    runtime = (datetime.datetime.now() - started_at).total_seconds()
+                    if runtime > self.predict_timeout:
+                        timed_out = True
+                        self.worker.cancel()
+
+                if isinstance(event, Heartbeat):
+                    # Heartbeat events exist solely to ensure that we have a
+                    # regular opportunity to check for cancelation and
+                    # timeouts.
+                    #
+                    # We don't need to do anything with them.
+                    pass
+                elif isinstance(event, Log):
+                    response["logs"] += event.message
+                    send_response(response)
+                elif isinstance(event, PredictionOutputType):
+                    # Note: this error message will be seen by users so it is
+                    # intentionally vague about what has gone wrong.
+                    assert output_type is None, "Predictor returned unexpected output"
+                    output_type = event
+                    if output_type.multi:
+                        response["output"] = []
+                elif isinstance(event, PredictionOutput):
+                    # Note: this error message will be seen by users so it is
+                    # intentionally vague about what has gone wrong.
+                    assert (
+                        output_type is not None
+                    ), "Predictor returned unexpected output"
+
+                    output = self.upload_files(event.payload)
+
+                    if output_type.multi:
+                        response["output"].append(output)
+                        send_response(response)
+                    else:
+                        assert (
+                            response["output"] is None
+                        ), "Predictor unexpectedly returned multiple outputs"
+                        response["output"] = output
+
+                elif isinstance(event, Done):
+                    done_event = event
+                else:
+                    sys.stderr.write(f"Received unexpected event from worker: {event}")
+
+            completed_at = datetime.datetime.now()
+            response["completed_at"] = format_datetime(completed_at)
+
+            if done_event.canceled and was_canceled:
                 response["status"] = Status.CANCELED
-                response["completed_at"] = format_datetime(datetime.datetime.now())
-                send_response(response)
-                return
-
-            if self.runner.has_logs_waiting():
-                response["logs"] += self.runner.read_logs()
-                send_response(response)
-
-            if not self.runner.is_alive():
+            elif done_event.canceled and timed_out:
                 response["status"] = Status.FAILED
-                response["error"] = "Prediction failed for an unknown reason. It might have run out of memory?"
-                response["completed_at"] = format_datetime(datetime.datetime.now())
-                send_response(response)
-                span.add_event(name="exception", attributes={"exception.type": "unhandled_error"})
-                span.set_status(TraceStatus(status_code=StatusCode.ERROR))
-                self.should_exit = True
-                return
-
-        if self.runner.error() is not None:
+                response["error"] = "Prediction timed out"
+            elif done_event.error:
+                response["status"] = Status.FAILED
+                response["error"] = str(done_event.error_detail)
+            else:
+                response["status"] = Status.SUCCEEDED
+                response["metrics"] = {
+                    "predict_time": (completed_at - started_at).total_seconds()
+                }
+        except Exception as e:
+            self.should_exit = True
+            completed_at = datetime.datetime.now()
+            response["completed_at"] = format_datetime(completed_at)
             response["status"] = Status.FAILED
-            response["error"] = str(self.runner.error())  # type: ignore
-            response["completed_at"] = format_datetime(datetime.datetime.now())
-            send_response(response)
-            span.record_exception(self.runner.error())
-            span.set_status(TraceStatus(status_code=StatusCode.ERROR))
-            return
-
-        span.add_event("received first output")
-
-        if self.runner.is_output_generator():
-            output = response["output"] = []
-
-            while self.runner.is_processing():
-                # TODO: restructure this to avoid the tight CPU-eating loop
-                if should_cancel():
-                    self.runner.cancel()
-                    response["status"] = Status.CANCELED
-                    response["completed_at"] = format_datetime(datetime.datetime.now())
-                    send_response(response)
-                    return
-
-                if self.runner.has_output_waiting() or self.runner.has_logs_waiting():
-                    # Object has already passed through `make_encodeable()` in the Runner, so all we need to do here is upload the files
-                    new_output = [
-                        self.upload_files(o) for o in self.runner.read_output()
-                    ]
-                    new_logs = self.runner.read_logs()
-
-                    # sometimes it'll say there's output when there's none
-                    if new_output == [] and new_logs == "":
-                        continue
-
-                    output.extend(new_output)
-                    response["logs"] += new_logs
-
-                    # we could `time.sleep(0.1)` and check `is_processing()`
-                    # here to give the predictor subprocess a chance to exit
-                    # so we don't send a double message for final output, at
-                    # the cost of extra latency
-                    send_response(response)
-
-                if not self.runner.is_alive():
-                    response["status"] = Status.FAILED
-                    response["error"] = "Prediction failed for an unknown reason. It might have run out of memory?"
-                    response["completed_at"] = format_datetime(datetime.datetime.now())
-                    send_response(response)
-                    span.add_event(name="exception", attributes={"exception.type": "unhandled_error"})
-                    span.set_status(TraceStatus(status_code=StatusCode.ERROR))
-                    self.should_exit = True
-                    return
-
-            if self.runner.error() is not None:
-                response["status"] = Status.FAILED
-                response["error"] = str(self.runner.error())  # type: ignore
-                response["completed_at"] = format_datetime(datetime.datetime.now())
-                send_response(response)
-                span.record_exception(self.runner.error())
-                span.set_status(TraceStatus(status_code=StatusCode.ERROR))
-                return
-
-            span.add_event("received final output")
-
-            response["status"] = Status.SUCCEEDED
-            completed_at = datetime.datetime.now()
-            response["completed_at"] = format_datetime(completed_at)
-            response["metrics"] = {
-                "predict_time": (completed_at - started_at).total_seconds()
-            }
-            output.extend(self.upload_files(o) for o in self.runner.read_output())
-            response["logs"] += self.runner.read_logs()
-            send_response(response)
-
-        else:
-            if self.runner.error() is not None:
-                response["status"] = Status.FAILED
-                response["error"] = str(self.runner.error())  # type: ignore
-                response["completed_at"] = format_datetime(datetime.datetime.now())
-                send_response(response)
-                span.record_exception(self.runner.error())
-                span.set_status(TraceStatus(status_code=StatusCode.ERROR))
-                return
-
-            output = self.runner.read_output()
-            while len(output) == 0:
-                output = self.runner.read_output()
-            assert len(output) == 1
-
-            response["status"] = Status.SUCCEEDED
-            completed_at = datetime.datetime.now()
-            response["completed_at"] = format_datetime(completed_at)
-            response["metrics"] = {
-                "predict_time": (completed_at - started_at).total_seconds()
-            }
-            response["output"] = self.upload_files(output[0])
-            response["logs"] += self.runner.read_logs()
+            response["error"] = str(e)
+        finally:
             send_response(response)
 
     def download(self, url: str) -> bytes:
@@ -481,7 +446,7 @@ def ensure_trailing_slash(url: str) -> str:
 
 
 def _queue_worker_from_argv(
-    predictor: BasePredictor,
+    predictor_ref: str,
     redis_host: str,
     redis_port: str,
     input_queue: str,
@@ -501,7 +466,7 @@ def _queue_worker_from_argv(
     else:
         predict_timeout_int = None
     return RedisQueueWorker(
-        predictor,
+        predictor_ref,
         redis_host,
         int(redis_port),
         input_queue,
@@ -522,7 +487,7 @@ if __name__ == "__main__":
         trace.get_tracer_provider().add_span_processor(span_processor)
 
     config = load_config()
-    predictor = load_predictor(config)
+    predictor_ref = get_predictor_ref(config)
 
-    worker = _queue_worker_from_argv(predictor, *sys.argv[1:])
+    worker = _queue_worker_from_argv(predictor_ref, *sys.argv[1:])
     worker.start()

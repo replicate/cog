@@ -1,4 +1,6 @@
+attrs==22.1.0
 fastapi==0.70.1
+hypothesis==6.56.4
 mypy==0.950
 numpy==1.21.5
 pillow==9.0.1
