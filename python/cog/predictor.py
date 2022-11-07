@@ -68,13 +68,21 @@ def load_predictor(config: Dict[str, Any]) -> BasePredictor:
     Constructs an instance of the user-defined Predictor class from a config.
     """
 
+    ref = get_predictor_ref(config)
+    return load_predictor_from_ref(ref)
+
+
+def get_predictor_ref(config: Dict[str, Any]) -> str:
     if "predict" not in config:
         raise PredictorNotSet(
             "Can't run predictions: 'predict' option not found in cog.yaml"
         )
 
-    predict_string = config["predict"]
-    module_path, class_name = predict_string.split(":", 1)
+    return config["predict"]
+
+
+def load_predictor_from_ref(ref: str) -> BasePredictor:
+    module_path, class_name = ref.split(":", 1)
     module_name = os.path.basename(module_path).split(".py", 1)[0]
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None
