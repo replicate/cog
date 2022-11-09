@@ -421,51 +421,87 @@ class WorkerState(RuleBasedStateMachine):
 
     def __init__(self):
         super().__init__()
-        self.worker = Worker(_fixture_path("hello_world"))
+        self.worker = Worker(_fixture_path("steps"))
 
-    setup_result = Bundle("setup_result")
-    predict_result = Bundle("predict_result")
+        self.setup_generator = None
+        self.setup_events = []
 
-    @rule(target=setup_result)
+        self.predict_generator = None
+        self.predict_events = []
+        self.predict_payload = None
+
+    @rule(sleep=st.floats(min_value=0, max_value=0.5))
+    def wait(self, sleep):
+        time.sleep(sleep)
+
+    @rule()
     def setup(self):
         try:
-            return self.worker.setup()
-        except InvalidStateException as e:
-            return e
+            self.setup_generator = self.worker.setup()
+            self.setup_events = []
+        except InvalidStateException:
+            pass
 
-    @rule(r=consumes(setup_result))
-    def setup_result_valid(self, r):
-        if isinstance(r, InvalidStateException):
-            return
+    @precondition(lambda x: x.setup_generator)
+    @rule(n=st.integers(min_value=1, max_value=10))
+    def read_setup_events(self, n):
+        try:
+            for _ in range(n):
+                event = next(self.setup_generator)
+                self.setup_events.append(event)
+        except StopIteration:
+            self.setup_generator = None
 
-        result = _process(r)
+            self._check_setup_events()
 
+    def _check_setup_events(self):
+        assert isinstance(self.setup_events[-1], Done)
+
+        print(self.setup_events)
+        result = _process(self.setup_events)
         assert result.stdout == "did setup\n"
         assert result.stderr == ""
         assert result.done == Done()
 
-    @rule(target=predict_result, name=st.one_of(st.text(), ST_NAMES))
-    def predict(self, name):
+    @rule(name=ST_NAMES, steps=st.integers(min_value=0, max_value=10))
+    def predict(self, name, steps):
         try:
-            events = self.worker.predict({"name": name})
-            self.cancel_sent = False
-            return events
-        except InvalidStateException as e:
-            return e
+            payload = {"name": name, "steps": steps}
+            self.predict_generator = self.worker.predict(payload)
+            self.predict_payload = payload
+            self.predict_events = []
+        except InvalidStateException:
+            pass
 
-    @rule(r=consumes(predict_result))
-    def predict_result_valid(self, r):
-        if isinstance(r, InvalidStateException):
-            return
+    @precondition(lambda x: x.predict_generator)
+    @rule(n=st.integers(min_value=1, max_value=10))
+    def read_predict_events(self, n):
+        try:
+            for _ in range(n):
+                event = next(self.predict_generator)
+                self.predict_events.append(event)
+        except StopIteration:
+            self.predict_generator = None
+            self._check_predict_events()
 
-        result = _process(r)
+    def _check_predict_events(self):
+        assert isinstance(self.predict_events[-1], Done)
 
-        assert result.stdout.startswith("hello, ")
-        assert result.stdout.endswith("\n")
+        payload = self.predict_payload
+        print(self.predict_events)
+        result = _process(self.predict_events)
+
+        expected_stdout = ["START\n"]
+        for i in range(payload["steps"]):
+            expected_stdout.append(f"STEP1 {i+1}\n")
+        expected_stdout.append("END\n")
+
+        assert result.stdout == "".join(expected_stdout)
         assert result.stderr == ""
+        assert result.output == f"NAME={payload['name']}"
         assert result.done == Done()
 
-    @rule(r=consumes(predict_result))
+    # @rule(r=consumes(predict_result))
     def cancel(self, r):
         if isinstance(r, InvalidStateException):
             return
