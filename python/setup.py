@@ -16,7 +16,7 @@ setuptools.setup(
     python_requires=">=3.6.0",
     install_requires=[
         # intentionally loose. perhaps these should be vendored to not collide with user code?
-        "attrs>=22,<23",
+        "attrs>=20.1,<23",
         "fastapi>=0.6,<1",
         "opentelemetry-exporter-otlp>=1.11.1,<2",
         "opentelemetry-sdk>=1.11.1,<2",
