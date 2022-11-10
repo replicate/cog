@@ -102,8 +102,9 @@ def test_stream_redirector(tmpfile):
     def _write_hook(stream_name, original_stream, data):
         output.append((stream_name, data))
 
+    ws_stdout.wrap()
+    ws_stderr.wrap()
     r = StreamRedirector([ws_stdout, ws_stderr], _write_hook)
-    r.redirect()
     r.start()
 
     fake_stdout.write("hello to stdout\n")
@@ -141,8 +142,8 @@ def test_stream_redirector_line_handling(tmpfile, writes, expected_output):
     def _write_hook(stream_name, original_stream, data):
         output.append((stream_name, data))
 
+    ws.wrap()
     r = StreamRedirector([ws], _write_hook)
-    r.redirect()
     r.start()
 
     for w in writes:
