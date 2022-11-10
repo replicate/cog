@@ -4,18 +4,18 @@ import selectors
 import sys
 import threading
 import time
-import typing
 import uuid
+from typing import Callable, Optional, Sequence, TextIO
 
 
 class WrappedStream:
-    def __init__(self, name, stream):
+    def __init__(self, name: str, stream: TextIO):
         self.name = name
         self._stream = stream
-        self._original_fp = None
-        self._wrapped_fp = None
+        self._original_fp: Optional[TextIO] = None
+        self._wrapped_fp: Optional[TextIO] = None
 
-    def wrap(self):
+    def wrap(self) -> None:
         r, w = os.pipe()
 
         # Save a copy of the original stream file descriptor.
@@ -38,20 +38,20 @@ class WrappedStream:
         os.set_blocking(r, False)
         self._wrapped_fp = os.fdopen(r, "r")
 
-    def write(self, data):
-        self._stream.write(data)
+    def write(self, data: str) -> int:
+        return self._stream.write(data)
 
-    def flush(self):
-        self._stream.flush()
+    def flush(self) -> None:
+        return self._stream.flush()
 
     @property
-    def wrapped(self):
+    def wrapped(self) -> TextIO:
         if not self._wrapped_fp:
             raise RuntimeError("you must call wrap() before using wrapped")
         return self._wrapped_fp
 
     @property
-    def original(self):
+    def original(self) -> TextIO:
         if not self._original_fp:
             raise RuntimeError("you must call wrap() before using original")
         return self._original_fp
@@ -68,8 +68,8 @@ class StreamRedirector(threading.Thread):
 
     def __init__(
         self,
-        streams: typing.Sequence[WrappedStream],
-        write_hook: typing.Callable[[str, typing.TextIO, str], None],
+        streams: Sequence[WrappedStream],
+        write_hook: Callable[[str, TextIO, str], None],
     ):
         self._streams = list(streams)
         self._write_hook = write_hook
@@ -88,7 +88,7 @@ class StreamRedirector(threading.Thread):
         # still running, Python will exit.
         super().__init__(daemon=True)
 
-    def drain(self):
+    def drain(self) -> None:
         self.drain_event.clear()
         for stream in self._streams:
             stream.write(self.drain_token + "\n")
@@ -96,14 +96,14 @@ class StreamRedirector(threading.Thread):
         if not self.drain_event.wait(timeout=1):
             raise RuntimeError("output streams failed to drain")
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         for stream in self._streams:
             stream.write(self.terminate_token + "\n")
             stream.flush()
             break  # only need to write one terminate token
         self.join()
 
-    def run(self):
+    def run(self) -> None:
         selector = selectors.DefaultSelector()
 
         should_exit = False
@@ -120,7 +120,7 @@ class StreamRedirector(threading.Thread):
             for key, _ in selector.select():
                 stream = key.data
 
-                for line in key.fileobj:
+                for line in stream.wrapped:
 
                     if not line.endswith("\n"):
                         # TODO: limit how much we're prepared to buffer on a

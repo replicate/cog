@@ -18,12 +18,14 @@ import requests
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
     OTLPSpanExporter,
-)  # type: ignore
-from opentelemetry.sdk.trace import TracerProvider  # type: ignore
-from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore
+)
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import Status as TraceStatus
 from opentelemetry.trace import StatusCode
-from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+from opentelemetry.trace.propagation.tracecontext import (
+    TraceContextTextMapPropagator,
+)
 from pydantic import ValidationError
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
@@ -327,6 +329,9 @@ class RedisQueueWorker:
             completed_at = datetime.datetime.now()
             response["completed_at"] = format_datetime(completed_at)
 
+            # It should only be possible to get here if we got a done event.
+            assert done_event
+
             if done_event.canceled and was_canceled:
                 response["status"] = Status.CANCELED
             elif done_event.canceled and timed_out:
@@ -484,7 +489,7 @@ if __name__ == "__main__":
     if "OTEL_SERVICE_NAME" in os.environ:
         trace.set_tracer_provider(TracerProvider())
         span_processor = BatchSpanProcessor(OTLPSpanExporter())
-        trace.get_tracer_provider().add_span_processor(span_processor)
+        trace.get_tracer_provider().add_span_processor(span_processor)  # type: ignore
 
     config = load_config()
     predictor_ref = get_predictor_ref(config)
