@@ -176,12 +176,16 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         try:
             self._predictor = load_predictor_from_ref(self._predictor_ref)
             self._predictor.setup()
-        except Exception:
+        except Exception as e:
             traceback.print_exc()
             done.error = True
-        except:  # for SystemExit and friends reraise to ensure the process dies
+            done.error_detail = str(e)
+        except BaseException as e:
+            # For SystemExit and friends we attempt to add some useful context
+            # to the logs, but reraise to ensure the process dies.
             traceback.print_exc()
             done.error = True
+            done.error_detail = str(e)
             raise
         finally:
             self._stream_redirector.drain()
