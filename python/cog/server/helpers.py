@@ -36,7 +36,7 @@ class WrappedStream:
         # We set the FD to be non-blocking so that we can select/poll/epoll
         # over multiple wrapped streams.
         os.set_blocking(r, False)
-        self._wrapped_fp = os.fdopen(r, "r", buffering=1)
+        self._wrapped_fp = os.fdopen(r, "r")
 
     @property
     def wrapped(self):
