@@ -261,8 +261,8 @@ class RedisQueueWorker:
             span.record_exception(e)
             span.set_status(TraceStatus(status_code=StatusCode.ERROR))
             return
-        finally:
-            cleanup_functions.append(input_obj.cleanup)
+
+        cleanup_functions.append(input_obj.cleanup)
 
         response["started_at"] = format_datetime(started_at)
         response["logs"] = ""
