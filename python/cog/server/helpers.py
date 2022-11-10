@@ -1,11 +1,11 @@
+import io
 import os
 import selectors
 import sys
 import threading
 import time
+import typing
 import uuid
-
-from .eventtypes import Log
 
 
 class WrappedStream:
@@ -60,13 +60,19 @@ class StreamRedirector(threading.Thread):
     It also passes the data through to the original stream.
     """
 
-    def __init__(self, events):
-        self.events = events
-        self.stdout = WrappedStream("stdout", sys.stdout)
-        self.stderr = WrappedStream("stderr", sys.stderr)
-        self.drain_token = str(uuid.uuid4())
+    def __init__(
+        self,
+        streams: typing.Sequence[WrappedStream],
+        write_hook: typing.Callable[[str, typing.TextIO, str], None],
+    ):
+        self._streams = list(streams)
+        self._write_hook = write_hook
+        self.drain_token = uuid.uuid4().hex
         self.drain_event = threading.Event()
-        self.terminate_token = str(uuid.uuid4())
+        self.terminate_token = uuid.uuid4().hex
+
+        if len(self._streams) == 0:
+            raise ValueError("provide at least one wrapped stream to redirect")
 
         # Setting daemon=True ensures that threading._shutdown will not wait
         # for this thread if a fatal exception (SystemExit, KeyboardInterrupt)
@@ -77,28 +83,36 @@ class StreamRedirector(threading.Thread):
         super().__init__(daemon=True)
 
     def redirect(self):
-        self.stdout.wrap()
-        self.stderr.wrap()
+        for stream in self._streams:
+            stream.wrap()
 
     def drain(self):
         self.drain_event.clear()
-        print(self.drain_token, flush=True)
-        print(self.drain_token, file=sys.stderr, flush=True)
+        for stream in self._streams:
+            stream._stream.write(self.drain_token + "\n")
+            stream._stream.flush()
         if not self.drain_event.wait(timeout=1):
             raise RuntimeError("output streams failed to drain")
 
     def shutdown(self):
-        print(self.terminate_token, flush=True)
+        for stream in self._streams:
+            stream._stream.write(self.terminate_token + "\n")
+            stream._stream.flush()
+            break # only need to write one terminate token
         self.join()
 
     def run(self):
         selector = selectors.DefaultSelector()
 
         should_exit = False
-        stdout_key = selector.register(self.stdout.wrapped, selectors.EVENT_READ, self.stdout)
-        stderr_key = selector.register(self.stderr.wrapped, selectors.EVENT_READ, self.stderr)
         drain_tokens_seen = 0
-        drain_tokens_needed = 2
+        drain_tokens_needed = 0
+        buffers = {}
+
+        for stream in self._streams:
+            selector.register(stream.wrapped, selectors.EVENT_READ, stream)
+            buffers[stream.name] = io.StringIO()
+            drain_tokens_needed += 1
 
         while not should_exit:
             for key, _ in selector.select():
@@ -106,18 +120,32 @@ class StreamRedirector(threading.Thread):
 
                 for line in key.fileobj:
 
-                    if line.strip() == self.terminate_token:
+                    if not line.endswith("\n"):
+                        # TODO: limit how much we're prepared to buffer on a
+                        # single line
+                        buffers[stream.name].write(line)
+                        continue
+
+                    full_line = buffers[stream.name].getvalue() + line.strip()
+
+                    # Reset buffer (this is quicker and easier than resetting
+                    # the existing buffer, but may generate more garbage).
+                    buffers[stream.name] = io.StringIO()
+
+                    if full_line.endswith(self.terminate_token):
                         should_exit = True
-                        continue
+                        full_line = full_line[:-len(self.terminate_token)]
 
-                    if line.strip() == self.drain_token:
+                    if full_line.endswith(self.drain_token):
                         drain_tokens_seen += 1
+                        full_line = full_line[:-len(self.drain_token)]
 
-                        if drain_tokens_seen >= drain_tokens_needed:
-                            self.drain_event.set()
-                            drain_tokens_seen = 0
+                    # If full_line is emptry at this point it means the only
+                    # thing in the line was a drain token (or a terminate
+                    # token).
+                    if full_line:
+                        self._write_hook(stream.name, stream.original, full_line + "\n")
 
-                        continue
-
-                    stream.original.write(line)
-                    self.events.send(Log(line, source=stream.name))
+                    if drain_tokens_seen >= drain_tokens_needed:
+                        self.drain_event.set()
+                        drain_tokens_seen = 0

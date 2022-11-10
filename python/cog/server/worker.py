@@ -22,7 +22,7 @@ from .exceptions import (
     FatalWorkerException,
     InvalidStateException,
 )
-from .helpers import StreamRedirector
+from .helpers import StreamRedirector, WrappedStream
 
 _spawn = multiprocessing.get_context("spawn")
 
@@ -138,7 +138,9 @@ class _ChildWorker(_spawn.Process):
         # We use SIGUSR1 to signal an interrupt for cancelation.
         signal.signal(signal.SIGUSR1, self._signal_handler)
 
-        self._stream_redirector = StreamRedirector(self._events)
+        ws_stdout = WrappedStream("stdout", sys.stdout)
+        ws_stderr = WrappedStream("stderr", sys.stderr)
+        self._stream_redirector = StreamRedirector([ws_stdout, ws_stderr], self._stream_write_hook)
         self._stream_redirector.redirect()
         self._stream_redirector.start()
 
@@ -205,3 +207,7 @@ class _ChildWorker(_spawn.Process):
     def _signal_handler(self, signum, frame):
         if signum == signal.SIGUSR1 and self._cancelable:
             raise CancelationException()
+
+    def _stream_write_hook(self, stream_name, original_stream, data):
+        original_stream.write(data)
+        self._events.send(Log(data, source=stream_name))
