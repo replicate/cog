@@ -6,23 +6,24 @@ from typing import Any, Optional
 
 import pytest
 from attrs import define
-from hypothesis import given, settings, strategies as st, Verbosity
+from hypothesis import Verbosity, given, settings
+from hypothesis import strategies as st
 from hypothesis.stateful import (
     Bundle,
     RuleBasedStateMachine,
-    rule,
     consumes,
     precondition,
+    rule,
 )
 
 from cog.server.eventtypes import (
-    Log,
     Done,
     Heartbeat,
+    Log,
     PredictionOutput,
     PredictionOutputType,
 )
-from cog.server.exceptions import InvalidStateException, FatalWorkerException
+from cog.server.exceptions import FatalWorkerException, InvalidStateException
 from cog.server.worker import Worker
 
 # Set a longer deadline on CI as the instances are a bit slower.

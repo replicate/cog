@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from cog.server.helpers import WrappedStream, StreamRedirector
+from cog.server.helpers import StreamRedirector, WrappedStream
 
 
 @pytest.fixture
@@ -17,6 +17,7 @@ def tmpdir():
 def tmpfile(tmpdir):
     def _tmpfile():
         return os.path.join(tmpdir, uuid.uuid4().hex)
+
     return _tmpfile
 
 
@@ -139,15 +140,18 @@ def test_stream_redirector(tmpfile):
     r.shutdown()
 
 
-@pytest.mark.parametrize("writes,expected_output", [
-    # lines are preserved
-    (["hello world\n"], ["hello world\n"]),
-    # partial lines at end are flushed (complete with a newline that wasn't
-    # actually written)
-    (["one\n", "two"], ["one\n", "two\n"]),
-    # partial lines in the middle are buffered until a newline is seen
-    (["one", "two", "three\n"], ["onetwothree\n"]),
-])
+@pytest.mark.parametrize(
+    "writes,expected_output",
+    [
+        # lines are preserved
+        (["hello world\n"], ["hello world\n"]),
+        # partial lines at end are flushed (complete with a newline that wasn't
+        # actually written)
+        (["one\n", "two"], ["one\n", "two\n"]),
+        # partial lines in the middle are buffered until a newline is seen
+        (["one", "two", "three\n"], ["onetwothree\n"]),
+    ],
+)
 def test_stream_redirector_line_handling(tmpfile, writes, expected_output):
     filename = tmpfile()
     fake_stream = open(filename, "w")

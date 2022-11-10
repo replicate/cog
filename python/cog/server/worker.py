@@ -144,7 +144,9 @@ class _ChildWorker(_spawn.Process):
         ws_stdout.wrap()
         ws_stderr.wrap()
 
-        self._stream_redirector = StreamRedirector([ws_stdout, ws_stderr], self._stream_write_hook)
+        self._stream_redirector = StreamRedirector(
+            [ws_stdout, ws_stderr], self._stream_write_hook
+        )
         self._stream_redirector.start()
 
         self._setup()

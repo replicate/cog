@@ -1,18 +1,16 @@
-from anyio import CapacityLimiter
-from anyio.lowlevel import RunVar
 import argparse
 import logging
 import os
 import types
 from typing import Any, Optional
 
+# https://github.com/encode/uvicorn/issues/998
+import uvicorn  # type: ignore
+from anyio import CapacityLimiter
+from anyio.lowlevel import RunVar
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
-
-# https://github.com/encode/uvicorn/issues/998
-import uvicorn  # type: ignore
-
 
 from ..files import upload_file
 from ..json import make_encodeable, upload_files

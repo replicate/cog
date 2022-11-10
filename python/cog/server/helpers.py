@@ -100,7 +100,7 @@ class StreamRedirector(threading.Thread):
         for stream in self._streams:
             stream.write(self.terminate_token + "\n")
             stream.flush()
-            break # only need to write one terminate token
+            break  # only need to write one terminate token
         self.join()
 
     def run(self):
@@ -136,11 +136,11 @@ class StreamRedirector(threading.Thread):
 
                     if full_line.endswith(self.terminate_token):
                         should_exit = True
-                        full_line = full_line[:-len(self.terminate_token)]
+                        full_line = full_line[: -len(self.terminate_token)]
 
                     if full_line.endswith(self.drain_token):
                         drain_tokens_seen += 1
-                        full_line = full_line[:-len(self.drain_token)]
+                        full_line = full_line[: -len(self.drain_token)]
 
                     # If full_line is emptry at this point it means the only
                     # thing in the line was a drain token (or a terminate
