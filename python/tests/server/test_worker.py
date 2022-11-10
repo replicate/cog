@@ -25,9 +25,9 @@ from cog.server.eventtypes import (
 from cog.server.exceptions import InvalidStateException, FatalWorkerException
 from cog.server.worker import Worker
 
-settings.register_profile("ci", max_examples=1000, deadline=300)
-settings.register_profile("default", max_examples=100, deadline=300)
-settings.register_profile("quick", max_examples=10, deadline=300)
+# Set a longer deadline on CI as the instances are a bit slower.
+settings.register_profile("ci", max_examples=100, deadline=1000)
+settings.register_profile("default", max_examples=10, deadline=500)
 settings.load_profile(os.getenv("HYPOTHESIS_PROFILE", "default"))
 
 ST_NAMES = st.sampled_from(["John", "Barry", "Elspeth", "Hamid", "Ronnie", "Yasmeen"])

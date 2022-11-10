@@ -70,6 +70,8 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Test
         run: make test-python
+        env:
+          HYPOTHESIS_PROFILE: ci
 
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-integration:
