@@ -82,10 +82,6 @@ class StreamRedirector(threading.Thread):
         # still running, Python will exit.
         super().__init__(daemon=True)
 
-    def redirect(self):
-        for stream in self._streams:
-            stream.wrap()
-
     def drain(self):
         self.drain_event.clear()
         for stream in self._streams:
