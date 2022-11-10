@@ -17,6 +17,7 @@ setuptools.setup(
     install_requires=[
         # intentionally loose. perhaps these should be vendored to not collide with user code?
         "fastapi>=0.6,<1",
+        "hyperlink>=21.0.0",
         "opentelemetry-exporter-otlp>=1.11.1,<2",
         "opentelemetry-sdk>=1.11.1,<2",
         "protobuf<=3.20.3",
@@ -26,6 +27,7 @@ setuptools.setup(
         "requests>=2,<3",
         "typing_extensions>=4.1.0",
         "uvicorn[standard]>=0.12,<1",
+        "websockets>=10.3",
     ],
     packages=setuptools.find_packages(),
 )
