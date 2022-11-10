@@ -189,26 +189,19 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
     def _loop(self) -> None:
         while True:
-            done = Done()
+            ev = self._events.recv()
+            if isinstance(ev, Shutdown):
+                break
+            elif isinstance(ev, PredictionInput):
+                self._predict(ev.payload)
+            else:
+                print(f"Got unexpected event: {ev}", file=sys.stderr)
 
-            try:
-                ev = self._events.recv()
-                if isinstance(ev, Shutdown):
-                    break
-                elif isinstance(ev, PredictionInput):
-                    self._predict(done, ev.payload)
-                else:
-                    print(f"Got unexpected event: {ev}", file=sys.stderr)
-            except EOFError:
-                done.error = True
-                raise RuntimeError("Connection to Worker unexpectedly closed.")
-            self._stream_redirector.drain()
-            self._events.send(done)
-
-    def _predict(self, done: Done, payload: Dict[str, Any]) -> None:
+    def _predict(self, payload: Dict[str, Any]) -> None:
         assert self._predictor
+        done = Done()
+        self._cancelable = True
         try:
-            self._cancelable = True
             result = self._predictor.predict(**payload)
             if result:
                 if isinstance(result, types.GeneratorType):
@@ -226,6 +219,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             done.error_detail = str(e)
         finally:
             self._cancelable = False
+        self._stream_redirector.drain()
+        self._events.send(done)
 
     def _signal_handler(self, signum: int, frame: Optional[types.FrameType]) -> None:
         if signum == signal.SIGUSR1 and self._cancelable:
