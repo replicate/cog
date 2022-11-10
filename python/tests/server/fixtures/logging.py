@@ -8,6 +8,7 @@ libc = ctypes.CDLL(None)
 # test that we can still capture type signature even if we write
 # a bunch of stuff at import time.
 libc.puts(b"writing some stuff from C at import time")
+libc.fflush(None)
 sys.stdout.write("writing to stdout at import time\n")
 sys.stderr.write("writing to stderr at import time\n")
 
@@ -22,6 +23,7 @@ class Predictor:
         logging.warn("writing log message")
         time.sleep(0.1)
         libc.puts(b"writing from C")
+        libc.fflush(None)
         time.sleep(0.1)
         sys.stderr.write("writing to stderr\n")
         time.sleep(0.1)
