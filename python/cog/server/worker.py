@@ -39,6 +39,7 @@ class WorkerState(Enum):
 class Worker:
     def __init__(self, predictor_ref, tee_output=True):
         self._state = WorkerState.NEW
+        self._allow_cancel = False
 
         # A pipe with which to communicate with the child worker.
         self._events, child_events = _spawn.Pipe()
@@ -55,6 +56,7 @@ class Worker:
     def predict(self, payload, poll=None):
         self._assert_state(WorkerState.READY)
         self._state = WorkerState.PROCESSING
+        self._allow_cancel = True
         self._events.send(PredictionInput(payload=payload))
 
         return self._wait(poll=poll)
@@ -80,8 +82,9 @@ class Worker:
         self._child.close()
 
     def cancel(self):
-        if self._state == WorkerState.PROCESSING and self._child.is_alive():
+        if self._allow_cancel and self._child.is_alive():
             os.kill(self._child.pid, signal.SIGUSR1)
+            self._allow_cancel = False
 
     def _assert_state(self, state):
         if self._state != state:
@@ -115,6 +118,7 @@ class Worker:
                 raise FatalWorkerException(raise_on_error)
             else:
                 self._state = WorkerState.READY
+                self._allow_cancel = False
 
         # If we dropped off the end off the end of the loop, check if it's
         # because the child process died.
