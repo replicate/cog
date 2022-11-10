@@ -2,11 +2,12 @@ import base64
 import os
 import tempfile
 
+import responses
 from PIL import Image
 from pydantic import BaseModel
-import responses
 
-from cog import BasePredictor, Input, Path, File
+from cog import BasePredictor, File, Input, Path
+
 from .test_http import make_client
 
 
@@ -35,7 +36,7 @@ def test_good_str_input():
 def test_good_int_input():
     class Predictor(BasePredictor):
         def predict(self, num: int) -> int:
-            return num ** 3
+            return num**3
 
     client = make_client(Predictor())
     resp = client.post("/predictions", json={"input": {"num": 3}})
@@ -49,7 +50,7 @@ def test_good_int_input():
 def test_bad_int_input():
     class Predictor(BasePredictor):
         def predict(self, num: int) -> int:
-            return num ** 2
+            return num**2
 
     client = make_client(Predictor())
     resp = client.post("/predictions", json={"input": {"num": "foo"}})
@@ -68,7 +69,7 @@ def test_bad_int_input():
 def test_default_int_input():
     class Predictor(BasePredictor):
         def predict(self, num: int = Input(default=5)) -> int:
-            return num ** 2
+            return num**2
 
     client = make_client(Predictor())
 
@@ -272,7 +273,7 @@ def test_choices_str():
 def test_choices_int():
     class Predictor(BasePredictor):
         def predict(self, x: int = Input(choices=[1, 2])) -> int:
-            return x ** 2
+            return x**2
 
     client = make_client(Predictor())
     resp = client.post("/predictions", json={"input": {"x": 1}})

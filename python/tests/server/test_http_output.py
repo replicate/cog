@@ -5,11 +5,12 @@ import tempfile
 from typing import Iterator, List
 
 import numpy as np
-from PIL import Image
 import responses
+from PIL import Image
 from responses.matchers import multipart_matcher
 
-from cog import BaseModel, BasePredictor, Path, File
+from cog import BaseModel, BasePredictor, File, Path
+
 from .test_http import make_client
 
 

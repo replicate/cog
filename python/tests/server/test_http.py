@@ -5,13 +5,12 @@ import tempfile
 from typing import Iterator, List
 from unittest import mock
 
-from fastapi.testclient import TestClient
-from pydantic import BaseModel
-from PIL import Image
 import pytest
+from fastapi.testclient import TestClient
+from PIL import Image
+from pydantic import BaseModel
 
-from cog import BasePredictor, Input, File, Path
-
+from cog import BasePredictor, File, Input, Path
 from cog.server.http import create_app
 
 
