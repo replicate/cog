@@ -276,7 +276,7 @@ def test_cancel_is_safe():
     happening or the cancelation of unexpected predictions.
     """
 
-    w = Worker(predictor_ref=_fixture_path("sleep"), tee_output=False)
+    w = Worker(predictor_ref=_fixture_path("sleep"), tee_output=True)
 
     try:
         for _ in range(50):
@@ -309,7 +309,7 @@ def test_cancel_idempotency():
     recommended, should still only result in a single cancelled prediction, and
     should not affect subsequent predictions.
     """
-    w = Worker(predictor_ref=_fixture_path("sleep"), tee_output=False)
+    w = Worker(predictor_ref=_fixture_path("sleep"), tee_output=True)
 
     try:
         _process(w.setup())
@@ -333,6 +333,37 @@ def test_cancel_idempotency():
 
         assert not result2.done.canceled
         assert result2.output == "done in 0.1 seconds"
+    finally:
+        w.terminate()
+
+
+def test_cancel_multiple_predictions():
+    """
+    Multiple predictions cancelled in a row shouldn't be a problem. This test
+    is mainly ensuring that the _allow_cancel latch in Worker is correctly
+    reset every time a prediction starts.
+    """
+
+    w = Worker(predictor_ref=_fixture_path("sleep"), tee_output=True)
+
+    try:
+        _process(w.setup())
+
+        dones = []
+
+        for _ in range(5):
+            canceled = False
+
+            for event in w.predict({"sleep": 0.5}, poll=0.01):
+                if not canceled:
+                    w.cancel()
+                    canceled = True
+
+                if isinstance(event, Done):
+                    dones.append(event)
+
+        assert len(dones) == 5
+        assert all([d == Done(canceled=True) for d in dones])
     finally:
         w.terminate()
 
@@ -376,7 +407,9 @@ def test_heartbeats_cancel():
                 w.cancel()
                 canceled = True
 
-        assert time.time() - start < 2
+        elapsed = time.time() - start
+
+        assert elapsed < 2
         assert heartbeat_count > 0
     finally:
         w.terminate()
