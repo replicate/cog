@@ -5,9 +5,11 @@ import sys
 import traceback
 import types
 from enum import Enum, auto, unique
+from multiprocessing.connection import Connection
+from typing import Any, Dict, Iterable, Optional, TextIO, Union
 
 from ..json import make_encodeable
-from ..predictor import load_predictor_from_ref
+from ..predictor import BasePredictor, load_predictor_from_ref
 from .eventtypes import (
     Done,
     Heartbeat,
@@ -26,6 +28,8 @@ from .helpers import StreamRedirector, WrappedStream
 
 _spawn = multiprocessing.get_context("spawn")
 
+_PublicEventType = Union[Done, Heartbeat, Log, PredictionOutput, PredictionOutputType]
+
 
 @unique
 class WorkerState(Enum):
@@ -37,7 +41,7 @@ class WorkerState(Enum):
 
 
 class Worker:
-    def __init__(self, predictor_ref, tee_output=True):
+    def __init__(self, predictor_ref: str, tee_output: bool = True):
         self._state = WorkerState.NEW
         self._allow_cancel = False
 
@@ -46,14 +50,16 @@ class Worker:
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
         self._terminating = False
 
-    def setup(self):
+    def setup(self) -> Iterable[_PublicEventType]:
         self._assert_state(WorkerState.NEW)
         self._state = WorkerState.STARTING
         self._child.start()
 
         return self._wait(raise_on_error="Predictor errored during setup")
 
-    def predict(self, payload, poll=None):
+    def predict(
+        self, payload: Dict[str, Any], poll: Optional[float] = None
+    ) -> Iterable[_PublicEventType]:
         self._assert_state(WorkerState.READY)
         self._state = WorkerState.PROCESSING
         self._allow_cancel = True
@@ -61,7 +67,7 @@ class Worker:
 
         return self._wait(poll=poll)
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         if self._state == WorkerState.DEFUNCT:
             return
 
@@ -70,7 +76,7 @@ class Worker:
         if self._child.is_alive():
             self._events.send(Shutdown())
 
-    def terminate(self):
+    def terminate(self) -> None:
         if self._state == WorkerState.DEFUNCT:
             return
 
@@ -81,18 +87,20 @@ class Worker:
             self._child.join()
         self._child.close()
 
-    def cancel(self):
+    def cancel(self) -> None:
         if self._allow_cancel and self._child.is_alive():
             os.kill(self._child.pid, signal.SIGUSR1)
             self._allow_cancel = False
 
-    def _assert_state(self, state):
+    def _assert_state(self, state: WorkerState) -> None:
         if self._state != state:
             raise InvalidStateException(
                 f"Invalid operation: state is {self._state} (must be {state})"
             )
 
-    def _wait(self, poll=None, raise_on_error=None):
+    def _wait(
+        self, poll: Optional[float] = None, raise_on_error: Optional[str] = None
+    ) -> Iterable[_PublicEventType]:
         done = None
 
         if poll:
@@ -129,17 +137,22 @@ class Worker:
             )
 
 
-class _ChildWorker(_spawn.Process):
-    def __init__(self, predictor_ref, events, tee_output=True):
+class _ChildWorker(_spawn.Process):  # type: ignore
+    def __init__(
+        self,
+        predictor_ref: str,
+        events: Connection,
+        tee_output: bool = True,
+    ):
         self._predictor_ref = predictor_ref
-        self._predictor = None
+        self._predictor: Optional[BasePredictor] = None
         self._events = events
         self._tee_output = tee_output
         self._cancelable = False
 
         super().__init__()
 
-    def run(self):
+    def run(self) -> None:
         # We use SIGUSR1 to signal an interrupt for cancelation.
         signal.signal(signal.SIGUSR1, self._signal_handler)
 
@@ -158,7 +171,7 @@ class _ChildWorker(_spawn.Process):
 
         self._stream_redirector.shutdown()
 
-    def _setup(self):
+    def _setup(self) -> None:
         done = Done()
         try:
             self._predictor = load_predictor_from_ref(self._predictor_ref)
@@ -174,7 +187,7 @@ class _ChildWorker(_spawn.Process):
             self._stream_redirector.drain()
             self._events.send(done)
 
-    def _loop(self):
+    def _loop(self) -> None:
         while True:
             done = Done()
 
@@ -192,7 +205,8 @@ class _ChildWorker(_spawn.Process):
             self._stream_redirector.drain()
             self._events.send(done)
 
-    def _predict(self, done, payload):
+    def _predict(self, done: Done, payload: Dict[str, Any]) -> None:
+        assert self._predictor
         try:
             self._cancelable = True
             result = self._predictor.predict(**payload)
@@ -213,11 +227,13 @@ class _ChildWorker(_spawn.Process):
         finally:
             self._cancelable = False
 
-    def _signal_handler(self, signum, frame):
+    def _signal_handler(self, signum: int, frame: Optional[types.FrameType]) -> None:
         if signum == signal.SIGUSR1 and self._cancelable:
             raise CancelationException()
 
-    def _stream_write_hook(self, stream_name, original_stream, data):
+    def _stream_write_hook(
+        self, stream_name: str, original_stream: TextIO, data: str
+    ) -> None:
         if self._tee_output:
             original_stream.write(data)
         self._events.send(Log(data, source=stream_name))
