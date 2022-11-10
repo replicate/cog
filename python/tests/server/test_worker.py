@@ -1,8 +1,8 @@
 import importlib
 import os
-import time
 import sys
-from typing import Any
+import time
+from typing import Any, Optional
 
 import pytest
 from attrs import define
@@ -95,10 +95,10 @@ class Result:
     stdout: str = ""
     stderr: str = ""
     heartbeat_count: int = 0
-    output_type: PredictionOutputType | None = None
+    output_type: Optional[PredictionOutputType] = None
     output: Any = None
-    done: Done | None = None
-    exception: Exception | None = None
+    done: Optional[Done] = None
+    exception: Optional[Exception] = None
 
 
 def _process(events, swallow_exceptions=False):
