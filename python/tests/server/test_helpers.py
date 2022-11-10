@@ -36,6 +36,21 @@ def test_wrapped_stream_can_read_from_wrapped(tmpfile):
     assert ws.wrapped.readline() == "test data\n"
 
 
+def test_wrapped_stream_writes_to_underlying_stream(tmpfile):
+    """
+    WrappedStream has `write()` and `flush()` methods that are passed through to the underlying stream.
+    """
+    filename = tmpfile()
+    fake_stream = open(filename, "w")
+    ws = WrappedStream("fake", fake_stream)
+    ws.wrap()
+
+    ws.write("test data\n")
+    ws.flush()
+
+    assert ws.wrapped.readline() == "test data\n"
+
+
 def test_wrapped_stream_can_write_to_original(tmpfile):
     """
     WrappedStream exposes an `original` file object than be used to write data

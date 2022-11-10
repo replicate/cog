@@ -38,6 +38,12 @@ class WrappedStream:
         os.set_blocking(r, False)
         self._wrapped_fp = os.fdopen(r, "r")
 
+    def write(self, data):
+        self._stream.write(data)
+
+    def flush(self):
+        self._stream.flush()
+
     @property
     def wrapped(self):
         if not self._wrapped_fp:
@@ -85,15 +91,15 @@ class StreamRedirector(threading.Thread):
     def drain(self):
         self.drain_event.clear()
         for stream in self._streams:
-            stream._stream.write(self.drain_token + "\n")
-            stream._stream.flush()
+            stream.write(self.drain_token + "\n")
+            stream.flush()
         if not self.drain_event.wait(timeout=1):
             raise RuntimeError("output streams failed to drain")
 
     def shutdown(self):
         for stream in self._streams:
-            stream._stream.write(self.terminate_token + "\n")
-            stream._stream.flush()
+            stream.write(self.terminate_token + "\n")
+            stream.flush()
             break # only need to write one terminate token
         self.join()
 
