@@ -62,7 +62,7 @@ OUTPUT_FIXTURES = [
     ),
     (
         "count_up",
-        {"upto": st.integers(min_value=0, max_value=1000)},
+        {"upto": st.integers(min_value=0, max_value=100)},
         lambda x: list(range(x["upto"])),
     ),
     ("complex_output", {}, lambda _: {"number": 42, "text": "meaning of life"}),
@@ -493,7 +493,7 @@ class WorkerState(RuleBasedStateMachine):
 
         expected_stdout = ["START\n"]
         for i in range(payload["steps"]):
-            expected_stdout.append(f"STEP1 {i+1}\n")
+            expected_stdout.append(f"STEP {i+1}\n")
         expected_stdout.append("END\n")
 
         assert result.stdout == "".join(expected_stdout)
