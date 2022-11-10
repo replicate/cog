@@ -360,7 +360,7 @@ class RedisQueueWorker:
         return resp.content
 
     def webhook_caller(self, webhook: str) -> Callable:
-        response_interval = float(os.environ.get("COG_THROTTLE_RESPONSE_INTERVAL", 0))
+        response_interval = float(os.environ.get("COG_THROTTLE_RESPONSE_INTERVAL", 0.5))
         throttler = ResponseThrottler(response_interval=response_interval)
 
         # This session will retry requests up to 12 times, with exponential

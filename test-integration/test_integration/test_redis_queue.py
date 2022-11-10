@@ -10,6 +10,10 @@ import unittest.mock as mock
 
 from .util import docker_run, random_string
 
+DEFAULT_ENV = {
+    "COG_THROTTLE_RESPONSE_INTERVAL": "0",
+}
+
 
 @pytest.fixture(scope="session")
 def httpserver_listen_address():
@@ -46,6 +50,7 @@ def test_queue_worker_files(
             "model_id",
             "logs",
         ],
+        env=DEFAULT_ENV,
     ):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
@@ -161,6 +166,7 @@ def test_queue_worker_yielding_file(
             "model_id",
             "logs",
         ],
+        env=DEFAULT_ENV,
     ):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
@@ -313,6 +319,7 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client, https
             "model_id",
             "logs",
         ],
+        env=DEFAULT_ENV,
     ):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
@@ -416,6 +423,7 @@ def test_queue_worker_error(docker_network, docker_image, redis_client, httpserv
             "model_id",
             "logs",
         ],
+        env=DEFAULT_ENV,
     ):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
@@ -528,6 +536,7 @@ def test_queue_worker_error_after_output(
             "model_id",
             "logs",
         ],
+        env=DEFAULT_ENV,
     ):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
@@ -674,6 +683,7 @@ def test_queue_worker_unhandled_error(
             "model_id",
             "logs",
         ],
+        env=DEFAULT_ENV,
     ):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
@@ -786,6 +796,7 @@ def test_queue_worker_invalid_input(
             "model_id",
             "logs",
         ],
+        env=DEFAULT_ENV,
     ):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
@@ -860,6 +871,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client, httpse
             "model_id",
             "logs",
         ],
+        env=DEFAULT_ENV,
     ):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
@@ -1011,6 +1023,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
             "logs",
             "2",  # timeout
         ],
+        env=DEFAULT_ENV,
     ):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
@@ -1212,6 +1225,7 @@ def test_queue_worker_yielding_timeout(
             "logs",
             "2",  # timeout
         ],
+        env=DEFAULT_ENV,
     ):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
@@ -1412,6 +1426,7 @@ def test_queue_worker_complex_output(
             "model_id",
             "logs",
         ],
+        env=DEFAULT_ENV,
     ):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
@@ -1509,6 +1524,7 @@ def test_queue_worker_yielding_list_of_complex_output(
             "model_id",
             "logs",
         ],
+        env=DEFAULT_ENV,
     ):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
@@ -1621,6 +1637,7 @@ def test_queue_worker_setup(docker_network, docker_image, redis_client, httpserv
             "model_id",
             "logs",
         ],
+        env=DEFAULT_ENV,
     ):
         httpserver.expect_request("/webhook", method="POST")
         redis_client.xgroup_create(
@@ -1709,6 +1726,7 @@ def test_queue_worker_webhook_retries(
             "model_id",
             "logs",
         ],
+        env=DEFAULT_ENV,
     ):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
@@ -1819,6 +1837,7 @@ def test_queue_worker_redis_responses(docker_network, docker_image, redis_client
             "model_id",
             "logs",
         ],
+        env=DEFAULT_ENV,
     ):
         redis_client.xgroup_create(
             mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
@@ -1885,6 +1904,7 @@ def test_queue_worker_cancel(docker_network, docker_image, redis_client, httpser
             "model_id",
             "logs",
         ],
+        env=DEFAULT_ENV,
     ):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
