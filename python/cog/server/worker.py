@@ -37,12 +37,12 @@ class WorkerState(Enum):
 
 
 class Worker:
-    def __init__(self, predictor_ref):
+    def __init__(self, predictor_ref, tee_output=True):
         self._state = WorkerState.NEW
 
         # A pipe with which to communicate with the child worker.
         self._events, child_events = _spawn.Pipe()
-        self._child = _ChildWorker(predictor_ref, child_events)
+        self._child = _ChildWorker(predictor_ref, child_events, tee_output)
         self._terminating = False
 
     def setup(self):
@@ -126,10 +126,11 @@ class Worker:
 
 
 class _ChildWorker(_spawn.Process):
-    def __init__(self, predictor_ref, events):
+    def __init__(self, predictor_ref, events, tee_output=True):
         self._predictor_ref = predictor_ref
         self._predictor = None
         self._events = events
+        self._tee_output = tee_output
         self._cancelable = False
 
         super().__init__()
@@ -209,5 +210,6 @@ class _ChildWorker(_spawn.Process):
             raise CancelationException()
 
     def _stream_write_hook(self, stream_name, original_stream, data):
-        original_stream.write(data)
+        if self._tee_output:
+            original_stream.write(data)
         self._events.send(Log(data, source=stream_name))
