@@ -235,4 +235,5 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     ) -> None:
         if self._tee_output:
             original_stream.write(data)
+            original_stream.flush()
         self._events.send(Log(data, source=stream_name))
