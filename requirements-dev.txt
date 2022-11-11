@@ -10,9 +10,10 @@ pytest-httpserver==1.0.4
 PyYAML==5.4.1
 redis==4.1.0
 requests==2.25.1
-responses==0.16.0
+responses==0.22.0
 types-requests==2.25.1
 types-PyYAML==5.4.1
 types-redis==4.1.0
+types-setuptools==65.5.0.2
 uvicorn[standard]==0.16.0
 wheel==0.36.2

@@ -16,19 +16,13 @@ from urllib.parse import urlparse
 import redis
 import requests
 from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-    OTLPSpanExporter,
-)
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import Status as TraceStatus
 from opentelemetry.trace import StatusCode
-from opentelemetry.trace.propagation.tracecontext import (
-    TraceContextTextMapPropagator,
-)
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from pydantic import ValidationError
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
 
 from ..files import guess_filename
 from ..json import upload_files
@@ -40,7 +34,7 @@ from ..predictor import (
 )
 from ..response import Status
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
-from .response_throttler import ResponseThrottler
+from .webhook import webhook_caller
 from .worker import Worker
 
 
@@ -183,7 +177,7 @@ class RedisQueueWorker:
                 ) as span:
                     webhook = message.get("webhook")
                     if webhook is not None:
-                        send_response = self.webhook_caller(webhook)
+                        send_response = webhook_caller(webhook)
                     else:
                         redis_key = message["response_queue"]
                         send_response = self.redis_setter(redis_key)
@@ -358,37 +352,6 @@ class RedisQueueWorker:
         resp = requests.get(url)
         resp.raise_for_status()
         return resp.content
-
-    def webhook_caller(self, webhook: str) -> Callable:
-        response_interval = float(os.environ.get("COG_THROTTLE_RESPONSE_INTERVAL", 0.5))
-        throttler = ResponseThrottler(response_interval=response_interval)
-
-        # This session will retry requests up to 12 times, with exponential
-        # backoff. In total it'll try for up to roughly 320 seconds, providing
-        # resilience through temporary networking and availability issues.
-        session = requests.Session()
-        adapter = HTTPAdapter(
-            max_retries=Retry(
-                total=12,
-                backoff_factor=0.1,
-                status_forcelist=[429, 500, 502, 503, 504],
-                allowed_methods=["POST"],
-            )
-        )
-        session.mount("http://", adapter)
-        session.mount("https://", adapter)
-
-        def caller(response: Any) -> None:
-            if throttler.should_send_response(response):
-                if Status.is_terminal(response["status"]):
-                    # For terminal updates, retry persistently
-                    session.post(webhook, json=response)
-                else:
-                    # For other requests, don't retry
-                    requests.post(webhook, json=response)
-                throttler.update_last_sent_response_time()
-
-        return caller
 
     def redis_setter(self, redis_key: str) -> Callable:
         def setter(response: Any) -> None:
