@@ -12,7 +12,7 @@ class Status(str, enum.Enum):
 
     @staticmethod
     def is_terminal(status: "Status") -> bool:
-        return status in (Status.SUCCEEDED, Status.FAILED)
+        return status in {Status.SUCCEEDED, Status.CANCELED, Status.FAILED}
 
 
 def get_response_type(OutputType: Type[BaseModel]) -> Any:
