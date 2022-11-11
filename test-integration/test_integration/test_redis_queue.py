@@ -2084,6 +2084,80 @@ def test_queue_worker_report_setup_run_failure(
         )
 
 
+def test_queue_worker_webhook_events_filter(
+    docker_network, docker_image, redis_client, httpserver
+):
+    project_dir = Path(__file__).parent / "fixtures/logging-project"
+    subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
+
+    with docker_run(
+        image=docker_image,
+        interactive=True,
+        network=docker_network,
+        command=[
+            "python",
+            "-m",
+            "cog.server.redis_queue",
+            "--redis-host=redis",
+            "--redis-port=6379",
+            "--input-queue=predict-queue",
+            "--consumer-id=test-worker",
+        ],
+        env=DEFAULT_ENV,
+    ):
+        predict_id = random_string(10)
+        webhook_url = httpserver.url_for("/webhook").replace(
+            "localhost", "host.docker.internal"
+        )
+
+        # We're only expecting a single webhook: after the prediction is done
+        httpserver.expect_oneshot_request(
+            "/webhook",
+            json={
+                "id": predict_id,
+                "input": {},
+                "webhook": webhook_url,
+                "webhook_events_filter": ["completed"],
+                "logs": (
+                    "WARNING:root:writing log message\n"
+                    + "writing from C\n"
+                    + "writing to stderr\n"
+                    + "writing with print\n"
+                ),
+                "output": "output",
+                "status": "succeeded",
+                "started_at": mock.ANY,
+                "completed_at": mock.ANY,
+                "metrics": {
+                    "predict_time": mock.ANY,
+                },
+            },
+            method="POST",
+        )
+
+        redis_client.xgroup_create(
+            mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
+        )
+
+        with httpserver.wait(timeout=15) as waiting:
+            redis_client.xadd(
+                name="predict-queue",
+                fields={
+                    "value": json.dumps(
+                        {
+                            "id": predict_id,
+                            "input": {},
+                            "webhook": webhook_url,
+                            "webhook_events_filter": ["completed"],
+                        }
+                    ),
+                },
+            )
+
+        # check we received all the webhooks
+        assert waiting.result
+
+
 def response_iterator(redis_client, response_queue, timeout=10):
     redis_client.config_set("notify-keyspace-events", "KEA")
     channel = redis_client.pubsub()
