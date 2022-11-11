@@ -49,6 +49,7 @@ The message body should be a JSON object with the following fields:
 
 - `input`: a JSON object with the same keys as the [arguments to the `predict()` function](python.md). Any `File` or `Path` inputs are passed as URLs.
 - `webhook`: the URL Cog will send responses to.
+- `webhook_events_filter` (optional): a list of events to send webhooks for. May contain `start`, `output`, `logs` and `completed`. Defaults to all events. Will always send `completed` events, even if omitted from the list.
 - `cancel_key` (optional): a Redis key to watch to signal that this prediction should be canceled. If the key is created the prediction will be canceled.
 
 There's also one deprecated field:
