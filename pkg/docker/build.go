@@ -69,7 +69,7 @@ func BuildAddLabelsToImage(image string, labels map[string]string) error {
 }
 
 func m1BuildxBuildArgs() []string {
-	return []string{"buildx", "build", "--platform", "linux/amd64"}
+	return []string{"buildx", "build", "--platform", "linux/amd64", "--load"}
 }
 
 func buildKitBuildArgs() []string {
