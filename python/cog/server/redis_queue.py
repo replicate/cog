@@ -59,6 +59,7 @@ class RedisQueueWorker:
         predict_timeout: Optional[int] = None,
         redis_db: int = 0,
         report_setup_run_url: Optional[str] = None,
+        max_failure_count: Optional[int] = None,
     ):
         self.worker = Worker(predictor_ref)
         self.redis_host = redis_host
@@ -71,6 +72,7 @@ class RedisQueueWorker:
         self.predict_timeout = predict_timeout
         self.redis_db = redis_db
         self.report_setup_run_url = report_setup_run_url
+        self.max_failure_count = max_failure_count
         if self.predict_timeout is not None:
             # 30s grace period allows final responses to be sent and job to be acked
             self.autoclaim_messages_after = self.predict_timeout + 30
@@ -181,6 +183,8 @@ class RedisQueueWorker:
             )
             sys.stderr.write(f"Setup time: {setup_time:.2f}\n")
 
+        failure_count = 0
+
         sys.stderr.write(f"Waiting for message on {self.input_queue}\n")
         while not self.should_exit:
             try:
@@ -224,6 +228,21 @@ class RedisQueueWorker:
 
                     for response in self.run_prediction(message, should_cancel):
                         send_response(response)
+
+                    if self.max_failure_count is not None:
+                        # Keep track of runs of failures to catch the situation
+                        # where the worker has gotten into a bad state where it can
+                        # only fail predictions, but isn't exiting.
+                        if response["status"] == Status.FAILED:
+                            failure_count += 1
+                            if failure_count > self.max_failure_count:
+                                self.should_exit = True
+                                print(
+                                    f"Had {failure_count} failures in a row, exiting...",
+                                    file=sys.stderr,
+                                )
+                        else:
+                            failure_count = 0
 
                     self.redis.xack(self.input_queue, self.input_queue, message_id)
                     self.redis.xdel(self.input_queue, message_id)
@@ -480,6 +499,11 @@ if __name__ == "__main__":
     parser.add_argument("--model-id")
     parser.add_argument("--predict-timeout", type=int)
     parser.add_argument("--report-setup-run-url")
+    parser.add_argument(
+        "--max-failure-count",
+        type=int,
+        help="Maximum number of consecutive failures before the worker should exit",
+    )
 
     args = parser.parse_args()
 
@@ -499,6 +523,7 @@ if __name__ == "__main__":
             model_id=args.model_id,
             predict_timeout=args.predict_timeout,
             report_setup_run_url=args.report_setup_run_url,
+            max_failure_count=args.max_failure_count,
         )
 
     worker.start()
