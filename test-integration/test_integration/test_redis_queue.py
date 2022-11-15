@@ -1975,6 +1975,115 @@ def test_queue_worker_cancel(docker_network, docker_image, redis_client, httpser
         assert waiting.result
 
 
+def test_queue_worker_report_setup_run_success(
+    docker_network, docker_image, redis_client, httpserver
+):
+    project_dir = Path(__file__).parent / "fixtures/int-project"
+    subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
+
+    httpserver.expect_oneshot_request(
+        "/report-setup-run",
+        json={
+            "status": "succeeded",
+            "started_at": mock.ANY,
+            "completed_at": mock.ANY,
+            "logs": "",
+        },
+        method="POST",
+    )
+
+    report_setup_run_url = httpserver.url_for("/report-setup-run").replace(
+        "localhost", "host.docker.internal"
+    )
+
+    with docker_run(
+        image=docker_image,
+        interactive=True,
+        network=docker_network,
+        command=[
+            "python",
+            "-m",
+            "cog.server.redis_queue",
+            "--input-queue=predict-queue",
+            "--redis-host=redis",
+            "--redis-port=6379",
+            f"--report-setup-run-url={report_setup_run_url}",
+        ],
+        env=DEFAULT_ENV,
+    ):
+        with httpserver.wait(timeout=15) as waiting:
+            pass
+
+        # check we receive the initial webhook
+        assert waiting.result
+
+
+def test_queue_worker_report_setup_run_failure(
+    docker_network, docker_image, redis_client, httpserver
+):
+    project_dir = Path(__file__).parent / "fixtures/failed-setup-project"
+    subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
+
+    response = None
+
+    def capture_response(request):
+        nonlocal response
+        response = request.get_json()
+
+    httpserver.expect_oneshot_request(
+        "/report-setup-run",
+        json={
+            "status": "failed",
+            "started_at": mock.ANY,
+            "completed_at": mock.ANY,
+            "logs": mock.ANY,
+        },
+        method="POST",
+    ).respond_with_handler(capture_response)
+
+    report_setup_run_url = httpserver.url_for("/report-setup-run").replace(
+        "localhost", "host.docker.internal"
+    )
+
+    with docker_run(
+        image=docker_image,
+        interactive=True,
+        network=docker_network,
+        command=[
+            "python",
+            "-m",
+            "cog.server.redis_queue",
+            "--input-queue=predict-queue",
+            "--redis-host=redis",
+            "--redis-port=6379",
+            f"--report-setup-run-url={report_setup_run_url}",
+        ],
+        env=DEFAULT_ENV,
+    ):
+        with httpserver.wait(timeout=15) as waiting:
+            pass
+
+        # check we receive the initial webhook
+        assert waiting.result
+
+        # check the logs include a traceback
+        assert "Traceback" in response["logs"]
+
+        # make sure the container exits
+        tries = 0
+        while (
+            docker_image
+            in subprocess.check_output(["docker", "ps"], universal_newlines=True)
+            and tries < 5
+        ):
+            tries += 1
+            time.sleep(1)
+
+        assert docker_image not in subprocess.check_output(
+            ["docker", "ps"], universal_newlines=True
+        )
+
+
 def response_iterator(redis_client, response_queue, timeout=10):
     redis_client.config_set("notify-keyspace-events", "KEA")
     channel = redis_client.pubsub()

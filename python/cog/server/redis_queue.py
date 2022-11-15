@@ -36,7 +36,7 @@ from ..predictor import (
 from ..response import Status
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
 from .probes import ProbeHelper
-from .webhook import webhook_caller
+from .webhook import requests_session, webhook_caller
 from .worker import Worker
 
 
@@ -58,6 +58,7 @@ class RedisQueueWorker:
         log_queue: Optional[str] = None,
         predict_timeout: Optional[int] = None,
         redis_db: int = 0,
+        report_setup_run_url: Optional[str] = None,
     ):
         self.worker = Worker(predictor_ref)
         self.redis_host = redis_host
@@ -69,6 +70,7 @@ class RedisQueueWorker:
         self.log_queue = log_queue
         self.predict_timeout = predict_timeout
         self.redis_db = redis_db
+        self.report_setup_run_url = report_setup_run_url
         if self.predict_timeout is not None:
             # 30s grace period allows final responses to be sent and job to be acked
             self.autoclaim_messages_after = self.predict_timeout + 30
@@ -135,17 +137,43 @@ class RedisQueueWorker:
     def start(self) -> None:
         with self.tracer.start_as_current_span(name="redis_queue.setup") as span:
             signal.signal(signal.SIGTERM, self.signal_exit)
-            start_time = time.time()
+            started_at = datetime.datetime.now()
 
-            # TODO(bfirsh): setup should time out too, but we don't display these logs to the user, so don't timeout to avoid confusion
-            for event in self.worker.setup():
-                # TODO: send worker logs somewhere useful!
-                pass
+            setup_logs = ""
+            try:
+                for event in self.worker.setup():
+                    if isinstance(event, Log):
+                        setup_logs += event.message
+                    elif isinstance(event, Done):
+                        setup_status = (
+                            Status.FAILED if event.error else Status.SUCCEEDED
+                        )
+            except Exception:
+                setup_status = Status.FAILED
+
+            if setup_status == Status.FAILED:
+                sys.stderr.write("Setup failed, exiting immediately")
+                self.should_exit = True
+
+            completed_at = datetime.datetime.now()
 
             # Signal pod readiness (when in k8s)
             self.probes.ready()
 
-            setup_time = time.time() - start_time
+            if self.report_setup_run_url:
+                # TODO this should be async so we can get on with predictions ASAP
+                requests_session().post(
+                    self.report_setup_run_url,
+                    json={
+                        "status": setup_status,
+                        "started_at": format_datetime(started_at),
+                        "completed_at": format_datetime(completed_at),
+                        "logs": setup_logs,
+                    },
+                )
+
+            # TODO deprecate this
+            setup_time = (completed_at - started_at).total_seconds()
             self.redis.xadd(
                 self.setup_time_queue,
                 fields={"duration": setup_time},
@@ -451,6 +479,7 @@ if __name__ == "__main__":
     parser.add_argument("--consumer-id")
     parser.add_argument("--model-id")
     parser.add_argument("--predict-timeout", type=int)
+    parser.add_argument("--report-setup-run-url")
 
     args = parser.parse_args()
 
@@ -469,6 +498,7 @@ if __name__ == "__main__":
             consumer_id=args.consumer_id,
             model_id=args.model_id,
             predict_timeout=args.predict_timeout,
+            report_setup_run_url=args.report_setup_run_url,
         )
 
     worker.start()
