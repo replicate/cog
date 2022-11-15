@@ -38,12 +38,13 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		imageName = config.DockerImageName(projectDir)
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildProgressOutput); err != nil {
+	imageID, err := image.Build(cfg, projectDir, imageName, buildProgressOutput)
+	if err != nil {
 		return err
 	}
 
 	console.Infof("\nImage built as %s", imageName)
-
+	console.Output(imageID)
 	return nil
 }
 

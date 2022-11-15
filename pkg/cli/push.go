@@ -42,7 +42,8 @@ func push(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push registry.hooli.corp/hotdog-detector'")
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildProgressOutput); err != nil {
+	imageID, err := image.Build(cfg, projectDir, imageName, buildProgressOutput)
+	if err != nil {
 		return err
 	}
 
@@ -57,5 +58,6 @@ func push(cmd *cobra.Command, args []string) error {
 			console.Infof("\nRun your model on Replicate:\n    %s", replicatePage)
 		}
 	}
+	console.Output(imageID)
 	return exitStatus
 }
