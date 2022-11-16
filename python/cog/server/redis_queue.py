@@ -35,6 +35,7 @@ from ..predictor import (
 )
 from ..response import Status
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
+from .probes import ProbeHelper
 from .webhook import webhook_caller
 from .worker import Worker
 
@@ -87,6 +88,7 @@ class RedisQueueWorker:
         self.predict_time_queue = input_queue + self.RUN_TIME_QUEUE_SUFFIX
         self.stats_queue_length = 100
         self.tracer = trace.get_tracer("cog")
+        self.probes = ProbeHelper()
 
         sys.stderr.write(
             f"Connected to Redis: {self.redis_host}:{self.redis_port} (db {self.redis_db})\n"
@@ -139,6 +141,9 @@ class RedisQueueWorker:
             for event in self.worker.setup():
                 # TODO: send worker logs somewhere useful!
                 pass
+
+            # Signal pod readiness (when in k8s)
+            self.probes.ready()
 
             setup_time = time.time() - start_time
             self.redis.xadd(
