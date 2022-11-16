@@ -125,6 +125,32 @@ To get notified of updates to the value, you can `SUBSCRIBE` to [keyspace notifi
 
 [keyspace notifications]: https://redis.io/docs/manual/keyspace-notifications/
 
+## Kubernetes probes
+
+If the queue worker detects that it is running inside Kubernetes, it will create
+an empty file at `/var/run/cog/ready` when the predictor's `setup()` method has
+completed successfully.
+
+This can be used together with a [readiness probe][k8s-readiness] and a [rollout
+strategy][k8s-rollout] to ensure safe rollouts of Kubernetes deployments running
+the queue worker.
+
+[k8s-readiness]: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-readiness-probes
+[k8s-rollout]: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
+
+An example readiness probe configuration might look like:
+
+```yaml
+readinessProbe:
+  exec:
+    command:
+    - test
+    - -f
+    - /var/run/cog/ready
+  initialDelaySeconds: 1
+  periodSeconds: 1
+```
+
 ## Telemetry
 
 Cog's queue worker is instrumented using [OpenTelemetry](https://opentelemetry.io). For setup it sends:
