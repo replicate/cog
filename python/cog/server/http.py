@@ -31,6 +31,8 @@ def create_app(predictor: BasePredictor, threads: int = 1) -> FastAPI:
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
     )
+    # Run any configurations required by the predictor.
+    predictor.configure_api(app)
 
     @app.on_event("startup")
     def startup() -> None:

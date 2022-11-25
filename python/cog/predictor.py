@@ -4,6 +4,7 @@ import enum
 import importlib.util
 import inspect
 import os.path
+from fastapi import FastAPI
 from pathlib import Path
 from pydantic import create_model, BaseModel, Field
 from pydantic.fields import FieldInfo
@@ -24,6 +25,13 @@ class BasePredictor(ABC):
     def setup(self) -> None:
         """
         An optional method to prepare the model so multiple predictions run efficiently.
+        """
+
+    def configure_api(self, app: FastAPI) -> None:
+        """
+        An optional method to configure the FastAPI app.
+
+        This is a useful place to configure any CORS settings.
         """
 
     @abstractmethod
