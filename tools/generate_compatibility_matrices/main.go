@@ -358,24 +358,38 @@ func parsePreviousTorchVersionsCode(code string, compats []config.TorchCompatibi
 		"torch": "", "torchvision": "", "torchaudio": "",
 	}
 
-	sections := strings.Split(code, "\n\n")
-	for _, section := range sections {
-		heading, install := split2(section, "\n")
-		if !strings.HasPrefix(install, "pip install ") {
-			// conda install etc
+	var cuda *string
+	skipSection := false
+
+	for _, line := range strings.Split(code, "\n") {
+		// Set section
+		if strings.HasPrefix(line, "#") {
+			skipSection = false
+			rawArch := strings.ToLower(line[2:])
+			if strings.HasPrefix(rawArch, "cuda") {
+				_, c := split2(rawArch, " ")
+				cuda = &c
+			} else if rawArch == "cpu only" {
+				cuda = nil
+			} else if strings.HasPrefix(rawArch, "rocm") {
+				cuda = nil
+				skipSection = true
+			} else {
+				// Ignore additional heading lines (notes, etc)
+				continue
+			}
+		}
+
+		// In a ROCM section, so skip
+		if skipSection {
 			continue
 		}
-		rawArch := strings.ToLower(heading[2:])
-		var cuda *string
-		if strings.HasPrefix(rawArch, "cuda") {
-			_, c := split2(rawArch, " ")
-			cuda = &c // can't take pointer directly
-		} else if strings.HasPrefix(rawArch, "rocm") {
+
+		// conda install etc
+		if !strings.HasPrefix(line, "pip install ") {
 			continue
-		} else if rawArch != "cpu only" {
-			return nil, fmt.Errorf("Invalid arch: %s", rawArch)
 		}
-		compat, err := parseTorchInstallString(install, supportedLibrarySet, cuda)
+		compat, err := parseTorchInstallString(line, supportedLibrarySet, cuda)
 		if err != nil {
 			return nil, err
 		}
