@@ -162,14 +162,18 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 func (c *Config) PythonRequirementsForArch(goos string, goarch string) (string, error) {
 	packages := []string{}
 	findLinksSet := map[string]bool{}
+	extraIndexURLSet := map[string]bool{}
 	for _, pkg := range c.Build.pythonRequirementsContent {
-		archPkg, findLinks, err := c.pythonPackageForArch(pkg, goos, goarch)
+		archPkg, findLinks, extraIndexURL, err := c.pythonPackageForArch(pkg, goos, goarch)
 		if err != nil {
 			return "", err
 		}
 		packages = append(packages, archPkg)
 		if findLinks != "" {
 			findLinksSet[findLinks] = true
+		}
+		if extraIndexURL != "" {
+			extraIndexURLSet[extraIndexURL] = true
 		}
 	}
 
@@ -178,6 +182,9 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string) (string, 
 	lines := []string{}
 	for findLinks := range findLinksSet {
 		lines = append(lines, "--find-links "+findLinks)
+	}
+	for extraIndexURL := range extraIndexURLSet {
+		lines = append(lines, "--extra-index-url "+extraIndexURL)
 	}
 
 	// Then, everything else
@@ -188,42 +195,42 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string) (string, 
 
 // pythonPackageForArch takes a package==version line and
 // returns a package==version and index URL resolved to the correct GPU package for the given OS and architecture
-func (c *Config) pythonPackageForArch(pkg string, goos string, goarch string) (actualPackage string, findLinks string, err error) {
+func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage, findLinks, extraIndexURL string, err error) {
 	name, version, err := splitPinnedPythonRequirement(pkg)
 	if err != nil {
 		// It's not pinned, so just return the line verbatim
-		return pkg, "", nil
+		return pkg, "", "", nil
 	}
 	if name == "tensorflow" {
 		if c.Build.GPU {
 			name, version, err = tfGPUPackage(version, c.Build.CUDA)
 			if err != nil {
-				return "", "", err
+				return "", "", "", err
 			}
 		}
 		// There is no CPU case for tensorflow because the default package is just the CPU package, so no transformation of version is needed
 	} else if name == "torch" {
 		if c.Build.GPU {
-			name, version, findLinks, err = torchGPUPackage(version, c.Build.CUDA)
+			name, version, findLinks, extraIndexURL, err = torchGPUPackage(version, c.Build.CUDA)
 			if err != nil {
-				return "", "", err
+				return "", "", "", err
 			}
 		} else {
-			name, version, findLinks, err = torchCPUPackage(version, goos, goarch)
+			name, version, findLinks, extraIndexURL, err = torchCPUPackage(version, goos, goarch)
 			if err != nil {
-				return "", "", err
+				return "", "", "", err
 			}
 		}
 	} else if name == "torchvision" {
 		if c.Build.GPU {
-			name, version, findLinks, err = torchvisionGPUPackage(version, c.Build.CUDA)
+			name, version, findLinks, extraIndexURL, err = torchvisionGPUPackage(version, c.Build.CUDA)
 			if err != nil {
-				return "", "", err
+				return "", "", "", err
 			}
 		} else {
-			name, version, findLinks, err = torchvisionCPUPackage(version, goos, goarch)
+			name, version, findLinks, extraIndexURL, err = torchvisionCPUPackage(version, goos, goarch)
 			if err != nil {
-				return "", "", err
+				return "", "", "", err
 			}
 		}
 	}
@@ -231,7 +238,7 @@ func (c *Config) pythonPackageForArch(pkg string, goos string, goarch string) (a
 	if version != "" {
 		pkgWithVersion += "==" + version
 	}
-	return pkgWithVersion, findLinks, nil
+	return pkgWithVersion, findLinks, extraIndexURL, nil
 }
 
 func (c *Config) validateAndCompleteCUDA() error {
