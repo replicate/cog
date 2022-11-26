@@ -2,7 +2,6 @@ package update
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"time"
@@ -35,7 +34,7 @@ func loadState() (*state, error) {
 	if !exists {
 		return &state, nil
 	}
-	text, err := ioutil.ReadFile(p)
+	text, err := os.ReadFile(p)
 	if err != nil {
 		console.Debugf("Failed to read %s: %s", p, err)
 		return &state, nil
@@ -65,7 +64,7 @@ func writeState(s *state) error {
 		return err
 	}
 
-	err = ioutil.WriteFile(statePath, bytes, 0o600)
+	err = os.WriteFile(statePath, bytes, 0o600)
 	if err != nil {
 		return err
 	}

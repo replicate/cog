@@ -93,7 +93,7 @@ Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the fu
 
 ## Development environment
 
-You'll need to [install Go 1.18](https://golang.org/doc/install). If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
+You'll need to [install Go 1.19](https://golang.org/doc/install). If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
 
 Install the Python dependencies:
 

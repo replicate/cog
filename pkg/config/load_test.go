@@ -1,7 +1,6 @@
 package config
 
 import (
-	"io/ioutil"
 	"os"
 	"path"
 	"testing"
@@ -28,13 +27,13 @@ func TestGetProjectDirWithFlagSet(t *testing.T) {
 }
 
 func TestGetConfigShouldLoadFromCustomDir(t *testing.T) {
-	dir, err := ioutil.TempDir("", "cog-test")
+	dir, err := os.MkdirTemp("", "cog-test")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 
-	err = ioutil.WriteFile(path.Join(dir, "cog.yaml"), []byte(testConfig), 0o644)
+	err = os.WriteFile(path.Join(dir, "cog.yaml"), []byte(testConfig), 0o644)
 	require.NoError(t, err)
-	err = ioutil.WriteFile(path.Join(dir, "requirements.txt"), []byte("torch==1.0.0"), 0o644)
+	err = os.WriteFile(path.Join(dir, "requirements.txt"), []byte("torch==1.0.0"), 0o644)
 	require.NoError(t, err)
 	conf, _, err := GetConfig(dir)
 	require.NoError(t, err)
@@ -43,11 +42,11 @@ func TestGetConfigShouldLoadFromCustomDir(t *testing.T) {
 }
 
 func TestFindProjectRootDirShouldFindParentDir(t *testing.T) {
-	projectDir, err := ioutil.TempDir("", "cog-test")
+	projectDir, err := os.MkdirTemp("", "cog-test")
 	require.NoError(t, err)
 	defer os.RemoveAll(projectDir)
 
-	err = ioutil.WriteFile(path.Join(projectDir, "cog.yaml"), []byte(testConfig), 0o644)
+	err = os.WriteFile(path.Join(projectDir, "cog.yaml"), []byte(testConfig), 0o644)
 	require.NoError(t, err)
 
 	subdir := path.Join(projectDir, "some/sub/dir")
@@ -60,7 +59,7 @@ func TestFindProjectRootDirShouldFindParentDir(t *testing.T) {
 }
 
 func TestFindProjectRootDirShouldReturnErrIfNoConfig(t *testing.T) {
-	projectDir, err := ioutil.TempDir("", "cog-test")
+	projectDir, err := os.MkdirTemp("", "cog-test")
 	require.NoError(t, err)
 	defer os.RemoveAll(projectDir)
 
