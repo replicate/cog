@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@master
       - uses: actions/setup-go@v2
         with:
-          go-version: 1.18
+          go-version: 1.19
       - name: Setup Python
         uses: actions/setup-python@v2
         with:
@@ -81,7 +81,7 @@ jobs:
       - uses: actions/checkout@master
       - uses: actions/setup-go@v2
         with:
-          go-version: 1.18
+          go-version: 1.19
       - name: Setup Python
         uses: actions/setup-python@v2
         with:
@@ -114,7 +114,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v2
         with:
-          go-version: 1.18
+          go-version: 1.19
       - name: Build dependencies
         run: make build-dependencies
       - uses: goreleaser/goreleaser-action@v2

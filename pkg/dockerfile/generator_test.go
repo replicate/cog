@@ -2,7 +2,6 @@ package dockerfile
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"testing"
@@ -152,7 +151,7 @@ CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 	require.Equal(t, expected, actual)
 
-	requirements, err := ioutil.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
+	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
 
 	require.Equal(t, `--find-links https://download.pytorch.org/whl/torch_stable.html
@@ -206,7 +205,7 @@ COPY . /src`
 
 	require.Equal(t, expected, actual)
 
-	requirements, err := ioutil.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
+	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
 	require.Equal(t, `torch==1.5.1
 pandas==1.2.0.12`, string(requirements))
@@ -251,7 +250,7 @@ COPY . /src`
 func TestPythonRequirements(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cog-test")
 	require.NoError(t, err)
-	err = ioutil.WriteFile(path.Join(tmpDir, "my-requirements.txt"), []byte("torch==1.0.0"), 0o644)
+	err = os.WriteFile(path.Join(tmpDir, "my-requirements.txt"), []byte("torch==1.0.0"), 0o644)
 	require.NoError(t, err)
 	conf, err := config.FromYAML([]byte(`
 build:
