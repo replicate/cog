@@ -52,7 +52,7 @@ type TorchCompatibility struct {
 	Torch       string
 	Torchvision string
 	Torchaudio  string
-	IndexURL    string
+	FindLinks   string
 	CUDA        *string
 	Pythons     []string
 }
@@ -260,10 +260,10 @@ func tfGPUPackage(ver string, cuda string) (name string, cpuVersion string, err 
 	return "", "", nil
 }
 
-func torchCPUPackage(ver string, goos string, goarch string) (name string, cpuVersion string, indexURL string, err error) {
+func torchCPUPackage(ver string, goos string, goarch string) (name string, cpuVersion string, findLinks string, err error) {
 	for _, compat := range TorchCompatibilityMatrix {
 		if compat.TorchVersion() == ver && compat.CUDA == nil {
-			return "torch", torchStripCPUSuffixForM1(compat.Torch, goos, goarch), compat.IndexURL, nil
+			return "torch", torchStripCPUSuffixForM1(compat.Torch, goos, goarch), compat.FindLinks, nil
 		}
 	}
 
@@ -271,7 +271,7 @@ func torchCPUPackage(ver string, goos string, goarch string) (name string, cpuVe
 	return "torch", ver, "", nil
 }
 
-func torchGPUPackage(ver string, cuda string) (name string, cpuVersion string, indexURL string, err error) {
+func torchGPUPackage(ver string, cuda string) (name string, cpuVersion string, findLinks string, err error) {
 	// find the torch package that has the requested torch version and the latest cuda version
 	// that is at most as high as the requested cuda version
 	var latest *TorchCompatibility
@@ -306,20 +306,20 @@ func torchGPUPackage(ver string, cuda string) (name string, cpuVersion string, i
 		return "torch", ver, "", nil
 	}
 
-	return "torch", latest.Torch, latest.IndexURL, nil
+	return "torch", latest.Torch, latest.FindLinks, nil
 }
 
-func torchvisionCPUPackage(ver string, goos string, goarch string) (name string, cpuVersion string, indexURL string, err error) {
+func torchvisionCPUPackage(ver string, goos string, goarch string) (name string, cpuVersion string, findLinks string, err error) {
 	for _, compat := range TorchCompatibilityMatrix {
 		if compat.TorchvisionVersion() == ver && compat.CUDA == nil {
-			return "torchvision", torchStripCPUSuffixForM1(compat.Torchvision, goos, goarch), compat.IndexURL, nil
+			return "torchvision", torchStripCPUSuffixForM1(compat.Torchvision, goos, goarch), compat.FindLinks, nil
 		}
 	}
 	// Fall back to just installing default version. For older torchvision versions, they don't have any CPU versions.
 	return "torchvision", ver, "", nil
 }
 
-func torchvisionGPUPackage(ver string, cuda string) (name string, cpuVersion string, indexURL string, err error) {
+func torchvisionGPUPackage(ver string, cuda string) (name string, cpuVersion string, findLinks string, err error) {
 	// find the torchvision package that has the requested
 	// torchvision version and the latest cuda version that is at
 	// most as high as the requested cuda version
@@ -355,7 +355,7 @@ func torchvisionGPUPackage(ver string, cuda string) (name string, cpuVersion str
 		return "torchvision", ver, "", nil
 	}
 
-	return "torchvision", latest.Torchvision, latest.IndexURL, nil
+	return "torchvision", latest.Torchvision, latest.FindLinks, nil
 }
 
 // aarch64 packages don't have +cpu suffix: https://download.pytorch.org/whl/torch_stable.html

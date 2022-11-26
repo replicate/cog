@@ -268,7 +268,7 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 
 	libVersions := map[string]string{}
 
-	indexURL := ""
+	findLinks := ""
 	skipNext := false
 
 	// Simple parser for pip install strings
@@ -283,7 +283,7 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 		case "pip", "pip3", "install":
 			continue
 		case "-f":
-			indexURL = fields[i+1]
+			findLinks = fields[i+1]
 			skipNext = true
 			continue
 		case "--extra-index-url":
@@ -322,7 +322,7 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 		Torch:       torch,
 		Torchvision: torchvision,
 		Torchaudio:  torchaudio,
-		IndexURL:    indexURL,
+		FindLinks:   findLinks,
 		CUDA:        cuda,
 		Pythons:     pythons,
 	}, nil
