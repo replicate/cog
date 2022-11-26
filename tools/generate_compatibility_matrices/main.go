@@ -269,6 +269,7 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 	libVersions := map[string]string{}
 
 	findLinks := ""
+	extraIndexURL := ""
 	skipNext := false
 
 	// Simple parser for pip install strings
@@ -287,7 +288,7 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 			skipNext = true
 			continue
 		case "--extra-index-url":
-			// Torch 1.11 seems to be the same on PyPi and PyTorch's PyPi repo for all CUDA versions, so just install from PyPi
+			extraIndexURL = fields[i+1]
 			skipNext = true
 			continue
 		}
@@ -319,12 +320,13 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 	pythons := []string{"3.6", "3.7", "3.8", "3.9", "3.10"}
 
 	return &config.TorchCompatibility{
-		Torch:       torch,
-		Torchvision: torchvision,
-		Torchaudio:  torchaudio,
-		FindLinks:   findLinks,
-		CUDA:        cuda,
-		Pythons:     pythons,
+		Torch:         torch,
+		Torchvision:   torchvision,
+		Torchaudio:    torchaudio,
+		FindLinks:     findLinks,
+		ExtraIndexURL: extraIndexURL,
+		CUDA:          cuda,
+		Pythons:       pythons,
 	}, nil
 }
 

@@ -54,6 +54,37 @@ foo==1.0.0`
 	require.Equal(t, expected, requirements)
 }
 
+func TestPythonRequirementsResolvesPythonPackagesAndCudaVersionsWithExtraIndexURL(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cog-test")
+	require.NoError(t, err)
+	err = os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`torch==1.12.1
+torchvision==0.13.1
+torchaudio==0.12.1
+foo==1.0.0`), 0o644)
+	require.NoError(t, err)
+
+	config := &Config{
+		Build: &Build{
+			GPU:                true,
+			PythonVersion:      "3.8",
+			PythonRequirements: "requirements.txt",
+		},
+	}
+	err = config.ValidateAndComplete(tmpDir)
+	require.NoError(t, err)
+	require.Equal(t, "11.6.2", config.Build.CUDA)
+	require.Equal(t, "8", config.Build.CuDNN)
+
+	requirements, err := config.PythonRequirementsForArch("", "")
+	require.NoError(t, err)
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu116
+torch==1.12.1+cu116
+torchvision==0.13.1+cu116
+torchaudio==0.12.1
+foo==1.0.0`
+	require.Equal(t, expected, requirements)
+}
+
 func TestPythonRequirementsWorksWithLinesCogCannotParse(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cog-test")
 	require.NoError(t, err)
