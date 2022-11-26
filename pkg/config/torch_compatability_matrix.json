@@ -1,7 +1,63 @@
 [
   {
-    "Torch": "1.12.1",
-    "Torchvision": "0.13.1",
+    "Torch": "1.13.0",
+    "Torchvision": "0.14.0",
+    "Torchaudio": "0.13.0",
+    "FindLinks": "",
+    "CUDA": null,
+    "Pythons": [
+      "3.6",
+      "3.7",
+      "3.8",
+      "3.9",
+      "3.10"
+    ]
+  },
+  {
+    "Torch": "1.13.0",
+    "Torchvision": "0.14.0",
+    "Torchaudio": "0.13.0",
+    "FindLinks": "",
+    "CUDA": "",
+    "Pythons": [
+      "3.6",
+      "3.7",
+      "3.8",
+      "3.9",
+      "3.10"
+    ]
+  },
+  {
+    "Torch": "1.13.0",
+    "Torchvision": "0.14.0",
+    "Torchaudio": "0.13.0",
+    "FindLinks": "",
+    "CUDA": "",
+    "Pythons": [
+      "3.6",
+      "3.7",
+      "3.8",
+      "3.9",
+      "3.10"
+    ]
+  },
+  {
+    "Torch": "1.12.1+cu116",
+    "Torchvision": "0.13.1+cu116",
+    "Torchaudio": "0.12.1",
+    "FindLinks": "",
+    "CUDA": "11.6",
+    "Pythons": [
+      "3.6",
+      "3.7",
+      "3.8",
+      "3.9",
+      "3.10"
+    ]
+  },
+  {
+    "Torch": "1.12.1+cu113",
+    "Torchvision": "0.13.1+cu113",
     "Torchaudio": "0.12.1",
     "FindLinks": "",
     "CUDA": "11.3",
@@ -14,36 +70,8 @@
     ]
   },
   {
-    "Torch": "1.12.1",
-    "Torchvision": "0.13.1",
-    "Torchaudio": "0.12.1",
-    "FindLinks": "",
-    "CUDA": null,
-    "Pythons": [
-      "3.6",
-      "3.7",
-      "3.8",
-      "3.9",
-      "3.10"
-    ]
-  },
-  {
-    "Torch": "1.12.1",
-    "Torchvision": "0.13.1",
-    "Torchaudio": "0.12.1",
-    "FindLinks": "",
-    "CUDA": "11.6",
-    "Pythons": [
-      "3.6",
-      "3.7",
-      "3.8",
-      "3.9",
-      "3.10"
-    ]
-  },
-  {
-    "Torch": "1.12.1",
-    "Torchvision": "0.13.1",
+    "Torch": "1.12.1+cu102",
+    "Torchvision": "0.13.1+cu102",
     "Torchaudio": "0.12.1",
     "FindLinks": "",
     "CUDA": "10.2",
@@ -56,11 +84,11 @@
     ]
   },
   {
-    "Torch": "1.12.0",
-    "Torchvision": "0.13.0",
-    "Torchaudio": "0.12.0",
+    "Torch": "1.12.1+cpu",
+    "Torchvision": "0.13.1+cpu",
+    "Torchaudio": "0.12.1",
     "FindLinks": "",
-    "CUDA": "11.2",
+    "CUDA": null,
     "Pythons": [
       "3.6",
       "3.7",
@@ -70,8 +98,36 @@
     ]
   },
   {
-    "Torch": "1.12.0",
-    "Torchvision": "0.13.0",
+    "Torch": "1.12.0+cu116",
+    "Torchvision": "0.13.0+cu116",
+    "Torchaudio": "0.12.0",
+    "FindLinks": "",
+    "CUDA": "11.6",
+    "Pythons": [
+      "3.6",
+      "3.7",
+      "3.8",
+      "3.9",
+      "3.10"
+    ]
+  },
+  {
+    "Torch": "1.12.0+cu113",
+    "Torchvision": "0.13.0+cu113",
+    "Torchaudio": "0.12.0",
+    "FindLinks": "",
+    "CUDA": "11.3",
+    "Pythons": [
+      "3.6",
+      "3.7",
+      "3.8",
+      "3.9",
+      "3.10"
+    ]
+  },
+  {
+    "Torch": "1.12.0+cu102",
+    "Torchvision": "0.13.0+cu102",
     "Torchaudio": "0.12.0",
     "FindLinks": "",
     "CUDA": "10.2",
@@ -84,25 +140,11 @@
     ]
   },
   {
-    "Torch": "1.12.0",
-    "Torchvision": "0.13.0",
+    "Torch": "1.12.0+cpu",
+    "Torchvision": "0.13.0+cpu",
     "Torchaudio": "0.12.0",
     "FindLinks": "",
     "CUDA": null,
-    "Pythons": [
-      "3.6",
-      "3.7",
-      "3.8",
-      "3.9",
-      "3.10"
-    ]
-  },
-  {
-    "Torch": "1.12.0",
-    "Torchvision": "0.13.0",
-    "Torchaudio": "0.12.0",
-    "FindLinks": "",
-    "CUDA": "11.6",
     "Pythons": [
       "3.6",
       "3.7",
@@ -157,7 +199,7 @@
     "Torch": "1.10.1+cu111",
     "Torchvision": "0.11.2+cu111",
     "Torchaudio": "0.10.1",
-    "FindLinks": "https://download.pytorch.org/whl/torch_stable.html",
+    "FindLinks": "https://download.pytorch.org/whl/cu113/torch_stable.html",
     "CUDA": "11.1",
     "Pythons": [
       "3.6",
@@ -171,7 +213,7 @@
     "Torch": "1.10.1+cu102",
     "Torchvision": "0.11.2+cu102",
     "Torchaudio": "0.10.1",
-    "FindLinks": "https://download.pytorch.org/whl/torch_stable.html",
+    "FindLinks": "https://download.pytorch.org/whl/cu102/torch_stable.html",
     "CUDA": "10.2",
     "Pythons": [
       "3.6",
@@ -185,7 +227,7 @@
     "Torch": "1.10.1+cpu",
     "Torchvision": "0.11.2+cpu",
     "Torchaudio": "0.10.1",
-    "FindLinks": "https://download.pytorch.org/whl/torch_stable.html",
+    "FindLinks": "https://download.pytorch.org/whl/cpu/torch_stable.html",
     "CUDA": null,
     "Pythons": [
       "3.6",
