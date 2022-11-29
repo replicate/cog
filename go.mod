@@ -6,7 +6,7 @@ require (
 	github.com/anaskhan96/soup v1.2.5
 	github.com/docker/cli v20.10.21+incompatible
 	github.com/docker/docker v20.10.21+incompatible
-	github.com/getkin/kin-openapi v0.109.0
+	github.com/getkin/kin-openapi v0.110.0
 	github.com/golangci/golangci-lint v1.50.1
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/mattn/go-isatty v0.0.16
