@@ -33,7 +33,7 @@ from ..predictor import (
     load_config,
     load_predictor_from_ref,
 )
-from ..response import Event, Status
+from ..schema import Status, WebhookEvent
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
 from .probes import ProbeHelper
 from .webhook import requests_session, webhook_caller
@@ -227,10 +227,20 @@ class RedisQueueWorker:
                     should_cancel = self.cancelation_checker(message.get("cancel_key"))
 
                     if "webhook_events_filter" in message:
-                        # this will raise an exception if the list isn't valid
-                        events_filter = Event.validate(message["webhook_events_filter"])
+                        valid_events = {ev.value for ev in WebhookEvent}
+
+                        for event in message["webhook_events_filter"]:
+                            if event not in valid_events:
+                                raise ValueError(
+                                    f"Invalid webhook event {event}! Must be one of {valid_events}"
+                                )
+
+                        # We always send the completed event
+                        events_filter = set(message["webhook_events_filter"]) | {
+                            WebhookEvent.COMPLETED
+                        }
                     else:
-                        events_filter = Event.default_events()
+                        events_filter = WebhookEvent.default_events()
 
                     for response_event, response in self.run_prediction(
                         message, should_cancel
@@ -265,7 +275,7 @@ class RedisQueueWorker:
 
     def run_prediction(
         self, message: Dict[str, Any], should_cancel: Callable
-    ) -> Iterable[Tuple[Event, Dict[str, Any]]]:
+    ) -> Iterable[Tuple[WebhookEvent, Dict[str, Any]]]:
         # use the request message as the basis of our response so
         # that we echo back any additional fields sent to us
         response = message
@@ -280,7 +290,7 @@ class RedisQueueWorker:
         except Exception as e:
             response["status"] = Status.FAILED
             response["error"] = str(e)
-            yield (Event.COMPLETED, response)
+            yield (WebhookEvent.COMPLETED, response)
 
             try:
                 input_obj.cleanup()
@@ -292,7 +302,7 @@ class RedisQueueWorker:
         response["started_at"] = format_datetime(started_at)
         response["logs"] = ""
 
-        yield (Event.START, response)
+        yield (WebhookEvent.START, response)
 
         timed_out = False
         was_canceled = False
@@ -320,7 +330,7 @@ class RedisQueueWorker:
                     pass
                 elif isinstance(event, Log):
                     response["logs"] += event.message
-                    yield (Event.LOGS, response)
+                    yield (WebhookEvent.LOGS, response)
                 elif isinstance(event, PredictionOutputType):
                     # Note: this error message will be seen by users so it is
                     # intentionally vague about what has gone wrong.
@@ -339,7 +349,7 @@ class RedisQueueWorker:
 
                     if output_type.multi:
                         response["output"].append(output)
-                        yield (Event.OUTPUT, response)
+                        yield (WebhookEvent.OUTPUT, response)
                     else:
                         assert (
                             response["output"] is None
@@ -378,7 +388,7 @@ class RedisQueueWorker:
             response["status"] = Status.FAILED
             response["error"] = str(e)
         finally:
-            yield (Event.COMPLETED, response)
+            yield (WebhookEvent.COMPLETED, response)
 
             try:
                 input_obj.cleanup()
