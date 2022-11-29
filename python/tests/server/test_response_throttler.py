@@ -1,6 +1,6 @@
 import time
 
-from cog.response import Status
+from cog.schema import Status
 from cog.server.response_throttler import ResponseThrottler
 
 

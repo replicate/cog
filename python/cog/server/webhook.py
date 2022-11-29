@@ -5,7 +5,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
-from ..response import Status
+from ..schema import Status
 from .response_throttler import ResponseThrottler
 
 

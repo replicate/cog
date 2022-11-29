@@ -8,7 +8,7 @@ import json
 from ..errors import ConfigDoesNotExist, PredictorNotSet
 from ..suppress_output import suppress_output
 
-from ..predictor import load_predictor, load_config
+from ..predictor import get_predictor_ref, load_config
 from ..server.http import create_app
 
 if __name__ == "__main__":
@@ -16,12 +16,13 @@ if __name__ == "__main__":
     try:
         with suppress_output():
             config = load_config()
-            predictor = load_predictor(config)
+            predictor_ref = get_predictor_ref(config)
     except (ConfigDoesNotExist, PredictorNotSet):
         # If there is no cog.yaml or 'predict' has not been set, then there is no type signature.
         # Not an error, there just isn't anything.
         pass
     else:
-        app = create_app(predictor)
+        with suppress_output():
+            app = create_app(predictor_ref)
         schema = app.openapi()
     print(json.dumps(schema, indent=2))
