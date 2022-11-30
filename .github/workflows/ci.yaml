@@ -33,7 +33,7 @@ jobs:
           restore-keys: |
             pip-${{ secrets.CACHE_VERSION }}-
       - name: Install Python dependencies
-        run: pip install -r requirements-dev.txt
+        run: pip install -e python -r requirements-dev.txt
       - uses: actions/cache@v2
         with:
           path: ~/go/pkg/mod
@@ -68,7 +68,7 @@ jobs:
           restore-keys: |
             pip-${{ secrets.CACHE_VERSION }}-
       - name: Install Python dependencies
-        run: pip install -r requirements-dev.txt
+        run: pip install -e python -r requirements-dev.txt
       - name: Test
         run: make test-python
         env:
