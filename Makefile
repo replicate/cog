@@ -1,5 +1,6 @@
 SHELL := /bin/bash
 
+DESTDIR ?=
 PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
 
@@ -35,7 +36,7 @@ cog: pkg/dockerfile/embed/cog.whl
 
 .PHONY: install
 install: cog
-	$(INSTALL_PROGRAM) cog $(BINDIR)/cog
+	$(INSTALL_PROGRAM) cog $(DESTDIR)$(BINDIR)/cog
 
 .PHONY: uninstall
 uninstall:
