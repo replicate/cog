@@ -1,5 +1,11 @@
 SHELL := /bin/bash
 
+PREFIX = /usr/local
+BINDIR = $(PREFIX)/bin
+
+INSTALL := install -m 0755
+INSTALL_PROGRAM := $(INSTALL)
+
 COG_VERSION ?= $(shell git describe --tags --match 'v*' --abbrev=0)+dev
 RELEASE_DIR := release
 GOOS := $(shell go env GOOS)
@@ -27,6 +33,8 @@ cog: pkg/dockerfile/embed/cog.whl
 
 .PHONY: install
 install: cog
+	$(INSTALL_PROGRAM) cog $(BINDIR)/cog
+
 
 .PHONY: clean
 clean:
