@@ -52,10 +52,9 @@ test-go: pkg/dockerfile/embed/cog.whl | check-fmt vet lint
 	$(GO) get gotest.tools/gotestsum
 	$(GO) run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
 
-# TODO(bfirsh): use local copy of cog so we don't have to install globally
 .PHONY: test-integration
 test-integration: cog
-	cd test-integration/ && $(MAKE)
+	cd test-integration/ && $(MAKE) PATH="$(PWD):$(PATH)" test
 
 .PHONY: test-python
 test-python:
