@@ -40,8 +40,8 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-${{ secrets.CACHE_VERSION }}-
-      - name: "Build"
-        run: make build
+      - name: Build
+        run: make cog
       - name: Test
         run: make test-go
 
@@ -118,8 +118,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Build dependencies
-        run: make build-dependencies
+      - name: Build
+        run: make cog
       - uses: goreleaser/goreleaser-action@v2
         with:
           version: latest
