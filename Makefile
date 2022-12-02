@@ -20,16 +20,15 @@ pkg/dockerfile/embed/cog.whl: python/* python/cog/* python/cog/server/* python/c
 	mkdir -p pkg/dockerfile/embed
 	cp python/dist/*.whl pkg/dockerfile/embed/cog.whl
 
-build-dependencies: pkg/dockerfile/embed/cog.whl
+cog: pkg/dockerfile/embed/cog.whl
+	CGO_ENABLED=0 go build $(LDFLAGS) -o $@ cmd/cog/cog.go
 
-.PHONY: build
-build: clean build-dependencies
-	@mkdir -p $(RELEASE_DIR)
-	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BINARY) $(MAIN)
+.PHONY: install
+install: cog
 
 .PHONY: clean
 clean:
-	rm -rf $(RELEASE_DIR)
+	rm -f cog
 	rm -f pkg/dockerfile/embed/cog.whl
 
 .PHONY: generate
@@ -43,7 +42,7 @@ test-go: build-dependencies check-fmt vet lint
 
 # TODO(bfirsh): use local copy of cog so we don't have to install globally
 .PHONY: test-integration
-test-integration: install
+test-integration: cog
 	cd test-integration/ && $(MAKE)
 
 .PHONY: test-python
