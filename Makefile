@@ -35,6 +35,9 @@ cog: pkg/dockerfile/embed/cog.whl
 install: cog
 	$(INSTALL_PROGRAM) cog $(BINDIR)/cog
 
+.PHONY: uninstall
+uninstall:
+	rm -f $(DESTDIR)$(BINDIR)/cog
 
 .PHONY: clean
 clean:
