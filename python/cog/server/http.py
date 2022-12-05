@@ -133,10 +133,11 @@ if __name__ == "__main__":
 
     predictor = load_predictor(config)
     app = create_app(predictor, threads=threads)
+    port = int(os.getenv("PORT", 5000))
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=5000,
+        port=port,
         # log level is configurable so we can make it quiet or verbose for `cog predict`
         # cog predict --debug       # -> debug
         # cog predict               # -> warning
