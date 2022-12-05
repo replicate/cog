@@ -15,10 +15,6 @@ PYTHON := python
 PYTEST := pytest
 MYPY := mypy
 
-COG_VERSION ?= $(shell git describe --tags --match 'v*' --abbrev=0)+dev
-BUILD_TIME := $(shell date +%Y-%m-%dT%H:%M:%S%z)
-LDFLAGS := -ldflags "-X github.com/replicate/cog/pkg/global.Version=$(COG_VERSION) -X github.com/replicate/cog/pkg/global.BuildTime=$(BUILD_TIME) -w"
-
 default: all
 
 .PHONY: all
@@ -32,7 +28,10 @@ pkg/dockerfile/embed/cog.whl: python/* python/cog/* python/cog/server/* python/c
 	cp python/dist/*.whl $@
 
 cog: pkg/dockerfile/embed/cog.whl
-	CGO_ENABLED=0 $(GO) build $(LDFLAGS) -o $@ cmd/cog/cog.go
+	$(eval COG_VERSION ?= $(shell git describe --tags --always --dirty))
+	CGO_ENABLED=0 $(GO) build -o $@ \
+		-ldflags "-X github.com/replicate/cog/pkg/global.Version=$(COG_VERSION) -X github.com/replicate/cog/pkg/global.BuildTime=$(shell date +%Y-%m-%dT%H:%M:%S%z) -w" \
+		cmd/cog/cog.go
 
 .PHONY: install
 install: cog
