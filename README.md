@@ -115,16 +115,15 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 
 ## Install
 
-Download and install a pre-built executable by running the following commands:
+You can download and install the latest release of Cog
+by running the following commands in a terminal:
 
 ```console
 sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
 sudo chmod +x /usr/local/bin/cog
 ```
 
-You can re-run these commands to update your installation to the latest release.
-
-Alternatively, you can build Cog from source by running the following commands:
+Alternatively, you can build Cog from source and install it with these commands:
 
 ```console
 $ make
