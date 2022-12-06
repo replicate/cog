@@ -190,6 +190,7 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
       <td align="center"><a href="https://merrell.io/"><img src="https://avatars.githubusercontent.com/u/14996837?v=4?s=100" width="100px;" alt="Justin Merrell"/><br /><sub><b>Justin Merrell</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=justinmerrell" title="Documentation">📖</a></td>
       <td align="center"><a href="https://github.com/ruriky"><img src="https://avatars.githubusercontent.com/u/19946546?v=4?s=100" width="100px;" alt="Rurik Ylä-Onnenvuori"/><br /><sub><b>Rurik Ylä-Onnenvuori</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aruriky" title="Bug reports">🐛</a></td>
       <td align="center"><a href="https://www.youka.club/"><img src="https://avatars.githubusercontent.com/u/59315275?v=4?s=100" width="100px;" alt="Youka"/><br /><sub><b>Youka</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Ayoukaclub" title="Bug reports">🐛</a></td>
+      <td align="center"><a href="https://github.com/afiaka87"><img src="https://avatars.githubusercontent.com/u/3994972?v=4?s=100" width="100px;" alt="Clay Mullis"/><br /><sub><b>Clay Mullis</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=afiaka87" title="Documentation">📖</a></td>
     </tr>
   </tbody>
 </table>
