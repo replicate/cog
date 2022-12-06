@@ -214,6 +214,19 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "nickstenning",
+      "name": "Nick Stenning",
+      "avatar_url": "https://avatars.githubusercontent.com/u/3602?v=4",
+      "profile": "https://whiteink.com",
+      "contributions": [
+        "code",
+        "doc",
+        "design",
+        "infra",
+        "test"
+      ]
     }
   ],
   "contributorsPerLine": 7,
