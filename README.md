@@ -188,6 +188,7 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
     <tr>
       <td align="center"><a href="https://whiteink.com"><img src="https://avatars.githubusercontent.com/u/3602?v=4?s=100" width="100px;" alt="Nick Stenning"/><br /><sub><b>Nick Stenning</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=nickstenning" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=nickstenning" title="Documentation">📖</a> <a href="#design-nickstenning" title="Design">🎨</a> <a href="#infra-nickstenning" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a> <a href="https://github.com/replicate/cog/commits?author=nickstenning" title="Tests">⚠️</a></td>
       <td align="center"><a href="https://merrell.io/"><img src="https://avatars.githubusercontent.com/u/14996837?v=4?s=100" width="100px;" alt="Justin Merrell"/><br /><sub><b>Justin Merrell</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=justinmerrell" title="Documentation">📖</a></td>
+      <td align="center"><a href="https://github.com/ruriky"><img src="https://avatars.githubusercontent.com/u/19946546?v=4?s=100" width="100px;" alt="Rurik Ylä-Onnenvuori"/><br /><sub><b>Rurik Ylä-Onnenvuori</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aruriky" title="Bug reports">🐛</a></td>
     </tr>
   </tbody>
 </table>
