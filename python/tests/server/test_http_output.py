@@ -9,31 +9,52 @@ import responses
 from PIL import Image
 from responses.matchers import multipart_matcher
 
-from cog import BaseModel, BasePredictor, File, Path
 
-from .test_http import make_client
+from .conftest import match, uses_predictor
 
 
-def test_return_wrong_type():
-    class Predictor(BasePredictor):
-        def predict(self) -> int:
-            return "foo"
-
-    client = make_client(Predictor(), raise_server_exceptions=False)
+@uses_predictor("output_wrong_type")
+def test_return_wrong_type(client):
     resp = client.post("/predictions")
     assert resp.status_code == 500
 
 
-def test_path_output_path():
-    class Predictor(BasePredictor):
-        def predict(self) -> Path:
-            temp_dir = tempfile.mkdtemp()
-            temp_path = os.path.join(temp_dir, "my_file.bmp")
-            img = Image.new("RGB", (255, 255), "red")
-            img.save(temp_path)
-            return Path(temp_path)
+@uses_predictor("output_file")
+def test_output_file(client):
+    res = client.post("/predictions")
+    assert res.status_code == 200
+    assert res.json() == match(
+        {
+            "status": "succeeded",
+            "output": "data:application/octet-stream;base64,aGVsbG8=",  # hello
+        }
+    )
 
-    client = make_client(Predictor())
+
+@responses.activate
+@uses_predictor("output_file_named")
+def test_output_file_to_http(client):
+    responses.add(
+        responses.PUT,
+        "http://example.com/upload/foo.txt",
+        status=201,
+        match=[multipart_matcher({"file": ("foo.txt", b"hello")})],
+    )
+
+    res = client.post(
+        "/predictions", json={"output_file_prefix": "http://example.com/upload/"}
+    )
+    assert res.json() == match(
+        {
+            "status": "succeeded",
+            "output": "http://example.com/upload/foo.txt",
+        }
+    )
+    assert res.status_code == 200
+
+
+@uses_predictor("output_path_image")
+def test_output_path(client):
     res = client.post("/predictions")
     assert res.status_code == 200
     header, b64data = res.json()["output"].split(",", 1)
@@ -43,15 +64,8 @@ def test_path_output_path():
 
 
 @responses.activate
-def test_output_path_to_http():
-    class Predictor(BasePredictor):
-        def predict(self) -> Path:
-            temp_dir = tempfile.mkdtemp()
-            temp_path = os.path.join(temp_dir, "file.txt")
-            with open(temp_path, "w") as fh:
-                fh.write("hello")
-            return Path(temp_path)
-
+@uses_predictor("output_path_text")
+def test_output_path_to_http(client):
     fh = io.BytesIO(b"hello")
     fh.name = "file.txt"
     responses.add(
@@ -61,101 +75,47 @@ def test_output_path_to_http():
         match=[multipart_matcher({"file": fh})],
     )
 
-    client = make_client(Predictor())
     res = client.post(
         "/predictions", json={"output_file_prefix": "http://example.com/upload/"}
     )
-    assert res.json() == {
-        "status": "succeeded",
-        "output": "http://example.com/upload/file.txt",
-    }
-    assert res.status_code == 200
-
-
-def test_path_output_file():
-    class Predictor(BasePredictor):
-        def predict(self) -> File:
-            return io.StringIO("hello")
-
-    client = make_client(Predictor())
-    res = client.post("/predictions")
-    assert res.status_code == 200
-    assert res.json() == {
-        "status": "succeeded",
-        "output": "data:application/octet-stream;base64,aGVsbG8=",  # hello
-    }
-
-
-@responses.activate
-def test_output_file_to_http():
-    class Predictor(BasePredictor):
-        def predict(self) -> File:
-            fh = io.StringIO("hello")
-            fh.name = "foo.txt"
-            return fh
-
-    responses.add(
-        responses.PUT,
-        "http://example.com/upload/foo.txt",
-        status=201,
-        match=[multipart_matcher({"file": ("foo.txt", b"hello")})],
+    assert res.json() == match(
+        {
+            "status": "succeeded",
+            "output": "http://example.com/upload/file.txt",
+        }
     )
-
-    client = make_client(Predictor())
-    res = client.post(
-        "/predictions", json={"output_file_prefix": "http://example.com/upload/"}
-    )
-    assert res.json() == {
-        "status": "succeeded",
-        "output": "http://example.com/upload/foo.txt",
-    }
     assert res.status_code == 200
 
 
-def test_json_output_numpy():
-    class Predictor(BasePredictor):
-        def predict(self) -> np.float64:
-            return np.float64(1.0)
-
-    client = make_client(Predictor())
+@uses_predictor("output_numpy")
+def test_json_output_numpy(client):
     resp = client.post("/predictions")
     assert resp.status_code == 200
-    assert resp.json() == {"output": 1.0, "status": "succeeded"}
+    assert resp.json() == match({"output": 1.0, "status": "succeeded"})
 
 
-def test_complex_output():
-    class Output(BaseModel):
-        text: str
-        file: File
-
-    class Predictor(BasePredictor):
-        def predict(self) -> Output:
-            return Output(text="hello", file=io.StringIO("hello"))
-
-    client = make_client(Predictor())
+@uses_predictor("output_complex")
+def test_complex_output(client):
     resp = client.post("/predictions")
-    assert resp.json() == {
-        "output": {
-            "file": "data:application/octet-stream;base64,aGVsbG8=",
-            "text": "hello",
-        },
-        "status": "succeeded",
-    }
+    assert resp.json() == match(
+        {
+            "output": {
+                "file": "data:application/octet-stream;base64,aGVsbG8=",
+                "text": "hello",
+            },
+            "status": "succeeded",
+        }
+    )
     assert resp.status_code == 200
 
 
-def test_iterator_of_list_of_complex_output():
-    class Output(BaseModel):
-        text: str
-
-    class Predictor(BasePredictor):
-        def predict(self) -> Iterator[List[Output]]:
-            yield [Output(text="hello")]
-
-    client = make_client(Predictor())
+@uses_predictor("output_iterator_complex")
+def test_iterator_of_list_of_complex_output(client):
     resp = client.post("/predictions")
-    assert resp.json() == {
-        "output": [[{"text": "hello"}]],
-        "status": "succeeded",
-    }
+    assert resp.json() == match(
+        {
+            "output": [[{"text": "hello"}]],
+            "status": "succeeded",
+        }
+    )
     assert resp.status_code == 200

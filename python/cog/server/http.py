@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import textwrap
 from typing import Any, Optional
 
 import pydantic
@@ -30,6 +31,11 @@ from .runner import PredictionRunner
 logger = logging.getLogger("cog")
 
 
+class EmptyInput(dict):
+    def cleanup(self):
+        pass
+
+
 def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
     app = FastAPI(
         title="Cog",  # TODO: mention model name?
@@ -53,6 +59,10 @@ def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
         RunVar("_default_thread_limiter").set(CapacityLimiter(threads))  # type: ignore
         runner.setup()
 
+    @app.on_event("shutdown")
+    def shutdown() -> None:
+        runner.shutdown()
+
     @app.get("/")
     def root() -> Any:
         return {
@@ -70,39 +80,55 @@ def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
         """
         Run a single prediction on the model
         """
-        result = runner.predict(request)
+        # [compat] If no body is supplied, assume that this model can be run
+        # with empty input. This will throw a ValidationError if that's not
+        # possible.
+        if request is None:
+            request = PredictionRequest(input={})
+        # [compat] If body is supplied but input is None, set it to an empty
+        # dictionary so that later code can be simpler.
+        if request.input is None:
+            request.input = EmptyInput()
 
         try:
-            response = result.get()
-        except ValidationError as e:
-            logger.error(
-                f"""The return value of predict() was not valid:
-
-    {e}
-
-    Check that your predict function is in this form, where `output_type` is the same as the type you are returning (e.g. `str`):
-
-        def predict(...) -> output_type:
-            ...
-    """
-            )
-            raise HTTPException(status_code=500)
+            generic_response = runner.predict(request).get()
         finally:
-            if request is not None and request.input is not None:
-                request.input.cleanup()
+            request.input.cleanup()
 
-        encoded_response = jsonable_encoder(response)
+        try:
+            response = PredictionResponse(**generic_response.dict())
+        except ValidationError as e:
+            _log_invalid_output(e)
+            raise HTTPException(status_code=500)
 
-        if hasattr(request, "output_file_prefix"):
-            encoded_response = upload_files(
-                encoded_response,
-                upload_file=lambda fh: upload_file(fh, request.output_file_prefix),  # type: ignore
-            )
+        response_object = response.dict()
+        response_object["output"] = upload_files(
+            response_object["output"],
+            upload_file=lambda fh: upload_file(fh, request.output_file_prefix),  # type: ignore
+        )
 
         # TODO: clean up output files
+        encoded_response = jsonable_encoder(response_object)
         return JSONResponse(content=encoded_response)
 
     return app
+
+
+def _log_invalid_output(error):
+    logger.error(
+        textwrap.dedent(
+            f"""\
+            The return value of predict() was not valid:
+
+            {error}
+
+            Check that your predict function is in this form, where `output_type` is the same as the type you are returning (e.g. `str`):
+
+                def predict(...) -> output_type:
+                    ...
+           """
+        )
+    )
 
 
 if __name__ == "__main__":

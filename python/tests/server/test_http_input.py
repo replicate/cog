@@ -2,57 +2,54 @@ import base64
 import os
 import tempfile
 
+import pytest
 import responses
-from PIL import Image
-from pydantic import BaseModel
 
-from cog import BasePredictor, File, Input, Path
-
-from .test_http import make_client
+from .conftest import make_client, match, uses_predictor
 
 
-def test_no_input():
-    class Predictor(BasePredictor):
-        def predict(self) -> str:
-            return "foobar"
-
-    client = make_client(Predictor())
+@uses_predictor("input_none")
+def test_no_input(client):
     resp = client.post("/predictions")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "succeeded", "output": "foobar"}
+    assert resp.json() == match({"status": "succeeded", "output": "foobar"})
 
 
-def test_good_str_input():
-    class Predictor(BasePredictor):
-        def predict(self, text: str) -> str:
-            return text
+@uses_predictor("input_none")
+def test_missing_input(client):
+    """Check we support missing input fields for backwards compatibility"""
+    resp = client.post("/predictions", json={})
+    assert resp.status_code == 200
+    assert resp.json() == match({"status": "succeeded", "output": "foobar"})
 
-    client = make_client(Predictor())
+
+@uses_predictor("input_none")
+def test_empty_input(client):
+    """Check we support empty input fields for backwards compatibility"""
+    resp = client.post("/predictions", json={"input": {}})
+    assert resp.status_code == 200
+    assert resp.json() == match({"status": "succeeded", "output": "foobar"})
+
+
+@uses_predictor("input_string")
+def test_good_str_input(client):
     resp = client.post("/predictions", json={"input": {"text": "baz"}})
     assert resp.status_code == 200
-    assert resp.json() == {"status": "succeeded", "output": "baz"}
+    assert resp.json() == match({"status": "succeeded", "output": "baz"})
 
 
-def test_good_int_input():
-    class Predictor(BasePredictor):
-        def predict(self, num: int) -> int:
-            return num**3
-
-    client = make_client(Predictor())
+@uses_predictor("input_integer")
+def test_good_int_input(client):
     resp = client.post("/predictions", json={"input": {"num": 3}})
     assert resp.status_code == 200
-    assert resp.json() == {"output": 27, "status": "succeeded"}
+    assert resp.json() == match({"output": 27, "status": "succeeded"})
     resp = client.post("/predictions", json={"input": {"num": -3}})
     assert resp.status_code == 200
-    assert resp.json() == {"output": -27, "status": "succeeded"}
+    assert resp.json() == match({"output": -27, "status": "succeeded"})
 
 
-def test_bad_int_input():
-    class Predictor(BasePredictor):
-        def predict(self, num: int) -> int:
-            return num**2
-
-    client = make_client(Predictor())
+@uses_predictor("input_integer")
+def test_bad_int_input(client):
     resp = client.post("/predictions", json={"input": {"num": "foo"}})
     assert resp.json() == {
         "detail": [
@@ -66,28 +63,19 @@ def test_bad_int_input():
     assert resp.status_code == 422
 
 
-def test_default_int_input():
-    class Predictor(BasePredictor):
-        def predict(self, num: int = Input(default=5)) -> int:
-            return num**2
-
-    client = make_client(Predictor())
-
+@uses_predictor("input_integer_default")
+def test_default_int_input(client):
     resp = client.post("/predictions", json={"input": {}})
     assert resp.status_code == 200
-    assert resp.json() == {"output": 25, "status": "succeeded"}
+    assert resp.json() == match({"output": 25, "status": "succeeded"})
 
     resp = client.post("/predictions", json={"input": {"num": 3}})
     assert resp.status_code == 200
-    assert resp.json() == {"output": 9, "status": "succeeded"}
+    assert resp.json() == match({"output": 9, "status": "succeeded"})
 
 
-def test_file_input_data_url():
-    class Predictor(BasePredictor):
-        def predict(self, file: File) -> str:
-            return file.read()
-
-    client = make_client(Predictor())
+@uses_predictor("input_file")
+def test_file_input_data_url(client):
     resp = client.post(
         "/predictions",
         json={
@@ -97,34 +85,23 @@ def test_file_input_data_url():
             }
         },
     )
-    assert resp.json() == {"output": "bar", "status": "succeeded"}
+    assert resp.json() == match({"output": "bar", "status": "succeeded"})
     assert resp.status_code == 200
 
 
 @responses.activate
-def test_file_input_with_http_url():
-    class Predictor(BasePredictor):
-        def predict(self, file: File) -> str:
-            return file.read()
-
+@uses_predictor("input_file")
+def test_file_input_with_http_url(client):
     responses.add(responses.GET, "http://example.com/foo.txt", body="hello")
-
-    client = make_client(Predictor())
     resp = client.post(
         "/predictions",
         json={"input": {"file": "http://example.com/foo.txt"}},
     )
-    assert resp.json() == {"output": "hello", "status": "succeeded"}
+    assert resp.json() == match({"output": "hello", "status": "succeeded"})
 
 
-def test_path_input_data_url():
-    class Predictor(BasePredictor):
-        def predict(self, path: Path) -> str:
-            with open(path) as fh:
-                extension = fh.name.split(".")[-1]
-                return f"{extension} {fh.read()}"
-
-    client = make_client(Predictor())
+@uses_predictor("input_path")
+def test_path_input_data_url(client):
     resp = client.post(
         "/predictions",
         json={
@@ -134,16 +111,12 @@ def test_path_input_data_url():
             }
         },
     )
-    assert resp.json() == {"output": "txt bar", "status": "succeeded"}
+    assert resp.json() == match({"output": "txt bar", "status": "succeeded"})
     assert resp.status_code == 200
 
 
-def test_path_temporary_files_are_removed():
-    class Predictor(BasePredictor):
-        def predict(self, path: Path) -> str:
-            return str(path)
-
-    client = make_client(Predictor())
+@uses_predictor("input_path_2")
+def test_path_temporary_files_are_removed(client):
     resp = client.post(
         "/predictions",
         json={
@@ -158,29 +131,18 @@ def test_path_temporary_files_are_removed():
 
 
 @responses.activate
-def test_file_input_with_http_url():
-    class Predictor(BasePredictor):
-        def predict(self, path: Path) -> str:
-            with open(path) as fh:
-                extension = fh.name.split(".")[-1]
-                return f"{extension} {fh.read()}"
-
+@uses_predictor("input_path")
+def test_path_input_with_http_url(client):
     responses.add(responses.GET, "http://example.com/foo.txt", body="hello")
-
-    client = make_client(Predictor())
     resp = client.post(
         "/predictions",
         json={"input": {"path": "http://example.com/foo.txt"}},
     )
-    assert resp.json() == {"output": "txt hello", "status": "succeeded"}
+    assert resp.json() == match({"output": "txt hello", "status": "succeeded"})
 
 
-def test_file_bad_input():
-    class Predictor(BasePredictor):
-        def predict(self, file: File) -> str:
-            return file.read()
-
-    client = make_client(Predictor())
+@uses_predictor("input_file")
+def test_file_bad_input(client):
     resp = client.post(
         "/predictions",
         json={"input": {"file": "foo"}},
@@ -188,37 +150,8 @@ def test_file_bad_input():
     assert resp.status_code == 422
 
 
-def test_path_output_file():
-    class Predictor(BasePredictor):
-        def predict(self) -> Path:
-            temp_dir = tempfile.mkdtemp()
-            temp_path = os.path.join(temp_dir, "my_file.bmp")
-            img = Image.new("RGB", (255, 255), "red")
-            img.save(temp_path)
-            return Path(temp_path)
-
-    client = make_client(Predictor())
-    res = client.post("/predictions")
-    assert res.status_code == 200
-    header, b64data = res.json()["output"].split(",", 1)
-    # need both image/bmp and image/x-ms-bmp until https://bugs.python.org/issue44211 is fixed
-    assert header in ["data:image/bmp;base64", "data:image/x-ms-bmp;base64"]
-    assert len(base64.b64decode(b64data)) == 195894
-
-
-def test_multiple_arguments():
-    class Predictor(BasePredictor):
-        def predict(
-            self,
-            text: str,
-            path: Path,
-            num1: int,
-            num2: int = Input(default=10),
-        ) -> str:
-            with open(path) as fh:
-                return text + " " + str(num1 * num2) + " " + fh.read()
-
-    client = make_client(Predictor())
+@uses_predictor("input_multiple")
+def test_multiple_arguments(client):
     resp = client.post(
         "/predictions",
         json={
@@ -231,15 +164,13 @@ def test_multiple_arguments():
         },
     )
     assert resp.status_code == 200
-    assert resp.json() == {"output": "baz 50 wibble", "status": "succeeded"}
+    assert resp.json() == match(
+        {"output": "baz 50 wibble", "status": "succeeded"}
+    )
 
 
-def test_gt_lt():
-    class Predictor(BasePredictor):
-        def predict(self, num: float = Input(ge=3.01, le=10.5)) -> float:
-            return num
-
-    client = make_client(Predictor())
+@uses_predictor("input_ge_le")
+def test_gt_lt(client):
     resp = client.post("/predictions", json={"input": {"num": 2}})
     assert resp.json() == {
         "detail": [
@@ -257,26 +188,27 @@ def test_gt_lt():
     assert resp.status_code == 200
 
 
-def test_choices_str():
-    class Predictor(BasePredictor):
-        def predict(self, text: str = Input(choices=["foo", "bar"])) -> str:
-            assert type(text) == str
-            return text
-
-    client = make_client(Predictor())
+@uses_predictor("input_choices")
+def test_choices_str(client):
     resp = client.post("/predictions", json={"input": {"text": "foo"}})
     assert resp.status_code == 200
     resp = client.post("/predictions", json={"input": {"text": "baz"}})
     assert resp.status_code == 422
 
 
-def test_choices_int():
-    class Predictor(BasePredictor):
-        def predict(self, x: int = Input(choices=[1, 2])) -> int:
-            return x**2
-
-    client = make_client(Predictor())
+@uses_predictor("input_choices_integer")
+def test_choices_int(client):
     resp = client.post("/predictions", json={"input": {"x": 1}})
     assert resp.status_code == 200
     resp = client.post("/predictions", json={"input": {"x": 3}})
     assert resp.status_code == 422
+
+
+def test_untyped_inputs():
+    with pytest.raises(TypeError):
+        make_client("input_untyped")
+
+
+def test_input_with_unsupported_type():
+    with pytest.raises(TypeError):
+        make_client("input_unsupported_type")
