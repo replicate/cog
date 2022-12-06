@@ -128,6 +128,13 @@ sudo chmod +x /usr/local/bin/cog
 
 You can re-run these commands to update your installation to the latest release.
 
+Alternatively, you can build Cog from source by running the following commands:
+
+```console
+$ make
+$ sudo make install
+```
+
 ## Next steps
 
 - [Get started with an example model](docs/getting-started.md)
