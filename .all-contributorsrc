@@ -212,7 +212,9 @@
       "avatar_url": "https://avatars.githubusercontent.com/u/27?v=4",
       "profile": "https://m4ke.org",
       "contributions": [
-        "code"
+        "code",
+        "doc",
+        "test"
       ]
     },
     {
