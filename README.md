@@ -59,7 +59,7 @@ class Predictor(BasePredictor):
 
 Now, you can run predictions on this model:
 
-```
+```console
 $ cog predict -i @input.jpg
 --> Building Docker image...
 --> Running Prediction...
@@ -68,7 +68,7 @@ $ cog predict -i @input.jpg
 
 Or, build a Docker image for deployment:
 
-```
+```console
 $ cog build -t my-colorization-model
 --> Building Docker image...
 --> Built my-colorization-model:latest
@@ -84,14 +84,14 @@ $ curl http://localhost:5000/predictions -X POST \
 
 In development, you can also run arbitrary commands inside the Docker environment:
 
-```
+```console
 $ cog run python train.py
 ...
 ```
 
 Or, [spin up a Jupyter notebook](docs/notebooks.md):
 
-```
+```console
 $ cog run -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
 ```
 -->
@@ -117,7 +117,7 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 
 First, [install Docker if you haven't already](https://docs.docker.com/get-docker/). Then, run this in a terminal:
 
-```
+```console
 sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
 sudo chmod +x /usr/local/bin/cog
 ```
@@ -126,7 +126,7 @@ sudo chmod +x /usr/local/bin/cog
 
 If you're already got Cog installed and want to update to a newer version:
 
-```
+```console
 sudo rm $(which cog)
 sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
 sudo chmod +x /usr/local/bin/cog
