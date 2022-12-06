@@ -115,11 +115,7 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 
 ## Install
 
-First, [install Docker if you haven't already](https://docs.docker.com/get-docker/). 
-
-Next, 
-download and install a precompiled executable
-by running the following terminal commands:
+Download and install a pre-built executable by running the following commands:
 
 ```console
 sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
