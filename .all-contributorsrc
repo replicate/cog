@@ -247,6 +247,15 @@
       "contributions": [
         "bug"
       ]
+    },
+    {
+      "login": "youkaclub",
+      "name": "Youka",
+      "avatar_url": "https://avatars.githubusercontent.com/u/59315275?v=4",
+      "profile": "https://www.youka.club/",
+      "contributions": [
+        "bug"
+      ]
     }
   ],
   "contributorsPerLine": 7,
