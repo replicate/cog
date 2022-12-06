@@ -265,6 +265,17 @@
       "contributions": [
         "doc"
       ]
+    },
+    {
+      "login": "mattt",
+      "name": "Mattt",
+      "avatar_url": "https://avatars.githubusercontent.com/u/7659?v=4",
+      "profile": "https://github.com/mattt",
+      "contributions": [
+        "code",
+        "doc",
+        "infra"
+      ]
     }
   ],
   "contributorsPerLine": 7,
