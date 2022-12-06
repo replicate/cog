@@ -48,7 +48,7 @@ clean:
 	rm -f pkg/dockerfile/embed/cog.whl
 
 .PHONY: test-go
-test-go: pkg/dockerfile/embed/cog.whl | check-fmt vet lint
+test-go: pkg/dockerfile/embed/cog.whl | check-fmt vet lint-go
 	$(GO) get gotest.tools/gotestsum
 	$(GO) run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
 
@@ -83,10 +83,16 @@ check-fmt:
 	$(GO) run golang.org/x/tools/cmd/goimports -d .
 	@test -z $$($(GO) run golang.org/x/tools/cmd/goimports -l .)
 
-.PHONY: lint
-lint:
+.PHONY: lint-go
+lint-go:
 	$(GO) run github.com/golangci/golangci-lint/cmd/golangci-lint run ./...
+
+.PHONY: lint-python
+lint-python:
 	$(MYPY) python/cog
+
+.PHONY: lint
+lint: lint-go lint-python
 
 .PHONY: mod-tidy
 mod-tidy:
