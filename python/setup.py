@@ -17,7 +17,7 @@ setuptools.setup(
     install_requires=[
         # intentionally loose. perhaps these should be vendored to not collide with user code?
         "attrs>=20.1,<23",
-        "fastapi>=0.6,<1",
+        "fastapi>=0.75.2,<1",
         "opentelemetry-exporter-otlp>=1.11.1,<2",
         "opentelemetry-sdk>=1.11.1,<2",
         "protobuf<=3.20.3",
