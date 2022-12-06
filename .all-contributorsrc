@@ -227,6 +227,15 @@
         "infra",
         "test"
       ]
+    },
+    {
+      "login": "justinmerrell",
+      "name": "Justin Merrell",
+      "avatar_url": "https://avatars.githubusercontent.com/u/14996837?v=4",
+      "profile": "https://merrell.io/",
+      "contributions": [
+        "doc"
+      ]
     }
   ],
   "contributorsPerLine": 7,
