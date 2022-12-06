@@ -45,6 +45,11 @@ class PredictionRunner:
         self._result = None
         return False
 
+    def shutdown(self) -> None:
+        self._threadpool.terminate()
+        self._threadpool.join()
+        self._worker.terminate()
+
     def cancel(self) -> None:
         # TODO: a cancel :)
         pass
@@ -121,7 +126,9 @@ class PredictionEventHandler:
         self.p.output = output
 
     def append_output(self, output: Any) -> None:
-        assert self.p.output, "Cannot append output before setting output"
+        assert isinstance(
+            self.p.output, list
+        ), "Cannot append output before setting output"
         self.p.output.append(output)
 
     def append_logs(self, logs: str) -> None:
