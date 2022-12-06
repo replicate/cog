@@ -158,8 +158,14 @@ def test_openapi_specification():
                             "format": "uri",
                             "x-order": 4,
                         },
-                        "choices": {"$ref": "#/components/schemas/choices"},
-                        "int_choices": {"$ref": "#/components/schemas/int_choices"},
+                        "choices": {
+                            "allOf": [{"$ref": "#/components/schemas/choices"}],
+                            "x-order": 5,
+                        },
+                        "int_choices": {
+                            "allOf": [{"$ref": "#/components/schemas/int_choices"}],
+                            "x-order": 6,
+                        },
                     },
                 },
                 "Output": {"title": "Output", "type": "string"},
@@ -200,7 +206,9 @@ def test_openapi_specification():
                         "loc": {
                             "title": "Location",
                             "type": "array",
-                            "items": {"type": "string"},
+                            "items": {
+                                "anyOf": [{"type": "string"}, {"type": "integer"}],
+                            },
                         },
                         "msg": {"title": "Message", "type": "string"},
                         "type": {"title": "Error Type", "type": "string"},
@@ -359,7 +367,9 @@ def test_openapi_specification_with_custom_user_defined_output_type():
                         "loc": {
                             "title": "Location",
                             "type": "array",
-                            "items": {"type": "string"},
+                            "items": {
+                                "anyOf": [{"type": "string"}, {"type": "integer"}],
+                            },
                         },
                         "msg": {"title": "Message", "type": "string"},
                         "type": {"title": "Error Type", "type": "string"},
@@ -450,9 +460,11 @@ def test_openapi_specification_with_int_choices():
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
-    assert resp.json()["components"]["schemas"]["Input"]["properties"][
-        "pick_a_number_any_number"
-    ] == {"$ref": "#/components/schemas/pick_a_number_any_number"}
+    props = resp.json()["components"]["schemas"]["Input"]["properties"]
+
+    assert props["pick_a_number_any_number"]["allOf"] == [
+        {"$ref": "#/components/schemas/pick_a_number_any_number"}
+    ]
     assert resp.json()["components"]["schemas"]["pick_a_number_any_number"] == {
         "description": "An enumeration.",
         "enum": [1, 2],
