@@ -89,13 +89,14 @@ def test_file_input_data_url(client):
     assert resp.status_code == 200
 
 
-@responses.activate
 @uses_predictor("input_file")
-def test_file_input_with_http_url(client):
-    responses.add(responses.GET, "http://example.com/foo.txt", body="hello")
+def test_file_input_with_http_url(client, httpserver):
+    # Use a real HTTP server rather than responses as file fetching occurs on
+    # the other side of the Worker process boundary.
+    httpserver.expect_request("/foo.txt").respond_with_data("hello")
     resp = client.post(
         "/predictions",
-        json={"input": {"file": "http://example.com/foo.txt"}},
+        json={"input": {"file": httpserver.url_for("/foo.txt")}},
     )
     assert resp.json() == match({"output": "hello", "status": "succeeded"})
 
@@ -164,9 +165,7 @@ def test_multiple_arguments(client):
         },
     )
     assert resp.status_code == 200
-    assert resp.json() == match(
-        {"output": "baz 50 wibble", "status": "succeeded"}
-    )
+    assert resp.json() == match({"output": "baz 50 wibble", "status": "succeeded"})
 
 
 @uses_predictor("input_ge_le")
