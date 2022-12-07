@@ -24,9 +24,8 @@ func TestPythonPackagesAndRequirementsCantBeUsedTogether(t *testing.T) {
 }
 
 func TestPythonRequirementsResolvesPythonPackagesAndCudaVersions(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "cog-test")
-	require.NoError(t, err)
-	err = os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`torch==1.7.1
+	tmpDir := t.TempDir()
+	err := os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`torch==1.7.1
 torchvision==0.8.2
 torchaudio==0.7.2
 foo==1.0.0`), 0o644)
@@ -55,9 +54,8 @@ foo==1.0.0`
 }
 
 func TestPythonRequirementsResolvesPythonPackagesAndCudaVersionsWithExtraIndexURL(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "cog-test")
-	require.NoError(t, err)
-	err = os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`torch==1.12.1
+	tmpDir := t.TempDir()
+	err := os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`torch==1.12.1
 torchvision==0.13.1
 torchaudio==0.12.1
 foo==1.0.0`), 0o644)
@@ -86,9 +84,8 @@ foo==1.0.0`
 }
 
 func TestPythonRequirementsWorksWithLinesCogCannotParse(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "cog-test")
-	require.NoError(t, err)
-	err = os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`foo==1.0.0
+	tmpDir := t.TempDir()
+	err := os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`foo==1.0.0
 # a torch which already has a version
 torch==1.7.1+cu110
 # complex requirements

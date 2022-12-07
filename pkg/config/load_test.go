@@ -27,11 +27,9 @@ func TestGetProjectDirWithFlagSet(t *testing.T) {
 }
 
 func TestGetConfigShouldLoadFromCustomDir(t *testing.T) {
-	dir, err := os.MkdirTemp("", "cog-test")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
-	err = os.WriteFile(path.Join(dir, "cog.yaml"), []byte(testConfig), 0o644)
+	err := os.WriteFile(path.Join(dir, "cog.yaml"), []byte(testConfig), 0o644)
 	require.NoError(t, err)
 	err = os.WriteFile(path.Join(dir, "requirements.txt"), []byte("torch==1.0.0"), 0o644)
 	require.NoError(t, err)
@@ -42,11 +40,9 @@ func TestGetConfigShouldLoadFromCustomDir(t *testing.T) {
 }
 
 func TestFindProjectRootDirShouldFindParentDir(t *testing.T) {
-	projectDir, err := os.MkdirTemp("", "cog-test")
-	require.NoError(t, err)
-	defer os.RemoveAll(projectDir)
+	projectDir := t.TempDir()
 
-	err = os.WriteFile(path.Join(projectDir, "cog.yaml"), []byte(testConfig), 0o644)
+	err := os.WriteFile(path.Join(projectDir, "cog.yaml"), []byte(testConfig), 0o644)
 	require.NoError(t, err)
 
 	subdir := path.Join(projectDir, "some/sub/dir")
@@ -59,12 +55,10 @@ func TestFindProjectRootDirShouldFindParentDir(t *testing.T) {
 }
 
 func TestFindProjectRootDirShouldReturnErrIfNoConfig(t *testing.T) {
-	projectDir, err := os.MkdirTemp("", "cog-test")
-	require.NoError(t, err)
-	defer os.RemoveAll(projectDir)
+	projectDir := t.TempDir()
 
 	subdir := path.Join(projectDir, "some/sub/dir")
-	err = os.MkdirAll(subdir, 0o700)
+	err := os.MkdirAll(subdir, 0o700)
 	require.NoError(t, err)
 
 	_, err = findProjectRootDir(subdir)
