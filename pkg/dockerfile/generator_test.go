@@ -47,8 +47,7 @@ RUN curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master
 }
 
 func TestGenerateEmptyCPU(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "test")
-	require.NoError(t, err)
+	tmpDir := t.TempDir()
 
 	conf, err := config.FromYAML([]byte(`
 build:
@@ -78,8 +77,7 @@ COPY . /src`
 }
 
 func TestGenerateEmptyGPU(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "test")
-	require.NoError(t, err)
+	tmpDir := t.TempDir()
 
 	conf, err := config.FromYAML([]byte(`
 build:
@@ -111,8 +109,7 @@ COPY . /src`
 }
 
 func TestGenerateFullCPU(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "test")
-	require.NoError(t, err)
+	tmpDir := t.TempDir()
 
 	conf, err := config.FromYAML([]byte(`
 build:
@@ -160,8 +157,7 @@ pandas==1.2.0.12`, string(requirements))
 }
 
 func TestGenerateFullGPU(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "test")
-	require.NoError(t, err)
+	tmpDir := t.TempDir()
 
 	conf, err := config.FromYAML([]byte(`
 build:
@@ -213,8 +209,7 @@ pandas==1.2.0.12`, string(requirements))
 
 // pre_install is deprecated but supported for backwards compatibility
 func TestPreInstall(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "test")
-	require.NoError(t, err)
+	tmpDir := t.TempDir()
 
 	conf, err := config.FromYAML([]byte(`
 build:
@@ -248,9 +243,8 @@ COPY . /src`
 }
 
 func TestPythonRequirements(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "cog-test")
-	require.NoError(t, err)
-	err = os.WriteFile(path.Join(tmpDir, "my-requirements.txt"), []byte("torch==1.0.0"), 0o644)
+	tmpDir := t.TempDir()
+	err := os.WriteFile(path.Join(tmpDir, "my-requirements.txt"), []byte("torch==1.0.0"), 0o644)
 	require.NoError(t, err)
 	conf, err := config.FromYAML([]byte(`
 build:
