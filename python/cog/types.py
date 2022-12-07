@@ -36,18 +36,6 @@ def Input(
     )
 
 
-def get_filename(url: str) -> str:
-    parsed_url = urlparse(url)
-    if parsed_url.scheme == "data":
-        header, _ = parsed_url.path.split(",", 1)
-        mime_type, _ = header.split(";", 1)
-        extension = mimetypes.guess_extension(mime_type)
-        if extension is None:
-            return "file"
-        return "file" + extension
-    return os.path.basename(parsed_url.path)
-
-
 class File(io.IOBase):
     validate_always = True
 
@@ -67,10 +55,7 @@ class File(io.IOBase):
             header, encoded = parsed_url.path.split(",", 1)
             return io.BytesIO(base64.b64decode(encoded))
         elif parsed_url.scheme == "http" or parsed_url.scheme == "https":
-            resp = requests.get(value, stream=True)
-            resp.raise_for_status()
-            resp.raw.decode_content = True
-            return resp.raw
+            return URLFile(value)
         else:
             raise ValueError(
                 f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
@@ -105,3 +90,83 @@ class Path(pathlib.PosixPath):
         """Defines what this type should be in openapi.json"""
         # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
         field_schema.update(type="string", format="uri")
+
+
+class URLFile(io.IOBase):
+    """
+    URLFile is a proxy object for a :class:`urllib3.response.HTTPResponse`
+    object that is created lazily. It's a file-like object constructed from a
+    URL that can survive pickling/unpickling.
+    """
+
+    __slots__ = ("__target__", "__url__")
+
+    def __init__(self, url):
+        object.__setattr__(self, "__url__", url)
+
+    # We provide __getstate__ and __setstate__ explicitly to ensure that the
+    # object is always picklable.
+    def __getstate__(self):
+        return {"url": object.__getattribute__(self, "__url__")}
+
+    def __setstate__(self, state):
+        object.__setattr__(self, "__url__", state["url"])
+
+    # Proxy getattr/setattr/delattr through to the response object.
+    def __setattr__(self, name, value):
+        if hasattr(type(self), name):
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self.__wrapped__, name, value)
+
+    def __getattr__(self, name):
+        if name in ("__target__", "__wrapped__", "__url__"):
+            raise AttributeError(name)
+        else:
+            return getattr(self.__wrapped__, name)
+
+    def __delattr__(self, name):
+        if hasattr(type(self), name):
+            object.__delattr__(self, name)
+        else:
+            delattr(self.__wrapped__, name)
+
+    # Luckily the only dunder method on HTTPResponse is __iter__
+    def __iter__(self):
+        return iter(self.__wrapped__)
+
+    @property
+    def __wrapped__(self):
+        try:
+            return object.__getattribute__(self, "__target__")
+        except AttributeError:
+            url = object.__getattribute__(self, "__url__")
+            resp = requests.get(url, stream=True)
+            resp.raise_for_status()
+            resp.raw.decode_content = True
+            object.__setattr__(self, "__target__", resp.raw)
+            return resp.raw
+
+    def __repr__(self):
+        try:
+            target = object.__getattribute__(self, "__target__")
+        except AttributeError:
+            return "<{} at 0x{:x} for {!r}>".format(
+                type(self).__name__, id(self), object.__getattribute__(self, "__url__")
+            )
+        else:
+            return "<{} at 0x{:x} wrapping {!r}>".format(
+                type(self).__name__, id(self), target, id(target)
+            )
+
+
+def get_filename(url: str) -> str:
+    parsed_url = urlparse(url)
+    if parsed_url.scheme == "data":
+        header, _ = parsed_url.path.split(",", 1)
+        mime_type, _ = header.split(";", 1)
+        extension = mimetypes.guess_extension(mime_type)
+        if extension is None:
+            return "file"
+        return "file" + extension
+    return os.path.basename(parsed_url.path)
