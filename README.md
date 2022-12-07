@@ -115,6 +115,8 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 
 ## Install
 
+<a id="upgrade"></a>
+
 You can download and install the latest release of Cog
 by running the following commands in a terminal:
 
