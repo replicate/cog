@@ -126,8 +126,8 @@ sudo chmod +x /usr/local/bin/cog
 Alternatively, you can build Cog from source and install it with these commands:
 
 ```console
-$ make
-$ sudo make install
+make
+sudo make install
 ```
 
 ## Next steps
