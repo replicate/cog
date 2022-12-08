@@ -483,7 +483,17 @@ def _queue_worker_from_argv(
     )
 
 
+def _die(signum: Any, frame: Any) -> None:
+    print("Caught early SIGTERM. Exiting immediately!", file=sys.stderr)
+    sys.exit(1)
+
+
 if __name__ == "__main__":
+    # We are probably running as PID 1 so need to explicitly register a handler
+    # to die on SIGTERM. This will be overwritten once we start the
+    # RedisQueueWorker.
+    signal.signal(signal.SIGTERM, _die)
+
     # Enable OpenTelemetry if the env vars are present. If this block isn't
     # run, all the opentelemetry calls are no-ops.
     if "OTEL_SERVICE_NAME" in os.environ:
