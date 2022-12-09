@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools", "setuptools_scm[toml]"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cog"
+description = "Containers for machine learning"
+readme = "README.md"
+authors = [
+  {name = "Replicate", email = "team@replicate.com"}
+]
+license.file = "LICENSE"
+urls."Source" = "https://github.com/replicate/cog"
+
+requires-python = ">=3.6"
+dependencies = [
+    # intentionally loose. perhaps these should be vendored to not collide with user code?
+    "attrs>=20.1,<23",
+    "fastapi>=0.75.2,<1",
+    "opentelemetry-exporter-otlp>=1.11.1,<2",
+    "opentelemetry-sdk>=1.11.1,<2",
+    "protobuf<=3.20.3",
+    "pydantic>=1,<2",
+    "PyYAML",
+    "redis>=4,<5",
+    "requests>=2,<3",
+    "typing_extensions>=4.1.0",
+    "uvicorn[standard]>=0.12,<1",
+]
+
+dynamic = ["version"]
+
+[tool.setuptools_scm]
+root = ".."
+write_to = "python/cog/_version.py"

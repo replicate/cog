@@ -1,3 +1,4 @@
+build==0.9.0
 hypothesis==6.56.4
 httpx==0.23.1
 mypy==0.990
@@ -10,4 +11,3 @@ types-requests==2.25.1
 types-PyYAML==5.4.1
 types-redis==4.1.0
 types-setuptools==65.5.0.2
-wheel==0.36.2
