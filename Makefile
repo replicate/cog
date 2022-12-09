@@ -23,7 +23,7 @@ all: cog
 pkg/dockerfile/embed/cog.whl: python/* python/cog/* python/cog/server/* python/cog/command/*
 	@echo "Building Python library"
 	rm -rf python/dist
-	cd python && $(PYTHON) setup.py bdist_wheel
+	pip install build && $(PYTHON) -m build python/ --wheel
 	mkdir -p pkg/dockerfile/embed
 	cp python/dist/*.whl $@
 
@@ -44,6 +44,7 @@ uninstall:
 .PHONY: clean
 clean:
 	$(GO) clean
+	rm -rf python/build python/dist
 	rm -f cog
 	rm -f pkg/dockerfile/embed/cog.whl
 
