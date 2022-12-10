@@ -24,12 +24,23 @@ You define how Cog runs predictions on your model by defining a class that inher
 
 ```python
 from cog import BasePredictor, Path, Input
+from fastapi.middleware.cors import CORSMiddleware
 import torch
 
 class Predictor(BasePredictor):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
         self.model = torch.load("weights.pth")
+
+    def configure_api(self, app):
+        """Configure FastAPI CORS."""
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     def predict(self,
             image: Path = Input(description="Image to enlarge"),
@@ -42,7 +53,7 @@ class Predictor(BasePredictor):
         return output
 ```
 
-Your Predictor class should define two methods: `setup()` and `predict()`.
+Your Predictor class should define `predict()` and optionally `setup()` and `configure_api()`.
 
 ### `Predictor.setup()`
 
@@ -51,6 +62,13 @@ Prepare the model so multiple predictions run efficiently.
 Use this _optional_ method to include any expensive one-off operations in here like loading trained models, instantiate data transformations, etc.
 
 It's best not to download model weights or any other files in this function. You should bake these into the image when you build it. This means your model doesn't depend on any other system being available and accessible. It also means the Docker image ID becomes an immutable identifier for the precise model you're running, instead of the combination of the image ID and whatever files it might have downloaded.
+
+### `Predictor.configure_app(app)`
+
+Configures the [FastAPI](https://fastapi.tiangolo.com/) server.
+
+Use this _optional_ method to modify how the API server runs.  The provided
+example demonstrates how to allow cross origin requests.  Other changes to the server can be added.
 
 ### `Predictor.predict(**kwargs)`
 
