@@ -52,6 +52,9 @@ func Build(cfg *config.Config, dir, imageName string, progressOutput string) err
 	labels := map[string]string{
 		global.LabelNamespace + "version": global.Version,
 		global.LabelNamespace + "config":  string(bytes.TrimSpace(configJSON)),
+		// Mark the image as having an appropriate init entrypoint. We can use this
+		// to decide how/if to shim the image.
+		global.LabelNamespace + "has_init": "true",
 		// Backwards compatibility. Remove for 1.0.
 		"org.cogmodel.deprecated":  "The org.cogmodel labels are deprecated. Use run.cog.",
 		"org.cogmodel.cog_version": global.Version,
