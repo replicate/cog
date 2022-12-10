@@ -89,6 +89,7 @@ func (g *Generator) GenerateBase() (string, error) {
 		"# syntax = docker/dockerfile:1.2",
 		"FROM " + baseImage,
 		g.preamble(),
+		g.installTini(),
 		installPython,
 		installCog,
 		aptInstalls,
@@ -139,6 +140,26 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia
     apt-key del 7fa2af80`)
 	}
 
+	return strings.Join(lines, "\n")
+}
+
+func (g *Generator) installTini() string {
+	// Install tini as the image entrypoint to provide signal handling and process
+	// reaping appropriate for PID 1.
+	//
+	// N.B. If you remove/change this, consider removing/changing the `has_init`
+	// image label applied in image/build.go.
+	lines := []string{
+		`RUN --mount=type=cache,target=/var/cache/apt set -eux; \
+apt-get update -qq; \
+apt-get install -qqy --no-install-recommends curl; \
+rm -rf /var/lib/apt/lists/*; \
+TINI_VERSION=v0.19.0; \
+TINI_ARCH="$(dpkg --print-architecture)"; \
+curl -sSL -o /sbin/tini "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_ARCH}"; \
+chmod +x /sbin/tini`,
+		`ENTRYPOINT ["/sbin/tini", "--"]`,
+	}
 	return strings.Join(lines, "\n")
 }
 
