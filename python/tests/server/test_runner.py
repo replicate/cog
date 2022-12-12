@@ -1,6 +1,7 @@
 import os
 import pytest
 import time
+from datetime import datetime
 from unittest import mock
 
 from cog.schema import PredictionRequest, PredictionResponse
@@ -19,17 +20,35 @@ def _fixture_path(name):
     return os.path.join(test_dir, f"fixtures/{name}.py") + ":Predictor"
 
 
-# FIXME: this needs more tests!
-def test_prediction_runner():
+@pytest.fixture
+def runner():
     runner = PredictionRunner(predictor_ref=_fixture_path("sleep"))
     try:
-        runner.setup()
-        request = PredictionRequest(input={"sleep": 0.1})
-        async_result = runner.predict(request)
-        response = async_result.get(timeout=1)
-        assert response.output == "done in 0.1 seconds"
+        yield runner
     finally:
         runner.shutdown()
+
+
+def test_prediction_runner(runner):
+    runner.setup()
+    request = PredictionRequest(input={"sleep": 0.1})
+    async_result = runner.predict(request)
+    response = async_result.get(timeout=1)
+    assert response.output == "done in 0.1 seconds"
+    assert response.status == "succeeded"
+    assert response.error is None
+    assert response.logs == ""
+    assert isinstance(response.started_at, datetime)
+    assert isinstance(response.completed_at, datetime)
+
+
+def test_prediction_runner_called_while_busy(runner):
+    request = PredictionRequest(input={"sleep": 0.1})
+    runner.predict(request)
+
+    assert runner.is_busy()
+    with pytest.raises(Exception):
+        runner.predict(request)
 
 
 # list of (events, calls)
