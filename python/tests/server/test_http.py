@@ -451,6 +451,29 @@ def test_openapi_specification_with_list():
     }
 
 
+def test_openapi_specification_with_list_of_objects():
+    class Output(BaseModel):
+        foo: str
+
+    class Predictor(BasePredictor):
+        def predict(
+            self,
+        ) -> List[Output]:
+            pass
+
+    client = make_client(Predictor())
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+
+    assert resp.json()["components"]["schemas"]["Output"] == {
+        "title": "Output",
+        "type": "array",
+        "items": {
+            "type": "string",
+        },
+    }
+
+
 def test_openapi_specification_with_int_choices():
     class Predictor(BasePredictor):
         def predict(self, pick_a_number_any_number: int = Input(choices=[1, 2])) -> str:
