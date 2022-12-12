@@ -1,7 +1,7 @@
 import sys
 from datetime import datetime, timezone
 from multiprocessing.pool import ThreadPool, AsyncResult
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from .. import schema
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
@@ -30,7 +30,7 @@ class PredictionRunner:
         assert not self.is_busy()
 
         self._result = self._threadpool.apply_async(
-            func=_predict, args=(self._worker, prediction)
+            func=predict, args=(self._worker, prediction)
         )
         return self._result
 
@@ -55,13 +55,20 @@ class PredictionRunner:
         pass
 
 
-def _predict(
+def predict(
     worker: Worker,
     request: schema.PredictionRequest,
+    event_handler_class: Optional[
+        Callable[[schema.PredictionResponse], "PredictionEventHandler"]
+    ] = None,
 ) -> schema.PredictionResponse:
     initial_prediction = request.dict()
     response = schema.PredictionResponse(**initial_prediction)
-    handler = PredictionEventHandler(response)
+
+    if event_handler_class is None:
+        handler = PredictionEventHandler(response)
+    else:
+        handler = event_handler_class(response)
 
     output_type = None
     for event in worker.predict(initial_prediction["input"]):
