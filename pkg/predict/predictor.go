@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -14,7 +13,6 @@ import (
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
-	"github.com/replicate/cog/pkg/util/shell"
 )
 
 type status string
@@ -57,19 +55,20 @@ func NewPredictor(runOptions docker.RunOptions) Predictor {
 
 func (p *Predictor) Start(logsWriter io.Writer) error {
 	var err error
-	p.port, err = shell.NextFreePort(5000 + rand.Intn(1000))
-	if err != nil {
-		return err
-	}
-
 	containerPort := 5000
 
-	p.runOptions.Ports = append(p.runOptions.Ports, docker.Port{HostPort: p.port, ContainerPort: containerPort})
+	p.runOptions.Ports = append(p.runOptions.Ports, docker.Port{HostPort: 0, ContainerPort: containerPort})
 
 	p.containerID, err = docker.RunDaemon(p.runOptions)
 	if err != nil {
 		return fmt.Errorf("Failed to start container: %w", err)
 	}
+
+	p.port, err = docker.GetPort(p.containerID, containerPort)
+	if err != nil {
+		return fmt.Errorf("Failed to determine container port: %w", err)
+	}
+
 	go func() {
 		if err := docker.ContainerLogsFollow(p.containerID, logsWriter); err != nil {
 			// if user hits ctrl-c we expect an error signal
