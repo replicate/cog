@@ -11,7 +11,7 @@ jobs:
       fail-fast: false
       matrix:
         # https://docs.github.com/en/free-pro-team@latest/actions/reference/specifications-for-github-hosted-runners#supported-runners-and-hardware-resources
-        platform: [ubuntu-20.04, macos-12]
+        platform: [ubuntu-latest-8-cores, macos-12]
     runs-on: ${{ matrix.platform }}
     defaults:
       run:
@@ -47,7 +47,7 @@ jobs:
 
   test-python:
     name: "Test Python ${{ matrix.python-version }}"
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest-8-cores
     strategy:
       fail-fast: false
       matrix:
@@ -77,7 +77,7 @@ jobs:
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-integration:
     name: "Test integration"
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest-16-cores
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
@@ -109,7 +109,7 @@ jobs:
   release:
     needs: [test, test-integration]
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     steps:
       - uses: actions/checkout@v3
         with:
