@@ -10,15 +10,6 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-func NextFreePort(port int) (int, error) {
-	for p := port; p < 65535; p++ {
-		if !PortIsOpen(p) {
-			return p, nil
-		}
-	}
-	return 0, fmt.Errorf("No free ports available")
-}
-
 func WaitForPort(port int, timeout time.Duration) error {
 	start := time.Now()
 	for {
