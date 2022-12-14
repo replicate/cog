@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/replicate/cog/pkg/config"
+	"github.com/sieve-data/cog/pkg/config"
 )
 
 func testInstallCog(relativeTmpDir string) string {

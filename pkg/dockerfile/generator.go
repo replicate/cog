@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/replicate/cog/pkg/config"
+	"github.com/sieve-data/cog/pkg/config"
 )
 
 //go:embed embed/cog.whl

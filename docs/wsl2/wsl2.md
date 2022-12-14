@@ -152,7 +152,7 @@ wsl.exe
 Download and install `cog` inside the VM:
 
 ```bash
-sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
+sudo curl -o /usr/local/bin/cog -L https://github.com/sieve-data/cog/releases/latest/download/cog_`uname -s`_`uname -m`
 sudo chmod +x /usr/local/bin/cog
 ```
 
@@ -206,4 +206,4 @@ explorer.exe prediction.png
 - <https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&Distribution=WSL-Ubuntu&target_version=2.0>
 - <https://www.docker.com/blog/wsl-2-gpu-support-for-docker-desktop-on-nvidia-gpus/>
 - <https://docs.microsoft.com/en-us/windows/wsl/install-manual#step-4---download-the-linux-kernel-update-package>
-- <https://github.com/replicate/cog>
+- <https://github.com/sieve-data/cog>

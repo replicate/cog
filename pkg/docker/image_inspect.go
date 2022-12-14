@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/docker/docker/api/types"
-	"github.com/replicate/cog/pkg/util/console"
+	"github.com/sieve-data/cog/pkg/util/console"
 )
 
 var ErrNoSuchImage = errors.New("No image returned")

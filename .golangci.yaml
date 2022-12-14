@@ -59,7 +59,7 @@ linters-settings:
   goimports:
     # put imports beginning with prefix after 3rd-party packages;
     # it's a comma-separated list of prefixes
-    local-prefixes: github.com/replicate/cog/
+    local-prefixes: github.com/sieve-data/cog/
   maligned:
     # print struct with more effective memory layout or not, false by default
     suggest-new: true

@@ -12,7 +12,7 @@ This guide will walk you through what you can do with Cog by using an example mo
 First, install Cog:
 
 ```bash
-sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
+sudo curl -o /usr/local/bin/cog -L https://github.com/sieve-data/cog/releases/latest/download/cog_`uname -s`_`uname -m`
 sudo chmod +x /usr/local/bin/cog
 
 ```

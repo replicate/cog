@@ -2,7 +2,7 @@
 
 Cog containers are Docker containers that serve an HTTP server for running predictions on your model. You can deploy them anywhere that Docker containers run.
 
-This guide assumes you have a model packaged with Cog. If you don't, [follow our getting started guide](getting-started-own-model.md), or use [an example model](https://github.com/replicate/cog-examples).
+This guide assumes you have a model packaged with Cog. If you don't, [follow our getting started guide](getting-started-own-model.md), or use [an example model](https://github.com/sieve-data/cog-examples).
 
 ## Getting started
 

@@ -13,8 +13,8 @@ import (
 
 	"github.com/anaskhan96/soup"
 
-	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/util/console"
+	"github.com/sieve-data/cog/pkg/config"
+	"github.com/sieve-data/cog/pkg/util/console"
 )
 
 var defaultCUDA = map[string]string{

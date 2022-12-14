@@ -7,9 +7,9 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/replicate/cog/pkg/errors"
-	"github.com/replicate/cog/pkg/global"
-	"github.com/replicate/cog/pkg/util/files"
+	"github.com/sieve-data/cog/pkg/errors"
+	"github.com/sieve-data/cog/pkg/global"
+	"github.com/sieve-data/cog/pkg/util/files"
 )
 
 const maxSearchDepth = 100
@@ -42,8 +42,6 @@ func GetConfig(customDir string) (*Config, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-
-	err = config.ValidateAndCompleteConfig()
 
 	return config, rootDir, err
 }

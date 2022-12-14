@@ -10,7 +10,7 @@ import (
 	"github.com/docker/cli/cli/config"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/docker/cli/cli/config/types"
-	"github.com/replicate/cog/pkg/util/console"
+	"github.com/sieve-data/cog/pkg/util/console"
 )
 
 type credentialHelperInput struct {

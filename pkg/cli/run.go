@@ -4,10 +4,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/image"
-	"github.com/replicate/cog/pkg/util/console"
+	"github.com/sieve-data/cog/pkg/config"
+	"github.com/sieve-data/cog/pkg/docker"
+	"github.com/sieve-data/cog/pkg/image"
+	"github.com/sieve-data/cog/pkg/util/console"
 	"github.com/spf13/cobra"
 )
 

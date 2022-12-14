@@ -8,7 +8,7 @@ BINARY := $(RELEASE_DIR)/$(GOOS)/$(GOARCH)/cog
 INSTALL_PATH := /usr/local/bin/cog
 MAIN := cmd/cog/cog.go
 BUILD_TIME := $(shell date +%Y-%m-%dT%H:%M:%S%z)
-LDFLAGS := -ldflags "-X github.com/replicate/cog/pkg/global.Version=$(COG_VERSION) -X github.com/replicate/cog/pkg/global.BuildTime=$(BUILD_TIME) -w"
+LDFLAGS := -ldflags "-X github.com/sieve-data/cog/pkg/global.Version=$(COG_VERSION) -X github.com/sieve-data/cog/pkg/global.BuildTime=$(BUILD_TIME) -w"
 
 
 default: build

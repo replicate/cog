@@ -2,16 +2,17 @@ package docker
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 
-	"github.com/replicate/cog/pkg/util"
-	"github.com/replicate/cog/pkg/util/console"
+	"github.com/sieve-data/cog/pkg/util"
+	"github.com/sieve-data/cog/pkg/util/console"
 )
 
-func Build(dir, dockerfile, imageName string, progressOutput string) error {
+func Build(dir, dockerfile, imageName string, progressOutput string, writer io.Writer) error {
 	var args []string
 	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
 		args = m1BuildxBuildArgs()
@@ -28,8 +29,8 @@ func Build(dir, dockerfile, imageName string, progressOutput string) error {
 	cmd := exec.Command("docker", args...)
 	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
 	cmd.Dir = dir
-	cmd.Stdout = os.Stderr // redirect stdout to stderr - build output is all messaging
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = writer // redirect stdout to stderr - build output is all messaging
+	cmd.Stderr = writer
 	cmd.Stdin = strings.NewReader(dockerfile)
 
 	console.Debug("$ " + strings.Join(cmd.Args, " "))

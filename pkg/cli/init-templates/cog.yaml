@@ -1,5 +1,5 @@
 # Configuration for Cog ⚙️
-# Reference: https://github.com/replicate/cog/blob/main/docs/yaml.md
+# Reference: https://github.com/sieve-data/cog/blob/main/docs/yaml.md
 
 build:
   # set to true if your model requires a GPU

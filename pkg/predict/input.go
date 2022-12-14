@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/mitchellh/go-homedir"
-	"github.com/replicate/cog/pkg/util/console"
+	"github.com/sieve-data/cog/pkg/util/console"
 	"github.com/vincent-petithory/dataurl"
 )
 
