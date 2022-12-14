@@ -101,7 +101,7 @@ Install the Python dependencies:
 
 Once you have Go installed, run:
 
-    make install
+    make install PREFIX=$(go env GOPATH)
 
 This installs the `cog` binary to `$GOPATH/bin/cog`.
 
