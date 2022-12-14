@@ -117,8 +117,14 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 
 <a id="upgrade"></a>
 
-You can download and install the latest release of Cog
-by running the following commands in a terminal:
+If you're using macOS, you can install Cog using Homebrew:
+
+```console
+brew install cog
+```
+
+You can also download and install the latest release of Cog
+directly from GitHub by running the following commands in a terminal:
 
 ```console
 sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
