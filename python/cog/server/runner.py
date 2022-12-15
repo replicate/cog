@@ -139,7 +139,7 @@ class PredictionEventHandler:
         self.p.output.append(output)
 
     def append_logs(self, logs: str) -> None:
-        assert self.p.logs
+        assert self.p.logs is not None
         self.p.logs += logs
 
     def succeeded(self) -> None:

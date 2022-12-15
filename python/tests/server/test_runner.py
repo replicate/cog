@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 from unittest import mock
 
-from cog.schema import PredictionRequest, PredictionResponse
+from cog.schema import PredictionRequest, PredictionResponse, Status
 from cog.server.eventtypes import (
     Done,
     Heartbeat,
@@ -12,7 +12,7 @@ from cog.server.eventtypes import (
     PredictionOutput,
     PredictionOutputType,
 )
-from cog.server.runner import PredictionRunner, predict
+from cog.server.runner import PredictionEventHandler, PredictionRunner, predict
 
 
 def _fixture_path(name):
@@ -114,3 +114,40 @@ def test_predict(events, calls):
 
     event_handler = event_handler_class.return_value
     assert event_handler.method_calls == calls
+
+
+def test_prediction_event_handler():
+    p = PredictionResponse(input={"hello": "there"})
+    h = PredictionEventHandler(p)
+
+    assert p.status == Status.PROCESSING
+    assert p.output is None
+    assert p.logs == ""
+    assert isinstance(p.started_at, datetime)
+
+    h.set_output("giraffes")
+    assert p.output == "giraffes"
+
+    # cheat and reset output behind event handler's back
+    p.output = None
+    h.set_output([])
+    h.append_output("elephant")
+    h.append_output("duck")
+    assert p.output == ["elephant", "duck"]
+
+    h.append_logs("running a prediction\n")
+    h.append_logs("still running\n")
+    assert p.logs == "running a prediction\nstill running\n"
+
+    h.succeeded()
+    assert p.status == Status.SUCCEEDED
+    assert isinstance(p.completed_at, datetime)
+
+    h.failed("oops")
+    assert p.status == Status.FAILED
+    assert p.error == "oops"
+    assert isinstance(p.completed_at, datetime)
+
+    h.canceled()
+    assert p.status == Status.CANCELED
+    assert isinstance(p.completed_at, datetime)
