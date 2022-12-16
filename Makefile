@@ -59,7 +59,7 @@ test-integration: cog
 
 .PHONY: test-python
 test-python:
-	cd python/ && $(PYTEST) -vv
+	cd python/ && $(PYTEST) -n auto -vv
 
 .PHONY: test
 test: test-go test-python test-integration
