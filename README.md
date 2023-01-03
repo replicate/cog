@@ -200,6 +200,9 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
       <td align="center"><a href="https://github.com/mattt"><img src="https://avatars.githubusercontent.com/u/7659?v=4?s=100" width="100px;" alt="Mattt"/><br /><sub><b>Mattt</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=mattt" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=mattt" title="Documentation">📖</a> <a href="#infra-mattt" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a></td>
       <td align="center"><a href="https://github.com/Juneezee"><img src="https://avatars.githubusercontent.com/u/20135478?v=4?s=100" width="100px;" alt="Eng Zer Jun"/><br /><sub><b>Eng Zer Jun</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=Juneezee" title="Tests">⚠️</a></td>
     </tr>
+    <tr>
+      <td align="center"><a href="https://github.com/bbedward"><img src="https://avatars.githubusercontent.com/u/550752?v=4?s=100" width="100px;" alt="BB"/><br /><sub><b>BB</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=bbedward" title="Code">💻</a></td>
+    </tr>
   </tbody>
 </table>
 
