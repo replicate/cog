@@ -109,9 +109,6 @@ FROM nvidia/cuda:11.2.0-cudnn8-devel-ubuntu20.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-RUN rm /etc/apt/sources.list.d/cuda.list && \
-    rm /etc/apt/sources.list.d/nvidia-ml.list && \
-    apt-key del 7fa2af80
 ` + testTini() + testInstallPython("3.8") + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
 EXPOSE 5000
@@ -198,9 +195,6 @@ FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-RUN rm /etc/apt/sources.list.d/cuda.list && \
-    rm /etc/apt/sources.list.d/nvidia-ml.list && \
-    apt-key del 7fa2af80
 ` + testTini() +
 		testInstallPython("3.8") +
 		testInstallCog(gen.relativeTmpDir) + `
