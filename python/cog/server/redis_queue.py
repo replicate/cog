@@ -49,24 +49,28 @@ class RedisQueueWorker:
     def __init__(
         self,
         predictor_ref: str,
-        redis_url: str,
+        redis_host: str,
+        redis_port: int,
         input_queue: str,
         upload_url: str,
         consumer_id: str,
         model_id: Optional[str] = None,
         log_queue: Optional[str] = None,
         predict_timeout: Optional[int] = None,
+        redis_db: int = 0,
         report_setup_run_url: Optional[str] = None,
         max_failure_count: Optional[int] = None,
     ):
         self.worker = Worker(predictor_ref)
-        self.redis_url = redis_url
+        self.redis_host = redis_host
+        self.redis_port = redis_port
         self.input_queue = input_queue
         self.upload_url = upload_url
         self.consumer_id = consumer_id
         self.model_id = model_id
         self.log_queue = log_queue
         self.predict_timeout = predict_timeout
+        self.redis_db = redis_db
         self.report_setup_run_url = report_setup_run_url
         self.max_failure_count = max_failure_count
         if self.predict_timeout is not None:
@@ -80,7 +84,9 @@ class RedisQueueWorker:
         predictor = load_predictor_from_ref(predictor_ref)
         self.InputType = get_input_type(predictor)
 
-        self.redis = redis.from_url(self.redis_url)
+        self.redis = redis.Redis(
+            host=self.redis_host, port=self.redis_port, db=self.redis_db
+        )
         self.should_exit = False
         self.setup_time_queue = input_queue + self.SETUP_TIME_QUEUE_SUFFIX
         self.predict_time_queue = input_queue + self.RUN_TIME_QUEUE_SUFFIX
@@ -89,7 +95,7 @@ class RedisQueueWorker:
         self.probes = ProbeHelper()
 
         sys.stderr.write(
-            f"Connected to Redis: {self.redis_url}\n"
+            f"Connected to Redis: {self.redis_host}:{self.redis_port} (db {self.redis_db})\n"
         )
 
     def signal_exit(self, signum: Any, frame: Any) -> None:
@@ -476,7 +482,8 @@ def _queue_worker_from_argv(
         predict_timeout_int = None
     return RedisQueueWorker(
         predictor_ref,
-        f"redis://{redis_host}:{redis_port}/0",
+        redis_host,
+        int(redis_port),
         input_queue,
         upload_url,
         comsumer_id,
@@ -513,12 +520,8 @@ if __name__ == "__main__":
     # TODO remove this in a future version of Cog
     parser.add_argument("positional_args", nargs="*")
 
-    # accepting redis-host and redis-port for backwards compatibility, they are
-    # replaced by the single --redis-url.
-    # TODO remove these two arguments in a future version of Cog
     parser.add_argument("--redis-host")
     parser.add_argument("--redis-port", type=int)
-    parser.add_argument("--redis-url")
     parser.add_argument("--input-queue")
     parser.add_argument("--upload-url")
     parser.add_argument("--consumer-id")
@@ -539,14 +542,10 @@ if __name__ == "__main__":
         )
         worker = _queue_worker_from_argv(predictor_ref, *args.positional_args)
     else:
-        if args.redis_url is None:
-            sys.stderr.write(
-                "--redis-host and --redis-port arguments are deprecated. Switch to --redis-url."
-            )
-            args.redis_url = f"redis://{args.redis_host}:{args.redis_port}/0"
         worker = RedisQueueWorker(
             predictor_ref=predictor_ref,
-            redis_url=args.redis_url,
+            redis_host=args.redis_host,
+            redis_port=args.redis_port,
             input_queue=args.input_queue,
             upload_url=args.upload_url,
             consumer_id=args.consumer_id,
