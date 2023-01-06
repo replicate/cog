@@ -53,7 +53,7 @@ jobs:
 
   test-python:
     name: "Test Python ${{ matrix.python-version }}"
-    runs-on: ubuntu-latest-64-cores
+    runs-on: ubuntu-latest-8-cores
     strategy:
       fail-fast: false
       matrix:
@@ -83,7 +83,7 @@ jobs:
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-integration:
     name: "Test integration"
-    runs-on: ubuntu-latest-64-cores
+    runs-on: ubuntu-latest-16-cores
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
