@@ -33,7 +33,7 @@ def runner():
 def test_prediction_runner(runner):
     runner.setup()
     request = PredictionRequest(input={"sleep": 0.1})
-    async_result = runner.predict(request)
+    _, async_result = runner.predict(request)
     response = async_result.get(timeout=1)
     assert response.output == "done in 0.1 seconds"
     assert response.status == "succeeded"
@@ -56,7 +56,7 @@ def test_prediction_runner_called_while_busy(runner):
 def test_prediction_runner_called_while_busy(runner):
     runner.setup()
     request = PredictionRequest(input={"sleep": 0.5})
-    async_result = runner.predict(request)
+    _, async_result = runner.predict(request)
 
     runner.cancel()
 
@@ -121,20 +121,15 @@ def test_predict(events, calls):
     worker = fake_worker(events)
     request = PredictionRequest(input={"text": "hello"}, foo="bar")
     should_cancel = Event()
-    event_handler_class = mock.Mock()
+    event_handler = mock.Mock()
 
-    expected_response = PredictionResponse(**request.dict())
     response = predict(
         worker=worker,
         request=request,
         should_cancel=should_cancel,
-        event_handler_class=event_handler_class,
+        event_handler=event_handler,
     )
-    assert response == expected_response
 
-    event_handler_class.assert_called_once_with(expected_response)
-
-    event_handler = event_handler_class.return_value
     assert event_handler.method_calls == calls
 
 
