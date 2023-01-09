@@ -1,5 +1,6 @@
 import sys
 from datetime import datetime, timezone
+from multiprocessing import Event
 from multiprocessing.pool import ThreadPool, AsyncResult
 from typing import Any, Callable, Dict, Optional
 
@@ -15,6 +16,7 @@ class PredictionRunner:
         self._result: Optional[AsyncResult] = None
         self._last_result = None
         self._worker = Worker(predictor_ref=predictor_ref)
+        self._should_cancel = Event()
 
     def setup(self) -> None:
         # TODO send these logs to wherever they're configured to go
@@ -29,8 +31,10 @@ class PredictionRunner:
         # It's the caller's responsibility to not call us if we're busy.
         assert not self.is_busy()
 
+        self._should_cancel.clear()
+
         self._result = self._threadpool.apply_async(
-            func=predict, args=(self._worker, prediction)
+            func=predict, args=(self._worker, prediction, self._should_cancel)
         )
         return self._result
 
@@ -51,13 +55,13 @@ class PredictionRunner:
         self._worker.terminate()
 
     def cancel(self) -> None:
-        # TODO: a cancel :)
-        pass
+        self._should_cancel.set()
 
 
 def predict(
     worker: Worker,
     request: schema.PredictionRequest,
+    should_cancel: Event,
     event_handler_class: Optional[
         Callable[[schema.PredictionResponse], "PredictionEventHandler"]
     ] = None,
@@ -71,7 +75,11 @@ def predict(
         handler = event_handler_class(response)
 
     output_type = None
-    for event in worker.predict(initial_prediction["input"]):
+    for event in worker.predict(initial_prediction["input"], poll=0.1):
+        if should_cancel.is_set():
+            worker.cancel()
+            should_cancel.clear()
+
         if isinstance(event, Heartbeat):
             # Heartbeat events exist solely to ensure that we have a
             # regular opportunity to check for cancelation and

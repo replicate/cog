@@ -2,6 +2,7 @@ import os
 import pytest
 import time
 from datetime import datetime
+from multiprocessing import Event
 from unittest import mock
 
 from cog.schema import PredictionRequest, PredictionResponse, Status
@@ -43,12 +44,29 @@ def test_prediction_runner(runner):
 
 
 def test_prediction_runner_called_while_busy(runner):
+    runner.setup()
     request = PredictionRequest(input={"sleep": 0.1})
     runner.predict(request)
 
     assert runner.is_busy()
     with pytest.raises(Exception):
         runner.predict(request)
+
+
+def test_prediction_runner_called_while_busy(runner):
+    runner.setup()
+    request = PredictionRequest(input={"sleep": 0.5})
+    async_result = runner.predict(request)
+
+    runner.cancel()
+
+    response = async_result.get(timeout=1)
+    assert response.output == None
+    assert response.status == "canceled"
+    assert response.error is None
+    assert response.logs == ""
+    assert isinstance(response.started_at, datetime)
+    assert isinstance(response.completed_at, datetime)
 
 
 # list of (events, calls)
@@ -91,7 +109,7 @@ PREDICT_TESTS = [
 
 def fake_worker(events):
     class FakeWorker:
-        def predict(self, input_):
+        def predict(self, input_, poll=None):
             for e in events:
                 yield e
 
@@ -102,11 +120,15 @@ def fake_worker(events):
 def test_predict(events, calls):
     worker = fake_worker(events)
     request = PredictionRequest(input={"text": "hello"}, foo="bar")
+    should_cancel = Event()
     event_handler_class = mock.Mock()
 
     expected_response = PredictionResponse(**request.dict())
     response = predict(
-        worker=worker, request=request, event_handler_class=event_handler_class
+        worker=worker,
+        request=request,
+        should_cancel=should_cancel,
+        event_handler_class=event_handler_class,
     )
     assert response == expected_response
 
