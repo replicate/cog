@@ -20,7 +20,7 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.11.1,<2",
     "opentelemetry-sdk>=1.11.1,<2",
     "protobuf<=3.20.3",
-    "pydantic>=1,<2",
+    "pydantic>=1.9,<2",
     "PyYAML",
     "redis>=4,<5",
     "requests>=2,<3",
