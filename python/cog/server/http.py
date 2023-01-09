@@ -91,7 +91,8 @@ def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
             request.input = EmptyInput()
 
         try:
-            generic_response = runner.predict(request).get()
+            _, async_response = runner.predict(request)
+            generic_response = async_response.get()
         finally:
             request.input.cleanup()
 
