@@ -3,6 +3,7 @@ import io
 
 from PIL import Image
 import pytest
+import unittest.mock as mock
 
 from .conftest import make_client, match, uses_predictor
 
@@ -30,7 +31,7 @@ def test_openapi_specification(client):
                 "responses": {
                     "200": {
                         "description": "Successful Response",
-                        "content": {"application/json": {"schema": {}}},
+                        "content": {"application/json": {"schema": mock.ANY}},
                     }
                 },
             }
