@@ -2,7 +2,7 @@ import argparse
 import logging
 import os
 import textwrap
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import pydantic
 
@@ -10,7 +10,7 @@ import pydantic
 import uvicorn  # type: ignore
 from anyio import CapacityLimiter
 from anyio.lowlevel import RunVar
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, FastAPI, Header, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
@@ -29,11 +29,6 @@ from .. import schema
 from .runner import PredictionRunner
 
 logger = logging.getLogger("cog")
-
-
-class EmptyInput(dict):
-    def cleanup(self):
-        pass
 
 
 def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
@@ -76,7 +71,7 @@ def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
         response_model=PredictionResponse,
         response_model_exclude_unset=True,
     )
-    def predict(request: PredictionRequest = Body(default=None)) -> Any:  # type: ignore
+    def predict(request: PredictionRequest = Body(default=None), prefer: Union[str, None] = Header(default=None)) -> Any:  # type: ignore
         """
         Run a single prediction on the model
         """
@@ -88,16 +83,15 @@ def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
         # [compat] If body is supplied but input is None, set it to an empty
         # dictionary so that later code can be simpler.
         if request.input is None:
-            request.input = EmptyInput()
+            request.input = {}
+
+        initial_response, async_result = runner.predict(request)
+
+        if prefer == "respond-async":
+            return JSONResponse(jsonable_encoder(initial_response), status_code=202)
 
         try:
-            _, async_response = runner.predict(request)
-            generic_response = async_response.get()
-        finally:
-            request.input.cleanup()
-
-        try:
-            response = PredictionResponse(**generic_response.dict())
+            response = PredictionResponse(**async_result.get().dict())
         except ValidationError as e:
             _log_invalid_output(e)
             raise HTTPException(status_code=500)
