@@ -32,11 +32,12 @@ class PredictionRunner:
         assert not self.is_busy()
 
         self._should_cancel.clear()
+        event_handler = create_event_handler(prediction)
 
         self._result = self._threadpool.apply_async(
-            func=predict, args=(self._worker, prediction, self._should_cancel)
+            func=predict, args=(self._worker, prediction, self._should_cancel, event_handler)
         )
-        return self._result
+        return (event_handler.response, self._result)
 
     def is_busy(self) -> bool:
         if self._result is None:
@@ -58,73 +59,11 @@ class PredictionRunner:
         self._should_cancel.set()
 
 
-def predict(
-    worker: Worker,
-    request: schema.PredictionRequest,
-    should_cancel: Event,
-    event_handler_class: Optional[
-        Callable[[schema.PredictionResponse], "PredictionEventHandler"]
-    ] = None,
-) -> schema.PredictionResponse:
-    initial_prediction = request.dict()
-    response = schema.PredictionResponse(**initial_prediction)
+def create_event_handler(prediction):
+    response = schema.PredictionResponse(**prediction.dict())
+    event_handler = PredictionEventHandler(response)
 
-    if event_handler_class is None:
-        handler = PredictionEventHandler(response)
-    else:
-        handler = event_handler_class(response)
-
-    output_type = None
-    for event in worker.predict(initial_prediction["input"], poll=0.1):
-        if should_cancel.is_set():
-            worker.cancel()
-            should_cancel.clear()
-
-        if isinstance(event, Heartbeat):
-            # Heartbeat events exist solely to ensure that we have a
-            # regular opportunity to check for cancelation and
-            # timeouts.
-            #
-            # We don't need to do anything with them.
-            pass
-
-        elif isinstance(event, Log):
-            handler.append_logs(event.message)
-
-        elif isinstance(event, PredictionOutputType):
-            if output_type is not None:
-                handler.failed(error="Predictor returned unexpected output")
-                break
-
-            output_type = event
-            if output_type.multi:
-                handler.set_output([])
-        elif isinstance(event, PredictionOutput):
-            if output_type is None:
-                handler.failed(error="Predictor returned unexpected output")
-                break
-
-            # TODO this should be handled by the arbiter container
-            # output = upload_files(event.payload)
-
-            if output_type.multi:
-                handler.append_output(event.payload)
-            else:
-                handler.set_output(event.payload)
-
-        elif isinstance(event, Done):
-            # TODO handle timeouts
-            if event.canceled:
-                handler.canceled()
-            elif event.error:
-                handler.failed(error=str(event.error_detail))
-            else:
-                handler.succeeded()
-
-        else:
-            print(f"Received unexpected event from worker: {event}", file=sys.stderr)
-
-    return response
+    return event_handler
 
 
 # TODO: send webhooks
@@ -135,6 +74,10 @@ class PredictionEventHandler:
         self.p.output = None
         self.p.logs = ""
         self.p.started_at = datetime.now(tz=timezone.utc)
+
+    @property
+    def response(self):
+        return self.p
 
     def set_output(self, output: Any) -> None:
         assert self.p.output is None, "Predictor unexpectedly returned multiple outputs"
@@ -165,3 +108,64 @@ class PredictionEventHandler:
 
     def _set_completed_at(self) -> None:
         self.p.completed_at = datetime.now(tz=timezone.utc)
+
+
+def predict(
+    worker: Worker,
+    request: schema.PredictionRequest,
+    should_cancel: Event,
+    event_handler: PredictionEventHandler,
+) -> schema.PredictionResponse:
+    initial_prediction = request.dict()
+
+    output_type = None
+    for event in worker.predict(initial_prediction["input"], poll=0.1):
+        if should_cancel.is_set():
+            worker.cancel()
+            should_cancel.clear()
+
+        if isinstance(event, Heartbeat):
+            # Heartbeat events exist solely to ensure that we have a
+            # regular opportunity to check for cancelation and
+            # timeouts.
+            #
+            # We don't need to do anything with them.
+            pass
+
+        elif isinstance(event, Log):
+            event_handler.append_logs(event.message)
+
+        elif isinstance(event, PredictionOutputType):
+            if output_type is not None:
+                event_handler.failed(error="Predictor returned unexpected output")
+                break
+
+            output_type = event
+            if output_type.multi:
+                event_handler.set_output([])
+        elif isinstance(event, PredictionOutput):
+            if output_type is None:
+                event_handler.failed(error="Predictor returned unexpected output")
+                break
+
+            # TODO this should be handled by the arbiter container
+            # output = upload_files(event.payload)
+
+            if output_type.multi:
+                event_handler.append_output(event.payload)
+            else:
+                event_handler.set_output(event.payload)
+
+        elif isinstance(event, Done):
+            # TODO handle timeouts
+            if event.canceled:
+                event_handler.canceled()
+            elif event.error:
+                event_handler.failed(error=str(event.error_detail))
+            else:
+                event_handler.succeeded()
+
+        else:
+            print(f"Received unexpected event from worker: {event}", file=sys.stderr)
+
+    return event_handler.response
