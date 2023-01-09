@@ -1,3 +1,4 @@
+from datetime import datetime
 import base64
 import io
 
@@ -41,6 +42,14 @@ def test_openapi_specification(client):
                 "summary": "Predict",
                 "description": "Run a single prediction on the model",
                 "operationId": "predict_predictions_post",
+                "parameters": [
+                    {
+                        "in": "header",
+                        "name": "prefer",
+                        "required": False,
+                        "schema": {"title": "Prefer", "type": "string"},
+                    }
+                ],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -280,3 +289,14 @@ def test_yielding_files_from_generator_predictors(client):
     assert image_color(output[0]) == (255, 0, 0)  # red
     assert image_color(output[1]) == (0, 0, 255)  # blue
     assert image_color(output[2]) == (255, 255, 0)  # yellow
+
+
+@uses_predictor("yield_strings")
+def test_asynchronous_prediction_endpoint(client):
+    resp = client.post("/predictions", headers={"Prefer": "respond-async"})
+    assert resp.status_code == 202
+
+    assert resp.json() == match(
+        {"status": "processing", "output": None, "started_at": mock.ANY}
+    )
+    assert resp.json()["started_at"] is not None

@@ -34,8 +34,15 @@ class PredictionRunner:
         self._should_cancel.clear()
         event_handler = create_event_handler(prediction)
 
+        def cleanup(_):
+            if hasattr(prediction.input, "cleanup"):
+                prediction.input.cleanup()
+
         self._result = self._threadpool.apply_async(
-            func=predict, args=(self._worker, prediction, self._should_cancel, event_handler)
+            func=predict,
+            args=(self._worker, prediction, self._should_cancel, event_handler),
+            callback=cleanup,
+            error_callback=cleanup,
         )
         return (event_handler.response, self._result)
 
