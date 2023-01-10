@@ -11,6 +11,7 @@ from .worker import Worker
 
 class PredictionRunner:
     def __init__(self, predictor_ref: str):
+        self.current_prediction_id = None
         self._thread = None
         self._threadpool = ThreadPool(processes=1)
         self._result: Optional[AsyncResult] = None
@@ -44,6 +45,8 @@ class PredictionRunner:
             callback=cleanup,
             error_callback=cleanup,
         )
+
+        self.current_prediction_id = prediction.id
         return (event_handler.response, self._result)
 
     def is_busy(self) -> bool:

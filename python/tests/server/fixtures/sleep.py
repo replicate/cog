@@ -1,9 +1,9 @@
 import time
 
-class Predictor:
-    def setup(self):
-        pass
+from cog import BasePredictor
 
-    def predict(self, sleep=0):
+
+class Predictor(BasePredictor):
+    def predict(self, sleep: float = 0) -> str:
         time.sleep(sleep)
         return f"done in {sleep} seconds"
