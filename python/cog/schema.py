@@ -66,6 +66,8 @@ class PredictionResponse(PredictionBaseModel):
     error: t.Optional[str]
     status: t.Optional[Status]
 
+    webhook: t.Optional[pydantic.AnyHttpUrl]
+
     @classmethod
     def with_types(cls, input_type: t.Type, output_type: t.Type) -> t.Any:
         # [compat] Input is implicitly optional -- previous versions of the
