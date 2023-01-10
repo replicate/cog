@@ -10,7 +10,7 @@ import pydantic
 import uvicorn  # type: ignore
 from anyio import CapacityLimiter
 from anyio.lowlevel import RunVar
-from fastapi import Body, FastAPI, Header, HTTPException
+from fastapi import Body, FastAPI, Header, HTTPException, Path
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
@@ -105,6 +105,17 @@ def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
         # TODO: clean up output files
         encoded_response = jsonable_encoder(response_object)
         return JSONResponse(content=encoded_response)
+
+    @app.post("/predictions/{prediction_id}/cancel")
+    def cancel(prediction_id: str = Path(title="Prediction ID")):
+        """
+        Cancel a running prediction
+        """
+        if runner.current_prediction_id == prediction_id:
+            runner.cancel()
+            return JSONResponse({}, status_code=200)
+        else:
+            return JSONResponse({}, status_code=404)
 
     return app
 
