@@ -1,6 +1,9 @@
 from datetime import datetime
 import base64
 import io
+import responses
+from responses import matchers
+import time
 
 from PIL import Image
 import pytest
@@ -322,15 +325,48 @@ def test_yielding_files_from_generator_predictors(client):
     assert image_color(output[2]) == (255, 255, 0)  # yellow
 
 
-@uses_predictor("yield_strings")
+# a basic end-to-end test for async predictions. if you're adding more
+# exhaustive tests of webhooks, consider adding them to test_runner.py
+@responses.activate
+@uses_predictor("input_string")
 def test_asynchronous_prediction_endpoint(client):
-    resp = client.post("/predictions", headers={"Prefer": "respond-async"})
+    webhook = responses.post(
+        "https://example.com/webhook",
+        match=[
+            matchers.json_params_matcher(
+                {
+                    "id": "12345abcde",
+                    "status": "succeeded",
+                    "output": "hello world",
+                },
+                strict_match=False,
+            )
+        ],
+        status=200,
+    )
+
+    resp = client.post(
+        "/predictions",
+        json={
+            "id": "12345abcde",
+            "input": {"text": "hello world"},
+            "webhook": "https://example.com/webhook",
+        },
+        headers={"Prefer": "respond-async"},
+    )
     assert resp.status_code == 202
 
     assert resp.json() == match(
         {"status": "processing", "output": None, "started_at": mock.ANY}
     )
     assert resp.json()["started_at"] is not None
+
+    n = 0
+    while webhook.call_count < 1 and n < 10:
+        time.sleep(0.1)
+        n += 1
+
+    assert webhook.call_count == 1
 
 
 @uses_predictor("sleep")
