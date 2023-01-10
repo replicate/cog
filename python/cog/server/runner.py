@@ -1,11 +1,13 @@
 import sys
 from datetime import datetime, timezone
+from fastapi.encoders import jsonable_encoder
 from multiprocessing import Event
 from multiprocessing.pool import ThreadPool, AsyncResult
 from typing import Any, Callable, Dict, Optional
 
 from .. import schema
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
+from .webhook import webhook_caller
 from .worker import Worker
 
 
@@ -76,7 +78,10 @@ def create_event_handler(prediction):
     return event_handler
 
 
-# TODO: send webhooks
+def null_webhook_sender(response):
+    pass
+
+
 class PredictionEventHandler:
     def __init__(self, p: schema.PredictionResponse):
         self.p = p
@@ -84,6 +89,11 @@ class PredictionEventHandler:
         self.p.output = None
         self.p.logs = ""
         self.p.started_at = datetime.now(tz=timezone.utc)
+
+        if p.webhook is not None:
+            self._webhook_sender = webhook_caller(p.webhook)
+        else:
+            self._webhook_sender = null_webhook_sender
 
     @property
     def response(self):
@@ -106,18 +116,25 @@ class PredictionEventHandler:
     def succeeded(self) -> None:
         self.p.status = schema.Status.SUCCEEDED
         self._set_completed_at()
+        self._send_webhook()
 
     def failed(self, error: str) -> None:
         self.p.status = schema.Status.FAILED
         self.p.error = error
         self._set_completed_at()
+        self._send_webhook()
 
     def canceled(self) -> None:
         self.p.status = schema.Status.CANCELED
         self._set_completed_at()
+        self._send_webhook()
 
     def _set_completed_at(self) -> None:
         self.p.completed_at = datetime.now(tz=timezone.utc)
+
+    def _send_webhook(self) -> None:
+        if self._webhook_sender is not None:
+            self._webhook_sender(jsonable_encoder(self.response))
 
 
 def predict(
