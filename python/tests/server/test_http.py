@@ -81,6 +81,37 @@ def test_openapi_specification(client):
                 },
             }
         },
+        "/predictions/{prediction_id}/cancel": {
+            "post": {
+                "summary": "Cancel",
+                "description": "Cancel a running prediction",
+                "operationId": "cancel_predictions__prediction_id__cancel_post",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "prediction_id",
+                        "required": True,
+                        "schema": {"title": "Prediction ID", "type": "string"},
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {"application/json": {"schema": {}}},
+                        "description": "Successful Response",
+                    },
+                    "422": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        },
+                        "description": "Validation Error",
+                    },
+                },
+            }
+        },
     }
     assert schema["components"]["schemas"]["Input"] == {
         "title": "Input",
@@ -300,3 +331,19 @@ def test_asynchronous_prediction_endpoint(client):
         {"status": "processing", "output": None, "started_at": mock.ANY}
     )
     assert resp.json()["started_at"] is not None
+
+
+@uses_predictor("sleep")
+def test_prediction_cancel(client):
+    resp = client.post("/predictions/123/cancel")
+    assert resp.status_code == 404
+
+    resp = client.post(
+        "/predictions",
+        json={"id": "123", "input": {"sleep": 1}},
+        headers={"Prefer": "respond-async"},
+    )
+    assert resp.status_code == 202
+
+    resp = client.post("/predictions/123/cancel")
+    assert resp.status_code == 200
