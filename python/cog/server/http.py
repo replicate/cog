@@ -78,6 +78,9 @@ def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
 
         app.state.health["status"] = "healthy"
 
+        probes = ProbeHelper()
+        probes.ready()
+
     @app.on_event("shutdown")
     def shutdown() -> None:
         runner.shutdown()
@@ -136,7 +139,7 @@ def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
         return JSONResponse(content=encoded_response)
 
     @app.post("/predictions/{prediction_id}/cancel")
-    def cancel(prediction_id: str = Path(title="Prediction ID")):
+    def cancel(prediction_id: str = Path(..., title="Prediction ID")):
         """
         Cancel a running prediction
         """
@@ -150,7 +153,7 @@ def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
 
 
 def _log_invalid_output(error):
-    logger.error(
+    log.error(
         textwrap.dedent(
             f"""\
             The return value of predict() was not valid:
