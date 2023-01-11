@@ -53,8 +53,6 @@ class RedisQueueWorker:
         input_queue: str,
         upload_url: str,
         consumer_id: str,
-        model_id: Optional[str] = None,
-        log_queue: Optional[str] = None,
         predict_timeout: Optional[int] = None,
         report_setup_run_url: Optional[str] = None,
         max_failure_count: Optional[int] = None,
@@ -64,8 +62,6 @@ class RedisQueueWorker:
         self.input_queue = input_queue
         self.upload_url = upload_url
         self.consumer_id = consumer_id
-        self.model_id = model_id
-        self.log_queue = log_queue
         self.predict_timeout = predict_timeout
         self.report_setup_run_url = report_setup_run_url
         self.max_failure_count = max_failure_count
@@ -480,8 +476,6 @@ def _queue_worker_from_argv(
         input_queue,
         upload_url,
         comsumer_id,
-        model_id,
-        log_queue,
         predict_timeout_int,
     )
 
@@ -550,7 +544,6 @@ if __name__ == "__main__":
             input_queue=args.input_queue,
             upload_url=args.upload_url,
             consumer_id=args.consumer_id,
-            model_id=args.model_id,
             predict_timeout=args.predict_timeout,
             report_setup_run_url=args.report_setup_run_url,
             max_failure_count=args.max_failure_count,
