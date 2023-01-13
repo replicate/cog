@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi.encoders import jsonable_encoder
 from multiprocessing import Event
 from multiprocessing.pool import ThreadPool, AsyncResult
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from .. import schema
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
@@ -16,17 +16,31 @@ class PredictionRunner:
         self.current_prediction_id = None
         self._thread = None
         self._threadpool = ThreadPool(processes=1)
+
         self._result: Optional[AsyncResult] = None
         self._last_result = None
+
         self._worker = Worker(predictor_ref=predictor_ref)
         self._should_cancel = Event()
 
-    def setup(self) -> None:
-        # TODO send these logs to wherever they're configured to go
-        logs = ""
-        for event in self._worker.setup():
-            if isinstance(event, Log):
-                logs += event.message
+    def setup(self) -> Tuple[schema.Status, str]:
+        _logs = []
+        _status = None
+
+        try:
+            for event in self._worker.setup():
+                if isinstance(event, Log):
+                    _logs.append(event.message)
+                elif isinstance(event, Done):
+                    _status = (
+                        schema.Status.FAILED if event.error else schema.Status.SUCCEEDED
+                    )
+        except Exception:
+            _status = schema.Status.FAILED
+
+        assert _status is not None, "must receive done event from setup"
+
+        return (_status, "".join(_logs))
 
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
     # no longer have to support Python 3.8

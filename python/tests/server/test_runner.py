@@ -30,6 +30,13 @@ def runner():
         runner.shutdown()
 
 
+def test_prediction_runner_setup(runner):
+    status, logs = runner.setup()
+
+    assert status == Status.SUCCEEDED
+    assert logs == ""
+
+
 def test_prediction_runner(runner):
     runner.setup()
     request = PredictionRequest(input={"sleep": 0.1})
