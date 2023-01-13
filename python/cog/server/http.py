@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional, Union
 
 import pydantic
+import structlog
 
 # https://github.com/encode/uvicorn/issues/998
 import uvicorn  # type: ignore
@@ -18,6 +19,7 @@ from pydantic import BaseModel, ValidationError
 
 from ..files import upload_file
 from ..json import upload_files
+from ..logging import setup_logging
 from ..predictor import (
     BasePredictor,
     get_input_type,
@@ -30,7 +32,7 @@ from .. import schema
 from .probes import ProbeHelper
 from .runner import PredictionRunner
 
-logger = logging.getLogger("cog")
+log = structlog.get_logger("cog.server.http")
 
 
 def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
@@ -77,9 +79,6 @@ def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
         probes.ready()
 
         app.state.health["status"] = "healthy"
-
-        probes = ProbeHelper()
-        probes.ready()
 
     @app.on_event("shutdown")
     def shutdown() -> None:
@@ -180,6 +179,13 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    # log level is configurable so we can make it quiet or verbose for `cog predict`
+    # cog predict --debug       # -> debug
+    # cog predict               # -> warning
+    # docker run <image-name>   # -> info (default)
+    log_level = logging.getLevelName(os.environ.get("COG_LOG_LEVEL", "INFO").upper())
+    setup_logging(log_level=log_level)
+
     config = load_config()
 
     threads = args.threads
@@ -191,16 +197,13 @@ if __name__ == "__main__":
 
     predictor_ref = get_predictor_ref(config)
     app = create_app(predictor_ref, threads=threads)
+
     port = int(os.getenv("PORT", 5000))
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=port,
-        # log level is configurable so we can make it quiet or verbose for `cog predict`
-        # cog predict --debug       # -> debug
-        # cog predict               # -> warning
-        # docker run <image-name>   # -> info (default)
-        log_level=os.environ.get("COG_LOG_LEVEL", "info"),
+        log_config=None,
         # This is the default, but to be explicit: only run a single worker
         workers=1,
     )
