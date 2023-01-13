@@ -27,94 +27,92 @@ def test_openapi_specification(client):
     schema = resp.json()
     assert schema["openapi"] == "3.0.2"
     assert schema["info"] == {"title": "Cog", "version": "0.1.0"}
-    assert schema["paths"] == {
-        "/": {
-            "get": {
-                "summary": "Root",
-                "operationId": "root__get",
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {"application/json": {"schema": mock.ANY}},
+    assert schema["paths"]["/"] == {
+        "get": {
+            "summary": "Root",
+            "operationId": "root__get",
+            "responses": {
+                "200": {
+                    "description": "Successful Response",
+                    "content": {"application/json": {"schema": mock.ANY}},
+                }
+            },
+        }
+    }
+    assert schema["paths"]["/predictions"] == {
+        "post": {
+            "summary": "Predict",
+            "description": "Run a single prediction on the model",
+            "operationId": "predict_predictions_post",
+            "parameters": [
+                {
+                    "in": "header",
+                    "name": "prefer",
+                    "required": False,
+                    "schema": {"title": "Prefer", "type": "string"},
+                }
+            ],
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/PredictionRequest"}
                     }
-                },
-            }
-        },
-        "/predictions": {
-            "post": {
-                "summary": "Predict",
-                "description": "Run a single prediction on the model",
-                "operationId": "predict_predictions_post",
-                "parameters": [
-                    {
-                        "in": "header",
-                        "name": "prefer",
-                        "required": False,
-                        "schema": {"title": "Prefer", "type": "string"},
-                    }
-                ],
-                "requestBody": {
+                }
+            },
+            "responses": {
+                "200": {
+                    "description": "Successful Response",
                     "content": {
                         "application/json": {
-                            "schema": {"$ref": "#/components/schemas/PredictionRequest"}
+                            "schema": {
+                                "$ref": "#/components/schemas/PredictionResponse"
+                            }
                         }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/PredictionResponse"
-                                }
-                            }
-                        },
-                    },
-                    "422": {
-                        "description": "Validation Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
-                            }
-                        },
                     },
                 },
-            }
-        },
-        "/predictions/{prediction_id}/cancel": {
-            "post": {
-                "summary": "Cancel",
-                "description": "Cancel a running prediction",
-                "operationId": "cancel_predictions__prediction_id__cancel_post",
-                "parameters": [
-                    {
-                        "in": "path",
-                        "name": "prediction_id",
-                        "required": True,
-                        "schema": {"title": "Prediction ID", "type": "string"},
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "content": {"application/json": {"schema": {}}},
-                        "description": "Successful Response",
-                    },
-                    "422": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/HTTPValidationError"
-                                }
+                "422": {
+                    "description": "Validation Error",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/HTTPValidationError"
                             }
-                        },
-                        "description": "Validation Error",
+                        }
                     },
                 },
-            }
-        },
+            },
+        }
+    }
+    assert schema["paths"]["/predictions/{prediction_id}/cancel"] == {
+        "post": {
+            "summary": "Cancel",
+            "description": "Cancel a running prediction",
+            "operationId": "cancel_predictions__prediction_id__cancel_post",
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "prediction_id",
+                    "required": True,
+                    "schema": {"title": "Prediction ID", "type": "string"},
+                }
+            ],
+            "responses": {
+                "200": {
+                    "content": {"application/json": {"schema": {}}},
+                    "description": "Successful Response",
+                },
+                "422": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/HTTPValidationError"
+                            }
+                        }
+                    },
+                    "description": "Validation Error",
+                },
+            },
+        }
     }
     assert schema["components"]["schemas"]["Input"] == {
         "title": "Input",

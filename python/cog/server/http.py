@@ -2,6 +2,7 @@ import argparse
 import logging
 import os
 import textwrap
+from datetime import datetime, timezone
 from typing import Any, Optional, Union
 
 import pydantic
@@ -26,6 +27,7 @@ from ..predictor import (
     load_predictor_from_ref,
 )
 from .. import schema
+from .probes import ProbeHelper
 from .runner import PredictionRunner
 
 logger = logging.getLogger("cog")
@@ -36,6 +38,12 @@ def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
     )
+
+    app.state.health = {
+        "status": "initializing",
+        "setup": None,
+    }
+
     runner = PredictionRunner(predictor_ref)
     # TODO: avoid loading predictor code in this process
     predictor = load_predictor_from_ref(predictor_ref)
@@ -52,7 +60,23 @@ def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
     def startup() -> None:
         # https://github.com/tiangolo/fastapi/issues/4221
         RunVar("_default_thread_limiter").set(CapacityLimiter(threads))  # type: ignore
-        runner.setup()
+
+        setup_start = datetime.now(timezone.utc)
+        status, logs = runner.setup()
+        setup_complete = datetime.now(timezone.utc)
+
+        app.state.health["setup"] = {
+            "logs": logs,
+            "status": status,
+            "started_at": setup_start,
+            "completed_at": setup_complete,
+        }
+
+        # TODO: this process should die if setup fails!
+        probes = ProbeHelper()
+        probes.ready()
+
+        app.state.health["status"] = "healthy"
 
     @app.on_event("shutdown")
     def shutdown() -> None:
@@ -65,6 +89,10 @@ def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
             "docs_url": "/docs",
             "openapi_url": "/openapi.json",
         }
+
+    @app.get("/health-check")
+    def healthcheck() -> Any:
+        return JSONResponse(content=jsonable_encoder(app.state.health))
 
     @app.post(
         "/predictions",
@@ -87,6 +115,7 @@ def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
 
         initial_response, async_result = runner.predict(request)
 
+        # TODO: spec-compliant parsing of Prefer header.
         if prefer == "respond-async":
             return JSONResponse(jsonable_encoder(initial_response), status_code=202)
 
