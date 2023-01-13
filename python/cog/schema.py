@@ -6,6 +6,7 @@ import pydantic
 
 
 class Status(str, Enum):
+    STARTING = "starting"
     PROCESSING = "processing"
     SUCCEEDED = "succeeded"
     CANCELED = "canceled"
