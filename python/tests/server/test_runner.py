@@ -5,7 +5,7 @@ from datetime import datetime
 from multiprocessing import Event
 from unittest import mock
 
-from cog.schema import PredictionRequest, PredictionResponse, Status
+from cog.schema import PredictionRequest, PredictionResponse, Status, WebhookEvent
 from cog.server.eventtypes import (
     Done,
     Heartbeat,
@@ -14,6 +14,9 @@ from cog.server.eventtypes import (
     PredictionOutputType,
 )
 from cog.server.runner import PredictionEventHandler, PredictionRunner, predict
+
+
+from .conftest import match
 
 
 def _fixture_path(name):
@@ -175,3 +178,110 @@ def test_prediction_event_handler():
     h.canceled()
     assert p.status == Status.CANCELED
     assert isinstance(p.completed_at, datetime)
+
+
+def test_prediction_event_handler_webhook_sender():
+    s = mock.Mock()
+    p = PredictionResponse(input={"hello": "there"})
+    h = PredictionEventHandler(p, webhook_sender=s)
+
+    h.set_output([])
+    h.append_output("elephant")
+    h.append_output("duck")
+
+    h.append_logs("running a prediction\n")
+    h.append_logs("still running\n")
+
+    s.reset_mock()
+    h.succeeded()
+
+    s.assert_called_once_with(
+        match(
+            {
+                "input": {"hello": "there"},
+                "output": ["elephant", "duck"],
+                "logs": "running a prediction\nstill running\n",
+                "error": None,
+                "status": "succeeded",
+                "metrics": {"predict_time": mock.ANY},
+            }
+        ),
+        WebhookEvent.COMPLETED,
+    )
+
+
+def test_prediction_event_handler_webhook_sender_intermediate():
+    s = mock.Mock()
+    p = PredictionResponse(input={"hello": "there"})
+    h = PredictionEventHandler(p, webhook_sender=s)
+
+    s.assert_called_once_with(match({"status": "processing"}), WebhookEvent.START)
+
+    s.reset_mock()
+    h.set_output("giraffes")
+    assert s.call_count == 0
+
+    # cheat and reset output behind event handler's back
+    p.output = None
+    s.reset_mock()
+    h.set_output([])
+    h.append_output("elephant")
+    h.append_output("duck")
+    s.assert_has_calls(
+        [
+            mock.call(
+                match(
+                    {
+                        "output": ["elephant"],
+                    }
+                ),
+                WebhookEvent.OUTPUT,
+            ),
+            mock.call(
+                match(
+                    {
+                        "output": ["elephant", "duck"],
+                    }
+                ),
+                WebhookEvent.OUTPUT,
+            ),
+        ]
+    )
+
+    s.reset_mock()
+    h.append_logs("running a prediction\n")
+    h.append_logs("still running\n")
+    s.assert_has_calls(
+        [
+            mock.call(
+                match(
+                    {
+                        "logs": "running a prediction\n",
+                    }
+                ),
+                WebhookEvent.LOGS,
+            ),
+            mock.call(
+                match(
+                    {
+                        "logs": "running a prediction\nstill running\n",
+                    }
+                ),
+                WebhookEvent.LOGS,
+            ),
+        ]
+    )
+
+    s.reset_mock()
+    h.succeeded()
+    s.assert_called_once_with(match({"status": "succeeded"}), WebhookEvent.COMPLETED)
+
+    s.reset_mock()
+    h.failed("oops")
+    s.assert_called_once_with(
+        match({"status": "failed", "error": "oops"}), WebhookEvent.COMPLETED
+    )
+
+    s.reset_mock()
+    h.canceled()
+    s.assert_called_once_with(match({"status": "canceled"}), WebhookEvent.COMPLETED)
