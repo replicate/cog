@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 from .. import schema
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
-from .webhook import webhook_caller
+from .webhook import webhook_caller, webhook_caller_filtered
 from .worker import Worker
 
 
@@ -87,27 +87,34 @@ class PredictionRunner:
 
 def create_event_handler(prediction):
     response = schema.PredictionResponse(**prediction.dict())
-    event_handler = PredictionEventHandler(response)
+
+    webhook = prediction.webhook
+    events_filter = (
+        prediction.webhook_events_filter or schema.WebhookEvent.default_events()
+    )
+
+    webhook_sender = None
+    if webhook is not None:
+        webhook_sender = webhook_caller_filtered(webhook, events_filter)
+
+    event_handler = PredictionEventHandler(response, webhook_sender=webhook_sender)
 
     return event_handler
 
 
-def null_webhook_sender(response):
-    pass
-
-
 class PredictionEventHandler:
-    def __init__(self, p: schema.PredictionResponse):
+    def __init__(
+        self, p: schema.PredictionResponse, webhook_sender: Optional[Callable] = None
+    ):
         self.p = p
         self.p.status = schema.Status.PROCESSING
         self.p.output = None
         self.p.logs = ""
         self.p.started_at = datetime.now(tz=timezone.utc)
 
-        if p.webhook is not None:
-            self._webhook_sender = webhook_caller(p.webhook)
-        else:
-            self._webhook_sender = null_webhook_sender
+        self._webhook_sender = webhook_sender
+
+        self._send_webhook(schema.WebhookEvent.START)
 
     @property
     def response(self):
@@ -116,39 +123,52 @@ class PredictionEventHandler:
     def set_output(self, output: Any) -> None:
         assert self.p.output is None, "Predictor unexpectedly returned multiple outputs"
         self.p.output = output
+        # We don't send a webhook for compatibility with the behaviour of
+        # redis_queue. In future we can consider whether it makes sense to send
+        # one here.
 
     def append_output(self, output: Any) -> None:
         assert isinstance(
             self.p.output, list
         ), "Cannot append output before setting output"
         self.p.output.append(output)
+        self._send_webhook(schema.WebhookEvent.OUTPUT)
 
     def append_logs(self, logs: str) -> None:
         assert self.p.logs is not None
         self.p.logs += logs
+        self._send_webhook(schema.WebhookEvent.LOGS)
 
     def succeeded(self) -> None:
         self.p.status = schema.Status.SUCCEEDED
         self._set_completed_at()
-        self._send_webhook()
+        # These have been set already: this is to convince the typechecker of
+        # that...
+        assert self.p.completed_at is not None
+        assert self.p.started_at is not None
+        self.p.metrics = {
+            "predict_time": (self.p.completed_at - self.p.started_at).total_seconds()
+        }
+        self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     def failed(self, error: str) -> None:
         self.p.status = schema.Status.FAILED
         self.p.error = error
         self._set_completed_at()
-        self._send_webhook()
+        self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     def canceled(self) -> None:
         self.p.status = schema.Status.CANCELED
         self._set_completed_at()
-        self._send_webhook()
+        self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     def _set_completed_at(self) -> None:
         self.p.completed_at = datetime.now(tz=timezone.utc)
 
-    def _send_webhook(self) -> None:
+    def _send_webhook(self, event: schema.WebhookEvent) -> None:
         if self._webhook_sender is not None:
-            self._webhook_sender(jsonable_encoder(self.response))
+            dict_response = jsonable_encoder(self.response.dict())
+            self._webhook_sender(dict_response, event)
 
 
 def predict(
