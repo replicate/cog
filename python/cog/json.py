@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 import io
 from types import GeneratorType
@@ -31,6 +32,8 @@ def make_encodeable(obj: Any) -> Any:
         return [make_encodeable(value) for value in obj]
     if isinstance(obj, Enum):
         return obj.value
+    if isinstance(obj, datetime):
+        return obj.isoformat()
     if has_numpy:
         if isinstance(obj, np.integer):
             return int(obj)

@@ -2,6 +2,7 @@ import datetime
 import logging
 import os
 import json
+import multiprocessing
 import signal
 import sys
 import threading
@@ -20,8 +21,10 @@ import structlog
 import uvicorn
 
 from . import schema
+from .json import make_encodeable
 from .logging import setup_logging
 from .server.probes import ProbeHelper
+from .server.webhook import webhook_caller
 
 log = structlog.get_logger("cog.director")
 
@@ -126,11 +129,13 @@ class DirectorQueueWorker:
         predict_timeout: int,
         prediction_event: threading.Event,
         shutdown_event: threading.Event,
+        prediction_request_pipe: multiprocessing.connection.Connection,
     ):
         self.redis_consumer = redis_consumer
 
         self.prediction_event = prediction_event
         self.shutdown_event = shutdown_event
+        self.prediction_request_pipe = prediction_request_pipe
 
         self.predict_timeout = predict_timeout
 
@@ -201,12 +206,17 @@ class DirectorQueueWorker:
         should_cancel = self.redis_consumer.checker(message.get("cancel_key"))
         prediction_id = message["id"]
 
-        # Override webhook to call us
-        # FIXME: we need to save the webhook URI api gave us and call that!
-        message["webhook"] = "http://localhost:4900/webhook"
+        # Send the original request to the webserver, so it can trust the fields
+        while self.prediction_request_pipe.poll():
+            # clear the pipe first, out of an abundance of caution
+            self.prediction_request_pipe.recv()
+        self.prediction_request_pipe.send(message)
 
         # Reset the prediction event to indicate that a prediction is running
         self.prediction_event.clear()
+
+        # Override webhook to call us
+        message["webhook"] = "http://localhost:4900/webhook"
 
         # Call the untrusted container to start the prediction
         resp = self.cog_client.post(
@@ -256,6 +266,14 @@ def create_app(
     # Used to signal when the queue worker should shut down.
     app.state.shutdown_event = threading.Event()
 
+    # Used to send the original prediction request from the queue worker to the
+    # webserver for constructing outgoing webhooks.
+    (
+        app.state.prediction_request_pipe,
+        worker_prediction_request_pipe,
+    ) = multiprocessing.Pipe()
+    app.state.prediction_request = None
+
     # Number of consecutive failures seen
     app.state.failure_count = 0
 
@@ -266,6 +284,7 @@ def create_app(
             predict_timeout=predict_timeout,
             prediction_event=app.state.prediction_event,
             shutdown_event=app.state.shutdown_event,
+            prediction_request_pipe=worker_prediction_request_pipe,
         ),
     )
 
@@ -297,6 +316,8 @@ def create_app(
 
     @app.post("/webhook")
     def webhook(payload: schema.PredictionResponse) -> Any:
+        # TODO the logic here seems weird, might need to invert the variable
+        # name to something like `prediction_running`?
         if app.state.prediction_event.is_set():
             return JSONResponse(
                 {"detail": "cannot receive webhooks when no prediction is running"},
@@ -308,7 +329,27 @@ def create_app(
                 {"detail": "webhook payload must have a status"}, status_code=400
             )
 
+        if app.state.prediction_request is None:
+            log.info("Getting updated prediction_request from pipe")
+            # TODO how defensive do we need to be reading from this pipe?
+            app.state.prediction_request = app.state.prediction_request_pipe.recv()
+            app.state.send_webhook = webhook_caller(
+                app.state.prediction_request["webhook"]
+            )
+
+        # only permit a limited set of keys from the payload, to prevent
+        # untrusted code from setting things like IDs and internal data
+        outgoing_response = make_encodeable(
+            {
+                **app.state.prediction_request,
+                **allowed_fields(payload.dict()),
+            }
+        )
+        log.info("Sending outgoing webhook", payload=outgoing_response)
+        app.state.send_webhook(outgoing_response)
+
         if schema.Status.is_terminal(payload.status):
+            app.state.prediction_request = None
             app.state.prediction_event.set()
 
         if payload.status == schema.Status.FAILED:
@@ -320,6 +361,25 @@ def create_app(
         return JSONResponse({"status": "ok"}, status_code=200)
 
     return app
+
+
+ALLOWED_FIELDS_FROM_UNTRUSTED_CONTAINER = (
+    # FIXME: we shouldn't trust the timings (or derived metrics) either
+    "completed_at",
+    "started_at",
+    "metrics",
+    # Prediction output and output metadata
+    "error",
+    "logs",
+    "output",
+    "status",
+)
+
+
+def allowed_fields(payload: dict):
+    return {
+        k: v for k, v in payload.items() if k in ALLOWED_FIELDS_FROM_UNTRUSTED_CONTAINER
+    }
 
 
 def _make_local_http_client() -> requests.Session:
