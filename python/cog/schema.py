@@ -67,7 +67,7 @@ class PredictionResponse(PredictionBaseModel):
     error: t.Optional[str]
     status: t.Optional[Status]
 
-    webhook: t.Optional[pydantic.AnyHttpUrl]
+    metrics: t.Optional[t.Dict[str, t.Any]]
 
     @classmethod
     def with_types(cls, input_type: t.Type, output_type: t.Type) -> t.Any:
