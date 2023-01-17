@@ -2,6 +2,7 @@ import base64
 import io
 import mimetypes
 import os
+from urllib.parse import urlparse
 
 import requests
 
@@ -34,3 +35,30 @@ def guess_filename(obj: io.IOBase) -> str:
     """Tries to guess the filename of the given object."""
     name = getattr(obj, "name", "file")
     return os.path.basename(name)
+
+
+def put_file_to_signed_endpoint(fh: io.IOBase, endpoint: str) -> str:
+    filename = guess_filename(fh)
+    content_type, _ = mimetypes.guess_type(filename)
+
+    resp = requests.put(
+        ensure_trailing_slash(endpoint) + filename,
+        fh,  # type: ignore
+        headers={"Content-type": content_type},
+    )
+    resp.raise_for_status()
+
+    # strip any signing gubbins from the URL
+    final_url = urlparse(resp.url)._replace(query="").geturl()
+
+    return final_url
+
+
+def ensure_trailing_slash(url: str) -> str:
+    """
+    Adds a trailing slash to `url` if not already present, and then returns it.
+    """
+    if url.endswith("/"):
+        return url
+    else:
+        return url + "/"

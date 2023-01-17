@@ -35,7 +35,9 @@ from .runner import PredictionRunner
 log = structlog.get_logger("cog.server.http")
 
 
-def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
+def create_app(
+    predictor_ref: str, threads: int = 1, upload_url: Optional[str] = None
+) -> FastAPI:
     app = FastAPI(
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
@@ -46,7 +48,7 @@ def create_app(predictor_ref: str, threads: int = 1) -> FastAPI:
         "setup": None,
     }
 
-    runner = PredictionRunner(predictor_ref)
+    runner = PredictionRunner(predictor_ref, upload_url=upload_url)
     # TODO: avoid loading predictor code in this process
     predictor = load_predictor_from_ref(predictor_ref)
 
@@ -177,6 +179,13 @@ if __name__ == "__main__":
         default=None,
         help="Number of worker processes. Defaults to number of CPUs, or 1 if using a GPU.",
     )
+    parser.add_argument(
+        "--upload-url",
+        dest="upload_url",
+        type=str,
+        default=None,
+        help="An endpoint for Cog to PUT output files to",
+    )
     args = parser.parse_args()
 
     # log level is configurable so we can make it quiet or verbose for `cog predict`
@@ -196,7 +205,7 @@ if __name__ == "__main__":
             threads = os.cpu_count()
 
     predictor_ref = get_predictor_ref(config)
-    app = create_app(predictor_ref, threads=threads)
+    app = create_app(predictor_ref, threads=threads, upload_url=args.upload_url)
 
     port = int(os.getenv("PORT", 5000))
     uvicorn.run(
