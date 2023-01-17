@@ -1,3 +1,4 @@
+import io
 import sys
 from datetime import datetime, timezone
 from fastapi.encoders import jsonable_encoder
@@ -6,13 +7,15 @@ from multiprocessing.pool import ThreadPool, AsyncResult
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from .. import schema
+from ..files import put_file_to_signed_endpoint
+from ..json import upload_files
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
 from .webhook import webhook_caller, webhook_caller_filtered
 from .worker import Worker
 
 
 class PredictionRunner:
-    def __init__(self, predictor_ref: str):
+    def __init__(self, predictor_ref: str, upload_url: Optional[str] = None):
         self.current_prediction_id = None
         self._thread = None
         self._threadpool = ThreadPool(processes=1)
@@ -22,6 +25,8 @@ class PredictionRunner:
 
         self._worker = Worker(predictor_ref=predictor_ref)
         self._should_cancel = Event()
+
+        self._upload_url = upload_url
 
     def setup(self) -> Tuple[schema.Status, str]:
         _logs = []
@@ -49,17 +54,23 @@ class PredictionRunner:
         assert not self.is_busy()
 
         self._should_cancel.clear()
-        event_handler = create_event_handler(prediction)
+        event_handler = create_event_handler(prediction, upload_url=self._upload_url)
 
         def cleanup(_):
             if hasattr(prediction.input, "cleanup"):
                 prediction.input.cleanup()
 
+        # FIXME handle errors in a way that we can fail the prediction
+        def oopsie(err):
+            print(f"Something broke! {err}")
+            cleanup(err)
+            raise err
+
         self._result = self._threadpool.apply_async(
             func=predict,
             args=(self._worker, prediction, self._should_cancel, event_handler),
             callback=cleanup,
-            error_callback=cleanup,
+            error_callback=oopsie,
         )
 
         self.current_prediction_id = prediction.id
@@ -85,7 +96,7 @@ class PredictionRunner:
         self._should_cancel.set()
 
 
-def create_event_handler(prediction):
+def create_event_handler(prediction, upload_url: Optional[str] = None):
     response = schema.PredictionResponse(**prediction.dict())
 
     webhook = prediction.webhook
@@ -97,14 +108,33 @@ def create_event_handler(prediction):
     if webhook is not None:
         webhook_sender = webhook_caller_filtered(webhook, events_filter)
 
-    event_handler = PredictionEventHandler(response, webhook_sender=webhook_sender)
+    file_uploader = None
+    if upload_url is not None:
+        file_uploader = generate_file_uploader(upload_url)
+
+    event_handler = PredictionEventHandler(
+        response, webhook_sender=webhook_sender, file_uploader=file_uploader
+    )
 
     return event_handler
 
 
+def generate_file_uploader(upload_url):
+    def file_uploader(output):
+        def upload_file(fh: io.IOBase) -> str:
+            return put_file_to_signed_endpoint(fh, upload_url)
+
+        return upload_files(output, upload_file=upload_file)
+
+    return file_uploader
+
+
 class PredictionEventHandler:
     def __init__(
-        self, p: schema.PredictionResponse, webhook_sender: Optional[Callable] = None
+        self,
+        p: schema.PredictionResponse,
+        webhook_sender: Optional[Callable] = None,
+        file_uploader: Optional[Callable] = None,
     ):
         self.p = p
         self.p.status = schema.Status.PROCESSING
@@ -113,6 +143,7 @@ class PredictionEventHandler:
         self.p.started_at = datetime.now(tz=timezone.utc)
 
         self._webhook_sender = webhook_sender
+        self._file_uploader = file_uploader
 
         self._send_webhook(schema.WebhookEvent.START)
 
@@ -122,7 +153,7 @@ class PredictionEventHandler:
 
     def set_output(self, output: Any) -> None:
         assert self.p.output is None, "Predictor unexpectedly returned multiple outputs"
-        self.p.output = output
+        self.p.output = self._upload_files(output)
         # We don't send a webhook for compatibility with the behaviour of
         # redis_queue. In future we can consider whether it makes sense to send
         # one here.
@@ -131,7 +162,7 @@ class PredictionEventHandler:
         assert isinstance(
             self.p.output, list
         ), "Cannot append output before setting output"
-        self.p.output.append(output)
+        self.p.output.append(self._upload_files(output))
         self._send_webhook(schema.WebhookEvent.OUTPUT)
 
     def append_logs(self, logs: str) -> None:
@@ -169,6 +200,18 @@ class PredictionEventHandler:
         if self._webhook_sender is not None:
             dict_response = jsonable_encoder(self.response.dict())
             self._webhook_sender(dict_response, event)
+
+    def _upload_files(self, output: Any) -> Any:
+        if self._file_uploader is None:
+            return output
+
+        try:
+            return self._file_uploader(output)
+        except Exception as error:
+            self.failed(error)
+            # re-raise and crash the container
+            # TODO ensure director gracefully handles this container crashing
+            raise error
 
 
 def predict(
