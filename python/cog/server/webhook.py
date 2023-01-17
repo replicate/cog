@@ -1,11 +1,11 @@
 import os
-from typing import Any, Callable
+from typing import Any, Callable, Set
 
 import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
-from ..schema import Status
+from ..schema import Status, WebhookEvent
 from .response_throttler import ResponseThrottler
 
 
@@ -28,6 +28,18 @@ def _get_version() -> str:
 
 _user_agent = f"cog-worker/{_get_version()}"
 _response_interval = float(os.environ.get("COG_THROTTLE_RESPONSE_INTERVAL", 0.5))
+
+
+def webhook_caller_filtered(
+    webhook: str, webhook_events_filter: Set[WebhookEvent]
+) -> Callable:
+    upstream_caller = webhook_caller(webhook)
+
+    def caller(response: Any, event: WebhookEvent) -> None:
+        if event in webhook_events_filter:
+            upstream_caller(response)
+
+    return caller
 
 
 def webhook_caller(webhook: str) -> Callable:
