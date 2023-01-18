@@ -170,7 +170,7 @@ class DirectorQueueWorker:
                             "model container completed setup", wait_seconds=wait_seconds
                         )
 
-                        # TODO: send setup-run webhook
+                        # FIXME: send setup-run webhook
                         break
 
             setup_poll_count += 1
@@ -232,6 +232,7 @@ class DirectorQueueWorker:
         # Wait for any of: completion, shutdown signal. Also check to see if we
         # should cancel the running prediction, and make the appropriate HTTP
         # call if so.
+        # FIXME: handle timeouts
         while True:
             if self.prediction_event.wait(POLL_INTERVAL):
                 break
@@ -299,7 +300,7 @@ def create_app(
             failure_count=app.state.failure_count,
         )
 
-        # FIXME: find a better way to shut down uvicorn
+        # TODO: find a better way to shut down uvicorn
         os.kill(os.getpid(), signal.SIGTERM)
 
     @app.on_event("startup")
@@ -364,7 +365,7 @@ def create_app(
 
 
 ALLOWED_FIELDS_FROM_UNTRUSTED_CONTAINER = (
-    # FIXME: we shouldn't trust the timings (or derived metrics) either
+    # TODO: we shouldn't trust the timings (or derived metrics) either
     "completed_at",
     "started_at",
     "metrics",

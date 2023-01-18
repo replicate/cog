@@ -206,11 +206,12 @@ class PredictionEventHandler:
             return output
 
         try:
+            # FIXME: clean up output files
             return self._file_uploader(output)
         except Exception as error:
             self.failed(error)
             # re-raise and crash the container
-            # TODO ensure director gracefully handles this container crashing
+            # FIXME: ensure director gracefully handles this container crashing
             raise error
 
 
@@ -252,16 +253,12 @@ def predict(
                 event_handler.failed(error="Predictor returned unexpected output")
                 break
 
-            # TODO this should be handled by the arbiter container
-            # output = upload_files(event.payload)
-
             if output_type.multi:
                 event_handler.append_output(event.payload)
             else:
                 event_handler.set_output(event.payload)
 
         elif isinstance(event, Done):
-            # TODO handle timeouts
             if event.canceled:
                 event_handler.canceled()
             elif event.error:
