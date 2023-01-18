@@ -76,7 +76,8 @@ def create_app(
             "completed_at": setup_complete,
         }
 
-        # TODO: this process should die if setup fails!
+        # FIXME: we should handle setup failures appropriately (not just stay
+        # alive forever saying "I failed")
         probes = ProbeHelper()
         probes.ready()
 
@@ -135,7 +136,7 @@ def create_app(
             upload_file=lambda fh: upload_file(fh, request.output_file_prefix),  # type: ignore
         )
 
-        # TODO: clean up output files
+        # FIXME: clean up output files
         encoded_response = jsonable_encoder(response_object)
         return JSONResponse(content=encoded_response)
 
