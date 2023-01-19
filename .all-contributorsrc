@@ -294,6 +294,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "williamluer",
+      "name": "williamluer",
+      "avatar_url": "https://avatars.githubusercontent.com/u/85975676?v=4",
+      "profile": "https://github.com/williamluer",
+      "contributions": [
+        "doc"
+      ]
     }
   ],
   "contributorsPerLine": 7,
