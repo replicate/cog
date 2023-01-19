@@ -1,7 +1,9 @@
 import argparse
 import logging
 import os
+import signal
 import textwrap
+import threading
 from datetime import datetime, timezone
 from typing import Any, Optional, Union
 
@@ -36,7 +38,10 @@ log = structlog.get_logger("cog.server.http")
 
 
 def create_app(
-    predictor_ref: str, threads: int = 1, upload_url: Optional[str] = None
+    predictor_ref: str,
+    threads: int = 1,
+    upload_url: Optional[str] = None,
+    shutdown_event: threading.Event = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Cog",  # TODO: mention model name?
@@ -151,6 +156,15 @@ def create_app(
         else:
             return JSONResponse({}, status_code=404)
 
+    @app.post("/shutdown")
+    def shutdown():
+        if shutdown_event is not None:
+            log.info("Shutting down after request to /shutdown")
+            shutdown_event.set()
+            return JSONResponse({}, status_code=200)
+
+        return JSONResponse({}, status_code=404)
+
     return app
 
 
@@ -171,6 +185,22 @@ def _log_invalid_output(error):
     )
 
 
+class Server(uvicorn.Server):
+    def start(self):
+        self._thread = threading.Thread(target=self.run)
+        self._thread.start()
+
+    def stop(self):
+        self.should_exit = True
+
+    def join(self):
+        self._thread.join()
+
+
+def signal_exit(signum: Any, frame: Any) -> None:
+    log.warn("Got a signal to exit, ignoring it...", signal=signal.Signals(signum).name)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Cog HTTP server")
     parser.add_argument(
@@ -186,6 +216,13 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="An endpoint for Cog to PUT output files to",
+    )
+    parser.add_argument(
+        "--await-explicit-shutdown",
+        dest="await_explicit_shutdown",
+        type=bool,
+        default=False,
+        help="Ignore SIGINT and SIGTERM and wait for a request to /shutdown before exiting",
     )
     args = parser.parse_args()
 
@@ -205,11 +242,20 @@ if __name__ == "__main__":
         else:
             threads = os.cpu_count()
 
+    should_exit = None
+    if args.await_explicit_shutdown:
+        should_exit = threading.Event()
+
     predictor_ref = get_predictor_ref(config)
-    app = create_app(predictor_ref, threads=threads, upload_url=args.upload_url)
+    app = create_app(
+        predictor_ref,
+        threads=threads,
+        upload_url=args.upload_url,
+        shutdown_event=should_exit,
+    )
 
     port = int(os.getenv("PORT", 5000))
-    uvicorn.run(
+    uvicornConfig = uvicorn.Config(
         app,
         host="0.0.0.0",
         port=port,
@@ -217,3 +263,16 @@ if __name__ == "__main__":
         # This is the default, but to be explicit: only run a single worker
         workers=1,
     )
+
+    if args.await_explicit_shutdown:
+        signal.signal(signal.SIGINT, signal_exit)
+        signal.signal(signal.SIGTERM, signal_exit)
+        s = Server(config=uvicornConfig)
+        s.start()
+
+        should_exit.wait()
+
+        s.stop()
+        s.join()
+    else:
+        uvicorn.Server(config=uvicornConfig).run()

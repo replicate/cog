@@ -36,6 +36,10 @@ POLL_INTERVAL = 0.1
 CANCEL_WAIT = 5
 
 
+class Abort(Exception):
+    pass
+
+
 class QueueWorker:
     def __init__(
         self,
@@ -188,16 +192,15 @@ class QueueWorker:
                     break
 
         completed = self.prediction_event.wait(CANCEL_WAIT)
+        self.redis_consumer.ack(message_id)
+
         if not completed:
             # TODO: send our own webhook when this happens
             log.warn(
                 "prediction failed to complete after cancelation",
                 prediction_id=prediction_id,
             )
-            # FIXME: we should now assume that the model pod is broken, so we
-            # should probably kill it and we should restart, too.
-
-        self.redis_consumer.ack(message_id)
+            self._abort("prediction failed to complete after cancelation")
 
     def handle_exit(self, signum: Any, frame: Any) -> None:
         log.warn("received termination signal", signal=signal.Signals(signum).name)
@@ -209,6 +212,13 @@ class QueueWorker:
             timeout=1,
         )
         resp.raise_for_status()
+
+    def _abort(self, message=None):
+        resp = self.cog_client.post(
+            self.cog_http_base + "/shutdown",
+            timeout=1,
+        )
+        raise Abort(message)
 
 
 def _make_local_http_client() -> requests.Session:
