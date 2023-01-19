@@ -49,7 +49,7 @@ class Predictor(BasePredictor):
 
     # The arguments and types the model takes as input
     def predict(self,
-          image: Path = Input(title="Grayscale input image")
+          image: Path = Input(description="Grayscale input image")
     ) -> Path:
         """Run a single prediction on the model"""
         processed_image = preprocess(image)
