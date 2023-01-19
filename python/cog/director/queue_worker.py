@@ -46,9 +46,11 @@ class QueueWorker:
         redis_consumer: RedisConsumer,
         predict_timeout: int,
         max_failure_count: int,
+        report_setup_run_url: str,
     ):
         self.redis_consumer = redis_consumer
         self.predict_timeout = predict_timeout
+        self.report_setup_run_url = report_setup_run_url
 
         self.prediction_event = threading.Event()
         self.prediction_timeout_event = threading.Event()
@@ -96,17 +98,28 @@ class QueueWorker:
                 if resp.status_code == 200:
                     body = resp.json()
 
-                    if (
-                        body["status"] == "healthy"
-                        and body["setup"] is not None
-                        and body["setup"]["status"] == schema.Status.SUCCEEDED
-                    ):
+                    if body["setup"] is not None:
                         wait_seconds = time.perf_counter() - mark
+                        setup_status = body["setup"]["status"]
                         log.info(
-                            "model container completed setup", wait_seconds=wait_seconds
+                            "model container finished setup",
+                            wait_seconds=wait_seconds,
+                            status=setup_status,
                         )
 
-                        # FIXME: send setup-run webhook
+                        if self.report_setup_run_url:
+                            # TODO this should be async so we can get on with predictions ASAP
+                            requests_session().post(
+                                self.report_setup_run_url, json=body
+                            )
+
+                        # if setup failed, exit immediately
+                        if (
+                            body["status"] != "healthy"
+                            or setup_status != schema.Status.SUCCEEDED
+                        ):
+                            self._abort("model container failed setup")
+
                         break
 
             setup_poll_count += 1
