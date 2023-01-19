@@ -194,6 +194,8 @@ class QueueWorker:
         started_at = datetime.datetime.now()
 
         while True:
+            # FIXME: gracefully handle the model container crashing
+
             if self.prediction_event.wait(POLL_INTERVAL):
                 break
 
