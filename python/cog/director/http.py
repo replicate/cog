@@ -31,6 +31,7 @@ class Server(uvicorn.Server):
 
 def create_app(
     prediction_event: threading.Event,
+    prediction_timeout_event: threading.Event,
     prediction_request_pipe: multiprocessing.connection.Connection,
     max_failure_count: int,
 ) -> FastAPI:
@@ -39,6 +40,10 @@ def create_app(
     # Used to signal between webserver and queue worker when a prediction is
     # running or not.
     app.state.prediction_event = prediction_event
+
+    # Used to signal to the webserver that a prediction timed out and was
+    # canceled automatically.
+    app.state.prediction_timeout_event = prediction_timeout_event
 
     # Used to send the original prediction request from the queue worker to the
     # webserver for constructing outgoing webhooks.
@@ -93,7 +98,16 @@ def create_app(
                 **allowed_fields(payload.dict()),
             }
         )
-        log.info("Sending outgoing webhook", payload=outgoing_response)
+
+        # if the prediction was canceled, that might be because it timed out:
+        # change the status to match that set by redis_queue if so...
+        if (
+            outgoing_response["status"] == schema.Status.CANCELED
+            and app.state.prediction_timeout_event.is_set()
+        ):
+            outgoing_response["status"] = schema.Status.FAILED
+            outgoing_response["error"] = "Prediction timed out"
+
         app.state.send_webhook(outgoing_response)
 
         if schema.Status.is_terminal(payload.status):
