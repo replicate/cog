@@ -143,6 +143,13 @@ class QueueWorker:
             return
 
         message = json.loads(message_json)
+        log.info(
+            "received message",
+            message_id=message_id,
+            queue=self.redis_consumer.redis_input_queue,
+            prediction_id=message['id'],
+            model_version=message['version'],
+        )
         should_cancel = self.redis_consumer.checker(message.get("cancel_key"))
         prediction_id = message["id"]
 
