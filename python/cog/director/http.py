@@ -5,57 +5,48 @@ import threading
 from typing import Any
 
 import structlog
+import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from .. import schema
 from ..json import make_encodeable
-from ..server.probes import ProbeHelper
 from ..server.webhook import webhook_caller
-from .queue_worker import QueueWorker
-from .redis import RedisConsumer
 
 log = structlog.get_logger(__name__)
 
 
-def run_queue_worker(**kwargs: Any) -> None:
-    worker = QueueWorker(**kwargs)
-    worker.start()
+class Server(uvicorn.Server):
+    def start(self):
+        self._thread = threading.Thread(target=self.run)
+        self._thread.start()
+
+    def stop(self):
+        self.should_exit = True
+
+    def join(self):
+        assert self._thread is not None, "cannot terminate unstarted server"
+        self._thread.join()
 
 
 def create_app(
-    redis_consumer: RedisConsumer, predict_timeout: int, max_failure_count: int
+    prediction_event: threading.Event,
+    prediction_request_pipe: multiprocessing.connection.Connection,
+    max_failure_count: int,
 ) -> FastAPI:
     app = FastAPI(title="Director")
 
     # Used to signal between webserver and queue worker when a prediction is
     # running or not.
-    app.state.prediction_event = threading.Event()
-
-    # Used to signal when the queue worker should shut down.
-    app.state.shutdown_event = threading.Event()
+    app.state.prediction_event = prediction_event
 
     # Used to send the original prediction request from the queue worker to the
     # webserver for constructing outgoing webhooks.
-    (
-        app.state.prediction_request_pipe,
-        worker_prediction_request_pipe,
-    ) = multiprocessing.Pipe()
+    app.state.prediction_request_pipe = prediction_request_pipe
     app.state.prediction_request = None
 
     # Number of consecutive failures seen
     app.state.failure_count = 0
-
-    worker = threading.Thread(
-        target=run_queue_worker,
-        kwargs=dict(
-            redis_consumer=redis_consumer,
-            predict_timeout=predict_timeout,
-            prediction_event=app.state.prediction_event,
-            shutdown_event=app.state.shutdown_event,
-            prediction_request_pipe=worker_prediction_request_pipe,
-        ),
-    )
 
     def check_failure_count() -> None:
         if max_failure_count is None:
@@ -70,18 +61,6 @@ def create_app(
 
         # TODO: find a better way to shut down uvicorn
         os.kill(os.getpid(), signal.SIGTERM)
-
-    @app.on_event("startup")
-    def startup() -> None:
-        # Signal pod readiness (when in k8s)
-        probes = ProbeHelper()
-        probes.ready()
-
-        worker.start()
-
-    @app.on_event("shutdown")
-    def shutdown() -> None:
-        app.state.shutdown_event.set()
 
     @app.post("/webhook")
     def webhook(payload: schema.PredictionResponse) -> Any:

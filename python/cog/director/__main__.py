@@ -8,7 +8,7 @@ import structlog
 import uvicorn
 
 from ..logging import setup_logging
-from .http import create_app
+from .http import create_app, Server
 from .redis import RedisConsumer
 from .queue_worker import QueueWorker
 
@@ -22,6 +22,7 @@ def _die(signum: Any, frame: Any) -> None:
 
 # We are probably running as PID 1 so need to explicitly register a handler
 # to die on SIGTERM. This will be overwritten once we start uvicorn.
+signal.signal(signal.SIGINT, _die)
 signal.signal(signal.SIGTERM, _die)
 
 parser = ArgumentParser()
@@ -47,9 +48,9 @@ redis_consumer = RedisConsumer(
     redis_consumer_id=args.redis_consumer_id,
     predict_timeout=args.predict_timeout,
 )
-app = create_app(
+worker = QueueWorker(
     redis_consumer=redis_consumer,
     predict_timeout=args.predict_timeout,
     max_failure_count=args.max_failure_count,
 )
-uvicorn.run(app, port=4900, log_config=None)
+worker.start()
