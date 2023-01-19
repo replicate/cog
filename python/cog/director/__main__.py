@@ -37,6 +37,7 @@ parser.add_argument(
     default=5,
     help="Maximum number of consecutive failures before the worker should exit",
 )
+parser.add_argument("--report-setup-run-url")
 
 setup_logging(log_level=logging.INFO)
 
@@ -52,5 +53,6 @@ worker = QueueWorker(
     redis_consumer=redis_consumer,
     predict_timeout=args.predict_timeout,
     max_failure_count=args.max_failure_count,
+    report_setup_run_url=args.report_setup_run_url,
 )
 worker.start()
