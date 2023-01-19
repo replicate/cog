@@ -54,9 +54,6 @@ class RedisConsumer:
 
             message_id = key.decode()
             message = raw_message[1].decode()
-            log.info(
-                "received message", message_id=message_id, queue=self.redis_input_queue
-            )
             return message_id, message
 
         # if no old messages exist, get message from main queue
@@ -74,9 +71,6 @@ class RedisConsumer:
         key, raw_message = raw_messages[0][1][0]
         message_id = key.decode()
         message = raw_message[b"value"].decode()
-        log.info(
-            "received message", message_id=message_id, queue=self.redis_input_queue
-        )
         return message_id, message
 
     def ack(self, message_id: str) -> None:
