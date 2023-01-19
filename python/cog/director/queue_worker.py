@@ -13,11 +13,13 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 import requests
 import structlog
+import uvicorn
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
 from .. import schema
-from ..server.webhook import webhook_caller
+from ..server.probes import ProbeHelper
+from .http import Server, create_app
 from .redis import EmptyRedisStream, RedisConsumer
 
 log = structlog.get_logger(__name__)
@@ -36,22 +38,39 @@ class QueueWorker:
         self,
         redis_consumer: RedisConsumer,
         predict_timeout: int,
-        prediction_event: threading.Event,
-        shutdown_event: threading.Event,
-        prediction_request_pipe: multiprocessing.connection.Connection,
+        max_failure_count: int,
     ):
         self.redis_consumer = redis_consumer
 
-        self.prediction_event = prediction_event
-        self.shutdown_event = shutdown_event
-        self.prediction_request_pipe = prediction_request_pipe
+        self.prediction_event = threading.Event()
+        self.shutdown_event = threading.Event()
+
+        (r, w) = multiprocessing.Pipe()
+        self.prediction_request_pipe = w
 
         self.predict_timeout = predict_timeout
 
         self.cog_client = _make_local_http_client()
         self.cog_http_base = "http://localhost:5000"
 
+        app = create_app(
+            prediction_event=self.prediction_event,
+            prediction_request_pipe=r,
+            max_failure_count=max_failure_count,
+        )
+        config = uvicorn.Config(app, port=4900, log_config=None)
+        self.server = Server(config)
+
     def start(self) -> None:
+        signal.signal(signal.SIGINT, self.handle_exit)
+        signal.signal(signal.SIGTERM, self.handle_exit)
+
+        # Signal pod readiness (when in k8s)
+        probes = ProbeHelper()
+        probes.ready()
+
+        self.server.start()
+
         mark = time.perf_counter()
         setup_poll_count = 0
 
@@ -104,6 +123,10 @@ class QueueWorker:
 
         log.info("shutting down worker: bye bye!")
 
+        # TODO: wait for prediction to finish and stuff
+        self.server.stop()
+        self.server.join()
+
     def handle_message(self) -> None:
         try:
             message_id, message_json = self.redis_consumer.get()
@@ -153,10 +176,11 @@ class QueueWorker:
                 )
                 resp.raise_for_status()
 
-            if self.shutdown_event.is_set():
-                return
-
         self.redis_consumer.ack(message_id)
+
+    def handle_exit(self, signum: Any, frame: Any) -> None:
+        log.warn("received termination signal", signal=signal.Signals(signum).name)
+        self.shutdown_event.set()
 
 
 def _make_local_http_client() -> requests.Session:
