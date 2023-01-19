@@ -6,12 +6,16 @@ from multiprocessing import Event
 from multiprocessing.pool import ThreadPool, AsyncResult
 from typing import Any, Callable, Dict, Optional, Tuple
 
+import structlog
+
 from .. import schema
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
 from .webhook import webhook_caller, webhook_caller_filtered
 from .worker import Worker
+
+log = structlog.get_logger("cog.server.runner")
 
 
 class PredictionRunner:
@@ -56,21 +60,22 @@ class PredictionRunner:
         self._should_cancel.clear()
         event_handler = create_event_handler(prediction, upload_url=self._upload_url)
 
-        def cleanup(_):
+        def cleanup(_=None):
             if hasattr(prediction.input, "cleanup"):
                 prediction.input.cleanup()
 
-        # FIXME handle errors in a way that we can fail the prediction
-        def oopsie(err):
-            print(f"Something broke! {err}")
-            cleanup(err)
-            raise err
+        def handle_error(error):
+            log.error("async predict thread exited with an error", error=error)
+            cleanup()
+            # re-raise the error to crash the container -- we don't have the
+            # context to recover gracefully from here
+            raise error
 
         self._result = self._threadpool.apply_async(
             func=predict,
             args=(self._worker, prediction, self._should_cancel, event_handler),
             callback=cleanup,
-            error_callback=oopsie,
+            error_callback=handle_error,
         )
 
         self.current_prediction_id = prediction.id
@@ -206,16 +211,47 @@ class PredictionEventHandler:
             return output
 
         try:
-            # FIXME: clean up output files
+            # TODO: clean up output files
             return self._file_uploader(output)
         except Exception as error:
-            self.failed(error)
-            # re-raise and crash the container
-            # FIXME: ensure director gracefully handles this container crashing
-            raise error
+            # If something goes wrong uploading a file, it's irrecoverable.
+            # The re-raised exception will be caught and cause the prediction
+            # to be failed, with a useful error message.
+            raise FileUploadError("Got error trying to upload output files") from error
 
 
 def predict(
+    worker: Worker,
+    request: schema.PredictionRequest,
+    should_cancel: Event,
+    event_handler: PredictionEventHandler,
+) -> schema.PredictionResponse:
+    try:
+        return _predict(worker, request, should_cancel, event_handler)
+    except Exception as error:
+        log.error(
+            "Got unexpected error during prediction response handling", error=error
+        )
+
+        # Attempt to fail the prediction and trigger a webhook, but if that
+        # also fails just move on
+        try:
+            # TODO: include a stack trace
+            event_handler.failed(
+                error=f"Got unexpected error during prediction response handling: {error}"
+            )
+        except Exception as another_error:
+            log.error(
+                "Got error when trying to fail prediction due to unexpected error",
+                error=another_error,
+            )
+
+        # Any error encountered like this is likely irrecoverable; re-raise the
+        # error to cause the container to crash.
+        raise error
+
+
+def _predict(
     worker: Worker,
     request: schema.PredictionRequest,
     should_cancel: Event,
@@ -267,6 +303,6 @@ def predict(
                 event_handler.succeeded()
 
         else:
-            print(f"Received unexpected event from worker: {event}", file=sys.stderr)
+            log.warn("Received unexpected event from worker", event=event)
 
     return event_handler.response
