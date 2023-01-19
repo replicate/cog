@@ -32,6 +32,9 @@ SETUP_POLL_INTERVAL = 0.1
 # keyword argument for Worker.predict(...) in the redis queue worker code.
 POLL_INTERVAL = 0.1
 
+# How long to wait for a cancelation to complete, in seconds.
+CANCEL_WAIT = 5
+
 
 class QueueWorker:
     def __init__(
@@ -41,20 +44,21 @@ class QueueWorker:
         max_failure_count: int,
     ):
         self.redis_consumer = redis_consumer
+        self.predict_timeout = predict_timeout
 
         self.prediction_event = threading.Event()
+        self.prediction_timeout_event = threading.Event()
         self.shutdown_event = threading.Event()
 
         (r, w) = multiprocessing.Pipe()
         self.prediction_request_pipe = w
-
-        self.predict_timeout = predict_timeout
 
         self.cog_client = _make_local_http_client()
         self.cog_http_base = "http://localhost:5000"
 
         app = create_app(
             prediction_event=self.prediction_event,
+            prediction_timeout_event=self.prediction_timeout_event,
             prediction_request_pipe=r,
             max_failure_count=max_failure_count,
         )
@@ -146,6 +150,7 @@ class QueueWorker:
 
         # Reset the prediction event to indicate that a prediction is running
         self.prediction_event.clear()
+        self.prediction_timeout_event.clear()
 
         # Override webhook to call us
         message["webhook"] = "http://localhost:4900/webhook"
@@ -164,23 +169,46 @@ class QueueWorker:
         # Wait for any of: completion, shutdown signal. Also check to see if we
         # should cancel the running prediction, and make the appropriate HTTP
         # call if so.
-        # FIXME: handle timeouts.
+
+        started_at = datetime.datetime.now()
+
         while True:
             if self.prediction_event.wait(POLL_INTERVAL):
                 break
 
             if should_cancel():
-                resp = self.cog_client.post(
-                    self.cog_http_base + "/predictions/" + prediction_id + "/cancel",
-                    timeout=1,
-                )
-                resp.raise_for_status()
+                self._cancel_prediction(prediction_id)
+                break
+
+            if self.predict_timeout:
+                runtime = (datetime.datetime.now() - started_at).total_seconds()
+                if runtime > self.predict_timeout:
+                    self.prediction_timeout_event.set()
+                    self._cancel_prediction(prediction_id)
+                    break
+
+        completed = self.prediction_event.wait(CANCEL_WAIT)
+        if not completed:
+            # TODO: send our own webhook when this happens
+            log.warn(
+                "prediction failed to complete after cancelation",
+                prediction_id=prediction_id,
+            )
+            # FIXME: we should now assume that the model pod is broken, so we
+            # should probably kill it and we should restart, too.
 
         self.redis_consumer.ack(message_id)
 
     def handle_exit(self, signum: Any, frame: Any) -> None:
         log.warn("received termination signal", signal=signal.Signals(signum).name)
         self.shutdown_event.set()
+
+    def _cancel_prediction(self, prediction_id):
+        resp = self.cog_client.post(
+            self.cog_http_base + "/predictions/" + prediction_id + "/cancel",
+            timeout=1,
+        )
+        resp.raise_for_status()
 
 
 def _make_local_http_client() -> requests.Session:
