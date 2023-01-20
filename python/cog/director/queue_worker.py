@@ -19,6 +19,7 @@ from requests.packages.urllib3.util.retry import Retry
 
 from .. import schema
 from ..server.probes import ProbeHelper
+from ..server.webhook import requests_session
 from .http import Server, create_app
 from .redis import EmptyRedisStream, RedisConsumer
 
@@ -107,11 +108,7 @@ class QueueWorker:
                             status=setup_status,
                         )
 
-                        if self.report_setup_run_url:
-                            # TODO this should be async so we can get on with predictions ASAP
-                            requests_session().post(
-                                self.report_setup_run_url, json=body
-                            )
+                        self._report_setup_run(body["setup"])
 
                         # if setup failed, exit immediately
                         if (
@@ -232,6 +229,18 @@ class QueueWorker:
             timeout=1,
         )
         resp.raise_for_status()
+
+    def _report_setup_run(self, payload):
+        if not self.report_setup_run_url:
+            return
+
+        session = requests_session()
+        try:
+            # TODO this should be async so we can get on with predictions ASAP
+            resp = session.post(self.report_setup_run_url, json=payload)
+            resp.raise_for_status()
+        except requests.exceptions.RequestException:
+            log.warn("failed to report setup run", exc_info=True)
 
     def _abort(self, message=None):
         resp = self.cog_client.post(
