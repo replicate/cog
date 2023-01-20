@@ -1,4 +1,5 @@
 import logging
+import os
 import signal
 import sys
 from argparse import ArgumentParser
@@ -39,7 +40,8 @@ parser.add_argument(
 )
 parser.add_argument("--report-setup-run-url")
 
-setup_logging(log_level=logging.INFO)
+log_level = logging.getLevelName(os.environ.get("LOG_LEVEL", "INFO").upper())
+setup_logging(log_level=log_level)
 
 args = parser.parse_args()
 

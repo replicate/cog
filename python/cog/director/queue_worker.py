@@ -140,7 +140,7 @@ class QueueWorker:
             try:
                 self.handle_message()
             except Exception:
-                log.exception("failed to handle message")
+                log.error("failed to handle message", exc_info=True)
 
         log.info("shutting down worker: bye bye!")
 
@@ -160,8 +160,8 @@ class QueueWorker:
             "received message",
             message_id=message_id,
             queue=self.redis_consumer.redis_input_queue,
-            prediction_id=message['id'],
-            model_version=message['version'],
+            prediction_id=message["id"],
+            model_version=message["version"],
         )
         should_cancel = self.redis_consumer.checker(message.get("cancel_key"))
         prediction_id = message["id"]
