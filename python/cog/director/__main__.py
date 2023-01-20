@@ -1,4 +1,5 @@
 import logging
+import queue
 import os
 import signal
 import sys
@@ -9,7 +10,6 @@ import structlog
 import uvicorn
 
 from ..logging import setup_logging
-from .http import create_app, Server
 from .redis import RedisConsumer
 from .queue_worker import QueueWorker
 
@@ -52,6 +52,7 @@ redis_consumer = RedisConsumer(
     predict_timeout=args.predict_timeout,
 )
 worker = QueueWorker(
+    events=queue.Queue(maxsize=128),
     redis_consumer=redis_consumer,
     predict_timeout=args.predict_timeout,
     max_failure_count=args.max_failure_count,

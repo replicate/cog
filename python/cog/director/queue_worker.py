@@ -1,8 +1,8 @@
 import datetime
 import json
 import logging
-import multiprocessing
 import os
+import queue
 import signal
 import sys
 import threading
@@ -19,8 +19,10 @@ from requests.packages.urllib3.util.retry import Retry
 
 from .. import schema
 from ..server.probes import ProbeHelper
-from ..server.webhook import requests_session
+from ..server.webhook import requests_session, webhook_caller
+from .eventtypes import Webhook
 from .http import Server, create_app
+from .prediction_tracker import PredictionTracker
 from .redis import EmptyRedisStream, RedisConsumer
 
 log = structlog.get_logger(__name__)
@@ -44,31 +46,24 @@ class Abort(Exception):
 class QueueWorker:
     def __init__(
         self,
+        events: queue.Queue,
         redis_consumer: RedisConsumer,
         predict_timeout: int,
         max_failure_count: int,
         report_setup_run_url: str,
     ):
+        self.events = events
         self.redis_consumer = redis_consumer
         self.predict_timeout = predict_timeout
         self.report_setup_run_url = report_setup_run_url
 
-        self.prediction_event = threading.Event()
-        self.prediction_timeout_event = threading.Event()
-        self.shutdown_event = threading.Event()
-
-        (r, w) = multiprocessing.Pipe()
-        self.prediction_request_pipe = w
+        self._tracker = None
+        self._should_exit = False
 
         self.cog_client = _make_local_http_client()
         self.cog_http_base = "http://localhost:5000"
 
-        app = create_app(
-            prediction_event=self.prediction_event,
-            prediction_timeout_event=self.prediction_timeout_event,
-            prediction_request_pipe=r,
-            max_failure_count=max_failure_count,
-        )
+        app = create_app(events=self.events)
         config = uvicorn.Config(app, port=4900, log_config=None)
         self.server = Server(config)
 
@@ -87,7 +82,7 @@ class QueueWorker:
 
         # First, we wait for the model container to report a successful
         # setup...
-        while not self.shutdown_event.is_set():
+        while not self._should_exit:
             try:
                 resp = requests.get(
                     self.cog_http_base + "/health-check",
@@ -133,11 +128,19 @@ class QueueWorker:
 
         # Now, we enter the main loop, pulling prediction requests from Redis
         # and managing the model container.
-        while not self.shutdown_event.is_set():
+        while not self._should_exit:
             try:
-                self.handle_message()
+                message_id, message_json = self.redis_consumer.get()
+            except EmptyRedisStream:
+                time.sleep(POLL_INTERVAL)  # give the CPU a moment to breathe
+                continue
+
+            try:
+                self.handle_message(message_id, message_json)
             except Exception:
                 log.error("failed to handle message", exc_info=True)
+            finally:
+                self._tracker = None
 
         log.info("shutting down worker: bye bye!")
 
@@ -145,14 +148,9 @@ class QueueWorker:
         self.server.stop()
         self.server.join()
 
-    def handle_message(self) -> None:
-        try:
-            message_id, message_json = self.redis_consumer.get()
-        except EmptyRedisStream:
-            time.sleep(POLL_INTERVAL)  # give the CPU a moment to breathe
-            return
-
+    def handle_message(self, message_id, message_json) -> None:
         message = json.loads(message_json)
+
         log.info(
             "received message",
             message_id=message_id,
@@ -163,15 +161,10 @@ class QueueWorker:
         should_cancel = self.redis_consumer.checker(message.get("cancel_key"))
         prediction_id = message["id"]
 
-        # Send the original request to the webserver, so it can trust the fields
-        while self.prediction_request_pipe.poll():
-            # clear the pipe first, out of an abundance of caution
-            self.prediction_request_pipe.recv()
-        self.prediction_request_pipe.send(message)
-
-        # Reset the prediction event to indicate that a prediction is running
-        self.prediction_event.clear()
-        self.prediction_timeout_event.clear()
+        self._tracker = PredictionTracker(
+            response=schema.PredictionResponse(**message),
+            webhook_caller=webhook_caller(message["webhook"]),
+        )
 
         # Override webhook to call us
         message["webhook"] = "http://localhost:4900/webhook"
@@ -190,13 +183,20 @@ class QueueWorker:
         # Wait for any of: completion, shutdown signal. Also check to see if we
         # should cancel the running prediction, and make the appropriate HTTP
         # call if so.
-
         started_at = datetime.datetime.now()
 
         while True:
-            # FIXME: gracefully handle the model container crashing
+            try:
+                event = self.events.get(timeout=POLL_INTERVAL)
+            except queue.Empty:
+                pass
+            else:
+                if isinstance(event, Webhook):
+                    self._tracker.update_from_webhook_payload(event.payload)
+                else:
+                    log.warn("received unknown event", event=event)
 
-            if self.prediction_event.wait(POLL_INTERVAL):
+            if self._tracker.is_complete():
                 break
 
             if should_cancel():
@@ -206,14 +206,27 @@ class QueueWorker:
             if self.predict_timeout:
                 runtime = (datetime.datetime.now() - started_at).total_seconds()
                 if runtime > self.predict_timeout:
-                    self.prediction_timeout_event.set()
+                    # Mark the prediction as timed out so we handle the
+                    # cancelation webhook appropriately.
+                    self._tracker.timed_out()
                     self._cancel_prediction(prediction_id)
                     break
 
-        completed = self.prediction_event.wait(CANCEL_WAIT)
+        # Wait for cancelation if necessary
+        if not self._tracker.is_complete():
+            try:
+                event = self.events.get(timeout=CANCEL_WAIT)
+            except queue.Empty:
+                pass
+            else:
+                if isinstance(event, Webhook):
+                    self._tracker.update_from_webhook_payload(event.payload)
+                else:
+                    log.warn("received unknown event", event=event)
+
         self.redis_consumer.ack(message_id)
 
-        if not completed:
+        if not self._tracker.is_complete():
             # TODO: send our own webhook when this happens
             log.warn(
                 "prediction failed to complete after cancelation",
@@ -223,7 +236,7 @@ class QueueWorker:
 
     def handle_exit(self, signum: Any, frame: Any) -> None:
         log.warn("received termination signal", signal=signal.Signals(signum).name)
-        self.shutdown_event.set()
+        self._should_exit = True
 
     def _cancel_prediction(self, prediction_id):
         resp = self.cog_client.post(
@@ -249,6 +262,7 @@ class QueueWorker:
             self.cog_http_base + "/shutdown",
             timeout=1,
         )
+        self._should_exit = True
         raise Abort(message)
 
 
