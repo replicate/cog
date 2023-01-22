@@ -12,6 +12,7 @@ import uvicorn
 from ..logging import setup_logging
 from .redis import RedisConsumer
 from .director import Director
+from .http import Server, create_app
 
 log = structlog.get_logger("cog.director")
 
@@ -45,17 +46,28 @@ setup_logging(log_level=log_level)
 
 args = parser.parse_args()
 
+events = queue.Queue(maxsize=128)
+
+config = uvicorn.Config(create_app(events=events), port=4900, log_config=None)
+server = Server(config)
+server.start()
+
+
 redis_consumer = RedisConsumer(
     redis_url=args.redis_url,
     redis_input_queue=args.redis_input_queue,
     redis_consumer_id=args.redis_consumer_id,
     predict_timeout=args.predict_timeout,
 )
+
 director = Director(
-    events=queue.Queue(maxsize=128),
+    events=events,
     redis_consumer=redis_consumer,
     predict_timeout=args.predict_timeout,
     max_failure_count=args.max_failure_count,
     report_setup_run_url=args.report_setup_run_url,
 )
+director.register_shutdown_hook(server.stop)
 director.start()
+
+server.join()
