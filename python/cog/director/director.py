@@ -20,15 +20,12 @@ from requests.packages.urllib3.util.retry import Retry
 from .. import schema
 from ..server.probes import ProbeHelper
 from ..server.webhook import requests_session, webhook_caller
-from .eventtypes import Webhook
+from .eventtypes import Health, HealthcheckStatus, Webhook
 from .http import Server, create_app
 from .prediction_tracker import PredictionTracker
 from .redis import EmptyRedisStream, RedisConsumer
 
 log = structlog.get_logger(__name__)
-
-# How often to check for model container setup on boot.
-SETUP_POLL_INTERVAL = 0.1
 
 # How often to check for cancelation or shutdown signals while a prediction is
 # running, in seconds. 100ms mirrors the value currently supplied to the `poll`
@@ -65,89 +62,98 @@ class Director:
         self.cog_http_base = "http://localhost:5000"
 
     def start(self) -> None:
-        signal.signal(signal.SIGINT, self.handle_exit)
-        signal.signal(signal.SIGTERM, self.handle_exit)
+        try:
+            signal.signal(signal.SIGINT, self._handle_exit)
+            signal.signal(signal.SIGTERM, self._handle_exit)
 
-        # Signal pod readiness (when in k8s)
-        probes = ProbeHelper()
-        probes.ready()
+            # Signal pod readiness (when in k8s)
+            probes = ProbeHelper()
+            probes.ready()
 
+            # First, we wait for the model container to report a successful
+            # setup.
+            self._setup()
+
+            # Now, we enter the main loop, pulling prediction requests from Redis
+            # and managing the model container.
+            self._loop()
+
+        finally:
+            log.info("shutting down worker: bye bye!")
+            for hook in self._shutdown_hooks:
+                try:
+                    hook()
+                except Exception:
+                    log.error(
+                        "caught exception while running shutdown hook", exc_info=True
+                    )
+
+    def register_shutdown_hook(self, hook: Callable):
+        self._shutdown_hooks.append(hook)
+
+    def _handle_exit(self, signum: Any, frame: Any) -> None:
+        log.warn("received termination signal", signal=signal.Signals(signum).name)
+        self._should_exit = True
+
+    def _setup(self):
         mark = time.perf_counter()
-        setup_poll_count = 0
 
-        # First, we wait for the model container to report a successful
-        # setup...
         while not self._should_exit:
             try:
-                resp = requests.get(
-                    self.cog_http_base + "/health-check",
-                    timeout=1,
-                )
-            except requests.exceptions.RequestException:
-                pass
-            else:
-                if resp.status_code == 200:
-                    body = resp.json()
-
-                    if body["setup"] is not None:
-                        wait_seconds = time.perf_counter() - mark
-                        setup_status = body["setup"]["status"]
-                        log.info(
-                            "model container finished setup",
-                            wait_seconds=wait_seconds,
-                            status=setup_status,
-                        )
-
-                        self._report_setup_run(body["setup"])
-
-                        # if setup failed, exit immediately
-                        if (
-                            body["status"] != "healthy"
-                            or setup_status != schema.Status.SUCCEEDED
-                        ):
-                            self._abort("model container failed setup")
-
-                        break
-
-            setup_poll_count += 1
-
-            # Print a liveness message every five seconds
-            if setup_poll_count % int(5 / SETUP_POLL_INTERVAL) == 0:
+                event = self.events.get(timeout=1)
+            except queue.Empty:
                 wait_seconds = time.perf_counter() - mark
                 log.info(
                     "waiting for model container to complete setup",
                     wait_seconds=wait_seconds,
                 )
+                continue
 
-            time.sleep(SETUP_POLL_INTERVAL)
+            if not isinstance(event, HealthcheckStatus):
+                log.warn(
+                    "received unexpected event while waiting for setup", data=event
+                )
+                continue
 
-        # Now, we enter the main loop, pulling prediction requests from Redis
-        # and managing the model container.
+            if event.health == Health.UNKNOWN:
+                log.warn(
+                    "received unexpected event while waiting for setup", data=event
+                )
+                continue
+
+            wait_seconds = time.perf_counter() - mark
+            log.info(
+                "model container finished setup",
+                wait_seconds=wait_seconds,
+                health=event.health,
+            )
+            self._report_setup_run(event.metadata)
+
+            # if setup failed, exit immediately
+            if event.health == Health.SETUP_FAILED:
+                self._abort("model container failed setup")
+
+            return
+
+    def _loop(self):
         while not self._should_exit:
             try:
                 message_id, message_json = self.redis_consumer.get()
             except EmptyRedisStream:
-                time.sleep(POLL_INTERVAL)  # give the CPU a moment to breathe
+                continue
+            except Exception:
+                log.error("error fetching message from redis", exc_info=True)
+                time.sleep(5)
                 continue
 
             try:
-                self.handle_message(message_id, message_json)
+                self._handle_message(message_id, message_json)
             except Exception:
                 log.error("failed to handle message", exc_info=True)
             finally:
                 self._tracker = None
 
-        log.info("shutting down worker: bye bye!")
-        for hook in self._shutdown_hooks:
-            try:
-                hook()
-            except Exception:
-                log.error("caught exception while running shutdown hook", exc_info=True)
-
-    def register_shutdown_hook(self, hook: Callable):
-        self._shutdown_hooks.append(hook)
-
-    def handle_message(self, message_id, message_json) -> None:
+    def _handle_message(self, message_id, message_json) -> None:
         message = json.loads(message_json)
 
         log.info(
@@ -192,8 +198,11 @@ class Director:
             else:
                 if isinstance(event, Webhook):
                     self._tracker.update_from_webhook_payload(event.payload)
+                elif isinstance(event, HealthcheckStatus):
+                    # TODO: handle these appropriately
+                    log.info("received healthcheck status update", data=event)
                 else:
-                    log.warn("received unknown event", event=event)
+                    log.warn("received unknown event", data=event)
 
             if self._tracker.is_complete():
                 break
@@ -221,7 +230,7 @@ class Director:
                 if isinstance(event, Webhook):
                     self._tracker.update_from_webhook_payload(event.payload)
                 else:
-                    log.warn("received unknown event", event=event)
+                    log.warn("received unknown event", data=event)
 
         self.redis_consumer.ack(message_id)
 
@@ -232,10 +241,6 @@ class Director:
                 prediction_id=prediction_id,
             )
             self._abort("prediction failed to complete after cancelation")
-
-    def handle_exit(self, signum: Any, frame: Any) -> None:
-        log.warn("received termination signal", signal=signal.Signals(signum).name)
-        self._should_exit = True
 
     def _cancel_prediction(self, prediction_id):
         resp = self.cog_client.post(
