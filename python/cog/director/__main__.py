@@ -12,6 +12,7 @@ import uvicorn
 from ..logging import setup_logging
 from .redis import RedisConsumer
 from .director import Director
+from .healthchecker import Healthchecker, http_fetcher
 from .http import Server, create_app
 
 log = structlog.get_logger("cog.director")
@@ -52,6 +53,10 @@ config = uvicorn.Config(create_app(events=events), port=4900, log_config=None)
 server = Server(config)
 server.start()
 
+healthchecker = Healthchecker(
+    events=events, fetcher=http_fetcher("http://localhost:5000/health-check")
+)
+healthchecker.start()
 
 redis_consumer = RedisConsumer(
     redis_url=args.redis_url,
@@ -67,7 +72,9 @@ director = Director(
     max_failure_count=args.max_failure_count,
     report_setup_run_url=args.report_setup_run_url,
 )
+director.register_shutdown_hook(healthchecker.stop)
 director.register_shutdown_hook(server.stop)
 director.start()
 
+healthchecker.join()
 server.join()
