@@ -41,6 +41,10 @@ class PredictionTracker:
     def update_from_webhook_payload(self, payload: schema.PredictionResponse):
         self._update(allowed_fields(payload.dict()))
 
+    @property
+    def status(self):
+        return self._response.status
+
     def _update(self, mapping: Dict[str, Any]):
         self._response = self._response.copy(update=mapping)
         self._adjust_cancelation_status()
