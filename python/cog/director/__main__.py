@@ -11,7 +11,7 @@ import uvicorn
 
 from ..logging import setup_logging
 from .redis import RedisConsumer
-from .queue_worker import QueueWorker
+from .director import Director
 
 log = structlog.get_logger("cog.director")
 
@@ -51,11 +51,11 @@ redis_consumer = RedisConsumer(
     redis_consumer_id=args.redis_consumer_id,
     predict_timeout=args.predict_timeout,
 )
-worker = QueueWorker(
+director = Director(
     events=queue.Queue(maxsize=128),
     redis_consumer=redis_consumer,
     predict_timeout=args.predict_timeout,
     max_failure_count=args.max_failure_count,
     report_setup_run_url=args.report_setup_run_url,
 )
-worker.start()
+director.start()
