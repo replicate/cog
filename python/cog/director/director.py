@@ -52,8 +52,10 @@ class Director:
         self.events = events
         self.redis_consumer = redis_consumer
         self.predict_timeout = predict_timeout
+        self.max_failure_count = max_failure_count
         self.report_setup_run_url = report_setup_run_url
 
+        self._failure_count = 0
         self._tracker = None
         self._should_exit = False
         self._shutdown_hooks = []
@@ -142,6 +144,7 @@ class Director:
             except EmptyRedisStream:
                 continue
             except Exception:
+                self._record_failure()
                 log.error("error fetching message from redis", exc_info=True)
                 time.sleep(5)
                 continue
@@ -149,6 +152,7 @@ class Director:
             try:
                 self._handle_message(message_id, message_json)
             except Exception:
+                self._record_failure()
                 log.error("failed to handle message", exc_info=True)
             finally:
                 self._tracker = None
@@ -242,6 +246,14 @@ class Director:
             )
             self._abort("prediction failed to complete after cancelation")
 
+        # Keep track of runs of failures to catch the situation where the
+        # worker has gotten into a bad state where it can only fail
+        # predictions, but isn't exiting.
+        if self._tracker.status == schema.Status.FAILED:
+            self._record_failure()
+        else:
+            self._record_success()
+
     def _cancel_prediction(self, prediction_id):
         resp = self.cog_client.post(
             self.cog_http_base + "/predictions/" + prediction_id + "/cancel",
@@ -260,6 +272,16 @@ class Director:
             resp.raise_for_status()
         except requests.exceptions.RequestException:
             log.warn("failed to report setup run", exc_info=True)
+
+    def _record_failure(self):
+        if not self.max_failure_count:
+            return
+        self._failure_count += 1
+        if self._failure_count > self.max_failure_count:
+            self._abort(f"saw {self._failure_count} failures in a row")
+
+    def _record_success(self):
+        self._failure_count = 0
 
     def _abort(self, message=None):
         resp = self.cog_client.post(
