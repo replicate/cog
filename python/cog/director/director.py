@@ -43,7 +43,7 @@ class Abort(Exception):
     pass
 
 
-class QueueWorker:
+class Director:
     def __init__(
         self,
         events: queue.Queue,
