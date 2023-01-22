@@ -29,7 +29,7 @@ class Server(uvicorn.Server):
 def create_app(events: queue.Queue) -> FastAPI:
     app = FastAPI(title="Director")
 
-    # The event queue is used to communicate with QueueWorker when webhook
+    # The event queue is used to communicate with Director when webhook
     # events are received.
     app.state.events = events
 
