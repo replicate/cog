@@ -37,6 +37,12 @@ class PredictionTracker:
         self._timed_out = True
 
     def update_from_webhook_payload(self, payload: schema.PredictionResponse):
+        # Safety check -- only allow payloads with IDs matching self._response.
+        if payload.id != self._response.id:
+            raise PredictionMismatchError(
+                f"received webhook payload for {payload.id} while tracking {self._response.id}"
+            )
+
         self._update(allowed_fields(payload.dict()))
 
     def fail(self, message):

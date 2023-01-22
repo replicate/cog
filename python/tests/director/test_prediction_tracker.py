@@ -1,6 +1,8 @@
 from unittest import mock
 
-from cog.director.prediction_tracker import PredictionTracker
+import pytest
+
+from cog.director.prediction_tracker import PredictionTracker, PredictionMismatchError
 from cog.schema import PredictionResponse
 
 
@@ -76,3 +78,14 @@ def test_prediction_tracker_fail():
     assert webhook_payload["error"] == "something went wrong"
     assert webhook_payload["started_at"] is not None
     assert webhook_payload["completed_at"] is not None
+
+
+def test_prediction_tracker_wrong_id():
+    response = PredictionResponse(id="abc123", input={"prompt": "hello, world"})
+    webhook_caller = mock.Mock()
+    pt = PredictionTracker(response, webhook_caller=webhook_caller)
+
+    payload = PredictionResponse(id="abc456", input={"prompt": "hello, world"})
+
+    with pytest.raises(PredictionMismatchError):
+        pt.update_from_webhook_payload(payload)
