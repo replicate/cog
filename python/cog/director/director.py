@@ -56,7 +56,6 @@ class Director:
         self.report_setup_run_url = report_setup_run_url
 
         self._failure_count = 0
-        self._tracker = None
         self._should_exit = False
         self._shutdown_hooks = []
 
@@ -154,8 +153,10 @@ class Director:
             except Exception:
                 self._record_failure()
                 log.error("failed to handle message", exc_info=True)
-            finally:
-                self._tracker = None
+            else:
+                # If we completed _handle_message without an exception, we
+                # acknowledge the message so nobody else picks it up.
+                self.redis_consumer.ack(message_id)
 
     def _handle_message(self, message_id, message_json) -> None:
         message = json.loads(message_json)
@@ -170,7 +171,10 @@ class Director:
         should_cancel = self.redis_consumer.checker(message.get("cancel_key"))
         prediction_id = message["id"]
 
-        self._tracker = PredictionTracker(
+        # Tracker is tied to a single prediction, and deliberately only exists
+        # within this method in an attempt to eliminate the possibility that we
+        # mix up state between predictions.
+        tracker = PredictionTracker(
             response=schema.PredictionResponse(**message),
             webhook_caller=webhook_caller(message["webhook"]),
         )
@@ -179,77 +183,78 @@ class Director:
         message["webhook"] = "http://localhost:4900/webhook"
 
         # Call the untrusted container to start the prediction
-        resp = self.cog_client.post(
-            self.cog_http_base + "/predictions",
-            json=message,
-            headers={"Prefer": "respond-async"},
-            timeout=2,
-        )
-        # FIXME: we should handle schema validation errors here and send
-        # appropriate webhooks back up the stack.
-        resp.raise_for_status()
+        try:
+            resp = self.cog_client.post(
+                self.cog_http_base + "/predictions",
+                json=message,
+                headers={"Prefer": "respond-async"},
+                timeout=2,
+            )
+        except requests.exceptions.RequestException:
+            tracker.fail("Unknown error handling prediction.")
+            self._record_failure()
+            return
+
+        try:
+            resp.raise_for_status()
+        except requests.exceptions.RequestException:
+            # Special case validation errors
+            if resp.status_code == 422:
+                tracker.fail(f"Prediction input failed validation: {resp.text}")
+            else:
+                tracker.fail("Unknown error handling prediction.")
+            self._record_failure()
+            return
 
         # Wait for any of: completion, shutdown signal. Also check to see if we
         # should cancel the running prediction, and make the appropriate HTTP
         # call if so.
-        started_at = datetime.datetime.now()
-
-        while True:
+        while not tracker.is_complete():
             try:
                 event = self.events.get(timeout=POLL_INTERVAL)
             except queue.Empty:
                 pass
             else:
                 if isinstance(event, Webhook):
-                    self._tracker.update_from_webhook_payload(event.payload)
+                    tracker.update_from_webhook_payload(event.payload)
                 elif isinstance(event, HealthcheckStatus):
                     # TODO: handle these appropriately
                     log.info("received healthcheck status update", data=event)
                 else:
                     log.warn("received unknown event", data=event)
 
-            if self._tracker.is_complete():
-                break
-
             if should_cancel():
                 self._cancel_prediction(prediction_id)
                 break
 
-            if self.predict_timeout:
-                runtime = (datetime.datetime.now() - started_at).total_seconds()
-                if runtime > self.predict_timeout:
-                    # Mark the prediction as timed out so we handle the
-                    # cancelation webhook appropriately.
-                    self._tracker.timed_out()
-                    self._cancel_prediction(prediction_id)
-                    break
+            if self.predict_timeout and tracker.runtime > self.predict_timeout:
+                # Mark the prediction as timed out so we handle the
+                # cancelation webhook appropriately.
+                tracker.timed_out()
+                self._cancel_prediction(prediction_id)
+                break
 
-        # Wait for cancelation if necessary
-        if not self._tracker.is_complete():
+        # Wait up to another CANCEL_WAIT seconds for cancelation if necessary
+        mark = time.perf_counter()
+        while not tracker.is_complete() and time.perf_counter() - mark < CANCEL_WAIT:
             try:
-                event = self.events.get(timeout=CANCEL_WAIT)
+                event = self.events.get(timeout=POLL_INTERVAL)
             except queue.Empty:
                 pass
             else:
                 if isinstance(event, Webhook):
-                    self._tracker.update_from_webhook_payload(event.payload)
-                else:
-                    log.warn("received unknown event", data=event)
+                    tracker.update_from_webhook_payload(event.payload)
 
-        self.redis_consumer.ack(message_id)
-
-        if not self._tracker.is_complete():
-            # TODO: send our own webhook when this happens
-            log.warn(
-                "prediction failed to complete after cancelation",
-                prediction_id=prediction_id,
-            )
+        # If the prediction is *still* not complete, something is badly wrong
+        # and we should abort.
+        if not tracker.is_complete():
+            tracker.fail("Prediction did not respond after cancelation.")
             self._abort("prediction failed to complete after cancelation")
 
         # Keep track of runs of failures to catch the situation where the
         # worker has gotten into a bad state where it can only fail
         # predictions, but isn't exiting.
-        if self._tracker.status == schema.Status.FAILED:
+        if tracker.status == schema.Status.FAILED:
             self._record_failure()
         else:
             self._record_success()
