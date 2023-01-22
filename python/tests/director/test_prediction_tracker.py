@@ -15,6 +15,8 @@ def test_prediction_tracker_basic():
     webhook_caller.assert_called_once()
     (webhook_payload,) = webhook_caller.call_args.args
     assert webhook_payload["logs"] == "running prediction"
+    assert webhook_payload["started_at"] is not None
+    assert webhook_payload["completed_at"] is None
 
 
 def test_prediction_tracker_adjusts_status_for_cancelations():
@@ -44,3 +46,33 @@ def test_prediction_tracker_is_complete():
     pt = PredictionTracker(response)
 
     assert pt.is_complete()
+
+
+def test_prediction_tracker_completion_timestamps():
+    response = PredictionResponse(id="abc123", input={"prompt": "hello, world"})
+    webhook_caller = mock.Mock()
+    pt = PredictionTracker(response, webhook_caller=webhook_caller)
+
+    payload = response.copy(update={"status": "succeeded"})
+    pt.update_from_webhook_payload(payload)
+
+    webhook_caller.assert_called_once()
+    (webhook_payload,) = webhook_caller.call_args.args
+    assert webhook_payload["started_at"] is not None
+    assert webhook_payload["completed_at"] is not None
+    assert webhook_payload["metrics"]["predict_time"] is not None
+
+
+def test_prediction_tracker_fail():
+    response = PredictionResponse(id="abc123", input={"prompt": "hello, world"})
+    webhook_caller = mock.Mock()
+    pt = PredictionTracker(response, webhook_caller=webhook_caller)
+
+    pt.fail("something went wrong")
+
+    webhook_caller.assert_called_once()
+    (webhook_payload,) = webhook_caller.call_args.args
+    assert webhook_payload["status"] == "failed"
+    assert webhook_payload["error"] == "something went wrong"
+    assert webhook_payload["started_at"] is not None
+    assert webhook_payload["completed_at"] is not None
