@@ -53,6 +53,11 @@ class PredictionTracker:
         self._update(payload)
 
     @property
+    def runtime(self):
+        now = datetime.now(tz=timezone.utc)
+        return (now - self._response.started_at).total_seconds()
+
+    @property
     def status(self):
         return self._response.status
 
