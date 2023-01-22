@@ -59,13 +59,10 @@ class Director:
 
         self._tracker = None
         self._should_exit = False
+        self._shutdown_hooks = []
 
         self.cog_client = _make_local_http_client()
         self.cog_http_base = "http://localhost:5000"
-
-        app = create_app(events=self.events)
-        config = uvicorn.Config(app, port=4900, log_config=None)
-        self.server = Server(config)
 
     def start(self) -> None:
         signal.signal(signal.SIGINT, self.handle_exit)
@@ -74,8 +71,6 @@ class Director:
         # Signal pod readiness (when in k8s)
         probes = ProbeHelper()
         probes.ready()
-
-        self.server.start()
 
         mark = time.perf_counter()
         setup_poll_count = 0
@@ -143,10 +138,14 @@ class Director:
                 self._tracker = None
 
         log.info("shutting down worker: bye bye!")
+        for hook in self._shutdown_hooks:
+            try:
+                hook()
+            except Exception:
+                log.error("caught exception while running shutdown hook", exc_info=True)
 
-        # TODO: wait for prediction to finish and stuff
-        self.server.stop()
-        self.server.join()
+    def register_shutdown_hook(self, hook: Callable):
+        self._shutdown_hooks.append(hook)
 
     def handle_message(self, message_id, message_json) -> None:
         message = json.loads(message_json)
