@@ -349,6 +349,7 @@ def test_asynchronous_prediction_endpoint(client):
             "id": "12345abcde",
             "input": {"text": "hello world"},
             "webhook": "https://example.com/webhook",
+            "webhook_events_filter": ["completed"],
         },
         headers={"Prefer": "respond-async"},
     )
