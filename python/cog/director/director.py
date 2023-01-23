@@ -224,10 +224,12 @@ class Director:
                     log.warn("received unknown event", data=event)
 
             if should_cancel():
+                log.info("received cancelation request for prediction")
                 self._cancel_prediction(prediction_id)
                 break
 
             if self.predict_timeout and tracker.runtime > self.predict_timeout:
+                log.warn("prediction timed out", predict_timeout=self.predict_timeout)
                 # Mark the prediction as timed out so we handle the
                 # cancelation webhook appropriately.
                 tracker.timed_out()
