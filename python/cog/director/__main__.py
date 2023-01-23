@@ -8,14 +8,26 @@ from typing import Any
 
 import structlog
 import uvicorn
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from ..logging import setup_logging
 from .director import Director
 from .healthchecker import Healthchecker, http_fetcher
 from .http import Server, create_app
+from .monitor import Monitor
 from .redis import RedisConsumer, RedisConsumerRotator
 
 log = structlog.get_logger("cog.director")
+
+# Enable OpenTelemetry if the env vars are present. If this block isn't
+# run, all the opentelemetry calls are no-ops.
+if "OTEL_SERVICE_NAME" in os.environ:
+    trace.set_tracer_provider(TracerProvider())
+    span_processor = BatchSpanProcessor(OTLPSpanExporter())
+    trace.get_tracer_provider().add_span_processor(span_processor)  # type: ignore
 
 
 def _die(signum: Any, frame: Any) -> None:
@@ -58,6 +70,9 @@ healthchecker = Healthchecker(
 )
 healthchecker.start()
 
+monitor = Monitor()
+monitor.start()
+
 if (len(args.redis_url) != len(args.redis_input_queue)) or (
     len(args.redis_url) != len(args.redis_consumer_id)
 ):
@@ -88,14 +103,19 @@ redis_consumer_rotator = RedisConsumerRotator(consumers=redis_consumers)
 director = Director(
     events=events,
     healthchecker=healthchecker,
+    monitor=monitor,
     redis_consumer_rotator=redis_consumer_rotator,
     predict_timeout=args.predict_timeout,
     max_failure_count=args.max_failure_count,
     report_setup_run_url=args.report_setup_run_url,
 )
+
+
 director.register_shutdown_hook(healthchecker.stop)
 director.register_shutdown_hook(server.stop)
+director.register_shutdown_hook(monitor.stop)
 director.start()
 
+monitor.join()
 healthchecker.join()
 server.join()

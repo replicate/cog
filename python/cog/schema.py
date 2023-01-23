@@ -58,6 +58,7 @@ class PredictionResponse(PredictionBaseModel):
     output: t.Any
 
     id: t.Optional[str]
+    version: t.Optional[str]
 
     created_at: t.Optional[datetime]
     started_at: t.Optional[datetime]
