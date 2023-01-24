@@ -61,6 +61,11 @@ class PredictionRunner:
         # It's the caller's responsibility to not call us if we're busy.
         assert not self.is_busy()
 
+        # Set up logger context for main thread. The same thing happens inside
+        # the predict thread.
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(prediction_id=prediction.id)
+
         self._should_cancel.clear()
         event_handler = create_event_handler(prediction, upload_url=self._upload_url)
 
@@ -145,6 +150,7 @@ class PredictionEventHandler:
         webhook_sender: Optional[Callable] = None,
         file_uploader: Optional[Callable] = None,
     ):
+        log.info("starting prediction")
         self.p = p
         self.p.status = schema.Status.PROCESSING
         self.p.output = None
@@ -180,6 +186,7 @@ class PredictionEventHandler:
         self._send_webhook(schema.WebhookEvent.LOGS)
 
     def succeeded(self) -> None:
+        log.info("prediction succeeded")
         self.p.status = schema.Status.SUCCEEDED
         self._set_completed_at()
         # These have been set already: this is to convince the typechecker of
@@ -192,12 +199,14 @@ class PredictionEventHandler:
         self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     def failed(self, error: str) -> None:
+        log.info("prediction failed", error=error)
         self.p.status = schema.Status.FAILED
         self.p.error = error
         self._set_completed_at()
         self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     def canceled(self) -> None:
+        log.info("prediction canceled")
         self.p.status = schema.Status.CANCELED
         self._set_completed_at()
         self._send_webhook(schema.WebhookEvent.COMPLETED)
@@ -230,12 +239,15 @@ def predict(
     should_cancel: Event,
     event_handler: PredictionEventHandler,
 ) -> schema.PredictionResponse:
+
+    # Set up logger context within prediction thread.
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(prediction_id=request.id)
+
     try:
         return _predict(worker, request, should_cancel, event_handler)
     except Exception as error:
-        log.error(
-            "Got unexpected error during prediction response handling", error=error
-        )
+        log.error("caught exception while running prediction", exc_info=True)
 
         # Attempt to fail the prediction and trigger a webhook, but if that
         # also fails just move on
@@ -246,10 +258,8 @@ def predict(
             )
         except Exception as another_error:
             log.error(
-                "Got error when trying to fail prediction due to unexpected error",
-                error=another_error,
+                "caught exception while handling prediction failure", exc_info=True
             )
-
         # Any error encountered like this is likely irrecoverable; re-raise the
         # error to cause the container to crash.
         raise error
@@ -307,6 +317,6 @@ def _predict(
                 event_handler.succeeded()
 
         else:
-            log.warn("Received unexpected event from worker", event=event)
+            log.warn("received unexpected event from worker", data=event)
 
     return event_handler.response
