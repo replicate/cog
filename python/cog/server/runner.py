@@ -18,6 +18,10 @@ from .worker import Worker
 log = structlog.get_logger("cog.server.runner")
 
 
+class FileUploadError(Exception):
+    pass
+
+
 class PredictionRunner:
     def __init__(self, predictor_ref: str, upload_url: Optional[str] = None):
         self.current_prediction_id = None
