@@ -144,6 +144,11 @@ class Director:
 
     def _loop(self):
         while not self._should_exit:
+            structlog.contextvars.clear_contextvars()
+            structlog.contextvars.bind_contextvars(
+                queue=self.redis_consumer.redis_input_queue,
+            )
+
             try:
                 message_id, message_json = self.redis_consumer.get()
             except EmptyRedisStream:
@@ -154,6 +159,8 @@ class Director:
                 time.sleep(5)
                 continue
 
+            structlog.contextvars.bind_contextvars(message_id=message_id)
+
             try:
                 self._handle_message(message_id, message_json)
             except Exception:
@@ -163,17 +170,17 @@ class Director:
                 # If we completed _handle_message without an exception, we
                 # acknowledge the message so nobody else picks it up.
                 self.redis_consumer.ack(message_id)
+                log.info("acked message")
 
     def _handle_message(self, message_id, message_json) -> None:
         message = json.loads(message_json)
 
-        log.info(
-            "received message",
-            message_id=message_id,
-            queue=self.redis_consumer.redis_input_queue,
+        structlog.contextvars.bind_contextvars(
             prediction_id=message["id"],
             model_version=message["version"],
         )
+
+        log.info("received message")
         should_cancel = self.redis_consumer.checker(message.get("cancel_key"))
         prediction_id = message["id"]
 
