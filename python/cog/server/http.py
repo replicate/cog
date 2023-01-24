@@ -193,8 +193,22 @@ class Server(uvicorn.Server):
     def stop(self):
         self.should_exit = True
 
-    def join(self):
-        self._thread.join()
+        self._thread.join(timeout=1)
+
+        # There's no signal handler to rely on to stop the thread directly, so
+        # if something is taking control of the server thread for a while (eg
+        # uploading a file) then it might not exit very quickly. It's not easy
+        # to make it a daemon thread, because the server itself spawns at least
+        # two more threads.
+        #
+        # If this is being called, something else (eg director) is taking
+        # responsibility for graceful shutdowns, so there shouldn't be a
+        # problem with interrupting anything in progress.
+        #
+        # This approach is a little bit overkill, and probably wants revisiting
+        # when we get a chance.
+        if self._thread.is_alive():
+            os.kill(os.getpid(), signal.SIGKILL)
 
 
 def signal_exit(signum: Any, frame: Any) -> None:
@@ -273,6 +287,5 @@ if __name__ == "__main__":
         should_exit.wait()
 
         s.stop()
-        s.join()
     else:
         uvicorn.Server(config=uvicornConfig).run()
