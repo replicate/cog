@@ -83,3 +83,7 @@ def setup_logging(*, log_level: int = logging.NOTSET) -> None:
     for l in ["uvicorn", "uvicorn.access", "uvicorn.error"]:
         logging.getLogger(l).handlers.clear()
         logging.getLogger(l).propagate = True
+
+    # Reconfigure log levels for some overly chatty libraries
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
