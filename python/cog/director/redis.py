@@ -33,8 +33,6 @@ class RedisConsumer:
         log.info("connected to redis", url=self.redis_url)
 
     def get(self) -> Tuple[str, str]:
-        log.debug("waiting for message", queue=self.redis_input_queue)
-
         # first, try to autoclaim old messages from pending queue
         raw_messages = self.redis.execute_command(
             "XAUTOCLAIM",
@@ -76,7 +74,6 @@ class RedisConsumer:
     def ack(self, message_id: str) -> None:
         self.redis.xack(self.redis_input_queue, self.redis_input_queue, message_id)
         self.redis.xdel(self.redis_input_queue, message_id)
-        log.info("acked message", message_id=message_id, queue=self.redis_input_queue)
 
     def checker(self, redis_key: str) -> Callable:
         def checker_() -> bool:
