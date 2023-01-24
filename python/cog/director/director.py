@@ -81,6 +81,12 @@ class Director:
 
         finally:
             log.info("shutting down worker: bye bye!")
+
+            try:
+                self._shutdown_model()
+            except Exception:
+                log.error("caught exception while shutting down model", exc_info=True)
+
             for hook in self._shutdown_hooks:
                 try:
                     hook()
@@ -291,12 +297,17 @@ class Director:
         self._failure_count = 0
 
     def _abort(self, message=None):
+        self._should_exit = True
+        raise Abort(message)
+
+    def _shutdown_model(self):
         resp = self.cog_client.post(
             self.cog_http_base + "/shutdown",
             timeout=1,
         )
-        self._should_exit = True
-        raise Abort(message)
+        log.info(
+            "attempted to shut down model container", response_code=resp.status_code
+        )
 
 
 def _make_local_http_client() -> requests.Session:
