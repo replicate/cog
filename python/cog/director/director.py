@@ -224,8 +224,10 @@ class Director:
                 if isinstance(event, Webhook):
                     tracker.update_from_webhook_payload(event.payload)
                 elif isinstance(event, HealthcheckStatus):
-                    # TODO: handle these appropriately
                     log.info("received healthcheck status update", data=event)
+                    if event.health != Health.HEALTHY:
+                        tracker.fail("Model stopped responding during prediction.")
+                        self._abort("model container no longer healthy")
                 else:
                     log.warn("received unknown event", data=event)
 

@@ -93,8 +93,8 @@ def _make_http_client() -> requests.Session:
     session = requests.Session()
     adapter = HTTPAdapter(
         max_retries=Retry(
-            total=3,
-            backoff_factor=0.1,
+            total=6,
+            backoff_factor=0.2,
             status_forcelist=[429, 500, 502, 503, 504],
         ),
     )
