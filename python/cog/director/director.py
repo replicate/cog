@@ -265,7 +265,7 @@ class Director:
         # If the prediction is *still* not complete, something is badly wrong
         # and we should abort.
         if not tracker.is_complete():
-            tracker.fail("Prediction did not respond after cancelation.")
+            tracker.force_cancel()
             self._abort("prediction failed to complete after cancelation")
 
         # Keep track of runs of failures to catch the situation where the
