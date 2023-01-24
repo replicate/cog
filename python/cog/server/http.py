@@ -191,6 +191,7 @@ class Server(uvicorn.Server):
         self._thread.start()
 
     def stop(self):
+        log.info("Setting should_exit on uvicorn to shut it down")
         self.should_exit = True
 
         self._thread.join(timeout=1)
@@ -207,8 +208,8 @@ class Server(uvicorn.Server):
         #
         # This approach is a little bit overkill, and probably wants revisiting
         # when we get a chance.
-        if self._thread.is_alive():
-            os.kill(os.getpid(), signal.SIGKILL)
+        log.info("Sending SIGKILL to own process to kill all the threads")
+        os.kill(os.getpid(), signal.SIGKILL)
 
 
 def signal_exit(signum: Any, frame: Any) -> None:
