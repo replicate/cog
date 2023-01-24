@@ -295,8 +295,9 @@ class Director:
         if tracker.status == schema.Status.FAILED:
             log.warn("prediction failed")
             self._record_failure()
-        if tracker.status == schema.Status.CANCELED:
+        elif tracker.status == schema.Status.CANCELED:
             log.info("prediction canceled")
+            self._record_success()
         else:
             log.info("prediction succeeded")
             self._record_success()
