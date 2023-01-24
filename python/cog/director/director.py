@@ -164,10 +164,11 @@ class Director:
             structlog.contextvars.bind_contextvars(message_id=message_id)
 
             try:
+                log.info("received message")
                 self._handle_message(message_id, message_json)
             except Exception:
                 self._record_failure()
-                log.error("failed to handle message", exc_info=True)
+                log.error("caught exception while running prediction", exc_info=True)
             else:
                 # If we completed _handle_message without an exception, we
                 # acknowledge the message so nobody else picks it up.
@@ -176,15 +177,15 @@ class Director:
 
     def _handle_message(self, message_id, message_json) -> None:
         message = json.loads(message_json)
+        prediction_id = message["id"]
 
         structlog.contextvars.bind_contextvars(
-            prediction_id=message["id"],
+            prediction_id=prediction_id,
             model_version=message["version"],
         )
 
-        log.info("received message")
+        log.info("running prediction")
         should_cancel = self.redis_consumer.checker(message.get("cancel_key"))
-        prediction_id = message["id"]
 
         # Tracker is tied to a single prediction, and deliberately only exists
         # within this method in an attempt to eliminate the possibility that we
@@ -197,7 +198,7 @@ class Director:
         # Override webhook to call us
         message["webhook"] = "http://localhost:4900/webhook"
 
-        # Call the untrusted container to start the prediction
+        # Call the model container to start the prediction
         try:
             resp = self.cog_client.post(
                 self.cog_http_base + "/predictions",
@@ -207,6 +208,7 @@ class Director:
             )
         except requests.exceptions.RequestException:
             tracker.fail("Unknown error handling prediction.")
+            log.error("prediction failed: could not create prediction", exc_info=True)
             self._record_failure()
             return
 
@@ -216,8 +218,18 @@ class Director:
             # Special case validation errors
             if resp.status_code == 422:
                 tracker.fail(f"Prediction input failed validation: {resp.text}")
+                log.warn(
+                    "prediction failed: failed input validation",
+                    status_code=resp.status_code,
+                    response=resp.text,
+                )
             else:
                 tracker.fail("Unknown error handling prediction.")
+                log.error(
+                    "prediction failed: invalid response status from create request",
+                    status_code=resp.status_code,
+                    response=resp.text,
+                )
             self._record_failure()
             return
 
@@ -236,17 +248,23 @@ class Director:
                     log.info("received healthcheck status update", data=event)
                     if event.health != Health.HEALTHY:
                         tracker.fail("Model stopped responding during prediction.")
+                        log.error(
+                            "prediction failed: model container failed healthchecks"
+                        )
                         self._abort("model container no longer healthy")
                 else:
                     log.warn("received unknown event", data=event)
 
             if should_cancel():
-                log.info("received cancelation request for prediction")
+                log.info("prediction cancelation requested")
                 self._cancel_prediction(prediction_id)
                 break
 
             if self.predict_timeout and tracker.runtime > self.predict_timeout:
-                log.warn("prediction timed out", predict_timeout=self.predict_timeout)
+                log.warn(
+                    "prediction cancelation requested due to timeout",
+                    predict_timeout=self.predict_timeout,
+                )
                 # Mark the prediction as timed out so we handle the
                 # cancelation webhook appropriately.
                 tracker.timed_out()
@@ -268,14 +286,19 @@ class Director:
         # and we should abort.
         if not tracker.is_complete():
             tracker.force_cancel()
+            log.error("prediction forcibly canceled")
             self._abort("prediction failed to complete after cancelation")
 
         # Keep track of runs of failures to catch the situation where the
         # worker has gotten into a bad state where it can only fail
         # predictions, but isn't exiting.
         if tracker.status == schema.Status.FAILED:
+            log.warn("prediction failed")
             self._record_failure()
+        if tracker.status == schema.Status.CANCELED:
+            log.info("prediction canceled")
         else:
+            log.info("prediction succeeded")
             self._record_success()
 
     def _cancel_prediction(self, prediction_id):
@@ -316,9 +339,7 @@ class Director:
             self.cog_http_base + "/shutdown",
             timeout=1,
         )
-        log.info(
-            "attempted to shut down model container", response_code=resp.status_code
-        )
+        log.info("requested model container shutdown", response_code=resp.status_code)
 
 
 def _make_local_http_client() -> requests.Session:
