@@ -52,6 +52,12 @@ class PredictionTracker:
         }
         self._update(payload)
 
+    def force_cancel(self):
+        payload = {
+            "status": schema.Status.CANCELED,
+        }
+        self._update(payload)
+
     @property
     def runtime(self):
         now = datetime.now(tz=timezone.utc)
