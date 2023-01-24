@@ -33,7 +33,9 @@ log = structlog.get_logger(__name__)
 POLL_INTERVAL = 0.1
 
 # How long to wait for a cancelation to complete, in seconds.
-CANCEL_WAIT = 5
+# TODO: when the model container is no longer responsible for e.g. file
+# uploads, we should likely try and reduce this to a smaller number, e.g. 5s.
+CANCEL_WAIT = 30
 
 
 class Abort(Exception):
