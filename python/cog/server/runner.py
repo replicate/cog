@@ -8,7 +8,10 @@ from multiprocessing import Event
 from multiprocessing.pool import ThreadPool, AsyncResult
 from typing import Any, Callable, Dict, Optional, Tuple
 
+import requests
 import structlog
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 from .. import schema
 from ..files import put_file_to_signed_endpoint
@@ -144,9 +147,11 @@ def create_event_handler(prediction, upload_url: Optional[str] = None):
 
 
 def generate_file_uploader(upload_url):
+    client = _make_file_upload_http_client()
+
     def file_uploader(output):
         def upload_file(fh: io.IOBase) -> str:
-            return put_file_to_signed_endpoint(fh, upload_url)
+            return put_file_to_signed_endpoint(fh, upload_url, client=client)
 
         return upload_files(output, upload_file=upload_file)
 
@@ -330,3 +335,18 @@ def _predict(
             log.warn("received unexpected event from worker", data=event)
 
     return event_handler.response
+
+
+def _make_file_upload_http_client() -> requests.Session:
+    session = requests.Session()
+    adapter = HTTPAdapter(
+        max_retries=Retry(
+            total=3,
+            backoff_factor=0.1,
+            status_forcelist=[408, 429, 500, 502, 503, 504],
+            allowed_methods=["PUT"],
+        ),
+    )
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
