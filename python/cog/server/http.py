@@ -5,7 +5,7 @@ import signal
 import textwrap
 import threading
 from datetime import datetime, timezone
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 import pydantic
 import structlog
@@ -39,9 +39,9 @@ log = structlog.get_logger("cog.server.http")
 
 def create_app(
     predictor_ref: str,
+    shutdown_event: threading.Event,
     threads: int = 1,
     upload_url: Optional[str] = None,
-    shutdown_event: threading.Event = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Cog",  # TODO: mention model name?
@@ -53,7 +53,11 @@ def create_app(
         "setup": None,
     }
 
-    runner = PredictionRunner(predictor_ref, upload_url=upload_url)
+    runner = PredictionRunner(
+        predictor_ref=predictor_ref,
+        shutdown_event=shutdown_event,
+        upload_url=upload_url,
+    )
     # TODO: avoid loading predictor code in this process
     predictor = load_predictor_from_ref(predictor_ref)
 
@@ -158,12 +162,9 @@ def create_app(
 
     @app.post("/shutdown")
     def shutdown():
-        if shutdown_event is not None:
-            log.info("Shutting down after request to /shutdown")
-            shutdown_event.set()
-            return JSONResponse({}, status_code=200)
-
-        return JSONResponse({}, status_code=404)
+        log.info("shutdown requested via http")
+        shutdown_event.set()
+        return JSONResponse({}, status_code=200)
 
     return app
 
@@ -191,29 +192,32 @@ class Server(uvicorn.Server):
         self._thread.start()
 
     def stop(self):
-        log.info("Setting should_exit on uvicorn to shut it down")
+        log.info("stopping server")
         self.should_exit = True
 
-        self._thread.join(timeout=1)
+        self._thread.join(timeout=5)
+        if not self._thread.is_alive():
+            return
 
-        # There's no signal handler to rely on to stop the thread directly, so
-        # if something is taking control of the server thread for a while (eg
-        # uploading a file) then it might not exit very quickly. It's not easy
-        # to make it a daemon thread, because the server itself spawns at least
-        # two more threads.
-        #
-        # If this is being called, something else (eg director) is taking
-        # responsibility for graceful shutdowns, so there shouldn't be a
-        # problem with interrupting anything in progress.
-        #
-        # This approach is a little bit overkill, and probably wants revisiting
-        # when we get a chance.
-        log.info("Sending SIGKILL to own process to kill all the threads")
+        log.warn("failed to exit after 5 seconds, setting force_exit")
+        self.force_exit = True
+        self._thread.join(timeout=5)
+        if not self._thread.is_alive():
+            return
+
+        log.warn("failed to exit after another 5 seconds, sending SIGKILL")
         os.kill(os.getpid(), signal.SIGKILL)
 
 
-def signal_exit(signum: Any, frame: Any) -> None:
+def signal_ignore(signum: Any, frame: Any) -> None:
     log.warn("Got a signal to exit, ignoring it...", signal=signal.Signals(signum).name)
+
+
+def signal_set_event(event: threading.Event) -> Callable:
+    def _signal_set_event(signum: Any, frame: Any):
+        event.set()
+
+    return _signal_set_event
 
 
 if __name__ == "__main__":
@@ -237,7 +241,7 @@ if __name__ == "__main__":
         dest="await_explicit_shutdown",
         type=bool,
         default=False,
-        help="Ignore SIGINT and SIGTERM and wait for a request to /shutdown before exiting",
+        help="Ignore SIGTERM and wait for a request to /shutdown (or a SIGINT) before exiting",
     )
     args = parser.parse_args()
 
@@ -257,20 +261,17 @@ if __name__ == "__main__":
         else:
             threads = os.cpu_count()
 
-    should_exit = None
-    if args.await_explicit_shutdown:
-        should_exit = threading.Event()
-
+    shutdown_event = threading.Event()
     predictor_ref = get_predictor_ref(config)
     app = create_app(
-        predictor_ref,
+        predictor_ref=predictor_ref,
+        shutdown_event=shutdown_event,
         threads=threads,
         upload_url=args.upload_url,
-        shutdown_event=should_exit,
     )
 
     port = int(os.getenv("PORT", 5000))
-    uvicornConfig = uvicorn.Config(
+    config = uvicorn.Config(
         app,
         host="0.0.0.0",
         port=port,
@@ -280,13 +281,16 @@ if __name__ == "__main__":
     )
 
     if args.await_explicit_shutdown:
-        signal.signal(signal.SIGINT, signal_exit)
-        signal.signal(signal.SIGTERM, signal_exit)
-        s = Server(config=uvicornConfig)
-        s.start()
-
-        should_exit.wait()
-
-        s.stop()
+        signal.signal(signal.SIGTERM, signal_ignore)
     else:
-        uvicorn.Server(config=uvicornConfig).run()
+        signal.signal(signal.SIGTERM, signal_set_event(shutdown_event))
+
+    s = Server(config=config)
+    s.start()
+
+    try:
+        shutdown_event.wait()
+    except KeyboardInterrupt:
+        pass
+
+    s.stop()

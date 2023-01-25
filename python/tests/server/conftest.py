@@ -1,4 +1,5 @@
 import os
+import threading
 
 from fastapi.testclient import TestClient
 import pytest
@@ -34,7 +35,7 @@ def make_client(fixture_name: str):
     Creates a fastapi test client for an app that uses the requested Predictor.
     """
     predictor_ref = _fixture_path(fixture_name)
-    app = create_app(predictor_ref)
+    app = create_app(predictor_ref=predictor_ref, shutdown_event=threading.Event())
     return TestClient(app)
 
 
