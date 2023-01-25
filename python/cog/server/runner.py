@@ -113,9 +113,9 @@ class PredictionRunner:
         return False
 
     def shutdown(self) -> None:
+        self._worker.terminate()
         self._threadpool.terminate()
         self._threadpool.join()
-        self._worker.terminate()
 
     def cancel(self) -> None:
         self._should_cancel.set()
