@@ -28,7 +28,7 @@ pkg/dockerfile/embed/cog.whl: python/* python/cog/* python/cog/server/* python/c
 	cp python/dist/*.whl $@
 
 cog: pkg/dockerfile/embed/cog.whl
-	$(eval COG_VERSION ?= $(shell git describe --tags --always --dirty))
+	$(eval COG_VERSION ?= $(shell git describe --tags --match 'v*' --abbrev=0)+dev)
 	CGO_ENABLED=0 $(GO) build -o $@ \
 		-ldflags "-X github.com/replicate/cog/pkg/global.Version=$(COG_VERSION) -X github.com/replicate/cog/pkg/global.BuildTime=$(shell date +%Y-%m-%dT%H:%M:%S%z) -w" \
 		cmd/cog/cog.go
