@@ -80,12 +80,12 @@ class Worker:
         if self._state == WorkerState.DEFUNCT:
             return
 
+        self._terminating = True
         self._state = WorkerState.DEFUNCT
 
         if self._child.is_alive():
             self._child.terminate()
             self._child.join()
-        self._child.close()
 
     def cancel(self) -> None:
         if self._allow_cancel and self._child.is_alive():
