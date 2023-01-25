@@ -2,9 +2,10 @@ import io
 import os
 import signal
 import sys
+import threading
+import traceback
 from datetime import datetime, timezone
 from fastapi.encoders import jsonable_encoder
-from multiprocessing import Event
 from multiprocessing.pool import ThreadPool, AsyncResult
 from typing import Any, Callable, Dict, Optional, Tuple
 
@@ -28,16 +29,24 @@ class FileUploadError(Exception):
 
 
 class PredictionRunner:
-    def __init__(self, predictor_ref: str, upload_url: Optional[str] = None):
+    def __init__(
+        self,
+        *,
+        predictor_ref: str,
+        shutdown_event: threading.Event,
+        upload_url: Optional[str] = None,
+    ):
         self.current_prediction_id = None
+
         self._thread = None
         self._threadpool = ThreadPool(processes=1)
 
         self._result: Optional[AsyncResult] = None
 
         self._worker = Worker(predictor_ref=predictor_ref)
-        self._should_cancel = Event()
+        self._should_cancel = threading.Event()
 
+        self._shutdown_event = shutdown_event
         self._upload_url = upload_url
 
     def setup(self) -> Tuple[schema.Status, str]:
@@ -78,23 +87,23 @@ class PredictionRunner:
                 prediction.input.cleanup()
 
         def handle_error(error):
-            log.error("async predict thread exited with an error", error=error)
-            cleanup()
-
-            # Crash the container -- we don't have the context to recover
-            # gracefully from here.
-            #
-            # This function gets called in a thread, and there are least two
-            # more active threads at this point, so there's no easy way to
-            # cleanly coordinate a shutdown.
-            #
-            # This approach is a little bit overkill, and probably wants
-            # revisiting when we get a chance.
-            os.kill(os.getpid(), signal.SIGKILL)
+            # Re-raise the exception in order to more easily capture exc_info,
+            # and then trigger shutdown, as we have no easy way to resume
+            # worker state if an exception was thrown.
+            try:
+                raise error
+            except Exception:
+                log.error("caught exception while running prediction", exc_info=True)
+                self._shutdown_event.set()
 
         self._result = self._threadpool.apply_async(
             func=predict,
-            args=(self._worker, prediction, self._should_cancel, event_handler),
+            kwds={
+                "worker": self._worker,
+                "request": prediction,
+                "event_handler": event_handler,
+                "should_cancel": self._should_cancel,
+            },
             callback=cleanup,
             error_callback=handle_error,
         )
@@ -247,10 +256,11 @@ class PredictionEventHandler:
 
 
 def predict(
+    *,
     worker: Worker,
     request: schema.PredictionRequest,
-    should_cancel: Event,
     event_handler: PredictionEventHandler,
+    should_cancel: threading.Event,
 ) -> schema.PredictionResponse:
 
     # Set up logger context within prediction thread.
@@ -258,31 +268,25 @@ def predict(
     structlog.contextvars.bind_contextvars(prediction_id=request.id)
 
     try:
-        return _predict(worker, request, should_cancel, event_handler)
-    except Exception as error:
-        log.error("caught exception while running prediction", exc_info=True)
-
-        # Attempt to fail the prediction and trigger a webhook, but if that
-        # also fails just move on
-        try:
-            # TODO: include a stack trace
-            event_handler.failed(
-                error=f"Got unexpected error during prediction response handling: {error}"
-            )
-        except Exception as another_error:
-            log.error(
-                "caught exception while handling prediction failure", exc_info=True
-            )
-        # Any error encountered like this is likely irrecoverable; re-raise the
-        # error to cause the container to crash.
-        raise error
+        return _predict(
+            worker=worker,
+            request=request,
+            event_handler=event_handler,
+            should_cancel=should_cancel,
+        )
+    except Exception as e:
+        tb = traceback.format_exc()
+        event_handler.append_logs(tb)
+        event_handler.failed(error=str(e))
+        raise
 
 
 def _predict(
+    *,
     worker: Worker,
     request: schema.PredictionRequest,
-    should_cancel: Event,
     event_handler: PredictionEventHandler,
+    should_cancel: threading.Event,
 ) -> schema.PredictionResponse:
     initial_prediction = request.dict()
 
