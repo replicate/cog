@@ -34,7 +34,6 @@ class PredictionRunner:
         self._threadpool = ThreadPool(processes=1)
 
         self._result: Optional[AsyncResult] = None
-        self._last_result = None
 
         self._worker = Worker(predictor_ref=predictor_ref)
         self._should_cancel = Event()
@@ -110,7 +109,6 @@ class PredictionRunner:
         if not self._result.ready():
             return True
 
-        self._last_result = self._result.get()
         self._result = None
         return False
 
