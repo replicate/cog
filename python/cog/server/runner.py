@@ -1,4 +1,6 @@
 import io
+import os
+import signal
 import sys
 from datetime import datetime, timezone
 from fastapi.encoders import jsonable_encoder
@@ -76,9 +78,17 @@ class PredictionRunner:
         def handle_error(error):
             log.error("async predict thread exited with an error", error=error)
             cleanup()
-            # re-raise the error to crash the container -- we don't have the
-            # context to recover gracefully from here
-            raise error
+
+            # Crash the container -- we don't have the context to recover
+            # gracefully from here.
+            #
+            # This function gets called in a thread, and there are least two
+            # more active threads at this point, so there's no easy way to
+            # cleanly coordinate a shutdown.
+            #
+            # This approach is a little bit overkill, and probably wants
+            # revisiting when we get a chance.
+            os.kill(os.getpid(), signal.SIGKILL)
 
         self._result = self._threadpool.apply_async(
             func=predict,
