@@ -33,28 +33,21 @@ class RedisConsumer:
         log.info("connected to redis", url=self.redis_url)
 
     def get(self) -> Tuple[str, str]:
-        # first, try to autoclaim old messages from pending queue
-        raw_messages = self.redis.execute_command(
-            "XAUTOCLAIM",
-            self.redis_input_queue,
-            self.redis_input_queue,
-            self.redis_consumer_id,
-            str(self.autoclaim_messages_after * 1000),
-            "0-0",
-            "COUNT",
-            1,
-        )
-        # format: [[b'1619393873567-0', [b'mykey', b'myval']]]
-        # since redis==4.3.4 an empty response from xautoclaim is indicated by [[b'0-0', []]]
-        if raw_messages and raw_messages[0] is not None and len(raw_messages[0]) == 2:
-            key, raw_message = raw_messages[0]
-            assert raw_message[0] == b"value"
-
-            message_id = key.decode()
-            message = raw_message[1].decode()
-            return message_id, message
-
-        # if no old messages exist, get message from main queue
+        # Redis streams are reliable queues: messages must be acked once
+        # handled, otherwise they will remain in the queue where they can be
+        # claimed by other consumers after a visibility timeout.
+        #
+        # At the moment, we try to ack every message we receive, even if we
+        # encounter an exception while handling it. We do this because the
+        # semantics of restarting a prediction are not well defined, and
+        # because in truly exceptional cases where the messages go unacked, the
+        # predictions will be failed by `terminate_stuck_predictions` in
+        # replicate-web, and the unacked messages will be purged by
+        # `pruneStuckRequests` in autoscaler.
+        #
+        # None of this is ideal, and in future we likely want to improve
+        # director's ability to recover and retry predictions that failed
+        # exceptionally.
         raw_messages = self.redis.xreadgroup(
             groupname=self.redis_input_queue,
             consumername=self.redis_consumer_id,

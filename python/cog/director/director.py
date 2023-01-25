@@ -169,9 +169,9 @@ class Director:
             except Exception:
                 self._record_failure()
                 log.error("caught exception while running prediction", exc_info=True)
-            else:
-                # If we completed _handle_message without an exception, we
-                # acknowledge the message so nobody else picks it up.
+            finally:
+                # See the comment in RedisConsumer.get to understand why we ack
+                # even when an exception is thrown while handling a message.
                 self.redis_consumer.ack(message_id)
                 log.info("acked message")
 
