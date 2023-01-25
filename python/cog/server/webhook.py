@@ -68,6 +68,9 @@ def requests_session() -> requests.Session:
     session.headers["user-agent"] = (
         _user_agent + " " + str(session.headers["user-agent"])
     )
+    auth_token = os.environ.get("WEBHOOK_AUTH_TOKEN")
+    if auth_token:
+        session.headers["authorization"] = "Bearer " + auth_token
 
     return session
 
@@ -76,10 +79,7 @@ def requests_session_with_retries() -> requests.Session:
     # This session will retry requests up to 12 times, with exponential
     # backoff. In total it'll try for up to roughly 320 seconds, providing
     # resilience through temporary networking and availability issues.
-    session = requests.Session()
-    session.headers["user-agent"] = (
-        _user_agent + " " + str(session.headers["user-agent"])
-    )
+    session = requests_session()
     adapter = HTTPAdapter(
         max_retries=Retry(
             total=12,
