@@ -312,14 +312,25 @@ class Director:
 
 def _make_local_http_client() -> requests.Session:
     session = requests.Session()
-    adapter = HTTPAdapter(
-        max_retries=Retry(
-            total=3,
-            backoff_factor=0.1,
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["POST"],
-        ),
-    )
+    auth_token = os.environ.get("WEBHOOK_AUTH_TOKEN")
+    adapter = WebhookHTTPAdapter(auth_token)
     session.mount("http://", adapter)
     session.mount("https://", adapter)
     return session
+
+
+class WebhookHTTPAdapter(HTTPAdapter):
+    def __init__(self, auth_token):
+        super.__init__(
+            max_retries=Retry(
+                total=3,
+                backoff_factor=0.1,
+                status_forcelist=[429, 500, 502, 503, 504],
+                allowed_methods=["POST"],
+            ),
+        )
+        self.auth_token = auth_token
+
+    def add_headers(self, request, **kwargs):
+        if self.auth_token:
+            request.headers["Authorization"] = "Bearer " + self.auth_token
