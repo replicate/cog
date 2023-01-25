@@ -37,11 +37,13 @@ def guess_filename(obj: io.IOBase) -> str:
     return os.path.basename(name)
 
 
-def put_file_to_signed_endpoint(fh: io.IOBase, endpoint: str) -> str:
+def put_file_to_signed_endpoint(
+    fh: io.IOBase, endpoint: str, client: requests.Session
+) -> str:
     filename = guess_filename(fh)
     content_type, _ = mimetypes.guess_type(filename)
 
-    resp = requests.put(
+    resp = client.put(
         ensure_trailing_slash(endpoint) + filename,
         fh,  # type: ignore
         headers={"Content-type": content_type},
