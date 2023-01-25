@@ -153,6 +153,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         super().__init__()
 
     def run(self) -> None:
+        # If we're running at a shell, SIGINT will be sent to every process in
+        # the process group. We ignore it in the child process and require that
+        # shutdown is coordinated by the parent process.
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+
         # We use SIGUSR1 to signal an interrupt for cancelation.
         signal.signal(signal.SIGUSR1, self._signal_handler)
 

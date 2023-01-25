@@ -1,8 +1,8 @@
 import os
 import pytest
+import threading
 import time
 from datetime import datetime
-from multiprocessing import Event
 from unittest import mock
 
 from cog.schema import PredictionRequest, PredictionResponse, Status, WebhookEvent
@@ -26,7 +26,9 @@ def _fixture_path(name):
 
 @pytest.fixture
 def runner():
-    runner = PredictionRunner(predictor_ref=_fixture_path("sleep"))
+    runner = PredictionRunner(
+        predictor_ref=_fixture_path("sleep"), shutdown_event=threading.Event()
+    )
     try:
         yield runner
     finally:
@@ -130,14 +132,14 @@ def fake_worker(events):
 def test_predict(events, calls):
     worker = fake_worker(events)
     request = PredictionRequest(input={"text": "hello"}, foo="bar")
-    should_cancel = Event()
     event_handler = mock.Mock()
+    should_cancel = threading.Event()
 
     response = predict(
         worker=worker,
         request=request,
-        should_cancel=should_cancel,
         event_handler=event_handler,
+        should_cancel=should_cancel,
     )
 
     assert event_handler.method_calls == calls
