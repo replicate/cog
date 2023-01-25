@@ -43,10 +43,16 @@ def put_file_to_signed_endpoint(
     filename = guess_filename(fh)
     content_type, _ = mimetypes.guess_type(filename)
 
+    # set connect timeout to slightly more than a multiple of 3 to avoid
+    # aligning perfectly with TCP retransmission timer
+    connect_timeout = 10
+    read_timeout = 15
+
     resp = client.put(
         ensure_trailing_slash(endpoint) + filename,
         fh,  # type: ignore
         headers={"Content-type": content_type},
+        timeout=(connect_timeout, read_timeout),
     )
     resp.raise_for_status()
 
