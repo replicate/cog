@@ -23,6 +23,6 @@ if __name__ == "__main__":
         pass
     else:
         with suppress_output():
-            app = create_app(predictor_ref)
+            app = create_app(predictor_ref, shutdown_event=None)
         schema = app.openapi()
     print(json.dumps(schema, indent=2))
