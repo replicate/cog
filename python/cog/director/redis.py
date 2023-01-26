@@ -1,4 +1,4 @@
-from typing import Callable, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import redis
 import structlog
@@ -73,3 +73,35 @@ class RedisConsumer:
             return redis_key is not None and self.redis.exists(redis_key) > 0
 
         return checker_
+
+
+class RedisConsumerRotator:
+    def __init__(
+        self,
+        redis_configs: List[Tuple[str, str, str]],
+        predict_timeout: Optional[int] = None,
+    ):
+        if len(redis_configs) == 0:
+            raise ValueError("redis_configs must not be empty")
+
+        self.consumers = []
+
+        for (redis_url, redis_input_queue, redis_consumer_id) in redis_configs:
+            consumer = RedisConsumer(
+                redis_url=redis_url,
+                redis_input_queue=redis_input_queue,
+                redis_consumer_id=redis_consumer_id,
+                predict_timeout=predict_timeout,
+            )
+            self.consumers.append(consumer)
+
+        self._current_consumer_index = 0
+
+    def get_current(self) -> RedisConsumer:
+        return self.consumers[self._current_consumer_index]
+
+    def rotate(self) -> None:
+        consumer_count = len(self.consumers)
+        self._current_consumer_index = (
+            self._current_consumer_index + 1
+        ) % consumer_count

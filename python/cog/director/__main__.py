@@ -13,7 +13,7 @@ from ..logging import setup_logging
 from .director import Director
 from .healthchecker import Healthchecker, http_fetcher
 from .http import Server, create_app
-from .redis import RedisConsumer
+from .redis import RedisConsumerRotator
 
 log = structlog.get_logger("cog.director")
 
@@ -58,17 +58,21 @@ healthchecker = Healthchecker(
 )
 healthchecker.start()
 
-redis_consumer = RedisConsumer(
-    redis_url=args.redis_url,
-    redis_input_queue=args.redis_input_queue,
-    redis_consumer_id=args.redis_consumer_id,
+redis_consumer_rotator = RedisConsumerRotator(
+    redis_configs=[
+        (
+            args.redis_url,
+            args.redis_input_queue,
+            args.redis_consumer_id,
+        )
+    ],
     predict_timeout=args.predict_timeout,
 )
 
 director = Director(
     events=events,
     healthchecker=healthchecker,
-    redis_consumer=redis_consumer,
+    redis_consumer_rotator=redis_consumer_rotator,
     predict_timeout=args.predict_timeout,
     max_failure_count=args.max_failure_count,
     report_setup_run_url=args.report_setup_run_url,
