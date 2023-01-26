@@ -238,7 +238,7 @@ class PredictionEventHandler:
 
     def _send_webhook(self, event: schema.WebhookEvent) -> None:
         if self._webhook_sender is not None:
-            dict_response = jsonable_encoder(self.response.dict())
+            dict_response = jsonable_encoder(self.response.dict(exclude_unset=True))
             self._webhook_sender(dict_response, event)
 
     def _upload_files(self, output: Any) -> Any:
