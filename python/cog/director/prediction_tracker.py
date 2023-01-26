@@ -27,8 +27,11 @@ class PredictionTracker:
     ):
         self._webhook_caller = webhook_caller
         self._response = response
-        self._response.started_at = datetime.now(tz=timezone.utc)
         self._timed_out = False
+
+    def start(self):
+        self._response.status = schema.Status.PROCESSING
+        self._response.started_at = datetime.now(tz=timezone.utc)
 
     def is_complete(self):
         return schema.Status.is_terminal(self._response.status)
@@ -82,6 +85,8 @@ class PredictionTracker:
         self._response.error = "Prediction timed out"
 
     def _set_completed_at(self):
+        if not self._response.started_at:
+            return
         if self._response.completed_at:
             return
         if schema.Status.is_terminal(self._response.status):

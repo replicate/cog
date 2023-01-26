@@ -10,6 +10,7 @@ def test_prediction_tracker_basic():
     response = PredictionResponse(id="abc123", input={"prompt": "hello, world"})
     webhook_caller = mock.Mock()
     pt = PredictionTracker(response, webhook_caller=webhook_caller)
+    pt.start()
 
     payload = response.copy(update={"logs": "running prediction"})
     pt.update_from_webhook_payload(payload)
@@ -25,6 +26,7 @@ def test_prediction_tracker_adjusts_status_for_cancelations():
     response = PredictionResponse(id="abc123", input={"prompt": "hello, world"})
     webhook_caller = mock.Mock()
     pt = PredictionTracker(response, webhook_caller=webhook_caller)
+    pt.start()
 
     pt.timed_out()
     payload = response.copy(update={"status": "canceled"})
@@ -39,6 +41,7 @@ def test_prediction_tracker_adjusts_status_for_cancelations():
 def test_prediction_tracker_is_complete():
     response = PredictionResponse(id="abc123", input={"prompt": "hello, world"})
     pt = PredictionTracker(response)
+    pt.start()
 
     assert not pt.is_complete()
 
@@ -54,6 +57,7 @@ def test_prediction_tracker_completion_timestamps():
     response = PredictionResponse(id="abc123", input={"prompt": "hello, world"})
     webhook_caller = mock.Mock()
     pt = PredictionTracker(response, webhook_caller=webhook_caller)
+    pt.start()
 
     payload = response.copy(update={"status": "succeeded"})
     pt.update_from_webhook_payload(payload)
@@ -69,6 +73,7 @@ def test_prediction_tracker_fail():
     response = PredictionResponse(id="abc123", input={"prompt": "hello, world"})
     webhook_caller = mock.Mock()
     pt = PredictionTracker(response, webhook_caller=webhook_caller)
+    pt.start()
 
     pt.fail("something went wrong")
 
@@ -84,6 +89,7 @@ def test_prediction_tracker_wrong_id():
     response = PredictionResponse(id="abc123", input={"prompt": "hello, world"})
     webhook_caller = mock.Mock()
     pt = PredictionTracker(response, webhook_caller=webhook_caller)
+    pt.start()
 
     payload = PredictionResponse(id="abc456", input={"prompt": "hello, world"})
 
