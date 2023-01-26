@@ -30,9 +30,9 @@ signal.signal(signal.SIGTERM, _die)
 
 parser = ArgumentParser()
 
-parser.add_argument("--redis-url", required=True)
-parser.add_argument("--redis-input-queue", required=True)
-parser.add_argument("--redis-consumer-id", required=True)
+parser.add_argument("--redis-url", type=str, action="append", required=True)
+parser.add_argument("--redis-input-queue", type=str, action="append", required=True)
+parser.add_argument("--redis-consumer-id", type=str, action="append", required=True)
 parser.add_argument("--predict-timeout", type=int, default=1800)
 parser.add_argument(
     "--max-failure-count",
@@ -58,14 +58,23 @@ healthchecker = Healthchecker(
 )
 healthchecker.start()
 
+if (len(args.redis_url) != len(args.redis_input_queue)) or (
+    len(args.redis_url) != len(args.redis_consumer_id)
+):
+    raise RuntimeError(
+        "Must be equal number of the arguments --redis-url, --redis-input-queue, and --redis-consumer-id"
+    )
+
+redis_configs = list(
+    zip(
+        args.redis_url,
+        args.redis_input_queue,
+        args.redis_consumer_id,
+    )
+)
+
 redis_consumer_rotator = RedisConsumerRotator(
-    redis_configs=[
-        (
-            args.redis_url,
-            args.redis_input_queue,
-            args.redis_consumer_id,
-        )
-    ],
+    redis_configs=redis_configs,
     predict_timeout=args.predict_timeout,
 )
 
