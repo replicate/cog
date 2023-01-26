@@ -247,6 +247,8 @@ class Director:
             self._record_failure()
             return
 
+        tracker.start()
+
         # Wait for any of: completion, shutdown signal. Also check to see if we
         # should cancel the running prediction, and make the appropriate HTTP
         # call if so.
