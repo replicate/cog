@@ -203,7 +203,6 @@ def test_prediction_event_handler_webhook_sender():
                 "input": {"hello": "there"},
                 "output": ["elephant", "duck"],
                 "logs": "running a prediction\nstill running\n",
-                "error": None,
                 "status": "succeeded",
                 "metrics": {"predict_time": mock.ANY},
             }
