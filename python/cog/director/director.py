@@ -38,6 +38,11 @@ POLL_INTERVAL = 0.1
 # uploads, we should likely try and reduce this to a smaller number, e.g. 5s.
 CANCEL_WAIT = 30
 
+# How long to wait for an explicit healthcheck request before aborting. Note
+# that to avoid failing prematurely this should be at least as long as the it
+# takes for the complete chain of retries configured for the Healthchecker.
+HEALTHCHECK_WAIT = 10
+
 
 class Abort(Exception):
     pass
@@ -158,6 +163,8 @@ class Director:
                 queue=self.redis_consumer.redis_input_queue,
             )
 
+            self._confirm_model_health()
+
             try:
                 message_id, message_json = self.redis_consumer.get()
             except EmptyRedisStream:
@@ -255,10 +262,10 @@ class Director:
                     log.info("received healthcheck status update", data=event)
                     if event.health != Health.HEALTHY:
                         tracker.fail("Model stopped responding during prediction.")
-                        log.error(
-                            "prediction failed: model container failed healthchecks"
+                        self._abort(
+                            "prediction failed: model container failed healthchecks",
+                            health=event.health.name,
                         )
-                        self._abort("model container no longer healthy")
                 else:
                     log.warn("received unknown event", data=event)
 
@@ -293,7 +300,6 @@ class Director:
         # and we should abort.
         if not tracker.is_complete():
             tracker.force_cancel()
-            log.error("prediction forcibly canceled")
             self._abort("prediction failed to complete after cancelation")
 
         # Keep track of runs of failures to catch the situation where the
@@ -308,6 +314,32 @@ class Director:
         else:
             log.info("prediction succeeded")
             self._record_success()
+
+    def _confirm_model_health(self):
+        self.healthchecker.request_status()
+        mark = time.perf_counter()
+
+        while time.perf_counter() - mark < HEALTHCHECK_WAIT:
+            try:
+                event = self.events.get(timeout=POLL_INTERVAL)
+            except queue.Empty:
+                continue
+
+            if not isinstance(event, HealthcheckStatus):
+                log.warn(
+                    "healthcheck confirmation: received unexpected event while waiting",
+                    data=event,
+                )
+
+            if event.health == Health.HEALTHY:
+                return
+            else:
+                self._abort("healthcheck confirmation: model container is not healthy")
+
+        self._abort(
+            "healthcheck confirmation: waited too long without response",
+            wait_seconds=HEALTHCHECK_WAIT,
+        )
 
     def _cancel_prediction(self, prediction_id):
         resp = self.cog_client.post(
@@ -333,13 +365,16 @@ class Director:
             return
         self._failure_count += 1
         if self._failure_count > self.max_failure_count:
-            self._abort(f"saw {self._failure_count} failures in a row")
+            self._abort(
+                "saw too many failures in a row", failure_count=self._failure_count
+            )
 
     def _record_success(self):
         self._failure_count = 0
 
-    def _abort(self, message=None):
+    def _abort(self, message=None, **kwds):
         self._should_exit = True
+        log.error(message, **kwds)
         raise Abort(message)
 
     def _shutdown_model(self):
