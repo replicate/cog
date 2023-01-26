@@ -46,6 +46,57 @@ def test_healthchecker():
     h.join()
 
 
+def test_healthchecker_set_interval():
+    events = queue.Queue(maxsize=64)
+    fetcher = fake_fetcher(
+        [
+            HealthcheckStatus(health=Health.UNKNOWN),
+            HealthcheckStatus(health=Health.HEALTHY, metadata={"animal": "giraffe"}),
+        ]
+    )
+
+    h = Healthchecker(events=events, fetcher=fetcher, interval=5)
+    h.start()
+
+    with pytest.raises(queue.Empty):
+        events.get(timeout=0.1)
+
+    h.set_interval(0.1)
+
+    result = events.get(timeout=1)
+
+    assert result == HealthcheckStatus(
+        health=Health.HEALTHY, metadata={"animal": "giraffe"}
+    )
+
+    h.stop()
+    h.join()
+
+
+def test_healthchecker_request_status():
+    events = queue.Queue(maxsize=64)
+    fetcher = fake_fetcher(
+        [
+            HealthcheckStatus(health=Health.UNKNOWN),
+        ]
+    )
+
+    h = Healthchecker(events=events, fetcher=fetcher)
+    h.start()
+
+    with pytest.raises(queue.Empty):
+        events.get(timeout=0.1)
+
+    h.request_status()
+
+    result = events.get(timeout=1)
+
+    assert result == HealthcheckStatus(health=Health.UNKNOWN)
+
+    h.stop()
+    h.join()
+
+
 @responses.activate
 def test_http_fetcher_ok():
     responses.add(
