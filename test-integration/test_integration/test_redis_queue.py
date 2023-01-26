@@ -15,6 +15,36 @@ DEFAULT_ENV = {
 }
 
 
+def model_running(
+    docker_image, docker_network, predict_timeout=None, report_setup_run_url=None
+):
+    args = [
+        "--redis-url=redis://redis:6379/0",
+        "--input-queue=predict-queue",
+        "--upload-url=http://upload-server:5000/upload",
+        "--consumer-id=test-worker",
+    ]
+
+    if predict_timeout is not None:
+        args.append(f"--predict-timeout={predict_timeout}")
+
+    if report_setup_run_url is not None:
+        args.append(f"--report-setup-run-url={report_setup_run_url}")
+
+    return docker_run(
+        image=docker_image,
+        interactive=True,
+        network=docker_network,
+        command=[
+            "python",
+            "-m",
+            "cog.server.redis_queue",
+            *args,
+        ],
+        env=DEFAULT_ENV,
+    )
+
+
 @pytest.fixture(scope="session")
 def httpserver_listen_address():
     if os.getenv("GITHUB_ACTIONS") == "true":
@@ -34,22 +64,7 @@ def test_queue_worker_files(
     with open(upload_server / "input.txt", "w") as f:
         f.write("test")
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "--redis-url=redis://redis:6379/0",
-            "--input-queue=predict-queue",
-            "--upload-url=http://upload-server:5000/upload",
-            "--consumer-id=test-worker",
-            "--model-id=model_id",
-        ],
-        env=DEFAULT_ENV,
-    ):
+    with model_running(docker_image, docker_network):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
             "localhost", "host.docker.internal"
@@ -148,24 +163,7 @@ def test_queue_worker_yielding_file(
     with open(upload_server / "input.txt", "w") as f:
         f.write("test")
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "redis",
-            "6379",
-            "predict-queue",
-            "http://upload-server:5000/upload",
-            "test-worker",
-            "model_id",
-            "logs",
-        ],
-        env=DEFAULT_ENV,
-    ):
+    with model_running(docker_image, docker_network):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
             "localhost", "host.docker.internal"
@@ -301,24 +299,7 @@ def test_queue_worker_yielding(docker_network, docker_image, redis_client, https
     project_dir = Path(__file__).parent / "fixtures/yielding-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "redis",
-            "6379",
-            "predict-queue",
-            "",
-            "test-worker",
-            "model_id",
-            "logs",
-        ],
-        env=DEFAULT_ENV,
-    ):
+    with model_running(docker_image, docker_network):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
             "localhost", "host.docker.internal"
@@ -405,24 +386,7 @@ def test_queue_worker_error(docker_network, docker_image, redis_client, httpserv
     project_dir = Path(__file__).parent / "fixtures/failing-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "redis",
-            "6379",
-            "predict-queue",
-            "",
-            "test-worker",
-            "model_id",
-            "logs",
-        ],
-        env=DEFAULT_ENV,
-    ):
+    with model_running(docker_image, docker_network):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
             "localhost", "host.docker.internal"
@@ -518,24 +482,7 @@ def test_queue_worker_error_after_output(
     project_dir = Path(__file__).parent / "fixtures/failing-after-output-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "redis",
-            "6379",
-            "predict-queue",
-            "",
-            "test-worker",
-            "model_id",
-            "logs",
-        ],
-        env=DEFAULT_ENV,
-    ):
+    with model_running(docker_image, docker_network):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
             "localhost", "host.docker.internal"
@@ -665,24 +612,7 @@ def test_queue_worker_unhandled_error(
     project_dir = Path(__file__).parent / "fixtures/unhandled-error-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "redis",
-            "6379",
-            "predict-queue",
-            "",
-            "test-worker",
-            "model_id",
-            "logs",
-        ],
-        env=DEFAULT_ENV,
-    ):
+    with model_running(docker_image, docker_network):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
             "localhost", "host.docker.internal"
@@ -778,24 +708,7 @@ def test_queue_worker_invalid_input(
     project_dir = Path(__file__).parent / "fixtures/int-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "redis",
-            "6379",
-            "predict-queue",
-            "",
-            "test-worker",
-            "model_id",
-            "logs",
-        ],
-        env=DEFAULT_ENV,
-    ):
+    with model_running(docker_image, docker_network):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
             "localhost", "host.docker.internal"
@@ -853,24 +766,7 @@ def test_queue_worker_logging(docker_network, docker_image, redis_client, httpse
     project_dir = Path(__file__).parent / "fixtures/logging-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "redis",
-            "6379",
-            "predict-queue",
-            "",
-            "test-worker",
-            "model_id",
-            "logs",
-        ],
-        env=DEFAULT_ENV,
-    ):
+    with model_running(docker_image, docker_network):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
             "localhost", "host.docker.internal"
@@ -1004,23 +900,7 @@ def test_queue_worker_timeout(docker_network, docker_image, redis_client, httpse
     project_dir = Path(__file__).parent / "fixtures/timeout-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "--redis-url=redis://redis:6379/0",
-            "--input-queue=predict-queue",
-            "--upload-url=",
-            "--consumer-id=test-worker",
-            "--model-id=model_id",
-            "--predict-timeout=2",
-        ],
-        env=DEFAULT_ENV,
-    ):
+    with model_running(docker_image, docker_network, predict_timeout=2):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
             "localhost", "host.docker.internal"
@@ -1204,25 +1084,7 @@ def test_queue_worker_yielding_timeout(
     project_dir = Path(__file__).parent / "fixtures/yielding-timeout-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "redis",
-            "6379",
-            "predict-queue",
-            "",
-            "test-worker",
-            "model_id",
-            "logs",
-            "2",  # timeout
-        ],
-        env=DEFAULT_ENV,
-    ):
+    with model_running(docker_image, docker_network, predict_timeout=2):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
             "localhost", "host.docker.internal"
@@ -1406,24 +1268,7 @@ def test_queue_worker_complex_output(
     project_dir = Path(__file__).parent / "fixtures/complex-output-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "redis",
-            "6379",
-            "predict-queue",
-            "",
-            "test-worker",
-            "model_id",
-            "logs",
-        ],
-        env=DEFAULT_ENV,
-    ):
+    with model_running(docker_image, docker_network):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
             "localhost", "host.docker.internal"
@@ -1504,24 +1349,7 @@ def test_queue_worker_yielding_list_of_complex_output(
     )
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "redis",
-            "6379",
-            "predict-queue",
-            "http://upload-server:5000/upload",
-            "test-worker",
-            "model_id",
-            "logs",
-        ],
-        env=DEFAULT_ENV,
-    ):
+    with model_running(docker_image, docker_network):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
             "localhost", "host.docker.internal"
@@ -1617,24 +1445,7 @@ def test_queue_worker_setup(docker_network, docker_image, redis_client, httpserv
     project_dir = Path(__file__).parent / "fixtures/long-setup-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "redis",
-            "6379",
-            "predict-queue",
-            "",
-            "test-worker",
-            "model_id",
-            "logs",
-        ],
-        env=DEFAULT_ENV,
-    ):
+    with model_running(docker_image, docker_network):
         httpserver.expect_request("/webhook", method="POST")
         redis_client.xgroup_create(
             mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
@@ -1706,24 +1517,7 @@ def test_queue_worker_webhook_retries(
     project_dir = Path(__file__).parent / "fixtures/int-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "redis",
-            "6379",
-            "predict-queue",
-            "",
-            "test-worker",
-            "model_id",
-            "logs",
-        ],
-        env=DEFAULT_ENV,
-    ):
+    with model_running(docker_image, docker_network):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
             "localhost", "host.docker.internal"
@@ -1817,24 +1611,7 @@ def test_queue_worker_redis_responses(docker_network, docker_image, redis_client
     project_dir = Path(__file__).parent / "fixtures/int-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "redis",
-            "6379",
-            "predict-queue",
-            "",
-            "test-worker",
-            "model_id",
-            "logs",
-        ],
-        env=DEFAULT_ENV,
-    ):
+    with model_running(docker_image, docker_network):
         redis_client.xgroup_create(
             mkstream=True, groupname="predict-queue", name="predict-queue", id="$"
         )
@@ -1884,24 +1661,7 @@ def test_queue_worker_cancel(docker_network, docker_image, redis_client, httpser
     project_dir = Path(__file__).parent / "fixtures/timeout-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "redis",
-            "6379",
-            "predict-queue",
-            "",
-            "test-worker",
-            "model_id",
-            "logs",
-        ],
-        env=DEFAULT_ENV,
-    ):
+    with model_running(docker_image, docker_network):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
             "localhost", "host.docker.internal"
@@ -1994,20 +1754,8 @@ def test_queue_worker_report_setup_run_success(
         "localhost", "host.docker.internal"
     )
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "--input-queue=predict-queue",
-            "--redis-host=redis",
-            "--redis-port=6379",
-            f"--report-setup-run-url={report_setup_run_url}",
-        ],
-        env=DEFAULT_ENV,
+    with model_running(
+        docker_image, docker_network, report_setup_run_url=report_setup_run_url
     ):
         with httpserver.wait(timeout=15) as waiting:
             pass
@@ -2043,19 +1791,8 @@ def test_queue_worker_report_setup_run_failure(
         "localhost", "host.docker.internal"
     )
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "--input-queue=predict-queue",
-            "--redis-url=redis://redis:6379/0",
-            f"--report-setup-run-url={report_setup_run_url}",
-        ],
-        env=DEFAULT_ENV,
+    with model_running(
+        docker_image, docker_network, report_setup_run_url=report_setup_run_url
     ):
         with httpserver.wait(timeout=15) as waiting:
             pass
@@ -2087,20 +1824,7 @@ def test_queue_worker_webhook_events_filter(
     project_dir = Path(__file__).parent / "fixtures/logging-project"
     subprocess.run(["cog", "build", "-t", docker_image], check=True, cwd=project_dir)
 
-    with docker_run(
-        image=docker_image,
-        interactive=True,
-        network=docker_network,
-        command=[
-            "python",
-            "-m",
-            "cog.server.redis_queue",
-            "--redis-url=redis://redis:6379/0",
-            "--input-queue=predict-queue",
-            "--consumer-id=test-worker",
-        ],
-        env=DEFAULT_ENV,
-    ):
+    with model_running(docker_image, docker_network):
         predict_id = random_string(10)
         webhook_url = httpserver.url_for("/webhook").replace(
             "localhost", "host.docker.internal"
