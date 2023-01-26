@@ -63,7 +63,7 @@ class PredictionResponse(PredictionBaseModel):
     started_at: t.Optional[datetime]
     completed_at: t.Optional[datetime]
 
-    logs: t.Optional[str]
+    logs: str = ""
     error: t.Optional[str]
     status: t.Optional[Status]
 
