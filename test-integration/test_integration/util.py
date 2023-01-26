@@ -73,6 +73,7 @@ def docker_run(
         cmd += command
     try:
         subprocess.Popen(cmd)
+        time.sleep(1)
         yield
     finally:
         subprocess.Popen(["docker", "rm", "--force", name]).wait()
