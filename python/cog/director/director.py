@@ -15,7 +15,7 @@ from ..server.webhook import requests_session, webhook_caller
 from .eventtypes import Health, HealthcheckStatus, Webhook
 from .healthchecker import Healthchecker
 from .prediction_tracker import PredictionTracker
-from .redis import EmptyRedisStream, RedisConsumer
+from .redis import EmptyRedisStream, RedisConsumerRotator
 
 log = structlog.get_logger(__name__)
 
@@ -48,14 +48,14 @@ class Director:
         self,
         events: queue.Queue,
         healthchecker: Healthchecker,
-        redis_consumer: RedisConsumer,
+        redis_consumer_rotator: RedisConsumerRotator,
         predict_timeout: int,
         max_failure_count: int,
         report_setup_run_url: str,
     ):
         self.events = events
         self.healthchecker = healthchecker
-        self.redis_consumer = redis_consumer
+        self.redis_consumer_rotator = redis_consumer_rotator
         self.predict_timeout = predict_timeout
         self.max_failure_count = max_failure_count
         self.report_setup_run_url = report_setup_run_url
@@ -153,15 +153,18 @@ class Director:
 
     def _loop(self) -> None:
         while not self._should_exit:
+            self.redis_consumer_rotator.rotate()
+            redis_consumer = self.redis_consumer_rotator.get_current()
+
             structlog.contextvars.clear_contextvars()
             structlog.contextvars.bind_contextvars(
-                queue=self.redis_consumer.redis_input_queue,
+                queue=redis_consumer.redis_input_queue,
             )
 
             self._confirm_model_health()
 
             try:
-                message_id, message_json = self.redis_consumer.get()
+                message_id, message_json = redis_consumer.get()
             except EmptyRedisStream:
                 continue
             except Exception:
@@ -181,7 +184,7 @@ class Director:
             finally:
                 # See the comment in RedisConsumer.get to understand why we ack
                 # even when an exception is thrown while handling a message.
-                self.redis_consumer.ack(message_id)
+                redis_consumer.ack(message_id)
                 log.info("acked message")
 
     def _handle_message(self, message_id: str, message_json: str) -> None:
@@ -194,7 +197,9 @@ class Director:
         )
 
         log.info("running prediction")
-        should_cancel = self.redis_consumer.checker(message.get("cancel_key"))
+        should_cancel = self.redis_consumer_rotator.get_current().checker(
+            message.get("cancel_key")
+        )
 
         # Tracker is tied to a single prediction, and deliberately only exists
         # within this method in an attempt to eliminate the possibility that we
