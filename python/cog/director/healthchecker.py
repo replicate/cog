@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, Optional
 
 import requests
 import structlog
+from attrs import define
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
@@ -12,24 +13,25 @@ from .eventtypes import Health, HealthcheckStatus
 
 log = structlog.get_logger(__name__)
 
-# How often to healthcheck when state is unknown
-UNKNOWN_POLL_INTERVAL = 0.1
-
-# How often to healthcheck when state is known
-POLL_INTERVAL = 5
+# How often to healthcheck initially
+DEFAULT_POLL_INTERVAL = 0.1
 
 
 class Healthchecker:
     def __init__(
-        self, *, events: queue.Queue, fetcher: Callable[[], HealthcheckStatus]
+        self,
+        *,
+        events: queue.Queue,
+        fetcher: Callable[[], HealthcheckStatus],
+        interval: float = DEFAULT_POLL_INTERVAL,
     ):
         self._events = events
         self._fetch = fetcher
 
         self._thread = None
-        self._should_exit = threading.Event()
+        self._interval = interval
+        self._control = queue.Queue()
 
-        self._last_check = time.perf_counter()
         self._state = HealthcheckStatus(health=Health.UNKNOWN)
 
     def start(self) -> None:
@@ -43,36 +45,55 @@ class Healthchecker:
         """
         Trigger the termination of the healthcheck thread.
         """
-        self._should_exit.set()
+        self._control.put(_Stop())
+
+    def set_interval(self, interval: float) -> None:
+        """
+        Change the polling interval.
+        """
+        self._control.put(_SetInterval(value=interval))
+
+    def request_status(self) -> None:
+        """
+        Request an unconditional status update.
+        """
+        self._control.put(_RequestStatus())
 
     def join(self) -> None:
         if self._thread is not None:
             self._thread.join()
 
     def _run(self) -> None:
-        while not self._should_exit.is_set():
-            if self._check_due():
-                self._set_state(self._fetch())
-                self._last_check = time.perf_counter()
-            else:
-                time.sleep(min(POLL_INTERVAL, UNKNOWN_POLL_INTERVAL))
+        while True:
+            try:
+                msg = self._control.get(timeout=self._interval)
+            except queue.Empty:
+                self._check()
+                continue
 
-    def _set_state(self, state: HealthcheckStatus) -> None:
-        if self._state == state:
+            if isinstance(msg, _Stop):
+                break
+            elif isinstance(msg, _SetInterval):
+                self._interval = msg.value
+            elif isinstance(msg, _RequestStatus):
+                self._check(force_update=True)
+            else:
+                log.warn("unknown message on control queue", msg=msg)
+
+    def _check(self, force_update: bool = False) -> None:
+        state = self._fetch()
+
+        if self._state != state:
+            log.debug("healthchecker status changed", state=state)
+        elif not force_update:
             return
+
         self._state = state
-        log.debug("healthchecker status changed", state=state)
+
         try:
             self._events.put(self._state, timeout=0.1)
         except queue.Full:
             log.warn("failed to enqueue healthcheck status change: queue full")
-
-    def _check_due(self) -> bool:
-        last_check_delta = time.perf_counter() - self._last_check
-        if self._state.health == Health.UNKNOWN:
-            return last_check_delta > UNKNOWN_POLL_INTERVAL
-        else:
-            return last_check_delta > POLL_INTERVAL
 
 
 def http_fetcher(url: str):
@@ -130,3 +151,18 @@ def _state_from_response(resp: requests.Response) -> HealthcheckStatus:
         return HealthcheckStatus(health=Health.HEALTHY, metadata=body["setup"])
 
     return HealthcheckStatus(health=Health.SETUP_FAILED, metadata=body["setup"])
+
+
+@define
+class _Stop:
+    pass
+
+
+@define
+class _RequestStatus:
+    pass
+
+
+@define
+class _SetInterval:
+    value: float

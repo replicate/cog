@@ -21,6 +21,7 @@ from .. import schema
 from ..server.probes import ProbeHelper
 from ..server.webhook import requests_session, webhook_caller
 from .eventtypes import Health, HealthcheckStatus, Webhook
+from .healthchecker import Healthchecker
 from .http import Server, create_app
 from .prediction_tracker import PredictionTracker
 from .redis import EmptyRedisStream, RedisConsumer
@@ -46,12 +47,14 @@ class Director:
     def __init__(
         self,
         events: queue.Queue,
+        healthchecker: Healthchecker,
         redis_consumer: RedisConsumer,
         predict_timeout: int,
         max_failure_count: int,
         report_setup_run_url: str,
     ):
         self.events = events
+        self.healthchecker = healthchecker
         self.redis_consumer = redis_consumer
         self.predict_timeout = predict_timeout
         self.max_failure_count = max_failure_count
@@ -141,6 +144,10 @@ class Director:
             # if setup failed, exit immediately
             if event.health == Health.SETUP_FAILED:
                 self._abort("model container failed setup")
+
+            # Now that we've run setup, let's slow down healthchecks a little
+            # bit. We don't need them to run every 100ms.
+            self.healthchecker.set_interval(5)
 
             return
 

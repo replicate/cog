@@ -67,6 +67,7 @@ redis_consumer = RedisConsumer(
 
 director = Director(
     events=events,
+    healthchecker=healthchecker,
     redis_consumer=redis_consumer,
     predict_timeout=args.predict_timeout,
     max_failure_count=args.max_failure_count,
