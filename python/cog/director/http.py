@@ -14,14 +14,14 @@ log = structlog.get_logger(__name__)
 
 
 class Server(uvicorn.Server):
-    def start(self):
+    def start(self) -> None:
         self._thread = threading.Thread(target=self.run)
         self._thread.start()
 
-    def stop(self):
+    def stop(self) -> None:
         self.should_exit = True
 
-    def join(self):
+    def join(self) -> None:
         assert self._thread is not None, "cannot terminate unstarted server"
         self._thread.join()
 

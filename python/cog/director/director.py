@@ -1,28 +1,19 @@
-import datetime
 import json
-import logging
-import os
 import queue
 import signal
-import sys
-import threading
 import time
-import traceback
-from argparse import ArgumentParser
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 import requests
 import structlog
-import uvicorn
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
 from .. import schema
 from ..server.probes import ProbeHelper
 from ..server.webhook import requests_session, webhook_caller
 from .eventtypes import Health, HealthcheckStatus, Webhook
 from .healthchecker import Healthchecker
-from .http import Server, create_app
 from .prediction_tracker import PredictionTracker
 from .redis import EmptyRedisStream, RedisConsumer
 
@@ -71,7 +62,7 @@ class Director:
 
         self._failure_count = 0
         self._should_exit = False
-        self._shutdown_hooks = []
+        self._shutdown_hooks: List[Callable] = []
 
         self.cog_client = _make_local_http_client()
         self.cog_http_base = "http://localhost:5000"
@@ -109,14 +100,14 @@ class Director:
                         "caught exception while running shutdown hook", exc_info=True
                     )
 
-    def register_shutdown_hook(self, hook: Callable):
+    def register_shutdown_hook(self, hook: Callable) -> None:
         self._shutdown_hooks.append(hook)
 
     def _handle_exit(self, signum: Any, frame: Any) -> None:
         log.warn("received termination signal", signal=signal.Signals(signum).name)
         self._should_exit = True
 
-    def _setup(self):
+    def _setup(self) -> None:
         mark = time.perf_counter()
 
         while not self._should_exit:
@@ -160,7 +151,7 @@ class Director:
 
             return
 
-    def _loop(self):
+    def _loop(self) -> None:
         while not self._should_exit:
             structlog.contextvars.clear_contextvars()
             structlog.contextvars.bind_contextvars(
@@ -193,7 +184,7 @@ class Director:
                 self.redis_consumer.ack(message_id)
                 log.info("acked message")
 
-    def _handle_message(self, message_id, message_json) -> None:
+    def _handle_message(self, message_id: str, message_json: str) -> None:
         message = json.loads(message_json)
         prediction_id = message["id"]
 
@@ -321,7 +312,7 @@ class Director:
             log.info("prediction succeeded")
             self._record_success()
 
-    def _confirm_model_health(self):
+    def _confirm_model_health(self) -> None:
         self.healthchecker.request_status()
         mark = time.perf_counter()
 
@@ -348,14 +339,14 @@ class Director:
             wait_seconds=HEALTHCHECK_WAIT,
         )
 
-    def _cancel_prediction(self, prediction_id):
+    def _cancel_prediction(self, prediction_id: Any) -> None:
         resp = self.cog_client.post(
             self.cog_http_base + "/predictions/" + prediction_id + "/cancel",
             timeout=1,
         )
         resp.raise_for_status()
 
-    def _report_setup_run(self, payload):
+    def _report_setup_run(self, payload: Optional[Dict[str, Any]]) -> None:
         if not self.report_setup_run_url:
             return
 
@@ -367,7 +358,7 @@ class Director:
         except requests.exceptions.RequestException:
             log.warn("failed to report setup run", exc_info=True)
 
-    def _record_failure(self):
+    def _record_failure(self) -> None:
         if not self.max_failure_count:
             return
         self._failure_count += 1
@@ -376,15 +367,15 @@ class Director:
                 "saw too many failures in a row", failure_count=self._failure_count
             )
 
-    def _record_success(self):
+    def _record_success(self) -> None:
         self._failure_count = 0
 
-    def _abort(self, message=None, **kwds):
+    def _abort(self, message: str = None, **kwds: Any) -> None:
         self._should_exit = True
         log.error(message, **kwds)
         raise Abort(message)
 
-    def _shutdown_model(self):
+    def _shutdown_model(self) -> None:
         resp = self.cog_client.post(
             self.cog_http_base + "/shutdown",
             timeout=1,

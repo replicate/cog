@@ -1,13 +1,12 @@
 import queue
-import time
 import threading
-from typing import Any, Callable, Dict, Optional
+from typing import Callable, Optional
 
 import requests
 import structlog
 from attrs import define
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
 from .eventtypes import Health, HealthcheckStatus
 
@@ -28,9 +27,9 @@ class Healthchecker:
         self._events = events
         self._fetch = fetcher
 
-        self._thread = None
+        self._thread: Optional[threading.Thread] = None
         self._interval = interval
-        self._control = queue.Queue()
+        self._control: queue.Queue = queue.Queue()
 
         self._state = HealthcheckStatus(health=Health.UNKNOWN)
 
@@ -96,10 +95,10 @@ class Healthchecker:
             log.warn("failed to enqueue healthcheck status change: queue full")
 
 
-def http_fetcher(url: str):
+def http_fetcher(url: str) -> Callable:
     c = _make_http_client()
 
-    def _fetch():
+    def _fetch() -> HealthcheckStatus:
         try:
             resp = c.get(url, timeout=1)
         except requests.exceptions.RequestException:

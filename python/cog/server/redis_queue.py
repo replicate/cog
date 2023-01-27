@@ -1,4 +1,3 @@
-import contextlib
 import datetime
 import io
 import json
@@ -7,11 +6,9 @@ import signal
 import sys
 import time
 import traceback
-import types
 from argparse import ArgumentParser
 from mimetypes import guess_type
-from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 from urllib.parse import urlparse
 
 import redis
@@ -20,10 +17,7 @@ from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.trace import Status as TraceStatus
-from opentelemetry.trace import StatusCode
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
-from pydantic import ValidationError
 
 from ..files import guess_filename
 from ..json import upload_files
@@ -84,9 +78,7 @@ class RedisQueueWorker:
         self.tracer = trace.get_tracer("cog")
         self.probes = ProbeHelper()
 
-        sys.stderr.write(
-            f"Connected to Redis: {self.redis_url}\n"
-        )
+        sys.stderr.write(f"Connected to Redis: {self.redis_url}\n")
 
     def signal_exit(self, signum: Any, frame: Any) -> None:
         self.should_exit = True
