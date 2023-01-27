@@ -5,18 +5,18 @@ import tempfile
 import pytest
 import responses
 
-from .conftest import make_client, match, uses_predictor
+from .conftest import make_client, uses_predictor
 
 
 @uses_predictor("input_none")
-def test_no_input(client):
+def test_no_input(client, match):
     resp = client.post("/predictions")
     assert resp.status_code == 200
     assert resp.json() == match({"status": "succeeded", "output": "foobar"})
 
 
 @uses_predictor("input_none")
-def test_missing_input(client):
+def test_missing_input(client, match):
     """Check we support missing input fields for backwards compatibility"""
     resp = client.post("/predictions", json={})
     assert resp.status_code == 200
@@ -24,7 +24,7 @@ def test_missing_input(client):
 
 
 @uses_predictor("input_none")
-def test_empty_input(client):
+def test_empty_input(client, match):
     """Check we support empty input fields for backwards compatibility"""
     resp = client.post("/predictions", json={"input": {}})
     assert resp.status_code == 200
@@ -32,14 +32,14 @@ def test_empty_input(client):
 
 
 @uses_predictor("input_string")
-def test_good_str_input(client):
+def test_good_str_input(client, match):
     resp = client.post("/predictions", json={"input": {"text": "baz"}})
     assert resp.status_code == 200
     assert resp.json() == match({"status": "succeeded", "output": "baz"})
 
 
 @uses_predictor("input_integer")
-def test_good_int_input(client):
+def test_good_int_input(client, match):
     resp = client.post("/predictions", json={"input": {"num": 3}})
     assert resp.status_code == 200
     assert resp.json() == match({"output": 27, "status": "succeeded"})
@@ -64,7 +64,7 @@ def test_bad_int_input(client):
 
 
 @uses_predictor("input_integer_default")
-def test_default_int_input(client):
+def test_default_int_input(client, match):
     resp = client.post("/predictions", json={"input": {}})
     assert resp.status_code == 200
     assert resp.json() == match({"output": 25, "status": "succeeded"})
@@ -75,7 +75,7 @@ def test_default_int_input(client):
 
 
 @uses_predictor("input_file")
-def test_file_input_data_url(client):
+def test_file_input_data_url(client, match):
     resp = client.post(
         "/predictions",
         json={
@@ -90,7 +90,7 @@ def test_file_input_data_url(client):
 
 
 @uses_predictor("input_file")
-def test_file_input_with_http_url(client, httpserver):
+def test_file_input_with_http_url(client, httpserver, match):
     # Use a real HTTP server rather than responses as file fetching occurs on
     # the other side of the Worker process boundary.
     httpserver.expect_request("/foo.txt").respond_with_data("hello")
@@ -102,7 +102,7 @@ def test_file_input_with_http_url(client, httpserver):
 
 
 @uses_predictor("input_path")
-def test_path_input_data_url(client):
+def test_path_input_data_url(client, match):
     resp = client.post(
         "/predictions",
         json={
@@ -117,7 +117,7 @@ def test_path_input_data_url(client):
 
 
 @uses_predictor("input_path_2")
-def test_path_temporary_files_are_removed(client):
+def test_path_temporary_files_are_removed(client, match):
     resp = client.post(
         "/predictions",
         json={
@@ -133,7 +133,7 @@ def test_path_temporary_files_are_removed(client):
 
 @responses.activate
 @uses_predictor("input_path")
-def test_path_input_with_http_url(client):
+def test_path_input_with_http_url(client, match):
     responses.add(responses.GET, "http://example.com/foo.txt", body="hello")
     resp = client.post(
         "/predictions",
@@ -152,7 +152,7 @@ def test_file_bad_input(client):
 
 
 @uses_predictor("input_multiple")
-def test_multiple_arguments(client):
+def test_multiple_arguments(client, match):
     resp = client.post(
         "/predictions",
         json={

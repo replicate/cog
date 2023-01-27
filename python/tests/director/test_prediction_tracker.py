@@ -6,7 +6,18 @@ from cog.director.prediction_tracker import PredictionTracker, PredictionMismatc
 from cog.schema import PredictionResponse
 
 
-def test_prediction_tracker_basic():
+class NotNoneMatcher:
+    def __eq__(self, other):
+        return other is not None
+
+    def __repr__(self):
+        return "<not None>"
+
+
+NotNone = NotNoneMatcher()
+
+
+def test_prediction_tracker_basic(match):
     response = PredictionResponse(id="abc123", input={"prompt": "hello, world"})
     webhook_caller = mock.Mock()
     pt = PredictionTracker(response, webhook_caller=webhook_caller)
@@ -15,14 +26,18 @@ def test_prediction_tracker_basic():
     payload = response.copy(update={"logs": "running prediction"})
     pt.update_from_webhook_payload(payload)
 
-    webhook_caller.assert_called_once()
-    (webhook_payload,) = webhook_caller.call_args.args
-    assert webhook_payload["logs"] == "running prediction"
-    assert webhook_payload["started_at"] is not None
-    assert webhook_payload["completed_at"] is None
+    webhook_caller.assert_called_once_with(
+        match(
+            {
+                "logs": "running prediction",
+                "started_at": NotNone,
+                "completed_at": None,
+            }
+        )
+    )
 
 
-def test_prediction_tracker_adjusts_status_for_cancelations():
+def test_prediction_tracker_adjusts_status_for_cancelations(match):
     response = PredictionResponse(id="abc123", input={"prompt": "hello, world"})
     webhook_caller = mock.Mock()
     pt = PredictionTracker(response, webhook_caller=webhook_caller)
@@ -32,10 +47,14 @@ def test_prediction_tracker_adjusts_status_for_cancelations():
     payload = response.copy(update={"status": "canceled"})
     pt.update_from_webhook_payload(payload)
 
-    webhook_caller.assert_called_once()
-    (webhook_payload,) = webhook_caller.call_args.args
-    assert webhook_payload["status"] == "failed"
-    assert webhook_payload["error"] == "Prediction timed out"
+    webhook_caller.assert_called_once_with(
+        match(
+            {
+                "status": "failed",
+                "error": "Prediction timed out",
+            }
+        )
+    )
 
 
 def test_prediction_tracker_is_complete():
@@ -53,7 +72,7 @@ def test_prediction_tracker_is_complete():
     assert pt.is_complete()
 
 
-def test_prediction_tracker_completion_timestamps():
+def test_prediction_tracker_completion_timestamps(match):
     response = PredictionResponse(id="abc123", input={"prompt": "hello, world"})
     webhook_caller = mock.Mock()
     pt = PredictionTracker(response, webhook_caller=webhook_caller)
@@ -62,14 +81,20 @@ def test_prediction_tracker_completion_timestamps():
     payload = response.copy(update={"status": "succeeded"})
     pt.update_from_webhook_payload(payload)
 
-    webhook_caller.assert_called_once()
-    (webhook_payload,) = webhook_caller.call_args.args
-    assert webhook_payload["started_at"] is not None
-    assert webhook_payload["completed_at"] is not None
-    assert webhook_payload["metrics"]["predict_time"] is not None
+    webhook_caller.assert_called_once_with(
+        match(
+            {
+                "started_at": NotNone,
+                "completed_at": NotNone,
+                "metrics": {
+                    "predict_time": NotNone,
+                },
+            }
+        )
+    )
 
 
-def test_prediction_tracker_fail():
+def test_prediction_tracker_fail(match):
     response = PredictionResponse(id="abc123", input={"prompt": "hello, world"})
     webhook_caller = mock.Mock()
     pt = PredictionTracker(response, webhook_caller=webhook_caller)
@@ -77,12 +102,16 @@ def test_prediction_tracker_fail():
 
     pt.fail("something went wrong")
 
-    webhook_caller.assert_called_once()
-    (webhook_payload,) = webhook_caller.call_args.args
-    assert webhook_payload["status"] == "failed"
-    assert webhook_payload["error"] == "something went wrong"
-    assert webhook_payload["started_at"] is not None
-    assert webhook_payload["completed_at"] is not None
+    webhook_caller.assert_called_once_with(
+        match(
+            {
+                "status": "failed",
+                "error": "something went wrong",
+                "started_at": NotNone,
+                "completed_at": NotNone,
+            }
+        )
+    )
 
 
 def test_prediction_tracker_wrong_id():

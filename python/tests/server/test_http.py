@@ -9,11 +9,11 @@ from PIL import Image
 import pytest
 import unittest.mock as mock
 
-from .conftest import make_client, match, uses_predictor
+from .conftest import make_client, uses_predictor
 
 
 @uses_predictor("setup")
-def test_setup_is_called(client):
+def test_setup_is_called(client, match):
     resp = client.post("/predictions")
     assert resp.status_code == 200
     assert resp.json() == match({"status": "succeeded", "output": "bar"})
@@ -283,7 +283,7 @@ def test_openapi_specification_with_int_choices(client):
 
 
 @uses_predictor("yield_strings")
-def test_yielding_strings_from_generator_predictors(client):
+def test_yielding_strings_from_generator_predictors(client, match):
     resp = client.post("/predictions")
     assert resp.status_code == 200
     assert resp.json() == match(
@@ -292,7 +292,7 @@ def test_yielding_strings_from_generator_predictors(client):
 
 
 @uses_predictor("yield_strings_file_input")
-def test_yielding_strings_from_generator_predictors_file_input(client):
+def test_yielding_strings_from_generator_predictors_file_input(client, match):
     resp = client.post(
         "/predictions",
         json={"input": {"file": "data:text/plain; charset=utf-8;base64,aGVsbG8="}},
@@ -327,7 +327,7 @@ def test_yielding_files_from_generator_predictors(client):
 # exhaustive tests of webhooks, consider adding them to test_runner.py
 @responses.activate
 @uses_predictor("input_string")
-def test_asynchronous_prediction_endpoint(client):
+def test_asynchronous_prediction_endpoint(client, match):
     webhook = responses.post(
         "https://example.com/webhook",
         match=[

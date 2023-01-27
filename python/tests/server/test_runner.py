@@ -16,9 +16,6 @@ from cog.server.eventtypes import (
 from cog.server.runner import PredictionEventHandler, PredictionRunner, predict
 
 
-from .conftest import match
-
-
 def _fixture_path(name):
     test_dir = os.path.dirname(os.path.realpath(__file__))
     return os.path.join(test_dir, f"fixtures/{name}.py") + ":Predictor"
@@ -182,7 +179,7 @@ def test_prediction_event_handler():
     assert isinstance(p.completed_at, datetime)
 
 
-def test_prediction_event_handler_webhook_sender():
+def test_prediction_event_handler_webhook_sender(match):
     s = mock.Mock()
     p = PredictionResponse(input={"hello": "there"})
     h = PredictionEventHandler(p, webhook_sender=s)
@@ -211,7 +208,7 @@ def test_prediction_event_handler_webhook_sender():
     )
 
 
-def test_prediction_event_handler_webhook_sender_intermediate():
+def test_prediction_event_handler_webhook_sender_intermediate(match):
     s = mock.Mock()
     p = PredictionResponse(input={"hello": "there"})
     h = PredictionEventHandler(p, webhook_sender=s)
