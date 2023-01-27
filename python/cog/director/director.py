@@ -370,7 +370,7 @@ class Director:
     def _record_success(self) -> None:
         self._failure_count = 0
 
-    def _abort(self, message: str = None, **kwds: Any) -> None:
+    def _abort(self, message: str, **kwds: Any) -> None:
         self._should_exit = True
         log.error(message, **kwds)
         raise Abort(message)
