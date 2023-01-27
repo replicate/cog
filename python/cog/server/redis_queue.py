@@ -402,7 +402,7 @@ class RedisQueueWorker:
             resp = requests.put(
                 ensure_trailing_slash(self.upload_url) + filename,
                 fh,  # type: ignore
-                headers={"Content-type": content_type},
+                headers={"Content-type": content_type} if content_type else None,
             )
             resp.raise_for_status()
 
