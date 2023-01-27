@@ -33,6 +33,10 @@ log = structlog.get_logger(__name__)
 # keyword argument for Worker.predict(...) in the redis queue worker code.
 POLL_INTERVAL = 0.1
 
+# How long it's acceptable to wait for a prediction create request to respond,
+# in seconds.
+PREDICTION_CREATE_TIMEOUT = 5
+
 # How long to wait for a cancelation to complete, in seconds.
 # TODO: when the model container is no longer responsible for e.g. file
 # uploads, we should likely try and reduce this to a smaller number, e.g. 5s.
@@ -218,7 +222,7 @@ class Director:
                 self.cog_http_base + "/predictions",
                 json=message,
                 headers={"Prefer": "respond-async"},
-                timeout=2,
+                timeout=PREDICTION_CREATE_TIMEOUT,
             )
         except requests.exceptions.RequestException:
             tracker.fail("Unknown error handling prediction.")
