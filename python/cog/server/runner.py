@@ -70,7 +70,9 @@ class PredictionRunner:
 
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
     # no longer have to support Python 3.8
-    def predict(self, prediction: schema.PredictionRequest) -> AsyncResult:
+    def predict(
+        self, prediction: schema.PredictionRequest, upload: bool = True
+    ) -> AsyncResult:
         # It's the caller's responsibility to not call us if we're busy.
         assert not self.is_busy()
 
@@ -80,7 +82,8 @@ class PredictionRunner:
         structlog.contextvars.bind_contextvars(prediction_id=prediction.id)
 
         self._should_cancel.clear()
-        event_handler = create_event_handler(prediction, upload_url=self._upload_url)
+        upload_url = self._upload_url if upload else None
+        event_handler = create_event_handler(prediction, upload_url=upload_url)
 
         def cleanup(_=None):
             if hasattr(prediction.input, "cleanup"):

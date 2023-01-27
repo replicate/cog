@@ -5,12 +5,13 @@ import tempfile
 from typing import Iterator, List
 
 import numpy as np
+import pytest
 import responses
 from PIL import Image
 from responses.matchers import multipart_matcher
 
 
-from .conftest import uses_predictor
+from .conftest import uses_predictor, uses_predictor_with_client_options
 
 
 @uses_predictor("output_wrong_type")
@@ -34,6 +35,31 @@ def test_output_file(client, match):
 @responses.activate
 @uses_predictor("output_file_named")
 def test_output_file_to_http(client, match):
+    responses.add(
+        responses.PUT,
+        "http://example.com/upload/foo.txt",
+        status=201,
+        match=[multipart_matcher({"file": ("foo.txt", b"hello")})],
+    )
+
+    res = client.post(
+        "/predictions", json={"output_file_prefix": "http://example.com/upload/"}
+    )
+    assert res.json() == match(
+        {
+            "status": "succeeded",
+            "output": "http://example.com/upload/foo.txt",
+        }
+    )
+    assert res.status_code == 200
+
+
+@responses.activate
+@uses_predictor_with_client_options("output_file_named", upload_url="https://dontuseme")
+def test_output_file_to_http_with_upload_url_specified(client, match):
+    # Ensure that even when --upload-url is provided on the command line,
+    # uploads continue to go to the specifed output_file_prefix, for backwards
+    # compatibility.
     responses.add(
         responses.PUT,
         "http://example.com/upload/foo.txt",
