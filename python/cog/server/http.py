@@ -127,10 +127,15 @@ def create_app(
         if request.input is None:
             request.input = {}
 
-        initial_response, async_result = runner.predict(request)
-
         # TODO: spec-compliant parsing of Prefer header.
-        if prefer == "respond-async":
+        respond_async = prefer == "respond-async"
+
+        # For now, we only ask PredictionRunner to handle file uploads for
+        # async predictions. This is unfortunate but required to ensure
+        # backwards-compatible behaviour for synchronous predictions.
+        initial_response, async_result = runner.predict(request, upload=respond_async)
+
+        if respond_async:
             return JSONResponse(jsonable_encoder(initial_response), status_code=202)
 
         try:
