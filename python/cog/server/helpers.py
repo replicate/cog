@@ -1,9 +1,7 @@
 import io
 import os
 import selectors
-import sys
 import threading
-import time
 import uuid
 from typing import Callable, Optional, Sequence, TextIO
 

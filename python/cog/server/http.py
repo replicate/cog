@@ -7,30 +7,26 @@ import threading
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional, Union
 
-import pydantic
 import structlog
-
-# https://github.com/encode/uvicorn/issues/998
-import uvicorn  # type: ignore
+import uvicorn
 from anyio import CapacityLimiter
 from anyio.lowlevel import RunVar
 from fastapi import Body, FastAPI, Header, HTTPException, Path
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
+from .. import schema
 from ..files import upload_file
 from ..json import upload_files
 from ..logging import setup_logging
 from ..predictor import (
-    BasePredictor,
     get_input_type,
     get_output_type,
     get_predictor_ref,
     load_config,
     load_predictor_from_ref,
 )
-from .. import schema
 from .probes import ProbeHelper
 from .runner import PredictionRunner
 
@@ -155,7 +151,7 @@ def create_app(
         return JSONResponse(content=encoded_response)
 
     @app.post("/predictions/{prediction_id}/cancel")
-    def cancel(prediction_id: str = Path(..., title="Prediction ID")):
+    def cancel(prediction_id: str = Path(..., title="Prediction ID")) -> JSONResponse:
         """
         Cancel a running prediction
         """
@@ -166,7 +162,7 @@ def create_app(
             return JSONResponse({}, status_code=404)
 
     @app.post("/shutdown")
-    def shutdown():
+    def shutdown() -> JSONResponse:
         log.info("shutdown requested via http")
         shutdown_event.set()
         return JSONResponse({}, status_code=200)
@@ -174,7 +170,7 @@ def create_app(
     return app
 
 
-def _log_invalid_output(error):
+def _log_invalid_output(error: Any) -> None:
     log.error(
         textwrap.dedent(
             f"""\
@@ -192,11 +188,11 @@ def _log_invalid_output(error):
 
 
 class Server(uvicorn.Server):
-    def start(self):
+    def start(self) -> None:
         self._thread = threading.Thread(target=self.run)
         self._thread.start()
 
-    def stop(self):
+    def stop(self) -> None:
         log.info("stopping server")
         self.should_exit = True
 
@@ -219,7 +215,7 @@ def signal_ignore(signum: Any, frame: Any) -> None:
 
 
 def signal_set_event(event: threading.Event) -> Callable:
-    def _signal_set_event(signum: Any, frame: Any):
+    def _signal_set_event(signum: Any, frame: Any) -> None:
         event.set()
 
     return _signal_set_event
@@ -276,7 +272,7 @@ if __name__ == "__main__":
     )
 
     port = int(os.getenv("PORT", 5000))
-    config = uvicorn.Config(
+    server_config = uvicorn.Config(
         app,
         host="0.0.0.0",
         port=port,
@@ -290,7 +286,7 @@ if __name__ == "__main__":
     else:
         signal.signal(signal.SIGTERM, signal_set_event(shutdown_event))
 
-    s = Server(config=config)
+    s = Server(config=server_config)
     s.start()
 
     try:

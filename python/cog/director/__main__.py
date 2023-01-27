@@ -1,6 +1,6 @@
 import logging
-import queue
 import os
+import queue
 import signal
 import sys
 from argparse import ArgumentParser
@@ -10,10 +10,10 @@ import structlog
 import uvicorn
 
 from ..logging import setup_logging
-from .redis import RedisConsumer
 from .director import Director
 from .healthchecker import Healthchecker, http_fetcher
 from .http import Server, create_app
+from .redis import RedisConsumer
 
 log = structlog.get_logger("cog.director")
 
@@ -47,7 +47,7 @@ setup_logging(log_level=log_level)
 
 args = parser.parse_args()
 
-events = queue.Queue(maxsize=128)
+events: queue.Queue = queue.Queue(maxsize=128)
 
 config = uvicorn.Config(create_app(events=events), port=4900, log_config=None)
 server = Server(config)

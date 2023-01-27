@@ -1,24 +1,21 @@
 import io
-import os
-import signal
-import sys
 import threading
 import traceback
 from datetime import datetime, timezone
-from fastapi.encoders import jsonable_encoder
-from multiprocessing.pool import ThreadPool, AsyncResult
-from typing import Any, Callable, Dict, Optional, Tuple
+from multiprocessing.pool import AsyncResult, ThreadPool
+from typing import Any, Callable, Optional, Tuple
 
 import requests
 import structlog
+from fastapi.encoders import jsonable_encoder
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
 from .. import schema
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
-from .webhook import webhook_caller, webhook_caller_filtered
+from .webhook import webhook_caller_filtered
 from .worker import Worker
 
 log = structlog.get_logger("cog.server.runner")
@@ -36,7 +33,7 @@ class PredictionRunner:
         shutdown_event: threading.Event,
         upload_url: Optional[str] = None,
     ):
-        self.current_prediction_id = None
+        self.current_prediction_id: Optional[str] = None
 
         self._thread = None
         self._threadpool = ThreadPool(processes=1)
@@ -72,7 +69,7 @@ class PredictionRunner:
     # no longer have to support Python 3.8
     def predict(
         self, prediction: schema.PredictionRequest, upload: bool = True
-    ) -> AsyncResult:
+    ) -> Tuple[schema.PredictionResponse, AsyncResult]:
         # It's the caller's responsibility to not call us if we're busy.
         assert not self.is_busy()
 
@@ -85,11 +82,11 @@ class PredictionRunner:
         upload_url = self._upload_url if upload else None
         event_handler = create_event_handler(prediction, upload_url=upload_url)
 
-        def cleanup(_=None):
+        def cleanup(_: Optional[Any] = None) -> None:
             if hasattr(prediction.input, "cleanup"):
                 prediction.input.cleanup()
 
-        def handle_error(error):
+        def handle_error(error: BaseException) -> None:
             # Re-raise the exception in order to more easily capture exc_info,
             # and then trigger shutdown, as we have no easy way to resume
             # worker state if an exception was thrown.
@@ -133,7 +130,9 @@ class PredictionRunner:
         self._should_cancel.set()
 
 
-def create_event_handler(prediction, upload_url: Optional[str] = None):
+def create_event_handler(
+    prediction: schema.PredictionRequest, upload_url: Optional[str] = None
+) -> "PredictionEventHandler":
     response = schema.PredictionResponse(**prediction.dict())
 
     webhook = prediction.webhook
@@ -156,10 +155,10 @@ def create_event_handler(prediction, upload_url: Optional[str] = None):
     return event_handler
 
 
-def generate_file_uploader(upload_url):
+def generate_file_uploader(upload_url: str) -> Callable:
     client = _make_file_upload_http_client()
 
-    def file_uploader(output):
+    def file_uploader(output: Any) -> Any:
         def upload_file(fh: io.IOBase) -> str:
             return put_file_to_signed_endpoint(fh, upload_url, client=client)
 
@@ -188,7 +187,7 @@ class PredictionEventHandler:
         self._send_webhook(schema.WebhookEvent.START)
 
     @property
-    def response(self):
+    def response(self) -> schema.PredictionResponse:
         return self.p
 
     def set_output(self, output: Any) -> None:

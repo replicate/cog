@@ -3,7 +3,7 @@ from typing import Any, Callable, Set
 
 import requests
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
 from ..schema import Status, WebhookEvent
 from .response_throttler import ResponseThrottler
@@ -65,7 +65,9 @@ def webhook_caller(webhook: str) -> Callable:
 
 def requests_session() -> requests.Session:
     session = requests.Session()
-    session.headers["user-agent"] = _user_agent + " " + session.headers["user-agent"]
+    session.headers["user-agent"] = (
+        _user_agent + " " + str(session.headers["user-agent"])
+    )
 
     return session
 
@@ -75,7 +77,9 @@ def requests_session_with_retries() -> requests.Session:
     # backoff. In total it'll try for up to roughly 320 seconds, providing
     # resilience through temporary networking and availability issues.
     session = requests.Session()
-    session.headers["user-agent"] = _user_agent + " " + session.headers["user-agent"]
+    session.headers["user-agent"] = (
+        _user_agent + " " + str(session.headers["user-agent"])
+    )
     adapter = HTTPAdapter(
         max_retries=Retry(
             total=12,

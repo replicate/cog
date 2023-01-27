@@ -1,5 +1,5 @@
-from typing import Any, Callable, Dict, Optional
 from enum import Enum, auto, unique
+from typing import Any, Dict, Optional
 
 from attrs import define
 
