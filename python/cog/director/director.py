@@ -332,6 +332,7 @@ class Director:
                     "healthcheck confirmation: received unexpected event while waiting",
                     data=event,
                 )
+                continue
 
             if event.health == Health.HEALTHY:
                 return
