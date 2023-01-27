@@ -61,6 +61,9 @@ class PredictionTracker:
 
     @property
     def runtime(self) -> float:
+        if self._response.started_at is None:
+            return 0
+
         now = datetime.now(tz=timezone.utc)
         return (now - self._response.started_at).total_seconds()
 
