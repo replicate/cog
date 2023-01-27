@@ -90,14 +90,16 @@ class PredictionTracker:
             return
         if self._response.completed_at:
             return
+
         if schema.Status.is_terminal(self._response.status):
             self._response.completed_at = datetime.now(tz=timezone.utc)
-        if self._response.status == schema.Status.SUCCEEDED:
-            self._response.metrics = {
-                "predict_time": (
-                    self._response.completed_at - self._response.started_at
-                ).total_seconds()
-            }
+
+            if self._response.status == schema.Status.SUCCEEDED:
+                self._response.metrics = {
+                    "predict_time": (
+                        self._response.completed_at - self._response.started_at
+                    ).total_seconds()
+                }
 
     def _send_webhook(self) -> None:
         if not self._webhook_caller:
