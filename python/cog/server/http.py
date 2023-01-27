@@ -162,7 +162,7 @@ def create_app(
             return JSONResponse({}, status_code=404)
 
     @app.post("/shutdown")
-    def shutdown() -> JSONResponse:
+    def start_shutdown() -> JSONResponse:
         log.info("shutdown requested via http")
         shutdown_event.set()
         return JSONResponse({}, status_code=200)
