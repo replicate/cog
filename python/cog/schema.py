@@ -1,6 +1,6 @@
+import typing as t
 from datetime import datetime
 from enum import Enum
-import typing as t
 
 import pydantic
 
@@ -13,7 +13,7 @@ class Status(str, Enum):
     FAILED = "failed"
 
     @staticmethod
-    def is_terminal(status: "Status") -> bool:
+    def is_terminal(status: t.Optional["Status"]) -> bool:
         return status in {Status.SUCCEEDED, Status.CANCELED, Status.FAILED}
 
 

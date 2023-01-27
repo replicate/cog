@@ -1,10 +1,8 @@
-import threading
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
 from .. import schema
 from ..json import make_encodeable
-
 
 ALLOWED_FIELDS_FROM_UNTRUSTED_CONTAINER = (
     # Prediction output and output metadata
@@ -29,17 +27,17 @@ class PredictionTracker:
         self._response = response
         self._timed_out = False
 
-    def start(self):
+    def start(self) -> None:
         self._response.status = schema.Status.PROCESSING
         self._response.started_at = datetime.now(tz=timezone.utc)
 
-    def is_complete(self):
+    def is_complete(self) -> bool:
         return schema.Status.is_terminal(self._response.status)
 
-    def timed_out(self):
+    def timed_out(self) -> None:
         self._timed_out = True
 
-    def update_from_webhook_payload(self, payload: schema.PredictionResponse):
+    def update_from_webhook_payload(self, payload: schema.PredictionResponse) -> None:
         # Safety check -- only allow payloads with IDs matching self._response.
         if payload.id != self._response.id:
             raise PredictionMismatchError(
@@ -48,35 +46,35 @@ class PredictionTracker:
 
         self._update(allowed_fields(payload.dict()))
 
-    def fail(self, message):
+    def fail(self, message: Any) -> None:
         payload = {
             "status": schema.Status.FAILED,
             "error": message,
         }
         self._update(payload)
 
-    def force_cancel(self):
+    def force_cancel(self) -> None:
         payload = {
             "status": schema.Status.CANCELED,
         }
         self._update(payload)
 
     @property
-    def runtime(self):
+    def runtime(self) -> float:
         now = datetime.now(tz=timezone.utc)
         return (now - self._response.started_at).total_seconds()
 
     @property
-    def status(self):
+    def status(self) -> Optional[schema.Status]:
         return self._response.status
 
-    def _update(self, mapping: Dict[str, Any]):
+    def _update(self, mapping: Dict[str, Any]) -> None:
         self._response = self._response.copy(update=mapping)
         self._adjust_cancelation_status()
         self._set_completed_at()
         self._send_webhook()
 
-    def _adjust_cancelation_status(self):
+    def _adjust_cancelation_status(self) -> None:
         if not self._timed_out:
             return
         if self._response.status != schema.Status.CANCELED:
@@ -84,7 +82,7 @@ class PredictionTracker:
         self._response.status = schema.Status.FAILED
         self._response.error = "Prediction timed out"
 
-    def _set_completed_at(self):
+    def _set_completed_at(self) -> None:
         if not self._response.started_at:
             return
         if self._response.completed_at:
@@ -98,7 +96,7 @@ class PredictionTracker:
                 ).total_seconds()
             }
 
-    def _send_webhook(self):
+    def _send_webhook(self) -> None:
         if not self._webhook_caller:
             return
 
@@ -107,7 +105,7 @@ class PredictionTracker:
         self._webhook_caller(payload)
 
 
-def allowed_fields(payload: dict):
+def allowed_fields(payload: dict) -> dict:
     return {
         k: v for k, v in payload.items() if k in ALLOWED_FIELDS_FROM_UNTRUSTED_CONTAINER
     }
