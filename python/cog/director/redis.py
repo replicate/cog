@@ -76,25 +76,11 @@ class RedisConsumer:
 
 
 class RedisConsumerRotator:
-    def __init__(
-        self,
-        redis_configs: List[Tuple[str, str, str]],
-        predict_timeout: Optional[int] = None,
-    ):
-        if len(redis_configs) == 0:
-            raise ValueError("redis_configs must not be empty")
+    def __init__(self, consumers: List[RedisConsumer]):
+        if len(consumers) == 0:
+            raise ValueError("Must provide at least one RedisConsumer")
 
-        self.consumers = []
-
-        for (redis_url, redis_input_queue, redis_consumer_id) in redis_configs:
-            consumer = RedisConsumer(
-                redis_url=redis_url,
-                redis_input_queue=redis_input_queue,
-                redis_consumer_id=redis_consumer_id,
-                predict_timeout=predict_timeout,
-            )
-            self.consumers.append(consumer)
-
+        self.consumers = consumers
         self._current_consumer_index = 0
 
     def get_current(self) -> RedisConsumer:
