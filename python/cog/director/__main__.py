@@ -13,7 +13,7 @@ from ..logging import setup_logging
 from .director import Director
 from .healthchecker import Healthchecker, http_fetcher
 from .http import Server, create_app
-from .redis import RedisConsumerRotator
+from .redis import RedisConsumer, RedisConsumerRotator
 
 log = structlog.get_logger("cog.director")
 
@@ -65,7 +65,7 @@ if (len(args.redis_url) != len(args.redis_input_queue)) or (
         "Must be equal number of the arguments --redis-url, --redis-input-queue, and --redis-consumer-id"
     )
 
-redis_configs = list(
+redis_args = list(
     zip(
         args.redis_url,
         args.redis_input_queue,
@@ -73,10 +73,17 @@ redis_configs = list(
     )
 )
 
-redis_consumer_rotator = RedisConsumerRotator(
-    redis_configs=redis_configs,
-    predict_timeout=args.predict_timeout,
-)
+redis_consumers = [
+    RedisConsumer(
+        redis_url=redis_url,
+        redis_input_queue=redis_input_queue,
+        redis_consumer_id=redis_consumer_id,
+        predict_timeout=args.predict_timeout,
+    )
+    for (redis_url, redis_input_queue, redis_consumer_id) in redis_args
+]
+
+redis_consumer_rotator = RedisConsumerRotator(consumers=redis_consumers)
 
 director = Director(
     events=events,
