@@ -2,11 +2,14 @@ import os
 from typing import Any, Callable, Set
 
 import requests
+import structlog
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
 from ..schema import Status, WebhookEvent
 from .response_throttler import ResponseThrottler
+
+log = structlog.get_logger(__name__)
 
 
 def _get_version() -> str:
@@ -56,8 +59,11 @@ def webhook_caller(webhook: str) -> Callable:
                 # For terminal updates, retry persistently
                 retry_session.post(webhook, json=response)
             else:
-                # For other requests, don't retry
-                default_session.post(webhook, json=response)
+                # For other requests, don't retry, and ignore any errors
+                try:
+                    default_session.post(webhook, json=response)
+                except requests.exceptions.RequestException:
+                    log.warn("caught exception while sending webhook", exc_info=True)
             throttler.update_last_sent_response_time()
 
     return caller

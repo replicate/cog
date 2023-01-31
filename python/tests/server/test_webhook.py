@@ -1,3 +1,4 @@
+import requests
 import responses
 from responses import registries
 
@@ -94,3 +95,20 @@ def test_webhook_caller_filtered_omits_filtered_events():
     c = webhook_caller_filtered("https://example.com/webhook/123", events)
 
     c({"status": "processing", "animal": "giraffe"}, WebhookEvent.LOGS)
+
+
+@responses.activate
+def test_webhook_caller_connection_errors():
+    connerror_resp = responses.Response(
+        responses.POST,
+        "https://example.com/webhook/123",
+        status=200,
+    )
+    connerror_exc = requests.ConnectionError("failed to connect")
+    connerror_exc.response = connerror_resp
+    connerror_resp.body = connerror_exc
+    responses.add(connerror_resp)
+
+    c = webhook_caller("https://example.com/webhook/123")
+    # this should not raise an error
+    c({"status": "processing", "animal": "giraffe"})
