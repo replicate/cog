@@ -151,7 +151,7 @@ def create_app(
         return JSONResponse(content=encoded_response)
 
     @app.post("/predictions/{prediction_id}/cancel")
-    def cancel(prediction_id: str = Path(..., title="Prediction ID")) -> JSONResponse:
+    def cancel(prediction_id: str = Path(..., title="Prediction ID")) -> Any:
         """
         Cancel a running prediction
         """
@@ -162,7 +162,7 @@ def create_app(
             return JSONResponse({}, status_code=404)
 
     @app.post("/shutdown")
-    def start_shutdown() -> JSONResponse:
+    def start_shutdown() -> Any:
         log.info("shutdown requested via http")
         shutdown_event.set()
         return JSONResponse({}, status_code=200)
