@@ -118,6 +118,8 @@ jobs:
       - test-python
       - test-integration
     if: startsWith(github.ref, 'refs/tags/v')
+    outputs:
+      cog_version: ${{ steps.build-python-package.outputs.version }}
     runs-on: ubuntu-latest-8-cores
     steps:
       - uses: actions/checkout@v3
@@ -136,6 +138,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build Python package
+        id: build-python-package
         run: |
           # clean package built for go client
           rm -rf python/dist
@@ -143,9 +146,34 @@ jobs:
           pip install build
           # build package
           python -m build python/ --wheel
+          # set output
+          echo "version=$(ls python/dist/ | cut -d- -f2)" >> $GITHUB_OUTPUT
       - name: Push Python package
         uses: pypa/gh-action-pypi-publish@master
         with:
           user: __token__
           password: ${{ secrets.PYPI_TOKEN }}
           packages_dir: python/dist
+
+  build-director:
+    name: Build director
+    needs: release
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    env:
+      COG_VERSION: ${{ needs.release.outputs.cog_version }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v1'
+        with:
+          workload_identity_provider: 'projects/1025538909507/locations/global/workloadIdentityPools/github/providers/github-actions'
+          service_account: 'builder@replicate.iam.gserviceaccount.com'
+
+      - uses: 'google-github-actions/setup-gcloud@v1'
+
+      - name: 'Build image'
+        working-directory: python/cog/director/
+        run: script/build >> $GITHUB_OUTPUT

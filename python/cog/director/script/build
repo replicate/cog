@@ -1,0 +1,8 @@
+#!/bin/bash
+set -eux -o pipefail
+
+gcloud builds submit \
+    --project=replicate \
+    --config cloudbuild.yaml \
+    --substitutions=_COG_VERSION=$COG_VERSION \
+| tee /tmp/cluster-build.txt >&2
