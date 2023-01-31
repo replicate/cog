@@ -1,0 +1,12 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+  - "build"
+  - "--build-arg"
+  - "cog_version=$_COG_VERSION"
+  - "-t"
+  - "us-central1-docker.pkg.dev/replicate/replicate-alpha/cog-director:$_COG_VERSION"
+  - "."
+images:
+  - "us-central1-docker.pkg.dev/replicate/replicate-alpha/cog-director:$_COG_VERSION"
+logsBucket: "gs://replicate-cloudbuild"
