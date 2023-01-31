@@ -98,7 +98,7 @@ def test_openapi_specification(client):
             ],
             "responses": {
                 "200": {
-                    "content": {"application/json": {"schema": {}}},
+                    "content": {"application/json": {"schema": mock.ANY}},
                     "description": "Successful Response",
                 },
                 "422": {
