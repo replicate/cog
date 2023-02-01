@@ -13,7 +13,13 @@ from cog.server.eventtypes import (
     PredictionOutput,
     PredictionOutputType,
 )
-from cog.server.runner import PredictionEventHandler, PredictionRunner, predict
+from cog.server.runner import (
+    PredictionEventHandler,
+    PredictionRunner,
+    RunnerBusyError,
+    UnknownPredictionError,
+    predict,
+)
 
 
 def _fixture_path(name):
@@ -58,11 +64,40 @@ def test_prediction_runner_called_while_busy(runner):
     runner.predict(request)
 
     assert runner.is_busy()
-    with pytest.raises(Exception):
+    with pytest.raises(RunnerBusyError):
         runner.predict(request)
 
 
-def test_prediction_runner_called_while_busy(runner):
+def test_prediction_runner_called_while_busy_idempotent(runner):
+    runner.setup()
+    request = PredictionRequest(id="abcd1234", input={"sleep": 0.1})
+
+    runner.predict(request)
+    runner.predict(request)
+    _, async_result = runner.predict(request)
+
+    response = async_result.get(timeout=1)
+    assert response.id == "abcd1234"
+    assert response.output == "done in 0.1 seconds"
+    assert response.status == "succeeded"
+
+
+def test_prediction_runner_called_while_busy_idempotent_wrong_id(runner):
+    runner.setup()
+    request1 = PredictionRequest(id="abcd1234", input={"sleep": 0.1})
+    request2 = PredictionRequest(id="5678efgh", input={"sleep": 0.1})
+
+    _, async_result = runner.predict(request1)
+    with pytest.raises(RunnerBusyError):
+        runner.predict(request2)
+
+    response = async_result.get(timeout=1)
+    assert response.id == "abcd1234"
+    assert response.output == "done in 0.1 seconds"
+    assert response.status == "succeeded"
+
+
+def test_prediction_runner_cancel(runner):
     runner.setup()
     request = PredictionRequest(input={"sleep": 0.5})
     _, async_result = runner.predict(request)
@@ -76,6 +111,31 @@ def test_prediction_runner_called_while_busy(runner):
     assert response.logs == ""
     assert isinstance(response.started_at, datetime)
     assert isinstance(response.completed_at, datetime)
+
+
+def test_prediction_runner_cancel_matching_id(runner):
+    runner.setup()
+    request = PredictionRequest(id="abcd1234", input={"sleep": 0.5})
+    _, async_result = runner.predict(request)
+
+    runner.cancel(prediction_id="abcd1234")
+
+    response = async_result.get(timeout=1)
+    assert response.output == None
+    assert response.status == "canceled"
+
+
+def test_prediction_runner_cancel_by_mismatched_id(runner):
+    runner.setup()
+    request = PredictionRequest(id="abcd1234", input={"sleep": 0.5})
+    _, async_result = runner.predict(request)
+
+    with pytest.raises(UnknownPredictionError):
+        runner.cancel(prediction_id="5678efgh")
+
+    response = async_result.get(timeout=1)
+    assert response.output == "done in 0.5 seconds"
+    assert response.status == "succeeded"
 
 
 # list of (events, calls)
