@@ -357,6 +357,41 @@ def test_prediction_idempotent_endpoint_mismatched_ids(client, match):
     assert resp.status_code == 422
 
 
+@uses_predictor("sleep")
+def test_prediction_idempotent_endpoint_is_idempotent(client, match):
+    resp1 = client.put(
+        "/predictions/abcd1234",
+        json={"input": {"sleep": 1}},
+        headers={"Prefer": "respond-async"},
+    )
+    resp2 = client.put(
+        "/predictions/abcd1234",
+        json={"input": {"sleep": 1}},
+        headers={"Prefer": "respond-async"},
+    )
+    assert resp1.status_code == 202
+    assert resp1.json() == match({"id": "abcd1234", "status": "processing"})
+    assert resp2.status_code == 202
+    assert resp2.json() == match({"id": "abcd1234", "status": "processing"})
+
+
+@uses_predictor("sleep")
+def test_prediction_idempotent_endpoint_conflict(client, match):
+    resp1 = client.put(
+        "/predictions/abcd1234",
+        json={"input": {"sleep": 1}},
+        headers={"Prefer": "respond-async"},
+    )
+    resp2 = client.put(
+        "/predictions/5678efgh",
+        json={"input": {"sleep": 1}},
+        headers={"Prefer": "respond-async"},
+    )
+    assert resp1.status_code == 202
+    assert resp1.json() == match({"id": "abcd1234", "status": "processing"})
+    assert resp2.status_code == 409
+
+
 # a basic end-to-end test for async predictions. if you're adding more
 # exhaustive tests of webhooks, consider adding them to test_runner.py
 @responses.activate
@@ -413,6 +448,9 @@ def test_prediction_cancel(client):
         headers={"Prefer": "respond-async"},
     )
     assert resp.status_code == 202
+
+    resp = client.post("/predictions/456/cancel")
+    assert resp.status_code == 404
 
     resp = client.post("/predictions/123/cancel")
     assert resp.status_code == 200

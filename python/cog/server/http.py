@@ -30,7 +30,7 @@ from ..predictor import (
     load_predictor_from_ref,
 )
 from .probes import ProbeHelper
-from .runner import PredictionRunner
+from .runner import PredictionRunner, RunnerBusyError, UnknownPredictionError
 
 log = structlog.get_logger("cog.server.http")
 
@@ -115,6 +115,11 @@ def create_app(
         """
         Run a single prediction on the model
         """
+        if runner.is_busy():
+            return JSONResponse(
+                {"detail": "Already running a prediction"}, status_code=409
+            )
+
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
 
@@ -167,10 +172,17 @@ def create_app(
         if request.input is None:
             request.input = {}
 
-        # For now, we only ask PredictionRunner to handle file uploads for
-        # async predictions. This is unfortunate but required to ensure
-        # backwards-compatible behaviour for synchronous predictions.
-        initial_response, async_result = runner.predict(request, upload=respond_async)
+        try:
+            # For now, we only ask PredictionRunner to handle file uploads for
+            # async predictions. This is unfortunate but required to ensure
+            # backwards-compatible behaviour for synchronous predictions.
+            initial_response, async_result = runner.predict(
+                request, upload=respond_async
+            )
+        except RunnerBusyError:
+            return JSONResponse(
+                {"detail": "Already running a prediction"}, status_code=409
+            )
 
         if respond_async:
             return JSONResponse(jsonable_encoder(initial_response), status_code=202)
@@ -196,11 +208,14 @@ def create_app(
         """
         Cancel a running prediction
         """
-        if runner.current_prediction_id == prediction_id:
-            runner.cancel()
-            return JSONResponse({}, status_code=200)
-        else:
+        if not runner.is_busy():
             return JSONResponse({}, status_code=404)
+        try:
+            runner.cancel(prediction_id)
+        except UnknownPredictionError:
+            return JSONResponse({}, status_code=404)
+        else:
+            return JSONResponse({}, status_code=200)
 
     @app.post("/shutdown")
     def start_shutdown() -> Any:

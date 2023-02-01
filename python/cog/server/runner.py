@@ -25,6 +25,14 @@ class FileUploadError(Exception):
     pass
 
 
+class RunnerBusyError(Exception):
+    pass
+
+
+class UnknownPredictionError(Exception):
+    pass
+
+
 class PredictionRunner:
     def __init__(
         self,
@@ -33,11 +41,10 @@ class PredictionRunner:
         shutdown_event: threading.Event,
         upload_url: Optional[str] = None,
     ):
-        self.current_prediction_id: Optional[str] = None
-
         self._thread = None
         self._threadpool = ThreadPool(processes=1)
 
+        self._response: Optional[schema.PredictionResponse] = None
         self._result: Optional[AsyncResult] = None
 
         self._worker = Worker(predictor_ref=predictor_ref)
@@ -71,7 +78,12 @@ class PredictionRunner:
         self, prediction: schema.PredictionRequest, upload: bool = True
     ) -> Tuple[schema.PredictionResponse, AsyncResult]:
         # It's the caller's responsibility to not call us if we're busy.
-        assert not self.is_busy()
+        if self.is_busy():
+            assert self._response is not None
+            assert self._result is not None
+            if prediction.id is not None and prediction.id == self._response.id:
+                return (self._response, self._result)
+            raise RunnerBusyError()
 
         # Set up logger context for main thread. The same thing happens inside
         # the predict thread.
@@ -96,6 +108,7 @@ class PredictionRunner:
                 log.error("caught exception while running prediction", exc_info=True)
                 self._shutdown_event.set()
 
+        self._response = event_handler.response
         self._result = self._threadpool.apply_async(
             func=predict,
             kwds={
@@ -108,8 +121,7 @@ class PredictionRunner:
             error_callback=handle_error,
         )
 
-        self.current_prediction_id = prediction.id
-        return (event_handler.response, self._result)
+        return (self._response, self._result)
 
     def is_busy(self) -> bool:
         if self._result is None:
@@ -118,6 +130,7 @@ class PredictionRunner:
         if not self._result.ready():
             return True
 
+        self._response = None
         self._result = None
         return False
 
@@ -126,7 +139,12 @@ class PredictionRunner:
         self._threadpool.terminate()
         self._threadpool.join()
 
-    def cancel(self) -> None:
+    def cancel(self, prediction_id: Optional[str] = None) -> None:
+        if not self.is_busy():
+            return
+        assert self._response is not None
+        if prediction_id is not None and prediction_id != self._response.id:
+            raise UnknownPredictionError()
         self._should_cancel.set()
 
 
