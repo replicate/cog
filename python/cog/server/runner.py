@@ -12,6 +12,7 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
 from .. import schema
+from .. import types
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
@@ -311,7 +312,13 @@ def _predict(
     initial_prediction = request.dict()
 
     output_type = None
-    for event in worker.predict(initial_prediction["input"], poll=0.1):
+    input_dict = initial_prediction["input"]
+
+    for k, v in input_dict.items():
+        if isinstance(v, types.URLPath):
+            input_dict[k] = v.convert()
+
+    for event in worker.predict(input_dict, poll=0.1):
         if should_cancel.is_set():
             worker.cancel()
             should_cancel.clear()
