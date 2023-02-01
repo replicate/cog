@@ -80,16 +80,50 @@ class Path(pathlib.PosixPath):
         if isinstance(value, pathlib.Path):
             return value
 
-        src = File.validate(value)
-        dest = tempfile.NamedTemporaryFile(suffix=get_filename(value), delete=False)
-        shutil.copyfileobj(src, dest)
-        return cls(dest.name)
+        return URLPath(
+            source=value,
+            filename=get_filename(value),
+            fileobj=File.validate(value),
+        )
 
     @classmethod
     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
         """Defines what this type should be in openapi.json"""
         # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
         field_schema.update(type="string", format="uri")
+
+
+class URLPath(pathlib.PosixPath):
+    """
+    URLPath is a nasty hack to ensure that we can defer the downloading of a
+    URL passed as a path until later in prediction dispatch.
+
+    It subclasses pathlib.PosixPath only so that it can pass isinstance(_,
+    pathlib.Path) checks.
+    """
+
+    def __init__(self, *, source: str, filename: str, fileobj: io.IOBase):
+        self.source = source
+        self.filename = filename
+        self.fileobj = fileobj
+
+        self._path = None
+
+    def convert(self):
+        if self._path is None:
+            dest = tempfile.NamedTemporaryFile(suffix=self.filename, delete=False)
+            shutil.copyfileobj(self.fileobj, dest)
+            self._path = Path(dest.name)
+        return self._path
+
+    def unlink(self):
+        if self._path and self._path.exists():
+            self._path.unlink()
+
+    def __str__(self):
+        # FastAPI's jsonable_encoder will encode subclasses of pathlib.Path by
+        # calling str() on them
+        return self.source
 
 
 class URLFile(io.IOBase):
