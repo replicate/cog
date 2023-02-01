@@ -323,6 +323,40 @@ def test_yielding_files_from_generator_predictors(client):
     assert image_color(output[2]) == (255, 255, 0)  # yellow
 
 
+@uses_predictor("input_none")
+def test_prediction_idempotent_endpoint(client, match):
+    resp = client.put("/predictions/abcd1234", json={})
+    assert resp.status_code == 200
+    assert resp.json() == match(
+        {"id": "abcd1234", "status": "succeeded", "output": "foobar"}
+    )
+
+
+@uses_predictor("input_none")
+def test_prediction_idempotent_endpoint_matched_ids(client, match):
+    resp = client.put(
+        "/predictions/abcd1234",
+        json={
+            "id": "abcd1234",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json() == match(
+        {"id": "abcd1234", "status": "succeeded", "output": "foobar"}
+    )
+
+
+@uses_predictor("input_none")
+def test_prediction_idempotent_endpoint_mismatched_ids(client, match):
+    resp = client.put(
+        "/predictions/abcd1234",
+        json={
+            "id": "foobar",
+        },
+    )
+    assert resp.status_code == 422
+
+
 # a basic end-to-end test for async predictions. if you're adding more
 # exhaustive tests of webhooks, consider adding them to test_runner.py
 @responses.activate

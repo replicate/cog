@@ -13,8 +13,10 @@ from anyio import CapacityLimiter
 from anyio.lowlevel import RunVar
 from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
 from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
+from pydantic.error_wrappers import ErrorWrapper
 
 from .. import schema
 from ..files import upload_file
@@ -113,6 +115,40 @@ def create_app(
         """
         Run a single prediction on the model
         """
+        # TODO: spec-compliant parsing of Prefer header.
+        respond_async = prefer == "respond-async"
+
+        return _predict(request=request, respond_async=respond_async)
+
+    @app.put(
+        "/predictions/{prediction_id}",
+        response_model=PredictionResponse,
+        response_model_exclude_unset=True,
+    )
+    def predict_idempotent(
+        prediction_id: str = Path(..., title="Prediction ID"),
+        request: PredictionRequest = Body(..., title="Prediction Request"),
+        prefer: Union[str, None] = Header(default=None),
+    ) -> Any:
+        """
+        Run a single prediction on the model (idempotent creation).
+        """
+        if request.id is not None and request.id != prediction_id:
+            raise RequestValidationError(
+                [
+                    ErrorWrapper(
+                        ValueError(
+                            "prediction ID must match the ID supplied in the URL"
+                        ),
+                        ("body", "id"),
+                    )
+                ]
+            )
+
+        # We've already checked that the IDs match, now ensure that an ID is
+        # set on the prediction object
+        request.id = prediction_id
+
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
 
