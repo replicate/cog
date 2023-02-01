@@ -11,7 +11,7 @@ import structlog
 import uvicorn
 from anyio import CapacityLimiter
 from anyio.lowlevel import RunVar
-from fastapi import Body, FastAPI, Header, HTTPException, Path
+from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -113,6 +113,14 @@ def create_app(
         """
         Run a single prediction on the model
         """
+        # TODO: spec-compliant parsing of Prefer header.
+        respond_async = prefer == "respond-async"
+
+        return _predict(request=request, respond_async=respond_async)
+
+    def _predict(
+        *, request: PredictionRequest, respond_async: bool = False
+    ) -> Response:
         # [compat] If no body is supplied, assume that this model can be run
         # with empty input. This will throw a ValidationError if that's not
         # possible.
@@ -122,9 +130,6 @@ def create_app(
         # dictionary so that later code can be simpler.
         if request.input is None:
             request.input = {}
-
-        # TODO: spec-compliant parsing of Prefer header.
-        respond_async = prefer == "respond-async"
 
         # For now, we only ask PredictionRunner to handle file uploads for
         # async predictions. This is unfortunate but required to ensure
