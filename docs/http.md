@@ -50,7 +50,7 @@ Or, with curl:
     curl -X POST -H "Content-Type: application/json" -d '{"input": {"image": "https://example.com/image.jpg", "text": "Hello world!"}}' http://localhost:5000/predictions
 
 
-### `POST /predictions` (asynchronous)
+## `POST /predictions` (asynchronous)
 
 Make a single prediction without waiting for the prediction to complete.
 
@@ -86,7 +86,7 @@ using the provided `--upload-url` as a prefix, in much the same way that
 works the same way for both synchronous and asynchronous prediction creation.
 This will be addressed in a future version of Cog.
 
-#### Webhooks
+### Webhooks
 
 Clients can (and should, if a prediction is created asynchronously) provide a
 `webhook` parameter at the top level of the prediction request, e.g.
@@ -132,7 +132,45 @@ Prefer: respond-async
 }
 ```
 
-### `POST /predictions/<prediction_id>/cancel`
+## `PUT /predictions/<prediction_id>` (synchronous)
+
+Make a single prediction.
+
+This is the idempotent version of the `POST /predictions` endpoint. If you call
+it multiple times with the same ID (for example, because of a network
+interruption) and the prediction is still running, the request will not create
+further predictions but will wait for the original prediction to complete.
+
+**Note:** It is currently the caller's responsibility to ensure that the
+supplied prediction ID is unique. We recommend you use base32-encoded UUID4s
+(stripped of any padding characters) to ensure forward compatibility: these will
+be 26 ASCII characters long.
+
+## `PUT /predictions/<prediction_id>` (asynchronous)
+
+Make a single prediction without waiting for the prediction to complete.
+
+Callers can specify an HTTP header of `Prefer: respond-async` when calling the
+`PUT /predictions/<prediction_id>` endpoint. If provided, the request will
+return immediately after starting the prediction with an HTTP `202 Accepted`
+status and a prediction object in status `processing`.
+
+This is the idempotent version of the asynchronous `POST /predictions` endpoint.
+If you call it multiple times with the same ID (for example, because of a
+network interruption) and the prediction is still running, the request will not
+create further predictions. The caller will receive a 202 Accepted response
+with the initial state of the prediction.
+
+**Note 1:** It is currently the caller's responsibility to ensure that the
+supplied prediction ID is unique. We recommend you use base32-encoded UUID4s
+(stripped of any padding characters) to ensure forward compatibility: these will
+be 26 ASCII characters long.
+
+**Note 2:** As noted earlier, Cog can only run one prediction at a time, and it is
+the caller's responsibility to make sure that earlier predictions are complete
+before new ones (with new IDs) are created.
+
+## `POST /predictions/<prediction_id>/cancel`
 
 While an asynchronous prediction is running, clients can cancel it by making a
 request to `POST /predictions/<prediction_id>/cancel`. The prediction `id` must
