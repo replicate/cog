@@ -214,8 +214,8 @@ class Director:
 
         # Call the model container to start the prediction
         try:
-            resp = self.cog_client.post(
-                self.cog_http_base + "/predictions",
+            resp = self.cog_client.put(
+                self.cog_http_base + "/predictions/" + prediction_id,
                 json=message,
                 headers={"Prefer": "respond-async"},
                 timeout=PREDICTION_CREATE_TIMEOUT,
