@@ -30,6 +30,7 @@ signal.signal(signal.SIGTERM, _die)
 
 parser = ArgumentParser()
 
+parser.add_argument("--cog-url", type=str, default="http://localhost:5000")
 parser.add_argument("--redis-url", type=str, action="append", required=True)
 parser.add_argument("--redis-input-queue", type=str, action="append", required=True)
 parser.add_argument("--redis-consumer-id", type=str, action="append", required=True)
@@ -49,12 +50,13 @@ args = parser.parse_args()
 
 events: queue.Queue = queue.Queue(maxsize=128)
 
-config = uvicorn.Config(create_app(events=events), port=4900, log_config=None)
+port = int(os.getenv("PORT", 4900))
+config = uvicorn.Config(create_app(events=events), port=port, log_config=None)
 server = Server(config)
 server.start()
 
 healthchecker = Healthchecker(
-    events=events, fetcher=http_fetcher("http://localhost:5000/health-check")
+    events=events, fetcher=http_fetcher(args.cog_url + "/health-check")
 )
 healthchecker.start()
 
@@ -89,6 +91,8 @@ director = Director(
     events=events,
     healthchecker=healthchecker,
     redis_consumer_rotator=redis_consumer_rotator,
+    cog_url=args.cog_url,
+    director_url=f"http://localhost:{port}",
     predict_timeout=args.predict_timeout,
     max_failure_count=args.max_failure_count,
     report_setup_run_url=args.report_setup_run_url,

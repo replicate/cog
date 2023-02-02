@@ -50,6 +50,8 @@ class Director:
         events: queue.Queue,
         healthchecker: Healthchecker,
         redis_consumer_rotator: RedisConsumerRotator,
+        cog_url: str,
+        director_url: str,
         predict_timeout: int,
         max_failure_count: int,
         report_setup_run_url: str,
@@ -66,7 +68,9 @@ class Director:
         self._shutdown_hooks: List[Callable] = []
 
         self.cog_client = _make_local_http_client()
-        self.cog_http_base = "http://localhost:5000"
+        self.cog_url = cog_url
+
+        self.director_url = director_url
 
     def start(self) -> None:
         try:
@@ -206,12 +210,12 @@ class Director:
         )
 
         # Override webhook to call us
-        message["webhook"] = "http://localhost:4900/webhook"
+        message["webhook"] = self.director_url + "/webhook"
 
         # Call the model container to start the prediction
         try:
             resp = self.cog_client.put(
-                self.cog_http_base + "/predictions/" + prediction_id,
+                self.cog_url + "/predictions/" + prediction_id,
                 json=message,
                 headers={"Prefer": "respond-async"},
                 timeout=PREDICTION_CREATE_TIMEOUT,
@@ -348,7 +352,7 @@ class Director:
 
     def _cancel_prediction(self, prediction_id: Any) -> None:
         resp = self.cog_client.post(
-            self.cog_http_base + "/predictions/" + prediction_id + "/cancel",
+            self.cog_url + "/predictions/" + prediction_id + "/cancel",
             timeout=1,
         )
         resp.raise_for_status()
@@ -384,7 +388,7 @@ class Director:
 
     def _shutdown_model(self) -> None:
         resp = self.cog_client.post(
-            self.cog_http_base + "/shutdown",
+            self.cog_url + "/shutdown",
             timeout=1,
         )
         log.info("requested model container shutdown", response_code=resp.status_code)
