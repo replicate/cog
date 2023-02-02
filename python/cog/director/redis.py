@@ -48,13 +48,21 @@ class RedisConsumer:
         # None of this is ideal, and in future we likely want to improve
         # director's ability to recover and retry predictions that failed
         # exceptionally.
-        raw_messages = self.redis.xreadgroup(
-            groupname=self.redis_input_queue,
-            consumername=self.redis_consumer_id,
-            streams={self.redis_input_queue: ">"},
-            count=1,
-            block=1000,
-        )
+        try:
+            raw_messages = self.redis.xreadgroup(
+                groupname=self.redis_input_queue,
+                consumername=self.redis_consumer_id,
+                streams={self.redis_input_queue: ">"},
+                count=1,
+                block=1000,
+            )
+        except redis.exceptions.ResponseError as e:
+            # treat a missing queue the same as an empty queue
+            if str(e).startswith("NOGROUP No such key"):
+                raise EmptyRedisStream()
+            else:
+                raise
+
         if not raw_messages:
             raise EmptyRedisStream()
 
