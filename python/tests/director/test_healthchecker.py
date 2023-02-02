@@ -29,7 +29,7 @@ def test_healthchecker():
             HealthcheckStatus(health=Health.UNKNOWN),
             HealthcheckStatus(health=Health.UNKNOWN),
             HealthcheckStatus(health=Health.UNKNOWN),
-            HealthcheckStatus(health=Health.HEALTHY, metadata={"animal": "giraffe"}),
+            HealthcheckStatus(health=Health.READY, metadata={"animal": "giraffe"}),
         ]
     )
 
@@ -39,7 +39,7 @@ def test_healthchecker():
     result = events.get(timeout=1)
 
     assert result == HealthcheckStatus(
-        health=Health.HEALTHY, metadata={"animal": "giraffe"}
+        health=Health.READY, metadata={"animal": "giraffe"}
     )
 
     h.stop()
@@ -51,7 +51,7 @@ def test_healthchecker_set_interval():
     fetcher = fake_fetcher(
         [
             HealthcheckStatus(health=Health.UNKNOWN),
-            HealthcheckStatus(health=Health.HEALTHY, metadata={"animal": "giraffe"}),
+            HealthcheckStatus(health=Health.READY, metadata={"animal": "giraffe"}),
         ]
     )
 
@@ -66,7 +66,7 @@ def test_healthchecker_set_interval():
     result = events.get(timeout=1)
 
     assert result == HealthcheckStatus(
-        health=Health.HEALTHY, metadata={"animal": "giraffe"}
+        health=Health.READY, metadata={"animal": "giraffe"}
     )
 
     h.stop()
@@ -103,7 +103,7 @@ def test_http_fetcher_ok():
         responses.GET,
         "https://example.com/health-check",
         json={
-            "status": "healthy",
+            "status": "READY",
             "setup": {"status": "succeeded", "logs": "hello there"},
         },
         status=200,
@@ -112,7 +112,7 @@ def test_http_fetcher_ok():
 
     status = fetcher()
 
-    assert status.health == Health.HEALTHY
+    assert status.health == Health.READY
     assert status.metadata == {"status": "succeeded", "logs": "hello there"}
 
 
@@ -153,7 +153,7 @@ def test_http_fetcher_missing_fields():
     responses.add(
         responses.GET,
         "https://example.com/health-check",
-        json='{"status":"healthy"}',  # missing "setup" field
+        json='{"status":"READY"}',  # missing "setup" field
         status=200,
     )
     fetcher = http_fetcher("https://example.com/health-check")
@@ -184,11 +184,30 @@ def test_http_fetcher_connection_errors():
 
 
 @responses.activate
+def test_http_fetcher_unrecognised_status():
+    responses.add(
+        responses.GET,
+        "https://example.com/health-check",
+        json={
+            "status": "READY_FOR_ANYTHING",
+            "setup": {"status": "succeeded", "logs": "hello there"},
+        },
+        status=200,
+    )
+    fetcher = http_fetcher("https://example.com/health-check")
+
+    status = fetcher()
+
+    assert status.health == Health.UNKNOWN
+    assert status.metadata == {"status": "succeeded", "logs": "hello there"}
+
+
+@responses.activate
 def test_http_fetcher_setup_failed():
     responses.add(
         responses.GET,
         "https://example.com/health-check",
-        json={"status": "healthy", "setup": {"status": "failed"}},
+        json={"status": "SETUP_FAILED", "setup": {"status": "failed"}},
         status=200,
     )
     fetcher = http_fetcher("https://example.com/health-check")

@@ -11,6 +11,7 @@ import structlog
 import uvicorn
 from anyio import CapacityLimiter
 from anyio.lowlevel import RunVar
+from enum import Enum, auto, unique
 from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -35,6 +36,15 @@ from .runner import PredictionRunner, RunnerBusyError, UnknownPredictionError
 log = structlog.get_logger("cog.server.http")
 
 
+@unique
+class Health(Enum):
+    UNKNOWN = auto()
+    STARTING = auto()
+    READY = auto()
+    BUSY = auto()
+    SETUP_FAILED = auto()
+
+
 def create_app(
     predictor_ref: str,
     shutdown_event: threading.Event,
@@ -46,10 +56,8 @@ def create_app(
         # version=None # TODO
     )
 
-    app.state.health = {
-        "status": "initializing",
-        "setup": None,
-    }
+    app.state.health = Health.STARTING
+    app.state.setup_result = None
 
     runner = PredictionRunner(
         predictor_ref=predictor_ref,
@@ -73,22 +81,23 @@ def create_app(
         RunVar("_default_thread_limiter").set(CapacityLimiter(threads))  # type: ignore
 
         setup_start = datetime.now(timezone.utc)
-        status, logs = runner.setup()
+        setup_status, setup_logs = runner.setup()
         setup_complete = datetime.now(timezone.utc)
 
-        app.state.health["setup"] = {
-            "logs": logs,
-            "status": status,
+        app.state.setup_result = {
+            "logs": setup_logs,
+            "status": setup_status,
             "started_at": setup_start,
             "completed_at": setup_complete,
         }
 
-        # FIXME: we should handle setup failures appropriately (not just stay
-        # alive forever saying "I failed")
+        if setup_status == schema.Status.SUCCEEDED:
+            app.state.health = Health.READY
+        else:
+            app.state.health = Health.SETUP_FAILED
+
         probes = ProbeHelper()
         probes.ready()
-
-        app.state.health["status"] = "healthy"
 
     @app.on_event("shutdown")
     def shutdown() -> None:
@@ -104,7 +113,16 @@ def create_app(
 
     @app.get("/health-check")
     def healthcheck() -> Any:
-        return JSONResponse(content=jsonable_encoder(app.state.health))
+        if app.state.health == Health.READY:
+            health = Health.BUSY if runner.is_busy() else Health.READY
+        else:
+            health = app.state.health
+        return jsonable_encoder(
+            {
+                "status": health.name,
+                "setup": app.state.setup_result,
+            }
+        )
 
     @app.post(
         "/predictions",

@@ -4,13 +4,7 @@ from typing import Any, Dict, Optional
 from attrs import define
 
 from .. import schema
-
-
-@unique
-class Health(Enum):
-    UNKNOWN = auto()
-    HEALTHY = auto()
-    SETUP_FAILED = auto()
+from ..server.http import Health
 
 
 @define
