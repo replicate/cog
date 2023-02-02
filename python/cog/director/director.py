@@ -10,9 +10,10 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
 from .. import schema
+from ..server.http import Health
 from ..server.probes import ProbeHelper
 from ..server.webhook import requests_session, webhook_caller
-from .eventtypes import Health, HealthcheckStatus, Webhook
+from .eventtypes import HealthcheckStatus, Webhook
 from .healthchecker import Healthchecker
 from .prediction_tracker import PredictionTracker
 from .redis import EmptyRedisStream, RedisConsumerRotator
@@ -116,28 +117,23 @@ class Director:
             except queue.Empty:
                 wait_seconds = time.perf_counter() - mark
                 log.info(
-                    "waiting for model container to complete setup",
-                    wait_seconds=wait_seconds,
+                    "setup: waiting for model container", wait_seconds=wait_seconds
                 )
                 continue
 
             if not isinstance(event, HealthcheckStatus):
-                log.warn(
-                    "received unexpected event while waiting for setup", data=event
-                )
+                log.warn("setup: received unexpected event", data=event)
                 continue
 
-            if event.health == Health.UNKNOWN:
-                log.warn(
-                    "received unexpected event while waiting for setup", data=event
-                )
+            if event.health not in {Health.READY, Health.SETUP_FAILED}:
+                log.warn("setup: health status changed", health=event.health.name)
                 continue
 
             wait_seconds = time.perf_counter() - mark
             log.info(
-                "model container finished setup",
+                "setup: model container finished setup",
                 wait_seconds=wait_seconds,
-                health=event.health,
+                health=event.health.name,
             )
             self._report_setup_run(event.metadata)
 
@@ -262,7 +258,7 @@ class Director:
                     tracker.update_from_webhook_payload(event.payload)
                 elif isinstance(event, HealthcheckStatus):
                     log.info("received healthcheck status update", data=event)
-                    if event.health != Health.HEALTHY:
+                    if event.health not in {Health.BUSY, Health.READY}:
                         tracker.fail("Model stopped responding during prediction.")
                         self._abort(
                             "prediction failed: model container failed healthchecks",
@@ -334,10 +330,16 @@ class Director:
                 )
                 continue
 
-            if event.health == Health.HEALTHY:
+            if event.health == Health.READY:
                 return
-            else:
-                self._abort("healthcheck confirmation: model container is not healthy")
+
+            # If we get anything else here: unknown, starting, busy,
+            # setup_failed, it represents a loss of synchronization between
+            # director and the model container, so we abort.
+            self._abort(
+                "healthcheck confirmation: model container is not healthy",
+                health=event.health.name,
+            )
 
         self._abort(
             "healthcheck confirmation: waited too long without response",

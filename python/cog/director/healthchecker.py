@@ -8,7 +8,8 @@ from attrs import define
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
-from .eventtypes import Health, HealthcheckStatus
+from .eventtypes import HealthcheckStatus
+from ..server.http import Health
 
 log = structlog.get_logger(__name__)
 
@@ -140,16 +141,16 @@ def _state_from_response(resp: requests.Response) -> HealthcheckStatus:
         )
         return HealthcheckStatus(health=Health.UNKNOWN)
 
-    if body["status"] != "healthy":
-        return HealthcheckStatus(health=Health.UNKNOWN)
+    try:
+        health = Health[body["status"]]
+    except KeyError:
+        log.warn(
+            "received response with unrecognised value for health",
+            response=resp.text,
+        )
+        return HealthcheckStatus(health=Health.UNKNOWN, metadata=body["setup"])
 
-    if body["setup"] is None:
-        return HealthcheckStatus(health=Health.UNKNOWN)
-
-    if body["setup"].get("status") == "succeeded":
-        return HealthcheckStatus(health=Health.HEALTHY, metadata=body["setup"])
-
-    return HealthcheckStatus(health=Health.SETUP_FAILED, metadata=body["setup"])
+    return HealthcheckStatus(health=health, metadata=body["setup"])
 
 
 @define
