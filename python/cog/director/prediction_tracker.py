@@ -72,9 +72,11 @@ class PredictionTracker:
         return self._response.status
 
     def _update(self, mapping: Dict[str, Any]) -> None:
+        # we capture timestamp prior to updating response as copying response can take time
+        ts = datetime.now(tz=timezone.utc)
         self._response = self._response.copy(update=mapping)
         self._adjust_cancelation_status()
-        self._set_completed_at()
+        self._set_completed_at(ts)
         self._send_webhook()
 
     def _adjust_cancelation_status(self) -> None:
@@ -85,14 +87,14 @@ class PredictionTracker:
         self._response.status = schema.Status.FAILED
         self._response.error = "Prediction timed out"
 
-    def _set_completed_at(self) -> None:
+    def _set_completed_at(self, ts: datetime) -> None:
         if not self._response.started_at:
             return
         if self._response.completed_at:
             return
 
         if schema.Status.is_terminal(self._response.status):
-            self._response.completed_at = datetime.now(tz=timezone.utc)
+            self._response.completed_at = ts
 
             if self._response.status == schema.Status.SUCCEEDED:
                 self._response.metrics = {
