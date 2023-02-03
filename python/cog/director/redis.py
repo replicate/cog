@@ -30,7 +30,10 @@ class RedisConsumer:
             self.autoclaim_messages_after = 10 * 60
 
         self.redis = redis.from_url(self.redis_url)
-        log.info("connected to redis", url=self.redis_url)
+        log.info(
+            "connected to redis",
+            host=self.redis.get_connection_kwargs().get("host"),
+        )
 
     def get(self) -> Tuple[str, str]:
         # Redis streams are reliable queues: messages must be acked once
