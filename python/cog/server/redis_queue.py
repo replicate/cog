@@ -78,7 +78,9 @@ class RedisQueueWorker:
         self.tracer = trace.get_tracer("cog")
         self.probes = ProbeHelper()
 
-        sys.stderr.write(f"Connected to Redis: {self.redis_url}\n")
+        sys.stderr.write(
+            f"Connected to Redis: {self.redis.get_connection_kwargs().get('host')}\n"
+        )
 
     def signal_exit(self, signum: Any, frame: Any) -> None:
         self.should_exit = True
