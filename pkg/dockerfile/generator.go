@@ -72,6 +72,7 @@ func (g *Generator) GenerateBase() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	pythonRequirements, err := g.pythonRequirements()
 	if err != nil {
 		return "", err
@@ -96,6 +97,7 @@ func (g *Generator) GenerateBase() (string, error) {
 		g.preamble(),
 		installPython,
 		g.installCython(),
+		g.installPydanticNoBinary(),
 		installCog,
 		aptInstalls,
 		pythonRequirements,
@@ -207,6 +209,11 @@ func (g *Generator) installCog() (string, error) {
 	return fmt.Sprintf(`COPY %s /tmp/%s
 RUN --mount=type=cache,target=/root/.cache/pip pip install /tmp/%s`, path.Join(g.relativeTmpDir, cogFilename), cogFilename, cogFilename), nil
 }
+
+func (g *Generator) installPydanticNoBinary() string {
+	return "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-binary pydantic"
+}
+
 func (g *Generator) installCython() string {
 	return "RUN --mount=type=cache,target=/root/.cache/pip pip install cython"
 }
