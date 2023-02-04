@@ -211,7 +211,7 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install /tmp/%s`, path.Join(g
 }
 
 func (g *Generator) installPydanticNoBinary() string {
-	return "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-binary pydantic"
+	return "RUN --mount=type=cache,target=/root/.cache/pip pip install pydantic --no-binary :all:"
 }
 
 func (g *Generator) installCython() string {
