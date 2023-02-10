@@ -12,12 +12,12 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vincent-petithory/dataurl"
 
-	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/image"
-	"github.com/replicate/cog/pkg/predict"
-	"github.com/replicate/cog/pkg/util/console"
-	"github.com/replicate/cog/pkg/util/mime"
+	"github.com/sieve-data/cog/pkg/config"
+	"github.com/sieve-data/cog/pkg/docker"
+	"github.com/sieve-data/cog/pkg/image"
+	"github.com/sieve-data/cog/pkg/predict"
+	"github.com/sieve-data/cog/pkg/util/console"
+	"github.com/sieve-data/cog/pkg/util/mime"
 )
 
 var (

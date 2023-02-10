@@ -136,7 +136,7 @@ def test_predict_runs_an_existing_image(tmpdir_factory):
         subprocess.run(["docker", "rmi", image_name], check=True)
 
 
-# https://github.com/replicate/cog/commit/28202b12ea40f71d791e840b97a51164e7be3b3c
+# https://github.com/sieve-data/cog/commit/28202b12ea40f71d791e840b97a51164e7be3b3c
 # we need to find a better way to test this
 @pytest.mark.skip("incredibly slow")
 def test_predict_with_remote_image(tmpdir_factory):

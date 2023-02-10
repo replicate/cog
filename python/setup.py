@@ -11,7 +11,7 @@ setuptools.setup(
     description="Containers for machine learning",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/replicate/cog",
+    url="https://github.com/sieve-data/cog",
     license="Apache License 2.0",
     python_requires=">=3.6.0",
     install_requires=[

@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/util/console"
-	"github.com/replicate/cog/pkg/util/files"
+	"github.com/sieve-data/cog/pkg/util/console"
+	"github.com/sieve-data/cog/pkg/util/files"
 )
 
 //go:embed init-templates/cog.yaml

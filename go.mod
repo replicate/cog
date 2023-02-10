@@ -1,4 +1,4 @@
-module github.com/replicate/cog
+module github.com/sieve-data/cog
 
 go 1.18
 

@@ -5,9 +5,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/global"
-	"github.com/replicate/cog/pkg/update"
-	"github.com/replicate/cog/pkg/util/console"
+	"github.com/sieve-data/cog/pkg/global"
+	"github.com/sieve-data/cog/pkg/update"
+	"github.com/sieve-data/cog/pkg/util/console"
 )
 
 var projectDirFlag string
@@ -19,7 +19,7 @@ func NewRootCommand() (*cobra.Command, error) {
 		Long: `Containers for machine learning.
 
 To get started, take a look at the documentation:
-https://github.com/replicate/cog`,
+https://github.com/sieve-data/cog`,
 		Example: `   To run a command inside a Docker environment defined with Cog:
       $ cog run echo hello world`,
 		Version: fmt.Sprintf("%s (built %s)", global.Version, global.BuildTime),

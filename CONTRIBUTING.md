@@ -177,7 +177,7 @@ Then visit [localhost:5001](http://localhost:5001) in your browser.
 
 ## Publishing a release
 
-This project has a [GitHub Actions workflow](https://github.com/replicate/cog/blob/39cfc5c44ab81832886c9139ee130296f1585b28/.github/workflows/ci.yaml#L107) that uses [goreleaser](https://goreleaser.com/quick-start/#quick-start) to facilitate the process of publishing new releases. The release process is triggered by manually creating and pushing a new git tag.
+This project has a [GitHub Actions workflow](https://github.com/sieve-data/cog/blob/39cfc5c44ab81832886c9139ee130296f1585b28/.github/workflows/ci.yaml#L107) that uses [goreleaser](https://goreleaser.com/quick-start/#quick-start) to facilitate the process of publishing new releases. The release process is triggered by manually creating and pushing a new git tag.
 
 To publish a new release, run the following in your local checkout of cog:
 
@@ -186,7 +186,7 @@ To publish a new release, run the following in your local checkout of cog:
     git tag v0.0.11
     git push --tags
 
-Then visit [github.com/replicate/cog/actions](https://github.com/replicate/cog/actions) to monitor the release process.
+Then visit [github.com/sieve-data/cog/actions](https://github.com/sieve-data/cog/actions) to monitor the release process.
 
 ### Publishing a prerelease
 
@@ -213,4 +213,4 @@ The compiled `cog` binary will be installed in `$GOPATH/bin/cog`, e.g. `~/go/bin
 
 ---
 
-Still having trouble? Please [open an issue](https://github.com/replicate/cog/issues) on GitHub.
+Still having trouble? Please [open an issue](https://github.com/sieve-data/cog/issues) on GitHub.

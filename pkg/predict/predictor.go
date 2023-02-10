@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/global"
-	"github.com/replicate/cog/pkg/util/console"
-	"github.com/replicate/cog/pkg/util/shell"
+	"github.com/sieve-data/cog/pkg/docker"
+	"github.com/sieve-data/cog/pkg/global"
+	"github.com/sieve-data/cog/pkg/util/console"
+	"github.com/sieve-data/cog/pkg/util/shell"
 )
 
 type status string

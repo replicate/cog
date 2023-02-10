@@ -3,9 +3,9 @@ package cli
 import (
 	"os"
 
-	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/image"
-	"github.com/replicate/cog/pkg/util/console"
+	"github.com/sieve-data/cog/pkg/config"
+	"github.com/sieve-data/cog/pkg/image"
+	"github.com/sieve-data/cog/pkg/util/console"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +38,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		imageName = config.DockerImageName(projectDir)
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildProgressOutput); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildProgressOutput, os.Stderr); err != nil {
 		return err
 	}
 

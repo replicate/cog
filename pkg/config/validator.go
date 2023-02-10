@@ -18,7 +18,7 @@ const (
 %s.
 
 To see what options you can use, take a look at the docs:
-https://github.com/replicate/cog/blob/main/docs/yaml.md
+https://github.com/sieve-data/cog/blob/main/docs/yaml.md
 
 You might also need to upgrade Cog, if this option was added in a
 later version of Cog.`

@@ -8,10 +8,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/replicate/cog/pkg/util"
-	"github.com/replicate/cog/pkg/util/console"
+	"github.com/sieve-data/cog/pkg/util"
+	"github.com/sieve-data/cog/pkg/util/console"
 
-	"github.com/replicate/cog/pkg/util/version"
+	"github.com/sieve-data/cog/pkg/util/version"
 )
 
 // TODO(andreas): check tf/py versions. tf 1.5.0 didn't install on py 3.8
@@ -256,7 +256,7 @@ func tfGPUPackage(ver string, cuda string) (name string, cpuVersion string, err 
 			return splitPythonPackage(compat.TFGPUPackage)
 		}
 	}
-	// We've already warned user if they're doing something stupid in validateAndCompleteCUDA(), so fail silently
+	// We've already warned user if they're doing something stupid in ValidateAndCompleteCUDA(), so fail silently
 	return "", "", nil
 }
 
@@ -302,7 +302,7 @@ func torchGPUPackage(ver string, cuda string) (name string, cpuVersion string, i
 		}
 	}
 	if latest == nil {
-		// We've already warned user if they're doing something stupid in validateAndCompleteCUDA()
+		// We've already warned user if they're doing something stupid in ValidateAndCompleteCUDA()
 		return "torch", ver, "", nil
 	}
 

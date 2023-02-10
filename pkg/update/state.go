@@ -9,8 +9,8 @@ import (
 
 	"github.com/mitchellh/go-homedir"
 
-	"github.com/replicate/cog/pkg/util/console"
-	"github.com/replicate/cog/pkg/util/files"
+	"github.com/sieve-data/cog/pkg/util/console"
+	"github.com/sieve-data/cog/pkg/util/files"
 )
 
 type state struct {

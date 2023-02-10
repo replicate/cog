@@ -2,15 +2,16 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/global"
-	"github.com/replicate/cog/pkg/image"
-	"github.com/replicate/cog/pkg/util/console"
+	"github.com/sieve-data/cog/pkg/config"
+	"github.com/sieve-data/cog/pkg/docker"
+	"github.com/sieve-data/cog/pkg/global"
+	"github.com/sieve-data/cog/pkg/image"
+	"github.com/sieve-data/cog/pkg/util/console"
 )
 
 func newPushCommand() *cobra.Command {
@@ -42,7 +43,7 @@ func push(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push registry.hooli.corp/hotdog-detector'")
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildProgressOutput); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildProgressOutput, os.Stderr); err != nil {
 		return err
 	}
 

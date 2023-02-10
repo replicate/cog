@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/mattn/go-isatty"
-	"github.com/replicate/cog/pkg/util/console"
+	"github.com/sieve-data/cog/pkg/util/console"
 )
 
 type Port struct {

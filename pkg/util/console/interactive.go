@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/replicate/cog/pkg/util/slices"
+	"github.com/sieve-data/cog/pkg/util/slices"
 )
 
 type Interactive struct {

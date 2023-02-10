@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/replicate/cog/pkg/global"
-	"github.com/replicate/cog/pkg/util/console"
+	"github.com/sieve-data/cog/pkg/global"
+	"github.com/sieve-data/cog/pkg/util/console"
 )
 
 func isUpdateEnabled() bool {

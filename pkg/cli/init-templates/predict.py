@@ -1,5 +1,5 @@
 # Prediction interface for Cog ⚙️
-# https://github.com/replicate/cog/blob/main/docs/python.md
+# https://github.com/sieve-data/cog/blob/main/docs/python.md
 
 from cog import BasePredictor, Input, Path
 

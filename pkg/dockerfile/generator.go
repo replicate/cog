@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/replicate/cog/pkg/config"
+	"github.com/sieve-data/cog/pkg/config"
 )
 
 //go:embed embed/cog.whl
@@ -72,6 +72,7 @@ func (g *Generator) GenerateBase() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	pythonRequirements, err := g.pythonRequirements()
 	if err != nil {
 		return "", err
@@ -95,10 +96,14 @@ func (g *Generator) GenerateBase() (string, error) {
 		"FROM " + baseImage,
 		g.preamble(),
 		installPython,
+		g.installCython(),
 		installCog,
 		aptInstalls,
 		pythonRequirements,
 		pipInstalls,
+		g.installSieve(),
+		g.uninstallPydantic(),
+		g.installPydanticNoBinary(),
 		run,
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
@@ -206,8 +211,29 @@ func (g *Generator) installCog() (string, error) {
 RUN --mount=type=cache,target=/root/.cache/pip pip install /tmp/%s`, path.Join(g.relativeTmpDir, cogFilename), cogFilename, cogFilename), nil
 }
 
+func (g *Generator) installPydanticNoBinary() string {
+	return "RUN --mount=type=cache,target=/root/.cache/pip pip install pydantic --no-binary :all:"
+}
+
+func (g *Generator) uninstallPydantic() string {
+	return "RUN --mount=type=cache,target=/root/.cache/pip pip uninstall pydantic -y"
+}
+
+func (g *Generator) installCython() string {
+	return "RUN --mount=type=cache,target=/root/.cache/pip pip install cython"
+}
+func (g *Generator) installSieve() string {
+	sieveInternal := "spatula-0.0.1-py3-none-any.whl"
+	sieveExternal := "sievedata-0.0.1.1-py3-none-any.whl"
+	format := "COPY %s /tmp/%s\n RUN --mount=type=cache,target=/root/.cache/pip pip install /tmp/%s"
+	line1 := fmt.Sprintf(format, sieveInternal, sieveInternal, sieveInternal)
+	line2 := fmt.Sprintf(format, sieveExternal, sieveExternal, sieveExternal)
+	return fmt.Sprintf("%s\n%s", line1, line2)
+}
+
 func (g *Generator) pythonRequirements() (string, error) {
 	reqs := g.Config.Build.PythonRequirements
+
 	if reqs == "" {
 		return "", nil
 	}
