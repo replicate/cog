@@ -68,8 +68,6 @@ def test_emit_utilization_span():
     assert "utilization" in spans[0].attributes
 
     assert abs(1.0 - spans[1].attributes["utilization"]) <= 0.3
-    assert "walrus1" == spans[1].attributes["model.version"]
-
     assert abs(0.5 - spans[2].attributes["utilization"]) <= 0.3
 
     assert spans[3].attributes["utilization"] == 0.0

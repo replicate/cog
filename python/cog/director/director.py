@@ -17,7 +17,7 @@ from ..server.probes import ProbeHelper
 from ..server.webhook import requests_session, webhook_caller
 from .eventtypes import HealthcheckStatus, Webhook
 from .healthchecker import Healthchecker
-from .monitor import Monitor
+from .monitor import Monitor, span_attributes_from_env
 from .prediction_tracker import PredictionTracker
 from .redis import EmptyRedisStream, RedisConsumerRotator
 
@@ -181,7 +181,8 @@ class Director:
             try:
                 log.info("received message")
                 with self._tracer.start_as_current_span(
-                    name="cog.prediction"
+                    name="cog.prediction",
+                    attributes=span_attributes_from_env(),
                 ) as span:
                     self._handle_message(message_id, message_json, span)
             except Exception:
