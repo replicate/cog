@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 from queue import Empty, Full, Queue
@@ -9,6 +10,18 @@ from opentelemetry import trace
 from .. import schema
 
 log = structlog.get_logger(__name__)
+
+
+def span_attributes_from_env():
+    return {
+        "hostname": os.environ.get("HOSTNAME", ""),
+        "model.id": os.environ.get("COG_MODEL_ID", ""),
+        "model.name": os.environ.get("COG_MODEL_NAME", ""),
+        "model.username": os.environ.get("COG_USERNAME", ""),
+        "model.version": os.environ.get("COG_MODEL_VERSION", ""),
+        "hardware": os.environ.get("COG_HARDWARE", ""),
+        "docker_image_uri": os.environ.get("COG_DOCKER_IMAGE_URI", ""),
+    }
 
 
 class Monitor:
@@ -60,7 +73,8 @@ class Monitor:
 
             if time.perf_counter() >= last_span_at + self.utilization_interval:
                 with self._tracer.start_as_current_span(
-                    name="cog.director.utilization"
+                    name="cog.director.utilization",
+                    attributes=span_attributes_from_env(),
                 ) as span:
                     if current_prediction_started_at:  # event didn't finish in window
                         active_sec += (
