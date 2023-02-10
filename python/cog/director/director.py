@@ -1,3 +1,4 @@
+import datetime
 import json
 import queue
 import signal
@@ -6,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 import requests
 import structlog
+from opentelemetry import trace
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
@@ -15,6 +17,7 @@ from ..server.probes import ProbeHelper
 from ..server.webhook import requests_session, webhook_caller
 from .eventtypes import HealthcheckStatus, Webhook
 from .healthchecker import Healthchecker
+from .monitor import Monitor
 from .prediction_tracker import PredictionTracker
 from .redis import EmptyRedisStream, RedisConsumerRotator
 
@@ -49,6 +52,7 @@ class Director:
         self,
         events: queue.Queue,
         healthchecker: Healthchecker,
+        monitor: Monitor,
         redis_consumer_rotator: RedisConsumerRotator,
         predict_timeout: int,
         max_failure_count: int,
@@ -56,6 +60,7 @@ class Director:
     ):
         self.events = events
         self.healthchecker = healthchecker
+        self.monitor = monitor
         self.redis_consumer_rotator = redis_consumer_rotator
         self.predict_timeout = predict_timeout
         self.max_failure_count = max_failure_count
@@ -64,6 +69,7 @@ class Director:
         self._failure_count = 0
         self._should_exit = False
         self._shutdown_hooks: List[Callable] = []
+        self._tracer = trace.get_tracer("cog-director")
 
         self.cog_client = _make_local_http_client()
         self.cog_http_base = "http://localhost:5000"
@@ -156,6 +162,7 @@ class Director:
             structlog.contextvars.bind_contextvars(
                 queue=redis_consumer.redis_input_queue,
             )
+            self.monitor.set_current_prediction(None)
 
             self._confirm_model_health()
 
@@ -173,7 +180,10 @@ class Director:
 
             try:
                 log.info("received message")
-                self._handle_message(message_id, message_json)
+                with self._tracer.start_as_current_span(
+                    name="cog.prediction"
+                ) as span:
+                    self._handle_message(message_id, message_json, span)
             except Exception:
                 self._record_failure()
                 log.error("caught exception while running prediction", exc_info=True)
@@ -183,7 +193,9 @@ class Director:
                 redis_consumer.ack(message_id)
                 log.info("acked message")
 
-    def _handle_message(self, message_id: str, message_json: str) -> None:
+    def _handle_message(
+        self, message_id: str, message_json: str, span: trace.Span
+    ) -> None:
         message = json.loads(message_json)
         prediction_id = message["id"]
 
@@ -193,9 +205,6 @@ class Director:
         )
 
         log.info("running prediction")
-        should_cancel = self.redis_consumer_rotator.get_current().checker(
-            message.get("cancel_key")
-        )
 
         # Tracker is tied to a single prediction, and deliberately only exists
         # within this method in an attempt to eliminate the possibility that we
@@ -203,6 +212,12 @@ class Director:
         tracker = PredictionTracker(
             response=schema.PredictionResponse(**message),
             webhook_caller=webhook_caller(message["webhook"]),
+        )
+        self.monitor.set_current_prediction(tracker._response)
+        self._set_span_attributes_from_tracker(span, tracker)
+
+        should_cancel = self.redis_consumer_rotator.get_current().checker(
+            message.get("cancel_key")
         )
 
         # Override webhook to call us
@@ -216,15 +231,15 @@ class Director:
                 headers={"Prefer": "respond-async"},
                 timeout=PREDICTION_CREATE_TIMEOUT,
             )
-        except requests.exceptions.RequestException:
+        except requests.exceptions.RequestException as e:
             tracker.fail("Unknown error handling prediction.")
             log.error("prediction failed: could not create prediction", exc_info=True)
-            self._record_failure()
+            self._record_failure(span, e)
             return
 
         try:
             resp.raise_for_status()
-        except requests.exceptions.RequestException:
+        except requests.exceptions.RequestException as e:
             # Special case validation errors
             if resp.status_code == 422:
                 tracker.fail(f"Prediction input failed validation: {resp.text}")
@@ -240,7 +255,7 @@ class Director:
                     status_code=resp.status_code,
                     response=resp.text,
                 )
-            self._record_failure()
+            self._record_failure(span, e)
             return
 
         tracker.start()
@@ -262,6 +277,7 @@ class Director:
                         tracker.fail("Model stopped responding during prediction.")
                         self._abort(
                             "prediction failed: model container failed healthchecks",
+                            span=span,
                             health=event.health.name,
                         )
                 else:
@@ -269,7 +285,7 @@ class Director:
 
             if should_cancel():
                 log.info("prediction cancelation requested")
-                self._cancel_prediction(prediction_id)
+                self._cancel_prediction(prediction_id, span)
                 break
 
             if self.predict_timeout and tracker.runtime > self.predict_timeout:
@@ -280,7 +296,7 @@ class Director:
                 # Mark the prediction as timed out so we handle the
                 # cancelation webhook appropriately.
                 tracker.timed_out()
-                self._cancel_prediction(prediction_id)
+                self._cancel_prediction(prediction_id, span, timed_out=True)
                 break
 
         # Wait up to another CANCEL_WAIT seconds for cancelation if necessary
@@ -298,20 +314,42 @@ class Director:
         # and we should abort.
         if not tracker.is_complete():
             tracker.force_cancel()
-            self._abort("prediction failed to complete after cancelation")
+            self._abort("prediction failed to complete after cancelation", span)
 
         # Keep track of runs of failures to catch the situation where the
         # worker has gotten into a bad state where it can only fail
         # predictions, but isn't exiting.
         if tracker.status == schema.Status.FAILED:
             log.warn("prediction failed")
-            self._record_failure()
+            self._record_failure(span)
         elif tracker.status == schema.Status.CANCELED:
             log.info("prediction canceled")
             self._record_success()
         else:
             log.info("prediction succeeded")
             self._record_success()
+
+        self._set_span_attributes_from_tracker(span, tracker)
+
+    # OpenTelemetry is very picky about not accepting None types
+    def _set_span_attributes_from_tracker(self, span, tracker):
+        span.set_attribute("prediction.uuid", tracker._response.id)
+        if tracker._response.version:
+            span.set_attribute("model.version", tracker._response.version)
+        if tracker._response.started_at:
+            span.set_attribute(
+                "prediction.started_at", tracker._response.started_at.timestamp()
+            )
+        if tracker._response.created_at:
+            span.set_attribute(
+                "prediction.created_at", tracker._response.created_at.timestamp()
+            )
+        if tracker._response.status:
+            span.set_attribute("prediction.status", tracker.status)
+        if tracker._response.completed_at:
+            span.set_attribute(
+                "prediction.completed_at", tracker._response.completed_at.timestamp()
+            )
 
     def _confirm_model_health(self) -> None:
         self.healthchecker.request_status()
@@ -346,7 +384,13 @@ class Director:
             wait_seconds=HEALTHCHECK_WAIT,
         )
 
-    def _cancel_prediction(self, prediction_id: Any) -> None:
+    def _cancel_prediction(
+        self, prediction_id: Any, span: trace.Span, timed_out=False
+    ) -> None:
+        span.set_attribute("prediction.status", "canceled")
+        if timed_out:
+            span.set_attribute("prediction.timed_out", True)
+
         resp = self.cog_client.post(
             self.cog_http_base + "/predictions/" + prediction_id + "/cancel",
             timeout=1,
@@ -365,19 +409,40 @@ class Director:
         except requests.exceptions.RequestException:
             log.warn("failed to report setup run", exc_info=True)
 
-    def _record_failure(self) -> None:
+    def _record_failure(
+        self,
+        span: Optional[trace.Span] = None,
+        exception: Optional[Exception] = None,
+        response: Optional[requests.Response] = None,
+    ) -> None:
+        if span:
+            span.set_attribute("prediction.status", "failed")
+            if exception:
+                span.record_exception(exception)
+            if response:
+                span.set_attribute("http.status_code", response.status_code)
+                span.set_attribute("http.response_length", len(response.content))
+
         if not self.max_failure_count:
             return
         self._failure_count += 1
         if self._failure_count > self.max_failure_count:
             self._abort(
-                "saw too many failures in a row", failure_count=self._failure_count
+                "saw too many failures in a row",
+                span=span,
+                failure_count=self._failure_count,
             )
 
     def _record_success(self) -> None:
         self._failure_count = 0
 
-    def _abort(self, message: str, **kwds: Any) -> None:
+    def _abort(
+        self, message: str, span: Optional[trace.Span] = None, **kwds: Any
+    ) -> None:
+        if span:
+            span.set_attribute("prediction.status", "failed")
+            span.set_attribute("prediction.error_message", f"{message}: {str(kwds)}")
+
         self._should_exit = True
         log.error(message, **kwds)
         raise Abort(message)
