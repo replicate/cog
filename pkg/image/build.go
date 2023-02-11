@@ -74,9 +74,6 @@ func Build(cfg *config.Config, dir, imageName string, progressOutput string, wri
 		labels["org.cogmodel.openapi_schema"] = string(schemaJSON)
 	}
 
-	if err := docker.BuildAddLabelsToImage(imageName, labels); err != nil {
-		return fmt.Errorf("Failed to add labels to image: %w", err)
-	}
 	return nil
 }
 
