@@ -14,7 +14,7 @@ from typing_extensions import get_origin, get_args, Annotated
 import yaml
 
 from .errors import ConfigDoesNotExist, PredictorNotSet
-from .types import Input, Path as CogPath, File as CogFile
+from .types import Input, Path as CogPath, File as CogFile, URLPath
 
 
 ALLOWED_INPUT_TYPES = [str, int, float, bool, CogFile, CogPath]
@@ -68,13 +68,21 @@ def load_predictor(config: Dict[str, Any]) -> BasePredictor:
     Constructs an instance of the user-defined Predictor class from a config.
     """
 
+    ref = get_predictor_ref(config)
+    return load_predictor_from_ref(ref)
+
+
+def get_predictor_ref(config: Dict[str, Any]) -> str:
     if "predict" not in config:
         raise PredictorNotSet(
             "Can't run predictions: 'predict' option not found in cog.yaml"
         )
 
-    predict_string = config["predict"]
-    module_path, class_name = predict_string.split(":", 1)
+    return config["predict"]
+
+
+def load_predictor_from_ref(ref: str) -> BasePredictor:
+    module_path, class_name = ref.split(":", 1)
     module_name = os.path.basename(module_path).split(".py", 1)[0]
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None
@@ -98,9 +106,12 @@ class BaseInput(BaseModel):
         Cleanup any temporary files created by the input.
         """
         for _, value in self:
+            # Handle URLPath objects specially for cleanup.
+            if isinstance(value, URLPath):
+                value.unlink()
             # Note this is pathlib.Path, which cog.Path is a subclass of. A pathlib.Path object shouldn't make its way here,
             # but both have an unlink() method, so may as well be safe.
-            if isinstance(value, Path):
+            elif isinstance(value, Path):
                 # This could be missing_ok=True when we drop support for Python 3.7
                 if value.exists():
                     value.unlink()
@@ -127,7 +138,7 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
 
     for name, parameter in signature.parameters.items():
         InputType = parameter.annotation
-        """
+
         if InputType is inspect.Signature.empty:
             raise TypeError(
                 f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
@@ -136,7 +147,6 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
             raise TypeError(
                 f"Unsupported input type {human_readable_type_name(InputType)} for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
             )
-        """
 
         # if no default is specified, create an empty, required input
         if parameter.default is inspect.Signature.empty:

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/mitchellh/go-homedir"
@@ -105,6 +107,19 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		Image:   imageName,
 		Volumes: volumes,
 	})
+
+	go func() {
+		captureSignal := make(chan os.Signal, 1)
+		signal.Notify(captureSignal, syscall.SIGINT)
+
+		<-captureSignal
+
+		console.Info("Stopping container...")
+		if err := predictor.Stop(); err != nil {
+			console.Warnf("Failed to stop container: %s", err)
+		}
+	}()
+
 	if err := predictor.Start(os.Stderr); err != nil {
 		return err
 	}
@@ -138,7 +153,8 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 
 	// Generate output depending on type in schema
 	var out []byte
-	outputSchema := schema.Components.Schemas["Response"].Value.Properties["output"].Value
+	responseSchema := schema.Paths["/predictions"].Post.Responses["200"].Value.Content["application/json"].Schema.Value
+	outputSchema := responseSchema.Properties["output"].Value
 
 	// Multiple outputs!
 	if outputSchema.Type == "array" && outputSchema.Items.Value != nil && outputSchema.Items.Value.Type == "string" && outputSchema.Items.Value.Format == "uri" {

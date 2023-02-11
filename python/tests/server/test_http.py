@@ -1,389 +1,221 @@
+from datetime import datetime
 import base64
 import io
-import os
-import tempfile
-from typing import Iterator, List
-from unittest import mock
+import responses
+from responses import matchers
+import time
 
-from fastapi.testclient import TestClient
-from pydantic import BaseModel
 from PIL import Image
 import pytest
+import unittest.mock as mock
 
-from cog import BasePredictor, Input, File, Path
-
-from cog.server.http import create_app
-
-
-def make_client(predictor: BasePredictor, **kwargs) -> TestClient:
-    app = create_app(predictor)
-    with TestClient(app, **kwargs) as client:
-        return client
+from .conftest import make_client, uses_predictor
 
 
-def test_setup_is_called():
-    class Predictor(BasePredictor):
-        def setup(self):
-            self.foo = "bar"
-
-        def predict(self) -> str:
-            return self.foo
-
-    client = make_client(Predictor())
+@uses_predictor("setup")
+def test_setup_is_called(client, match):
     resp = client.post("/predictions")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "succeeded", "output": "bar"}
+    assert resp.json() == match({"status": "succeeded", "output": "bar"})
 
 
-def test_openapi_specification():
-    class Predictor(BasePredictor):
-        def predict(
-            self,
-            no_default: str,
-            default_without_input: str = "default",
-            input_with_default: int = Input(default=10),
-            path: Path = Input(description="Some path"),
-            image: File = Input(description="Some path"),
-            choices: str = Input(choices=["foo", "bar"]),
-            int_choices: int = Input(choices=[3, 4, 5]),
-        ) -> str:
-            pass
-
-    client = make_client(Predictor())
+@uses_predictor("openapi_complex_input")
+def test_openapi_specification(client):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
-    print(resp.json())
-    assert resp.json() == {
-        "openapi": "3.0.2",
-        "info": {"title": "Cog", "version": "0.1.0"},
-        "paths": {
-            "/": {
-                "get": {
-                    "summary": "Root",
-                    "operationId": "root__get",
-                    "responses": {
-                        "200": {
-                            "description": "Successful Response",
-                            "content": {"application/json": {"schema": {}}},
-                        }
-                    },
+
+    schema = resp.json()
+    assert schema["openapi"] == "3.0.2"
+    assert schema["info"] == {"title": "Cog", "version": "0.1.0"}
+    assert schema["paths"]["/"] == {
+        "get": {
+            "summary": "Root",
+            "operationId": "root__get",
+            "responses": {
+                "200": {
+                    "description": "Successful Response",
+                    "content": {"application/json": {"schema": mock.ANY}},
                 }
             },
-            "/predictions": {
-                "post": {
-                    "summary": "Predict",
-                    "description": "Run a single prediction on the model",
-                    "operationId": "predict_predictions_post",
-                    "requestBody": {
-                        "content": {
-                            "application/json": {
-                                "schema": {"$ref": "#/components/schemas/Request"}
+        }
+    }
+    assert schema["paths"]["/predictions"] == {
+        "post": {
+            "summary": "Predict",
+            "description": "Run a single prediction on the model",
+            "operationId": "predict_predictions_post",
+            "parameters": [
+                {
+                    "in": "header",
+                    "name": "prefer",
+                    "required": False,
+                    "schema": {"title": "Prefer", "type": "string"},
+                }
+            ],
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/PredictionRequest"}
+                    }
+                }
+            },
+            "responses": {
+                "200": {
+                    "description": "Successful Response",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PredictionResponse"
                             }
                         }
                     },
-                    "responses": {
-                        "200": {
-                            "description": "Successful Response",
-                            "content": {
-                                "application/json": {
-                                    "schema": {"$ref": "#/components/schemas/Response"}
-                                }
-                            },
-                        },
-                        "422": {
-                            "description": "Validation Error",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "$ref": "#/components/schemas/HTTPValidationError"
-                                    }
-                                }
-                            },
-                        },
-                    },
-                }
-            },
-        },
-        "components": {
-            "schemas": {
-                "HTTPValidationError": {
-                    "title": "HTTPValidationError",
-                    "type": "object",
-                    "properties": {
-                        "detail": {
-                            "title": "Detail",
-                            "type": "array",
-                            "items": {"$ref": "#/components/schemas/ValidationError"},
+                },
+                "422": {
+                    "description": "Validation Error",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/HTTPValidationError"
+                            }
                         }
                     },
                 },
-                "Input": {
-                    "title": "Input",
-                    "required": [
-                        "no_default",
-                        "path",
-                        "image",
-                        "choices",
-                        "int_choices",
-                    ],
-                    "type": "object",
-                    "properties": {
-                        "no_default": {
-                            "title": "No Default",
-                            "type": "string",
-                            "x-order": 0,
-                        },
-                        "default_without_input": {
-                            "title": "Default Without Input",
-                            "type": "string",
-                            "default": "default",
-                            "x-order": 1,
-                        },
-                        "input_with_default": {
-                            "title": "Input With Default",
-                            "type": "integer",
-                            "default": 10,
-                            "x-order": 2,
-                        },
-                        "path": {
-                            "title": "Path",
-                            "description": "Some path",
-                            "type": "string",
-                            "format": "uri",
-                            "x-order": 3,
-                        },
-                        "image": {
-                            "title": "Image",
-                            "description": "Some path",
-                            "type": "string",
-                            "format": "uri",
-                            "x-order": 4,
-                        },
-                        "choices": {"$ref": "#/components/schemas/choices"},
-                        "int_choices": {"$ref": "#/components/schemas/int_choices"},
+            },
+        }
+    }
+    assert schema["paths"]["/predictions/{prediction_id}/cancel"] == {
+        "post": {
+            "summary": "Cancel",
+            "description": "Cancel a running prediction",
+            "operationId": "cancel_predictions__prediction_id__cancel_post",
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "prediction_id",
+                    "required": True,
+                    "schema": {"title": "Prediction ID", "type": "string"},
+                }
+            ],
+            "responses": {
+                "200": {
+                    "content": {"application/json": {"schema": mock.ANY}},
+                    "description": "Successful Response",
+                },
+                "422": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/HTTPValidationError"
+                            }
+                        }
                     },
+                    "description": "Validation Error",
                 },
-                "Output": {"title": "Output", "type": "string"},
-                "Request": {
-                    "title": "Request",
-                    "type": "object",
-                    "properties": {
-                        "input": {"$ref": "#/components/schemas/Input"},
-                        "output_file_prefix": {
-                            "title": "Output File Prefix",
-                            "type": "string",
-                        },
-                    },
-                    "description": "The request body for a prediction",
-                },
-                "Response": {
-                    "title": "Response",
-                    "required": ["status"],
-                    "type": "object",
-                    "properties": {
-                        "status": {"$ref": "#/components/schemas/Status"},
-                        "output": {"$ref": "#/components/schemas/Output"},
-                        "error": {"title": "Error", "type": "string"},
-                    },
-                    "description": "The response body for a prediction",
-                },
-                "Status": {
-                    "title": "Status",
-                    "enum": ["processing", "succeeded", "failed"],
-                    "description": "An enumeration.",
-                    "type": "string",
-                },
-                "ValidationError": {
-                    "title": "ValidationError",
-                    "required": ["loc", "msg", "type"],
-                    "type": "object",
-                    "properties": {
-                        "loc": {
-                            "title": "Location",
-                            "type": "array",
-                            "items": {"type": "string"},
-                        },
-                        "msg": {"title": "Message", "type": "string"},
-                        "type": {"title": "Error Type", "type": "string"},
-                    },
-                },
-                "choices": {
-                    "title": "choices",
-                    "enum": ["foo", "bar"],
-                    "description": "An enumeration.",
-                    "type": "string",
-                },
-                "int_choices": {
-                    "description": "An enumeration.",
-                    "enum": [3, 4, 5],
-                    "title": "int_choices",
-                    "type": "integer",
-                },
-            }
+            },
+        }
+    }
+    assert schema["components"]["schemas"]["Input"] == {
+        "title": "Input",
+        "required": [
+            "no_default",
+            "path",
+            "image",
+            "choices",
+            "int_choices",
+        ],
+        "type": "object",
+        "properties": {
+            "no_default": {
+                "title": "No Default",
+                "type": "string",
+                "x-order": 0,
+            },
+            "default_without_input": {
+                "title": "Default Without Input",
+                "type": "string",
+                "default": "default",
+                "x-order": 1,
+            },
+            "input_with_default": {
+                "title": "Input With Default",
+                "type": "integer",
+                "default": 10,
+                "x-order": 2,
+            },
+            "path": {
+                "title": "Path",
+                "description": "Some path",
+                "type": "string",
+                "format": "uri",
+                "x-order": 3,
+            },
+            "image": {
+                "title": "Image",
+                "description": "Some path",
+                "type": "string",
+                "format": "uri",
+                "x-order": 4,
+            },
+            "choices": {
+                "allOf": [{"$ref": "#/components/schemas/choices"}],
+                "x-order": 5,
+            },
+            "int_choices": {
+                "allOf": [{"$ref": "#/components/schemas/int_choices"}],
+                "x-order": 6,
+            },
+        },
+    }
+    assert schema["components"]["schemas"]["Output"] == {
+        "title": "Output",
+        "type": "string",
+    }
+    assert schema["components"]["schemas"]["choices"] == {
+        "title": "choices",
+        "enum": ["foo", "bar"],
+        "description": "An enumeration.",
+        "type": "string",
+    }
+    assert schema["components"]["schemas"]["int_choices"] == {
+        "description": "An enumeration.",
+        "enum": [3, 4, 5],
+        "title": "int_choices",
+        "type": "integer",
+    }
+
+
+@uses_predictor("openapi_custom_output_type")
+def test_openapi_specification_with_custom_user_defined_output_type(client):
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+
+    schema = resp.json()
+    assert schema["components"]["schemas"]["Output"] == {
+        "$ref": "#/components/schemas/MyOutput",
+        "title": "Output",
+    }
+    assert schema["components"]["schemas"]["MyOutput"] == {
+        "title": "MyOutput",
+        "type": "object",
+        "properties": {
+            "foo_number": {
+                "title": "Foo Number",
+                "type": "integer",
+                "default": "42",
+            },
+            "foo_string": {
+                "title": "Foo String",
+                "type": "string",
+                "default": "meaning of life",
+            },
         },
     }
 
 
-def test_openapi_specification_with_custom_user_defined_output_type():
-    # Calling this `MyOutput` to test if cog renames it to `Output` in the schema
-    class MyOutput(BaseModel):
-        foo_number: int = "42"
-        foo_string: str = "meaning of life"
-
-    class Predictor(BasePredictor):
-        def predict(
-            self,
-        ) -> MyOutput:
-            pass
-
-    client = make_client(Predictor())
-    resp = client.get("/openapi.json")
-    assert resp.status_code == 200
-    print(resp.json())
-
-    assert resp.json() == {
-        "openapi": "3.0.2",
-        "info": {"title": "Cog", "version": "0.1.0"},
-        "paths": {
-            "/": {
-                "get": {
-                    "summary": "Root",
-                    "operationId": "root__get",
-                    "responses": {
-                        "200": {
-                            "description": "Successful Response",
-                            "content": {"application/json": {"schema": {}}},
-                        }
-                    },
-                }
-            },
-            "/predictions": {
-                "post": {
-                    "summary": "Predict",
-                    "description": "Run a single prediction on the model",
-                    "operationId": "predict_predictions_post",
-                    "requestBody": {
-                        "content": {
-                            "application/json": {
-                                "schema": {"$ref": "#/components/schemas/Request"}
-                            }
-                        }
-                    },
-                    "responses": {
-                        "200": {
-                            "description": "Successful Response",
-                            "content": {
-                                "application/json": {
-                                    "schema": {"$ref": "#/components/schemas/Response"}
-                                }
-                            },
-                        },
-                        "422": {
-                            "description": "Validation Error",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "$ref": "#/components/schemas/HTTPValidationError"
-                                    }
-                                }
-                            },
-                        },
-                    },
-                }
-            },
-        },
-        "components": {
-            "schemas": {
-                "HTTPValidationError": {
-                    "title": "HTTPValidationError",
-                    "type": "object",
-                    "properties": {
-                        "detail": {
-                            "title": "Detail",
-                            "type": "array",
-                            "items": {"$ref": "#/components/schemas/ValidationError"},
-                        }
-                    },
-                },
-                "Input": {"title": "Input", "type": "object", "properties": {}},
-                "MyOutput": {
-                    "title": "MyOutput",
-                    "type": "object",
-                    "properties": {
-                        "foo_number": {
-                            "title": "Foo Number",
-                            "type": "integer",
-                            "default": "42",
-                        },
-                        "foo_string": {
-                            "title": "Foo String",
-                            "type": "string",
-                            "default": "meaning of life",
-                        },
-                    },
-                },
-                "Output": {"$ref": "#/components/schemas/MyOutput", "title": "Output"},
-                "Request": {
-                    "title": "Request",
-                    "type": "object",
-                    "properties": {
-                        "input": {"$ref": "#/components/schemas/Input"},
-                        "output_file_prefix": {
-                            "title": "Output File Prefix",
-                            "type": "string",
-                        },
-                    },
-                    "description": "The request body for a prediction",
-                },
-                "Response": {
-                    "title": "Response",
-                    "required": ["status"],
-                    "type": "object",
-                    "properties": {
-                        "status": {"$ref": "#/components/schemas/Status"},
-                        "output": {"$ref": "#/components/schemas/Output"},
-                        "error": {"title": "Error", "type": "string"},
-                    },
-                    "description": "The response body for a prediction",
-                },
-                "Status": {
-                    "title": "Status",
-                    "enum": ["processing", "succeeded", "failed"],
-                    "description": "An enumeration.",
-                    "type": "string",
-                },
-                "ValidationError": {
-                    "title": "ValidationError",
-                    "required": ["loc", "msg", "type"],
-                    "type": "object",
-                    "properties": {
-                        "loc": {
-                            "title": "Location",
-                            "type": "array",
-                            "items": {"type": "string"},
-                        },
-                        "msg": {"title": "Message", "type": "string"},
-                        "type": {"title": "Error Type", "type": "string"},
-                    },
-                },
-            }
-        },
-    }
-
-
-def test_openapi_specification_with_custom_user_defined_output_type_called_output():
-    # An output object called `Output` needs to be special cased because pydantic tries to dedupe it with the internal `Output`
-    class Output(BaseModel):
-        foo_number: int = "42"
-        foo_string: str = "meaning of life"
-
-    class Predictor(BasePredictor):
-        def predict(
-            self,
-        ) -> Output:
-            pass
-
-    client = make_client(Predictor())
+@uses_predictor("openapi_output_type")
+def test_openapi_specification_with_custom_user_defined_output_type_called_output(
+    client,
+):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
@@ -401,14 +233,8 @@ def test_openapi_specification_with_custom_user_defined_output_type_called_outpu
     }
 
 
-def test_openapi_specification_with_yield():
-    class Predictor(BasePredictor):
-        def predict(
-            self,
-        ) -> Iterator[str]:
-            pass
-
-    client = make_client(Predictor())
+@uses_predictor("openapi_output_yield")
+def test_openapi_specification_with_yield(client):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
@@ -422,14 +248,8 @@ def test_openapi_specification_with_yield():
     }
 
 
-def test_openapi_specification_with_list():
-    class Predictor(BasePredictor):
-        def predict(
-            self,
-        ) -> List[str]:
-            pass
-
-    client = make_client(Predictor())
+@uses_predictor("openapi_output_list")
+def test_openapi_specification_with_list(client):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
@@ -442,19 +262,19 @@ def test_openapi_specification_with_list():
     }
 
 
-def test_openapi_specification_with_int_choices():
-    class Predictor(BasePredictor):
-        def predict(self, pick_a_number_any_number: int = Input(choices=[1, 2])) -> str:
-            pass
-
-    client = make_client(Predictor())
+@uses_predictor("openapi_input_int_choices")
+def test_openapi_specification_with_int_choices(client):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
-    assert resp.json()["components"]["schemas"]["Input"]["properties"][
-        "pick_a_number_any_number"
-    ] == {"$ref": "#/components/schemas/pick_a_number_any_number"}
-    assert resp.json()["components"]["schemas"]["pick_a_number_any_number"] == {
+    schema = resp.json()
+    schemas = schema["components"]["schemas"]
+
+    assert schemas["Input"]["properties"]["pick_a_number_any_number"] == {
+        "allOf": [{"$ref": "#/components/schemas/pick_a_number_any_number"}],
+        "x-order": 0,
+    }
+    assert schemas["pick_a_number_any_number"] == {
         "description": "An enumeration.",
         "enum": [1, 2],
         "title": "pick_a_number_any_number",
@@ -462,52 +282,32 @@ def test_openapi_specification_with_int_choices():
     }
 
 
-def test_yielding_strings_from_generator_predictors():
-    class Predictor(BasePredictor):
-        def predict(self) -> Iterator[str]:
-            predictions = ["foo", "bar", "baz"]
-            for prediction in predictions:
-                yield prediction
-
-    client = make_client(Predictor())
+@uses_predictor("yield_strings")
+def test_yielding_strings_from_generator_predictors(client, match):
     resp = client.post("/predictions")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "succeeded", "output": ["foo", "bar", "baz"]}
+    assert resp.json() == match(
+        {"status": "succeeded", "output": ["foo", "bar", "baz"]}
+    )
 
 
-def test_yielding_strings_from_generator_predictors_file_input():
-    class Predictor(BasePredictor):
-        def predict(self, file: Path) -> Iterator[str]:
-            with file.open() as f:
-                prefix = f.read()
-            predictions = ["foo", "bar", "baz"]
-            for prediction in predictions:
-                yield prefix + " " + prediction
-
-    client = make_client(Predictor())
+@uses_predictor("yield_strings_file_input")
+def test_yielding_strings_from_generator_predictors_file_input(client, match):
     resp = client.post(
         "/predictions",
         json={"input": {"file": "data:text/plain; charset=utf-8;base64,aGVsbG8="}},
     )
     assert resp.status_code == 200
-    assert resp.json() == {
-        "status": "succeeded",
-        "output": ["hello foo", "hello bar", "hello baz"],
-    }
+    assert resp.json() == match(
+        {
+            "status": "succeeded",
+            "output": ["hello foo", "hello bar", "hello baz"],
+        }
+    )
 
 
-def test_yielding_files_from_generator_predictors():
-    class Predictor(BasePredictor):
-        def predict(self) -> Iterator[Path]:
-            colors = ["red", "blue", "yellow"]
-            for i, color in enumerate(colors):
-                temp_dir = tempfile.mkdtemp()
-                temp_path = os.path.join(temp_dir, f"prediction-{i}.bmp")
-                img = Image.new("RGB", (255, 255), color)
-                img.save(temp_path)
-                yield Path(temp_path)
-
-    client = make_client(Predictor())
+@uses_predictor("yield_files")
+def test_yielding_files_from_generator_predictors(client):
     resp = client.post("/predictions")
 
     assert resp.status_code == 200
@@ -523,41 +323,134 @@ def test_yielding_files_from_generator_predictors():
     assert image_color(output[2]) == (255, 255, 0)  # yellow
 
 
-# TODO: timing
-@pytest.mark.skip
-@mock.patch("time.time", return_value=0.0)
-def test_timing(time_mock):
-    class Predictor(BasePredictor):
-        def setup(self):
-            time_mock.return_value = 1.0
-
-        def predict(self):
-            time_mock.return_value = 3.0
-            return ""
-
-    client = make_client(Predictor())
-    resp = client.post("/predictions")
+@uses_predictor("input_none")
+def test_prediction_idempotent_endpoint(client, match):
+    resp = client.put("/predictions/abcd1234", json={})
     assert resp.status_code == 200
-    assert float(resp.headers["X-Setup-Time"]) == 1.0
-    assert float(resp.headers["X-Run-Time"]) == 2.0
+    assert resp.json() == match(
+        {"id": "abcd1234", "status": "succeeded", "output": "foobar"}
+    )
 
 
-def test_untyped_inputs():
-    class Predictor(BasePredictor):
-        def predict(self, input) -> str:
-            return input
+@uses_predictor("input_none")
+def test_prediction_idempotent_endpoint_matched_ids(client, match):
+    resp = client.put(
+        "/predictions/abcd1234",
+        json={
+            "id": "abcd1234",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json() == match(
+        {"id": "abcd1234", "status": "succeeded", "output": "foobar"}
+    )
 
-    with pytest.raises(TypeError):
-        client = make_client(Predictor())
+
+@uses_predictor("input_none")
+def test_prediction_idempotent_endpoint_mismatched_ids(client, match):
+    resp = client.put(
+        "/predictions/abcd1234",
+        json={
+            "id": "foobar",
+        },
+    )
+    assert resp.status_code == 422
 
 
-def test_input_with_unsupported_type():
-    class Input(BaseModel):
-        text: str
+@uses_predictor("sleep")
+def test_prediction_idempotent_endpoint_is_idempotent(client, match):
+    resp1 = client.put(
+        "/predictions/abcd1234",
+        json={"input": {"sleep": 1}},
+        headers={"Prefer": "respond-async"},
+    )
+    resp2 = client.put(
+        "/predictions/abcd1234",
+        json={"input": {"sleep": 1}},
+        headers={"Prefer": "respond-async"},
+    )
+    assert resp1.status_code == 202
+    assert resp1.json() == match({"id": "abcd1234", "status": "processing"})
+    assert resp2.status_code == 202
+    assert resp2.json() == match({"id": "abcd1234", "status": "processing"})
 
-    class Predictor(BasePredictor):
-        def predict(self, input: Input) -> str:
-            return input.text
 
-    with pytest.raises(TypeError):
-        client = make_client(Predictor())
+@uses_predictor("sleep")
+def test_prediction_idempotent_endpoint_conflict(client, match):
+    resp1 = client.put(
+        "/predictions/abcd1234",
+        json={"input": {"sleep": 1}},
+        headers={"Prefer": "respond-async"},
+    )
+    resp2 = client.put(
+        "/predictions/5678efgh",
+        json={"input": {"sleep": 1}},
+        headers={"Prefer": "respond-async"},
+    )
+    assert resp1.status_code == 202
+    assert resp1.json() == match({"id": "abcd1234", "status": "processing"})
+    assert resp2.status_code == 409
+
+
+# a basic end-to-end test for async predictions. if you're adding more
+# exhaustive tests of webhooks, consider adding them to test_runner.py
+@responses.activate
+@uses_predictor("input_string")
+def test_asynchronous_prediction_endpoint(client, match):
+    webhook = responses.post(
+        "https://example.com/webhook",
+        match=[
+            matchers.json_params_matcher(
+                {
+                    "id": "12345abcde",
+                    "status": "succeeded",
+                    "output": "hello world",
+                },
+                strict_match=False,
+            )
+        ],
+        status=200,
+    )
+
+    resp = client.post(
+        "/predictions",
+        json={
+            "id": "12345abcde",
+            "input": {"text": "hello world"},
+            "webhook": "https://example.com/webhook",
+            "webhook_events_filter": ["completed"],
+        },
+        headers={"Prefer": "respond-async"},
+    )
+    assert resp.status_code == 202
+
+    assert resp.json() == match(
+        {"status": "processing", "output": None, "started_at": mock.ANY}
+    )
+    assert resp.json()["started_at"] is not None
+
+    n = 0
+    while webhook.call_count < 1 and n < 10:
+        time.sleep(0.1)
+        n += 1
+
+    assert webhook.call_count == 1
+
+
+@uses_predictor("sleep")
+def test_prediction_cancel(client):
+    resp = client.post("/predictions/123/cancel")
+    assert resp.status_code == 404
+
+    resp = client.post(
+        "/predictions",
+        json={"id": "123", "input": {"sleep": 1}},
+        headers={"Prefer": "respond-async"},
+    )
+    assert resp.status_code == 202
+
+    resp = client.post("/predictions/456/cancel")
+    assert resp.status_code == 404
+
+    resp = client.post("/predictions/123/cancel")
+    assert resp.status_code == 200

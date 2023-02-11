@@ -93,15 +93,15 @@ Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the fu
 
 ## Development environment
 
-You'll need to [install Go 1.18](https://golang.org/doc/install). If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
+You'll need to [install Go 1.19](https://golang.org/doc/install). If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
 
 Install the Python dependencies:
 
-    pip install -r requirements-dev.txt
+    pip install -e python -r requirements-dev.txt
 
 Once you have Go installed, run:
 
-    make install
+    make install PREFIX=$(go env GOPATH)
 
 This installs the `cog` binary to `$GOPATH/bin/cog`.
 
@@ -200,10 +200,6 @@ To publish a prerelease version, append a [SemVer prerelease identifer](https://
     git push --tags
 
 ## Troubleshooting
-
-### `invalid command 'bdist_wheel'`
-
-If you get this error running `make install`, you'll need to run `pip install wheel` first.
 
 ### `cog command not found`
 

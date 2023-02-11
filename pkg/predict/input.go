@@ -1,8 +1,8 @@
 package predict
 
 import (
-	"io/ioutil"
 	"mime"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -60,7 +60,7 @@ func (inputs *Inputs) toMap() (map[string]string, error) {
 		if input.String != nil {
 			keyVals[key] = *input.String
 		} else if input.File != nil {
-			content, err := ioutil.ReadFile(*input.File)
+			content, err := os.ReadFile(*input.File)
 			if err != nil {
 				return keyVals, err
 			}

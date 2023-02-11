@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -14,7 +13,6 @@ import (
 	"github.com/sieve-data/cog/pkg/docker"
 	"github.com/sieve-data/cog/pkg/global"
 	"github.com/sieve-data/cog/pkg/util/console"
-	"github.com/sieve-data/cog/pkg/util/shell"
 )
 
 type status string
@@ -57,22 +55,26 @@ func NewPredictor(runOptions docker.RunOptions) Predictor {
 
 func (p *Predictor) Start(logsWriter io.Writer) error {
 	var err error
-	p.port, err = shell.NextFreePort(5000 + rand.Intn(1000))
-	if err != nil {
-		return err
-	}
-
 	containerPort := 5000
 
-	p.runOptions.Ports = append(p.runOptions.Ports, docker.Port{HostPort: p.port, ContainerPort: containerPort})
+	p.runOptions.Ports = append(p.runOptions.Ports, docker.Port{HostPort: 0, ContainerPort: containerPort})
 
 	p.containerID, err = docker.RunDaemon(p.runOptions)
 	if err != nil {
 		return fmt.Errorf("Failed to start container: %w", err)
 	}
+
+	p.port, err = docker.GetPort(p.containerID, containerPort)
+	if err != nil {
+		return fmt.Errorf("Failed to determine container port: %w", err)
+	}
+
 	go func() {
 		if err := docker.ContainerLogsFollow(p.containerID, logsWriter); err != nil {
-			console.Warnf("Error getting container logs: %s", err)
+			// if user hits ctrl-c we expect an error signal
+			if !strings.Contains(err.Error(), "signal: interrupt") {
+				console.Warnf("Error getting container logs: %s", err)
+			}
 		}
 	}()
 

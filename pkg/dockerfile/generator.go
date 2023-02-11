@@ -63,7 +63,7 @@ func (g *Generator) GenerateBase() (string, error) {
 	}
 	installPython := ""
 	if g.Config.Build.GPU {
-		installPython, err = g.installPython()
+		installPython, err = g.installPythonCUDA()
 		if err != nil {
 			return "", err
 		}
@@ -95,6 +95,7 @@ func (g *Generator) GenerateBase() (string, error) {
 		"# syntax = docker/dockerfile:1.2",
 		"FROM " + baseImage,
 		g.preamble(),
+		g.installTini(),
 		installPython,
 		g.installCython(),
 		installCog,
@@ -137,19 +138,28 @@ func (g *Generator) baseImage() (string, error) {
 }
 
 func (g *Generator) preamble() string {
-	lines := []string{
-		`ENV DEBIAN_FRONTEND=noninteractive
+	return `ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin`,
-	}
-	if g.Config.Build.GPU {
-		// Temporary hack until base images are updated
-		// https://github.com/NVIDIA/nvidia-docker/issues/1631
-		lines = append(lines, `RUN rm -f /etc/apt/sources.list.d/cuda.list && \
-    rm -f /etc/apt/sources.list.d/nvidia-ml.list && \
-    apt-key del 7fa2af80`)
-	}
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin`
+}
 
+func (g *Generator) installTini() string {
+	// Install tini as the image entrypoint to provide signal handling and process
+	// reaping appropriate for PID 1.
+	//
+	// N.B. If you remove/change this, consider removing/changing the `has_init`
+	// image label applied in image/build.go.
+	lines := []string{
+		`RUN --mount=type=cache,target=/var/cache/apt set -eux; \
+apt-get update -qq; \
+apt-get install -qqy --no-install-recommends curl; \
+rm -rf /var/lib/apt/lists/*; \
+TINI_VERSION=v0.19.0; \
+TINI_ARCH="$(dpkg --print-architecture)"; \
+curl -sSL -o /sbin/tini "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_ARCH}"; \
+chmod +x /sbin/tini`,
+		`ENTRYPOINT ["/sbin/tini", "--"]`,
+	}
 	return strings.Join(lines, "\n")
 }
 
@@ -163,7 +173,7 @@ func (g *Generator) aptInstalls() (string, error) {
 		" && rm -rf /var/lib/apt/lists/*", nil
 }
 
-func (g *Generator) installPython() (string, error) {
+func (g *Generator) installPythonCUDA() (string, error) {
 	// TODO: check that python version is valid
 
 	py := g.Config.Build.PythonVersion
@@ -186,7 +196,6 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get insta
 	tk-dev \
 	libffi-dev \
 	liblzma-dev \
-	python-openssl \
 	git \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
@@ -242,27 +251,21 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.
 }
 
 func (g *Generator) pipInstalls() (string, error) {
-	packages, indexURLs, err := g.Config.PythonPackagesForArch(g.GOOS, g.GOARCH)
+	requirements, err := g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH)
 	if err != nil {
 		return "", err
 	}
-	if len(packages) == 0 {
+	if strings.Trim(requirements, "") == "" {
 		return "", nil
 	}
 
-	findLinks := ""
-	for _, indexURL := range indexURLs {
-		findLinks += "-f " + indexURL + " "
-	}
-	for _, indexURL := range g.Config.Build.PythonFindLinks {
-		findLinks += "-f " + indexURL + " "
-	}
-	extraIndexURLs := ""
-	for _, indexURL := range g.Config.Build.PythonExtraIndexURLs {
-		extraIndexURLs += "--extra-index-url=" + indexURL
+	lines, containerPath, err := g.writeTemp("requirements.txt", []byte(requirements))
+	if err != nil {
+		return "", err
 	}
 
-	return "RUN --mount=type=cache,target=/root/.cache/pip pip install " + findLinks + " " + extraIndexURLs + " " + strings.Join(packages, " "), nil
+	lines = append(lines, "RUN --mount=type=cache,target=/root/.cache/pip pip install -r "+containerPath)
+	return strings.Join(lines, "\n"), nil
 }
 
 func (g *Generator) run() (string, error) {
@@ -282,6 +285,19 @@ This is the offending line: %s`, run)
 		lines = append(lines, "RUN "+run)
 	}
 	return strings.Join(lines, "\n"), nil
+}
+
+// writeTemp writes a temporary file that can be used as part of the build process
+// It returns the lines to add to Dockerfile to make it available and the filename it ends up as inside the container
+func (g *Generator) writeTemp(filename string, contents []byte) ([]string, string, error) {
+	path := filepath.Join(g.tmpDir, filename)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return []string{}, "", fmt.Errorf("Failed to write %s: %w", filename, err)
+	}
+	if err := os.WriteFile(path, contents, 0o644); err != nil {
+		return []string{}, "", fmt.Errorf("Failed to write %s: %w", filename, err)
+	}
+	return []string{fmt.Sprintf("COPY %s /tmp/%s", filepath.Join(g.relativeTmpDir, filename), filename)}, "/tmp/" + filename, nil
 }
 
 func filterEmpty(list []string) []string {

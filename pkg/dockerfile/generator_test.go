@@ -3,12 +3,26 @@ package dockerfile
 import (
 	"fmt"
 	"os"
+	"path"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/sieve-data/cog/pkg/config"
 )
+
+func testTini() string {
+	return `RUN --mount=type=cache,target=/var/cache/apt set -eux; \
+apt-get update -qq; \
+apt-get install -qqy --no-install-recommends curl; \
+rm -rf /var/lib/apt/lists/*; \
+TINI_VERSION=v0.19.0; \
+TINI_ARCH="$(dpkg --print-architecture)"; \
+curl -sSL -o /sbin/tini "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_ARCH}"; \
+chmod +x /sbin/tini
+ENTRYPOINT ["/sbin/tini", "--"]
+`
+}
 
 func testInstallCog(relativeTmpDir string) string {
 	return fmt.Sprintf(`COPY %s/cog-0.0.1.dev-py3-none-any.whl /tmp/cog-0.0.1.dev-py3-none-any.whl
@@ -34,7 +48,6 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get insta
 	tk-dev \
 	libffi-dev \
 	liblzma-dev \
-	python-openssl \
 	git \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
@@ -47,8 +60,7 @@ RUN curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master
 }
 
 func TestGenerateEmptyCPU(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "test")
-	require.NoError(t, err)
+	tmpDir := t.TempDir()
 
 	conf, err := config.FromYAML([]byte(`
 build:
@@ -56,7 +68,7 @@ build:
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
+	require.NoError(t, conf.ValidateAndComplete(""))
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
@@ -68,7 +80,7 @@ FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + testInstallCog(gen.relativeTmpDir) + `
+` + testTini() + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -78,8 +90,7 @@ COPY . /src`
 }
 
 func TestGenerateEmptyGPU(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "test")
-	require.NoError(t, err)
+	tmpDir := t.TempDir()
 
 	conf, err := config.FromYAML([]byte(`
 build:
@@ -87,7 +98,7 @@ build:
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
+	require.NoError(t, conf.ValidateAndComplete(""))
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
 	actual, err := gen.Generate()
@@ -98,10 +109,7 @@ FROM nvidia/cuda:11.2.0-cudnn8-devel-ubuntu20.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-RUN rm -f /etc/apt/sources.list.d/cuda.list && \
-    rm -f /etc/apt/sources.list.d/nvidia-ml.list && \
-    apt-key del 7fa2af80
-` + testInstallPython("3.8") + testInstallCog(gen.relativeTmpDir) + `
+` + testTini() + testInstallPython("3.8") + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -111,8 +119,7 @@ COPY . /src`
 }
 
 func TestGenerateFullCPU(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "test")
-	require.NoError(t, err)
+	tmpDir := t.TempDir()
 
 	conf, err := config.FromYAML([]byte(`
 build:
@@ -128,7 +135,7 @@ build:
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
+	require.NoError(t, conf.ValidateAndComplete(""))
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
@@ -140,20 +147,27 @@ FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + testInstallCog(gen.relativeTmpDir) + `
+` + testTini() + testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-RUN --mount=type=cache,target=/root/.cache/pip pip install -f https://download.pytorch.org/whl/torch_stable.html   torch==1.5.1+cpu pandas==1.2.0.12
+COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 	require.Equal(t, expected, actual)
+
+	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
+	require.NoError(t, err)
+
+	require.Equal(t, `--find-links https://download.pytorch.org/whl/torch_stable.html
+torch==1.5.1+cpu
+pandas==1.2.0.12`, string(requirements))
 }
 
 func TestGenerateFullGPU(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "test")
-	require.NoError(t, err)
+	tmpDir := t.TempDir()
 
 	conf, err := config.FromYAML([]byte(`
 build:
@@ -169,7 +183,7 @@ build:
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
+	require.NoError(t, conf.ValidateAndComplete(""))
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
@@ -181,13 +195,12 @@ FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-RUN rm -f /etc/apt/sources.list.d/cuda.list && \
-    rm -f /etc/apt/sources.list.d/nvidia-ml.list && \
-    apt-key del 7fa2af80
-` + testInstallPython("3.8") +
+` + testTini() +
+		testInstallPython("3.8") +
 		testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-RUN --mount=type=cache,target=/root/.cache/pip pip install   torch==1.5.1 pandas==1.2.0.12
+COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
@@ -195,12 +208,16 @@ CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, actual)
+
+	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
+	require.NoError(t, err)
+	require.Equal(t, `torch==1.5.1
+pandas==1.2.0.12`, string(requirements))
 }
 
 // pre_install is deprecated but supported for backwards compatibility
 func TestPreInstall(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "test")
-	require.NoError(t, err)
+	tmpDir := t.TempDir()
 
 	conf, err := config.FromYAML([]byte(`
 build:
@@ -210,7 +227,7 @@ build:
     - "cowsay moo"
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
+	require.NoError(t, conf.ValidateAndComplete(""))
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
@@ -222,7 +239,7 @@ FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + testInstallCog(gen.relativeTmpDir) + `
+` + testTini() + testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 RUN cowsay moo
 WORKDIR /src
@@ -234,19 +251,20 @@ COPY . /src`
 }
 
 func TestPythonRequirements(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "test")
+	tmpDir := t.TempDir()
+	err := os.WriteFile(path.Join(tmpDir, "my-requirements.txt"), []byte("torch==1.0.0"), 0o644)
 	require.NoError(t, err)
 	conf, err := config.FromYAML([]byte(`
 build:
   python_requirements: "my-requirements.txt"
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndCompleteConfig())
+	require.NoError(t, conf.ValidateAndComplete(tmpDir))
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
 	actual, err := gen.Generate()
 	require.NoError(t, err)
-	require.Contains(t, actual, `COPY my-requirements.txt /tmp/requirements.txt
-RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt`)
+	fmt.Println(actual)
+	require.Contains(t, actual, `pip install -r /tmp/requirements.txt`)
 }

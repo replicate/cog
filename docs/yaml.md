@@ -15,7 +15,7 @@ build:
 predict: "predict.py:Predictor"
 ```
 
-Tip: Run [`cog init`](getting-started-own-model#initialization) to generate an annotated `cog.yaml` file that can be used as a starting point for setting up your model.
+Tip: Run [`cog init`](getting-started-own-model.md#initialization) to generate an annotated `cog.yaml` file that can be used as a starting point for setting up your model.
 
 ## `build`
 

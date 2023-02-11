@@ -9,10 +9,9 @@ import (
 )
 
 func TestIsExecutable(t *testing.T) {
-	dir, err := os.MkdirTemp("/tmp", "test-files")
-	require.NoError(t, err)
+	dir := t.TempDir()
 	path := filepath.Join(dir, "test-file")
-	err = os.WriteFile(path, []byte{}, 0o644)
+	err := os.WriteFile(path, []byte{}, 0o644)
 	require.NoError(t, err)
 
 	require.False(t, IsExecutable(path))

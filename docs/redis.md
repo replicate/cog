@@ -49,6 +49,8 @@ The message body should be a JSON object with the following fields:
 
 - `input`: a JSON object with the same keys as the [arguments to the `predict()` function](python.md). Any `File` or `Path` inputs are passed as URLs.
 - `webhook`: the URL Cog will send responses to.
+- `webhook_events_filter` (optional): a list of events to send webhooks for. May contain `start`, `output`, `logs` and `completed`. Defaults to all events. Will always send `completed` events, even if omitted from the list.
+- `cancel_key` (optional): a Redis key to watch to signal that this prediction should be canceled. If the key is created the prediction will be canceled.
 
 There's also one deprecated field:
 
@@ -123,6 +125,32 @@ To get notified of updates to the value, you can `SUBSCRIBE` to [keyspace notifi
     redis:6379> SUBSCRIBE __keyspace@0__:my-response-queue
 
 [keyspace notifications]: https://redis.io/docs/manual/keyspace-notifications/
+
+## Kubernetes probes
+
+If the queue worker detects that it is running inside Kubernetes, it will create
+an empty file at `/var/run/cog/ready` when the predictor's `setup()` method has
+completed successfully.
+
+This can be used together with a [readiness probe][k8s-readiness] and a [rollout
+strategy][k8s-rollout] to ensure safe rollouts of Kubernetes deployments running
+the queue worker.
+
+[k8s-readiness]: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-readiness-probes
+[k8s-rollout]: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
+
+An example readiness probe configuration might look like:
+
+```yaml
+readinessProbe:
+  exec:
+    command:
+    - test
+    - -f
+    - /var/run/cog/ready
+  initialDelaySeconds: 1
+  periodSeconds: 1
+```
 
 ## Telemetry
 

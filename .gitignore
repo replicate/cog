@@ -1,8 +1,9 @@
-release
+/cog
 .ipynb_checkpoints/
 Untitled*.ipynb
 __pycache__
 .cog
+.hypothesis/
 dist
 *.egg-info
 pkg/dockerfile/embed/cog.whl

@@ -1,3 +1,4 @@
 .PHONY: test
 test:
-	pytest -vv
+	pip install -r requirements.txt
+	pytest -n auto -vv

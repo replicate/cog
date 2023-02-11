@@ -1,7 +1,11 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"path"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v2"
@@ -13,21 +17,20 @@ import (
 // TODO(andreas): support conda packages
 // TODO(andreas): support dockerfiles
 // TODO(andreas): custom cpu/gpu installs
-// TODO(andreas): validate python_requirements
 // TODO(andreas): suggest valid torchvision versions (e.g. if the user wants to use 0.8.0, suggest 0.8.1)
 
 type Build struct {
-	GPU                  bool     `json:"gpu,omitempty" yaml:"gpu"`
-	PythonVersion        string   `json:"python_version,omitempty" yaml:"python_version"`
-	PythonRequirements   string   `json:"python_requirements,omitempty" yaml:"python_requirements"`
-	PythonExtraIndexURLs []string `json:"python_extra_index_urls,omitempty" yaml:"python_extra_index_urls"`
-	PythonFindLinks      []string `json:"python_find_links,omitempty" yaml:"python_find_links"`
-	PythonPackages       []string `json:"python_packages,omitempty" yaml:"python_packages"`
-	Run                  []string `json:"run,omitempty" yaml:"run"`
-	SystemPackages       []string `json:"system_packages,omitempty" yaml:"system_packages"`
-	PreInstall           []string `json:"pre_install,omitempty" yaml:"pre_install"` // Deprecated, but included for backwards compatibility
-	CUDA                 string   `json:"cuda,omitempty" yaml:"cuda"`
-	CuDNN                string   `json:"cudnn,omitempty" yaml:"cudnn"`
+	GPU                bool     `json:"gpu,omitempty" yaml:"gpu"`
+	PythonVersion      string   `json:"python_version,omitempty" yaml:"python_version"`
+	PythonRequirements string   `json:"python_requirements,omitempty" yaml:"python_requirements"`
+	PythonPackages     []string `json:"python_packages,omitempty" yaml:"python_packages"` // Deprecated, but included for backwards compatibility
+	Run                []string `json:"run,omitempty" yaml:"run"`
+	SystemPackages     []string `json:"system_packages,omitempty" yaml:"system_packages"`
+	PreInstall         []string `json:"pre_install,omitempty" yaml:"pre_install"` // Deprecated, but included for backwards compatibility
+	CUDA               string   `json:"cuda,omitempty" yaml:"cuda"`
+	CuDNN              string   `json:"cudnn,omitempty" yaml:"cudnn"`
+
+	pythonRequirementsContent []string
 }
 
 type Example struct {
@@ -89,11 +92,9 @@ func (c *Config) cudaFromTF() (tfVersion string, tfCUDA string, tfCuDNN string, 
 }
 
 func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
-	for _, pkg := range c.Build.PythonPackages {
-		pkgName, version, err := splitPythonPackage(pkg)
+	for _, pkg := range c.Build.pythonRequirementsContent {
+		pkgName, version, err := splitPinnedPythonRequirement(pkg)
 		if err != nil {
-			// this should be caught by validation earlier
-			console.Warnf("Python package %s is malformed.", pkg)
 			return "", false
 		}
 		if pkgName == name {
@@ -103,7 +104,7 @@ func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 	return "", false
 }
 
-func (c *Config) ValidateAndCompleteConfig() error {
+func (c *Config) ValidateAndComplete(projectDir string) error {
 	// TODO(andreas): return all errors at once, rather than
 	// whack-a-mole one at a time with errs := []error{}, etc.
 
@@ -121,8 +122,26 @@ func (c *Config) ValidateAndCompleteConfig() error {
 		}
 	}
 
-	if err := c.validatePythonPackagesHaveVersions(); err != nil {
-		return err
+	if len(c.Build.PythonPackages) > 0 && c.Build.PythonRequirements != "" {
+		return fmt.Errorf("Only one of python_packages or python_requirements can be set in your cog.yaml, not both")
+	}
+
+	// Load python_requirements into memory to simplify reading it multiple times
+	if c.Build.PythonRequirements != "" {
+		fh, err := os.Open(path.Join(projectDir, c.Build.PythonRequirements))
+		if err != nil {
+			return err
+		}
+		// Use scanner to handle CRLF endings
+		scanner := bufio.NewScanner(fh)
+		for scanner.Scan() {
+			c.Build.pythonRequirementsContent = append(c.Build.pythonRequirementsContent, scanner.Text())
+		}
+	}
+
+	// Backwards compatibility
+	if len(c.Build.PythonPackages) > 0 {
+		c.Build.pythonRequirementsContent = c.Build.PythonPackages
 	}
 
 	if c.Build.GPU {
@@ -131,68 +150,82 @@ func (c *Config) ValidateAndCompleteConfig() error {
 		}
 	}
 
-	if len(c.Build.PythonPackages) > 0 && c.Build.PythonRequirements != "" {
-		return fmt.Errorf("Only one of python_packages or python_requirements can be set in your cog.yaml, not both")
-	}
-
 	return nil
 }
 
-func (c *Config) PythonPackagesForArch(goos string, goarch string) (packages []string, indexURLs []string, err error) {
-	packages = []string{}
-	indexURLSet := map[string]bool{}
-	for _, pkg := range c.Build.PythonPackages {
-		archPkg, indexURL, err := c.pythonPackageForArch(pkg, goos, goarch)
+// PythonRequirementsForArch returns a requirements.txt file with all the GPU packages resolved for given OS and architecture.
+func (c *Config) PythonRequirementsForArch(goos string, goarch string) (string, error) {
+	packages := []string{}
+	findLinksSet := map[string]bool{}
+	extraIndexURLSet := map[string]bool{}
+	for _, pkg := range c.Build.pythonRequirementsContent {
+		archPkg, findLinks, extraIndexURL, err := c.pythonPackageForArch(pkg, goos, goarch)
 		if err != nil {
-			return nil, nil, err
+			return "", err
 		}
 		packages = append(packages, archPkg)
-		if indexURL != "" {
-			indexURLSet[indexURL] = true
+		if findLinks != "" {
+			findLinksSet[findLinks] = true
+		}
+		if extraIndexURL != "" {
+			extraIndexURLSet[extraIndexURL] = true
 		}
 	}
-	indexURLs = []string{}
-	for indexURL := range indexURLSet {
-		indexURLs = append(indexURLs, indexURL)
+
+	// Create final requirements.txt output
+	// Put index URLs first
+	lines := []string{}
+	for findLinks := range findLinksSet {
+		lines = append(lines, "--find-links "+findLinks)
 	}
-	return packages, indexURLs, nil
+	for extraIndexURL := range extraIndexURLSet {
+		lines = append(lines, "--extra-index-url "+extraIndexURL)
+	}
+
+	// Then, everything else
+	lines = append(lines, packages...)
+
+	return strings.Join(lines, "\n"), nil
 }
 
-func (c *Config) pythonPackageForArch(pkg string, goos string, goarch string) (actualPackage string, indexURL string, err error) {
-	name, version, err := splitPythonPackage(pkg)
+// pythonPackageForArch takes a package==version line and
+// returns a package==version and index URL resolved to the correct GPU package for the given OS and architecture
+func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage, findLinks, extraIndexURL string, err error) {
+	name, version, err := splitPinnedPythonRequirement(pkg)
 	if err != nil {
-		return "", "", err
+		// It's not pinned, so just return the line verbatim
+		return pkg, "", "", nil
 	}
 	if name == "tensorflow" {
 		if c.Build.GPU {
 			name, version, err = tfGPUPackage(version, c.Build.CUDA)
 			if err != nil {
-				return "", "", err
+				return "", "", "", err
 			}
 		}
 		// There is no CPU case for tensorflow because the default package is just the CPU package, so no transformation of version is needed
 	} else if name == "torch" {
 		if c.Build.GPU {
-			name, version, indexURL, err = torchGPUPackage(version, c.Build.CUDA)
+			name, version, findLinks, extraIndexURL, err = torchGPUPackage(version, c.Build.CUDA)
 			if err != nil {
-				return "", "", err
+				return "", "", "", err
 			}
 		} else {
-			name, version, indexURL, err = torchCPUPackage(version, goos, goarch)
+			name, version, findLinks, extraIndexURL, err = torchCPUPackage(version, goos, goarch)
 			if err != nil {
-				return "", "", err
+				return "", "", "", err
 			}
 		}
 	} else if name == "torchvision" {
 		if c.Build.GPU {
-			name, version, indexURL, err = torchvisionGPUPackage(version, c.Build.CUDA)
+			name, version, findLinks, extraIndexURL, err = torchvisionGPUPackage(version, c.Build.CUDA)
 			if err != nil {
-				return "", "", err
+				return "", "", "", err
 			}
 		} else {
-			name, version, indexURL, err = torchvisionCPUPackage(version, goos, goarch)
+			name, version, findLinks, extraIndexURL, err = torchvisionCPUPackage(version, goos, goarch)
 			if err != nil {
-				return "", "", err
+				return "", "", "", err
 			}
 		}
 	}
@@ -200,7 +233,7 @@ func (c *Config) pythonPackageForArch(pkg string, goos string, goarch string) (a
 	if version != "" {
 		pkgWithVersion += "==" + version
 	}
-	return pkgWithVersion, indexURL, nil
+	return pkgWithVersion, findLinks, extraIndexURL, nil
 }
 
 func (c *Config) ValidateAndCompleteCUDA() error {
@@ -289,34 +322,15 @@ Compatible cuDNN version is: %s`,
 	return nil
 }
 
-func (c *Config) validatePythonPackagesHaveVersions() error {
-	packagesWithoutVersions := []string{}
-	for _, pkg := range c.Build.PythonPackages {
-		_, _, err := splitPythonPackage(pkg)
-		if err != nil {
-			packagesWithoutVersions = append(packagesWithoutVersions, pkg)
-		}
-	}
-	if len(packagesWithoutVersions) > 0 {
-		return fmt.Errorf(`All Python packages must have pinned versions, e.g. mypkg==1.0.0.
-The following packages are missing pinned versions: %s`, strings.Join(packagesWithoutVersions, ","))
-	}
-	return nil
-}
+// splitPythonPackage returns the name and version from a requirements.txt line in the form name==version
+func splitPinnedPythonRequirement(requirement string) (name string, version string, err error) {
+	pinnedPackageRe := regexp.MustCompile(`^([a-zA-Z0-9\-_]+)==([\d\.]+)$`)
 
-func splitPythonPackage(pkg string) (name string, version string, err error) {
-	if strings.HasPrefix(pkg, "git+") {
-		return pkg, "", nil
+	match := pinnedPackageRe.FindStringSubmatch(requirement)
+	if match == nil {
+		return "", "", fmt.Errorf("Package %s is not in the format 'name==version'", requirement)
 	}
-
-	if !strings.Contains(pkg, "==") {
-		return "", "", fmt.Errorf("Package %s is not in the format 'name==version'", pkg)
-	}
-	parts := strings.Split(pkg, "==")
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("Package %s is not in the format 'name==version'", pkg)
-	}
-	return parts[0], parts[1], nil
+	return match[1], match[2], nil
 }
 
 func sliceContains(slice []string, s string) bool {

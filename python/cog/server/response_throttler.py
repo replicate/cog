@@ -1,7 +1,6 @@
 import time
-import os
 
-from ..response import Status
+from ..schema import Status
 
 
 class ResponseThrottler:

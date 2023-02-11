@@ -205,6 +205,104 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "anotherjesse",
+      "name": "Jesse Andrews",
+      "avatar_url": "https://avatars.githubusercontent.com/u/27?v=4",
+      "profile": "https://m4ke.org",
+      "contributions": [
+        "code",
+        "doc",
+        "test"
+      ]
+    },
+    {
+      "login": "nickstenning",
+      "name": "Nick Stenning",
+      "avatar_url": "https://avatars.githubusercontent.com/u/3602?v=4",
+      "profile": "https://whiteink.com",
+      "contributions": [
+        "code",
+        "doc",
+        "design",
+        "infra",
+        "test"
+      ]
+    },
+    {
+      "login": "justinmerrell",
+      "name": "Justin Merrell",
+      "avatar_url": "https://avatars.githubusercontent.com/u/14996837?v=4",
+      "profile": "https://merrell.io/",
+      "contributions": [
+        "doc"
+      ]
+    },
+    {
+      "login": "ruriky",
+      "name": "Rurik Ylä-Onnenvuori",
+      "avatar_url": "https://avatars.githubusercontent.com/u/19946546?v=4",
+      "profile": "https://github.com/ruriky",
+      "contributions": [
+        "bug"
+      ]
+    },
+    {
+      "login": "youkaclub",
+      "name": "Youka",
+      "avatar_url": "https://avatars.githubusercontent.com/u/59315275?v=4",
+      "profile": "https://www.youka.club/",
+      "contributions": [
+        "bug"
+      ]
+    },
+    {
+      "login": "afiaka87",
+      "name": "Clay Mullis",
+      "avatar_url": "https://avatars.githubusercontent.com/u/3994972?v=4",
+      "profile": "https://github.com/afiaka87",
+      "contributions": [
+        "doc"
+      ]
+    },
+    {
+      "login": "mattt",
+      "name": "Mattt",
+      "avatar_url": "https://avatars.githubusercontent.com/u/7659?v=4",
+      "profile": "https://github.com/mattt",
+      "contributions": [
+        "code",
+        "doc",
+        "infra"
+      ]
+    },
+    {
+      "login": "Juneezee",
+      "name": "Eng Zer Jun",
+      "avatar_url": "https://avatars.githubusercontent.com/u/20135478?v=4",
+      "profile": "https://github.com/Juneezee",
+      "contributions": [
+        "test"
+      ]
+    },
+    {
+      "login": "bbedward",
+      "name": "BB",
+      "avatar_url": "https://avatars.githubusercontent.com/u/550752?v=4",
+      "profile": "https://github.com/bbedward",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "williamluer",
+      "name": "williamluer",
+      "avatar_url": "https://avatars.githubusercontent.com/u/85975676?v=4",
+      "profile": "https://github.com/williamluer",
+      "contributions": [
+        "doc"
+      ]
     }
   ],
   "contributorsPerLine": 7,

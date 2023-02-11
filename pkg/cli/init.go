@@ -4,7 +4,6 @@ import (
 	// blank import for embeds
 	_ "embed"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 
@@ -54,7 +53,7 @@ func initCommand(args []string) error {
 		return fmt.Errorf("Found an existing cog.yaml.\nExiting without overwriting (to be on the safe side!)")
 	}
 
-	err = ioutil.WriteFile(cogYamlPath, cogYamlContent, 0o644)
+	err = os.WriteFile(cogYamlPath, cogYamlContent, 0o644)
 	if err != nil {
 		return fmt.Errorf("Error writing %s: %w", cogYamlPath, err)
 	}
@@ -72,7 +71,7 @@ func initCommand(args []string) error {
 		return fmt.Errorf("Found an existing predict.py.\nExiting without overwriting (to be on the safe side!)")
 	}
 
-	err = ioutil.WriteFile(predictPyPath, predictPyContent, 0o644)
+	err = os.WriteFile(predictPyPath, predictPyContent, 0o644)
 	if err != nil {
 		return fmt.Errorf("Error writing %s: %w", predictPyPath, err)
 	}

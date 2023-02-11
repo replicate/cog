@@ -2,34 +2,36 @@ import datetime
 import io
 import json
 import os
-from mimetypes import guess_type
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
-from urllib.parse import urlparse
 import signal
 import sys
-import traceback
 import time
-import types
-import contextlib
+import traceback
+from argparse import ArgumentParser
+from mimetypes import guess_type
+from typing import Any, Callable, Dict, Iterable, Optional, Tuple
+from urllib.parse import urlparse
 
-from pydantic import ValidationError
 import redis
 import requests
-
-from ..predictor import BasePredictor, get_input_type, load_predictor, load_config
-from ..json import upload_files
-from ..response import Status
-from .runner import PredictionRunner
-from ..files import guess_filename
-from .response_throttler import ResponseThrottler
-
 from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter  # type: ignore
-from opentelemetry.sdk.trace import TracerProvider  # type: ignore
-from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore
-from opentelemetry.trace import Status as TraceStatus, StatusCode
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+from ..files import guess_filename
+from ..json import upload_files
+from ..predictor import (
+    get_input_type,
+    get_predictor_ref,
+    load_config,
+    load_predictor_from_ref,
+)
+from ..schema import Status, WebhookEvent
+from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
+from .probes import ProbeHelper
+from .webhook import requests_session, webhook_caller
+from .worker import Worker
 
 
 class RedisQueueWorker:
@@ -40,27 +42,23 @@ class RedisQueueWorker:
 
     def __init__(
         self,
-        predictor: BasePredictor,
-        redis_host: str,
-        redis_port: int,
+        predictor_ref: str,
+        redis_url: str,
         input_queue: str,
         upload_url: str,
         consumer_id: str,
-        model_id: Optional[str] = None,
-        log_queue: Optional[str] = None,
         predict_timeout: Optional[int] = None,
-        redis_db: int = 0,
+        report_setup_run_url: Optional[str] = None,
+        max_failure_count: Optional[int] = None,
     ):
-        self.runner = PredictionRunner(predict_timeout=predict_timeout)
-        self.redis_host = redis_host
-        self.redis_port = redis_port
+        self.worker = Worker(predictor_ref)
+        self.redis_url = redis_url
         self.input_queue = input_queue
         self.upload_url = upload_url
         self.consumer_id = consumer_id
-        self.model_id = model_id
-        self.log_queue = log_queue
         self.predict_timeout = predict_timeout
-        self.redis_db = redis_db
+        self.report_setup_run_url = report_setup_run_url
+        self.max_failure_count = max_failure_count
         if self.predict_timeout is not None:
             # 30s grace period allows final responses to be sent and job to be acked
             self.autoclaim_messages_after = self.predict_timeout + 30
@@ -69,19 +67,19 @@ class RedisQueueWorker:
             self.autoclaim_messages_after = 10 * 60
 
         # Set up types
+        predictor = load_predictor_from_ref(predictor_ref)
         self.InputType = get_input_type(predictor)
 
-        self.redis = redis.Redis(
-            host=self.redis_host, port=self.redis_port, db=self.redis_db
-        )
+        self.redis = redis.from_url(self.redis_url)
         self.should_exit = False
         self.setup_time_queue = input_queue + self.SETUP_TIME_QUEUE_SUFFIX
         self.predict_time_queue = input_queue + self.RUN_TIME_QUEUE_SUFFIX
         self.stats_queue_length = 100
         self.tracer = trace.get_tracer("cog")
+        self.probes = ProbeHelper()
 
         sys.stderr.write(
-            f"Connected to Redis: {self.redis_host}:{self.redis_port} (db {self.redis_db})\n"
+            f"Connected to Redis: {self.redis.get_connection_kwargs().get('host')}\n"
         )
 
     def signal_exit(self, signum: Any, frame: Any) -> None:
@@ -125,18 +123,51 @@ class RedisQueueWorker:
     def start(self) -> None:
         with self.tracer.start_as_current_span(name="redis_queue.setup") as span:
             signal.signal(signal.SIGTERM, self.signal_exit)
-            start_time = time.time()
+            started_at = datetime.datetime.now()
 
-            # TODO(bfirsh): setup should time out too, but we don't display these logs to the user, so don't timeout to avoid confusion
-            self.runner.setup()
+            setup_logs = ""
+            try:
+                for event in self.worker.setup():
+                    if isinstance(event, Log):
+                        setup_logs += event.message
+                    elif isinstance(event, Done):
+                        setup_status = (
+                            Status.FAILED if event.error else Status.SUCCEEDED
+                        )
+            except Exception:
+                setup_status = Status.FAILED
 
-            setup_time = time.time() - start_time
+            if setup_status == Status.FAILED:
+                sys.stderr.write("Setup failed, exiting immediately")
+                self.should_exit = True
+
+            completed_at = datetime.datetime.now()
+
+            # Signal pod readiness (when in k8s)
+            self.probes.ready()
+
+            if self.report_setup_run_url:
+                # TODO this should be async so we can get on with predictions ASAP
+                requests_session().post(
+                    self.report_setup_run_url,
+                    json={
+                        "status": setup_status,
+                        "started_at": format_datetime(started_at),
+                        "completed_at": format_datetime(completed_at),
+                        "logs": setup_logs,
+                    },
+                )
+
+            # TODO deprecate this
+            setup_time = (completed_at - started_at).total_seconds()
             self.redis.xadd(
                 self.setup_time_queue,
                 fields={"duration": setup_time},
                 maxlen=self.stats_queue_length,
             )
             sys.stderr.write(f"Setup time: {setup_time:.2f}\n")
+
+        failure_count = 0
 
         sys.stderr.write(f"Waiting for message on {self.input_queue}\n")
         while not self.should_exit:
@@ -168,7 +199,7 @@ class RedisQueueWorker:
                 ) as span:
                     webhook = message.get("webhook")
                     if webhook is not None:
-                        send_response = self.webhook_caller(webhook)
+                        send_response = webhook_caller(webhook)
                     else:
                         redis_key = message["response_queue"]
                         send_response = self.redis_setter(redis_key)
@@ -177,195 +208,193 @@ class RedisQueueWorker:
                         f"Received message {message_id} on {self.input_queue}\n"
                     )
 
-                    # use the request message as the basis of our response so
-                    # that we echo back any additional fields sent to us
-                    response = message
-                    response["status"] = Status.PROCESSING
-                    response["output"] = None
-                    response["logs"] = ""
+                    should_cancel = self.cancelation_checker(message.get("cancel_key"))
 
-                    cleanup_functions: List[Callable] = []
-                    try:
-                        start_time = time.time()
-                        self.handle_message(send_response, response, cleanup_functions)
-                        self.redis.xack(self.input_queue, self.input_queue, message_id)
-                        self.redis.xdel(
-                            self.input_queue, message_id
-                        )  # xdel to be able to get stream size
-                        run_time = time.time() - start_time
-                        self.redis.xadd(
-                            self.predict_time_queue,
-                            fields={"duration": run_time},
-                            maxlen=self.stats_queue_length,
-                        )
-                        sys.stderr.write(f"Run time for {message_id}: {run_time:.2f}\n")
-                    except Exception as e:
-                        response["status"] = Status.FAILED
-                        response["error"] = str(e)
-                        response["completed_at"] = format_datetime(
-                            datetime.datetime.now()
-                        )
-                        send_response(response)
-                        self.redis.xack(self.input_queue, self.input_queue, message_id)
-                        self.redis.xdel(self.input_queue, message_id)
-                    finally:
-                        for cleanup_function in cleanup_functions:
-                            try:
-                                cleanup_function()
-                            except Exception as e:
-                                sys.stderr.write(f"Cleanup function caught error: {e}")
+                    if "webhook_events_filter" in message:
+                        valid_events = {ev.value for ev in WebhookEvent}
+
+                        for event in message["webhook_events_filter"]:
+                            if event not in valid_events:
+                                raise ValueError(
+                                    f"Invalid webhook event {event}! Must be one of {valid_events}"
+                                )
+
+                        # We always send the completed event
+                        events_filter = set(message["webhook_events_filter"]) | {
+                            WebhookEvent.COMPLETED
+                        }
+                    else:
+                        events_filter = WebhookEvent.default_events()
+
+                    for response_event, response in self.run_prediction(
+                        message, should_cancel
+                    ):
+                        if response_event in events_filter:
+                            send_response(response)
+
+                    if self.max_failure_count is not None:
+                        # Keep track of runs of failures to catch the situation
+                        # where the worker has gotten into a bad state where it can
+                        # only fail predictions, but isn't exiting.
+                        if response["status"] == Status.FAILED:
+                            failure_count += 1
+                            if failure_count > self.max_failure_count:
+                                self.should_exit = True
+                                print(
+                                    f"Had {failure_count} failures in a row, exiting...",
+                                    file=sys.stderr,
+                                )
+                        else:
+                            failure_count = 0
+
+                    self.redis.xack(self.input_queue, self.input_queue, message_id)
+                    self.redis.xdel(self.input_queue, message_id)
+
             except Exception as e:
                 tb = traceback.format_exc()
                 sys.stderr.write(f"Failed to handle message: {tb}\n")
 
-        sys.stderr.write("Closing runner, bye bye!\n")
-        self.runner.close()
+        sys.stderr.write("Shutting down worker: bye bye!\n")
+        self.worker.shutdown()
 
-    def handle_message(
-        self,
-        send_response: Callable,
-        response: Dict[str, Any],
-        cleanup_functions: List[Callable],
-    ) -> None:
-        span = trace.get_current_span()
+    def run_prediction(
+        self, message: Dict[str, Any], should_cancel: Callable
+    ) -> Iterable[Tuple[WebhookEvent, Dict[str, Any]]]:
+        # use the request message as the basis of our response so
+        # that we echo back any additional fields sent to us
+        response = message
+        response["status"] = Status.PROCESSING
+        response["output"] = None
+        response["logs"] = ""
 
         started_at = datetime.datetime.now()
 
         try:
             input_obj = self.InputType(**response["input"])
-        except ValidationError as e:
-            tb = traceback.format_exc()
-            sys.stderr.write(tb)
+        except Exception as e:
             response["status"] = Status.FAILED
             response["error"] = str(e)
-            send_response(response)
-            span.record_exception(e)
-            span.set_status(TraceStatus(status_code=StatusCode.ERROR))
+            yield (WebhookEvent.COMPLETED, response)
+
+            try:
+                input_obj.cleanup()
+            except Exception as e:
+                sys.stderr.write(f"Cleanup function caught error: {e}")
+
             return
-
-        cleanup_functions.append(input_obj.cleanup)
-
-        self.runner.run(**input_obj.dict())
 
         response["started_at"] = format_datetime(started_at)
-
         response["logs"] = ""
 
-        send_response(response)
+        yield (WebhookEvent.START, response)
 
-        # just send logs until output starts
-        while self.runner.is_processing() and not self.runner.has_output_waiting():
-            if self.runner.has_logs_waiting():
-                response["logs"] += self.runner.read_logs()
-                send_response(response)
+        timed_out = False
+        was_canceled = False
+        done_event = None
+        output_type = None
 
-        if self.runner.error() is not None:
+        try:
+            for event in self.worker.predict(payload=input_obj.dict(), poll=0.1):
+                if not was_canceled and should_cancel():
+                    was_canceled = True
+                    self.worker.cancel()
+
+                if not timed_out and self.predict_timeout:
+                    runtime = (datetime.datetime.now() - started_at).total_seconds()
+                    if runtime > self.predict_timeout:
+                        timed_out = True
+                        self.worker.cancel()
+
+                if isinstance(event, Heartbeat):
+                    # Heartbeat events exist solely to ensure that we have a
+                    # regular opportunity to check for cancelation and
+                    # timeouts.
+                    #
+                    # We don't need to do anything with them.
+                    pass
+                elif isinstance(event, Log):
+                    response["logs"] += event.message
+                    yield (WebhookEvent.LOGS, response)
+                elif isinstance(event, PredictionOutputType):
+                    # Note: this error message will be seen by users so it is
+                    # intentionally vague about what has gone wrong.
+                    assert output_type is None, "Predictor returned unexpected output"
+                    output_type = event
+                    if output_type.multi:
+                        response["output"] = []
+                elif isinstance(event, PredictionOutput):
+                    # Note: this error message will be seen by users so it is
+                    # intentionally vague about what has gone wrong.
+                    assert (
+                        output_type is not None
+                    ), "Predictor returned unexpected output"
+
+                    output = self.upload_files(event.payload)
+
+                    if output_type.multi:
+                        response["output"].append(output)
+                        yield (WebhookEvent.OUTPUT, response)
+                    else:
+                        assert (
+                            response["output"] is None
+                        ), "Predictor unexpectedly returned multiple outputs"
+                        response["output"] = output
+
+                elif isinstance(event, Done):
+                    assert not done_event, "Predictor unexpectedly returned done twice"
+                    done_event = event
+                else:
+                    sys.stderr.write(f"Received unexpected event from worker: {event}")
+
+            completed_at = datetime.datetime.now()
+            response["completed_at"] = format_datetime(completed_at)
+
+            # It should only be possible to get here if we got a done event.
+            assert done_event
+
+            if done_event.canceled and was_canceled:
+                response["status"] = Status.CANCELED
+            elif done_event.canceled and timed_out:
+                response["status"] = Status.FAILED
+                response["error"] = "Prediction timed out"
+            elif done_event.error:
+                response["status"] = Status.FAILED
+                response["error"] = str(done_event.error_detail)
+            else:
+                response["status"] = Status.SUCCEEDED
+                response["metrics"] = {
+                    "predict_time": (completed_at - started_at).total_seconds()
+                }
+        except Exception as e:
+            self.should_exit = True
+            completed_at = datetime.datetime.now()
+            response["completed_at"] = format_datetime(completed_at)
             response["status"] = Status.FAILED
-            response["error"] = str(self.runner.error())  # type: ignore
-            response["completed_at"] = format_datetime(datetime.datetime.now())
-            send_response(response)
-            span.record_exception(self.runner.error())
-            span.set_status(TraceStatus(status_code=StatusCode.ERROR))
-            return
+            response["error"] = str(e)
+        finally:
+            yield (WebhookEvent.COMPLETED, response)
 
-        span.add_event("received first output")
-
-        if self.runner.is_output_generator():
-            output = response["output"] = []
-
-            while self.runner.is_processing():
-                # TODO: restructure this to avoid the tight CPU-eating loop
-                if self.runner.has_output_waiting() or self.runner.has_logs_waiting():
-                    # Object has already passed through `make_encodeable()` in the Runner, so all we need to do here is upload the files
-                    new_output = [
-                        self.upload_files(o) for o in self.runner.read_output()
-                    ]
-                    new_logs = self.runner.read_logs()
-
-                    # sometimes it'll say there's output when there's none
-                    if new_output == [] and new_logs == "":
-                        continue
-
-                    output.extend(new_output)
-                    response["logs"] += new_logs
-
-                    # we could `time.sleep(0.1)` and check `is_processing()`
-                    # here to give the predictor subprocess a chance to exit
-                    # so we don't send a double message for final output, at
-                    # the cost of extra latency
-                    send_response(response)
-
-            if self.runner.error() is not None:
-                response["status"] = Status.FAILED
-                response["error"] = str(self.runner.error())  # type: ignore
-                response["completed_at"] = format_datetime(datetime.datetime.now())
-                send_response(response)
-                span.record_exception(self.runner.error())
-                span.set_status(TraceStatus(status_code=StatusCode.ERROR))
-                return
-
-            span.add_event("received final output")
-
-            response["status"] = Status.SUCCEEDED
-            completed_at = datetime.datetime.now()
-            response["completed_at"] = format_datetime(completed_at)
-            response["metrics"] = {
-                "predict_time": (completed_at - started_at).total_seconds()
-            }
-            output.extend(self.upload_files(o) for o in self.runner.read_output())
-            response["logs"] += self.runner.read_logs()
-            send_response(response)
-
-        else:
-            # just send logs until output ends
-            while self.runner.is_processing():
-                if self.runner.has_logs_waiting():
-                    response["logs"] += self.runner.read_logs()
-                    send_response(response)
-
-            if self.runner.error() is not None:
-                response["status"] = Status.FAILED
-                response["error"] = str(self.runner.error())  # type: ignore
-                response["completed_at"] = format_datetime(datetime.datetime.now())
-                send_response(response)
-                span.record_exception(self.runner.error())
-                span.set_status(TraceStatus(status_code=StatusCode.ERROR))
-                return
-
-            output = self.runner.read_output()
-            assert len(output) == 1
-
-            response["status"] = Status.SUCCEEDED
-            completed_at = datetime.datetime.now()
-            response["completed_at"] = format_datetime(completed_at)
-            response["metrics"] = {
-                "predict_time": (completed_at - started_at).total_seconds()
-            }
-            response["output"] = self.upload_files(output[0])
-            response["logs"] += self.runner.read_logs()
-            send_response(response)
+            try:
+                input_obj.cleanup()
+            except Exception as e:
+                print(f"Cleanup function caught error: {e}", file=sys.stderr)
 
     def download(self, url: str) -> bytes:
         resp = requests.get(url)
         resp.raise_for_status()
         return resp.content
 
-    def webhook_caller(self, webhook: str) -> Callable:
-        response_interval = float(os.environ.get("COG_THROTTLE_RESPONSE_INTERVAL", 0))
-        throttler = ResponseThrottler(response_interval=response_interval)
-
-        def caller(response: Any) -> None:
-            if throttler.should_send_response(response):
-                requests.post(webhook, json=response)
-                throttler.update_last_sent_response_time()
-
-        return caller
-
     def redis_setter(self, redis_key: str) -> Callable:
         def setter(response: Any) -> None:
             self.redis.set(redis_key, json.dumps(response))
 
         return setter
+
+    def cancelation_checker(self, redis_key: str) -> Callable:
+        def checker() -> bool:
+            return redis_key is not None and self.redis.exists(redis_key) > 0
+
+        return checker
 
     def upload_files(self, obj: Any) -> Any:
         def upload_file(fh: io.IOBase) -> str:
@@ -375,7 +404,7 @@ class RedisQueueWorker:
             resp = requests.put(
                 ensure_trailing_slash(self.upload_url) + filename,
                 fh,  # type: ignore
-                headers={"Content-type": content_type},
+                headers={"Content-type": content_type} if content_type else None,
             )
             resp.raise_for_status()
 
@@ -416,7 +445,7 @@ def ensure_trailing_slash(url: str) -> str:
 
 
 def _queue_worker_from_argv(
-    predictor: BasePredictor,
+    predictor_ref: str,
     redis_host: str,
     redis_port: str,
     input_queue: str,
@@ -436,28 +465,82 @@ def _queue_worker_from_argv(
     else:
         predict_timeout_int = None
     return RedisQueueWorker(
-        predictor,
-        redis_host,
-        int(redis_port),
+        predictor_ref,
+        f"redis://{redis_host}:{redis_port}/0",
         input_queue,
         upload_url,
         comsumer_id,
-        model_id,
-        log_queue,
         predict_timeout_int,
     )
 
 
+def _die(signum: Any, frame: Any) -> None:
+    print("Caught early SIGTERM. Exiting immediately!", file=sys.stderr)
+    sys.exit(1)
+
+
 if __name__ == "__main__":
+    # We are probably running as PID 1 so need to explicitly register a handler
+    # to die on SIGTERM. This will be overwritten once we start the
+    # RedisQueueWorker.
+    signal.signal(signal.SIGTERM, _die)
+
     # Enable OpenTelemetry if the env vars are present. If this block isn't
     # run, all the opentelemetry calls are no-ops.
     if "OTEL_SERVICE_NAME" in os.environ:
         trace.set_tracer_provider(TracerProvider())
         span_processor = BatchSpanProcessor(OTLPSpanExporter())
-        trace.get_tracer_provider().add_span_processor(span_processor)
+        trace.get_tracer_provider().add_span_processor(span_processor)  # type: ignore
 
     config = load_config()
-    predictor = load_predictor(config)
+    predictor_ref = get_predictor_ref(config)
 
-    worker = _queue_worker_from_argv(predictor, *sys.argv[1:])
+    parser = ArgumentParser()
+
+    # accept positional arguments for backwards compatibility
+    # TODO remove this in a future version of Cog
+    parser.add_argument("positional_args", nargs="*")
+
+    # accepting redis-host and redis-port for backwards compatibility, they are
+    # replaced by the single --redis-url.
+    # TODO remove these two arguments in a future version of Cog
+    parser.add_argument("--redis-host")
+    parser.add_argument("--redis-port", type=int)
+    parser.add_argument("--redis-url")
+    parser.add_argument("--input-queue")
+    parser.add_argument("--upload-url")
+    parser.add_argument("--consumer-id")
+    parser.add_argument("--model-id")
+    parser.add_argument("--predict-timeout", type=int)
+    parser.add_argument("--report-setup-run-url")
+    parser.add_argument(
+        "--max-failure-count",
+        type=int,
+        help="Maximum number of consecutive failures before the worker should exit",
+    )
+
+    args = parser.parse_args()
+
+    if len(args.positional_args) > 0:
+        sys.stderr.write(
+            "Positional arguments for queue worker are deprecated. Switch to flag arguments."
+        )
+        worker = _queue_worker_from_argv(predictor_ref, *args.positional_args)
+    else:
+        if args.redis_url is None:
+            sys.stderr.write(
+                "--redis-host and --redis-port arguments are deprecated. Switch to --redis-url."
+            )
+            args.redis_url = f"redis://{args.redis_host}:{args.redis_port}/0"
+        worker = RedisQueueWorker(
+            predictor_ref=predictor_ref,
+            redis_url=args.redis_url,
+            input_queue=args.input_queue,
+            upload_url=args.upload_url,
+            consumer_id=args.consumer_id,
+            predict_timeout=args.predict_timeout,
+            report_setup_run_url=args.report_setup_run_url,
+            max_failure_count=args.max_failure_count,
+        )
+
     worker.start()

@@ -1,12 +1,15 @@
 package docker
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/mattn/go-isatty"
@@ -133,4 +136,45 @@ func RunDaemon(options RunOptions) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(containerID)), nil
+}
+
+func GetPort(containerID string, containerPort int) (int, error) {
+	cmd := exec.Command("docker", "port", containerID, fmt.Sprintf("%d", containerPort))
+	cmd.Env = os.Environ()
+	cmd.Stderr = os.Stderr
+
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, err
+	}
+
+	lines := []string{}
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if scanner.Err() != nil {
+		return 0, err
+	}
+
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "0.0.0.0:") {
+			continue
+		}
+
+		_, portString, err := net.SplitHostPort(strings.TrimSpace(line))
+		if err != nil {
+			return 0, err
+		}
+
+		port, err := strconv.Atoi(portString)
+		if err != nil {
+			return 0, err
+		}
+
+		return port, nil
+	}
+
+	return 0, fmt.Errorf("did not find port bound to 0.0.0.0 in `docker port` output")
+
 }

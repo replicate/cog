@@ -1,7 +1,6 @@
 package config
 
 import (
-	"io/ioutil"
 	"os"
 	"path"
 	"testing"
@@ -28,34 +27,22 @@ func TestGetProjectDirWithFlagSet(t *testing.T) {
 }
 
 func TestGetConfigShouldLoadFromCustomDir(t *testing.T) {
-	dir, err := ioutil.TempDir("", "cog-test")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
-	err = ioutil.WriteFile(path.Join(dir, "cog.yaml"), []byte(testConfig), 0o644)
+	err := os.WriteFile(path.Join(dir, "cog.yaml"), []byte(testConfig), 0o644)
+	require.NoError(t, err)
+	err = os.WriteFile(path.Join(dir, "requirements.txt"), []byte("torch==1.0.0"), 0o644)
 	require.NoError(t, err)
 	conf, _, err := GetConfig(dir)
 	require.NoError(t, err)
-	want := &Config{
-		Predict: "predict.py:SomePredictor",
-		Build: &Build{
-			PythonVersion:      "3.8",
-			PythonRequirements: "requirements.txt",
-			SystemPackages: []string{
-				"libgl1-mesa-glx",
-				"libglib2.0-0",
-			},
-		},
-	}
-	require.Equal(t, want, conf)
+	require.Equal(t, conf.Predict, "predict.py:SomePredictor")
+	require.Equal(t, conf.Build.PythonVersion, "3.8")
 }
 
 func TestFindProjectRootDirShouldFindParentDir(t *testing.T) {
-	projectDir, err := ioutil.TempDir("", "cog-test")
-	require.NoError(t, err)
-	defer os.RemoveAll(projectDir)
+	projectDir := t.TempDir()
 
-	err = ioutil.WriteFile(path.Join(projectDir, "cog.yaml"), []byte(testConfig), 0o644)
+	err := os.WriteFile(path.Join(projectDir, "cog.yaml"), []byte(testConfig), 0o644)
 	require.NoError(t, err)
 
 	subdir := path.Join(projectDir, "some/sub/dir")
@@ -68,12 +55,10 @@ func TestFindProjectRootDirShouldFindParentDir(t *testing.T) {
 }
 
 func TestFindProjectRootDirShouldReturnErrIfNoConfig(t *testing.T) {
-	projectDir, err := ioutil.TempDir("", "cog-test")
-	require.NoError(t, err)
-	defer os.RemoveAll(projectDir)
+	projectDir := t.TempDir()
 
 	subdir := path.Join(projectDir, "some/sub/dir")
-	err = os.MkdirAll(subdir, 0o700)
+	err := os.MkdirAll(subdir, 0o700)
 	require.NoError(t, err)
 
 	_, err = findProjectRootDir(subdir)

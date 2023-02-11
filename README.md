@@ -49,7 +49,7 @@ class Predictor(BasePredictor):
 
     # The arguments and types the model takes as input
     def predict(self,
-          image: Path = Input(title="Grayscale input image")
+          image: Path = Input(description="Grayscale input image")
     ) -> Path:
         """Run a single prediction on the model"""
         processed_image = preprocess(image)
@@ -59,7 +59,7 @@ class Predictor(BasePredictor):
 
 Now, you can run predictions on this model:
 
-```
+```console
 $ cog predict -i @input.jpg
 --> Building Docker image...
 --> Running Prediction...
@@ -68,7 +68,7 @@ $ cog predict -i @input.jpg
 
 Or, build a Docker image for deployment:
 
-```
+```console
 $ cog build -t my-colorization-model
 --> Building Docker image...
 --> Built my-colorization-model:latest
@@ -84,14 +84,14 @@ $ curl http://localhost:5000/predictions -X POST \
 
 In development, you can also run arbitrary commands inside the Docker environment:
 
-```
+```console
 $ cog run python train.py
 ...
 ```
 
 Or, [spin up a Jupyter notebook](docs/notebooks.md):
 
-```
+```console
 $ cog run -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
 ```
 -->
@@ -115,21 +115,27 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 
 ## Install
 
-First, [install Docker if you haven't already](https://docs.docker.com/get-docker/). Then, run this in a terminal:
+<a id="upgrade"></a>
 
+If you're using macOS, you can install Cog using Homebrew:
+
+```console
+brew install cog
 ```
-sudo curl -o /usr/local/bin/cog -L https://github.com/sieve-data/cog/releases/latest/download/cog_`uname -s`_`uname -m`
+
+You can also download and install the latest release of Cog
+directly from GitHub by running the following commands in a terminal:
+
+```console
+sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
 sudo chmod +x /usr/local/bin/cog
 ```
 
-## Upgrade
+Alternatively, you can build Cog from source and install it with these commands:
 
-If you're already got Cog installed and want to update to a newer version:
-
-```
-sudo rm $(which cog)
-sudo curl -o /usr/local/bin/cog -L https://github.com/sieve-data/cog/releases/latest/download/cog_`uname -s`_`uname -m`
-sudo chmod +x /usr/local/bin/cog
+```console
+make
+sudo make install
 ```
 
 ## Next steps
@@ -138,7 +144,7 @@ sudo chmod +x /usr/local/bin/cog
 - [Get started with your own model](docs/getting-started-own-model.md)
 - [Using Cog with notebooks](docs/notebooks.md)
 - [Using Cog with Windows 11](docs/wsl2/wsl2.md)
-- [Take a look at some examples of using Cog](https://github.com/sieve-data/cog-examples)
+- [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
 - [Deploy models with Cog](docs/deploy.md)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's environment
 - [Prediction interface reference](docs/python.md) to learn how the `Predictor` interface works
@@ -157,32 +163,48 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
 <!-- prettier-ignore-start -->
 <!-- markdownlint-disable -->
 <table>
-  <tr>
-    <td align="center"><a href="https://fir.sh/"><img src="https://avatars.githubusercontent.com/u/40906?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Ben Firshman</b></sub></a><br /><a href="https://github.com/sieve-data/cog/commits?author=bfirsh" title="Code">💻</a> <a href="https://github.com/sieve-data/cog/commits?author=bfirsh" title="Documentation">📖</a></td>
-    <td align="center"><a href="https://replicate.ai/"><img src="https://avatars.githubusercontent.com/u/713993?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Andreas Jansson</b></sub></a><br /><a href="https://github.com/sieve-data/cog/commits?author=andreasjansson" title="Code">💻</a> <a href="https://github.com/sieve-data/cog/commits?author=andreasjansson" title="Documentation">📖</a></td>
-    <td align="center"><a href="http://zeke.sikelianos.com/"><img src="https://avatars.githubusercontent.com/u/2289?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Zeke Sikelianos</b></sub></a><br /><a href="https://github.com/sieve-data/cog/commits?author=zeke" title="Code">💻</a> <a href="https://github.com/sieve-data/cog/commits?author=zeke" title="Documentation">📖</a> <a href="#tool-zeke" title="Tools">🔧</a></td>
-    <td align="center"><a href="https://rory.bio/"><img src="https://avatars.githubusercontent.com/u/9436784?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Rory Byrne</b></sub></a><br /><a href="https://github.com/sieve-data/cog/commits?author=synek" title="Code">💻</a> <a href="https://github.com/sieve-data/cog/commits?author=synek" title="Documentation">📖</a> <a href="https://github.com/sieve-data/cog/commits?author=synek" title="Tests">⚠️</a></td>
-    <td align="center"><a href="https://github.com/hangtwenty"><img src="https://avatars.githubusercontent.com/u/2420688?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Michael Floering</b></sub></a><br /><a href="https://github.com/sieve-data/cog/commits?author=hangtwenty" title="Code">💻</a> <a href="https://github.com/sieve-data/cog/commits?author=hangtwenty" title="Documentation">📖</a> <a href="#ideas-hangtwenty" title="Ideas, Planning, & Feedback">🤔</a></td>
-    <td align="center"><a href="https://bencevans.io/"><img src="https://avatars.githubusercontent.com/u/638535?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Ben Evans</b></sub></a><br /><a href="https://github.com/sieve-data/cog/commits?author=bencevans" title="Documentation">📖</a></td>
-    <td align="center"><a href="https://shashank.pw/"><img src="https://avatars.githubusercontent.com/u/778870?v=4?s=100" width="100px;" alt=""/><br /><sub><b>shashank agarwal</b></sub></a><br /><a href="https://github.com/sieve-data/cog/commits?author=imshashank" title="Code">💻</a> <a href="https://github.com/sieve-data/cog/commits?author=imshashank" title="Documentation">📖</a></td>
-  </tr>
-  <tr>
-    <td align="center"><a href="https://victorxlr.me/"><img src="https://avatars.githubusercontent.com/u/22397950?v=4?s=100" width="100px;" alt=""/><br /><sub><b>VictorXLR</b></sub></a><br /><a href="https://github.com/sieve-data/cog/commits?author=VictorXLR" title="Code">💻</a> <a href="https://github.com/sieve-data/cog/commits?author=VictorXLR" title="Documentation">📖</a> <a href="https://github.com/sieve-data/cog/commits?author=VictorXLR" title="Tests">⚠️</a></td>
-    <td align="center"><a href="https://annahung31.github.io/"><img src="https://avatars.githubusercontent.com/u/39179888?v=4?s=100" width="100px;" alt=""/><br /><sub><b>hung anna</b></sub></a><br /><a href="https://github.com/sieve-data/cog/issues?q=author%3Aannahung31" title="Bug reports">🐛</a></td>
-    <td align="center"><a href="http://notes.variogr.am/"><img src="https://avatars.githubusercontent.com/u/76612?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Brian Whitman</b></sub></a><br /><a href="https://github.com/sieve-data/cog/issues?q=author%3Abwhitman" title="Bug reports">🐛</a></td>
-    <td align="center"><a href="https://github.com/JimothyJohn"><img src="https://avatars.githubusercontent.com/u/24216724?v=4?s=100" width="100px;" alt=""/><br /><sub><b>JimothyJohn</b></sub></a><br /><a href="https://github.com/sieve-data/cog/issues?q=author%3AJimothyJohn" title="Bug reports">🐛</a></td>
-    <td align="center"><a href="https://github.com/ericguizzo"><img src="https://avatars.githubusercontent.com/u/26746670?v=4?s=100" width="100px;" alt=""/><br /><sub><b>ericguizzo</b></sub></a><br /><a href="https://github.com/sieve-data/cog/issues?q=author%3Aericguizzo" title="Bug reports">🐛</a></td>
-    <td align="center"><a href="http://www.dominicbaggott.com"><img src="https://avatars.githubusercontent.com/u/74812?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Dominic Baggott</b></sub></a><br /><a href="https://github.com/sieve-data/cog/commits?author=evilstreak" title="Code">💻</a> <a href="https://github.com/sieve-data/cog/commits?author=evilstreak" title="Tests">⚠️</a></td>
-    <td align="center"><a href="https://github.com/dashstander"><img src="https://avatars.githubusercontent.com/u/7449128?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Dashiell Stander</b></sub></a><br /><a href="https://github.com/sieve-data/cog/issues?q=author%3Adashstander" title="Bug reports">🐛</a> <a href="https://github.com/sieve-data/cog/commits?author=dashstander" title="Code">💻</a> <a href="https://github.com/sieve-data/cog/commits?author=dashstander" title="Tests">⚠️</a></td>
-  </tr>
-  <tr>
-    <td align="center"><a href="https://github.com/Hurricane-eye"><img src="https://avatars.githubusercontent.com/u/31437546?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Shuwei Liang</b></sub></a><br /><a href="https://github.com/sieve-data/cog/issues?q=author%3AHurricane-eye" title="Bug reports">🐛</a> <a href="#question-Hurricane-eye" title="Answering Questions">💬</a></td>
-    <td align="center"><a href="https://github.com/ericallam"><img src="https://avatars.githubusercontent.com/u/534?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Eric Allam</b></sub></a><br /><a href="#ideas-ericallam" title="Ideas, Planning, & Feedback">🤔</a></td>
-    <td align="center"><a href="https://perdomo.me"><img src="https://avatars.githubusercontent.com/u/178474?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Iván Perdomo</b></sub></a><br /><a href="https://github.com/sieve-data/cog/issues?q=author%3Aiperdomo" title="Bug reports">🐛</a></td>
-    <td align="center"><a href="http://charlesfrye.github.io"><img src="https://avatars.githubusercontent.com/u/10442975?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Charles Frye</b></sub></a><br /><a href="https://github.com/sieve-data/cog/commits?author=charlesfrye" title="Documentation">📖</a></td>
-    <td align="center"><a href="https://github.com/phamquiluan"><img src="https://avatars.githubusercontent.com/u/24642166?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Luan Pham</b></sub></a><br /><a href="https://github.com/sieve-data/cog/issues?q=author%3Aphamquiluan" title="Bug reports">🐛</a> <a href="https://github.com/sieve-data/cog/commits?author=phamquiluan" title="Documentation">📖</a></td>
-    <td align="center"><a href="https://github.com/TommyDew42"><img src="https://avatars.githubusercontent.com/u/46992350?v=4?s=100" width="100px;" alt=""/><br /><sub><b>TommyDew</b></sub></a><br /><a href="https://github.com/sieve-data/cog/commits?author=TommyDew42" title="Code">💻</a></td>
-  </tr>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://fir.sh/"><img src="https://avatars.githubusercontent.com/u/40906?v=4?s=100" width="100px;" alt="Ben Firshman"/><br /><sub><b>Ben Firshman</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=bfirsh" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=bfirsh" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://replicate.ai/"><img src="https://avatars.githubusercontent.com/u/713993?v=4?s=100" width="100px;" alt="Andreas Jansson"/><br /><sub><b>Andreas Jansson</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=andreasjansson" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=andreasjansson" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://zeke.sikelianos.com/"><img src="https://avatars.githubusercontent.com/u/2289?v=4?s=100" width="100px;" alt="Zeke Sikelianos"/><br /><sub><b>Zeke Sikelianos</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=zeke" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=zeke" title="Documentation">📖</a> <a href="#tool-zeke" title="Tools">🔧</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://rory.bio/"><img src="https://avatars.githubusercontent.com/u/9436784?v=4?s=100" width="100px;" alt="Rory Byrne"/><br /><sub><b>Rory Byrne</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=synek" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=synek" title="Documentation">📖</a> <a href="https://github.com/replicate/cog/commits?author=synek" title="Tests">⚠️</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/hangtwenty"><img src="https://avatars.githubusercontent.com/u/2420688?v=4?s=100" width="100px;" alt="Michael Floering"/><br /><sub><b>Michael Floering</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=hangtwenty" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=hangtwenty" title="Documentation">📖</a> <a href="#ideas-hangtwenty" title="Ideas, Planning, & Feedback">🤔</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://bencevans.io/"><img src="https://avatars.githubusercontent.com/u/638535?v=4?s=100" width="100px;" alt="Ben Evans"/><br /><sub><b>Ben Evans</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=bencevans" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://shashank.pw/"><img src="https://avatars.githubusercontent.com/u/778870?v=4?s=100" width="100px;" alt="shashank agarwal"/><br /><sub><b>shashank agarwal</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=imshashank" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=imshashank" title="Documentation">📖</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://victorxlr.me/"><img src="https://avatars.githubusercontent.com/u/22397950?v=4?s=100" width="100px;" alt="VictorXLR"/><br /><sub><b>VictorXLR</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=VictorXLR" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=VictorXLR" title="Documentation">📖</a> <a href="https://github.com/replicate/cog/commits?author=VictorXLR" title="Tests">⚠️</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://annahung31.github.io/"><img src="https://avatars.githubusercontent.com/u/39179888?v=4?s=100" width="100px;" alt="hung anna"/><br /><sub><b>hung anna</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aannahung31" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://notes.variogr.am/"><img src="https://avatars.githubusercontent.com/u/76612?v=4?s=100" width="100px;" alt="Brian Whitman"/><br /><sub><b>Brian Whitman</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Abwhitman" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/JimothyJohn"><img src="https://avatars.githubusercontent.com/u/24216724?v=4?s=100" width="100px;" alt="JimothyJohn"/><br /><sub><b>JimothyJohn</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3AJimothyJohn" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ericguizzo"><img src="https://avatars.githubusercontent.com/u/26746670?v=4?s=100" width="100px;" alt="ericguizzo"/><br /><sub><b>ericguizzo</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aericguizzo" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://www.dominicbaggott.com"><img src="https://avatars.githubusercontent.com/u/74812?v=4?s=100" width="100px;" alt="Dominic Baggott"/><br /><sub><b>Dominic Baggott</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=evilstreak" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=evilstreak" title="Tests">⚠️</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/dashstander"><img src="https://avatars.githubusercontent.com/u/7449128?v=4?s=100" width="100px;" alt="Dashiell Stander"/><br /><sub><b>Dashiell Stander</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Adashstander" title="Bug reports">🐛</a> <a href="https://github.com/replicate/cog/commits?author=dashstander" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=dashstander" title="Tests">⚠️</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Hurricane-eye"><img src="https://avatars.githubusercontent.com/u/31437546?v=4?s=100" width="100px;" alt="Shuwei Liang"/><br /><sub><b>Shuwei Liang</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3AHurricane-eye" title="Bug reports">🐛</a> <a href="#question-Hurricane-eye" title="Answering Questions">💬</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ericallam"><img src="https://avatars.githubusercontent.com/u/534?v=4?s=100" width="100px;" alt="Eric Allam"/><br /><sub><b>Eric Allam</b></sub></a><br /><a href="#ideas-ericallam" title="Ideas, Planning, & Feedback">🤔</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://perdomo.me"><img src="https://avatars.githubusercontent.com/u/178474?v=4?s=100" width="100px;" alt="Iván Perdomo"/><br /><sub><b>Iván Perdomo</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aiperdomo" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://charlesfrye.github.io"><img src="https://avatars.githubusercontent.com/u/10442975?v=4?s=100" width="100px;" alt="Charles Frye"/><br /><sub><b>Charles Frye</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=charlesfrye" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/phamquiluan"><img src="https://avatars.githubusercontent.com/u/24642166?v=4?s=100" width="100px;" alt="Luan Pham"/><br /><sub><b>Luan Pham</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aphamquiluan" title="Bug reports">🐛</a> <a href="https://github.com/replicate/cog/commits?author=phamquiluan" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/TommyDew42"><img src="https://avatars.githubusercontent.com/u/46992350?v=4?s=100" width="100px;" alt="TommyDew"/><br /><sub><b>TommyDew</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=TommyDew42" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://m4ke.org"><img src="https://avatars.githubusercontent.com/u/27?v=4?s=100" width="100px;" alt="Jesse Andrews"/><br /><sub><b>Jesse Andrews</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=anotherjesse" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=anotherjesse" title="Documentation">📖</a> <a href="https://github.com/replicate/cog/commits?author=anotherjesse" title="Tests">⚠️</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://whiteink.com"><img src="https://avatars.githubusercontent.com/u/3602?v=4?s=100" width="100px;" alt="Nick Stenning"/><br /><sub><b>Nick Stenning</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=nickstenning" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=nickstenning" title="Documentation">📖</a> <a href="#design-nickstenning" title="Design">🎨</a> <a href="#infra-nickstenning" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a> <a href="https://github.com/replicate/cog/commits?author=nickstenning" title="Tests">⚠️</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://merrell.io/"><img src="https://avatars.githubusercontent.com/u/14996837?v=4?s=100" width="100px;" alt="Justin Merrell"/><br /><sub><b>Justin Merrell</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=justinmerrell" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ruriky"><img src="https://avatars.githubusercontent.com/u/19946546?v=4?s=100" width="100px;" alt="Rurik Ylä-Onnenvuori"/><br /><sub><b>Rurik Ylä-Onnenvuori</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aruriky" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://www.youka.club/"><img src="https://avatars.githubusercontent.com/u/59315275?v=4?s=100" width="100px;" alt="Youka"/><br /><sub><b>Youka</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Ayoukaclub" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/afiaka87"><img src="https://avatars.githubusercontent.com/u/3994972?v=4?s=100" width="100px;" alt="Clay Mullis"/><br /><sub><b>Clay Mullis</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=afiaka87" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/mattt"><img src="https://avatars.githubusercontent.com/u/7659?v=4?s=100" width="100px;" alt="Mattt"/><br /><sub><b>Mattt</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=mattt" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=mattt" title="Documentation">📖</a> <a href="#infra-mattt" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Juneezee"><img src="https://avatars.githubusercontent.com/u/20135478?v=4?s=100" width="100px;" alt="Eng Zer Jun"/><br /><sub><b>Eng Zer Jun</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=Juneezee" title="Tests">⚠️</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/bbedward"><img src="https://avatars.githubusercontent.com/u/550752?v=4?s=100" width="100px;" alt="BB"/><br /><sub><b>BB</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=bbedward" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/williamluer"><img src="https://avatars.githubusercontent.com/u/85975676?v=4?s=100" width="100px;" alt="williamluer"/><br /><sub><b>williamluer</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=williamluer" title="Documentation">📖</a></td>
+    </tr>
+  </tbody>
 </table>
 
 <!-- markdownlint-restore -->

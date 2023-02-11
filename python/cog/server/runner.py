@@ -1,317 +1,381 @@
-import multiprocessing
-import os
-import signal
+import io
+import threading
 import traceback
-import types
-from enum import Enum
-from multiprocessing.connection import Connection
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
+from multiprocessing.pool import AsyncResult, ThreadPool
+from typing import Any, Callable, Optional, Tuple
 
-from pydantic import BaseModel
+import requests
+import structlog
+from fastapi.encoders import jsonable_encoder
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry  # type: ignore
+
+from .. import schema
+from .. import types
+from ..files import put_file_to_signed_endpoint
+from ..json import upload_files
+from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
+from .webhook import webhook_caller_filtered
+from .worker import Worker
+
+log = structlog.get_logger("cog.server.runner")
 
 
-from ..json import make_encodeable
-from ..predictor import load_config, load_predictor
-from .log_capture import capture_log
-
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter  # type: ignore
-from opentelemetry.sdk.trace import TracerProvider  # type: ignore
-from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore
-from opentelemetry.trace import NonRecordingSpan, SpanContext
+class FileUploadError(Exception):
+    pass
 
 
-class timeout:
-    """A context manager that times out after a given number of seconds."""
+class RunnerBusyError(Exception):
+    pass
 
-    def __init__(
-        self,
-        seconds: Optional[int],
-        elapsed: Optional[int] = None,
-        error_message: str = "Prediction timed out",
-    ) -> None:
-        if elapsed is None or seconds is None:
-            self.seconds = seconds
-        else:
-            self.seconds = seconds - int(elapsed)
-        self.error_message = error_message
 
-    def handle_timeout(self, signum: Any, frame: Any) -> None:
-        raise TimeoutError(self.error_message)
-
-    def __enter__(self) -> None:
-        if self.seconds is not None:
-            if self.seconds <= 0:
-                self.handle_timeout(None, None)
-            else:
-                signal.signal(signal.SIGALRM, self.handle_timeout)
-                signal.alarm(self.seconds)
-
-    def __exit__(self, type: Any, value: Any, traceback: Any) -> None:
-        if self.seconds is not None:
-            signal.alarm(0)
+class UnknownPredictionError(Exception):
+    pass
 
 
 class PredictionRunner:
-    PROCESSING_DONE = 1
-    EXIT_SENTINEL = "exit"
+    def __init__(
+        self,
+        *,
+        predictor_ref: str,
+        shutdown_event: threading.Event,
+        upload_url: Optional[str] = None,
+    ):
+        self._thread = None
+        self._threadpool = ThreadPool(processes=1)
 
-    class OutputType(Enum):
-        NOT_STARTED = 0
-        SINGLE = 1
-        GENERATOR = 2
+        self._response: Optional[schema.PredictionResponse] = None
+        self._result: Optional[AsyncResult] = None
 
-    def __init__(self, predict_timeout: Optional[int] = None) -> None:
-        self.logs_pipe_reader, self.logs_pipe_writer = multiprocessing.Pipe(
-            duplex=False
-        )
-        (
-            self.prediction_input_pipe_reader,
-            self.prediction_input_pipe_writer,
-        ) = multiprocessing.Pipe(duplex=False)
-        self.predictor_pipe_reader, self.predictor_pipe_writer = multiprocessing.Pipe(
-            duplex=False
-        )
-        self.error_pipe_reader, self.error_pipe_writer = multiprocessing.Pipe(
-            duplex=False
-        )
-        self.done_pipe_reader, self.done_pipe_writer = multiprocessing.Pipe(
-            duplex=False
-        )
-        self.predict_timeout = predict_timeout
+        self._worker = Worker(predictor_ref=predictor_ref)
+        self._should_cancel = threading.Event()
 
-    def setup(self) -> None:
-        """
-        Sets up the predictor in a subprocess. Blocks until the predictor has
-        finished setup. To start a prediction after setup call `run()`.
-        """
-        span = trace.get_current_span()
-        span.add_event("spawning predictor process")
-        # `multiprocessing.get_context("spawn")` returns the same API as
-        # `multiprocessing`, but will use the spawn method when creating
-        # any subprocess. Using the spawn method for the predictor
-        # subprocess is useful for compatibility with CUDA, which cannot
-        # run in a process that gets forked. If we can guarantee that all
-        # initialization happens within the subprocess, we could probably
-        # get away with using fork here instead.
-        self.predictor_process = multiprocessing.get_context("spawn").Process(
-            target=self._start_predictor_process,
-            kwargs={"span_context": span.get_span_context()},
-        )
+        self._shutdown_event = shutdown_event
+        self._upload_url = upload_url
 
-        self._is_processing = True
-        self.predictor_process.start()
+    def setup(self) -> Tuple[schema.Status, str]:
+        _logs = []
+        _status = None
 
-        # poll with an infinite timeout to avoid burning resources in the loop
-        while self.done_pipe_reader.poll(timeout=None) and self.is_processing():
-            pass
+        try:
+            for event in self._worker.setup():
+                if isinstance(event, Log):
+                    _logs.append(event.message)
+                elif isinstance(event, Done):
+                    _status = (
+                        schema.Status.FAILED if event.error else schema.Status.SUCCEEDED
+                    )
+        except Exception:
+            _status = schema.Status.FAILED
 
-    def _start_predictor_process(self, span_context: SpanContext = None) -> None:
-        # Enable OpenTelemetry if the env vars are present. If this block isn't
-        # run, all the opentelemetry calls are no-ops. We have to initialize
-        # this here again because we're running a new process.
-        if "OTEL_SERVICE_NAME" in os.environ:
-            trace.set_tracer_provider(TracerProvider())
-            span_processor = BatchSpanProcessor(OTLPSpanExporter())
-            trace.get_tracer_provider().add_span_processor(span_processor)
+        assert _status is not None, "must receive done event from setup"
 
-        tracer = trace.get_tracer("cog")
-        with tracer.start_as_current_span(
-            name="PredictionRunner._start_predictor_process",
-            context=trace.set_span_in_context(NonRecordingSpan(span_context)),
-        ) as span:
-            config = load_config()
-            self.predictor = load_predictor(config)
-            with tracer.start_as_current_span(name="predictor.setup"):
-                self.predictor.setup()
+        return (_status, "".join(_logs))
 
-            # tell the main process we've finished setup
-            self.done_pipe_writer.send(self.PROCESSING_DONE)
+    # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
+    # no longer have to support Python 3.8
+    def predict(
+        self, prediction: schema.PredictionRequest, upload: bool = True
+    ) -> Tuple[schema.PredictionResponse, AsyncResult]:
+        # It's the caller's responsibility to not call us if we're busy.
+        if self.is_busy():
+            assert self._response is not None
+            assert self._result is not None
+            if prediction.id is not None and prediction.id == self._response.id:
+                return (self._response, self._result)
+            raise RunnerBusyError()
 
-        while True:
+        # Set up logger context for main thread. The same thing happens inside
+        # the predict thread.
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(prediction_id=prediction.id)
+
+        self._should_cancel.clear()
+        upload_url = self._upload_url if upload else None
+        event_handler = create_event_handler(prediction, upload_url=upload_url)
+
+        def cleanup(_: Optional[Any] = None) -> None:
+            if hasattr(prediction.input, "cleanup"):
+                prediction.input.cleanup()
+
+        def handle_error(error: BaseException) -> None:
+            # Re-raise the exception in order to more easily capture exc_info,
+            # and then trigger shutdown, as we have no easy way to resume
+            # worker state if an exception was thrown.
             try:
-                message = self.prediction_input_pipe_reader.recv()
+                raise error
+            except Exception:
+                log.error("caught exception while running prediction", exc_info=True)
+                self._shutdown_event.set()
 
-                if message == PredictionRunner.EXIT_SENTINEL:
-                    break
-
-                self._run_prediction(
-                    prediction_input=message["prediction_input"],
-                    span_context=message["span_context"],
-                )
-            except EOFError:
-                continue
-
-    def run(self, **prediction_input: Dict[str, Any]) -> None:
-        """
-        Starts running a prediction in the predictor subprocess, using the
-        inputs provided in `prediction_input`.
-
-        The subprocess will send prediction output and logs to pipes as soon as
-        they're available. You can check if the pipes have any data using
-        `has_output_waiting()` and `has_logs_waiting()`. You can read data from
-        the pipes using `read_output()` and `read_logs()`.
-
-        Use `is_processing()` to check whether more data is expected in the
-        pipe for prediction output.
-        """
-        # We're starting processing!
-        self._is_processing = True
-
-        # We don't know whether or not we've got a generator (progressive
-        # output) until we start getting output from the model
-        self._is_output_generator = self.OutputType.NOT_STARTED
-
-        # We haven't encountered an error yet
-        self._error = None
-
-        # Send prediction input through the pipe to the predictor subprocess.
-        # Include the current span context to link up the opentelemetry trace.
-        self.prediction_input_pipe_writer.send(
-            {
-                "prediction_input": prediction_input,
-                "span_context": trace.get_current_span().get_span_context(),
-            }
+        self._response = event_handler.response
+        self._result = self._threadpool.apply_async(
+            func=predict,
+            kwds={
+                "worker": self._worker,
+                "request": prediction,
+                "event_handler": event_handler,
+                "should_cancel": self._should_cancel,
+            },
+            callback=cleanup,
+            error_callback=handle_error,
         )
 
-    def is_processing(self) -> bool:
-        """
-        Returns True if the subprocess running the prediction is still
-        processing.
-        """
-        if self.done_pipe_reader.poll():
-            try:
-                if self.done_pipe_reader.recv() == self.PROCESSING_DONE:
-                    self._is_processing = False
-            except EOFError:
-                pass
+        return (self._response, self._result)
 
-        return self._is_processing
-
-    def has_output_waiting(self) -> bool:
-        return self.predictor_pipe_reader.poll()
-
-    def read_output(self) -> List[Any]:
-        if self._is_output_generator is self.OutputType.NOT_STARTED:
-            return []
-
-        output = []
-        while self.has_output_waiting():
-            try:
-                output.append(self.predictor_pipe_reader.recv())
-            except EOFError:
-                break
-        return output
-
-    def has_logs_waiting(self) -> bool:
-        return self.logs_pipe_reader.poll()
-
-    def read_logs(self) -> str:
-        logs = ""
-        while self.has_logs_waiting():
-            try:
-                logs += self.logs_pipe_reader.recv() + "\n"
-            except EOFError:
-                break
-        return logs
-
-    def is_output_generator(self) -> Optional[bool]:
-        """
-        Returns `True` if the output is a generator, `False` if it's not, and
-        `None` if we don't know yet.
-        """
-        if self._is_output_generator is self.OutputType.NOT_STARTED:
-            if self.has_output_waiting():
-                # if there's output waiting use the first one to set whether
-                # we've got a generator, with a safety check
-                self._is_output_generator = self.predictor_pipe_reader.recv()
-                assert isinstance(self._is_output_generator, self.OutputType)
-
-        if self._is_output_generator is self.OutputType.NOT_STARTED:
-            return None
-        elif self._is_output_generator is self.OutputType.SINGLE:
+    def is_busy(self) -> bool:
+        if self._result is None:
             return False
-        elif self._is_output_generator is self.OutputType.GENERATOR:
+
+        if not self._result.ready():
             return True
 
-    def _run_prediction(
+        self._response = None
+        self._result = None
+        return False
+
+    def shutdown(self) -> None:
+        self._worker.terminate()
+        self._threadpool.terminate()
+        self._threadpool.join()
+
+    def cancel(self, prediction_id: Optional[str] = None) -> None:
+        if not self.is_busy():
+            return
+        assert self._response is not None
+        if prediction_id is not None and prediction_id != self._response.id:
+            raise UnknownPredictionError()
+        self._should_cancel.set()
+
+
+def create_event_handler(
+    prediction: schema.PredictionRequest, upload_url: Optional[str] = None
+) -> "PredictionEventHandler":
+    response = schema.PredictionResponse(**prediction.dict())
+
+    webhook = prediction.webhook
+    events_filter = (
+        prediction.webhook_events_filter or schema.WebhookEvent.default_events()
+    )
+
+    webhook_sender = None
+    if webhook is not None:
+        webhook_sender = webhook_caller_filtered(webhook, events_filter)
+
+    file_uploader = None
+    if upload_url is not None:
+        file_uploader = generate_file_uploader(upload_url)
+
+    event_handler = PredictionEventHandler(
+        response, webhook_sender=webhook_sender, file_uploader=file_uploader
+    )
+
+    return event_handler
+
+
+def generate_file_uploader(upload_url: str) -> Callable:
+    client = _make_file_upload_http_client()
+
+    def file_uploader(output: Any) -> Any:
+        def upload_file(fh: io.IOBase) -> str:
+            return put_file_to_signed_endpoint(fh, upload_url, client=client)
+
+        return upload_files(output, upload_file=upload_file)
+
+    return file_uploader
+
+
+class PredictionEventHandler:
+    def __init__(
         self,
-        prediction_input: Dict[str, Any],
-        span_context: SpanContext = None,
-    ) -> None:
-        """
-        Sends a boolean first, to indicate whether the output is a generator.
-        After that it sends the output(s).
+        p: schema.PredictionResponse,
+        webhook_sender: Optional[Callable] = None,
+        file_uploader: Optional[Callable] = None,
+    ):
+        log.info("starting prediction")
+        self.p = p
+        self.p.status = schema.Status.PROCESSING
+        self.p.output = None
+        self.p.logs = ""
+        self.p.started_at = datetime.now(tz=timezone.utc)
 
-        If the predictor raises an exception it'll send it to the error pipe
-        writer and then exit.
+        self._webhook_sender = webhook_sender
+        self._file_uploader = file_uploader
 
-        When the prediction is finished it'll send a token to the done pipe.
-        """
-        # Empty all the pipes before we start sending more messages to them
-        drain_pipe(self.logs_pipe_reader)
-        drain_pipe(self.predictor_pipe_reader)
-        drain_pipe(self.error_pipe_reader)
-        drain_pipe(self.done_pipe_reader)
+        self._send_webhook(schema.WebhookEvent.START)
 
-        with capture_log(self.logs_pipe_writer):
-            tracer = trace.get_tracer("cog")
-            with tracer.start_as_current_span(
-                name="predictor.predict",
-                context=trace.set_span_in_context(NonRecordingSpan(span_context)),
-            ) as span:
-                try:
-                    with timeout(seconds=self.predict_timeout):
-                        output = self.predictor.predict(**prediction_input)
+    @property
+    def response(self) -> schema.PredictionResponse:
+        return self.p
 
-                        if isinstance(output, types.GeneratorType):
-                            self.predictor_pipe_writer.send(self.OutputType.GENERATOR)
-                            while True:
-                                try:
-                                    self.predictor_pipe_writer.send(
-                                        make_encodeable(next(output))
-                                    )
-                                except StopIteration:
-                                    break
-                        else:
-                            self.predictor_pipe_writer.send(self.OutputType.SINGLE)
-                            self.predictor_pipe_writer.send(make_encodeable(output))
-                except Exception as e:
-                    # if it timed out there's no stack trace
-                    if type(e) != TimeoutError:
-                        traceback.print_exc()
-                    self.error_pipe_writer.send(e)
+    def set_output(self, output: Any) -> None:
+        assert self.p.output is None, "Predictor unexpectedly returned multiple outputs"
+        self.p.output = self._upload_files(output)
+        # We don't send a webhook for compatibility with the behaviour of
+        # redis_queue. In future we can consider whether it makes sense to send
+        # one here.
 
-        self.done_pipe_writer.send(self.PROCESSING_DONE)
+    def append_output(self, output: Any) -> None:
+        assert isinstance(
+            self.p.output, list
+        ), "Cannot append output before setting output"
+        self.p.output.append(self._upload_files(output))
+        self._send_webhook(schema.WebhookEvent.OUTPUT)
 
-    def error(self) -> Optional[str]:
-        """
-        Returns the error encountered by the predictor, if one exists.
-        """
-        if self._error is None and self.error_pipe_reader.poll():
-            try:
-                self._error = self.error_pipe_reader.recv()
-            except EOFError:
-                # I don't know how this is reachable ¯\_(ツ)_/¯
-                pass
+    def append_logs(self, logs: str) -> None:
+        assert self.p.logs is not None
+        self.p.logs += logs
+        self._send_webhook(schema.WebhookEvent.LOGS)
 
-        return self._error
+    def succeeded(self) -> None:
+        log.info("prediction succeeded")
+        self.p.status = schema.Status.SUCCEEDED
+        self._set_completed_at()
+        # These have been set already: this is to convince the typechecker of
+        # that...
+        assert self.p.completed_at is not None
+        assert self.p.started_at is not None
+        self.p.metrics = {
+            "predict_time": (self.p.completed_at - self.p.started_at).total_seconds()
+        }
+        self._send_webhook(schema.WebhookEvent.COMPLETED)
 
-    def close(self) -> None:
-        """
-        Exit the runner gracefully.
-        """
-        self.prediction_input_pipe_writer.send(PredictionRunner.EXIT_SENTINEL)
-        self.predictor_process.join()
+    def failed(self, error: str) -> None:
+        log.info("prediction failed", error=error)
+        self.p.status = schema.Status.FAILED
+        self.p.error = error
+        self._set_completed_at()
+        self._send_webhook(schema.WebhookEvent.COMPLETED)
 
+    def canceled(self) -> None:
+        log.info("prediction canceled")
+        self.p.status = schema.Status.CANCELED
+        self._set_completed_at()
+        self._send_webhook(schema.WebhookEvent.COMPLETED)
 
-def drain_pipe(pipe_reader: Connection) -> None:
-    """
-    Reads all available messages from a pipe and discards them. This serves to
-    clear the pipe for future usage.
-    """
-    while pipe_reader.poll():
+    def _set_completed_at(self) -> None:
+        self.p.completed_at = datetime.now(tz=timezone.utc)
+
+    def _send_webhook(self, event: schema.WebhookEvent) -> None:
+        if self._webhook_sender is not None:
+            dict_response = jsonable_encoder(self.response.dict(exclude_unset=True))
+            self._webhook_sender(dict_response, event)
+
+    def _upload_files(self, output: Any) -> Any:
+        if self._file_uploader is None:
+            return output
+
         try:
-            pipe_reader.recv()
-        except EOFError:
-            break
+            # TODO: clean up output files
+            return self._file_uploader(output)
+        except Exception as error:
+            # If something goes wrong uploading a file, it's irrecoverable.
+            # The re-raised exception will be caught and cause the prediction
+            # to be failed, with a useful error message.
+            raise FileUploadError("Got error trying to upload output files") from error
+
+
+def predict(
+    *,
+    worker: Worker,
+    request: schema.PredictionRequest,
+    event_handler: PredictionEventHandler,
+    should_cancel: threading.Event,
+) -> schema.PredictionResponse:
+
+    # Set up logger context within prediction thread.
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(prediction_id=request.id)
+
+    try:
+        return _predict(
+            worker=worker,
+            request=request,
+            event_handler=event_handler,
+            should_cancel=should_cancel,
+        )
+    except Exception as e:
+        tb = traceback.format_exc()
+        event_handler.append_logs(tb)
+        event_handler.failed(error=str(e))
+        raise
+
+
+def _predict(
+    *,
+    worker: Worker,
+    request: schema.PredictionRequest,
+    event_handler: PredictionEventHandler,
+    should_cancel: threading.Event,
+) -> schema.PredictionResponse:
+    initial_prediction = request.dict()
+
+    output_type = None
+    input_dict = initial_prediction["input"]
+
+    for k, v in input_dict.items():
+        if isinstance(v, types.URLPath):
+            input_dict[k] = v.convert()
+
+    for event in worker.predict(input_dict, poll=0.1):
+        if should_cancel.is_set():
+            worker.cancel()
+            should_cancel.clear()
+
+        if isinstance(event, Heartbeat):
+            # Heartbeat events exist solely to ensure that we have a
+            # regular opportunity to check for cancelation and
+            # timeouts.
+            #
+            # We don't need to do anything with them.
+            pass
+
+        elif isinstance(event, Log):
+            event_handler.append_logs(event.message)
+
+        elif isinstance(event, PredictionOutputType):
+            if output_type is not None:
+                event_handler.failed(error="Predictor returned unexpected output")
+                break
+
+            output_type = event
+            if output_type.multi:
+                event_handler.set_output([])
+        elif isinstance(event, PredictionOutput):
+            if output_type is None:
+                event_handler.failed(error="Predictor returned unexpected output")
+                break
+
+            if output_type.multi:
+                event_handler.append_output(event.payload)
+            else:
+                event_handler.set_output(event.payload)
+
+        elif isinstance(event, Done):
+            if event.canceled:
+                event_handler.canceled()
+            elif event.error:
+                event_handler.failed(error=str(event.error_detail))
+            else:
+                event_handler.succeeded()
+
+        else:
+            log.warn("received unexpected event from worker", data=event)
+
+    return event_handler.response
+
+
+def _make_file_upload_http_client() -> requests.Session:
+    session = requests.Session()
+    adapter = HTTPAdapter(
+        max_retries=Retry(
+            total=3,
+            backoff_factor=0.1,
+            status_forcelist=[408, 429, 500, 502, 503, 504],
+            allowed_methods=["PUT"],
+        ),
+    )
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session

@@ -1,16 +1,15 @@
-fastapi==0.70.1
-mypy==0.950
-numpy==1.21.5
-pillow==9.0.1
-pydantic==1.8.2
-pytest==6.2.4
-pytest-httpserver==1.0.4
-PyYAML==5.4.1
-redis==4.1.0
-requests==2.25.1
-responses==0.16.0
+build==0.9.0
+hypothesis==6.56.4
+httpx==0.23.1
+mypy==0.990
+numpy==1.21.6; python_version == '3.7'
+numpy==1.24.1; python_version > '3.7'
+pillow==9.3.0
+pytest==7.2.0
+pytest-httpserver==1.0.6
+pytest-xdist==3.1.0
+responses==0.22.0
 types-requests==2.25.1
 types-PyYAML==5.4.1
 types-redis==4.1.0
-uvicorn[standard]==0.16.0
-wheel==0.36.2
+types-setuptools==65.5.0.2
