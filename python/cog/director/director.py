@@ -335,6 +335,8 @@ class Director:
     # OpenTelemetry is very picky about not accepting None types
     def _set_span_attributes_from_tracker(self, span, tracker):
         span.set_attribute("prediction.uuid", tracker._response.id)
+        if tracker._response.error:
+            span.set_attribute("prediction.error", tracker._response.error)
         if tracker._response.version:
             span.set_attribute("model.version", tracker._response.version)
         if tracker._response.started_at:
