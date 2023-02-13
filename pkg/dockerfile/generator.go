@@ -103,8 +103,6 @@ func (g *Generator) GenerateBase() (string, error) {
 		pythonRequirements,
 		pipInstalls,
 		g.installSieve(),
-		g.uninstallPydantic(),
-		g.installPydanticNoBinary(),
 		run,
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
