@@ -1,30 +1,33 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema",
   "type": "object",
-  "title": "Schema for cog.yaml ",
+  "title": "Schema for cog.yaml",
+  "description": "Defines how to build a Docker image and how to run predictions on your model inside that image.",
   "properties": {
     "build": {
       "$id": "#/properties/build",
       "type": "object",
+      "description": "This stanza describes how to build the Docker image your model runs in.",
       "properties": {
         "cuda": {
           "$id": "#/properties/build/properties/cuda",
-          "type": "string"
+          "type": "string",
+          "description": "Cog automatically picks the correct version of CUDA to install, but this lets you override it for whatever reason."
         },
         "gpu": {
           "$id": "#/properties/build/properties/gpu",
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Enable GPUs for this model. When enabled, the [nvidia-docker](https://github.com/NVIDIA/nvidia-docker) base image will be used, and Cog will automatically figure out what versions of CUDA and cuDNN to use based on the version of Python, PyTorch, and Tensorflow that you are using."
         },
         "python_version": {
           "$id": "#/properties/build/properties/python_version",
-          "type": [
-            "string",
-            "number"
-          ]
+          "type": ["string", "number"],
+          "description": "The minor (`3.8`) or patch (`3.8.1`) version of Python to use."
         },
         "python_packages": {
           "$id": "#/properties/build/properties/python_packages",
           "type": "array",
+          "description": "A list of Python packages to install, in the format `package==version`.",
           "additionalItems": true,
           "items": {
             "$id": "#/properties/build/properties/python_packages/items",
@@ -39,6 +42,7 @@
         "pre_install": {
           "$id": "#/properties/build/properties/pre_install",
           "type": "array",
+          "description": "A list of setup commands to run in the environment before your Python packages are installed.",
           "additionalItems": true,
           "items": {
             "$id": "#/properties/build/properties/pre_install/items",
@@ -52,11 +56,13 @@
         },
         "python_requirements": {
           "$id": "#/properties/build/properties/python_requirements",
-          "type": "string"
+          "type": "string",
+          "description": "A pip requirements file specifying the Python packages to install."
         },
         "system_packages": {
           "$id": "#/properties/build/properties/system_packages",
           "type": "array",
+          "description": "A list of Ubuntu APT packages to install.",
           "additionalItems": true,
           "items": {
             "$id": "#/properties/build/properties/system_packages/items",
@@ -71,6 +77,7 @@
         "run": {
           "$id": "#/properties/build/properties/run",
           "type": "array",
+          "description": "A list of setup commands to run in the environment after your system packages and Python packages have been installed. If you're familiar with Docker, it's like a `RUN` instruction in your `Dockerfile`.",
           "additionalItems": true,
           "items": {
             "$id": "#/properties/build/properties/run/items",
@@ -87,11 +94,13 @@
     },
     "image": {
       "$id": "#/properties/image",
-      "type": "string"
+      "type": "string",
+      "description": "The name given to built Docker images. If you want to push to a registry, this should also include the registry name."
     },
     "predict": {
       "$id": "#/properties/predict",
-      "type": "string"
+      "type": "string",
+      "description": "The pointer to the `Predictor` object in your code, which defines how predictions are run on your model."
     }
   },
   "additionalProperties": false
