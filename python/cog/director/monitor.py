@@ -54,12 +54,17 @@ class Monitor:
         active_sec = 0.0
         current_prediction: Optional[schema.PredictionResponse] = None
         current_prediction_started_at: Optional[float] = None
+        model_ready = False
 
         while not self._should_exit.is_set():
             try:
                 current_prediction = self._prediction_events.get_nowait()
                 # Set to None or schema.PredictionResponse
                 # Will raise Empty when there is nothing in the queue in the timeout
+
+                # Requires director to call `set_current_prediction`, which it
+                # only does after the model has reported itself as ready
+                model_ready = True
 
                 if current_prediction_started_at:  # count utilization in window
                     active_sec += time.perf_counter() - current_prediction_started_at
@@ -71,7 +76,8 @@ class Monitor:
             except Empty:
                 pass
 
-            if time.perf_counter() >= last_span_at + self.utilization_interval:
+            emit_span = time.perf_counter() >= last_span_at + self.utilization_interval
+            if model_ready and emit_span:
                 with self._tracer.start_as_current_span(
                     name="cog.director.utilization",
                     attributes=span_attributes_from_env(),

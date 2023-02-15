@@ -50,6 +50,8 @@ def test_emit_utilization_span():
 
     monitor = Monitor(utilization_interval=1)
     monitor.start()
+    time.sleep(0.02)
+    assert len(span_provider.spans) == 0
 
     prediction = PredictionResponse(
         id="narwhal",
