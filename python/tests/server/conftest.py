@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 from typing import Any, Dict, Optional
 
 from attrs import define
@@ -45,6 +46,15 @@ def make_client(fixture_name: str, upload_url: Optional[str] = None):
     return TestClient(app)
 
 
+def wait_for_setup(client: TestClient):
+    while True:
+        resp = client.get("/health-check")
+        data = resp.json()
+        if data["status"] != "STARTING":
+            break
+        time.sleep(0.01)
+
+
 @pytest.fixture
 def client(request):
     fixture_name = request.param.predictor_fixture
@@ -52,4 +62,5 @@ def client(request):
 
     # Use context manager to trigger setup/shutdown events.
     with make_client(fixture_name=fixture_name, **options) as c:
+        wait_for_setup(c)
         yield c

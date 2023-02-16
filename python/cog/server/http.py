@@ -58,6 +58,7 @@ def create_app(
 
     app.state.health = Health.STARTING
     app.state.setup_result = None
+    app.state.setup_result_payload = None
 
     runner = PredictionRunner(
         predictor_ref=predictor_ref,
@@ -80,21 +81,7 @@ def create_app(
         # https://github.com/tiangolo/fastapi/issues/4221
         RunVar("_default_thread_limiter").set(CapacityLimiter(threads))  # type: ignore
 
-        setup_start = datetime.now(timezone.utc)
-        setup_status, setup_logs = runner.setup()
-        setup_complete = datetime.now(timezone.utc)
-
-        app.state.setup_result = {
-            "logs": setup_logs,
-            "status": setup_status,
-            "started_at": setup_start,
-            "completed_at": setup_complete,
-        }
-
-        if setup_status == schema.Status.SUCCEEDED:
-            app.state.health = Health.READY
-        else:
-            app.state.health = Health.SETUP_FAILED
+        app.state.setup_result = runner.setup()
 
         probes = ProbeHelper()
         probes.ready()
@@ -113,6 +100,7 @@ def create_app(
 
     @app.get("/health-check")
     def healthcheck() -> Any:
+        _check_setup_result()
         if app.state.health == Health.READY:
             health = Health.BUSY if runner.is_busy() else Health.READY
         else:
@@ -120,7 +108,7 @@ def create_app(
         return jsonable_encoder(
             {
                 "status": health.name,
-                "setup": app.state.setup_result,
+                "setup": app.state.setup_result_payload,
             }
         )
 
@@ -240,6 +228,25 @@ def create_app(
         log.info("shutdown requested via http")
         shutdown_event.set()
         return JSONResponse({}, status_code=200)
+
+    def _check_setup_result() -> Any:
+        if app.state.setup_result is None:
+            return
+
+        if not app.state.setup_result.ready():
+            return
+
+        result = app.state.setup_result.get()
+
+        if result["status"] == schema.Status.SUCCEEDED:
+            app.state.health = Health.READY
+        else:
+            app.state.health = Health.SETUP_FAILED
+
+        app.state.setup_result_payload = result
+
+        # Reset app.state.setup_result so future calls are a no-op
+        app.state.setup_result = None
 
     return app
 
