@@ -1,4 +1,3 @@
-import datetime
 import json
 import queue
 import signal
@@ -57,6 +56,7 @@ class Director:
         predict_timeout: int,
         max_failure_count: int,
         report_setup_run_url: str,
+        cog_http_base: str,
     ):
         self.events = events
         self.healthchecker = healthchecker
@@ -72,7 +72,7 @@ class Director:
         self._tracer = trace.get_tracer("cog-director")
 
         self.cog_client = _make_local_http_client()
-        self.cog_http_base = "http://localhost:5000"
+        self.cog_http_base = cog_http_base
 
     def start(self) -> None:
         try:

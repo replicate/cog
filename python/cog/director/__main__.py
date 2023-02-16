@@ -53,6 +53,7 @@ parser.add_argument(
     help="Maximum number of consecutive failures before the worker should exit",
 )
 parser.add_argument("--report-setup-run-url")
+parser.add_argument("--model-base-uri", type=str, default="http://localhost:5000")
 
 log_level = logging.getLevelName(os.environ.get("LOG_LEVEL", "INFO").upper())
 setup_logging(log_level=log_level)
@@ -66,7 +67,7 @@ server = Server(config)
 server.start()
 
 healthchecker = Healthchecker(
-    events=events, fetcher=http_fetcher("http://localhost:5000/health-check")
+    events=events, fetcher=http_fetcher(args.model_base_uri + "/health-check")
 )
 healthchecker.start()
 
@@ -108,6 +109,7 @@ director = Director(
     predict_timeout=args.predict_timeout,
     max_failure_count=args.max_failure_count,
     report_setup_run_url=args.report_setup_run_url,
+    cog_http_base=args.model_base_uri,
 )
 
 
