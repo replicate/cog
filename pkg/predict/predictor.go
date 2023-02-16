@@ -17,6 +17,10 @@ import (
 
 type status string
 
+type HealthcheckResponse struct {
+	Status string `json:"status"`
+}
+
 type Request struct {
 	// TODO: could this be Inputs?
 	Input map[string]string `json:"input"`
@@ -82,7 +86,7 @@ func (p *Predictor) Start(logsWriter io.Writer) error {
 }
 
 func (p *Predictor) waitForContainerReady() error {
-	url := fmt.Sprintf("http://localhost:%d/", p.port)
+	url := fmt.Sprintf("http://localhost:%d/health-check", p.port)
 
 	start := time.Now()
 	for {
@@ -108,7 +112,21 @@ func (p *Predictor) waitForContainerReady() error {
 		if resp.StatusCode != http.StatusOK {
 			continue
 		}
-		return nil
+		healthcheck := &HealthcheckResponse{}
+		if err := json.NewDecoder(resp.Body).Decode(healthcheck); err != nil {
+			return fmt.Errorf("Container healthcheck returned invalid response: %w", err)
+		}
+		// These status values are defined in python/cog/server/http.py
+		switch healthcheck.Status {
+		case "STARTING":
+			continue
+		case "SETUP_FAILED":
+			return fmt.Errorf("Model setup failed")
+		case "READY":
+			return nil
+		default:
+			return fmt.Errorf("Container healthcheck returned unexpected status: %s", healthcheck.Status)
+		}
 	}
 }
 

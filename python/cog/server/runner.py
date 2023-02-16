@@ -54,24 +54,26 @@ class PredictionRunner:
         self._shutdown_event = shutdown_event
         self._upload_url = upload_url
 
-    def setup(self) -> Tuple[schema.Status, str]:
-        _logs = []
-        _status = None
+    def setup(self) -> AsyncResult:
+        if self.is_busy():
+            raise RunnerBusyError()
 
-        try:
-            for event in self._worker.setup():
-                if isinstance(event, Log):
-                    _logs.append(event.message)
-                elif isinstance(event, Done):
-                    _status = (
-                        schema.Status.FAILED if event.error else schema.Status.SUCCEEDED
-                    )
-        except Exception:
-            _status = schema.Status.FAILED
+        def handle_error(error: BaseException) -> None:
+            # Re-raise the exception in order to more easily capture exc_info,
+            # and then trigger shutdown, as we have no easy way to resume
+            # worker state if an exception was thrown.
+            try:
+                raise error
+            except Exception:
+                log.error("caught exception while running setup", exc_info=True)
+                self._shutdown_event.set()
 
-        assert _status is not None, "must receive done event from setup"
-
-        return (_status, "".join(_logs))
+        self._result = self._threadpool.apply_async(
+            func=setup,
+            kwds={"worker": self._worker},
+            error_callback=handle_error,
+        )
+        return self._result
 
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
     # no longer have to support Python 3.8
@@ -80,7 +82,10 @@ class PredictionRunner:
     ) -> Tuple[schema.PredictionResponse, AsyncResult]:
         # It's the caller's responsibility to not call us if we're busy.
         if self.is_busy():
-            assert self._response is not None
+            # If self._result is set, but self._response is not, we're still
+            # doing setup.
+            if self._response is None:
+                raise RunnerBusyError()
             assert self._result is not None
             if prediction.id is not None and prediction.id == self._response.id:
                 return (self._response, self._result)
@@ -274,6 +279,37 @@ class PredictionEventHandler:
             # The re-raised exception will be caught and cause the prediction
             # to be failed, with a useful error message.
             raise FileUploadError("Got error trying to upload output files") from error
+
+
+def setup(*, worker: Worker):
+    logs = []
+    status = None
+    started_at = datetime.now(tz=timezone.utc)
+
+    try:
+        for event in worker.setup():
+            if isinstance(event, Log):
+                logs.append(event.message)
+            elif isinstance(event, Done):
+                status = (
+                    schema.Status.FAILED if event.error else schema.Status.SUCCEEDED
+                )
+    except Exception:
+        logs.append(traceback.format_exc())
+        status = schema.Status.FAILED
+
+    if status is None:
+        logs.append("Error: did not receive 'done' event from setup!")
+        status = schema.Status.FAILED
+
+    completed_at = datetime.now(tz=timezone.utc)
+
+    return {
+        "logs": "".join(logs),
+        "status": status,
+        "started_at": started_at,
+        "completed_at": completed_at,
+    }
 
 
 def predict(

@@ -33,20 +33,28 @@ def runner():
         predictor_ref=_fixture_path("sleep"), shutdown_event=threading.Event()
     )
     try:
+        runner.setup().get(5)
         yield runner
     finally:
         runner.shutdown()
 
 
-def test_prediction_runner_setup(runner):
-    status, logs = runner.setup()
+def test_prediction_runner_setup():
+    runner = PredictionRunner(
+        predictor_ref=_fixture_path("sleep"), shutdown_event=threading.Event()
+    )
+    try:
+        result = runner.setup().get(5)
 
-    assert status == Status.SUCCEEDED
-    assert logs == ""
+        assert result["status"] == Status.SUCCEEDED
+        assert result["logs"] == ""
+        assert isinstance(result["started_at"], datetime)
+        assert isinstance(result["completed_at"], datetime)
+    finally:
+        runner.shutdown()
 
 
 def test_prediction_runner(runner):
-    runner.setup()
     request = PredictionRequest(input={"sleep": 0.1})
     _, async_result = runner.predict(request)
     response = async_result.get(timeout=1)
@@ -59,17 +67,19 @@ def test_prediction_runner(runner):
 
 
 def test_prediction_runner_called_while_busy(runner):
-    runner.setup()
     request = PredictionRequest(input={"sleep": 0.1})
-    runner.predict(request)
+    _, async_result = runner.predict(request)
 
     assert runner.is_busy()
     with pytest.raises(RunnerBusyError):
         runner.predict(request)
 
+    # Call .get() to ensure that the first prediction is scheduled before we
+    # attempt to shut down the runner.
+    async_result.get()
+
 
 def test_prediction_runner_called_while_busy_idempotent(runner):
-    runner.setup()
     request = PredictionRequest(id="abcd1234", input={"sleep": 0.1})
 
     runner.predict(request)
@@ -83,7 +93,6 @@ def test_prediction_runner_called_while_busy_idempotent(runner):
 
 
 def test_prediction_runner_called_while_busy_idempotent_wrong_id(runner):
-    runner.setup()
     request1 = PredictionRequest(id="abcd1234", input={"sleep": 0.1})
     request2 = PredictionRequest(id="5678efgh", input={"sleep": 0.1})
 
@@ -98,7 +107,6 @@ def test_prediction_runner_called_while_busy_idempotent_wrong_id(runner):
 
 
 def test_prediction_runner_cancel(runner):
-    runner.setup()
     request = PredictionRequest(input={"sleep": 0.5})
     _, async_result = runner.predict(request)
 
@@ -114,7 +122,6 @@ def test_prediction_runner_cancel(runner):
 
 
 def test_prediction_runner_cancel_matching_id(runner):
-    runner.setup()
     request = PredictionRequest(id="abcd1234", input={"sleep": 0.5})
     _, async_result = runner.predict(request)
 
@@ -126,7 +133,6 @@ def test_prediction_runner_cancel_matching_id(runner):
 
 
 def test_prediction_runner_cancel_by_mismatched_id(runner):
-    runner.setup()
     request = PredictionRequest(id="abcd1234", input={"sleep": 0.5})
     _, async_result = runner.predict(request)
 
