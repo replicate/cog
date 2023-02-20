@@ -101,6 +101,16 @@ def test_file_input_with_http_url(client, httpserver, match):
     assert resp.json() == match({"output": "hello", "status": "succeeded"})
 
 
+@uses_predictor("input_path_2")
+def test_file_input_with_http_url_error(client, httpserver, match):
+    httpserver.expect_request("/foo.txt").respond_with_data("haha", status = 404)
+    resp = client.post(
+        "/predictions",
+        json={"input": {"path": httpserver.url_for("/foo.txt")}},
+    )
+    assert resp.json() == match({"status": "failed"})
+
+
 @uses_predictor("input_path")
 def test_path_input_data_url(client, match):
     resp = client.post(
