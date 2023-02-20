@@ -316,7 +316,14 @@ def _predict(
 
     for k, v in input_dict.items():
         if isinstance(v, types.URLPath):
-            input_dict[k] = v.convert()
+            try:
+                input_dict[k] = v.convert()
+            except requests.exceptions.RequestException as e:
+                tb = traceback.format_exc()
+                event_handler.append_logs(tb)
+                event_handler.failed(error=str(e))
+                log.warn("failed to download url path from input", exc_info=True)
+                return event_handler.response
 
     for event in worker.predict(input_dict, poll=0.1):
         if should_cancel.is_set():
