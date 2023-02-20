@@ -58,7 +58,7 @@ def test_output_file_to_http(client, match):
 @uses_predictor_with_client_options("output_file_named", upload_url="https://dontuseme")
 def test_output_file_to_http_with_upload_url_specified(client, match):
     # Ensure that even when --upload-url is provided on the command line,
-    # uploads continue to go to the specifed output_file_prefix, for backwards
+    # uploads continue to go to the specified output_file_prefix, for backwards
     # compatibility.
     responses.add(
         responses.PUT,
