@@ -167,7 +167,7 @@ class Director:
             self._confirm_model_health()
 
             try:
-                message_id, message_json = redis_consumer.get()
+                message_json = redis_consumer.get()
             except EmptyRedisStream:
                 continue
             except Exception:
@@ -176,7 +176,7 @@ class Director:
                 time.sleep(5)
                 continue
 
-            structlog.contextvars.bind_contextvars(message_id=message_id)
+            structlog.contextvars.bind_contextvars(message_id=redis_consumer.message_id)
 
             try:
                 log.info("received message")
@@ -184,19 +184,17 @@ class Director:
                     name="cog.prediction",
                     attributes=span_attributes_from_env(),
                 ) as span:
-                    self._handle_message(message_id, message_json, span)
+                    self._handle_message(message_json, span)
             except Exception:
                 self._record_failure()
                 log.error("caught exception while running prediction", exc_info=True)
             finally:
                 # See the comment in RedisConsumer.get to understand why we ack
                 # even when an exception is thrown while handling a message.
-                redis_consumer.ack(message_id)
+                redis_consumer.ack()
                 log.info("acked message")
 
-    def _handle_message(
-        self, message_id: str, message_json: str, span: trace.Span
-    ) -> None:
+    def _handle_message(self, message_json: str, span: trace.Span) -> None:
         message = json.loads(message_json)
         prediction_id = message["id"]
 
