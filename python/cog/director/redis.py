@@ -21,6 +21,7 @@ class RedisConsumer:
         self.redis_url = redis_url
         self.redis_input_queue = redis_input_queue
         self.redis_consumer_id = redis_consumer_id
+        self.message_id = None
 
         self.redis = redis.from_url(self.redis_url)
         log.info(
@@ -28,7 +29,9 @@ class RedisConsumer:
             host=self.redis.get_connection_kwargs().get("host"),
         )
 
-    def get(self) -> Tuple[str, str]:
+    def get(self) -> str:
+        assert self.message_id is None
+
         # Redis streams are reliable queues: messages must be acked once
         # handled, otherwise they will remain in the queue where they can be
         # claimed by other consumers after a visibility timeout.
@@ -64,13 +67,18 @@ class RedisConsumer:
 
         # format: [[b'mystream', [(b'1619395583065-0', {b'mykey': b'myval6'})]]]
         key, raw_message = raw_messages[0][1][0]
-        message_id = key.decode()
+        self.message_id = key.decode()
         message = raw_message[b"value"].decode()
-        return message_id, message
 
-    def ack(self, message_id: str) -> None:
-        self.redis.xack(self.redis_input_queue, self.redis_input_queue, message_id)
-        self.redis.xdel(self.redis_input_queue, message_id)
+        return message
+
+    def ack(self) -> None:
+        assert self.message_id is not None
+
+        self.redis.xack(self.redis_input_queue, self.redis_input_queue, self.message_id)
+        self.redis.xdel(self.redis_input_queue, self.message_id)
+
+        self.message_id = None
 
     def checker(self, redis_key: str) -> Callable:
         def checker_() -> bool:
