@@ -22,13 +22,6 @@ class RedisConsumer:
         self.redis_input_queue = redis_input_queue
         self.redis_consumer_id = redis_consumer_id
 
-        if predict_timeout is not None:
-            # 30s grace period allows final responses to be sent and job to be acked
-            self.autoclaim_messages_after = predict_timeout + 30
-        else:
-            # retry after 10 minutes by default
-            self.autoclaim_messages_after = 10 * 60
-
         self.redis = redis.from_url(self.redis_url)
         log.info(
             "connected to redis",
