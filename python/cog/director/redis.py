@@ -2,6 +2,8 @@ from typing import Callable, List, Optional, Tuple
 
 import redis
 import structlog
+import threading
+import time
 
 log = structlog.get_logger(__name__)
 
@@ -70,6 +72,11 @@ class RedisConsumer:
         self.message_id = key.decode()
         message = raw_message[b"value"].decode()
 
+        self._claimer = RedisMessageClaimer(
+            claim_message=self.claim_message(self.message_id)
+        )
+        self._claimer.start()
+
         return message
 
     def ack(self) -> None:
@@ -77,14 +84,30 @@ class RedisConsumer:
 
         self.redis.xack(self.redis_input_queue, self.redis_input_queue, self.message_id)
         self.redis.xdel(self.redis_input_queue, self.message_id)
+        self._claimer.stop()
 
         self.message_id = None
+        self._claimer = None
 
     def checker(self, redis_key: str) -> Callable:
         def checker_() -> bool:
             return redis_key is not None and self.redis.exists(redis_key) > 0
 
         return checker_
+
+    def claim_message(self, message_id: str) -> Callable:
+        def claim_message_() -> None:
+            self.redis.xclaim(
+                name=self.redis_input_queue,
+                groupname=self.redis_input_queue,
+                consumername=self.redis_consumer_id,
+                min_idle_time=0,
+                message_ids=[self.message_id],
+                force=True,
+                justid=True,
+            )
+
+        return claim_message_
 
 
 class RedisConsumerRotator:
@@ -103,3 +126,32 @@ class RedisConsumerRotator:
         self._current_consumer_index = (
             self._current_consumer_index + 1
         ) % consumer_count
+
+
+class RedisMessageClaimer:
+    def __init__(self, claim_message: Callable, claim_interval: int = 2):
+        self._thread = None
+        self._should_exit = threading.Event()
+        self._claim_message = claim_message
+        self._claim_interval = claim_interval
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._run)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._should_exit.set()
+        if self._thread is not None:
+            self._thread.join()
+
+    def _run(self) -> None:
+        last_claimed_at = time.perf_counter()
+
+        while not self._should_exit.is_set():
+            now = time.perf_counter()
+            if now >= last_claimed_at + self._claim_interval:
+                self._claim_message()
+                last_claimed_at = now
+
+            # Only sleep for a short time to respect _should_exit
+            time.sleep(0.01)
