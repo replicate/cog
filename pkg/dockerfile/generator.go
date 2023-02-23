@@ -13,7 +13,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 )
 
-//go:embed embed/cog.whl
+// go:embed embed/cog.whl
 var cogWheelEmbed []byte
 
 type Generator struct {
@@ -76,7 +76,11 @@ func (g *Generator) GenerateBase() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	installCog, err := g.installCog()
+	installCog, err := " ", nil
+	if (g.Config.Build.Cog){
+		installCog, err = g.installCog()
+	}
+
 	if err != nil {
 		return "", err
 	}
@@ -97,7 +101,7 @@ func (g *Generator) GenerateBase() (string, error) {
 		run,
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
-		`CMD ["python", "-m", "cog.server.http"]`,
+		g.getCmd(),
 	}), "\n"), nil
 }
 
@@ -160,6 +164,10 @@ func (g *Generator) aptInstalls() (string, error) {
 	return "RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy " +
 		strings.Join(packages, " ") +
 		" && rm -rf /var/lib/apt/lists/*", nil
+}
+
+func (g *Generator) getCmd () (string) {
+	return g.Config.Build.Cmd
 }
 
 func (g *Generator) installPythonCUDA() (string, error) {

@@ -24,6 +24,16 @@
           "type": ["string", "number"],
           "description": "The minor (`3.8`) or patch (`3.8.1`) version of Python to use."
         },
+        "cmd": {
+          "$id": "#/properties/build/properties/cmd",
+          "type": "string",
+          "description": "The CMD command of the dockerfile"
+        },
+        "cog": {
+          "$id": "#/properties/build/properties/cog",
+          "type": "boolean",
+          "description": "Boolean which says whether to install cog or not"
+        },
         "python_packages": {
           "$id": "#/properties/build/properties/python_packages",
           "type": "array",
@@ -90,7 +100,7 @@
           }
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "image": {
       "$id": "#/properties/image",
@@ -103,5 +113,5 @@
       "description": "The pointer to the `Predictor` object in your code, which defines how predictions are run on your model."
     }
   },
-  "additionalProperties": false
+  "additionalProperties": true
 }
