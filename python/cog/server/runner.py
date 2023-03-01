@@ -16,6 +16,7 @@ from .. import types
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
+from .probes import ProbeHelper
 from .webhook import webhook_caller_filtered
 from .worker import Worker
 
@@ -303,6 +304,11 @@ def setup(*, worker: Worker):
         status = schema.Status.FAILED
 
     completed_at = datetime.now(tz=timezone.utc)
+
+    # Only if setup succeeded, mark the container as "ready".
+    if status == schema.Status.SUCCEEDED:
+        probes = ProbeHelper()
+        probes.ready()
 
     return {
         "logs": "".join(logs),

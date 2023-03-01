@@ -30,7 +30,6 @@ from ..predictor import (
     load_config,
     load_predictor_from_ref,
 )
-from .probes import ProbeHelper
 from .runner import PredictionRunner, RunnerBusyError, UnknownPredictionError
 
 log = structlog.get_logger("cog.server.http")
@@ -82,9 +81,6 @@ def create_app(
         RunVar("_default_thread_limiter").set(CapacityLimiter(threads))  # type: ignore
 
         app.state.setup_result = runner.setup()
-
-        probes = ProbeHelper()
-        probes.ready()
 
     @app.on_event("shutdown")
     def shutdown() -> None:
