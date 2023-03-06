@@ -203,6 +203,7 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
     <tr>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/bbedward"><img src="https://avatars.githubusercontent.com/u/550752?v=4?s=100" width="100px;" alt="BB"/><br /><sub><b>BB</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=bbedward" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/williamluer"><img src="https://avatars.githubusercontent.com/u/85975676?v=4?s=100" width="100px;" alt="williamluer"/><br /><sub><b>williamluer</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=williamluer" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://sirupsen.com"><img src="https://avatars.githubusercontent.com/u/97400?v=4?s=100" width="100px;" alt="Simon Eskildsen"/><br /><sub><b>Simon Eskildsen</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=sirupsen" title="Code">💻</a></td>
     </tr>
   </tbody>
 </table>
