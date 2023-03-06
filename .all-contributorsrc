@@ -303,6 +303,15 @@
       "contributions": [
         "doc"
       ]
+    },
+    {
+      "login": "sirupsen",
+      "name": "Simon Eskildsen",
+      "avatar_url": "https://avatars.githubusercontent.com/u/97400?v=4",
+      "profile": "http://sirupsen.com",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
