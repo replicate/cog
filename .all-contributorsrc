@@ -312,6 +312,16 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "erbridge",
+      "name": "F",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1027364?v=4",
+      "profile": "https://erbridge.co.uk",
+      "contributions": [
+        "bug",
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
