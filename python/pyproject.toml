@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cog"
 description = "Containers for machine learning"
-readme = "README.md"
+# readme = "README.md"
 authors = [
   {name = "Replicate", email = "team@replicate.com"}
 ]
