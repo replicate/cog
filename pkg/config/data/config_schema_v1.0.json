@@ -26,33 +26,47 @@
         },
         "python_packages": {
           "$id": "#/properties/build/properties/python_packages",
-          "type": "array",
-          "description": "A list of Python packages to install, in the format `package==version`.",
-          "additionalItems": true,
-          "items": {
-            "$id": "#/properties/build/properties/python_packages/items",
-            "anyOf": [
-              {
-                "$id": "#/properties/build/properties/python_packages/items/anyOf/0",
-                "type": "string"
+          "oneOf": [
+            {
+              "type": "array",
+              "description": "A list of Python packages to install, in the format `package==version`.",
+              "additionalItems": true,
+              "items": {
+                "$id": "#/properties/build/properties/python_packages/items",
+                "anyOf": [
+                  {
+                    "$id": "#/properties/build/properties/python_packages/items/anyOf/0",
+                    "type": "string"
+                  }
+                ]
               }
-            ]
-          }
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "pre_install": {
           "$id": "#/properties/build/properties/pre_install",
-          "type": "array",
-          "description": "A list of setup commands to run in the environment before your Python packages are installed.",
-          "additionalItems": true,
-          "items": {
-            "$id": "#/properties/build/properties/pre_install/items",
-            "anyOf": [
-              {
-                "$id": "#/properties/build/properties/pre_install/items/anyOf/0",
-                "type": "string"
+          "oneOf": [
+            {
+              "type": "array",
+              "description": "A list of setup commands to run in the environment before your Python packages are installed.",
+              "additionalItems": true,
+              "items": {
+                "$id": "#/properties/build/properties/pre_install/items",
+                "anyOf": [
+                  {
+                    "$id": "#/properties/build/properties/pre_install/items/anyOf/0",
+                    "type": "string"
+                  }
+                ]
               }
-            ]
-          }
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "python_requirements": {
           "$id": "#/properties/build/properties/python_requirements",
@@ -61,33 +75,47 @@
         },
         "system_packages": {
           "$id": "#/properties/build/properties/system_packages",
-          "type": "array",
-          "description": "A list of Ubuntu APT packages to install.",
-          "additionalItems": true,
-          "items": {
-            "$id": "#/properties/build/properties/system_packages/items",
-            "anyOf": [
-              {
-                "$id": "#/properties/build/properties/system_packages/items/anyOf/0",
-                "type": "string"
+          "oneOf": [
+            {
+              "type": "array",
+              "description": "A list of Ubuntu APT packages to install.",
+              "additionalItems": true,
+              "items": {
+                "$id": "#/properties/build/properties/system_packages/items",
+                "anyOf": [
+                  {
+                    "$id": "#/properties/build/properties/system_packages/items/anyOf/0",
+                    "type": "string"
+                  }
+                ]
               }
-            ]
-          }
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "run": {
           "$id": "#/properties/build/properties/run",
-          "type": "array",
-          "description": "A list of setup commands to run in the environment after your system packages and Python packages have been installed. If you're familiar with Docker, it's like a `RUN` instruction in your `Dockerfile`.",
-          "additionalItems": true,
-          "items": {
-            "$id": "#/properties/build/properties/run/items",
-            "anyOf": [
-              {
-                "$id": "#/properties/build/properties/run/items/anyOf/0",
-                "type": "string"
+          "oneOf": [
+            {
+              "type": "array",
+              "description": "A list of setup commands to run in the environment after your system packages and Python packages have been installed. If you're familiar with Docker, it's like a `RUN` instruction in your `Dockerfile`.",
+              "additionalItems": true,
+              "items": {
+                "$id": "#/properties/build/properties/run/items",
+                "anyOf": [
+                  {
+                    "$id": "#/properties/build/properties/run/items/anyOf/0",
+                    "type": "string"
+                  }
+                ]
               }
-            ]
-          }
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false
