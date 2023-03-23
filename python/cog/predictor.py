@@ -40,9 +40,6 @@ from .types import (
     Path as CogPath,
 )
 
-ALLOWED_INPUT_TYPES = [str, int, float, bool, CogFile, CogPath]
-
-
 class BasePredictor(ABC):
     def setup(self, weights: Optional[Union[CogFile, CogPath]] = None) -> None:
         """
@@ -230,15 +227,6 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
 
     for name, parameter in signature.parameters.items():
         InputType = parameter.annotation
-
-        if InputType is inspect.Signature.empty:
-            raise TypeError(
-                f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
-            )
-        elif InputType not in ALLOWED_INPUT_TYPES:
-            raise TypeError(
-                f"Unsupported input type {human_readable_type_name(InputType)} for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
-            )
 
         # if no default is specified, create an empty, required input
         if parameter.default is inspect.Signature.empty:

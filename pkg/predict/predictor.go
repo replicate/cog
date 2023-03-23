@@ -24,7 +24,7 @@ type HealthcheckResponse struct {
 
 type Request struct {
 	// TODO: could this be Inputs?
-	Input map[string]string `json:"input"`
+	Input map[string]interface{} `json:"input"`
 }
 
 type Response struct {

@@ -279,7 +279,7 @@ func handleMultipleFileOutput(prediction *predict.Response, outputSchema *openap
 }
 
 func parseInputFlags(inputs []string) (predict.Inputs, error) {
-	keyVals := map[string]string{}
+	keyVals := map[string][]string{}
 	for _, input := range inputs {
 		var name, value string
 
@@ -295,8 +295,12 @@ func parseInputFlags(inputs []string) (predict.Inputs, error) {
 		if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
 			value = value[1 : len(value)-1]
 		}
-
-		keyVals[name] = value
+		currVal, present := keyVals[name]
+		if present {
+			keyVals[name] = append(currVal, value)
+		} else {
+			keyVals[name] = []string{value}
+		}
 	}
 
 	return predict.NewInputs(keyVals), nil
