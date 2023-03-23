@@ -14,48 +14,40 @@ import (
 type Input struct {
 	String *string
 	File   *string
+	StringList *[]string
 }
 
 type Inputs map[string]Input
 
-func NewInputs(keyVals map[string]string) Inputs {
+func NewInputs(keyVals map[string][]string) Inputs {
 	input := Inputs{}
-	for key, val := range keyVals {
-		val := val
-		if strings.HasPrefix(val, "@") {
-			val = val[1:]
-			expandedVal, err := homedir.Expand(val)
-			if err != nil {
-				// FIXME: handle this better?
-				console.Warnf("Error expanding homedir: %s", err)
+	for key, arr := range keyVals {
+		arr := arr
+		// Handle singleton slices by converting them to strings or expanding filenames
+		if len(arr) == 1 {
+			val := arr[0]
+			if strings.HasPrefix(val, "@") {
+				val = val[1:]
+				expandedVal, err := homedir.Expand(val)
+				if err != nil {
+					// FIXME: handle this better?
+					console.Warnf("Error expanding homedir: %s", err)
+				} else {
+					val = expandedVal
+				}
+				input[key] = Input{File: &val}
 			} else {
-				val = expandedVal
+				input[key] = Input{String: &val}
 			}
-
-			input[key] = Input{File: &val}
 		} else {
-			input[key] = Input{String: &val}
+			input[key] = Input{StringList: &arr}
 		}
 	}
 	return input
 }
 
-func NewInputsWithBaseDir(keyVals map[string]string, baseDir string) Inputs {
-	input := Inputs{}
-	for key, val := range keyVals {
-		val := val
-		if strings.HasPrefix(val, "@") {
-			val = filepath.Join(baseDir, val[1:])
-			input[key] = Input{File: &val}
-		} else {
-			input[key] = Input{String: &val}
-		}
-	}
-	return input
-}
-
-func (inputs *Inputs) toMap() (map[string]string, error) {
-	keyVals := map[string]string{}
+func (inputs *Inputs) toMap() (map[string]interface{}, error) {
+	keyVals := map[string]interface{}{}
 	for key, input := range *inputs {
 		if input.String != nil {
 			keyVals[key] = *input.String
@@ -66,6 +58,8 @@ func (inputs *Inputs) toMap() (map[string]string, error) {
 			}
 			mimeType := mime.TypeByExtension(filepath.Ext(*input.File))
 			keyVals[key] = dataurl.New(content, mimeType).String()
+		} else if input.StringList != nil {
+			keyVals[key] = *input.StringList
 		}
 	}
 	return keyVals, nil
