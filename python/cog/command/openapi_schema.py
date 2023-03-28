@@ -16,13 +16,12 @@ if __name__ == "__main__":
     try:
         with suppress_output():
             config = load_config()
-            predictor_ref = get_predictor_ref(config)
     except (ConfigDoesNotExist, PredictorNotSet):
         # If there is no cog.yaml or 'predict' has not been set, then there is no type signature.
         # Not an error, there just isn't anything.
         pass
     else:
         with suppress_output():
-            app = create_app(predictor_ref, shutdown_event=None)
+            app = create_app(config, shutdown_event=None)
         schema = app.openapi()
     print(json.dumps(schema, indent=2))

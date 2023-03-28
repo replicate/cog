@@ -5,7 +5,7 @@ import signal
 import textwrap
 import threading
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 import structlog
 import uvicorn
@@ -28,7 +28,7 @@ from ..predictor import (
     get_output_type,
     get_predictor_ref,
     load_config,
-    load_predictor_from_ref,
+    load_predictor,
 )
 from .runner import PredictionRunner, RunnerBusyError, UnknownPredictionError
 
@@ -45,7 +45,7 @@ class Health(Enum):
 
 
 def create_app(
-    predictor_ref: str,
+    config: Dict[str, Any],
     shutdown_event: threading.Event,
     threads: int = 1,
     upload_url: Optional[str] = None,
@@ -59,13 +59,15 @@ def create_app(
     app.state.setup_result = None
     app.state.setup_result_payload = None
 
+    predictor_ref = get_predictor_ref(config)
+
     runner = PredictionRunner(
         predictor_ref=predictor_ref,
         shutdown_event=shutdown_event,
         upload_url=upload_url,
     )
     # TODO: avoid loading predictor code in this process
-    predictor = load_predictor_from_ref(predictor_ref)
+    predictor = load_predictor(config)
 
     InputType = get_input_type(predictor)
     OutputType = get_output_type(predictor)
@@ -340,9 +342,8 @@ if __name__ == "__main__":
             threads = os.cpu_count()
 
     shutdown_event = threading.Event()
-    predictor_ref = get_predictor_ref(config)
     app = create_app(
-        predictor_ref=predictor_ref,
+        config=config,
         shutdown_event=shutdown_event,
         threads=threads,
         upload_url=args.upload_url,
