@@ -37,9 +37,9 @@ def make_client(fixture_name: str, upload_url: Optional[str] = None):
     """
     Creates a fastapi test client for an app that uses the requested Predictor.
     """
-    predictor_ref = _fixture_path(fixture_name)
+    config = {"predict": _fixture_path(fixture_name)}
     app = create_app(
-        predictor_ref=predictor_ref,
+        config=config,
         shutdown_event=threading.Event(),
         upload_url=upload_url,
     )
