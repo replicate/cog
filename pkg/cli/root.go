@@ -40,11 +40,12 @@ https://github.com/replicate/cog`,
 	rootCmd.AddCommand(
 		newBuildCommand(),
 		newDebugCommand(),
+		newInitCommand(),
+		newLoginCommand(),
 		newPredictCommand(),
 		newPushCommand(),
 		newRunCommand(),
-		newLoginCommand(),
-		newInitCommand(),
+		newTrainCommand(),
 	)
 
 	return &rootCmd, nil
