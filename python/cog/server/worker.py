@@ -123,7 +123,7 @@ class Worker:
 
         if done:
             if done.error and raise_on_error:
-                raise FatalWorkerException(raise_on_error)
+                raise FatalWorkerException(raise_on_error + ": " + done.error_detail)
             else:
                 self._state = WorkerState.READY
                 self._allow_cancel = False
