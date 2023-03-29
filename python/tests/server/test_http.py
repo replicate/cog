@@ -248,6 +248,22 @@ def test_openapi_specification_with_yield(client):
     }
 
 
+@uses_predictor("yield_concatenate_iterator")
+def test_openapi_specification_with_yield(client):
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+
+    assert resp.json()["components"]["schemas"]["Output"] == {
+        "title": "Output",
+        "type": "array",
+        "items": {
+            "type": "string",
+        },
+        "x-cog-array-type": "iterator",
+        "x-cog-array-display": "concatenate",
+    }
+
+
 @uses_predictor("openapi_output_list")
 def test_openapi_specification_with_list(client):
     resp = client.get("/openapi.json")
@@ -284,6 +300,15 @@ def test_openapi_specification_with_int_choices(client):
 
 @uses_predictor("yield_strings")
 def test_yielding_strings_from_generator_predictors(client, match):
+    resp = client.post("/predictions")
+    assert resp.status_code == 200
+    assert resp.json() == match(
+        {"status": "succeeded", "output": ["foo", "bar", "baz"]}
+    )
+
+
+@uses_predictor("yield_concatenate_iterator")
+def test_yielding_strings_from_concatenate_iterator(client, match):
     resp = client.post("/predictions")
     assert resp.status_code == 200
     assert resp.json() == match(

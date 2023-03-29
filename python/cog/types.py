@@ -6,7 +6,7 @@ import pathlib
 import requests
 import shutil
 import tempfile
-from typing import Any, Callable, Dict, Iterator, List, Union
+from typing import Any, Callable, Dict, Iterator, List, TypeVar, Union
 from urllib.parse import urlparse
 
 from pydantic import Field
@@ -204,3 +204,29 @@ def get_filename(url: str) -> str:
             return "file"
         return "file" + extension
     return os.path.basename(parsed_url.path)
+
+
+Item = TypeVar("Item")
+
+
+class ConcatenateIterator(Iterator[Item]):
+    @classmethod
+    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+        """Defines what this type should be in openapi.json"""
+        field_schema.pop("allOf", None)
+        field_schema.update(
+            {
+                "type": "array",
+                "items": {"type": "string"},
+                "x-cog-array-type": "iterator",
+                "x-cog-array-display": "concatenate",
+            }
+        )
+
+    @classmethod
+    def __get_validators__(cls) -> Iterator[Any]:
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, value: Any) -> Iterator:
+        return value
