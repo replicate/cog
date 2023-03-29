@@ -27,6 +27,7 @@ pkg/dockerfile/embed/cog.whl: python/* python/cog/* python/cog/server/* python/c
 	mkdir -p pkg/dockerfile/embed
 	cp python/dist/*.whl $@
 
+.PHONY: cog
 cog: pkg/dockerfile/embed/cog.whl
 	$(eval COG_VERSION ?= $(shell git describe --tags --match 'v*' --abbrev=0)+dev)
 	CGO_ENABLED=0 $(GO) build -o $@ \
