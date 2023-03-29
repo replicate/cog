@@ -28,7 +28,7 @@ from ..predictor import (
     get_output_type,
     get_predictor_ref,
     load_config,
-    load_predictor,
+    load_predictor_from_ref,
 )
 from .runner import PredictionRunner, RunnerBusyError, UnknownPredictionError
 
@@ -67,7 +67,7 @@ def create_app(
         upload_url=upload_url,
     )
     # TODO: avoid loading predictor code in this process
-    predictor = load_predictor(config)
+    predictor = load_predictor_from_ref(predictor_ref)
 
     InputType = get_input_type(predictor)
     OutputType = get_output_type(predictor)

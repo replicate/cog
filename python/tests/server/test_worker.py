@@ -40,7 +40,6 @@ SETUP_FATAL_FIXTURES = [
     ("exit_in_setup", {}),
     ("exit_on_import", {}),
     ("missing_predictor", {}),
-    ("missing_setup", {}),
     ("nonexistent_file", {}),  # this fixture doesn't even exist
 ]
 

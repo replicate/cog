@@ -17,8 +17,12 @@ class AppConfig:
 
 
 def _fixture_path(name):
+    # HACK: `name` can either be in the form "<name>.py:Predictor" or just "<name>".
+    if ":" not in name:
+        name = f"{name}.py:Predictor"
+
     test_dir = os.path.dirname(os.path.realpath(__file__))
-    return os.path.join(test_dir, f"fixtures/{name}.py") + ":Predictor"
+    return os.path.join(test_dir, f"fixtures/{name}")
 
 
 def uses_predictor(name):
