@@ -1,6 +1,7 @@
 from datetime import datetime
 import base64
 import io
+import os
 import responses
 from responses import matchers
 import time
@@ -486,3 +487,14 @@ def test_prediction_cancel(client):
 
     resp = client.post("/predictions/123/cancel")
     assert resp.status_code == 200
+
+
+@uses_predictor("setup_weights")
+def test_weights_are_read_from_environment_variables(client, match):
+    os.environ["COG_WEIGHTS"] = "data:text/plain; charset=utf-8;base64,aGVsbG8="
+
+    resp = client.post("/predictions")
+    assert resp.status_code == 200
+    assert resp.json() == match({"status": "succeeded", "output": "hello"})
+
+    del os.environ["COG_WEIGHTS"]

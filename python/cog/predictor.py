@@ -3,25 +3,33 @@ from collections.abc import Iterator
 import enum
 import importlib.util
 import inspect
+import io
 import os.path
 from pathlib import Path
 from pydantic import create_model, BaseModel, Field
 from pydantic.fields import FieldInfo
-from typing import Any, Callable, Dict, List, Type
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 # Added in Python 3.8. Can be from typing if we drop support for <3.8.
 from typing_extensions import get_origin, get_args, Annotated
 import yaml
 
 from .errors import ConfigDoesNotExist, PredictorNotSet
-from .types import Input, Path as CogPath, File as CogFile, URLPath
+from .types import (
+    Input,
+    Path as CogPath,
+    File as CogFile,
+    URLFile,
+    URLPath,
+    get_filename,
+)
 
 
 ALLOWED_INPUT_TYPES = [str, int, float, bool, CogFile, CogPath]
 
 
 class BasePredictor(ABC):
-    def setup(self) -> None:
+    def setup(self, weights: Optional[Union[CogFile, CogPath]] = None) -> None:
         """
         An optional method to prepare the model so multiple predictions run efficiently.
         """
@@ -31,6 +39,60 @@ class BasePredictor(ABC):
         """
         Run a single prediction on the model
         """
+
+
+def run_setup(predictor: BasePredictor) -> None:
+    weights_type = get_weights_type(predictor.setup)
+
+    # No weights need to be passed, so just run setup() without any arguments.
+    if weights_type is None:
+        predictor.setup()
+        return
+
+    weights: Union[io.IOBase, CogPath, None]
+
+    weights_url = os.environ.get("COG_WEIGHTS")
+    weights_path = "weights"
+
+    if weights_url:
+        if weights_type == CogFile:
+            weights = URLFile(weights_url)
+        elif weights_type == CogPath:
+            weights = URLPath(
+                source=weights_url,
+                filename=get_filename(weights_url),
+                fileobj=CogFile.validate(weights_url),
+            )
+        else:
+            raise ValueError(
+                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+            )
+    elif os.path.exists(weights_path):
+        if weights_type == CogFile:
+            weights = open(weights_path, "rb")
+        elif weights_type == CogPath:
+            weights = CogPath(weights_path)
+        else:
+            raise ValueError(
+                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+            )
+    else:
+        weights = None
+
+    predictor.setup(weights=weights)
+
+
+def get_weights_type(setup_function) -> Optional[Any]:
+    signature = inspect.signature(setup_function)
+    if "weights" not in signature.parameters:
+        return None
+    Type = signature.parameters["weights"].annotation
+    # Handle Optional. It is Union[Type, None]
+    if get_origin(Type) == Union:
+        args = get_args(Type)
+        if len(args) == 2 and args[1] is type(None):
+            Type = get_args(Type)[0]
+    return Type
 
 
 def run_prediction(

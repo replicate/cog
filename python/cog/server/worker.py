@@ -9,11 +9,7 @@ from multiprocessing.connection import Connection
 from typing import Any, Dict, Iterable, Optional, TextIO, Union
 
 from ..json import make_encodeable
-from ..predictor import (
-    BasePredictor,
-    get_predict,
-    load_predictor_from_ref,
-)
+from ..predictor import BasePredictor, load_predictor_from_ref, get_predict, run_setup
 from .eventtypes import (
     Done,
     Heartbeat,
@@ -186,7 +182,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             self._predictor = load_predictor_from_ref(self._predictor_ref)
             # Could be a function or a class
             if hasattr(self._predictor, "setup"):
-                self._predictor.setup()
+                run_setup(self._predictor)
         except Exception as e:
             traceback.print_exc()
             done.error = True
