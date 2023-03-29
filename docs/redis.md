@@ -91,7 +91,7 @@ For example, a message early in the prediction might look like:
         "started_at": "2022-09-22T14:31:17Z"
     }
 
-If the model yields [progressive output](python.md#progressive-output) then a mid-prediction message might look like:
+If the model yields [streaming output](python.md#streaming-output) then a mid-prediction message might look like:
 
     {
         "status": "processing",
@@ -145,9 +145,9 @@ An example readiness probe configuration might look like:
 readinessProbe:
   exec:
     command:
-    - test
-    - -f
-    - /var/run/cog/ready
+      - test
+      - -f
+      - /var/run/cog/ready
   initialDelaySeconds: 1
   periodSeconds: 1
 ```
@@ -166,7 +166,7 @@ For each prediction it sends:
 - a span when the request is received
 - a span wrapping your `predict()` method
 - an event when the first output is received from your `predict()` method
-- for progressive output, an event when the final output is received from your `predict()` method
+- for streaming output, an event when the final output is received from your `predict()` method
 
 If the runner encounters an error during the prediction it will record it and set the span's status to error.
 

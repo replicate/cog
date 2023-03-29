@@ -9,11 +9,11 @@ Tip: Run [`cog init`](getting-started-own-model.md#initialization) to generate a
 - [`BasePredictor`](#basepredictor)
   - [`Predictor.setup()`](#predictorsetup)
   - [`Predictor.predict(**kwargs)`](#predictorpredictkwargs)
-    - [Progressive output](#progressive-output)
+    - [Streaming output](#streaming-output)
 - [`Input(**kwargs)`](#inputkwargs)
 - [Output](#output)
-    - [Returning an object](#returning-an-object)
-    - [Returning a list](#returning-a-list)
+  - [Returning an object](#returning-an-object)
+  - [Returning a list](#returning-a-list)
 - [Input and output types](#input-and-output-types)
 - [`File()`](#file)
 - [`Path()`](#path)
@@ -62,11 +62,11 @@ The `predict()` method takes an arbitrary list of named arguments, where each ar
 
 `predict()` can return strings, numbers, [`cog.Path`](#path) objects representing files on disk, or lists or dicts of those types. You can also define a custom [`Output()`](#outputbasemodel) for more complex return types.
 
-#### Progressive output
+#### Streaming output
 
-Cog models can yield output progressively as the `predict()` method is running. For example, an image generation model can yield a series of images as it is being generated.
+Cog models can stream output as the `predict()` method is running. For example, a language model can output tokens as they're being generated and an image generation model can output a images they are being generated.
 
-To support progressive output in your Cog model, add `from typing import Iterator` to your predict.py file. The `typing` package is a part of Python's standard library so it doesn't need to be installed. Then add a return type annotation to the `predict()` method in the form `-> Iterator[<type>]` where `<type>` can be one of `str`, `int`, `float`, `bool`, `cog.File`, or `cog.Path`.
+To support streaming output in your Cog model, add `from typing import Iterator` to your predict.py file. The `typing` package is a part of Python's standard library so it doesn't need to be installed. Then add a return type annotation to the `predict()` method in the form `-> Iterator[<type>]` where `<type>` can be one of `str`, `int`, `float`, `bool`, `cog.File`, or `cog.Path`.
 
 ```py
 from cog import BasePredictor, Path
@@ -80,7 +80,17 @@ class Predictor(BasePredictor):
             yield Path(output_path)
 ```
 
+If you're streaming text output, you can use `ConcatenateIterator` to hint that the output should be concatenated together into a single string. This is useful on Replicate to display the output as a string instead of a list of strings.
 
+```py
+from cog import BasePredictor, Path, ConcatenateIterator
+
+class Predictor(BasePredictor):
+    def predict(self) -> ConcatenateIterator[str]:
+        tokens = ["The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"]
+        for token in tokens:
+            yield token + " "
+```
 
 ## `Input(**kwargs)`
 
@@ -111,7 +121,7 @@ Using the `Input` function provides better documentation and validation constrai
 
 ```py
 class Predictor(BasePredictor):
-    def predict(self, 
+    def predict(self,
         prompt: str = "default prompt", # this is valid
         iterations: int                 # also valid
     ) -> str:
