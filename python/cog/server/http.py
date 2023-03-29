@@ -49,6 +49,7 @@ def create_app(
     shutdown_event: threading.Event,
     threads: int = 1,
     upload_url: Optional[str] = None,
+    mode: str = "predict",
 ) -> FastAPI:
     app = FastAPI(
         title="Cog",  # TODO: mention model name?
@@ -59,7 +60,7 @@ def create_app(
     app.state.setup_result = None
     app.state.setup_result_payload = None
 
-    predictor_ref = get_predictor_ref(config)
+    predictor_ref = get_predictor_ref(config, mode)
 
     runner = PredictionRunner(
         predictor_ref=predictor_ref,
@@ -323,6 +324,14 @@ if __name__ == "__main__":
         default=False,
         help="Ignore SIGTERM and wait for a request to /shutdown (or a SIGINT) before exiting",
     )
+    parser.add_argument(
+        "--x-mode",
+        dest="mode",
+        type=str,
+        default="predict",
+        choices=["predict", "train"],
+        help="Experimental: Run in 'predict' or 'train' mode",
+    )
     args = parser.parse_args()
 
     # log level is configurable so we can make it quiet or verbose for `cog predict`
@@ -347,6 +356,7 @@ if __name__ == "__main__":
         shutdown_event=shutdown_event,
         threads=threads,
         upload_url=args.upload_url,
+        mode=args.mode,
     )
 
     port = int(os.getenv("PORT", 5000))

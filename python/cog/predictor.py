@@ -72,13 +72,16 @@ def load_predictor(config: Dict[str, Any]) -> BasePredictor:
     return load_predictor_from_ref(ref)
 
 
-def get_predictor_ref(config: Dict[str, Any]) -> str:
-    if "predict" not in config:
+def get_predictor_ref(config: Dict[str, Any], mode: str = "predict") -> str:
+    if mode not in ["predict", "train"]:
+        raise ValueError(f"Invalid mode: {mode}")
+
+    if mode not in config:
         raise PredictorNotSet(
-            "Can't run predictions: 'predict' option not found in cog.yaml"
+            f"Can't run predictions: '{mode}' option not found in cog.yaml"
         )
 
-    return config["predict"]
+    return config[mode]
 
 
 def load_predictor_from_ref(ref: str) -> BasePredictor:
