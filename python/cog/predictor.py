@@ -89,8 +89,11 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
-    predictor_class = getattr(module, class_name)
-    return predictor_class()
+    predictor = getattr(module, class_name)
+    # It could be a class or a function
+    if inspect.isclass(predictor):
+        return predictor()
+    return predictor
 
 
 # Base class for inputs, constructed dynamically in get_input_type().
@@ -117,6 +120,12 @@ class BaseInput(BaseModel):
                     value.unlink()
 
 
+def get_predict(predictor):
+    if hasattr(predictor, "predict"):
+        return predictor.predict
+    return predictor
+
+
 def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
     """
     Creates a Pydantic Input model from the arguments of a Predictor's predict() method.
@@ -131,7 +140,8 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
         text: str
     """
 
-    signature = inspect.signature(predictor.predict)
+    predict = get_predict(predictor)
+    signature = inspect.signature(predict)
     create_model_kwargs = {}
 
     order = 0
@@ -198,8 +208,8 @@ def get_output_type(predictor: BasePredictor) -> Type[BaseModel]:
     """
     Creates a Pydantic Output model from the return type annotation of a Predictor's predict() method.
     """
-
-    signature = inspect.signature(predictor.predict)
+    predict = get_predict(predictor)
+    signature = inspect.signature(predict)
     if signature.return_annotation is inspect.Signature.empty:
         raise TypeError(
             """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
