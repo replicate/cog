@@ -42,6 +42,7 @@ type Config struct {
 	Build   *Build `json:"build" yaml:"build"`
 	Image   string `json:"image,omitempty" yaml:"image"`
 	Predict string `json:"predict,omitempty" yaml:"predict"`
+	Train   string `json:"train,omitempty" yaml:"train"`
 }
 
 func DefaultConfig() *Config {
