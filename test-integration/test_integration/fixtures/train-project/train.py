@@ -1,5 +1,11 @@
-from cog import File
+from cog import BaseModel, File
 import io
 
-def train(text: str) -> File:
-    return io.StringIO(text)
+
+class TrainingOutput(BaseModel):
+    weights: File
+
+
+def train(text: str) -> TrainingOutput:
+    weights = io.StringIO(text)
+    return TrainingOutput(weights=weights)
