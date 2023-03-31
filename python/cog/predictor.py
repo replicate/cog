@@ -49,20 +49,19 @@ def run_setup(predictor: BasePredictor) -> None:
         predictor.setup()
         return
 
-    weights: Union[io.IOBase, CogPath, None]
+    weights: Union[io.IOBase, Path, None]
 
     weights_url = os.environ.get("COG_WEIGHTS")
     weights_path = "weights"
 
+    # TODO: Cog{File,Path}.validate(...) methods accept either "real"
+    # paths/files or URLs to those things. In future we can probably tidy this
+    # up a little bit.
     if weights_url:
         if weights_type == CogFile:
-            weights = URLFile(weights_url)
+            weights = CogFile.validate(weights_url)
         elif weights_type == CogPath:
-            weights = URLPath(
-                source=weights_url,
-                filename=get_filename(weights_url),
-                fileobj=CogFile.validate(weights_url),
-            )
+            weights = CogPath.validate(weights_url)
         else:
             raise ValueError(
                 f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
