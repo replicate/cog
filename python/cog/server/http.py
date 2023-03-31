@@ -30,6 +30,7 @@ from ..predictor import (
     load_config,
     load_predictor_from_ref,
 )
+from .exceptions import InvalidStateException
 from .runner import PredictionRunner, RunnerBusyError, UnknownPredictionError
 
 log = structlog.get_logger("cog.server.http")
@@ -194,6 +195,10 @@ def create_app(
         except ValidationError as e:
             _log_invalid_output(e)
             raise HTTPException(status_code=500)
+        except InvalidStateException as e:
+            _log_invalid_output(e)
+            raise HTTPException(
+                status_code=503, detail="Server not ready. Try again later")
 
         response_object = response.dict()
         response_object["output"] = upload_files(
