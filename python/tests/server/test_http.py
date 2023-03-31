@@ -19,6 +19,13 @@ def test_setup_is_called(client, match):
     assert resp.json() == match({"status": "succeeded", "output": "bar"})
 
 
+def test_predict_before_setup_complete():
+    client = make_client("sleep")
+    resp = client.post("/predictions")
+    assert resp.status_code == 503
+    assert resp.json() == {"detail": "Server not ready. Try again later"}
+
+
 @uses_predictor("openapi_complex_input")
 def test_openapi_specification(client):
     resp = client.get("/openapi.json")
