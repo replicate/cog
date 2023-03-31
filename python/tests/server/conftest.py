@@ -1,7 +1,9 @@
 import os
 import threading
 import time
+from contextlib import ExitStack
 from typing import Any, Dict, Optional
+from unittest import mock
 
 from attrs import define
 from fastapi.testclient import TestClient
@@ -64,7 +66,13 @@ def client(request):
     fixture_name = request.param.predictor_fixture
     options = request.param.options
 
-    # Use context manager to trigger setup/shutdown events.
-    with make_client(fixture_name=fixture_name, **options) as c:
+    with ExitStack() as stack:
+        if "env" in options:
+            stack.enter_context(mock.patch.dict(os.environ, options["env"]))
+            del options["env"]
+
+        # Use context manager to trigger setup/shutdown events.
+        c = make_client(fixture_name=fixture_name, **options)
+        stack.enter_context(c)
         wait_for_setup(c)
         yield c
