@@ -10,7 +10,7 @@ from PIL import Image
 import pytest
 import unittest.mock as mock
 
-from .conftest import make_client, uses_predictor
+from .conftest import make_client, uses_predictor, uses_predictor_with_client_options
 
 
 @uses_predictor("setup")
@@ -489,12 +489,11 @@ def test_prediction_cancel(client):
     assert resp.status_code == 200
 
 
-@uses_predictor("setup_weights")
+@uses_predictor_with_client_options(
+    "setup_weights",
+    env={"COG_WEIGHTS": "data:text/plain; charset=utf-8;base64,aGVsbG8="},
+)
 def test_weights_are_read_from_environment_variables(client, match):
-    os.environ["COG_WEIGHTS"] = "data:text/plain; charset=utf-8;base64,aGVsbG8="
-
     resp = client.post("/predictions")
     assert resp.status_code == 200
     assert resp.json() == match({"status": "succeeded", "output": "hello"})
-
-    del os.environ["COG_WEIGHTS"]
