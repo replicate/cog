@@ -26,6 +26,12 @@ def test_predict_before_setup_complete():
     assert resp.json() == {"detail": "Server not ready. Try again later"}
 
 
+def test_shutdown_before_setup_complete():
+    client = make_client("sleep")
+    resp = client.post("/shutdown")
+    assert resp.status_code == 200
+
+
 @uses_predictor("openapi_complex_input")
 def test_openapi_specification(client):
     resp = client.get("/openapi.json")
