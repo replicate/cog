@@ -9,7 +9,7 @@ from PIL import Image
 import pytest
 import unittest.mock as mock
 
-from .conftest import make_client, uses_predictor
+from .conftest import make_client, uses_predictor, wait_for_ready
 
 
 @uses_predictor("setup")
@@ -24,6 +24,10 @@ def test_predict_before_setup_complete():
     resp = client.post("/predictions")
     assert resp.status_code == 503
     assert resp.json() == {"detail": "Server not ready. Try again later"}
+
+    wait_for_ready(client)
+    resp = client.post("/predictions")
+    assert resp.status_code == 200
 
 
 @uses_predictor("openapi_complex_input")
