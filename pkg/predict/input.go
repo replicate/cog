@@ -1,13 +1,13 @@
 package predict
 
 import (
-	"mime"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/mitchellh/go-homedir"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/mime"
 	"github.com/vincent-petithory/dataurl"
 )
 
