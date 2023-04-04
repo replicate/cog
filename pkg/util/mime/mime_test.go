@@ -13,3 +13,11 @@ func TestExtensionByType(t *testing.T) {
 	require.Equal(t, ".json", ExtensionByType("application/json"))
 	require.Equal(t, "", ExtensionByType("asdfasdf"))
 }
+
+func TestTypeByExtension(t *testing.T) {
+	require.Equal(t, "text/plain", TypeByExtension(".txt"))
+	require.Equal(t, "image/jpeg", TypeByExtension(".jpg"))
+	require.Equal(t, "image/png", TypeByExtension(".png"))
+	require.Equal(t, "application/json", TypeByExtension(".json"))
+	require.Equal(t, "application/octet-stream", TypeByExtension(".asdfasdf"))
+}
