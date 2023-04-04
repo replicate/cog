@@ -2,153 +2,126 @@ package mime
 
 import (
 	"mime"
+	"strings"
 )
 
-func ExtensionByType(mimeType string) string {
-	switch mimeType {
-	case "audio/aac":
-		return ".aac"
-	case "application/x-abiword":
-		return ".abw"
-	case "application/x-freearc":
-		return ".arc"
-	case "video/x-msvideo":
-		return ".avi"
-	case "application/vnd.amazon.ebook":
-		return ".azw"
-	case "application/octet-stream":
-		return ".bin"
-	case "image/bmp":
-		return ".bmp"
-	case "application/x-bzip":
-		return ".bz"
-	case "application/x-bzip2":
-		return ".bz2"
-	case "application/x-csh":
-		return ".csh"
-	case "text/css":
-		return ".css"
-	case "text/csv":
-		return ".csv"
-	case "application/msword":
-		return ".doc"
-	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-		return ".docx"
-	case "application/vnd.ms-fontobject":
-		return ".eot"
-	case "application/epub+zip":
-		return ".epub"
-	case "application/gzip":
-		return ".gz"
-	case "image/gif":
-		return ".gif"
-	case "text/html":
-		return ".html"
-	case "image/vnd.microsoft.icon":
-		return ".ico"
-	case "text/calendar":
-		return ".ics"
-	case "application/java-archive":
-		return ".jar"
-	case "image/jpeg":
-		return ".jpg"
-	case "text/javascript":
-		return ".js"
-	case "application/json":
-		return ".json"
-	case "application/ld+json":
-		return ".jsonld"
-	case "audio/midi audio/x-midi":
-		return ".midi"
-	case "audio/mpeg":
-		return ".mp3"
-	case "application/x-cdf":
-		return ".cda"
-	case "video/mp4":
-		return ".mp4"
-	case "video/mpeg":
-		return ".mpeg"
-	case "application/vnd.apple.installer+xml":
-		return ".mpkg"
-	case "application/vnd.oasis.opendocument.presentation":
-		return ".odp"
-	case "application/vnd.oasis.opendocument.spreadsheet":
-		return ".ods"
-	case "application/vnd.oasis.opendocument.text":
-		return ".odt"
-	case "audio/ogg":
-		return ".oga"
-	case "video/ogg":
-		return ".ogv"
-	case "application/ogg":
-		return ".ogx"
-	case "audio/opus":
-		return ".opus"
-	case "font/otf":
-		return ".otf"
-	case "image/png":
-		return ".png"
-	case "application/pdf":
-		return ".pdf"
-	case "application/x-httpd-php":
-		return ".php"
-	case "application/vnd.ms-powerpoint":
-		return ".ppt"
-	case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-		return ".pptx"
-	case "application/vnd.rar":
-		return ".rar"
-	case "application/rtf":
-		return ".rtf"
-	case "application/x-sh":
-		return ".sh"
-	case "image/svg+xml":
-		return ".svg"
-	case "application/x-shockwave-flash":
-		return ".swf"
-	case "application/x-tar":
-		return ".tar"
-	case "image/tiff":
-		return ".tiff"
-	case "video/mp2t":
-		return ".ts"
-	case "font/ttf":
-		return ".ttf"
-	case "text/plain":
-		return ".txt"
-	case "application/vnd.visio":
-		return ".vsd"
-	case "audio/wav":
-		return ".wav"
-	case "audio/webm":
-		return ".weba"
-	case "video/webm":
-		return ".webm"
-	case "image/webp":
-		return ".webp"
-	case "font/woff":
-		return ".woff"
-	case "font/woff2":
-		return ".woff2"
-	case "application/xhtml+xml":
-		return ".xhtml"
-	case "application/vnd.ms-excel":
-		return ".xls"
-	case "application/xml":
-		return ".xml"
-	case "application/zip":
-		return ".zip"
-	case "video/3gpp":
-		return ".3gp"
-	case "video/3gpp2":
-		return ".3gp2"
-	case "application/x-7z-compressed":
-		return ".7z"
-	default:
-		extensions, _ := mime.ExtensionsByType(mimeType)
-		if len(extensions) == 0 {
-			return ""
-		}
-		return extensions[0]
+var typeToExtension = map[string]string{
+	"audio/aac":                    ".aac",
+	"application/x-abiword":        ".abw",
+	"application/x-freearc":        ".arc",
+	"video/x-msvideo":              ".avi",
+	"application/vnd.amazon.ebook": ".azw",
+	"application/octet-stream":     ".bin",
+	"image/bmp":                    ".bmp",
+	"application/x-bzip":           ".bz",
+	"application/x-bzip2":          ".bz2",
+	"application/x-csh":            ".csh",
+	"text/css":                     ".css",
+	"text/csv":                     ".csv",
+	"application/msword":           ".doc",
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+	"application/vnd.ms-fontobject":                                           ".eot",
+	"application/epub+zip":                                                    ".epub",
+	"application/gzip":                                                        ".gz",
+	"image/gif":                                                               ".gif",
+	"text/html":                                                               ".html",
+	"image/vnd.microsoft.icon":                                                ".ico",
+	"text/calendar":                                                           ".ics",
+	"application/java-archive":                                                ".jar",
+	"image/jpeg":                                                              ".jpg",
+	"text/javascript":                                                         ".js",
+	"application/json":                                                        ".json",
+	"application/ld+json":                                                     ".jsonld",
+	"audio/midi audio/x-midi":                                                 ".midi",
+	"audio/mpeg":                                                              ".mp3",
+	"application/x-cdf":                                                       ".cda",
+	"video/mp4":                                                               ".mp4",
+	"video/mpeg":                                                              ".mpeg",
+	"application/vnd.apple.installer+xml":                                     ".mpkg",
+	"application/vnd.oasis.opendocument.presentation": ".odp",
+	"application/vnd.oasis.opendocument.spreadsheet":  ".ods",
+	"application/vnd.oasis.opendocument.text":         ".odt",
+	"audio/ogg":                     ".oga",
+	"video/ogg":                     ".ogv",
+	"application/ogg":               ".ogx",
+	"audio/opus":                    ".opus",
+	"font/otf":                      ".otf",
+	"image/png":                     ".png",
+	"application/pdf":               ".pdf",
+	"application/x-httpd-php":       ".php",
+	"application/vnd.ms-powerpoint": ".ppt",
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+	"application/vnd.rar":           ".rar",
+	"application/rtf":               ".rtf",
+	"application/x-sh":              ".sh",
+	"image/svg+xml":                 ".svg",
+	"application/x-shockwave-flash": ".swf",
+	"application/x-tar":             ".tar",
+	"image/tiff":                    ".tiff",
+	"video/mp2t":                    ".ts",
+	"font/ttf":                      ".ttf",
+	"text/plain":                    ".txt",
+	"application/vnd.visio":         ".vsd",
+	"audio/wav":                     ".wav",
+	"audio/webm":                    ".weba",
+	"video/webm":                    ".webm",
+	"image/webp":                    ".webp",
+	"font/woff":                     ".woff",
+	"font/woff2":                    ".woff2",
+	"application/xhtml+xml":         ".xhtml",
+	"application/vnd.ms-excel":      ".xls",
+	"application/xml":               ".xml",
+	"application/zip":               ".zip",
+	"video/3gpp":                    ".3gp",
+	"video/3gpp2":                   ".3gp2",
+	"application/x-7z-compressed":   ".7z",
+}
+
+var extensionToType = map[string]string{}
+
+func init() {
+	for typ, ext := range typeToExtension {
+		extensionToType[ext] = typ
 	}
+}
+
+// ExtensionByType returns the file extension associated with the media type typ.
+// When typ has no associated extension, ExtensionByType returns an empty string.
+func ExtensionByType(typ string) string {
+	// Lookup extension from pre-defined map
+	ext := typeToExtension[typ]
+
+	// Fall back to mime.ExtensionsByType
+	if ext == "" {
+		extensions, _ := mime.ExtensionsByType(typ)
+		if len(extensions) > 0 {
+			ext = extensions[0]
+		}
+	}
+
+	return ext
+}
+
+// TypeByExtension returns the media type associated with the file extension ext.
+// The extension ext should begin with a leading dot, as in ".json"
+// When ext has no associated type, TypeByExtension returns "application/octet-stream"
+func TypeByExtension(ext string) string {
+	if !strings.HasPrefix(ext, ".") {
+		ext = "." + ext
+	}
+
+	// Lookup type from pre-defined map
+	typ := extensionToType[ext]
+
+	// Fall back to mime.TypeByExtension
+	if typ == "" {
+		typ = mime.TypeByExtension(ext)
+	}
+
+	// Default to "application/octet-stream"
+	if typ == "" {
+		typ = "application/octet-stream"
+	}
+
+	return typ
 }
