@@ -277,7 +277,6 @@ func parseInputFlags(inputs []string, schema *openapi3.T) (predict.Inputs, error
 		if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
 			value = value[1 : len(value)-1]
 		}
-		
 		currVal, present := keyVals[name]
 		if present {
 			keyVals[name] = append(currVal, value)

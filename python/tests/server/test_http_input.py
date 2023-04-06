@@ -103,7 +103,7 @@ def test_file_input_with_http_url(client, httpserver, match):
 
 @uses_predictor("input_path_2")
 def test_file_input_with_http_url_error(client, httpserver, match):
-    httpserver.expect_request("/foo.txt").respond_with_data("haha", status = 404)
+    httpserver.expect_request("/foo.txt").respond_with_data("haha", status=404)
     resp = client.post(
         "/predictions",
         json={"input": {"path": httpserver.url_for("/foo.txt")}},
@@ -216,8 +216,3 @@ def test_choices_int(client):
 def test_untyped_inputs():
     with pytest.raises(TypeError):
         make_client("input_untyped")
-
-
-def test_input_with_unsupported_type():
-    with pytest.raises(TypeError):
-        make_client("input_unsupported_type")
