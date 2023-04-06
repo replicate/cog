@@ -111,7 +111,8 @@ func RunWithIO(options RunOptions, stdin io.Reader, stdout, stderr io.Writer) er
 
 	err := cmd.Run()
 	if err != nil {
-		if strings.Contains(stderrCopy.String(), "could not select device driver") {
+		if strings.Contains(stderrCopy.String(), "could not select device driver") ||
+			strings.Contains(stderrCopy.String(), "nvidia-container-cli: initialization") {
 			return ErrMissingDeviceDriver
 		}
 		return err
