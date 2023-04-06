@@ -13,8 +13,8 @@ import (
 )
 
 type Input struct {
-	String *string
-	File   *string
+	String     *string
+	File       *string
 	StringList *[]string
 }
 

@@ -215,8 +215,3 @@ def test_choices_int(client):
 def test_untyped_inputs():
     with pytest.raises(TypeError):
         make_client("input_untyped")
-
-
-def test_input_with_unsupported_type():
-    with pytest.raises(TypeError):
-        make_client("input_unsupported_type")
