@@ -17,12 +17,8 @@ dependencies = [
     # intentionally loose. perhaps these should be vendored to not collide with user code?
     "attrs>=20.1,<23",
     "fastapi>=0.75.2,<1",
-    "opentelemetry-exporter-otlp>=1.11.1,<2",
-    "opentelemetry-sdk>=1.11.1,<2",
-    "protobuf<=3.20.3",
     "pydantic>=1.9,<2",
     "PyYAML",
-    "redis>=4,<5",
     "requests>=2,<3",
     "structlog>=20,<23",
     "typing_extensions>=4.1.0",
