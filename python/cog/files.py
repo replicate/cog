@@ -40,6 +40,8 @@ def guess_filename(obj: io.IOBase) -> str:
 def put_file_to_signed_endpoint(
     fh: io.IOBase, endpoint: str, client: requests.Session
 ) -> str:
+    fh.seek(0)
+
     filename = guess_filename(fh)
     content_type, _ = mimetypes.guess_type(filename)
 
