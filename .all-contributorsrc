@@ -332,6 +332,15 @@
         "bug",
         "code"
       ]
+    },
+    {
+      "login": "joannejchen",
+      "name": "Joanne Chen",
+      "avatar_url": "https://avatars.githubusercontent.com/u/33409024?v=4",
+      "profile": "https://github.com/joannejchen",
+      "contributions": [
+        "doc"
+      ]
     }
   ],
   "contributorsPerLine": 7,
