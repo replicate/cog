@@ -1,0 +1,3 @@
+build:
+  python_version: "3.8"
+train: "train.py:train"

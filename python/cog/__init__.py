@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from .predictor import BasePredictor
+from .predictor import BasePredictor, BaseTrainer
 from .types import File, Input, Path, ConcatenateIterator
 
 try:
@@ -13,6 +13,7 @@ __all__ = [
     "__version__",
     "BaseModel",
     "BasePredictor",
+    "BaseTrainer",
     "ConcatenateIterator",
     "File",
     "Input",

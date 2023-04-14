@@ -7,17 +7,27 @@ from responses import matchers
 import time
 
 from PIL import Image
-import pytest
 import unittest.mock as mock
 
-from .conftest import make_client, uses_predictor, uses_predictor_with_client_options
+from .conftest import (
+    uses_predictor,
+    uses_predictor_with_client_options,
+    uses_trainer,
+)
 
 
 @uses_predictor("setup")
-def test_setup_is_called(client, match):
+def test_predictor_setup_is_called(client, match):
     resp = client.post("/predictions")
     assert resp.status_code == 200
     assert resp.json() == match({"status": "succeeded", "output": "bar"})
+
+
+@uses_trainer("trainer_class.py:Trainer")
+def test_trainer_setup_is_called(training_client, match):
+    resp = training_client.post("/trainings", json={"input": {}})
+    assert resp.status_code == 200
+    assert resp.json() == match({"status": "succeeded", "output": 42})
 
 
 @uses_predictor("function.py:predict")
@@ -25,6 +35,13 @@ def test_predict_works_with_functions(client, match):
     resp = client.post("/predictions", json={"input": {"text": "baz"}})
     assert resp.status_code == 200
     assert resp.json() == match({"status": "succeeded", "output": "hello baz"})
+
+
+@uses_trainer("train_function.py:train")
+def test_train_works_with_functions(training_client, match):
+    resp = training_client.post("/trainings", json={"input": {"num": 5}})
+    assert resp.status_code == 200
+    assert resp.json() == match({"status": "succeeded", "output": 5})
 
 
 @uses_predictor("openapi_complex_input")
@@ -470,6 +487,49 @@ def test_asynchronous_prediction_endpoint(client, match):
     assert webhook.call_count == 1
 
 
+@responses.activate
+@uses_trainer("trainer_class.py:Trainer")
+def test_asynchronous_training_endpoint(training_client, match):
+    webhook = responses.post(
+        "https://example.com/webhook",
+        match=[
+            matchers.json_params_matcher(
+                {
+                    "id": "12345abcde",
+                    "status": "succeeded",
+                    "output": 42,
+                },
+                strict_match=False,
+            )
+        ],
+        status=200,
+    )
+
+    resp = training_client.post(
+        "/trainings",
+        json={
+            "id": "12345abcde",
+            "input": {},
+            "webhook": "https://example.com/webhook",
+            "webhook_events_filter": ["completed"],
+        },
+        headers={"Prefer": "respond-async"},
+    )
+    assert resp.status_code == 202
+
+    assert resp.json() == match(
+        {"status": "processing", "output": None, "started_at": mock.ANY}
+    )
+    assert resp.json()["started_at"] is not None
+
+    n = 0
+    while webhook.call_count < 1 and n < 10:
+        time.sleep(0.1)
+        n += 1
+
+    assert webhook.call_count == 1
+
+
 @uses_predictor("sleep")
 def test_prediction_cancel(client):
     resp = client.post("/predictions/123/cancel")
@@ -487,6 +547,46 @@ def test_prediction_cancel(client):
 
     resp = client.post("/predictions/123/cancel")
     assert resp.status_code == 200
+
+
+@uses_trainer("trainer_sleep.py:Trainer")
+def test_trainer_sleep_cancel(training_client):
+    resp = training_client.post("/trainings/123/cancel")
+    assert resp.status_code == 404
+
+    resp = training_client.post(
+        "/trainings",
+        json={"id": "123", "input": {"sleep": 1}},
+        headers={"Prefer": "respond-async"},
+    )
+    assert resp.status_code == 202
+
+    resp = training_client.post("/trainings/456/cancel")
+    assert resp.status_code == 404
+
+    resp = training_client.post("/trainings/123/cancel")
+    assert resp.status_code == 200
+
+
+@uses_trainer("trainer_sleep.py:Trainer")
+def test_cannot_predict_with_trainer(training_client):
+    resp = training_client.post("/predictions")
+    assert resp.status_code == 400
+
+    resp = training_client.put("/predictions/abcd1234", json={})
+    assert resp.status_code == 400
+
+    resp = training_client.post("/predictions/123/cancel")
+    assert resp.status_code == 400
+
+
+@uses_predictor("sleep")
+def test_cannot_train_with_predictor(client):
+    resp = client.post("/trainings")
+    assert resp.status_code == 400
+
+    resp = client.post("/trainings/123/cancel")
+    assert resp.status_code == 400
 
 
 @uses_predictor_with_client_options(

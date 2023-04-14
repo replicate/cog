@@ -13,9 +13,10 @@ from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
 from .. import schema
 from .. import types
+
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
-from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
+from .eventtypes import Done, Heartbeat, Log, JobOutput, JobOutputType
 from .probes import ProbeHelper
 from .webhook import webhook_caller_filtered
 from .worker import Worker
@@ -35,21 +36,25 @@ class UnknownPredictionError(Exception):
     pass
 
 
-class PredictionRunner:
+class UnknownTrainingError(Exception):
+    pass
+
+
+class Runner:
     def __init__(
         self,
         *,
-        predictor_ref: str,
+        runnable_ref: str,
         shutdown_event: threading.Event,
         upload_url: Optional[str] = None,
     ):
         self._thread = None
         self._threadpool = ThreadPool(processes=1)
 
-        self._response: Optional[schema.PredictionResponse] = None
+        self._response: Optional[schema.JobResponse] = None
         self._result: Optional[AsyncResult] = None
 
-        self._worker = Worker(predictor_ref=predictor_ref)
+        self._worker = Worker(job_ref=runnable_ref)
         self._should_cancel = threading.Event()
 
         self._shutdown_event = shutdown_event
@@ -78,9 +83,9 @@ class PredictionRunner:
 
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
     # no longer have to support Python 3.8
-    def predict(
-        self, prediction: schema.PredictionRequest, upload: bool = True
-    ) -> Tuple[schema.PredictionResponse, AsyncResult]:
+    def run(
+        self, request: schema.JobRequest, upload: bool = True
+    ) -> Tuple[schema.JobResponse, AsyncResult]:
         # It's the caller's responsibility to not call us if we're busy.
         if self.is_busy():
             # If self._result is set, but self._response is not, we're still
@@ -88,22 +93,23 @@ class PredictionRunner:
             if self._response is None:
                 raise RunnerBusyError()
             assert self._result is not None
-            if prediction.id is not None and prediction.id == self._response.id:
+            if request.id is not None and request.id == self._response.id:
                 return (self._response, self._result)
             raise RunnerBusyError()
 
         # Set up logger context for main thread. The same thing happens inside
-        # the predict thread.
+        # the job thread.
+        logger_context_key = get_logger_context_key(request)
         structlog.contextvars.clear_contextvars()
-        structlog.contextvars.bind_contextvars(prediction_id=prediction.id)
+        structlog.contextvars.bind_contextvars(**{logger_context_key: request.id})
 
         self._should_cancel.clear()
         upload_url = self._upload_url if upload else None
-        event_handler = create_event_handler(prediction, upload_url=upload_url)
+        event_handler = create_event_handler(request, upload_url=upload_url)
 
         def cleanup(_: Optional[Any] = None) -> None:
-            if hasattr(prediction.input, "cleanup"):
-                prediction.input.cleanup()
+            if hasattr(request.input, "cleanup"):
+                request.input.cleanup()
 
         def handle_error(error: BaseException) -> None:
             # Re-raise the exception in order to more easily capture exc_info,
@@ -112,15 +118,15 @@ class PredictionRunner:
             try:
                 raise error
             except Exception:
-                log.error("caught exception while running prediction", exc_info=True)
+                log.error("caught exception while running job", exc_info=True)
                 self._shutdown_event.set()
 
-        self._response = event_handler.response
+        self._response = event_handler.job
         self._result = self._threadpool.apply_async(
-            func=predict,
+            func=work,
             kwds={
                 "worker": self._worker,
-                "request": prediction,
+                "request": request,
                 "event_handler": event_handler,
                 "should_cancel": self._should_cancel,
             },
@@ -146,23 +152,30 @@ class PredictionRunner:
         self._threadpool.terminate()
         self._threadpool.join()
 
-    def cancel(self, prediction_id: Optional[str] = None) -> None:
+    def cancel(self, id: Optional[str] = None, job_type: str = "predict") -> None:
         if not self.is_busy():
             return
         assert self._response is not None
-        if prediction_id is not None and prediction_id != self._response.id:
-            raise UnknownPredictionError()
+        if id is not None and id != self._response.id:
+            if job_type == "train":
+                raise UnknownTrainingError()
+            else:
+                raise UnknownPredictionError()
         self._should_cancel.set()
 
 
 def create_event_handler(
-    prediction: schema.PredictionRequest, upload_url: Optional[str] = None
-) -> "PredictionEventHandler":
-    response = schema.PredictionResponse(**prediction.dict())
+    request: schema.JobRequest,
+    upload_url: Optional[str] = None,
+) -> "JobEventHandler":
+    if isinstance(request, schema.PredictionRequest):
+        response = schema.PredictionResponse(**request.dict())
+    else:
+        response = schema.TrainingResponse(**request.dict())
 
-    webhook = prediction.webhook
+    webhook = request.webhook
     events_filter = (
-        prediction.webhook_events_filter or schema.WebhookEvent.default_events()
+        request.webhook_events_filter or schema.WebhookEvent.default_events()
     )
 
     webhook_sender = None
@@ -173,8 +186,10 @@ def create_event_handler(
     if upload_url is not None:
         file_uploader = generate_file_uploader(upload_url)
 
-    event_handler = PredictionEventHandler(
-        response, webhook_sender=webhook_sender, file_uploader=file_uploader
+    event_handler = JobEventHandler(
+        response,
+        webhook_sender=webhook_sender,
+        file_uploader=file_uploader,
     )
 
     return event_handler
@@ -192,19 +207,33 @@ def generate_file_uploader(upload_url: str) -> Callable:
     return file_uploader
 
 
-class PredictionEventHandler:
+class JobEventHandler:
     def __init__(
         self,
-        p: schema.PredictionResponse,
+        response: schema.JobResponse,
         webhook_sender: Optional[Callable] = None,
         file_uploader: Optional[Callable] = None,
     ):
-        log.info("starting prediction")
-        self.p = p
-        self.p.status = schema.Status.PROCESSING
-        self.p.output = None
-        self.p.logs = ""
-        self.p.started_at = datetime.now(tz=timezone.utc)
+        if isinstance(response, schema.TrainingResponse):
+            self._runnable_name = "training"
+            self._runnable_class_name = "Trainer"
+            self._time_metric_name = "training_time"
+        elif isinstance(response, schema.PredictionResponse):
+            self._runnable_name = "prediction"
+            self._runnable_class_name = "Predictor"
+            self._time_metric_name = "predict_time"
+        else:
+            self._runnable_name = "job"
+            self._runnable_class_name = "job"
+            self._time_metric_name = "job_time"
+
+        log.info(f"starting {self._runnable_name}")
+
+        self.job = response
+        self.job.status = schema.Status.PROCESSING
+        self.job.output = None
+        self.job.logs = ""
+        self.job.started_at = datetime.now(tz=timezone.utc)
 
         self._webhook_sender = webhook_sender
         self._file_uploader = file_uploader
@@ -212,60 +241,64 @@ class PredictionEventHandler:
         self._send_webhook(schema.WebhookEvent.START)
 
     @property
-    def response(self) -> schema.PredictionResponse:
-        return self.p
+    def response(self) -> schema.JobResponse:
+        return self.job
 
     def set_output(self, output: Any) -> None:
-        assert self.p.output is None, "Predictor unexpectedly returned multiple outputs"
-        self.p.output = self._upload_files(output)
+        assert (
+            self.job.output is None
+        ), f"{self._runnable_class_name} unexpectedly returned multiple outputs"
+        self.job.output = self._upload_files(output)
         # We don't send a webhook for compatibility with the behaviour of
         # redis_queue. In future we can consider whether it makes sense to send
         # one here.
 
     def append_output(self, output: Any) -> None:
         assert isinstance(
-            self.p.output, list
+            self.job.output, list
         ), "Cannot append output before setting output"
-        self.p.output.append(self._upload_files(output))
+        self.job.output.append(self._upload_files(output))
         self._send_webhook(schema.WebhookEvent.OUTPUT)
 
     def append_logs(self, logs: str) -> None:
-        assert self.p.logs is not None
-        self.p.logs += logs
+        assert self.job.logs is not None
+        self.job.logs += logs
         self._send_webhook(schema.WebhookEvent.LOGS)
 
     def succeeded(self) -> None:
-        log.info("prediction succeeded")
-        self.p.status = schema.Status.SUCCEEDED
+        log.info(f"{self._runnable_name} succeeded")
+        self.job.status = schema.Status.SUCCEEDED
         self._set_completed_at()
         # These have been set already: this is to convince the typechecker of
         # that...
-        assert self.p.completed_at is not None
-        assert self.p.started_at is not None
-        self.p.metrics = {
-            "predict_time": (self.p.completed_at - self.p.started_at).total_seconds()
+        assert self.job.completed_at is not None
+        assert self.job.started_at is not None
+        self.job.metrics = {
+            f"{self._time_metric_name}": (
+                self.job.completed_at - self.job.started_at
+            ).total_seconds()
         }
         self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     def failed(self, error: str) -> None:
-        log.info("prediction failed", error=error)
-        self.p.status = schema.Status.FAILED
-        self.p.error = error
+        log.info(f"{self._runnable_name} failed", error=error)
+        self.job.status = schema.Status.FAILED
+        self.job.error = error
         self._set_completed_at()
         self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     def canceled(self) -> None:
-        log.info("prediction canceled")
-        self.p.status = schema.Status.CANCELED
+        log.info(f"{self._runnable_name} canceled")
+        self.job.status = schema.Status.CANCELED
         self._set_completed_at()
         self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     def _set_completed_at(self) -> None:
-        self.p.completed_at = datetime.now(tz=timezone.utc)
+        self.job.completed_at = datetime.now(tz=timezone.utc)
 
     def _send_webhook(self, event: schema.WebhookEvent) -> None:
         if self._webhook_sender is not None:
-            dict_response = jsonable_encoder(self.response.dict(exclude_unset=True))
+            dict_response = jsonable_encoder(self.job.dict(exclude_unset=True))
             self._webhook_sender(dict_response, event)
 
     def _upload_files(self, output: Any) -> Any:
@@ -318,20 +351,31 @@ def setup(*, worker: Worker):
     }
 
 
-def predict(
+def get_logger_context_key(request: schema.JobRequest):
+    if isinstance(request, schema.PredictionRequest):
+        return "prediction_id"
+    elif isinstance(request, schema.TrainingRequest):
+        return "training_id"
+    elif isinstance(request, schema.JobRequest):
+        return "id"
+    else:
+        raise ValueError(f"Request {request} has invalid type: {type(request)}")
+
+
+def work(
     *,
     worker: Worker,
-    request: schema.PredictionRequest,
-    event_handler: PredictionEventHandler,
+    request: schema.JobRequest,
+    event_handler: JobEventHandler,
     should_cancel: threading.Event,
-) -> schema.PredictionResponse:
-
+) -> schema.JobResponse:
     # Set up logger context within prediction thread.
     structlog.contextvars.clear_contextvars()
-    structlog.contextvars.bind_contextvars(prediction_id=request.id)
+    logger_context_key = get_logger_context_key(request)
+    structlog.contextvars.bind_contextvars(**{logger_context_key: request.id})
 
     try:
-        return _predict(
+        return _work(
             worker=worker,
             request=request,
             event_handler=event_handler,
@@ -344,17 +388,17 @@ def predict(
         raise
 
 
-def _predict(
+def _work(
     *,
     worker: Worker,
-    request: schema.PredictionRequest,
-    event_handler: PredictionEventHandler,
+    request: schema.JobRequest,
+    event_handler: JobEventHandler,
     should_cancel: threading.Event,
-) -> schema.PredictionResponse:
-    initial_prediction = request.dict()
+) -> schema.JobResponse:
+    initial_run = request.dict()
 
     output_type = None
-    input_dict = initial_prediction["input"]
+    input_dict = initial_run["input"]
 
     for k, v in input_dict.items():
         if isinstance(v, types.URLPath):
@@ -365,9 +409,9 @@ def _predict(
                 event_handler.append_logs(tb)
                 event_handler.failed(error=str(e))
                 log.warn("failed to download url path from input", exc_info=True)
-                return event_handler.response
+                return event_handler.job
 
-    for event in worker.predict(input_dict, poll=0.1):
+    for event in worker.run(input_dict, poll=0.1):
         if should_cancel.is_set():
             worker.cancel()
             should_cancel.clear()
@@ -383,17 +427,17 @@ def _predict(
         elif isinstance(event, Log):
             event_handler.append_logs(event.message)
 
-        elif isinstance(event, PredictionOutputType):
+        elif isinstance(event, JobOutputType):
             if output_type is not None:
-                event_handler.failed(error="Predictor returned unexpected output")
+                event_handler.failed(error="Unexpected output returned")
                 break
 
             output_type = event
             if output_type.multi:
                 event_handler.set_output([])
-        elif isinstance(event, PredictionOutput):
+        elif isinstance(event, JobOutput):
             if output_type is None:
-                event_handler.failed(error="Predictor returned unexpected output")
+                event_handler.failed(error="Unexpected output returned")
                 break
 
             if output_type.multi:
@@ -412,7 +456,7 @@ def _predict(
         else:
             log.warn("received unexpected event from worker", data=event)
 
-    return event_handler.response
+    return event_handler.job
 
 
 def _make_file_upload_http_client() -> requests.Session:

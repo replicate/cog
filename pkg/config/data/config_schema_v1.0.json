@@ -105,7 +105,7 @@
     "train": {
       "$id": "#/properties/train",
       "type": "string",
-      "description": "The pointer to the `Predictor` object in your code, which defines how predictions are run on your model."
+      "description": "The pointer to the train function in your code, which defines how to train your model."
     }
   },
   "additionalProperties": false

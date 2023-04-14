@@ -8,7 +8,7 @@ import json
 from ..errors import ConfigDoesNotExist, PredictorNotSet
 from ..suppress_output import suppress_output
 
-from ..predictor import get_predictor_ref, load_config
+from ..predictor import get_runnable_ref, load_config
 from ..server.http import create_app
 
 if __name__ == "__main__":

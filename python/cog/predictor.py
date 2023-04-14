@@ -14,21 +14,23 @@ from typing import Any, Callable, Dict, List, Optional, Type, Union
 from typing_extensions import get_origin, get_args, Annotated
 import yaml
 
-from .errors import ConfigDoesNotExist, PredictorNotSet
+from .errors import ConfigDoesNotExist, PredictorNotSet, TrainerNotSet
 from .types import (
     Input,
     Path as CogPath,
     File as CogFile,
-    URLFile,
     URLPath,
-    get_filename,
 )
 
 
 ALLOWED_INPUT_TYPES = [str, int, float, bool, CogFile, CogPath]
 
 
-class BasePredictor(ABC):
+class BaseRunnable(ABC):
+    pass
+
+
+class BasePredictor(BaseRunnable):
     def setup(self, weights: Optional[Union[CogFile, CogPath]] = None) -> None:
         """
         An optional method to prepare the model so multiple predictions run efficiently.
@@ -41,12 +43,33 @@ class BasePredictor(ABC):
         """
 
 
-def run_setup(predictor: BasePredictor) -> None:
-    weights_type = get_weights_type(predictor.setup)
+class BaseTrainer(BaseRunnable):
+    def setup(self, weights: Optional[Union[CogFile, CogPath]] = None) -> None:
+        """
+        An optional method to initialize the trainer.
+        """
+
+    @abstractmethod
+    def train(self, **kwargs: Any) -> Any:
+        """
+        Train a model.
+        """
+
+    def cancel(self) -> None:
+        """
+        An optional method to handle training cancellation to save training artifacts.
+        """
+
+
+Runnable = Union[BasePredictor, BaseTrainer]
+
+
+def run_setup(runnable: Runnable) -> None:
+    weights_type = get_weights_type(runnable.setup)
 
     # No weights need to be passed, so just run setup() without any arguments.
     if weights_type is None:
-        predictor.setup()
+        runnable.setup()
         return
 
     weights: Union[io.IOBase, Path, None]
@@ -64,7 +87,7 @@ def run_setup(predictor: BasePredictor) -> None:
             weights = CogPath.validate(weights_url)
         else:
             raise ValueError(
-                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+                f"Setup method has an argument 'weights' of type {weights_type}, but only File and Path are supported"
             )
     elif os.path.exists(weights_path):
         if weights_type == CogFile:
@@ -73,12 +96,12 @@ def run_setup(predictor: BasePredictor) -> None:
             weights = CogPath(weights_path)
         else:
             raise ValueError(
-                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+                f"Setup method has an argument 'weights' of type {weights_type}, but only File and Path are supported"
             )
     else:
         weights = None
 
-    predictor.setup(weights=weights)
+    runnable.setup(weights=weights)
 
 
 def get_weights_type(setup_function) -> Optional[Any]:
@@ -92,19 +115,6 @@ def get_weights_type(setup_function) -> Optional[Any]:
         if len(args) == 2 and args[1] is type(None):
             Type = get_args(Type)[0]
     return Type
-
-
-def run_prediction(
-    predictor: BasePredictor, inputs: Dict[Any, Any], cleanup_functions: List[Callable]
-) -> Any:
-    """
-    Run the predictor on the inputs, and append resulting paths
-    to cleanup functions for removal.
-    """
-    result = predictor.predict(**inputs)
-    if isinstance(result, Path):
-        cleanup_functions.append(result.unlink)
-    return result
 
 
 # TODO: make config a TypedDict
@@ -124,28 +134,33 @@ def load_config() -> Dict[str, Any]:
     return config
 
 
-def load_predictor(config: Dict[str, Any]) -> BasePredictor:
+def load_runnable(config: Dict[str, Any]) -> Optional[Runnable]:
     """
-    Constructs an instance of the user-defined Predictor class from a config.
+    Constructs an instance of the user-defined class or method from a config.
     """
 
-    ref = get_predictor_ref(config)
-    return load_predictor_from_ref(ref)
+    try:
+        ref = get_runnable_ref(config)
+    except TrainerNotSet:
+        return None
+    return load_runnable_from_ref(ref)
 
 
-def get_predictor_ref(config: Dict[str, Any], mode: str = "predict") -> str:
+def get_runnable_ref(config: Dict[str, Any], mode: str = "predict") -> str:
     if mode not in ["predict", "train"]:
         raise ValueError(f"Invalid mode: {mode}")
 
+    # trainer is experimental and optional
+    if mode not in config and mode == "train":
+        raise TrainerNotSet("Trainer not in cog.yaml")
+
     if mode not in config:
-        raise PredictorNotSet(
-            f"Can't run predictions: '{mode}' option not found in cog.yaml"
-        )
+        raise PredictorNotSet(f"Can't run: '{mode}' option not found in cog.yaml")
 
     return config[mode]
 
 
-def load_predictor_from_ref(ref: str) -> BasePredictor:
+def load_runnable_from_ref(ref: str) -> Runnable:
     module_path, class_name = ref.split(":", 1)
     module_name = os.path.basename(module_path).split(".py", 1)[0]
     spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -153,11 +168,11 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
-    predictor = getattr(module, class_name)
+    runnable = getattr(module, class_name)
     # It could be a class or a function
-    if inspect.isclass(predictor):
-        return predictor()
-    return predictor
+    if inspect.isclass(runnable):
+        return runnable()
+    return runnable
 
 
 # Base class for inputs, constructed dynamically in get_input_type().
@@ -184,15 +199,18 @@ class BaseInput(BaseModel):
                     value.unlink()
 
 
-def get_predict(predictor):
-    if hasattr(predictor, "predict"):
-        return predictor.predict
-    return predictor
+def get_run_method(runnable: Runnable):
+    if hasattr(runnable, "predict"):
+        return runnable.predict
+    if hasattr(runnable, "train"):
+        return runnable.train
+    return runnable
 
 
-def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
+def get_input_type(runnable: Runnable) -> Type[BaseInput]:
     """
-    Creates a Pydantic Input model from the arguments of a Predictor's predict() method.
+    Creates a Pydantic Input model from the arguments of a Predictor's predict() method
+    or of a Trainer's train() method. For example,
 
     class Predictor(BasePredictor):
         def predict(self, text: str):
@@ -204,8 +222,8 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
         text: str
     """
 
-    predict = get_predict(predictor)
-    signature = inspect.signature(predict)
+    run_method = get_run_method(runnable)
+    signature = inspect.signature(run_method)
     create_model_kwargs = {}
 
     order = 0
@@ -268,11 +286,11 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
     )
 
 
-def get_output_type(predictor: BasePredictor) -> Type[BaseModel]:
+def get_output_type(runnable: Runnable) -> Type[BaseModel]:
     """
-    Creates a Pydantic Output model from the return type annotation of a Predictor's predict() method.
+    Creates a Pydantic Output model from the return type annotation of the runnable's predict() or train() method.
     """
-    predict = get_predict(predictor)
+    predict = get_run_method(runnable)
     signature = inspect.signature(predict)
     if signature.return_annotation is inspect.Signature.empty:
         raise TypeError(

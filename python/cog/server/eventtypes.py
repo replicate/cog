@@ -6,7 +6,7 @@ from attrs import define, field, validators
 # From worker parent process
 #
 @define
-class PredictionInput:
+class JobInput:
     payload: Dict[str, Any]
 
 
@@ -24,12 +24,12 @@ class Log:
 
 
 @define
-class PredictionOutput:
+class JobOutput:
     payload: Any
 
 
 @define
-class PredictionOutputType:
+class JobOutputType:
     multi: bool = False
 
 

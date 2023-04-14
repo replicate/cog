@@ -106,7 +106,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: volumes,
-	})
+	}, "predictions")
 
 	go func() {
 		captureSignal := make(chan os.Signal, 1)

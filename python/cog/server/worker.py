@@ -9,14 +9,19 @@ from multiprocessing.connection import Connection
 from typing import Any, Dict, Iterable, Optional, TextIO, Union
 
 from ..json import make_encodeable
-from ..predictor import BasePredictor, load_predictor_from_ref, get_predict, run_setup
+from ..predictor import (
+    Runnable,
+    load_runnable_from_ref,
+    get_run_method,
+    run_setup,
+)
 from .eventtypes import (
     Done,
     Heartbeat,
     Log,
-    PredictionInput,
-    PredictionOutput,
-    PredictionOutputType,
+    JobInput,
+    JobOutput,
+    JobOutputType,
     Shutdown,
 )
 from .exceptions import (
@@ -28,7 +33,7 @@ from .helpers import StreamRedirector, WrappedStream
 
 _spawn = multiprocessing.get_context("spawn")
 
-_PublicEventType = Union[Done, Heartbeat, Log, PredictionOutput, PredictionOutputType]
+_PublicEventType = Union[Done, Heartbeat, Log, JobOutput, JobOutputType]
 
 
 @unique
@@ -41,13 +46,13 @@ class WorkerState(Enum):
 
 
 class Worker:
-    def __init__(self, predictor_ref: str, tee_output: bool = True):
+    def __init__(self, job_ref: str, tee_output: bool = True):
         self._state = WorkerState.NEW
         self._allow_cancel = False
 
         # A pipe with which to communicate with the child worker.
         self._events, child_events = _spawn.Pipe()
-        self._child = _ChildWorker(predictor_ref, child_events, tee_output)
+        self._child = _ChildWorker(job_ref, child_events, tee_output)
         self._terminating = False
 
     def setup(self) -> Iterable[_PublicEventType]:
@@ -55,15 +60,15 @@ class Worker:
         self._state = WorkerState.STARTING
         self._child.start()
 
-        return self._wait(raise_on_error="Predictor errored during setup")
+        return self._wait(raise_on_error="Errored during setup")
 
-    def predict(
+    def run(
         self, payload: Dict[str, Any], poll: Optional[float] = None
     ) -> Iterable[_PublicEventType]:
         self._assert_state(WorkerState.READY)
         self._state = WorkerState.PROCESSING
         self._allow_cancel = True
-        self._events.send(PredictionInput(payload=payload))
+        self._events.send(JobInput(payload=payload))
 
         return self._wait(poll=poll)
 
@@ -91,6 +96,8 @@ class Worker:
         if self._allow_cancel and self._child.is_alive():
             os.kill(self._child.pid, signal.SIGUSR1)
             self._allow_cancel = False
+            return self._wait(raise_on_error="Errored during cancel")
+        return []
 
     def _assert_state(self, state: WorkerState) -> None:
         if self._state != state:
@@ -133,19 +140,19 @@ class Worker:
         if not self._child.is_alive() and not self._terminating:
             exitcode = self._child.exitcode
             raise FatalWorkerException(
-                f"Prediction failed for an unknown reason. It might have run out of memory? (exitcode {exitcode})"
+                f"Run failed for an unknown reason. It might have run out of memory? (exitcode {exitcode})"
             )
 
 
 class _ChildWorker(_spawn.Process):  # type: ignore
     def __init__(
         self,
-        predictor_ref: str,
+        job_ref: str,
         events: Connection,
         tee_output: bool = True,
     ):
-        self._predictor_ref = predictor_ref
-        self._predictor: Optional[BasePredictor] = None
+        self._job_ref = job_ref
+        self._runnable: Optional[Runnable] = None
         self._events = events
         self._tee_output = tee_output
         self._cancelable = False
@@ -179,10 +186,10 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     def _setup(self) -> None:
         done = Done()
         try:
-            self._predictor = load_predictor_from_ref(self._predictor_ref)
+            self._runnable = load_runnable_from_ref(self._job_ref)
             # Could be a function or a class
-            if hasattr(self._predictor, "setup"):
-                run_setup(self._predictor)
+            if hasattr(self._runnable, "setup"):
+                run_setup(self._runnable)
         except Exception as e:
             traceback.print_exc()
             done.error = True
@@ -203,27 +210,27 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             ev = self._events.recv()
             if isinstance(ev, Shutdown):
                 break
-            elif isinstance(ev, PredictionInput):
-                self._predict(ev.payload)
+            elif isinstance(ev, JobInput):
+                self._work(ev.payload)
             else:
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
 
-    def _predict(self, payload: Dict[str, Any]) -> None:
-        assert self._predictor
+    def _work(self, payload: Dict[str, Any]) -> None:
+        assert self._runnable
         done = Done()
         self._cancelable = True
         try:
-            predict = get_predict(self._predictor)
-            result = predict(**payload)
+            run = get_run_method(self._runnable)
+            result = run(**payload)
 
             if result:
                 if isinstance(result, types.GeneratorType):
-                    self._events.send(PredictionOutputType(multi=True))
+                    self._events.send(JobOutputType(multi=True))
                     for r in result:
-                        self._events.send(PredictionOutput(payload=make_encodeable(r)))
+                        self._events.send(JobOutput(payload=make_encodeable(r)))
                 else:
-                    self._events.send(PredictionOutputType(multi=False))
-                    self._events.send(PredictionOutput(payload=make_encodeable(result)))
+                    self._events.send(JobOutputType(multi=False))
+                    self._events.send(JobOutput(payload=make_encodeable(result)))
         except CancelationException:
             done.canceled = True
         except Exception as e:
@@ -237,6 +244,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
     def _signal_handler(self, signum: int, frame: Optional[types.FrameType]) -> None:
         if signum == signal.SIGUSR1 and self._cancelable:
+            if hasattr(self._runnable, "cancel"):
+                self._runnable.cancel()
             raise CancelationException()
 
     def _stream_write_hook(

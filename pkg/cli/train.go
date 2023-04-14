@@ -69,7 +69,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		Image:   imageName,
 		Volumes: volumes,
 		Args:    []string{"python", "-m", "cog.server.http", "--x-mode", "train"},
-	})
+	}, "trainings")
 
 	go func() {
 		captureSignal := make(chan os.Signal, 1)

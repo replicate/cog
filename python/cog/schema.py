@@ -28,16 +28,13 @@ class WebhookEvent(str, Enum):
         return {cls.START, cls.OUTPUT, cls.LOGS, cls.COMPLETED}
 
 
-class PredictionBaseModel(pydantic.BaseModel, extra=pydantic.Extra.allow):
+class JobBaseModel(pydantic.BaseModel, extra=pydantic.Extra.allow):
     input: t.Dict[str, t.Any]
 
 
-class PredictionRequest(PredictionBaseModel):
+class JobRequest(JobBaseModel):
     id: t.Optional[str]
     created_at: t.Optional[datetime]
-
-    # TODO: deprecate this
-    output_file_prefix: t.Optional[str]
 
     webhook: t.Optional[pydantic.AnyHttpUrl]
     webhook_events_filter: t.Optional[
@@ -54,7 +51,7 @@ class PredictionRequest(PredictionBaseModel):
         )
 
 
-class PredictionResponse(PredictionBaseModel):
+class JobResponse(JobBaseModel):
     output: t.Any
 
     id: t.Optional[str]
@@ -81,3 +78,21 @@ class PredictionResponse(PredictionBaseModel):
             input=(t.Optional[input_type], None),
             output=(output_type, None),
         )
+
+
+class TrainingRequest(JobRequest):
+    pass
+
+
+class TrainingResponse(JobResponse):
+    pass
+
+
+class PredictionRequest(JobRequest):
+    # TODO: deprecate this
+    output_file_prefix: t.Optional[str]
+    pass
+
+
+class PredictionResponse(JobResponse):
+    pass

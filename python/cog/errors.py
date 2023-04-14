@@ -8,3 +8,7 @@ class ConfigDoesNotExist(CogError):
 
 class PredictorNotSet(CogError):
     """Exception raised when 'predict' is not set in cog.yaml when it needs to be."""
+
+
+class TrainerNotSet(CogError):
+    """Exception raised when 'train' is not set in cog.yaml."""

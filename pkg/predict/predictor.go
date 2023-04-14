@@ -43,18 +43,21 @@ type ValidationErrorResponse struct {
 type Predictor struct {
 	runOptions docker.RunOptions
 
+	// TODO(akm): remove hack to hit /trainings endpoint
+	endpoint string
+
 	// Running state
 	containerID string
 	port        int
 }
 
-func NewPredictor(runOptions docker.RunOptions) Predictor {
+func NewPredictor(runOptions docker.RunOptions, endpoint string) Predictor {
 	if global.Debug {
 		runOptions.Env = append(runOptions.Env, "COG_LOG_LEVEL=debug")
 	} else {
 		runOptions.Env = append(runOptions.Env, "COG_LOG_LEVEL=warning")
 	}
-	return Predictor{runOptions: runOptions}
+	return Predictor{runOptions: runOptions, endpoint: endpoint}
 }
 
 func (p *Predictor) Start(logsWriter io.Writer) error {
@@ -145,7 +148,7 @@ func (p *Predictor) Predict(inputs Inputs) (*Response, error) {
 		return nil, err
 	}
 
-	url := fmt.Sprintf("http://localhost:%d/predictions", p.port)
+	url := fmt.Sprintf("http://localhost:%d/%s", p.port, p.endpoint)
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create HTTP request to %s: %w", url, err)
@@ -163,19 +166,19 @@ func (p *Predictor) Predict(inputs Inputs) (*Response, error) {
 	if resp.StatusCode == http.StatusUnprocessableEntity {
 		errorResponse := &ValidationErrorResponse{}
 		if err := json.NewDecoder(resp.Body).Decode(errorResponse); err != nil {
-			return nil, fmt.Errorf("/predictions call returned status 422, and the response body failed to decode: %w", err)
+			return nil, fmt.Errorf("/%s call returned status 422, and the response body failed to decode: %w", p.endpoint, err)
 		}
 
-		return nil, buildInputValidationErrorMessage(errorResponse)
+		return nil, buildInputValidationErrorMessage(errorResponse, p.endpoint)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("/predictions call returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("/%s call returned status %d", p.endpoint, resp.StatusCode)
 	}
 
 	prediction := &Response{}
 	if err = json.NewDecoder(resp.Body).Decode(prediction); err != nil {
-		return nil, fmt.Errorf("Failed to decode prediction response: %w", err)
+		return nil, fmt.Errorf("Failed to decode %s response: %w", p.endpoint, err)
 	}
 	return prediction, nil
 }
@@ -196,13 +199,13 @@ func (p *Predictor) GetSchema() (*openapi3.T, error) {
 	return openapi3.NewLoader().LoadFromData(body)
 }
 
-func buildInputValidationErrorMessage(errorResponse *ValidationErrorResponse) error {
+func buildInputValidationErrorMessage(errorResponse *ValidationErrorResponse, endpoint string) error {
 	errorMessages := []string{}
 
 	for _, validationError := range errorResponse.Detail {
 		if len(validationError.Location) != 3 || validationError.Location[0] != "body" || validationError.Location[1] != "input" {
 			responseBody, _ := json.MarshalIndent(errorResponse, "", "\t")
-			return fmt.Errorf("/predictions call returned status 422, and there was an unexpected message in response:\n\n%s", responseBody)
+			return fmt.Errorf("/%s call returned status 422, and there was an unexpected message in response:\n\n%s", endpoint, responseBody)
 		}
 
 		errorMessages = append(errorMessages, fmt.Sprintf("- %s: %s", validationError.Location[2], validationError.Message))

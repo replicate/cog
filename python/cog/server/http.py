@@ -26,11 +26,18 @@ from ..logging import setup_logging
 from ..predictor import (
     get_input_type,
     get_output_type,
-    get_predictor_ref,
+    get_runnable_ref,
     load_config,
-    load_predictor_from_ref,
+    load_runnable_from_ref,
 )
-from .runner import PredictionRunner, RunnerBusyError, UnknownPredictionError
+
+from .runner import (
+    Runner,
+    RunnerBusyError,
+    UnknownPredictionError,
+    UnknownTrainingError,
+)
+
 
 log = structlog.get_logger("cog.server.http")
 
@@ -60,21 +67,30 @@ def create_app(
     app.state.setup_result = None
     app.state.setup_result_payload = None
 
-    predictor_ref = get_predictor_ref(config, mode)
+    # The Cog application should run either in training mode, or predicting mode, but not both.
+    # This is to avoid running setup for a predictor, which generally loads a model,
+    # and training in the same container without unloading the model.
+    runnable_ref = get_runnable_ref(config, mode)
 
-    runner = PredictionRunner(
-        predictor_ref=predictor_ref,
+    runner = Runner(
+        runnable_ref=runnable_ref,
         shutdown_event=shutdown_event,
         upload_url=upload_url,
     )
-    # TODO: avoid loading predictor code in this process
-    predictor = load_predictor_from_ref(predictor_ref)
 
-    InputType = get_input_type(predictor)
-    OutputType = get_output_type(predictor)
+    # TODO: avoid loading predictor code in this process
+    runnable = load_runnable_from_ref(runnable_ref)
+
+    InputType = get_input_type(runnable)
+    OutputType = get_output_type(runnable)
 
     PredictionRequest = schema.PredictionRequest.with_types(input_type=InputType)
     PredictionResponse = schema.PredictionResponse.with_types(
+        input_type=InputType, output_type=OutputType
+    )
+
+    TrainingRequest = schema.TrainingRequest.with_types(input_type=InputType)
+    TrainingResponse = schema.TrainingResponse.with_types(
         input_type=InputType, output_type=OutputType
     )
 
@@ -112,6 +128,86 @@ def create_app(
         )
 
     @app.post(
+        "/trainings",
+        response_model=TrainingResponse,
+        response_model_exclude_unset=True,
+    )
+    def train(request: TrainingRequest = Body(default=None), prefer: Union[str, None] = Header(default=None)) -> Any:  # type: ignore
+        """
+        Run a training on the model
+        """
+        if mode != "train":
+            return JSONResponse(
+                {"detail": "The application is running as a predictor, not a trainer."},
+                status_code=400,
+            )
+        if runner.is_busy():
+            return JSONResponse({"detail": "Already training."}, status_code=409)
+
+        respond_async = prefer == "respond-async"
+
+        return _train(request=request, respond_async=respond_async)
+
+    def _train(*, request: TrainingRequest, respond_async: bool) -> Response:
+        # [compat] If no body is supplied, assume that this model can be run
+        # with empty input. This will throw a ValidationError if that's not
+        # possible.
+        if request is None:
+            request = TrainingRequest(input={})
+        # [compat] If body is supplied but input is None, set it to an empty
+        # dictionary so that later code can be simpler.
+        if request.input is None:
+            request.input = {}
+
+        try:
+            # For now, we only ask the Runner to handle file uploads for
+            # async predictions. This is unfortunate but required to ensure
+            # backwards-compatible behaviour for synchronous predictions.
+            initial_response, async_result = runner.run(request, upload=respond_async)
+        except RunnerBusyError:
+            return JSONResponse(
+                {"detail": "Already running training."}, status_code=409
+            )
+
+        if respond_async:
+            return JSONResponse(jsonable_encoder(initial_response), status_code=202)
+
+        try:
+            response = TrainingResponse(**async_result.get().dict())
+        except ValidationError as e:
+            _log_invalid_output(e)
+            raise HTTPException(status_code=500)
+
+        response_object = response.dict()
+        response_object["output"] = upload_files(
+            response_object["output"],
+            upload_file=lambda fh: upload_file(fh, request.output_file_prefix),  # type: ignore
+        )
+
+        # FIXME: clean up output files
+        encoded_response = jsonable_encoder(response_object)
+        return JSONResponse(content=encoded_response)
+
+    @app.post("/trainings/{training_id}/cancel")
+    def cancel_training(training_id: str = Path(..., title="Training ID")) -> Any:
+        """
+        Cancel a running training.
+        """
+        if mode != "train":
+            return JSONResponse(
+                {"detail": "The application is running as a predictor, not a trainer."},
+                status_code=400,
+            )
+        if not runner.is_busy():
+            return JSONResponse({}, status_code=404)
+        try:
+            runner.cancel(training_id, "train")
+        except UnknownTrainingError:
+            return JSONResponse({}, status_code=404)
+        else:
+            return JSONResponse({}, status_code=200)
+
+    @app.post(
         "/predictions",
         response_model=PredictionResponse,
         response_model_exclude_unset=True,
@@ -120,6 +216,11 @@ def create_app(
         """
         Run a single prediction on the model
         """
+        if mode != "predict":
+            return JSONResponse(
+                {"detail": "The application is running as a trainer, not a predictor."},
+                status_code=400,
+            )
         if runner.is_busy():
             return JSONResponse(
                 {"detail": "Already running a prediction"}, status_code=409
@@ -143,6 +244,11 @@ def create_app(
         """
         Run a single prediction on the model (idempotent creation).
         """
+        if mode != "predict":
+            return JSONResponse(
+                {"detail": "The application is running as a trainer, not a predictor."},
+                status_code=400,
+            )
         if request.id is not None and request.id != prediction_id:
             raise RequestValidationError(
                 [
@@ -178,12 +284,10 @@ def create_app(
             request.input = {}
 
         try:
-            # For now, we only ask PredictionRunner to handle file uploads for
+            # For now, we only ask the Runner to handle file uploads for
             # async predictions. This is unfortunate but required to ensure
             # backwards-compatible behaviour for synchronous predictions.
-            initial_response, async_result = runner.predict(
-                request, upload=respond_async
-            )
+            initial_response, async_result = runner.run(request, upload=respond_async)
         except RunnerBusyError:
             return JSONResponse(
                 {"detail": "Already running a prediction"}, status_code=409
@@ -213,10 +317,15 @@ def create_app(
         """
         Cancel a running prediction
         """
+        if mode != "predict":
+            return JSONResponse(
+                {"detail": "The application is running as a trainer, not a predictor."},
+                status_code=400,
+            )
         if not runner.is_busy():
             return JSONResponse({}, status_code=404)
         try:
-            runner.cancel(prediction_id)
+            runner.cancel(prediction_id, "predict")
         except UnknownPredictionError:
             return JSONResponse({}, status_code=404)
         else:
@@ -332,6 +441,7 @@ if __name__ == "__main__":
         choices=["predict", "train"],
         help="Experimental: Run in 'predict' or 'train' mode",
     )
+
     args = parser.parse_args()
 
     # log level is configurable so we can make it quiet or verbose for `cog predict`
