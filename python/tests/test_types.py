@@ -1,9 +1,11 @@
 import io
 import pickle
 
-import responses
+from cog._vendor import responses
 
 from cog.types import URLFile
+
+responses.mock.target = "cog._vendor.requests.adapters.HTTPAdapter.send"
 
 
 @responses.activate

@@ -4,7 +4,7 @@ import io
 from types import GeneratorType
 from typing import Any, Callable
 
-from pydantic import BaseModel
+from ._vendor.pydantic import BaseModel
 
 from .types import Path
 

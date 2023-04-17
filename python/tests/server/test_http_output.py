@@ -6,12 +6,13 @@ from typing import Iterator, List
 
 import numpy as np
 import pytest
-import responses
+from cog._vendor import responses
 from PIL import Image
-from responses.matchers import multipart_matcher
-
+from cog._vendor.responses.matchers import multipart_matcher
 
 from .conftest import uses_predictor, uses_predictor_with_client_options
+
+responses.mock.target = "cog._vendor.requests.adapters.HTTPAdapter.send"
 
 
 @uses_predictor("output_wrong_type")

@@ -1,0 +1,67 @@
+--- python/cog/_vendor/hypothesis/strategies/_internal/core.py	2023-04-17 13:56:55
++++ python/cog/_vendor/hypothesis/strategies/_internal/core.py	2023-04-17 13:58:15
+@@ -2013,9 +2013,9 @@
+ 
+ 
+ def domains():
+-    import hypothesis.provisional
++    import hypothesis.provisional as provisional
+ 
+-    return hypothesis.provisional.domains()
++    return provisional.domains()
+ 
+ 
+ @defines_strategy(force_reusable_values=True)
+
+--- python/cog/_vendor/hypothesis/internal/entropy.py	2023-04-17 13:58:56
++++ python/cog/_vendor/hypothesis/internal/entropy.py	2023-04-17 14:02:23
+@@ -17,7 +17,7 @@
+ from typing import TYPE_CHECKING, Any, Callable, Hashable, Tuple
+ from weakref import WeakValueDictionary
+ 
+-import hypothesis.core
++import hypothesis.core as core
+ from hypothesis.errors import HypothesisWarning, InvalidArgument
+ from hypothesis.internal.compat import GRAALPY, PYPY
+ 
+@@ -190,9 +190,9 @@
+     bad idea in principle, and breaks all kinds of independence assumptions
+     in practice.
+     """
+-    if hypothesis.core._hypothesis_global_random is None:  # pragma: no cover
+-        hypothesis.core._hypothesis_global_random = random.Random()
+-        register_random(hypothesis.core._hypothesis_global_random)
++    if core._hypothesis_global_random is None:  # pragma: no cover
++        core._hypothesis_global_random = random.Random()
++        register_random(core._hypothesis_global_random)
+ 
+     seed_all, restore_all = get_seeder_and_restorer(seed)
+     seed_all()
+
+--- python/cog/_vendor/hypothesis/__init__.py	2023-04-17 14:04:00
++++ python/cog/_vendor/hypothesis/__init__.py	2023-04-17 14:03:23
+@@ -15,7 +15,7 @@
+ failing examples it finds.
+ """
+ 
+-import hypothesis._error_if_old  # noqa  # imported for side-effect of nice error
++import hypothesis._error_if_old as _error_if_old  # noqa  # imported for side-effect of nice error
+ from hypothesis._settings import HealthCheck, Phase, Verbosity, settings
+ from hypothesis.control import (
+     assume,
+
+--- python/cog/_vendor/hypothesis/entry_points.py	2023-04-17 15:56:07
++++ python/cog/_vendor/hypothesis/entry_points.py.new	2023-04-17 15:57:19
+@@ -60,6 +60,12 @@
+ 
+ def run():
+     for entry in get_entry_points():  # pragma: no cover
++        if entry.value == "pydantic._hypothesis_plugin":
++            entry = importlib_metadata.EntryPoint(
++                name=entry.name,
++                value="cog._vendor." + entry.value,
++                group="cog._vendor." + entry.group,
++            )
+         hook = entry.load()
+         if callable(hook):
+             hook()

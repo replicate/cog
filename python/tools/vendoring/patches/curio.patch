@@ -1,0 +1,25 @@
+--- python/cog/_vendor/curio/__main__.py	2023-04-17 14:08:43
++++ python/cog/_vendor/curio/__main__.py.new	2023-04-17 14:09:28
+@@ -1,6 +1,6 @@
+ import ast
+ import curio
+-import curio.monitor
++import curio.monitor as monitor
+ import code
+ import inspect
+ import sys
+@@ -103,11 +103,11 @@
+             message=r'^coroutine .* was never awaited$',
+             category=RuntimeWarning)
+         console.requests.put(None)
+-    
++
+ if __name__ == '__main__':
+     repl_locals = { 'curio': curio,
+-                    'ps': curio.monitor.ps,
+-                    'where': curio.monitor.where,
++                    'ps': monitor.ps,
++                    'where': monitor.where,
+     }
+     for key in {'__name__', '__package__',
+                 '__loader__', '__spec__',

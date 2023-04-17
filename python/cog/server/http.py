@@ -7,17 +7,17 @@ import threading
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional, Union
 
-import structlog
-import uvicorn
-from anyio import CapacityLimiter
-from anyio.lowlevel import RunVar
+from .._vendor import structlog
+from .._vendor import uvicorn
+from .._vendor.anyio import CapacityLimiter
+from .._vendor.anyio.lowlevel import RunVar
 from enum import Enum, auto, unique
-from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
-from fastapi.encoders import jsonable_encoder
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from pydantic import ValidationError
-from pydantic.error_wrappers import ErrorWrapper
+from .._vendor.fastapi import Body, FastAPI, Header, HTTPException, Path, Response
+from .._vendor.fastapi.encoders import jsonable_encoder
+from .._vendor.fastapi.exceptions import RequestValidationError
+from .._vendor.fastapi.responses import JSONResponse
+from .._vendor.pydantic import ValidationError
+from .._vendor.pydantic.error_wrappers import ErrorWrapper
 
 from .. import schema
 from ..files import upload_file

@@ -3,14 +3,14 @@ import mimetypes
 import os
 import base64
 import pathlib
-import requests
+from ._vendor import requests
 import shutil
 import tempfile
 from typing import Any, Callable, Dict, Iterator, List, TypeVar, Union
 from urllib.parse import urlparse
 
-from pydantic import Field
-from pydantic.typing import NoArgAnyCallable
+from ._vendor.pydantic import Field
+from ._vendor.pydantic.typing import NoArgAnyCallable
 
 
 def Input(

@@ -5,10 +5,10 @@ import time
 from typing import Any, Optional
 
 import pytest
-from attrs import define
-from hypothesis import Verbosity, given, settings
-from hypothesis import strategies as st
-from hypothesis.stateful import (
+from cog._vendor.attrs import define
+from cog._vendor.hypothesis import Verbosity, given, settings
+from cog._vendor.hypothesis import strategies as st
+from cog._vendor.hypothesis.stateful import (
     Bundle,
     RuleBasedStateMachine,
     consumes,

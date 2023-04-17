@@ -100,3 +100,8 @@ lint: lint-go lint-python
 .PHONY: mod-tidy
 mod-tidy:
 	$(GO) mod tidy
+
+.PHONY: vendor-python
+vendor-python:
+	pip install vendoring
+	cd python && vendoring sync -v .

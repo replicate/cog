@@ -5,8 +5,8 @@ from contextlib import ExitStack
 from typing import Any, Dict, Optional
 from unittest import mock
 
-from attrs import define
-from fastapi.testclient import TestClient
+from cog._vendor.attrs import define
+from cog._vendor.fastapi.testclient import TestClient
 import pytest
 
 from cog.server.http import create_app
