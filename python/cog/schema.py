@@ -91,7 +91,6 @@ class TrainingResponse(JobResponse):
 class PredictionRequest(JobRequest):
     # TODO: deprecate this
     output_file_prefix: t.Optional[str]
-    pass
 
 
 class PredictionResponse(JobResponse):

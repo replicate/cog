@@ -1,7 +1,9 @@
 import time
 
+from cog import BaseTrainer
 
-class Trainer:
+
+class Trainer(BaseTrainer):
     def setup(self) -> None:
         print("Setting up.")
 

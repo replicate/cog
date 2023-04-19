@@ -199,10 +199,15 @@ class BaseInput(BaseModel):
                     value.unlink()
 
 
-def get_run_method(runnable: Runnable):
+def get_run_method(runnable: Union[Runnable, Callable]):
+    # For backwards compatibility, Cog currently accepts any class that implements
+    # a `predict` method.
     if hasattr(runnable, "predict"):
         return runnable.predict
-    if hasattr(runnable, "train"):
+    # Otherwise, the user should extend `BasePredictor` or `BaseTrainer`
+    if isinstance(runnable, BasePredictor) and hasattr(runnable, "predict"):
+        return runnable.predict
+    if isinstance(runnable, BaseTrainer) and hasattr(runnable, "train"):
         return runnable.train
     return runnable
 
