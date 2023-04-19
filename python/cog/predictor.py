@@ -44,11 +44,6 @@ class BasePredictor(BaseRunnable):
 
 
 class BaseTrainer(BaseRunnable):
-    def setup(self, weights: Optional[Union[CogFile, CogPath]] = None) -> None:
-        """
-        An optional method to initialize the trainer.
-        """
-
     @abstractmethod
     def train(self, **kwargs: Any) -> Any:
         """
