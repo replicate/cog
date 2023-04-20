@@ -30,6 +30,7 @@ It will build the model in the current directory and train it.`,
 	}
 	addBuildProgressOutputFlag(cmd)
 	cmd.Flags().StringArrayVarP(&trainInputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
+	addGroupFileFlag(cmd)
 
 	return cmd
 }
@@ -47,7 +48,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if imageName, err = image.BuildBase(cfg, projectDir, buildProgressOutput); err != nil {
+	if imageName, err = image.BuildBase(cfg, projectDir, buildProgressOutput, groupFile); err != nil {
 		return err
 	}
 

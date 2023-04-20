@@ -25,6 +25,7 @@ func newDebugCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(debug)
+	addGroupFileFlag(cmd)
 
 	return cmd
 }
@@ -35,7 +36,7 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	generator, err := dockerfile.NewGenerator(config, projectDir)
+	generator, err := dockerfile.NewGenerator(config, projectDir, groupFile)
 	if err != nil {
 		return fmt.Errorf("Error creating Dockerfile generator: %w", err)
 	}

@@ -31,6 +31,7 @@ func newRunCommand() *cobra.Command {
 	cmd.Flags().StringArrayVarP(&runPorts, "publish", "p", []string{}, "Publish a container's port to the host, e.g. -p 8000")
 
 	flags.SetInterspersed(false)
+	addGroupFileFlag(cmd)
 
 	return cmd
 }
@@ -41,7 +42,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	imageName, err := image.BuildBase(cfg, projectDir, buildProgressOutput)
+	imageName, err := image.BuildBase(cfg, projectDir, buildProgressOutput, groupFile)
 	if err != nil {
 		return err
 	}

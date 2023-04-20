@@ -4,6 +4,7 @@ import (
 	// blank import for embeds
 	_ "embed"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -15,6 +16,11 @@ import (
 
 //go:embed embed/cog.whl
 var cogWheelEmbed []byte
+
+const (
+	maxNumFileGroups  = 3
+	fileSizeThresHold = 100 * 1000 * 1000 // 100 MegaBytes
+)
 
 type Generator struct {
 	Config *config.Config
@@ -28,9 +34,12 @@ type Generator struct {
 	tmpDir string
 	// tmpDir relative to Dir
 	relativeTmpDir string
+	// groupFile indicates grouping small files into independent docker
+	// image layer
+	groupFile bool
 }
 
-func NewGenerator(config *config.Config, dir string) (*Generator, error) {
+func NewGenerator(config *config.Config, dir string, groupFile bool) (*Generator, error) {
 	rootTmp := path.Join(dir, ".cog/tmp")
 	if err := os.MkdirAll(rootTmp, 0o755); err != nil {
 		return nil, err
@@ -53,6 +62,7 @@ func NewGenerator(config *config.Config, dir string) (*Generator, error) {
 		GOARCH:         runtime.GOOS,
 		tmpDir:         tmpDir,
 		relativeTmpDir: relativeTmpDir,
+		groupFile:      groupFile,
 	}, nil
 }
 
@@ -101,15 +111,116 @@ func (g *Generator) GenerateBase() (string, error) {
 	}), "\n"), nil
 }
 
+func dirSize(dir string) (int64, error) {
+	var size int64
+	if err := filepath.Walk(dir,
+		func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if !info.IsDir() {
+				size += info.Size()
+			}
+			return nil
+		},
+	); err != nil {
+		return 0, err
+	}
+	return size, nil
+}
+
+func divFilesBySize(threshold int64) (smalls []string, larges []string, err error) {
+	files, err := ioutil.ReadDir(".")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for _, file := range files {
+		size := file.Size()
+		if file.IsDir() {
+			size, err = dirSize(file.Name())
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		if size < threshold {
+			// check if file size is smaller than 100 MB
+			smalls = append(smalls, file.Name())
+			continue
+		}
+		larges = append(larges, file.Name())
+	}
+	return
+}
+
+func groupFiles(numGroups int) ([][]string, error) {
+	smalls, larges, err := divFilesBySize(fileSizeThresHold)
+	if err != nil {
+		return nil, err
+	}
+	ret := [][]string{}
+	nf := len(smalls)
+	if len(smalls) <= numGroups {
+		// put each file in one group
+		for _, f := range smalls {
+			ret = append(ret, []string{f})
+		}
+		return ret, nil
+	}
+	// TODO(charleszheng44): Improvement
+	filePerGroup, i := nf/numGroups, 0
+	for q := 0; q < numGroups; q++ {
+		curGrp := []string{}
+		for j := 0; j < filePerGroup; j, i = j+1, i+1 {
+			curGrp = append(curGrp, smalls[i])
+		}
+		ret = append(ret, curGrp)
+	}
+	// put the reminders into the last group.
+	ret[numGroups-1] = append(ret[numGroups-1], smalls[i:]...)
+	// put all large files in an independent group.
+	ret = append(ret, larges)
+	return ret, nil
+}
+
+func (g *Generator) copyWorkspace() (string, error) {
+	if !g.groupFile {
+		return "COPY . /src", nil
+	}
+
+	ret := ""
+	groups, err := groupFiles(maxNumFileGroups)
+	if err != nil {
+		return "", err
+	}
+
+	for _, group := range groups {
+		copyCmd := "COPY "
+		for _, file := range group {
+			copyCmd = copyCmd + file + " "
+		}
+		copyCmd = copyCmd + "/src" + "\n"
+		ret = ret + copyCmd
+	}
+	return ret, nil
+}
+
 func (g *Generator) Generate() (string, error) {
 	base, err := g.GenerateBase()
 	if err != nil {
 		return "", err
 	}
-	return strings.Join(filterEmpty([]string{
-		base,
-		`COPY . /src`,
-	}), "\n"), nil
+
+	copyWorkspace, err := g.copyWorkspace()
+	if err != nil {
+		return "", err
+	}
+
+	return strings.Join(filterEmpty(
+		[]string{
+			base,
+			copyWorkspace,
+		}), "\n"), nil
 }
 
 func (g *Generator) Cleanup() error {

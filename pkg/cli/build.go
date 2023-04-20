@@ -9,8 +9,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var buildTag string
-var buildProgressOutput string
+var (
+	buildTag            string
+	buildProgressOutput string
+	groupFile           bool
+)
 
 func newBuildCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -20,6 +23,7 @@ func newBuildCommand() *cobra.Command {
 		RunE:  buildCommand,
 	}
 	addBuildProgressOutputFlag(cmd)
+	addGroupFileFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
 }
@@ -38,7 +42,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		imageName = config.DockerImageName(projectDir)
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildProgressOutput); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildProgressOutput, groupFile); err != nil {
 		return err
 	}
 
@@ -53,4 +57,8 @@ func addBuildProgressOutputFlag(cmd *cobra.Command) {
 		defaultOutput = "plain"
 	}
 	cmd.Flags().StringVar(&buildProgressOutput, "progress", defaultOutput, "Set type of build progress output, 'auto' (default), 'tty' or 'plain'")
+}
+
+func addGroupFileFlag(cmd *cobra.Command) {
+	cmd.Flags().BoolVarP(&groupFile, "filegroup", "f", false, "If set, cog will group small files into independent docker layer")
 }

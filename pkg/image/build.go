@@ -15,10 +15,10 @@ import (
 // Build a Cog model from a config
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
-func Build(cfg *config.Config, dir, imageName string, progressOutput string) error {
+func Build(cfg *config.Config, dir, imageName string, progressOutput string, groupFile bool) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 
-	generator, err := dockerfile.NewGenerator(cfg, dir)
+	generator, err := dockerfile.NewGenerator(cfg, dir, groupFile)
 	if err != nil {
 		return fmt.Errorf("Error creating Dockerfile generator: %w", err)
 	}
@@ -77,13 +77,13 @@ func Build(cfg *config.Config, dir, imageName string, progressOutput string) err
 	return nil
 }
 
-func BuildBase(cfg *config.Config, dir string, progressOutput string) (string, error) {
+func BuildBase(cfg *config.Config, dir string, progressOutput string, groupFile bool) (string, error) {
 	// TODO: better image management so we don't eat up disk space
 	// https://github.com/replicate/cog/issues/80
 	imageName := config.BaseDockerImageName(dir)
 
 	console.Info("Building Docker image from environment in cog.yaml...")
-	generator, err := dockerfile.NewGenerator(cfg, dir)
+	generator, err := dockerfile.NewGenerator(cfg, dir, groupFile)
 	if err != nil {
 		return "", fmt.Errorf("Error creating Dockerfile generator: %w", err)
 	}
