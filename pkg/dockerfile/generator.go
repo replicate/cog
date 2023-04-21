@@ -4,6 +4,7 @@ import (
 	// blank import for embeds
 	_ "embed"
 	"fmt"
+	"io/fs"
 	"io/ioutil"
 	"os"
 	"path"
@@ -18,7 +19,9 @@ import (
 var cogWheelEmbed []byte
 
 const (
-	maxNumFileGroups  = 3
+	// this will also be the number of extra docker image layers
+	// besides the cog base layers.
+	maxNumFileGroups  = 10
 	fileSizeThresHold = 100 * 1000 * 1000 // 100 MegaBytes
 )
 
@@ -111,6 +114,7 @@ func (g *Generator) GenerateBase() (string, error) {
 	}), "\n"), nil
 }
 
+// dirSize returns the size of the given `dir`
 func dirSize(dir string) (int64, error) {
 	var size int64
 	if err := filepath.Walk(dir,
@@ -129,12 +133,13 @@ func dirSize(dir string) (int64, error) {
 	return size, nil
 }
 
-func divFilesBySize(threshold int64) (smalls []string, larges []string, err error) {
-	files, err := ioutil.ReadDir(".")
-	if err != nil {
-		return nil, nil, err
-	}
-
+// divFilesBySize divides files in workspace into small files
+// (size < `threshold`) and large files (size > `threshold`).
+func divFilesBySize(threshold int64, files []fs.FileInfo) (
+	smalls []string,
+	larges []string,
+	err error,
+) {
 	for _, file := range files {
 		size := file.Size()
 		if file.IsDir() {
@@ -143,7 +148,7 @@ func divFilesBySize(threshold int64) (smalls []string, larges []string, err erro
 				return nil, nil, err
 			}
 		}
-		if size < threshold {
+		if size <= threshold {
 			// check if file size is smaller than 100 MB
 			smalls = append(smalls, file.Name())
 			continue
@@ -153,22 +158,33 @@ func divFilesBySize(threshold int64) (smalls []string, larges []string, err erro
 	return
 }
 
-func groupFiles(numGroups int) ([][]string, error) {
-	smalls, larges, err := divFilesBySize(fileSizeThresHold)
+// groupFile divide files in the workspace into `numGroups` of groups.
+func groupFiles(numGroups int, fileSizeThresHold int64, files []fs.FileInfo) ([][]string, error) {
+	smalls, larges, err := divFilesBySize(fileSizeThresHold, files)
 	if err != nil {
 		return nil, err
 	}
 	ret := [][]string{}
-	nf := len(smalls)
-	if len(smalls) <= numGroups {
+	// put all large files in an independent group.
+	if len(larges) > 0 {
+		ret = append(ret, larges)
+	}
+	numSmalls := len(smalls)
+	if numSmalls <= numGroups {
 		// put each file in one group
 		for _, f := range smalls {
 			ret = append(ret, []string{f})
 		}
 		return ret, nil
 	}
-	// TODO(charleszheng44): Improvement
-	filePerGroup, i := nf/numGroups, 0
+	// TODO(charleszheng44): The algorithm dividing small files into groups
+	// and assigns each group to a docker image layer can be enhanced.
+	// Two potential issues that may arise:
+	// 1. Large groups of small files can still slow down the deployment
+	//    process, despite being evenly divided.
+	// 2. Users making changes to files in different groups can trigger the
+	//    regeneration of all related layers, leading to a sluggish deployment.
+	filePerGroup, i := numSmalls/numGroups, 0
 	for q := 0; q < numGroups; q++ {
 		curGrp := []string{}
 		for j := 0; j < filePerGroup; j, i = j+1, i+1 {
@@ -177,19 +193,26 @@ func groupFiles(numGroups int) ([][]string, error) {
 		ret = append(ret, curGrp)
 	}
 	// put the reminders into the last group.
-	ret[numGroups-1] = append(ret[numGroups-1], smalls[i:]...)
-	// put all large files in an independent group.
-	ret = append(ret, larges)
+	if i < numSmalls {
+		ret[numGroups-1] = append(ret[numGroups-1], smalls[i:]...)
+	}
+
 	return ret, nil
 }
 
+// copyWorkspace generates the Dockerfile COPY command copying files in the
+// current directory to the /src directory in the docker container.
 func (g *Generator) copyWorkspace() (string, error) {
 	if !g.groupFile {
 		return "COPY . /src", nil
 	}
 
 	ret := ""
-	groups, err := groupFiles(maxNumFileGroups)
+	files, err := ioutil.ReadDir(".")
+	if err != nil {
+		return "", err
+	}
+	groups, err := groupFiles(maxNumFileGroups, fileSizeThresHold, files)
 	if err != nil {
 		return "", err
 	}

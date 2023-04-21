@@ -60,5 +60,5 @@ func addBuildProgressOutputFlag(cmd *cobra.Command) {
 }
 
 func addGroupFileFlag(cmd *cobra.Command) {
-	cmd.Flags().BoolVarP(&groupFile, "filegroup", "f", false, "If set, cog will group small files into independent docker layer")
+	cmd.Flags().BoolVarP(&groupFile, "groupfile", "g", false, "If set, cog will group small files into independent docker layer")
 }
