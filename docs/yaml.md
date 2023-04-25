@@ -86,6 +86,20 @@ build:
 
 Your code is _not_ available to commands in `run`. This is so we can build your image efficiently when running locally.
 
+Each command in `run` can be either a string or a dictionary in the following format:
+
+````yaml
+build:
+  run:
+    - command: pip install
+      mounts:
+        - type: secret
+          id: pip
+          target: /etc/pip.conf
+```
+
+You can use secret mounts to securely pass credentials to setup commands, without baking them into the image. For more information, see [Dockerfile reference](https://docs.docker.com/engine/reference/builder/#run---mounttypesecret).
+
 ### `system_packages`
 
 A list of Ubuntu APT packages to install. For example:
@@ -95,7 +109,7 @@ build:
   system_packages:
     - "ffmpeg"
     - "libavcodec-dev"
-```
+````
 
 ## `image`
 

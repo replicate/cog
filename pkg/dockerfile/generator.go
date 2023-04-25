@@ -228,17 +228,31 @@ func (g *Generator) run() (string, error) {
 	runCommands := g.Config.Build.Run
 
 	// For backwards compatibility
-	runCommands = append(runCommands, g.Config.Build.PreInstall...)
+	for _, command := range g.Config.Build.PreInstall {
+		runCommands = append(runCommands, config.RunItem{Command: command})
+	}
 
 	lines := []string{}
 	for _, run := range runCommands {
-		run = strings.TrimSpace(run)
-		if strings.Contains(run, "\n") {
+		command := strings.TrimSpace(run.Command)
+		if strings.Contains(command, "\n") {
 			return "", fmt.Errorf(`One of the commands in 'run' contains a new line, which won't work. You need to create a new list item in YAML prefixed with '-' for each command.
 
-This is the offending line: %s`, run)
+This is the offending line: %s`, command)
 		}
-		lines = append(lines, "RUN "+run)
+
+		if len(run.Mounts) > 0 {
+			mounts := []string{}
+			for _, mount := range run.Mounts {
+				if mount.Type == "secret" {
+					secretMount := fmt.Sprintf("--mount=type=secret,id=%s,target=%s", mount.ID, mount.Target)
+					mounts = append(mounts, secretMount)
+				}
+			}
+			lines = append(lines, fmt.Sprintf("RUN %s %s", strings.Join(mounts, " "), command))
+		} else {
+			lines = append(lines, "RUN "+command)
+		}
 	}
 	return strings.Join(lines, "\n"), nil
 }

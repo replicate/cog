@@ -85,6 +85,35 @@
               {
                 "$id": "#/properties/build/properties/run/items/anyOf/0",
                 "type": "string"
+              },
+              {
+                "$id": "#/properties/build/properties/run/items/anyOf/1",
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  },
+                  "mounts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": ["secret"]
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "target": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["type", "id", "target"]
+                    }
+                  }
+                },
+                "required": ["command"]
               }
             ]
           }

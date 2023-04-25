@@ -19,16 +19,25 @@ import (
 // TODO(andreas): custom cpu/gpu installs
 // TODO(andreas): suggest valid torchvision versions (e.g. if the user wants to use 0.8.0, suggest 0.8.1)
 
+type RunItem struct {
+	Command string `json:"command,omitempty" yaml:"command"`
+	Mounts  []struct {
+		Type   string `json:"type,omitempty" yaml:"type"`
+		ID     string `json:"id,omitempty" yaml:"id"`
+		Target string `json:"target,omitempty" yaml:"target"`
+	} `json:"mounts,omitempty" yaml:"mounts"`
+}
+
 type Build struct {
-	GPU                bool     `json:"gpu,omitempty" yaml:"gpu"`
-	PythonVersion      string   `json:"python_version,omitempty" yaml:"python_version"`
-	PythonRequirements string   `json:"python_requirements,omitempty" yaml:"python_requirements"`
-	PythonPackages     []string `json:"python_packages,omitempty" yaml:"python_packages"` // Deprecated, but included for backwards compatibility
-	Run                []string `json:"run,omitempty" yaml:"run"`
-	SystemPackages     []string `json:"system_packages,omitempty" yaml:"system_packages"`
-	PreInstall         []string `json:"pre_install,omitempty" yaml:"pre_install"` // Deprecated, but included for backwards compatibility
-	CUDA               string   `json:"cuda,omitempty" yaml:"cuda"`
-	CuDNN              string   `json:"cudnn,omitempty" yaml:"cudnn"`
+	GPU                bool      `json:"gpu,omitempty" yaml:"gpu"`
+	PythonVersion      string    `json:"python_version,omitempty" yaml:"python_version"`
+	PythonRequirements string    `json:"python_requirements,omitempty" yaml:"python_requirements"`
+	PythonPackages     []string  `json:"python_packages,omitempty" yaml:"python_packages"` // Deprecated, but included for backwards compatibility
+	Run                []RunItem `json:"run,omitempty" yaml:"run"`
+	SystemPackages     []string  `json:"system_packages,omitempty" yaml:"system_packages"`
+	PreInstall         []string  `json:"pre_install,omitempty" yaml:"pre_install"` // Deprecated, but included for backwards compatibility
+	CUDA               string    `json:"cuda,omitempty" yaml:"cuda"`
+	CuDNN              string    `json:"cudnn,omitempty" yaml:"cudnn"`
 
 	pythonRequirementsContent []string
 }
@@ -52,6 +61,44 @@ func DefaultConfig() *Config {
 			PythonVersion: "3.8",
 		},
 	}
+}
+
+func (r *RunItem) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var commandOrMap interface{}
+	if err := unmarshal(&commandOrMap); err != nil {
+		return err
+	}
+
+	switch v := commandOrMap.(type) {
+	case string:
+		r.Command = v
+	case map[interface{}]interface{}:
+		var data []byte
+		var err error
+
+		if data, err = yaml.Marshal(v); err != nil {
+			return err
+		}
+
+		aux := struct {
+			Command string `yaml:"command"`
+			Mounts  []struct {
+				Type   string `yaml:"type"`
+				ID     string `yaml:"id"`
+				Target string `yaml:"target"`
+			} `yaml:"mounts,omitempty"`
+		}{}
+
+		if err := yaml.Unmarshal(data, &aux); err != nil {
+			return err
+		}
+
+		*r = RunItem(aux)
+	default:
+		return fmt.Errorf("unexpected type %T for RunItem", v)
+	}
+
+	return nil
 }
 
 func FromYAML(contents []byte) (*Config, error) {
