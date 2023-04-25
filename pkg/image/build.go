@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
+	"path"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
@@ -71,6 +74,22 @@ func Build(cfg *config.Config, dir, imageName string, progressOutput string) err
 		labels["org.cogmodel.openapi_schema"] = string(schemaJSON)
 	}
 
+	commit, err := gitHead(dir)
+	if err != nil {
+		console.Warnf("Failed to determine Git commit: %s", err)
+	}
+	if commit != "" {
+		labels["org.opencontainers.image.revision"] = commit
+	}
+
+	tag, err := gitTag(dir)
+	if err != nil {
+		console.Warnf("Failed to determine Git tag: %s", err)
+	}
+	if tag != "" {
+		labels["org.opencontainers.image.version"] = tag
+	}
+
 	if err := docker.BuildAddLabelsToImage(imageName, labels); err != nil {
 		return fmt.Errorf("Failed to add labels to image: %w", err)
 	}
@@ -100,4 +119,32 @@ func BuildBase(cfg *config.Config, dir string, progressOutput string) (string, e
 		return "", fmt.Errorf("Failed to build Docker image: %w", err)
 	}
 	return imageName, nil
+}
+
+func gitHead(dir string) (string, error) {
+	if _, err := os.Stat(path.Join(dir, ".git")); os.IsNotExist(err) {
+		return "", nil
+	}
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	commit := string(bytes.TrimSpace(out))
+	return commit, nil
+}
+
+func gitTag(dir string) (string, error) {
+	if _, err := os.Stat(path.Join(dir, ".git")); os.IsNotExist(err) {
+		return "", nil
+	}
+	cmd := exec.Command("git", "describe", "--tags", "--dirty")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	tag := string(bytes.TrimSpace(out))
+	return tag, nil
 }

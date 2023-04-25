@@ -100,6 +100,22 @@ build:
         f.write(cog_yaml)
 
     subprocess.run(
+        ["git", "init"],
+        cwd=tmpdir,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "initial"],
+        cwd=tmpdir,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "tag", "0.0.1"],
+        cwd=tmpdir,
+        check=True,
+    )
+
+    subprocess.run(
         ["cog", "build", "-t", docker_image],
         cwd=tmpdir,
         check=True,
@@ -138,6 +154,9 @@ build:
         }
     }
     assert "org.cogmodel.openapi_schema" not in labels
+
+    assert len(labels["org.opencontainers.image.version"]) > 0
+    assert len(labels["org.opencontainers.image.revision"]) > 0
 
 
 def test_build_with_cog_init_templates(tmpdir, docker_image):
