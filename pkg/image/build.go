@@ -82,6 +82,14 @@ func Build(cfg *config.Config, dir, imageName string, progressOutput string) err
 		labels["org.opencontainers.image.revision"] = commit
 	}
 
+	tag, err := gitTag(dir)
+	if err != nil {
+		console.Warnf("Failed to determine Git tag: %s", err)
+	}
+	if tag != "" {
+		labels["org.opencontainers.image.version"] = tag
+	}
+
 	if err := docker.BuildAddLabelsToImage(imageName, labels); err != nil {
 		return fmt.Errorf("Failed to add labels to image: %w", err)
 	}
@@ -125,4 +133,18 @@ func gitHead(dir string) (string, error) {
 	}
 	commit := string(bytes.TrimSpace(out))
 	return commit, nil
+}
+
+func gitTag(dir string) (string, error) {
+	if _, err := os.Stat(path.Join(dir, ".git")); os.IsNotExist(err) {
+		return "", nil
+	}
+	cmd := exec.Command("git", "describe", "--tags", "--dirty")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	tag := string(bytes.TrimSpace(out))
+	return tag, nil
 }
