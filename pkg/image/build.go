@@ -74,12 +74,12 @@ func Build(cfg *config.Config, dir, imageName string, progressOutput string) err
 		labels["org.cogmodel.openapi_schema"] = string(schemaJSON)
 	}
 
-	commit, err := GitHead(dir)
+	commit, err := gitHead(dir)
 	if err != nil {
-		console.Warnf("Failed to get Git commit hash: %s", err)
+		console.Warnf("Failed to determine Git commit: %s", err)
 	}
-	if commit != nil {
-		labels[global.LabelNamespace+"git_commit"] = *commit
+	if commit != "" {
+		labels["org.opencontainers.image.revision"] = commit
 	}
 
 	if err := docker.BuildAddLabelsToImage(imageName, labels); err != nil {
@@ -113,16 +113,16 @@ func BuildBase(cfg *config.Config, dir string, progressOutput string) (string, e
 	return imageName, nil
 }
 
-func GitHead(dir string) (*string, error) {
+func gitHead(dir string) (string, error) {
 	if _, err := os.Stat(path.Join(dir, ".git")); os.IsNotExist(err) {
-		return nil, nil
+		return "", nil
 	}
 	cmd := exec.Command("git", "rev-parse", "HEAD")
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	commit := string(bytes.TrimSpace(out))
-	return &commit, nil
+	return commit, nil
 }

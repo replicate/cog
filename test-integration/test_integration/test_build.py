@@ -150,7 +150,7 @@ build:
     }
     assert "org.cogmodel.openapi_schema" not in labels
 
-    assert len(labels["run.cog.git_commit"]) > 0
+    assert len(labels["org.opencontainers.image.revision"]) > 0
 
 
 def test_build_with_cog_init_templates(tmpdir, docker_image):
