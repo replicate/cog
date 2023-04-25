@@ -108,42 +108,6 @@ func (r *RunItem) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-func (r *RunItem) UnmarshalJSON(data []byte) error {
-	var commandOrMap interface{}
-	if err := json.Unmarshal(data, &commandOrMap); err != nil {
-		return err
-	}
-
-	switch v := commandOrMap.(type) {
-	case string:
-		r.Command = v
-	case map[string]interface{}:
-		aux := struct {
-			Command string `json:"command"`
-			Mounts  []struct {
-				Type   string `json:"type"`
-				ID     string `json:"id"`
-				Target string `json:"target"`
-			} `json:"mounts,omitempty"`
-		}{}
-
-		jsonData, err := json.Marshal(v)
-		if err != nil {
-			return err
-		}
-
-		if err := json.Unmarshal(jsonData, &aux); err != nil {
-			return err
-		}
-
-		*r = RunItem(aux)
-	default:
-		return fmt.Errorf("unexpected type %T for RunItem", v)
-	}
-
-	return nil
-}
-
 func FromYAML(contents []byte) (*Config, error) {
 	config := DefaultConfig()
 	if err := yaml.Unmarshal(contents, config); err != nil {
