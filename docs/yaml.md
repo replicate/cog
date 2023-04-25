@@ -88,7 +88,7 @@ Your code is _not_ available to commands in `run`. This is so we can build your 
 
 Each command in `run` can be either a string or a dictionary in the following format:
 
-````yaml
+```yaml
 build:
   run:
     - command: pip install
