@@ -6,12 +6,14 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
 func Build(dir, dockerfile, imageName string, secrets []string, progressOutput string) error {
+	env := append(os.Environ(), "DOCKER_BUILDKIT=1")
 	var args []string
 
 	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
@@ -20,8 +22,13 @@ func Build(dir, dockerfile, imageName string, secrets []string, progressOutput s
 		args = buildKitBuildArgs()
 	}
 
-	for _, secret := range secrets {
-		args = append(args, "--secret", secret)
+	if len(secrets) > 0 {
+		timestamp := time.Now().Unix()
+		env = append(env, "COG_SECRET_VERSION="+fmt.Sprintf("%d", timestamp))
+
+		for _, secret := range secrets {
+			args = append(args, "--secret", secret)
+		}
 	}
 
 	args = append(args,
@@ -33,7 +40,7 @@ func Build(dir, dockerfile, imageName string, secrets []string, progressOutput s
 	)
 
 	cmd := exec.Command("docker", args...)
-	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
+	cmd.Env = env
 	cmd.Dir = dir
 	cmd.Stdout = os.Stderr // redirect stdout to stderr - build output is all messaging
 	cmd.Stderr = os.Stderr

@@ -233,6 +233,11 @@ func (g *Generator) run() (string, error) {
 	}
 
 	lines := []string{}
+
+	if hasSecretMount(runCommands) {
+		lines = append(lines, "ARG COG_SECRET_VERSION")
+	}
+
 	for _, run := range runCommands {
 		command := strings.TrimSpace(run.Command)
 		if strings.Contains(command, "\n") {
@@ -278,4 +283,16 @@ func filterEmpty(list []string) []string {
 		}
 	}
 	return filtered
+}
+
+func hasSecretMount(runCommands []config.RunItem) bool {
+	for _, run := range runCommands {
+		for _, mount := range run.Mounts {
+			if mount.Type == "secret" {
+				return true
+			}
+		}
+	}
+
+	return false
 }
