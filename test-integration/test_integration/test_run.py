@@ -45,4 +45,5 @@ build:
         capture_output=True,
     )
     assert b"RUN echo hello world" in result.stdout
+    assert b"ARG COG_SECRET_VERSION" in result.stdout
     assert b"RUN --mount=type=secret,id=foo,target=secret.txt echo shh" in result.stdout
