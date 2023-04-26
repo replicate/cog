@@ -11,7 +11,7 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-func Build(dir, dockerfile, imageName string, secrets []string, progressOutput string) error {
+func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, progressOutput string) error {
 	var args []string
 
 	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
@@ -22,6 +22,10 @@ func Build(dir, dockerfile, imageName string, secrets []string, progressOutput s
 
 	for _, secret := range secrets {
 		args = append(args, "--secret", secret)
+	}
+
+	if noCache {
+		args = append(args, "--no-cache")
 	}
 
 	args = append(args,
