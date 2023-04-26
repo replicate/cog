@@ -5,7 +5,7 @@ on:
     branches:
       - main
     tags:
-      - '**'
+      - "**"
   pull_request:
     branches:
       - main
@@ -149,7 +149,7 @@ jobs:
           # set output
           echo "version=$(ls python/dist/ | cut -d- -f2)" >> $GITHUB_OUTPUT
       - name: Push Python package
-        uses: pypa/gh-action-pypi-publish@master
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
           user: __token__
           password: ${{ secrets.PYPI_TOKEN }}
