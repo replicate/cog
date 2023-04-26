@@ -11,13 +11,19 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-func Build(dir, dockerfile, imageName string, progressOutput string) error {
+func Build(dir, dockerfile, imageName string, secrets []string, progressOutput string) error {
 	var args []string
+
 	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
 		args = m1BuildxBuildArgs()
 	} else {
 		args = buildKitBuildArgs()
 	}
+
+	for _, secret := range secrets {
+		args = append(args, "--secret", secret)
+	}
+
 	args = append(args,
 		"--file", "-",
 		"--build-arg", "BUILDKIT_INLINE_CACHE=1",
@@ -25,6 +31,7 @@ func Build(dir, dockerfile, imageName string, progressOutput string) error {
 		"--progress", progressOutput,
 		".",
 	)
+
 	cmd := exec.Command("docker", args...)
 	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
 	cmd.Dir = dir
