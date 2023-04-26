@@ -11,6 +11,9 @@ In a directory outside your Cog project, create a `pip.conf` file with an `index
 index-url = https://username:password@my-private-registry.com
 ```
 
+> **Warning**
+> Be careful not to commit secrets in Git or include them in Docker images. If your Cog project contains any sensitive files, make sure they're listed in `.gitignore` and `.dockerignore`.
+
 ## `cog.yaml`
 
 In your project's [`cog.yaml`](yaml.md) file, add a setup command to run `pip install` with a secret configuration file mounted to `/etc/pip.conf`.
