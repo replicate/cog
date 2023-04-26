@@ -4,7 +4,7 @@ This guide describes how to build a Docker image with Cog that fetches Python pa
 
 ## `pip.conf`
 
-Create a `pip.conf` file with an `index-url` set to the registry's URL with embedded credentials.
+In a directory outside your Cog project, create a `pip.conf` file with an `index-url` set to the registry's URL with embedded credentials.
 
 ```conf
 [global]
