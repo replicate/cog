@@ -33,7 +33,7 @@ build:
 When building or pushing your model with Cog, pass the `--secret` option with an `id` matching the one specified in `cog.yaml`, along with a path to your local `pip.conf` file.
 
 ```console
-$ cog build cog build --secret id=pip,source=/path/to/pip.conf
+$ cog build --secret id=pip,source=/path/to/pip.conf
 ```
 
 Using a secret mount allows the private registry credentials to be securely passed to the `pip install` setup command, without baking them into the Docker image.
