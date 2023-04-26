@@ -34,3 +34,6 @@ $ cog build cog build --secret id=pip,source=/path/to/pip.conf
 ```
 
 Using a secret mount allows the private registry credentials to be securely passed to the `pip install` setup command, without baking them into the Docker image.
+
+> **Warning**
+> If you run `cog build` or `cog push` and then change the contents of a secret source file, the cached version of the file will be used on subsequent builds, ignoring any changes you made. To update the contents of the target secret file, either change the `id` value in `cog.yaml` and the `--secret` option, or pass the `--no-cache` option to bypass the cache entirely.
