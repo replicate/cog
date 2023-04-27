@@ -28,16 +28,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Setup Python
-        uses: actions/setup-python@v2
+      - uses: actions/setup-python@v3
         with:
           python-version: 3.8
-      - uses: actions/cache@v2
-        with:
-          path: ~/.cache/pip
-          key: pip-${{ hashFiles('**/requirements-dev.txt') }}
-          restore-keys: |
-            pip-${{ secrets.CACHE_VERSION }}-
+          cache: "pip"
       - name: Install Python dependencies
         run: pip install -e python -r requirements-dev.txt
       - uses: actions/cache@v2
@@ -63,16 +57,10 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v3
-      - name: Setup Python
-        uses: actions/setup-python@v2
+      - uses: actions/setup-python@v3
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: actions/cache@v2
-        with:
-          path: ~/.cache/pip
-          key: pip-${{ hashFiles('**/requirements-dev.txt') }}
-          restore-keys: |
-            pip-${{ secrets.CACHE_VERSION }}-
+          cache: "pip"
       - name: Install Python dependencies
         run: pip install -e python -r requirements-dev.txt
       - name: Test
@@ -90,22 +78,16 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Setup Python
-        uses: actions/setup-python@v2
+      - uses: actions/setup-python@v3
         with:
           python-version: 3.8
+          cache: "pip"
       - uses: actions/cache@v2
         with:
           path: ~/go/pkg/mod
           key: go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             go-${{ secrets.CACHE_VERSION }}-
-      - uses: actions/cache@v2
-        with:
-          path: ~/.cache/pip
-          key: pip-${{ hashFiles('**/requirements-dev.txt') }}
-          restore-keys: |
-            pip-${{ secrets.CACHE_VERSION }}-
       - name: Install Python dependencies
         run: |
           pip install -r requirements-dev.txt
