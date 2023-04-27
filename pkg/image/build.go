@@ -18,7 +18,7 @@ import (
 // Build a Cog model from a config
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
-func Build(cfg *config.Config, dir, imageName string, progressOutput string) error {
+func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache bool, progressOutput string) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 
 	generator, err := dockerfile.NewGenerator(cfg, dir)
@@ -36,7 +36,7 @@ func Build(cfg *config.Config, dir, imageName string, progressOutput string) err
 		return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 	}
 
-	if err := docker.Build(dir, dockerfileContents, imageName, progressOutput); err != nil {
+	if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput); err != nil {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
 	}
 
@@ -115,7 +115,7 @@ func BuildBase(cfg *config.Config, dir string, progressOutput string) (string, e
 	if err != nil {
 		return "", fmt.Errorf("Failed to generate Dockerfile: %w", err)
 	}
-	if err := docker.Build(dir, dockerfileContents, imageName, progressOutput); err != nil {
+	if err := docker.Build(dir, dockerfileContents, imageName, []string{}, false, progressOutput); err != nil {
 		return "", fmt.Errorf("Failed to build Docker image: %w", err)
 	}
 	return imageName, nil
