@@ -189,9 +189,7 @@ class BaseInput(BaseModel):
             # Note this is pathlib.Path, which cog.Path is a subclass of. A pathlib.Path object shouldn't make its way here,
             # but both have an unlink() method, so may as well be safe.
             elif isinstance(value, Path):
-                # This could be missing_ok=True when we drop support for Python 3.7
-                if value.exists():
-                    value.unlink()
+                value.unlink(missing_ok=True)
 
 
 def get_predict(predictor):
