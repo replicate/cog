@@ -70,6 +70,14 @@ jobs:
         platform: [ubuntu-latest-16-cores, macos-latest]
     runs-on: ${{ matrix.platform }}
     steps:
+      - name: Setup Docker on macOS
+        if: matrix.platform == 'macos-latest'
+        run: |
+          brew install docker docker-buildx
+          mkdir -p ~/.docker/cli-plugins
+          ln -sfn $(which docker-buildx) ~/.docker/cli-plugins/docker-buildx
+          docker buildx install
+          colima start --runtime docker
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
         with:
