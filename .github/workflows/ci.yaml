@@ -78,6 +78,7 @@ jobs:
           ln -sfn $(which docker-buildx) ~/.docker/cli-plugins/docker-buildx
           docker buildx install
           colima start --runtime docker
+          echo DOCKER_HOST="unix:///${HOME}/.colima/default/docker.sock" >> $GITHUB_ENV
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
         with:
