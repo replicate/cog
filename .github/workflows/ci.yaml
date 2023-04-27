@@ -11,7 +11,7 @@ on:
       - main
 
 jobs:
-  test:
+  test-go:
     name: "Test Go"
     strategy:
       fail-fast: false
@@ -81,7 +81,7 @@ jobs:
 
   release:
     needs:
-      - test
+      - test-go
       - test-python
       - test-integration
     if: startsWith(github.ref, 'refs/tags/v')
