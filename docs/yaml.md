@@ -58,6 +58,17 @@ build:
     - tensorflow==2.5.0
 ```
 
+### `python_requirements`
+
+A pip requirements file specifying the Python packages to install. For example:
+
+```yaml
+build:
+  python_requirements: requirements.txt
+```
+
+Your `cog.yaml` file can set either `python_packages` or `python_requirements`, but not both. Use `python_requirements` when you need to configure options like `--extra-index-url` or `--trusted-host` to fetch Python package dependencies.
+
 ### `python_version`
 
 The minor (`3.8`) or patch (`3.8.1`) version of Python to use. For example:
@@ -109,7 +120,7 @@ build:
   system_packages:
     - "ffmpeg"
     - "libavcodec-dev"
-````
+```
 
 ## `image`
 
