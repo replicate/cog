@@ -1,11 +1,13 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v2"
 )
 
 func TestPythonPackagesAndRequirementsCantBeUsedTogether(t *testing.T) {
@@ -362,11 +364,115 @@ func TestCUDABaseImageTag(t *testing.T) {
 	require.Equal(t, "nvidia/cuda:10.0-cudnn7-devel-ubuntu18.04", imageTag)
 }
 
+func TestBuildRunItemStringYAML(t *testing.T) {
+	type BuildWrapper struct {
+		Build *Build `yaml:"build"`
+	}
+
+	var buildWrapper BuildWrapper
+
+	yamlString := `
+build:
+  run:
+    - "echo 'Hello, World!'"
+`
+
+	err := yaml.Unmarshal([]byte(yamlString), &buildWrapper)
+	require.NoError(t, err)
+	require.NotNil(t, buildWrapper.Build)
+	require.Len(t, buildWrapper.Build.Run, 1)
+	require.Equal(t, "echo 'Hello, World!'", buildWrapper.Build.Run[0].Command)
+}
+
+func TestBuildRunItemStringJSON(t *testing.T) {
+	type BuildWrapper struct {
+		Build *Build `json:"build"`
+	}
+
+	var buildWrapper BuildWrapper
+
+	jsonString := `{
+	"build": {
+		"run": [
+			"echo 'Hello, World!'"
+		]
+	}
+}`
+
+	err := json.Unmarshal([]byte(jsonString), &buildWrapper)
+	require.NoError(t, err)
+	require.NotNil(t, buildWrapper.Build)
+	require.Len(t, buildWrapper.Build.Run, 1)
+	require.Equal(t, "echo 'Hello, World!'", buildWrapper.Build.Run[0].Command)
+}
+
+func TestBuildRunItemDictYAML(t *testing.T) {
+	type BuildWrapper struct {
+		Build *Build `yaml:"build"`
+	}
+
+	var buildWrapper BuildWrapper
+
+	yamlString := `
+build:
+  run:
+    - command: "echo 'Hello, World!'"
+      mounts:
+        - type: bind
+          id: my-volume
+          target: /mnt/data
+`
+
+	err := yaml.Unmarshal([]byte(yamlString), &buildWrapper)
+	require.NoError(t, err)
+	require.NotNil(t, buildWrapper.Build)
+	require.Len(t, buildWrapper.Build.Run, 1)
+	require.Equal(t, "echo 'Hello, World!'", buildWrapper.Build.Run[0].Command)
+	require.Len(t, buildWrapper.Build.Run[0].Mounts, 1)
+	require.Equal(t, "bind", buildWrapper.Build.Run[0].Mounts[0].Type)
+	require.Equal(t, "my-volume", buildWrapper.Build.Run[0].Mounts[0].ID)
+	require.Equal(t, "/mnt/data", buildWrapper.Build.Run[0].Mounts[0].Target)
+}
+
+func TestBuildRunItemDictJSON(t *testing.T) {
+	type BuildWrapper struct {
+		Build *Build `json:"build"`
+	}
+
+	var buildWrapper BuildWrapper
+
+	jsonString := `{
+	"build": {
+		"run": [
+			{
+				"command": "echo 'Hello, World!'",
+				"mounts": [
+					{
+						"type": "bind",
+						"id": "my-volume",
+						"target": "/mnt/data"
+					}
+				]
+			}
+		]
+	}
+}`
+
+	err := json.Unmarshal([]byte(jsonString), &buildWrapper)
+	require.NoError(t, err)
+	require.NotNil(t, buildWrapper.Build)
+	require.Len(t, buildWrapper.Build.Run, 1)
+	require.Equal(t, "echo 'Hello, World!'", buildWrapper.Build.Run[0].Command)
+	require.Len(t, buildWrapper.Build.Run[0].Mounts, 1)
+	require.Equal(t, "bind", buildWrapper.Build.Run[0].Mounts[0].Type)
+	require.Equal(t, "my-volume", buildWrapper.Build.Run[0].Mounts[0].ID)
+	require.Equal(t, "/mnt/data", buildWrapper.Build.Run[0].Mounts[0].Target)
+}
+
 func TestBlankBuild(t *testing.T) {
 	// Naively, this turns into nil, so make sure it's a real build object
 	config, err := FromYAML([]byte(`build:`))
 	require.NoError(t, err)
 	require.NotNil(t, config.Build)
 	require.Equal(t, false, config.Build.GPU)
-
 }
