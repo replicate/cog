@@ -108,6 +108,7 @@ build:
   python_packages:
     - pillow==9.1.0
     - tensorflow==2.8.0
+    - protobuf==3.20.0
 predict: "predict.py:Predictor"
 ```
 
