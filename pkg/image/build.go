@@ -31,12 +31,22 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache 
 		}
 	}()
 
-	dockerfileContents, err := generator.Generate()
+	modelweightsDockerfile, runnerDockerfile, dockerignore, err := generator.Generate()
 	if err != nil {
 		return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 	}
 
-	if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput); err != nil {
+	if err := os.WriteFile(".dockerignore", []byte(dockerfile.DockerignoreHeader), 0o644); err != nil {
+		return err
+	}
+	if err := docker.Build(dir, modelweightsDockerfile, imageName+"-modelweights", secrets, noCache, progressOutput); err != nil {
+		return fmt.Errorf("Failed to build Docker image for model weights: %w", err)
+	}
+
+	if err := os.WriteFile(".dockerignore", []byte(dockerignore), 0o644); err != nil {
+		return err
+	}
+	if err := docker.Build(dir, runnerDockerfile, imageName, secrets, noCache, progressOutput); err != nil {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
 	}
 
