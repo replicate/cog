@@ -72,10 +72,11 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	actual, err := gen.Generate()
+	_, actual, _, err := gen.Generate()
 	require.NoError(t, err)
 
 	expected := `# syntax = docker/dockerfile:1.2
+FROM cog-001-modelweights AS modelweights
 FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -101,10 +102,11 @@ predict: predict.py:Predictor
 	require.NoError(t, conf.ValidateAndComplete(""))
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	actual, err := gen.Generate()
+	_, actual, _, err := gen.Generate()
 	require.NoError(t, err)
 
 	expected := `# syntax = docker/dockerfile:1.2
+FROM cog-001-modelweights AS modelweights
 FROM nvidia/cuda:11.2.0-cudnn8-devel-ubuntu20.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -139,10 +141,11 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	actual, err := gen.Generate()
+	_, actual, _, err := gen.Generate()
 	require.NoError(t, err)
 
 	expected := `# syntax = docker/dockerfile:1.2
+FROM cog-001-modelweights AS modelweights
 FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -187,10 +190,11 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	actual, err := gen.Generate()
+	_, actual, _, err := gen.Generate()
 	require.NoError(t, err)
 
 	expected := `# syntax = docker/dockerfile:1.2
+FROM cog-001-modelweights AS modelweights
 FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -231,10 +235,11 @@ build:
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	actual, err := gen.Generate()
+	_, actual, _, err := gen.Generate()
 	require.NoError(t, err)
 
 	expected := `# syntax = docker/dockerfile:1.2
+FROM cog-001-modelweights AS modelweights
 FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -263,7 +268,7 @@ build:
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	actual, err := gen.Generate()
+	_, actual, _, err := gen.Generate()
 	require.NoError(t, err)
 	fmt.Println(actual)
 	require.Contains(t, actual, `pip install -r /tmp/requirements.txt`)
