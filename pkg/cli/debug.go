@@ -50,6 +50,6 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 	}
 	console.Output(fmt.Sprintf("=== ModelWeights Dockerfile contents:\n%s\n===\n", modelweightsDockerfile))
 	console.Output(fmt.Sprintf("=== Runner Dockerfile contents:\n%s\n===\n", RunnerDockerfile))
-	console.Output(fmt.Sprintf("=== DockerIgnore contents:\n%s\n===\n", dockerignore))
+	console.Output(fmt.Sprintf("=== DockerIgnore contents:\n%s===\n", dockerignore))
 	return nil
 }
