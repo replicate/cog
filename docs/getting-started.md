@@ -162,7 +162,7 @@ cog build -t resnet
 Once you've built the image, you can optionally view the generated dockerfile to get a sense of what Cog is doing under the hood:
 
 ```bash
-cog debug dockerfile
+cog debug
 ```
 
 You can run this image with `cog predict` by passing the filename as an argument:
@@ -204,6 +204,72 @@ cog push
 ```
 
 The Docker image is now accessible to anyone or any system that has access to this Docker registry.
+
+## Best Practices for Building Images
+
+When building an image, cog will copy large model files first before copying the codebase to Docker image. This means that if you change your code, the layer containing the model files will be reused. This makes the build process much faster. See https://github.com/replicate/cog/pull/1041 for more details.
+
+To make this work better, there are best practices to follow:
+
+1. Do not put any code in the same dir or sub-dir of the directory that contains your models.
+
+    ```shell
+    # Bad
+    .
+    ├── checkpoints/
+    │   ├── model_base_caption.pth
+    │   ├── model_vqa.pth
+    │   ├── model_base_retrieval_coco.pth
+    │   └── train_caption.py <-- Code file should not exist in the same dir as model files
+    ├── predict.py
+    └── cog.yaml
+
+    # Bad
+    .
+    ├── checkpoints/
+    │   ├── model_base_caption.pth
+    │   ├── model_vqa.pth
+    │   ├── model_base_retrieval_coco.pth
+    │   └── training/
+    │       └── train_caption.py <-- Code file should not exist in the sub dir of model dir
+    ├── predict.py
+    └── cog.yaml
+
+    # Good
+    .
+    ├── checkpoints/
+    │   ├── model_base_caption.pth
+    │   ├── model_vqa.pth
+    │   └── model_base_retrieval_coco.pth
+    ├── training/
+    │   └── train_caption.py
+    ├── predict.py
+    └── cog.yaml
+    ```
+
+2. You should keep your model files in a directory, not in the root directory of the project repo.
+
+    ```shell
+    # Bad
+    .
+    ├── model_base_caption.pth
+    ├── model_vqa.pth
+    ├── model_base_retrieval_coco.pth
+    ├── predict.py
+    └── cog.yaml
+
+    # Good
+    .
+    ├── checkpoints/
+    │   ├── model_base_caption.pth
+    │   ├── model_vqa.pth
+    │   └── model_base_retrieval_coco.pth
+    ├── predict.py
+    └── cog.yaml
+    ```
+
+> Note that the root directory of the project repo is an exception. It can still contain models and code files. cog will just copy them to the Docker image one file at a time. But this will create more layers.
+> This is for some projects for fast prototyping. But it is not recommended.
 
 ## Next steps
 
