@@ -13,20 +13,45 @@ license.file = "LICENSE"
 urls."Source" = "https://github.com/replicate/cog"
 
 requires-python = ">=3.6"
-dependencies = [
-    # intentionally loose. perhaps these should be vendored to not collide with user code?
-    "attrs>=20.1,<23",
-    "fastapi>=0.75.2,<1",
-    "pydantic>=1.9,<2",
-    "PyYAML",
-    "requests>=2,<3",
-    "structlog>=20,<23",
-    "typing_extensions>=4.1.0",
-    "uvicorn[standard]>=0.12,<1",
-]
 
 dynamic = ["version"]
 
 [tool.setuptools_scm]
 root = ".."
 write_to = "python/cog/_version.py"
+
+[tool.black]
+exclude = '(\.eggs|\.git|\.hg|\.mypy|_cache|\.nox|\.tox|\.venv|\.svn|_build|buck-out|build|dist|_vendor)'
+
+[tool.vendoring]
+destination = "cog/_vendor/"
+requirements = "cog/_vendor/vendor.txt"
+namespace = "cog._vendor"
+
+protected-files = ["__init__.py", "README.rst", "vendor.txt"]
+patches-dir = "tools/vendoring/patches"
+
+[tool.vendoring.transformations]
+substitute = []
+drop = [
+  # pyyaml falls back to plain python
+  "_yaml.*.so",
+
+  # sniffio ships with tests
+  "sniffio/_tests",
+
+  # responses ships with tests
+  "responses/tests",
+
+  # h11 ships with tests
+  "h11/tests",
+
+  # pydantic hypothesis plugin, fall back to python
+  "pydantic/_hypothesis_plugin.*.so",
+]
+
+[tool.vendoring.typing-stubs]
+
+[tool.vendoring.license.directories]
+
+[tool.vendoring.license.fallback-urls]

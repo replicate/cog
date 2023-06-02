@@ -199,6 +199,16 @@ To publish a prerelease version, append a [SemVer prerelease identifer](https://
     git tag -a v0.1.0-alpha -m "Prerelease v0.1.0"
     git push --tags
 
+## Vendoring Python packages
+
+We vendor the few Python libraries we depend on to avoid dependency hell. We use [vendoring](https://pypi.org/project/vendoring/), the same tool used by pip.
+
+The vendored packages are defined in `python/cog/_vendor/vendor.txt`. If you add/change anything in there, run this to update the vendored libraries:
+
+    make vendor-python
+
+If you run into issues you may need to manually add a patch. Patches are stored in `python/tools/vendoring/patches`.
+
 ## Troubleshooting
 
 ### `cog command not found`

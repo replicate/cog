@@ -5,11 +5,11 @@ from datetime import datetime, timezone
 from multiprocessing.pool import AsyncResult, ThreadPool
 from typing import Any, Callable, Optional, Tuple
 
-import requests
-import structlog
-from fastapi.encoders import jsonable_encoder
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry  # type: ignore
+from .._vendor import requests
+from .._vendor import structlog
+from .._vendor.fastapi.encoders import jsonable_encoder
+from .._vendor.requests.adapters import HTTPAdapter
+from .._vendor.urllib3.util.retry import Retry  # type: ignore
 
 from .. import schema
 from .. import types

@@ -6,13 +6,13 @@ import inspect
 import io
 import os.path
 from pathlib import Path
-from pydantic import create_model, BaseModel, Field
-from pydantic.fields import FieldInfo
+from ._vendor.pydantic import create_model, BaseModel, Field
+from ._vendor.pydantic.fields import FieldInfo
 from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 # Added in Python 3.8. Can be from typing if we drop support for <3.8.
-from typing_extensions import get_origin, get_args, Annotated
-import yaml
+from ._vendor.typing_extensions import get_origin, get_args, Annotated
+from ._vendor import yaml
 
 from .errors import ConfigDoesNotExist, PredictorNotSet
 from .types import (

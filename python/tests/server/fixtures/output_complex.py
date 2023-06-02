@@ -1,6 +1,6 @@
 import io
 
-from pydantic import BaseModel
+from cog._vendor.pydantic import BaseModel
 
 from cog import BasePredictor, File
 

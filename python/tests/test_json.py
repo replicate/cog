@@ -6,7 +6,7 @@ import cog
 from cog.files import upload_file
 from cog.json import make_encodeable, upload_files
 import numpy as np
-from pydantic import BaseModel
+from cog._vendor.pydantic import BaseModel
 
 
 def test_make_encodeable_recursively_encodes_tuples():

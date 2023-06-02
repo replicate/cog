@@ -1,6 +1,6 @@
 from typing import Any, Dict
 
-from attrs import define, field, validators
+from .._vendor.attrs import define, field, validators
 
 
 # From worker parent process

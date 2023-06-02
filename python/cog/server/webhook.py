@@ -1,10 +1,10 @@
 import os
 from typing import Any, Callable, Set
 
-import requests
-import structlog
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry  # type: ignore
+from .._vendor import requests
+from .._vendor import structlog
+from .._vendor.requests.adapters import HTTPAdapter
+from .._vendor.urllib3.util.retry import Retry  # type: ignore
 
 from ..schema import Status, WebhookEvent
 from .response_throttler import ResponseThrottler

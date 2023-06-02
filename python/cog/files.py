@@ -4,7 +4,7 @@ import mimetypes
 import os
 from urllib.parse import urlparse
 
-import requests
+from ._vendor import requests
 
 
 def upload_file(fh: io.IOBase, output_file_prefix: str = None) -> str:

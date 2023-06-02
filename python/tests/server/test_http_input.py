@@ -3,7 +3,7 @@ import os
 import tempfile
 
 import pytest
-import responses
+from cog._vendor import responses
 
 from .conftest import make_client, uses_predictor
 

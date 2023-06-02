@@ -2,8 +2,8 @@ from datetime import datetime
 import base64
 import io
 import os
-import responses
-from responses import matchers
+from cog._vendor import responses
+from cog._vendor.responses import matchers
 import time
 
 from PIL import Image

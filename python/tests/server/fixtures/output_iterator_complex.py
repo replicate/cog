@@ -1,6 +1,6 @@
 from typing import Iterator, List
 
-from pydantic import BaseModel
+from cog._vendor.pydantic import BaseModel
 
 from cog import BasePredictor
 
