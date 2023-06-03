@@ -67,11 +67,12 @@ def create_app(
         shutdown_event=shutdown_event,
         upload_url=upload_url,
     )
-    # TODO: avoid loading predictor code in this process
     module_path, class_name = predictor_ref.split(":", 1)
+    InputType = get_input_type(module_path, class_name)
+
+    # TODO: halfway through avoiding loading predictor code in this process
     predictor = load_predictor_from_ref(predictor_ref)
 
-    InputType = get_input_type(predictor)
     OutputType = get_output_type(predictor)
 
     PredictionRequest = schema.PredictionRequest.with_types(input_type=InputType)
