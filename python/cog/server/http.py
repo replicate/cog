@@ -59,7 +59,7 @@ def create_app(
     app.state.health = Health.STARTING
     app.state.setup_result = None
     app.state.setup_result_payload = None
-
+    
     predictor_ref = get_predictor_ref(config, mode)
 
     runner = PredictionRunner(
@@ -68,6 +68,7 @@ def create_app(
         upload_url=upload_url,
     )
     # TODO: avoid loading predictor code in this process
+    module_path, class_name = predictor_ref.split(":", 1)
     predictor = load_predictor_from_ref(predictor_ref)
 
     InputType = get_input_type(predictor)

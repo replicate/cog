@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import ast
 from collections.abc import Iterator
 import enum
 import importlib.util
@@ -189,76 +190,101 @@ def get_predict(predictor):
         return predictor.predict
     return predictor
 
-
-def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
+class PredictVisitor(ast.NodeVisitor):
     """
-    Creates a Pydantic Input model from the arguments of a Predictor's predict() method.
-
-    class Predictor(BasePredictor):
-        def predict(self, text: str):
-            ...
-
-    programmatically creates a model like this:
-
-    class Input(BaseModel):
-        text: str
+    Parses a Python file to find the cog predictor class, then finds the predict() method and parses its arguments to create a Pydantic Input model.
     """
+    def __init__(self, class_name: str) -> None:
+        self.class_name = class_name
+        # I don't love this -  but it's the easiest way to map from the string representation of a type to the actual type
+        self.type_str_to_type = {'str': str, 'int': int, 'float': float, 'bool': bool, 'File': CogFile, 'Path': CogPath}
 
-    predict = get_predict(predictor)
-    signature = inspect.signature(predict)
-    create_model_kwargs = {}
 
-    order = 0
+    def visit_ClassDef(self, node) -> Type[BaseInput]:
+        """
+        overwrites a "visit_ClassDef" method from the ast.NodeVisitor class - visits all class definitions, and if the class name matches the one we're looking for, calls the parse_predict method
+        """
+        print('Class:', node.name)
+        if node.name == self.class_name:
+            print("Found predictor class")
+        for body_node in node.body:
+            if isinstance(body_node, ast.FunctionDef) and body_node.name == "predict":
+                self.parse_predict(body_node)
 
-    for name, parameter in signature.parameters.items():
-        InputType = parameter.annotation
 
-        if InputType is inspect.Signature.empty:
-            raise TypeError(
-                f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
-            )
-        elif InputType not in ALLOWED_INPUT_TYPES:
-            raise TypeError(
-                f"Unsupported input type {human_readable_type_name(InputType)} for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
-            )
+    def parse_predict(self, node) -> Type[BaseInput]:
+        """
+        Parses predict method without loading any code. wild. 
+        """
+        print('Function:', node.name)
+        create_model_kwargs = {}
+        order = 0
 
-        # if no default is specified, create an empty, required input
-        if parameter.default is inspect.Signature.empty:
-            default = Input()
-        else:
-            default = parameter.default
-            # If user hasn't used `Input`, then wrap it in that
-            if not isinstance(default, FieldInfo):
-                default = Input(default=default)
+        # The defaults list is aligned from the end, so reverse both lists for easy alignment
+        reversed_args = list(reversed(node.args.args))
+        reversed_defaults = list(reversed(node.args.defaults))
 
-        # Fields aren't ordered, so use this pattern to ensure defined order
-        # https://github.com/go-openapi/spec/pull/116
-        default.extra["x-order"] = order
-        order += 1
-
-        # Choices!
-        if default.extra.get("choices"):
-            choices = default.extra["choices"]
-            # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
-            del default.extra["choices"]
-            if InputType == str:
-
-                class StringEnum(str, enum.Enum):
-                    pass
-
-                InputType = StringEnum(  # type: ignore
-                    name, {value: value for value in choices}
-                )
-            elif InputType == int:
-                InputType = enum.IntEnum(name, {str(value): value for value in choices})  # type: ignore
-            else:
+        for i, arg in enumerate(reversed_args):
+            print('Argument:', arg.arg)
+            if arg.arg == 'self':
+                continue
+            if not arg.annotation:
                 raise TypeError(
-                    f"The input {name} uses the option choices. Choices can only be used with str or int types."
+                    f"No input type provided for parameter `{arg.arg}`. Supported input types are: {list(self.type_str_to_type.keys())}."
                 )
+            elif ast.unparse(arg.annotation) not in self.type_str_to_type:
+                raise TypeError(
+                    f"Unsupported input type {ast.unparse(arg.annotation)} for parameter `{arg.arg}`. Supported input types are: {list(self.type_str_to_type.keys())}."
+                )
+            InputType= self.type_str_to_type[ast.unparse(arg.annotation)]
+            
+            # Do we actually still support not having a default? 
+            if i < len(reversed_defaults):
+                default = reversed_defaults[i]
+                if isinstance(default, ast.Call) and isinstance(default.func, ast.Name) and default.func.id == 'Input':
+                    # print('        Input args:')
+                    # this is probably a task for chatgpt again. 
+                    kwargs = {}
+                    for keyword in default.keywords:
+                        kwargs[keyword.arg] = ast.literal_eval(keyword.value)
+                        #print('            ', keyword.arg, ':', ast.unparse(keyword.value))
+                        default = Input(**kwargs)
+                else:
+                    # If user hasn't used `Input`, then wrap it in that
+                    default = Input(default=ast.literal_eval(default))
+            else:
+                # if no default is specified, create an empty, required input
+                default = Input()
 
-        create_model_kwargs[name] = (InputType, default)
+            # Fields aren't ordered, so use this pattern to ensure defined order
+            # https://github.com/go-openapi/spec/pull/116
+            default.extra["x-order"] = order
+            order += 1
 
-    return create_model(
+            # Choices!
+            if default.extra.get("choices"):
+                choices = default.extra["choices"]
+                # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
+                del default.extra["choices"]
+                if InputType == str:
+
+                    class StringEnum(str, enum.Enum):
+                        pass
+
+                    InputType = StringEnum(  # type: ignore
+                        arg.arg, {value: value for value in choices}
+                    )
+                elif InputType == int:
+                    InputType = enum.IntEnum(arg.arg, {str(value): value for value in choices})  # type: ignore
+                else:
+                    raise TypeError(
+                        f"The input {arg.arg} uses the option choices. Choices can only be used with str or int types."
+                    )
+
+            create_model_kwargs[arg.arg] = (InputType, default)
+
+        print(create_model_kwargs)
+        return create_model(
         "Input",
         __config__=None,
         __base__=BaseInput,
@@ -266,6 +292,14 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
         __validators__=None,
         **create_model_kwargs,
     )
+
+
+def get_input_type(predict_module: str, predict_object: str) -> Type[BaseInput]:
+    with open(predict_module, 'r') as file:
+        content = file.read()
+    module = ast.parse(content)
+    visitor = PredictVisitor(predict_object)
+    return visitor.visit(module)
 
 
 def get_output_type(predictor: BasePredictor) -> Type[BaseModel]:
