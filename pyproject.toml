@@ -28,5 +28,10 @@ dynamic = ["version"]
 [tool.setuptools_scm]
 write_to = "python/cog/_version.py"
 
+[tool.mypy]
+disallow_untyped_defs = true
+# TODO: remove this and bring the codebase inline with the current mypy default
+no_implicit_optional = false
+
 [tool.setuptools]
 package-dir = { "" = "python" }
