@@ -8,10 +8,20 @@ import os.path
 from pathlib import Path
 from pydantic import create_model, BaseModel, Field
 from pydantic.fields import FieldInfo
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Type,
+    Union,
+    get_origin,
+    get_args,
+)
 
-# Added in Python 3.8. Can be from typing if we drop support for <3.8.
-from typing_extensions import get_origin, get_args, Annotated
+# Added in Python 3.9. Can be from typing if we drop support for <3.9
+from typing_extensions import Annotated
 import yaml
 
 from .errors import ConfigDoesNotExist, PredictorNotSet
@@ -179,9 +189,7 @@ class BaseInput(BaseModel):
             # Note this is pathlib.Path, which cog.Path is a subclass of. A pathlib.Path object shouldn't make its way here,
             # but both have an unlink() method, so may as well be safe.
             elif isinstance(value, Path):
-                # This could be missing_ok=True when we drop support for Python 3.7
-                if value.exists():
-                    value.unlink()
+                value.unlink(missing_ok=True)
 
 
 def get_predict(predictor):
