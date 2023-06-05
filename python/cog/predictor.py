@@ -277,7 +277,7 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
         __module__=__name__,
         __validators__=None,
         **create_model_kwargs,
-    )
+    )  # type: ignore
 
 
 def get_output_type(predictor: BasePredictor) -> Type[BaseModel]:
