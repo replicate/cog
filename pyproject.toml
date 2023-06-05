@@ -23,6 +23,20 @@ dependencies = [
   "uvicorn[standard]>=0.12,<1",
 ]
 
+optional-dependencies = { "dev" = [
+  "black",
+  "build",
+  "httpx",
+  "hypothesis",
+  "mypy",
+  "numpy",
+  "pillow",
+  "pytest",
+  "pytest-httpserver",
+  "pytest-xdist",
+  "responses",
+] }
+
 dynamic = ["version"]
 
 [tool.setuptools_scm]
