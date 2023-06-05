@@ -1,5 +1,18 @@
 [
   {
+    "TF": "2.12.0",
+    "TFCPUPackage": "tensorflow==2.12.0",
+    "TFGPUPackage": "tensorflow==2.12.0",
+    "CUDA": "11.8",
+    "CuDNN": "8.6",
+    "Pythons": [
+      "3.8",
+      "3.9",
+      "3.10",
+      "3.11"
+    ]
+  },
+  {
     "TF": "2.11.0",
     "TFCPUPackage": "tensorflow==2.11.0",
     "TFGPUPackage": "tensorflow==2.11.0",

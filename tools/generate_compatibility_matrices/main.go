@@ -329,7 +329,7 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 			findLinks = fields[i+1]
 			skipNext = true
 			continue
-		case "--extra-index-url":
+		case "--index-url", "--extra-index-url":
 			extraIndexURL = fields[i+1]
 			skipNext = true
 			continue
