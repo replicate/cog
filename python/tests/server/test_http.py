@@ -254,7 +254,7 @@ def test_openapi_specification_with_yield(client):
 
 
 @uses_predictor("yield_concatenate_iterator")
-def test_openapi_specification_with_yield(client):
+def test_openapi_specification_with_yield_with_concatenate_iterator(client):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
