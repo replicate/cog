@@ -137,7 +137,7 @@ build:
         "build": {
             "python_version": "3.8",
             "gpu": True,
-            "cuda": "11.2",
+            "cuda": "11.8",
             "cudnn": "8",
         }
     }
@@ -149,7 +149,7 @@ build:
         "build": {
             "python_version": "3.8",
             "gpu": True,
-            "cuda": "11.2",
+            "cuda": "11.8",
             "cudnn": "8",
         }
     }
