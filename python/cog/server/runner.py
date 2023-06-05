@@ -41,7 +41,7 @@ class PredictionRunner:
         predictor_ref: str,
         shutdown_event: threading.Event,
         upload_url: Optional[str] = None,
-    ):
+    ) -> None:
         self._thread = None
         self._threadpool = ThreadPool(processes=1)
 
@@ -197,7 +197,7 @@ class PredictionEventHandler:
         p: schema.PredictionResponse,
         webhook_sender: Optional[Callable] = None,
         file_uploader: Optional[Callable] = None,
-    ):
+    ) -> None:
         log.info("starting prediction")
         self.p = p
         self.p.status = schema.Status.PROCESSING
@@ -324,7 +324,6 @@ def predict(
     event_handler: PredictionEventHandler,
     should_cancel: threading.Event,
 ) -> schema.PredictionResponse:
-
     # Set up logger context within prediction thread.
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(prediction_id=request.id)
