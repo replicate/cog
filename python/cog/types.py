@@ -117,9 +117,9 @@ class URLPath(pathlib.PosixPath):
             self._path = Path(dest.name)
         return self._path
 
-    def unlink(self) -> None:
+    def unlink(self, missing_ok: bool = False) -> None:
         if self._path and self._path.exists():
-            self._path.unlink()
+            self._path.unlink(missing_ok=missing_ok)
 
     def __str__(self) -> str:
         # FastAPI's jsonable_encoder will encode subclasses of pathlib.Path by
