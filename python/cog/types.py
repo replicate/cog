@@ -5,7 +5,7 @@ import os
 import pathlib
 import shutil
 import tempfile
-from typing import Any, Dict, Iterator, List, TypeVar, Union
+from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
 from urllib.parse import urlparse
 
 import requests
@@ -101,6 +101,8 @@ class URLPath(pathlib.PosixPath):
     pathlib.Path) checks.
     """
 
+    _path: Optional[Path]
+
     def __init__(self, *, source: str, filename: str, fileobj: io.IOBase) -> None:
         self.source = source
         self.filename = filename
@@ -108,14 +110,14 @@ class URLPath(pathlib.PosixPath):
 
         self._path = None
 
-    def convert(self):
+    def convert(self) -> Path:
         if self._path is None:
             dest = tempfile.NamedTemporaryFile(suffix=self.filename, delete=False)
             shutil.copyfileobj(self.fileobj, dest)
             self._path = Path(dest.name)
         return self._path
 
-    def unlink(self):
+    def unlink(self) -> None:
         if self._path and self._path.exists():
             self._path.unlink()
 
@@ -134,42 +136,42 @@ class URLFile(io.IOBase):
 
     __slots__ = ("__target__", "__url__")
 
-    def __init__(self, url) -> None:
+    def __init__(self, url: str) -> None:
         object.__setattr__(self, "__url__", url)
 
     # We provide __getstate__ and __setstate__ explicitly to ensure that the
     # object is always picklable.
-    def __getstate__(self):
+    def __getstate__(self) -> Dict[str, Any]:
         return {"url": object.__getattribute__(self, "__url__")}
 
-    def __setstate__(self, state):
+    def __setstate__(self, state: Dict[str, Any]) -> None:
         object.__setattr__(self, "__url__", state["url"])
 
     # Proxy getattr/setattr/delattr through to the response object.
-    def __setattr__(self, name, value) -> None:
+    def __setattr__(self, name: str, value: Any) -> None:
         if hasattr(type(self), name):
             object.__setattr__(self, name, value)
         else:
             setattr(self.__wrapped__, name, value)
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         if name in ("__target__", "__wrapped__", "__url__"):
             raise AttributeError(name)
         else:
             return getattr(self.__wrapped__, name)
 
-    def __delattr__(self, name) -> None:
+    def __delattr__(self, name: str) -> None:
         if hasattr(type(self), name):
             object.__delattr__(self, name)
         else:
             delattr(self.__wrapped__, name)
 
     # Luckily the only dunder method on HTTPResponse is __iter__
-    def __iter__(self):
+    def __iter__(self) -> Iterator[bytes]:
         return iter(self.__wrapped__)
 
     @property
-    def __wrapped__(self):
+    def __wrapped__(self) -> Any:
         try:
             return object.__getattribute__(self, "__target__")
         except AttributeError:
@@ -189,7 +191,10 @@ class URLFile(io.IOBase):
             )
         else:
             return "<{} at 0x{:x} wrapping {!r}>".format(
-                type(self).__name__, id(self), target, )
+                type(self).__name__,
+                id(self),
+                target,
+            )
 
 
 def get_filename(url: str) -> str:

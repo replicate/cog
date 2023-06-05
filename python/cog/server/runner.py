@@ -3,7 +3,7 @@ import threading
 import traceback
 from datetime import datetime, timezone
 from multiprocessing.pool import AsyncResult, ThreadPool
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import requests
 import structlog
@@ -281,7 +281,7 @@ class PredictionEventHandler:
             raise FileUploadError("Got error trying to upload output files") from error
 
 
-def setup(*, worker: Worker):
+def setup(*, worker: Worker) -> Dict[str, Any]:
     logs = []
     status = None
     started_at = datetime.now(tz=timezone.utc)

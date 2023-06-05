@@ -196,7 +196,7 @@ class BaseInput(BaseModel):
                 value.unlink(missing_ok=True)
 
 
-def get_predict(predictor):
+def get_predict(predictor: Any) -> Callable:
     if hasattr(predictor, "predict"):
         return predictor.predict
     return predictor
