@@ -95,7 +95,7 @@ def run_setup(predictor: BasePredictor) -> None:
     predictor.setup(weights=weights)
 
 
-def get_weights_type(setup_function) -> Optional[Any]:
+def get_weights_type(setup_function: Callable) -> Optional[Any]:
     signature = inspect.signature(setup_function)
     if "weights" not in signature.parameters:
         return None
