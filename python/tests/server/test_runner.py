@@ -113,7 +113,7 @@ def test_prediction_runner_cancel(runner):
     runner.cancel()
 
     response = async_result.get(timeout=1)
-    assert response.output == None
+    assert response.output is None
     assert response.status == "canceled"
     assert response.error is None
     assert response.logs == ""
@@ -128,7 +128,7 @@ def test_prediction_runner_cancel_matching_id(runner):
     runner.cancel(prediction_id="abcd1234")
 
     response = async_result.get(timeout=1)
-    assert response.output == None
+    assert response.output is None
     assert response.status == "canceled"
 
 
