@@ -60,9 +60,9 @@ def setup_logging(*, log_level: int = logging.NOTSET) -> None:
     )
 
     if development_logs:
-        log_renderer = structlog.dev.ConsoleRenderer(event_key="message")
+        log_renderer = structlog.dev.ConsoleRenderer(event_key="message")  # type: ignore
     else:
-        log_renderer = structlog.processors.JSONRenderer()
+        log_renderer = structlog.processors.JSONRenderer()  # type: ignore
 
     formatter = structlog.stdlib.ProcessorFormatter(
         foreign_pre_chain=processors,
