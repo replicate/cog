@@ -1,14 +1,14 @@
-from datetime import datetime
 import base64
 import io
 import os
-import responses
-from responses import matchers
 import time
-
-from PIL import Image
-import pytest
 import unittest.mock as mock
+from datetime import datetime
+
+import pytest
+import responses
+from PIL import Image
+from responses import matchers
 
 from .conftest import make_client, uses_predictor, uses_predictor_with_client_options
 

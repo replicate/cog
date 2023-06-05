@@ -3,7 +3,6 @@ import tempfile
 import uuid
 
 import pytest
-
 from cog.server.helpers import StreamRedirector, WrappedStream
 
 

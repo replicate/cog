@@ -1,8 +1,9 @@
-from PIL import Image
 import os
 import tempfile
 
 from cog import BasePredictor, Path
+from PIL import Image
+
 
 class Predictor(BasePredictor):
     def predict(self) -> Path:

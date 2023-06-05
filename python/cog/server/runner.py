@@ -11,8 +11,7 @@ from fastapi.encoders import jsonable_encoder
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
-from .. import schema
-from .. import types
+from .. import schema, types
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType

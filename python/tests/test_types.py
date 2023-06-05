@@ -2,7 +2,6 @@ import io
 import pickle
 
 import responses
-
 from cog.types import URLFile
 
 

@@ -1,14 +1,14 @@
+import base64
 import io
 import mimetypes
 import os
-import base64
 import pathlib
-import requests
 import shutil
 import tempfile
 from typing import Any, Callable, Dict, Iterator, List, TypeVar, Union
 from urllib.parse import urlparse
 
+import requests
 from pydantic import Field
 from pydantic.typing import NoArgAnyCallable
 

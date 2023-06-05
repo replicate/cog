@@ -1,6 +1,6 @@
+from cog import BasePredictor
 from pydantic import BaseModel
 
-from cog import BasePredictor
 
 # Calling this `MyOutput` to test if cog renames it to `Output` in the schema
 class MyOutput(BaseModel):

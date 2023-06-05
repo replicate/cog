@@ -5,13 +5,13 @@ import signal
 import textwrap
 import threading
 from datetime import datetime, timezone
+from enum import Enum, auto, unique
 from typing import Any, Callable, Dict, Optional, Union
 
 import structlog
 import uvicorn
 from anyio import CapacityLimiter
 from anyio.lowlevel import RunVar
-from enum import Enum, auto, unique
 from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError

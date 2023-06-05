@@ -1,13 +1,11 @@
-from abc import ABC, abstractmethod
-from collections.abc import Iterator
 import enum
 import importlib.util
 import inspect
 import io
 import os.path
+from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from pathlib import Path
-from pydantic import create_model, BaseModel, Field
-from pydantic.fields import FieldInfo
 from typing import (
     Any,
     Callable,
@@ -16,24 +14,30 @@ from typing import (
     Optional,
     Type,
     Union,
-    get_origin,
     get_args,
+    get_origin,
 )
+
+import yaml
+from pydantic import BaseModel, Field, create_model
+from pydantic.fields import FieldInfo
 
 # Added in Python 3.9. Can be from typing if we drop support for <3.9
 from typing_extensions import Annotated
-import yaml
 
 from .errors import ConfigDoesNotExist, PredictorNotSet
 from .types import (
-    Input,
-    Path as CogPath,
     File as CogFile,
+)
+from .types import (
+    Input,
     URLFile,
     URLPath,
     get_filename,
 )
-
+from .types import (
+    Path as CogPath,
+)
 
 ALLOWED_INPUT_TYPES = [str, int, float, bool, CogFile, CogPath]
 

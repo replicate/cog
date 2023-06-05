@@ -10,7 +10,6 @@ import responses
 from PIL import Image
 from responses.matchers import multipart_matcher
 
-
 from .conftest import uses_predictor, uses_predictor_with_client_options
 
 

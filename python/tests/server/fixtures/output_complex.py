@@ -1,8 +1,7 @@
 import io
 
-from pydantic import BaseModel
-
 from cog import BasePredictor, File
+from pydantic import BaseModel
 
 
 class Output(BaseModel):
