@@ -129,10 +129,10 @@ def load_config() -> Dict[str, Any]:
     try:
         with open(config_path) as fh:
             config = yaml.safe_load(fh)
-    except FileNotFoundError:
+    except FileNotFoundError as e:
         raise ConfigDoesNotExist(
             f"Could not find {config_path}",
-        )
+        ) from e
     return config
 
 
