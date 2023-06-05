@@ -113,7 +113,7 @@ the prediction, namely:
 
 Requests for event types `output` and `logs` will be sent at most once every
 500ms. This interval is currently not configurable. Requests for event types
-`start` and `completed` will always be sent.
+`start` and `completed` will be sent immediately.
 
 By default, Cog will send requests for all event types. Clients can change which
 events trigger webhook requests by specifying `webhook_events_filter` in the
