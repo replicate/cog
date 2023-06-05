@@ -45,12 +45,14 @@ class BasePredictor(ABC):
         """
         An optional method to prepare the model so multiple predictions run efficiently.
         """
+        return
 
     @abstractmethod
     def predict(self, **kwargs: Any) -> Any:
         """
         Run a single prediction on the model
         """
+        pass
 
 
 def run_setup(predictor: BasePredictor) -> None:
