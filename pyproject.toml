@@ -26,5 +26,7 @@ dependencies = [
 dynamic = ["version"]
 
 [tool.setuptools_scm]
-root = ".."
 write_to = "python/cog/_version.py"
+
+[tool.setuptools]
+package-dir = { "" = "python" }

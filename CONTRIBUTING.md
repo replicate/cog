@@ -97,7 +97,7 @@ You'll need to [install Go 1.19](https://golang.org/doc/install). If you're usin
 
 Install the Python dependencies:
 
-    pip install -e python -r requirements-dev.txt
+    pip install -r requirements-dev.txt
 
 Once you have Go installed, run:
 
