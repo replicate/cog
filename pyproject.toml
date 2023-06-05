@@ -44,6 +44,7 @@ dynamic = ["version"]
 write_to = "python/cog/_version.py"
 
 [tool.mypy]
+plugins = "pydantic.mypy"
 disallow_untyped_defs = true
 # TODO: remove this and bring the codebase inline with the current mypy default
 no_implicit_optional = false
