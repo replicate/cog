@@ -35,6 +35,7 @@ optional-dependencies = { "dev" = [
   "pytest-httpserver",
   "pytest-xdist",
   "responses",
+  "ruff",
 ] }
 
 dynamic = ["version"]
