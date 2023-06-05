@@ -2,8 +2,6 @@ import json
 import subprocess
 from pathlib import Path
 
-from .util import random_string
-
 
 def test_build_without_predictor(docker_image):
     project_dir = Path(__file__).parent / "fixtures/no-predictor-project"

@@ -5,12 +5,11 @@ import os
 import pathlib
 import shutil
 import tempfile
-from typing import Any, Callable, Dict, Iterator, List, TypeVar, Union
+from typing import Any, Dict, Iterator, List, TypeVar, Union
 from urllib.parse import urlparse
 
 import requests
 from pydantic import Field
-from pydantic.typing import NoArgAnyCallable
 
 
 def Input(
@@ -190,8 +189,7 @@ class URLFile(io.IOBase):
             )
         else:
             return "<{} at 0x{:x} wrapping {!r}>".format(
-                type(self).__name__, id(self), target, id(target)
-            )
+                type(self).__name__, id(self), target, )
 
 
 def get_filename(url: str) -> str:

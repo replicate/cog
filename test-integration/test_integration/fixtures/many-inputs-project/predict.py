@@ -1,6 +1,5 @@
-from typing import List
 
-from cog import BaseModel, BasePredictor, Input, Path
+from cog import BasePredictor, Input, Path
 
 
 class Predictor(BasePredictor):

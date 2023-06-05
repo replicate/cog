@@ -1,6 +1,5 @@
 import os
 import threading
-import time
 from datetime import datetime
 from unittest import mock
 
@@ -198,7 +197,7 @@ def test_predict(events, calls):
     event_handler = mock.Mock()
     should_cancel = threading.Event()
 
-    response = predict(
+    predict(
         worker=worker,
         request=request,
         event_handler=event_handler,
