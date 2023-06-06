@@ -393,11 +393,14 @@ def test_heartbeats_cancel():
         heartbeat_count = 0
         start = time.time()
 
+        canceled = False
         for event in w.predict({"sleep": 10}, poll=0.1):
             if isinstance(event, Heartbeat):
                 heartbeat_count += 1
             if time.time() - start > 0.5:
-                w.cancel()
+                if not canceled:
+                    w.cancel()
+                    canceled = True
 
         elapsed = time.time() - start
 

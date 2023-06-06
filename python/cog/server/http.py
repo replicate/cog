@@ -45,7 +45,7 @@ class Health(Enum):
 
 def create_app(
     config: Dict[str, Any],
-    shutdown_event: threading.Event,
+    shutdown_event: Optional[threading.Event],
     threads: int = 1,
     upload_url: Optional[str] = None,
     mode: str = "predict",
@@ -224,7 +224,8 @@ def create_app(
     @app.post("/shutdown")
     def start_shutdown() -> Any:
         log.info("shutdown requested via http")
-        shutdown_event.set()
+        if shutdown_event is not None:
+            shutdown_event.set()
         return JSONResponse({}, status_code=200)
 
     def _check_setup_result() -> Any:

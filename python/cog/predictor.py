@@ -95,7 +95,7 @@ def run_setup(predictor: BasePredictor) -> None:
     predictor.setup(weights=weights)
 
 
-def get_weights_type(setup_function) -> Optional[Any]:
+def get_weights_type(setup_function: Callable) -> Optional[Any]:
     signature = inspect.signature(setup_function)
     if "weights" not in signature.parameters:
         return None
@@ -277,7 +277,7 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
         __module__=__name__,
         __validators__=None,
         **create_model_kwargs,
-    )
+    )  # type: ignore
 
 
 def get_output_type(predictor: BasePredictor) -> Type[BaseModel]:

@@ -39,7 +39,7 @@ class PredictionRunner:
         self,
         *,
         predictor_ref: str,
-        shutdown_event: threading.Event,
+        shutdown_event: Optional[threading.Event],
         upload_url: Optional[str] = None,
     ) -> None:
         self._thread = None
@@ -66,7 +66,8 @@ class PredictionRunner:
                 raise error
             except Exception:
                 log.error("caught exception while running setup", exc_info=True)
-                self._shutdown_event.set()
+                if self._shutdown_event is not None:
+                    self._shutdown_event.set()
 
         self._result = self._threadpool.apply_async(
             func=setup,
@@ -112,7 +113,8 @@ class PredictionRunner:
                 raise error
             except Exception:
                 log.error("caught exception while running prediction", exc_info=True)
-                self._shutdown_event.set()
+                if self._shutdown_event is not None:
+                    self._shutdown_event.set()
 
         self._response = event_handler.response
         self._result = self._threadpool.apply_async(
