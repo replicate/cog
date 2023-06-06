@@ -112,7 +112,7 @@ sortedcontainers==2.4.0
     # via hypothesis
 starlette==0.27.0
     # via fastapi
-structlog==22.3.0
+structlog==23.1.0
     # via cog (pyproject.toml)
 toml==0.10.2
     # via responses
