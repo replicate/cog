@@ -35,6 +35,7 @@ optional-dependencies = { "dev" = [
   "pytest-httpserver",
   "pytest-xdist",
   "responses",
+  "ruff",
 ] }
 
 dynamic = ["version"]
@@ -46,6 +47,51 @@ write_to = "python/cog/_version.py"
 disallow_untyped_defs = true
 # TODO: remove this and bring the codebase inline with the current mypy default
 no_implicit_optional = false
+exclude = ["python/tests/"]
 
 [tool.setuptools]
 package-dir = { "" = "python" }
+
+[tool.ruff]
+select = [
+  "E",   # pycodestyle error
+  "F",   # Pyflakes
+  "I",   # isort
+  "W",   # pycodestyle warning
+  "UP",  # pyupgrade
+  "S",   # flake8-bandit
+  "B",   # flake8-bugbear
+  "ANN", # flake8-annotations
+]
+ignore = [
+  "E501",   # Line too long
+  "S101",   # Use of `assert` detected"
+  "S113",   # Probable use of requests call without timeout
+  "B008",   # Do not perform function call in argument defaults
+  "ANN001", # Missing type annotation for function argument
+  "ANN002", # Missing type annotation for `*args`
+  "ANN003", # Missing type annotation for `**kwargs`
+  "ANN101", # Missing type annotation for self in method
+  "ANN102", # Missing type annotation for cls in classmethod
+  "ANN401", # Dynamically typed expressions are disallowed
+]
+extend-exclude = [
+  "python/tests/server/fixtures/*",
+  "test-integration/test_integration/fixtures/*",
+]
+
+[tool.ruff.per-file-ignores]
+"python/cog/server/http.py" = [
+  "S104", # Possible binding to all interfaces
+]
+"python/tests/*" = [
+  "S101", # Use of assert
+  "S104", # Possible binding to all interfaces
+  "S301", # pickle can be unsafe when used to deserialize untrusted data
+  "ANN",
+]
+"test-integration/*" = [
+  "S101", # Use of assert
+  "S311", # Standard pseudo-random generators are not suitable for cryptographic purposes
+  "ANN",
+]

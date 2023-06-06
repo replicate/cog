@@ -7,7 +7,7 @@ from typing import Callable, Optional, Sequence, TextIO
 
 
 class WrappedStream:
-    def __init__(self, name: str, stream: TextIO):
+    def __init__(self, name: str, stream: TextIO) -> None:
         self.name = name
         self._stream = stream
         self._original_fp: Optional[TextIO] = None
@@ -68,7 +68,7 @@ class StreamRedirector(threading.Thread):
         self,
         streams: Sequence[WrappedStream],
         write_hook: Callable[[str, TextIO, str], None],
-    ):
+    ) -> None:
         self._streams = list(streams)
         self._write_hook = write_hook
         self.drain_token = uuid.uuid4().hex
@@ -119,7 +119,6 @@ class StreamRedirector(threading.Thread):
                 stream = key.data
 
                 for line in stream.wrapped:
-
                     if not line.endswith("\n"):
                         # TODO: limit how much we're prepared to buffer on a
                         # single line

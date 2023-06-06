@@ -14,6 +14,7 @@ GOARCH := $(shell $(GO) env GOARCH)
 PYTHON := python
 PYTEST := $(PYTHON) -m pytest
 MYPY := $(PYTHON) -m mypy
+RUFF := $(PYTHON) -m ruff
 
 default: all
 
@@ -92,6 +93,7 @@ lint-go:
 
 .PHONY: lint-python
 lint-python:
+	$(RUFF) python/cog
 	$(MYPY) python/cog
 
 .PHONY: lint

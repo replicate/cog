@@ -1,4 +1,5 @@
 from typing import Iterator
+
 from cog import BasePredictor, Path
 
 

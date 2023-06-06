@@ -1,13 +1,11 @@
-from abc import ABC, abstractmethod
-from collections.abc import Iterator
 import enum
 import importlib.util
 import inspect
 import io
 import os.path
+from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from pathlib import Path
-from pydantic import create_model, BaseModel, Field
-from pydantic.fields import FieldInfo
 from typing import (
     Any,
     Callable,
@@ -16,24 +14,28 @@ from typing import (
     Optional,
     Type,
     Union,
-    get_origin,
     get_args,
+    get_origin,
 )
+
+import yaml
+from pydantic import BaseModel, Field, create_model
+from pydantic.fields import FieldInfo
 
 # Added in Python 3.9. Can be from typing if we drop support for <3.9
 from typing_extensions import Annotated
-import yaml
 
 from .errors import ConfigDoesNotExist, PredictorNotSet
 from .types import (
-    Input,
-    Path as CogPath,
     File as CogFile,
-    URLFile,
-    URLPath,
-    get_filename,
 )
-
+from .types import (
+    Input,
+    URLPath,
+)
+from .types import (
+    Path as CogPath,
+)
 
 ALLOWED_INPUT_TYPES = [str, int, float, bool, CogFile, CogPath]
 
@@ -43,12 +45,14 @@ class BasePredictor(ABC):
         """
         An optional method to prepare the model so multiple predictions run efficiently.
         """
+        return
 
     @abstractmethod
     def predict(self, **kwargs: Any) -> Any:
         """
         Run a single prediction on the model
         """
+        pass
 
 
 def run_setup(predictor: BasePredictor) -> None:
@@ -127,10 +131,10 @@ def load_config() -> Dict[str, Any]:
     try:
         with open(config_path) as fh:
             config = yaml.safe_load(fh)
-    except FileNotFoundError:
+    except FileNotFoundError as e:
         raise ConfigDoesNotExist(
             f"Could not find {config_path}",
-        )
+        ) from e
     return config
 
 
@@ -192,7 +196,7 @@ class BaseInput(BaseModel):
                 value.unlink(missing_ok=True)
 
 
-def get_predict(predictor):
+def get_predict(predictor: Any) -> Callable:
     if hasattr(predictor, "predict"):
         return predictor.predict
     return predictor

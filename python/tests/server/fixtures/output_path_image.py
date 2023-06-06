@@ -1,9 +1,8 @@
 import os
 import tempfile
 
-from PIL import Image
-
 from cog import BasePredictor, Path
+from PIL import Image
 
 
 class Predictor(BasePredictor):

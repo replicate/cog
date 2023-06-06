@@ -3,7 +3,7 @@ import threading
 import traceback
 from datetime import datetime, timezone
 from multiprocessing.pool import AsyncResult, ThreadPool
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import requests
 import structlog
@@ -11,8 +11,7 @@ from fastapi.encoders import jsonable_encoder
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
-from .. import schema
-from .. import types
+from .. import schema, types
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
@@ -42,7 +41,7 @@ class PredictionRunner:
         predictor_ref: str,
         shutdown_event: threading.Event,
         upload_url: Optional[str] = None,
-    ):
+    ) -> None:
         self._thread = None
         self._threadpool = ThreadPool(processes=1)
 
@@ -198,7 +197,7 @@ class PredictionEventHandler:
         p: schema.PredictionResponse,
         webhook_sender: Optional[Callable] = None,
         file_uploader: Optional[Callable] = None,
-    ):
+    ) -> None:
         log.info("starting prediction")
         self.p = p
         self.p.status = schema.Status.PROCESSING
@@ -282,7 +281,7 @@ class PredictionEventHandler:
             raise FileUploadError("Got error trying to upload output files") from error
 
 
-def setup(*, worker: Worker):
+def setup(*, worker: Worker) -> Dict[str, Any]:
     logs = []
     status = None
     started_at = datetime.now(tz=timezone.utc)
@@ -325,7 +324,6 @@ def predict(
     event_handler: PredictionEventHandler,
     should_cancel: threading.Event,
 ) -> schema.PredictionResponse:
-
     # Set up logger context within prediction thread.
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(prediction_id=request.id)

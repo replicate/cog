@@ -1,11 +1,10 @@
-import json
 import os
 import tempfile
 
 import cog
+import numpy as np
 from cog.files import upload_file
 from cog.json import make_encodeable, upload_files
-import numpy as np
 from pydantic import BaseModel
 
 

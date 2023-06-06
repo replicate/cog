@@ -1,4 +1,5 @@
 from typing import Optional
+
 from cog import File, Path
 from cog.predictor import get_weights_type
 

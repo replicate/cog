@@ -9,7 +9,7 @@ from multiprocessing.connection import Connection
 from typing import Any, Dict, Iterable, Optional, TextIO, Union
 
 from ..json import make_encodeable
-from ..predictor import BasePredictor, load_predictor_from_ref, get_predict, run_setup
+from ..predictor import BasePredictor, get_predict, load_predictor_from_ref, run_setup
 from .eventtypes import (
     Done,
     Heartbeat,
@@ -41,7 +41,7 @@ class WorkerState(Enum):
 
 
 class Worker:
-    def __init__(self, predictor_ref: str, tee_output: bool = True):
+    def __init__(self, predictor_ref: str, tee_output: bool = True) -> None:
         self._state = WorkerState.NEW
         self._allow_cancel = False
 
@@ -143,7 +143,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         predictor_ref: str,
         events: Connection,
         tee_output: bool = True,
-    ):
+    ) -> None:
         self._predictor_ref = predictor_ref
         self._predictor: Optional[BasePredictor] = None
         self._events = events

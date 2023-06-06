@@ -3,7 +3,6 @@ import tempfile
 import uuid
 
 import pytest
-
 from cog.server.helpers import StreamRedirector, WrappedStream
 
 
@@ -66,7 +65,7 @@ def test_wrapped_stream_can_write_to_original(tmpfile):
     ws.original.flush()
     fake_stream.close()
 
-    output = open(filename, "r").read()
+    output = open(filename).read()
 
     assert output == "test data\n"
 
@@ -85,7 +84,7 @@ def test_wrapped_stream_writes_are_intercepted(tmpfile):
     fake_stream.flush()
     fake_stream.close()
 
-    output = open(filename, "r").read()
+    output = open(filename).read()
 
     assert output == ""
 
@@ -130,8 +129,8 @@ def test_stream_redirector(tmpfile):
 
     r.drain()
 
-    assert open(stdout_filename, "r").read() == ""
-    assert open(stderr_filename, "r").read() == ""
+    assert open(stdout_filename).read() == ""
+    assert open(stderr_filename).read() == ""
     assert output == [
         ("fake_stdout", "hello to stdout\n"),
         ("fake_stderr", "hello to stderr\n"),
@@ -171,7 +170,7 @@ def test_stream_redirector_line_handling(tmpfile, writes, expected_output):
 
     r.drain()
 
-    assert open(filename, "r").read() == ""
+    assert open(filename).read() == ""
     assert output == [("fake_stream", o) for o in expected_output]
 
     r.shutdown()

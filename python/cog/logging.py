@@ -1,5 +1,5 @@
-import os
 import logging
+import os
 
 import structlog
 from structlog.typing import EventDict
@@ -80,9 +80,9 @@ def setup_logging(*, log_level: int = logging.NOTSET) -> None:
     root.setLevel(log_level)
 
     # Propagate uvicorn logs instead of letting uvicorn configure the format
-    for l in ["uvicorn", "uvicorn.access", "uvicorn.error"]:
-        logging.getLogger(l).handlers.clear()
-        logging.getLogger(l).propagate = True
+    for name in ["uvicorn", "uvicorn.access", "uvicorn.error"]:
+        logging.getLogger(name).handlers.clear()
+        logging.getLogger(name).propagate = True
 
     # Reconfigure log levels for some overly chatty libraries
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)

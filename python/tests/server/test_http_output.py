@@ -1,15 +1,8 @@
 import base64
 import io
-import os
-import tempfile
-from typing import Iterator, List
 
-import numpy as np
-import pytest
 import responses
-from PIL import Image
 from responses.matchers import multipart_matcher
-
 
 from .conftest import uses_predictor, uses_predictor_with_client_options
 

@@ -1,8 +1,6 @@
 import json
-from pathlib import Path
 import subprocess
-
-from .util import random_string
+from pathlib import Path
 
 
 def test_build_without_predictor(docker_image):

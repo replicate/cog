@@ -1,16 +1,13 @@
-from datetime import datetime
 import base64
 import io
-import os
-import responses
-from responses import matchers
 import time
-
-from PIL import Image
-import pytest
 import unittest.mock as mock
 
-from .conftest import make_client, uses_predictor, uses_predictor_with_client_options
+import responses
+from PIL import Image
+from responses import matchers
+
+from .conftest import uses_predictor, uses_predictor_with_client_options
 
 
 @uses_predictor("setup")
@@ -257,7 +254,7 @@ def test_openapi_specification_with_yield(client):
 
 
 @uses_predictor("yield_concatenate_iterator")
-def test_openapi_specification_with_yield(client):
+def test_openapi_specification_with_yield_with_concatenate_iterator(client):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 

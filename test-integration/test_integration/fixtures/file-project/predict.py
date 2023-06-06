@@ -1,4 +1,5 @@
 import tempfile
+
 from cog import BasePredictor, Path
 
 

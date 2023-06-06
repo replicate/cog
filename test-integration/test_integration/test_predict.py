@@ -1,8 +1,9 @@
-from pathlib import Path
 import pathlib
 import shutil
-import pytest
 import subprocess
+from pathlib import Path
+
+import pytest
 
 from .util import random_string
 
@@ -90,11 +91,11 @@ def test_predict_writes_multiple_files_to_files(tmpdir_factory):
         capture_output=True,
     )
     assert result.stdout == b""
-    with open(out_dir / "output.0.txt", "r") as f:
+    with open(out_dir / "output.0.txt") as f:
         assert f.read() == "foo"
-    with open(out_dir / "output.1.txt", "r") as f:
+    with open(out_dir / "output.1.txt") as f:
         assert f.read() == "bar"
-    with open(out_dir / "output.2.txt", "r") as f:
+    with open(out_dir / "output.2.txt") as f:
         assert f.read() == "baz"
 
 

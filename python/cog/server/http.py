@@ -4,14 +4,13 @@ import os
 import signal
 import textwrap
 import threading
-from datetime import datetime, timezone
+from enum import Enum, auto, unique
 from typing import Any, Callable, Dict, Optional, Union
 
 import structlog
 import uvicorn
 from anyio import CapacityLimiter
 from anyio.lowlevel import RunVar
-from enum import Enum, auto, unique
 from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -196,7 +195,7 @@ def create_app(
             response = PredictionResponse(**async_result.get().dict())
         except ValidationError as e:
             _log_invalid_output(e)
-            raise HTTPException(status_code=500)
+            raise HTTPException(status_code=500) from e
 
         response_object = response.dict()
         response_object["output"] = upload_files(

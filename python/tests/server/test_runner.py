@@ -1,10 +1,9 @@
 import os
-import pytest
 import threading
-import time
 from datetime import datetime
 from unittest import mock
 
+import pytest
 from cog.schema import PredictionRequest, PredictionResponse, Status, WebhookEvent
 from cog.server.eventtypes import (
     Done,
@@ -113,7 +112,7 @@ def test_prediction_runner_cancel(runner):
     runner.cancel()
 
     response = async_result.get(timeout=1)
-    assert response.output == None
+    assert response.output is None
     assert response.status == "canceled"
     assert response.error is None
     assert response.logs == ""
@@ -128,7 +127,7 @@ def test_prediction_runner_cancel_matching_id(runner):
     runner.cancel(prediction_id="abcd1234")
 
     response = async_result.get(timeout=1)
-    assert response.output == None
+    assert response.output is None
     assert response.status == "canceled"
 
 
@@ -185,8 +184,7 @@ PREDICT_TESTS = [
 def fake_worker(events):
     class FakeWorker:
         def predict(self, input_, poll=None):
-            for e in events:
-                yield e
+            yield from events
 
     return FakeWorker()
 
@@ -198,7 +196,7 @@ def test_predict(events, calls):
     event_handler = mock.Mock()
     should_cancel = threading.Event()
 
-    response = predict(
+    predict(
         worker=worker,
         request=request,
         event_handler=event_handler,

@@ -1,5 +1,4 @@
 from cog import BasePredictor
-
 from mylib import concat
 
 

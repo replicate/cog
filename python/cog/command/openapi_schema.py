@@ -6,10 +6,9 @@ This prints a JSON object describing the inputs of the model.
 import json
 
 from ..errors import ConfigDoesNotExist, PredictorNotSet
-from ..suppress_output import suppress_output
-
-from ..predictor import get_predictor_ref, load_config
+from ..predictor import load_config
 from ..server.http import create_app
+from ..suppress_output import suppress_output
 
 if __name__ == "__main__":
     schema = {}
