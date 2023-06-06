@@ -32,7 +32,9 @@ jobs:
           python-version: 3.8
           cache: "pip"
       - name: Install Python dependencies
-        run: pip install -e . -r requirements-dev.txt
+        run: |
+          python -m pip install -r requirements.txt -r requirements-dev.txt .
+          yes | python -m mypy --install-types replicate || true
       - name: Build
         run: make cog
       - name: Test
@@ -55,7 +57,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
       - name: Install Python dependencies
-        run: pip install -e . -r requirements-dev.txt
+        run: |
+          python -m pip install -r requirements.txt -r requirements-dev.txt .
+          yes | python -m mypy --install-types replicate || true
       - name: Test
         run: make test-python
         env:
@@ -75,7 +79,9 @@ jobs:
           python-version: 3.8
           cache: "pip"
       - name: Install Python dependencies
-        run: pip install -e . -r requirements-dev.txt
+        run: |
+          python -m pip install -r requirements.txt -r requirements-dev.txt .
+          yes | python -m mypy --install-types replicate || true
       - name: Test
         run: make test-integration
 
