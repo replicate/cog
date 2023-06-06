@@ -32,7 +32,7 @@ jobs:
           python-version: 3.8
           cache: "pip"
       - name: Install Python dependencies
-        run: pip install -e python -r requirements-dev.txt
+        run: pip install -e . -r requirements-dev.txt
       - name: Build
         run: make cog
       - name: Test
@@ -55,7 +55,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
       - name: Install Python dependencies
-        run: pip install -e python -r requirements-dev.txt
+        run: pip install -e . -r requirements-dev.txt
       - name: Test
         run: make test-python
         env:
@@ -75,7 +75,7 @@ jobs:
           python-version: 3.8
           cache: "pip"
       - name: Install Python dependencies
-        run: pip install -r requirements-dev.txt
+        run: pip install -e . -r requirements-dev.txt
       - name: Test
         run: make test-integration
 
@@ -111,7 +111,7 @@ jobs:
           # install build
           pip install build
           # build package
-          python -m build python/ --wheel
+          python -m build --wheel
           # set output
           echo "version=$(ls python/dist/ | cut -d- -f2)" >> $GITHUB_OUTPUT
       - name: Push Python package
@@ -119,4 +119,4 @@ jobs:
         with:
           user: __token__
           password: ${{ secrets.PYPI_TOKEN }}
-          packages_dir: python/dist
+          packages_dir: dist

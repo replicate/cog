@@ -12,8 +12,8 @@ GOOS := $(shell $(GO) env GOOS)
 GOARCH := $(shell $(GO) env GOARCH)
 
 PYTHON := python
-PYTEST := pytest
-MYPY := mypy
+PYTEST := $(PYTHON) -m pytest
+MYPY := $(PYTHON) -m mypy
 
 default: all
 
@@ -22,10 +22,10 @@ all: cog
 
 pkg/dockerfile/embed/cog.whl: python/* python/cog/* python/cog/server/* python/cog/command/*
 	@echo "Building Python library"
-	rm -rf python/dist
-	$(PYTHON) -m pip install build && $(PYTHON) -m build python/ --wheel
+	rm -rf dist
+	$(PYTHON) -m pip install build && $(PYTHON) -m build --wheel
 	mkdir -p pkg/dockerfile/embed
-	cp python/dist/*.whl $@
+	cp dist/*.whl $@
 
 .PHONY: cog
 cog: pkg/dockerfile/embed/cog.whl
@@ -46,7 +46,7 @@ uninstall:
 .PHONY: clean
 clean:
 	$(GO) clean
-	rm -rf python/build python/dist
+	rm -rf build dist
 	rm -f cog
 	rm -f pkg/dockerfile/embed/cog.whl
 
@@ -61,7 +61,7 @@ test-integration: cog
 
 .PHONY: test-python
 test-python:
-	cd python/ && $(PYTEST) -n auto -vv
+	$(PYTEST) -n auto -vv python/tests
 
 .PHONY: test
 test: test-go test-python test-integration
