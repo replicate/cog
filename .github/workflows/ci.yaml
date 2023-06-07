@@ -113,13 +113,13 @@ jobs:
         id: build-python-package
         run: |
           # clean package built for go client
-          rm -rf python/dist
+          rm -rf dist
           # install build
           pip install build
           # build package
           python -m build --wheel
           # set output
-          echo "version=$(ls python/dist/ | cut -d- -f2)" >> $GITHUB_OUTPUT
+          echo "version=$(ls dist/ | cut -d- -f2)" >> $GITHUB_OUTPUT
       - name: Push Python package
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
