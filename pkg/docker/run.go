@@ -120,22 +120,31 @@ func RunWithIO(options RunOptions, stdin io.Reader, stdout, stderr io.Writer) er
 	return nil
 }
 
-func RunDaemon(options RunOptions) (string, error) {
+func RunDaemon(options RunOptions, stderr io.Writer) (string, error) {
 	internalOptions := internalRunOptions{RunOptions: options}
 	internalOptions.Detach = true
+
+	stderrCopy := new(bytes.Buffer)
+	stderrMultiWriter := io.MultiWriter(stderr, stderrCopy)
 
 	dockerArgs := generateDockerArgs(internalOptions)
 	cmd := exec.Command("docker", dockerArgs...)
 	cmd.Env = os.Environ()
-	// TODO: display errors more elegantly?
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = stderrMultiWriter
 
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
 
 	containerID, err := cmd.Output()
+
+	stderrString := stderrCopy.String()
+	if strings.Contains(stderrString, "could not select device driver") || strings.Contains(stderrString, "nvidia-container-cli: initialization error") {
+		return "", ErrMissingDeviceDriver
+	}
+
 	if err != nil {
 		return "", err
 	}
+
 	return strings.TrimSpace(string(containerID)), nil
 }
 
