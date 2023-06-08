@@ -18,7 +18,7 @@ dependencies = [
   "pydantic>=1.9,<2",
   "PyYAML",
   "requests>=2,<3",
-  "structlog>=20,<23",
+  "structlog>=20,<24",
   "typing_extensions>=4.1.0",
   "uvicorn[standard]>=0.12,<1",
 ]
