@@ -87,7 +87,7 @@ pytest==7.3.1
     #   pytest-xdist
 pytest-httpserver==1.0.6
     # via cog (pyproject.toml)
-pytest-xdist==3.1.0
+pytest-xdist==3.3.1
     # via cog (pyproject.toml)
 python-dotenv==1.0.0
     # via uvicorn
