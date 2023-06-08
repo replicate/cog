@@ -43,7 +43,7 @@ httptools==0.5.0
     # via uvicorn
 httpx==0.24.1
     # via cog (pyproject.toml)
-hypothesis==6.56.4
+hypothesis==6.76.0
     # via cog (pyproject.toml)
 idna==3.4
     # via
