@@ -10,7 +10,7 @@ require (
 	github.com/golangci/golangci-lint v1.50.1
 	github.com/hashicorp/go-version v1.6.0
 	github.com/logrusorgru/aurora v2.0.3+incompatible
-	github.com/mattn/go-isatty v0.0.16
+	github.com/mattn/go-isatty v0.0.19
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/moby/term v0.0.0-20201110203204-bea5bbe245bf
 	github.com/spf13/cobra v1.6.1
@@ -18,7 +18,7 @@ require (
 	github.com/vincent-petithory/dataurl v1.0.0
 	github.com/xeipuuv/gojsonschema v1.2.0
 	github.com/xeonx/timeago v1.0.0-rc5
-	golang.org/x/sys v0.3.0
+	golang.org/x/sys v0.6.0
 	golang.org/x/tools v0.4.0
 	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools/gotestsum v1.8.2
