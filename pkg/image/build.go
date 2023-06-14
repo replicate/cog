@@ -33,12 +33,12 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache 
 		}
 	}()
 
-	modelweightsDockerfile, runnerDockerfile, dockerignore, err := generator.Generate()
+	weightsDockerfile, runnerDockerfile, dockerignore, err := generator.Generate()
 	if err != nil {
 		return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 	}
 
-	if err := buildModelWeightsImage(dir, modelweightsDockerfile, imageName+"-modelweights", secrets, noCache, progressOutput); err != nil {
+	if err := buildWeightsImage(dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput); err != nil {
 		return fmt.Errorf("Failed to build model weights Docker image: %w", err)
 	}
 
@@ -154,8 +154,8 @@ func gitTag(dir string) (string, error) {
 	tag := string(bytes.TrimSpace(out))
 	return tag, nil
 }
-func buildModelWeightsImage(dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string) error {
-	if err := makeDockerignoreForModelweightsImage(); err != nil {
+func buildWeightsImage(dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string) error {
+	if err := makeDockerignoreForWeightsImage(); err != nil {
 		return fmt.Errorf("Failed to create .dockerignore file: %w", err)
 	}
 	if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput); err != nil {
@@ -177,7 +177,7 @@ func buildRunnerImage(dir, dockerfileContents, dockerignoreContents, imageName s
 	return nil
 }
 
-func makeDockerignoreForModelweightsImage() error {
+func makeDockerignoreForWeightsImage() error {
 	if err := backupDockerignore(); err != nil {
 		return fmt.Errorf("Failed to backup .dockerignore file: %w", err)
 	}

@@ -44,11 +44,11 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 			console.Warnf("Error cleaning up after build: %v", err)
 		}
 	}()
-	modelweightsDockerfile, RunnerDockerfile, dockerignore, err := generator.Generate()
+	weightsDockerfile, RunnerDockerfile, dockerignore, err := generator.Generate()
 	if err != nil {
 		return err
 	}
-	console.Output(fmt.Sprintf("=== ModelWeights Dockerfile contents:\n%s\n===\n", modelweightsDockerfile))
+	console.Output(fmt.Sprintf("=== Weights Dockerfile contents:\n%s\n===\n", weightsDockerfile))
 	console.Output(fmt.Sprintf("=== Runner Dockerfile contents:\n%s\n===\n", RunnerDockerfile))
 	console.Output(fmt.Sprintf("=== DockerIgnore contents:\n%s===\n", dockerignore))
 	return nil

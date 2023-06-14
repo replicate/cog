@@ -76,7 +76,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	expected := `# syntax = docker/dockerfile:1.2
-FROM cog-001-modelweights AS modelweights
+FROM cog-001-weights AS weights
 FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -106,7 +106,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	expected := `# syntax = docker/dockerfile:1.2
-FROM cog-001-modelweights AS modelweights
+FROM cog-001-weights AS weights
 FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -145,7 +145,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	expected := `# syntax = docker/dockerfile:1.2
-FROM cog-001-modelweights AS modelweights
+FROM cog-001-weights AS weights
 FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -194,7 +194,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	expected := `# syntax = docker/dockerfile:1.2
-FROM cog-001-modelweights AS modelweights
+FROM cog-001-weights AS weights
 FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -239,7 +239,7 @@ build:
 	require.NoError(t, err)
 
 	expected := `# syntax = docker/dockerfile:1.2
-FROM cog-001-modelweights AS modelweights
+FROM cog-001-weights AS weights
 FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -322,7 +322,7 @@ COPY root-large /src/root-large`
 
 	// model copy should be run before dependency install and code copy
 	expected = `# syntax = docker/dockerfile:1.2
-FROM cog-001-modelweights AS modelweights
+FROM cog-001-weights AS weights
 FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -331,9 +331,9 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia
 		testInstallPython("3.8") +
 		testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-COPY --from=modelweights /src/checkpoints /src/checkpoints
-COPY --from=modelweights /src/models /src/models
-COPY --from=modelweights /src/root-large /src/root-large
+COPY --from=weights /src/checkpoints /src/checkpoints
+COPY --from=weights /src/models /src/models
+COPY --from=weights /src/root-large /src/root-large
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
 RUN cowsay moo
