@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -121,7 +122,21 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	}()
 
 	if err := predictor.Start(os.Stderr); err != nil {
-		return err
+		if gpus != "" && errors.Is(err, docker.ErrMissingDeviceDriver) {
+			console.Info("Missing device driver, re-trying without GPU")
+
+			_ = predictor.Stop()
+			predictor = predict.NewPredictor(docker.RunOptions{
+				Image:   imageName,
+				Volumes: volumes,
+			})
+
+			if err := predictor.Start(os.Stderr); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
 	}
 
 	// FIXME: will not run on signal

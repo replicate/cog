@@ -63,7 +63,7 @@ func (p *Predictor) Start(logsWriter io.Writer) error {
 
 	p.runOptions.Ports = append(p.runOptions.Ports, docker.Port{HostPort: 0, ContainerPort: containerPort})
 
-	p.containerID, err = docker.RunDaemon(p.runOptions)
+	p.containerID, err = docker.RunDaemon(p.runOptions, logsWriter)
 	if err != nil {
 		return fmt.Errorf("Failed to start container: %w", err)
 	}
