@@ -15,6 +15,8 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
+const dockerignoreBackupPath = ".dockerignore.cog.bak"
+
 // Build a Cog model from a config
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
@@ -31,13 +33,17 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache 
 		}
 	}()
 
-	dockerfileContents, err := generator.Generate()
+	weightsDockerfile, runnerDockerfile, dockerignore, err := generator.Generate()
 	if err != nil {
 		return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 	}
 
-	if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput); err != nil {
-		return fmt.Errorf("Failed to build Docker image: %w", err)
+	if err := buildWeightsImage(dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput); err != nil {
+		return fmt.Errorf("Failed to build model weights Docker image: %w", err)
+	}
+
+	if err := buildRunnerImage(dir, runnerDockerfile, dockerignore, imageName, secrets, noCache, progressOutput); err != nil {
+		return fmt.Errorf("Failed to build runner Docker image: %w", err)
 	}
 
 	console.Info("Adding labels to image...")
@@ -147,4 +153,73 @@ func gitTag(dir string) (string, error) {
 	}
 	tag := string(bytes.TrimSpace(out))
 	return tag, nil
+}
+func buildWeightsImage(dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string) error {
+	if err := makeDockerignoreForWeightsImage(); err != nil {
+		return fmt.Errorf("Failed to create .dockerignore file: %w", err)
+	}
+	if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput); err != nil {
+		return fmt.Errorf("Failed to build Docker image for model weights: %w", err)
+	}
+	return nil
+}
+
+func buildRunnerImage(dir, dockerfileContents, dockerignoreContents, imageName string, secrets []string, noCache bool, progressOutput string) error {
+	if err := os.WriteFile(".dockerignore", []byte(dockerignoreContents), 0o644); err != nil {
+		return fmt.Errorf("Failed to create .dockerignore file: %w", err)
+	}
+	if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput); err != nil {
+		return fmt.Errorf("Failed to build Docker image: %w", err)
+	}
+	if err := restoreDockerignore(); err != nil {
+		return fmt.Errorf("Failed to restore backup .dockerignore file: %w", err)
+	}
+	return nil
+}
+
+func makeDockerignoreForWeightsImage() error {
+	if err := backupDockerignore(); err != nil {
+		return fmt.Errorf("Failed to backup .dockerignore file: %w", err)
+	}
+	if err := os.WriteFile(".dockerignore", []byte(dockerfile.DockerignoreHeader), 0o644); err != nil {
+		return err
+	}
+	return nil
+}
+
+func backupDockerignore() error {
+	if _, err := os.Stat(".dockerignore"); err != nil {
+		if os.IsNotExist(err) {
+			// .dockerignore file does not exist, nothing to backup
+			return nil
+		}
+		return err
+	}
+
+	// rename the .dockerignore file to a new name
+	if err := os.Rename(".dockerignore", dockerignoreBackupPath); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func restoreDockerignore() error {
+	if err := os.Remove(".dockerignore"); err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(dockerignoreBackupPath); err != nil {
+		if os.IsNotExist(err) {
+			// .dockerignore backup file does not exist, nothing to restore
+			return nil
+		}
+		return err
+	}
+
+	// rename the .dockerignore file to a new name
+	if err := os.Rename(dockerignoreBackupPath, ".dockerignore"); err != nil {
+		return err
+	}
+	return nil
 }

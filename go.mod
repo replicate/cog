@@ -21,7 +21,7 @@ require (
 	golang.org/x/sys v0.8.0
 	golang.org/x/tools v0.4.0
 	gopkg.in/yaml.v2 v2.4.0
-	gotest.tools/gotestsum v1.8.2
+	gotest.tools/gotestsum v1.10.0
 	sigs.k8s.io/yaml v1.3.0
 )
 
