@@ -121,10 +121,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	var stderr bytes.Buffer
-	if err := predictor.Start(&stderr); err != nil {
-		console.Debug(stderr.String())
-
+	if err := predictor.Start(os.Stderr); err != nil {
 		if gpus != "" && errors.Is(err, docker.ErrMissingDeviceDriver) {
 			console.Info("Missing device driver, re-trying without GPU")
 

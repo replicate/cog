@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"strconv"
 	"strings"
 
@@ -72,17 +71,12 @@ func run(cmd *cobra.Command, args []string) error {
 	console.Info("")
 	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
 
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-
-	err = docker.RunWithIO(runOptions, nil, &stdout, &stderr)
+	err = docker.Run(runOptions)
 	if runOptions.GPUs != "" && err == docker.ErrMissingDeviceDriver {
-		console.Debug(stdout.String())
-		console.Debug(stderr.String())
-		console.Debug("Missing device driver, re-trying without GPU")
+		console.Info("Missing device driver, re-trying without GPU")
 
 		runOptions.GPUs = ""
-		err = docker.RunWithIO(runOptions, nil, &stdout, &stderr)
+		err = docker.Run(runOptions)
 	}
 
 	return err
