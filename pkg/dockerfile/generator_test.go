@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -274,14 +276,31 @@ build:
 	require.Contains(t, actual, `pip install -r /tmp/requirements.txt`)
 }
 
-// mockModelFinder is a test type to mock modelfinder.ModelFinder
-type mockModelFinder struct {
-	f func() ([]string, []string, error)
+// mockFileInfo is a test type to mock os.FileInfo
+type mockFileInfo struct {
+	size int64
 }
 
-func (mf *mockModelFinder) FindModels() ([]string, []string, error) {
-	return mf.f()
+func (mfi mockFileInfo) Size() int64 {
+	return mfi.size
 }
+func (mfi mockFileInfo) Name() string {
+	return ""
+}
+func (mfi mockFileInfo) Mode() os.FileMode {
+	return 0
+}
+func (mfi mockFileInfo) ModTime() time.Time {
+	return time.Time{}
+}
+func (mfi mockFileInfo) IsDir() bool {
+	return false
+}
+func (mfi mockFileInfo) Sys() interface{} {
+	return nil
+}
+
+const sizeThreshold = 10 * 1024 * 1024
 
 func TestGenerateWithLargeModels(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -305,9 +324,13 @@ predict: predict.py:Predictor
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
 
-	gen.mf = &mockModelFinder{f: func() ([]string, []string, error) {
-		return []string{"checkpoints", "models"}, []string{"root-large"}, nil
-	}}
+	gen.fileWalker = func(root string, walkFn filepath.WalkFunc) error {
+		for _, path := range []string{"checkpoints/large-a", "models/large-b", "root-large"} {
+			walkFn(path, mockFileInfo{size: sizeThreshold}, nil)
+		}
+		return nil
+	}
+
 	modelDockerfile, runnerDockerfile, dockerignore, err := gen.Generate()
 	require.NoError(t, err)
 

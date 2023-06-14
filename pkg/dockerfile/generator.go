@@ -53,7 +53,7 @@ type Generator struct {
 	// tmpDir relative to Dir
 	relativeTmpDir string
 
-	mf modelfinder.ModelFinder
+	fileWalker modelfinder.FileWalker
 }
 
 func NewGenerator(config *config.Config, dir string) (*Generator, error) {
@@ -79,7 +79,7 @@ func NewGenerator(config *config.Config, dir string) (*Generator, error) {
 		GOARCH:         runtime.GOOS,
 		tmpDir:         tmpDir,
 		relativeTmpDir: relativeTmpDir,
-		mf:             modelfinder.New(),
+		fileWalker:     filepath.Walk,
 	}, nil
 }
 
@@ -193,12 +193,12 @@ func (g *Generator) Generate() (weightsBase string, dockerfile string, dockerign
 		`COPY . /src`,
 	)
 
-	dockerignoreContents := makeDockerignoreForWeights(modelDirs, modelFiles)
+	dockerignoreContents = makeDockerignoreForWeights(modelDirs, modelFiles)
 	return weightsBase, strings.Join(filterEmpty(base), "\n"), dockerignoreContents, nil
 }
 
 func (g *Generator) generateForWeights() (string, []string, []string, error) {
-	modelDirs, modelFiles, err := g.mf.FindModels()
+	modelDirs, modelFiles, err := modelfinder.FindModels(g.fileWalker)
 	if err != nil {
 		return "", nil, nil, err
 	}

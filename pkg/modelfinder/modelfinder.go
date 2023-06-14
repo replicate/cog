@@ -17,30 +17,13 @@ var suffixesToIgnore = []string{
 	".log", // logs
 }
 
-// ModelFinder is an interface that finds all the model files in the current directory.
-type ModelFinder interface {
-	// FindModels finds all the model files in the current directory.
-	// It returns a list of directories (except current directory) that contain model files,
-	// and a list of model files in current directory.
-	FindModels() ([]string, []string, error)
-}
-
+// FileWalker is a function type that walks the file tree rooted at root, calling walkFn for each file or directory in the tree, including root.
 type FileWalker func(root string, walkFn filepath.WalkFunc) error
 
-type modelFinder struct {
-	fw FileWalker
-}
-
-func New() ModelFinder {
-	return &modelFinder{
-		fw: filepath.Walk,
-	}
-}
-
-func (mf *modelFinder) FindModels() ([]string, []string, error) {
+func FindModels(fw FileWalker) ([]string, []string, error) {
 	var files []string
 	var codeFiles []string
-	err := mf.fw(".", func(path string, info os.FileInfo, err error) error {
+	err := fw(".", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
