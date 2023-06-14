@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -124,7 +125,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	if err := predictor.Start(&stderr); err != nil {
 		console.Debug(stderr.String())
 
-		if gpus != "" && strings.Contains(err.Error(), docker.ErrMissingDeviceDriver.Error()) {
+		if gpus != "" && errors.Is(err, docker.ErrMissingDeviceDriver) {
 			console.Debug("Missing device driver, re-trying without GPU")
 
 			_ = predictor.Stop()
