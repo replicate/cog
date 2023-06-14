@@ -7,11 +7,13 @@ import (
 	"strings"
 )
 
-var prefixListToIgnore = []string{".cog", ".git", "__pycache__"}
+var prefixesToIgnore = []string{".cog", ".git", "__pycache__"}
 
-var suffixListToIgnore = []string{
-	".py", ".ipynb", ".whl", // python projects
-	".jpg", ".jpeg", ".png", ".webp", ".svg", ".gif", ".mp4", // images and videos
+var suffixesToIgnore = []string{
+	".py", ".ipynb", ".whl", // Python projects
+	".jpg", ".jpeg", ".png", ".webp", ".svg", ".gif", ".avif", ".heic", // images
+	".mp4", ".mov", ".avi", ".wmv", ".mkv", ".webm", // videos
+	".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a", // audio files
 	".log", // logs
 }
 
@@ -75,12 +77,12 @@ func (mf *modelFinder) FindModels() ([]string, []string, error) {
 }
 
 func isNonModelFiles(path string) bool {
-	for _, prefix := range prefixListToIgnore {
+	for _, prefix := range prefixesToIgnore {
 		if strings.HasPrefix(path, prefix) {
 			return true
 		}
 	}
-	for _, suffix := range suffixListToIgnore {
+	for _, suffix := range suffixesToIgnore {
 		if strings.HasSuffix(path, suffix) {
 			return true
 		}
