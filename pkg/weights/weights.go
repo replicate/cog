@@ -1,4 +1,4 @@
-package modelfinder
+package weights
 
 import (
 	"os"
@@ -20,7 +20,7 @@ var suffixesToIgnore = []string{
 // FileWalker is a function type that walks the file tree rooted at root, calling walkFn for each file or directory in the tree, including root.
 type FileWalker func(root string, walkFn filepath.WalkFunc) error
 
-func FindModels(fw FileWalker) ([]string, []string, error) {
+func FindWeights(fw FileWalker) ([]string, []string, error) {
 	var files []string
 	var codeFiles []string
 	err := fw(".", func(path string, info os.FileInfo, err error) error {

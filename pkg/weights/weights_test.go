@@ -1,4 +1,4 @@
-package modelfinder
+package weights
 
 import (
 	"os"
@@ -43,7 +43,7 @@ func TestRootDirModelFiles(t *testing.T) {
 		return nil
 	}
 
-	dirs, rootFiles, err := FindModels(mockFileWalker)
+	dirs, rootFiles, err := FindWeights(mockFileWalker)
 	require.NoError(t, err)
 	require.Equal(t, []string{"large-a", "large-b"}, rootFiles)
 	require.Empty(t, dirs)
@@ -59,7 +59,7 @@ func TestSubDirModelFiles(t *testing.T) {
 		return nil
 	}
 
-	dirs, rootFiles, err := FindModels(mockFileWalker)
+	dirs, rootFiles, err := FindWeights(mockFileWalker)
 	require.NoError(t, err)
 	require.Empty(t, rootFiles)
 	require.Equal(t, []string{"models"}, dirs)
@@ -75,7 +75,7 @@ func TestRootAndSubDirModelFiles(t *testing.T) {
 		return nil
 	}
 
-	dirs, rootFiles, err := FindModels(mockFileWalker)
+	dirs, rootFiles, err := FindWeights(mockFileWalker)
 	require.NoError(t, err)
 	require.Equal(t, []string{"root-large"}, rootFiles)
 	require.Equal(t, []string{"models"}, dirs)
@@ -91,7 +91,7 @@ func TestRootDirLargeModelAndCodeFiles(t *testing.T) {
 		return nil
 	}
 
-	dirs, rootFiles, err := FindModels(mockFileWalker)
+	dirs, rootFiles, err := FindWeights(mockFileWalker)
 	require.NoError(t, err)
 	require.Equal(t, []string{"root-large"}, rootFiles)
 	require.Empty(t, dirs)
@@ -107,7 +107,7 @@ func TestSubDirLargeModelAndCodeFiles(t *testing.T) {
 		return nil
 	}
 
-	dirs, rootFiles, err := FindModels(mockFileWalker)
+	dirs, rootFiles, err := FindWeights(mockFileWalker)
 	require.NoError(t, err)
 	require.Empty(t, rootFiles)
 	require.Empty(t, dirs)
@@ -123,7 +123,7 @@ func TestSubDirLargeModelDirWithCodeFiles(t *testing.T) {
 		return nil
 	}
 
-	dirs, rootFiles, err := FindModels(mockFileWalker)
+	dirs, rootFiles, err := FindWeights(mockFileWalker)
 	require.NoError(t, err)
 	require.Empty(t, rootFiles)
 	require.Empty(t, dirs)
@@ -139,7 +139,7 @@ func TestDirSorting(t *testing.T) {
 		return nil
 	}
 
-	dirs, rootFiles, err := FindModels(mockFileWalker)
+	dirs, rootFiles, err := FindWeights(mockFileWalker)
 	require.NoError(t, err)
 	require.Empty(t, rootFiles)
 	require.Equal(t, []string{"models", "models2/a", "models2/b"}, dirs)
@@ -155,7 +155,7 @@ func TestSubDirMerge(t *testing.T) {
 		return nil
 	}
 
-	dirs, rootFiles, err := FindModels(mockFileWalker)
+	dirs, rootFiles, err := FindWeights(mockFileWalker)
 	require.NoError(t, err)
 	require.Empty(t, rootFiles)
 	require.Equal(t, []string{"models"}, dirs)

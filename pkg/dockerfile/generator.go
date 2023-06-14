@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/modelfinder"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 //go:embed embed/cog.whl
@@ -53,7 +53,7 @@ type Generator struct {
 	// tmpDir relative to Dir
 	relativeTmpDir string
 
-	fileWalker modelfinder.FileWalker
+	fileWalker weights.FileWalker
 }
 
 func NewGenerator(config *config.Config, dir string) (*Generator, error) {
@@ -198,7 +198,7 @@ func (g *Generator) Generate() (weightsBase string, dockerfile string, dockerign
 }
 
 func (g *Generator) generateForWeights() (string, []string, []string, error) {
-	modelDirs, modelFiles, err := modelfinder.FindModels(g.fileWalker)
+	modelDirs, modelFiles, err := weights.FindWeights(g.fileWalker)
 	if err != nil {
 		return "", nil, nil, err
 	}
