@@ -128,6 +128,18 @@ func (g *Generator) GenerateBase() (string, error) {
 	}), "\n"), nil
 }
 
+// GenerateLegacyDockerfile generates a Dockerfile that does not separate the model weights from the code.
+func (g *Generator) GenerateLegacyDockerfile() (string, error) {
+	base, err := g.GenerateBase()
+	if err != nil {
+		return "", err
+	}
+	return strings.Join(filterEmpty([]string{
+		base,
+		`COPY . /src`,
+	}), "\n"), nil
+}
+
 // Generate creates the Dockerfile and .dockerignore file contents for the model weights.
 // It returns four values:
 // - weightsBase: The base image used for Dockerfile generation for model weights.
