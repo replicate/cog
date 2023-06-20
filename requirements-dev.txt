@@ -54,7 +54,7 @@ iniconfig==2.0.0
     # via pytest
 markupsafe==2.1.3
     # via werkzeug
-mypy==0.990
+mypy==1.4.0
     # via cog (pyproject.toml)
 mypy-extensions==1.0.0
     # via
