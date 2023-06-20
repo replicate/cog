@@ -20,7 +20,7 @@ const dockerignoreBackupPath = ".dockerignore.cog.bak"
 // Build a Cog model from a config
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
-func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache bool, progressOutput string) error {
+func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, noWeightsImage bool, progressOutput string) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 
 	generator, err := dockerfile.NewGenerator(cfg, dir)
@@ -33,17 +33,28 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache 
 		}
 	}()
 
-	weightsDockerfile, runnerDockerfile, dockerignore, err := generator.Generate()
-	if err != nil {
-		return fmt.Errorf("Failed to generate Dockerfile: %w", err)
-	}
+	// By default, generate a Dockerfile that separates model weights from code.
+	if !noWeightsImage {
+		weightsDockerfile, runnerDockerfile, dockerignore, err := generator.Generate()
+		if err != nil {
+			return fmt.Errorf("Failed to generate Dockerfile: %w", err)
+		}
 
-	if err := buildWeightsImage(dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput); err != nil {
-		return fmt.Errorf("Failed to build model weights Docker image: %w", err)
-	}
+		if err := buildWeightsImage(dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput); err != nil {
+			return fmt.Errorf("Failed to build model weights Docker image: %w", err)
+		}
 
-	if err := buildRunnerImage(dir, runnerDockerfile, dockerignore, imageName, secrets, noCache, progressOutput); err != nil {
-		return fmt.Errorf("Failed to build runner Docker image: %w", err)
+		if err := buildRunnerImage(dir, runnerDockerfile, dockerignore, imageName, secrets, noCache, progressOutput); err != nil {
+			return fmt.Errorf("Failed to build runner Docker image: %w", err)
+		}
+	} else {
+		dockerfileContents, err := generator.GenerateDockerfileWithoutSeparateWeights()
+		if err != nil {
+			return fmt.Errorf("Failed to generate Dockerfile: %w", err)
+		}
+		if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput); err != nil {
+			return fmt.Errorf("Failed to build Docker image: %w", err)
+		}
 	}
 
 	console.Info("Adding labels to image...")

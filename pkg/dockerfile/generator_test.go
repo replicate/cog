@@ -401,3 +401,33 @@ root-large
 `
 	require.Equal(t, expected, dockerignore)
 }
+
+func TestGenerateDockerfileWithoutSeparateWeights(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	conf, err := config.FromYAML([]byte(`
+build:
+  gpu: false
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	gen, err := NewGenerator(conf, tmpDir)
+	require.NoError(t, err)
+	actual, err := gen.GenerateDockerfileWithoutSeparateWeights()
+	require.NoError(t, err)
+
+	expected := `# syntax = docker/dockerfile:1.2
+FROM python:3.8
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+` + testTini() + testInstallCog(gen.relativeTmpDir) + `
+WORKDIR /src
+EXPOSE 5000
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`
+
+	require.Equal(t, expected, actual)
+}

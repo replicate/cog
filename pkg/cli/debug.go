@@ -25,6 +25,7 @@ func newDebugCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(debug)
+	cmd.Flags().BoolVarP(&buildNoWeightsImage, "no-weights-image", "", false, "Disable the optimization that separates the weights from the code in image layers")
 
 	return cmd
 }
@@ -44,6 +45,16 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 			console.Warnf("Error cleaning up after build: %v", err)
 		}
 	}()
+
+	if buildNoWeightsImage {
+		dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
+		if err != nil {
+			return err
+		}
+		console.Output(dockerfile)
+		return nil
+	}
+
 	weightsDockerfile, RunnerDockerfile, dockerignore, err := generator.Generate()
 	if err != nil {
 		return err

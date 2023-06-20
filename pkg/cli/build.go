@@ -10,6 +10,7 @@ import (
 )
 
 var buildTag string
+var buildNoWeightsImage bool
 var buildSecrets []string
 var buildNoCache bool
 var buildProgressOutput string
@@ -25,6 +26,7 @@ func newBuildCommand() *cobra.Command {
 	addSecretsFlag(cmd)
 	addNoCacheFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
+	cmd.Flags().BoolVarP(&buildNoWeightsImage, "no-weights-image", "", false, "Disable the optimization that separates the weights from the code in image layers")
 	return cmd
 }
 
@@ -42,7 +44,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		imageName = config.DockerImageName(projectDir)
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildProgressOutput); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildNoWeightsImage, buildProgressOutput); err != nil {
 		return err
 	}
 
