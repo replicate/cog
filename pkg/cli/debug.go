@@ -27,7 +27,7 @@ func newDebugCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(debug)
-	cmd.Flags().BoolVarP(&buildNoWeightsImage, "no-weights-image", "", false, "Disable the optimization that separates the weights from the code in image layers")
+	addNoWeightsImageFlag(debug)
 	cmd.Flags().StringVarP(&imageName, "image-name", "", "", "The image name to use for the generated Dockerfile")
 
 	return cmd
