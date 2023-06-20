@@ -32,7 +32,7 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 
 	args = append(args,
 		"--file", "-",
-		"--build-arg", "BUILDKIT_INLINE_CACHE=1",
+		"--cache-to", "type=inline",
 		"--tag", imageName,
 		"--progress", progressOutput,
 		".",
