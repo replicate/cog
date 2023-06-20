@@ -49,7 +49,6 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 }
 
 func BuildAddLabelsToImage(image string, labels map[string]string) error {
-	dockerfile := "FROM " + image
 	var args []string
 
 	args = append(args,
@@ -72,6 +71,8 @@ func BuildAddLabelsToImage(image string, labels map[string]string) error {
 	// We're not using context, but Docker requires we pass a context
 	args = append(args, ".")
 	cmd := exec.Command("docker", args...)
+
+	dockerfile := "FROM " + image
 	cmd.Stdin = strings.NewReader(dockerfile)
 
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
