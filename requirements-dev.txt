@@ -101,7 +101,7 @@ requests==2.31.0
     #   responses
 responses==0.22.0
     # via cog (pyproject.toml)
-ruff==0.0.270
+ruff==0.0.272
     # via cog (pyproject.toml)
 sniffio==1.3.0
     # via
