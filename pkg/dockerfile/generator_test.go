@@ -402,7 +402,7 @@ root-large
 	require.Equal(t, expected, dockerignore)
 }
 
-func TestGenerateLegacyDockerfile(t *testing.T) {
+func TestGenerateDockerfileWithoutSeparateWeights(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	conf, err := config.FromYAML([]byte(`
@@ -415,7 +415,7 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	actual, err := gen.GenerateLegacyDockerfile()
+	actual, err := gen.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
 
 	expected := `# syntax = docker/dockerfile:1.2

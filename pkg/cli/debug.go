@@ -47,7 +47,7 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 	}()
 
 	if buildNoWeightsImage {
-		dockerfile, err := generator.GenerateLegacyDockerfile()
+		dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 		if err != nil {
 			return err
 		}

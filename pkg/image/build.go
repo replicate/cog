@@ -33,6 +33,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}
 	}()
 
+	// By default, generate a Dockerfile that separates model weights from code.
 	if !noWeightsImage {
 		weightsDockerfile, runnerDockerfile, dockerignore, err := generator.Generate()
 		if err != nil {
@@ -47,8 +48,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			return fmt.Errorf("Failed to build runner Docker image: %w", err)
 		}
 	} else {
-		// legacy compatibility mode
-		dockerfileContents, err := generator.GenerateLegacyDockerfile()
+		dockerfileContents, err := generator.GenerateDockerfileWithoutSeparateWeights()
 		if err != nil {
 			return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 		}
