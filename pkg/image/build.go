@@ -166,7 +166,7 @@ func buildWeightsImage(dir, dockerfileContents, imageName string, secrets []stri
 
 func buildRunnerImage(dir, dockerfileContents, dockerignoreContents, imageName string, secrets []string, noCache bool, progressOutput string) error {
 	if err := writeDockerignore(dockerignoreContents); err != nil {
-		return fmt.Errorf("Failed to write .dockerignore file with weights inclusion: %w", err)
+		return fmt.Errorf("Failed to write .dockerignore file with weights included: %w", err)
 	}
 	if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput); err != nil {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
@@ -183,7 +183,7 @@ func makeDockerignoreForWeightsImage() error {
 	}
 
 	if err := writeDockerignore(dockerfile.DockerignoreHeader); err != nil {
-		return fmt.Errorf("Failed to write .dockerignore file with standard header: %w", err)
+		return fmt.Errorf("Failed to write .dockerignore file: %w", err)
 	}
 	return nil
 }
