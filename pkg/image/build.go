@@ -176,8 +176,8 @@ func buildWeightsImage(dir, dockerfileContents, imageName string, secrets []stri
 }
 
 func buildRunnerImage(dir, dockerfileContents, dockerignoreContents, imageName string, secrets []string, noCache bool, progressOutput string) error {
-	if err := os.WriteFile(".dockerignore", []byte(dockerignoreContents), 0o644); err != nil {
-		return fmt.Errorf("Failed to create .dockerignore file: %w", err)
+	if err := writeDockerignore(dockerignoreContents); err != nil {
+		return fmt.Errorf("Failed to write .dockerignore file with weights included: %w", err)
 	}
 	if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput); err != nil {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
@@ -192,10 +192,24 @@ func makeDockerignoreForWeightsImage() error {
 	if err := backupDockerignore(); err != nil {
 		return fmt.Errorf("Failed to backup .dockerignore file: %w", err)
 	}
-	if err := os.WriteFile(".dockerignore", []byte(dockerfile.DockerignoreHeader), 0o644); err != nil {
-		return err
+
+	if err := writeDockerignore(dockerfile.DockerignoreHeader); err != nil {
+		return fmt.Errorf("Failed to write .dockerignore file: %w", err)
 	}
 	return nil
+}
+
+func writeDockerignore(contents string) error {
+	// read existing file contents from .dockerignore.cog.bak if it exists, and append to the new contents
+	if _, err := os.Stat(dockerignoreBackupPath); err == nil {
+		existingContents, err := os.ReadFile(dockerignoreBackupPath)
+		if err != nil {
+			return err
+		}
+		contents = string(existingContents) + "\n" + contents
+	}
+
+	return os.WriteFile(".dockerignore", []byte(contents), 0o644)
 }
 
 func backupDockerignore() error {
@@ -228,7 +242,6 @@ func restoreDockerignore() error {
 		return err
 	}
 
-	// rename the .dockerignore file to a new name
 	if err := os.Rename(dockerignoreBackupPath, ".dockerignore"); err != nil {
 		return err
 	}
