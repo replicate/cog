@@ -35,7 +35,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 
 	// By default, generate a Dockerfile that separates model weights from code.
 	if !noWeightsImage {
-		weightsDockerfile, runnerDockerfile, dockerignore, err := generator.Generate()
+		weightsDockerfile, runnerDockerfile, dockerignore, err := generator.Generate(imageName)
 		if err != nil {
 			return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 		}

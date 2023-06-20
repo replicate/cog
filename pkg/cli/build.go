@@ -25,8 +25,8 @@ func newBuildCommand() *cobra.Command {
 	addBuildProgressOutputFlag(cmd)
 	addSecretsFlag(cmd)
 	addNoCacheFlag(cmd)
+	addNoWeightsImageFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
-	cmd.Flags().BoolVarP(&buildNoWeightsImage, "no-weights-image", "", false, "Disable the optimization that separates the weights from the code in image layers")
 	return cmd
 }
 
@@ -67,4 +67,8 @@ func addSecretsFlag(cmd *cobra.Command) {
 
 func addNoCacheFlag(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&buildNoCache, "no-cache", false, "Do not use cache when building the image")
+}
+
+func addNoWeightsImageFlag(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&buildNoWeightsImage, "no-weights-image", false, "Do not separate weights from code in image layers")
 }

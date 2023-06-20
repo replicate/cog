@@ -25,8 +25,8 @@ func newPushCommand() *cobra.Command {
 	addBuildProgressOutputFlag(cmd)
 	addSecretsFlag(cmd)
 	addNoCacheFlag(cmd)
+	addNoWeightsImageFlag(cmd)
 
-	cmd.Flags().BoolVarP(&buildNoWeightsImage, "no-weights-image", "", false, "Disable the optimization that separates the weights from the code in image layers")
 	return cmd
 }
 
