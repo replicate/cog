@@ -14,10 +14,12 @@ import (
 func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, progressOutput string) error {
 	var args []string
 
+	args = append(args,
+		"buildx", "build",
+	)
+
 	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
-		args = m1BuildxBuildArgs()
-	} else {
-		args = buildKitBuildArgs()
+		args = append(args, "--platform", "linux/amd64", "--load")
 	}
 
 	for _, secret := range secrets {
@@ -50,10 +52,13 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 func BuildAddLabelsToImage(image string, labels map[string]string) error {
 	dockerfile := "FROM " + image
 	var args []string
+
+	args = append(args,
+		"buildx", "build",
+	)
+
 	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
-		args = m1BuildxBuildArgs()
-	} else {
-		args = buildKitBuildArgs()
+		args = append(args, "--platform", "linux/amd64", "--load")
 	}
 
 	args = append(args,
@@ -77,12 +82,4 @@ func BuildAddLabelsToImage(image string, labels map[string]string) error {
 		return err
 	}
 	return nil
-}
-
-func m1BuildxBuildArgs() []string {
-	return []string{"buildx", "build", "--platform", "linux/amd64", "--load"}
-}
-
-func buildKitBuildArgs() []string {
-	return []string{"build"}
 }
