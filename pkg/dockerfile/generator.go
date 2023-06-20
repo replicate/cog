@@ -192,7 +192,7 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 	}
 
 	for _, p := range append(modelDirs, modelFiles...) {
-		base = append(base, "", fmt.Sprintf("COPY --from=%s %[2]s %[2]s", "weights", path.Join("/src", p)))
+		base = append(base, "", fmt.Sprintf("COPY --from=%s --link %[2]s %[2]s", "weights", path.Join("/src", p)))
 	}
 
 	// the dependencies and code layers
