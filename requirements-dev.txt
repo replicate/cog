@@ -81,7 +81,7 @@ pydantic==1.10.8
     # via
     #   cog (pyproject.toml)
     #   fastapi
-pytest==7.3.1
+pytest==7.3.2
     # via
     #   cog (pyproject.toml)
     #   pytest-xdist
