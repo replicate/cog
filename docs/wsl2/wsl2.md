@@ -117,7 +117,9 @@ By default, a shimmed version of the CUDA tooling is provided by your Windows GP
 
 Important: you should _never_ use instructions for installing CUDA-toolkit in a generic linux fashion. in WSL 2, you _always_ want to use the provided `CUDA Toolkit using WSL-Ubuntu Package`.
 
-First, open a Windows Terminal and enter:
+First, open PowerShell or Windows Command Prompt in administrator mode
+by right-clicking and selecting "Run as administrator".
+Then enter the following command:
 
 ```powershell
 wsl.exe
