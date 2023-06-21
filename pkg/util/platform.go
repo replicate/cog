@@ -1,5 +1,6 @@
 package util
 
-func IsM1Mac(goos string, goarch string) bool {
+// IsAppleSiliconMac returns whether the current machine is an Apple silicon computer, such as the MacBook Air with M1.
+func IsAppleSiliconMac(goos string, goarch string) bool {
 	return goos == "darwin" && goarch == "arm64"
 }

@@ -18,7 +18,7 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 		"buildx", "build",
 	)
 
-	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
+	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
 		args = append(args, "--platform", "linux/amd64", "--load")
 	}
 
@@ -55,7 +55,7 @@ func BuildAddLabelsToImage(image string, labels map[string]string) error {
 		"buildx", "build",
 	)
 
-	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
+	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
 		args = append(args, "--platform", "linux/amd64", "--load")
 	}
 

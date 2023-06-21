@@ -90,7 +90,7 @@ func generateDockerArgs(options internalRunOptions) []string {
 
 func generateEnv(options internalRunOptions) []string {
 	env := os.Environ()
-	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
+	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
 		// Fixes "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested"
 		env = append(env, "DOCKER_DEFAULT_PLATFORM=linux/amd64")
 	}
