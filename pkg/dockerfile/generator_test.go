@@ -77,7 +77,7 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.Generate("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	expected := `# syntax = docker/dockerfile:1.2
+	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
@@ -107,7 +107,7 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.Generate("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	expected := `# syntax = docker/dockerfile:1.2
+	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
@@ -146,7 +146,7 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.Generate("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	expected := `# syntax = docker/dockerfile:1.2
+	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
@@ -195,7 +195,7 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.Generate("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	expected := `# syntax = docker/dockerfile:1.2
+	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
 ENV DEBIAN_FRONTEND=noninteractive
@@ -240,7 +240,7 @@ build:
 	_, actual, _, err := gen.Generate("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	expected := `# syntax = docker/dockerfile:1.2
+	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
@@ -334,7 +334,7 @@ predict: predict.py:Predictor
 	modelDockerfile, runnerDockerfile, dockerignore, err := gen.Generate("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	expected := `# syntax = docker/dockerfile:1.2
+	expected := `#syntax=docker/dockerfile:1.4
 FROM scratch
 
 COPY checkpoints /src/checkpoints
@@ -344,7 +344,7 @@ COPY root-large /src/root-large`
 	require.Equal(t, expected, modelDockerfile)
 
 	// model copy should be run before dependency install and code copy
-	expected = `# syntax = docker/dockerfile:1.2
+	expected = `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
 ENV DEBIAN_FRONTEND=noninteractive
@@ -354,9 +354,9 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia
 		testInstallPython("3.8") +
 		testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-COPY --from=weights /src/checkpoints /src/checkpoints
-COPY --from=weights /src/models /src/models
-COPY --from=weights /src/root-large /src/root-large
+COPY --from=weights --link /src/checkpoints /src/checkpoints
+COPY --from=weights --link /src/models /src/models
+COPY --from=weights --link /src/root-large /src/root-large
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
 RUN cowsay moo
@@ -418,7 +418,7 @@ predict: predict.py:Predictor
 	actual, err := gen.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
 
-	expected := `# syntax = docker/dockerfile:1.2
+	expected := `#syntax=docker/dockerfile:1.4
 FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1

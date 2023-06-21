@@ -113,7 +113,7 @@ func (g *Generator) GenerateBase() (string, error) {
 	}
 
 	return strings.Join(filterEmpty([]string{
-		"# syntax = docker/dockerfile:1.2",
+		"#syntax=docker/dockerfile:1.4",
 		"FROM " + baseImage,
 		g.preamble(),
 		g.installTini(),
@@ -181,7 +181,7 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 	}
 
 	base := []string{
-		"# syntax = docker/dockerfile:1.2",
+		"#syntax=docker/dockerfile:1.4",
 		fmt.Sprintf("FROM %s AS %s", imageName+"-weights", "weights"),
 		"FROM " + baseImage,
 		g.preamble(),
@@ -192,7 +192,7 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 	}
 
 	for _, p := range append(modelDirs, modelFiles...) {
-		base = append(base, "", fmt.Sprintf("COPY --from=%s %[2]s %[2]s", "weights", path.Join("/src", p)))
+		base = append(base, "", fmt.Sprintf("COPY --from=%s --link %[2]s %[2]s", "weights", path.Join("/src", p)))
 	}
 
 	// the dependencies and code layers
@@ -215,7 +215,7 @@ func (g *Generator) generateForWeights() (string, []string, []string, error) {
 		return "", nil, nil, err
 	}
 	// generate dockerfile to store these model weights files
-	dockerfileContents := `# syntax = docker/dockerfile:1.2
+	dockerfileContents := `#syntax=docker/dockerfile:1.4
 FROM scratch
 `
 	for _, p := range append(modelDirs, modelFiles...) {
