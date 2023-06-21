@@ -72,7 +72,7 @@ class PredictionTracker:
         return self._response.status
 
     def _update(self, mapping: Dict[str, Any]) -> None:
-        # we capture timestamp prior to updating response as copying response can take time
+        # capture timestamp prior to updating response, since copying response can take time
         ts = datetime.now(tz=timezone.utc)
         self._response = self._response.copy(update=mapping)
         self._adjust_cancelation_status()
