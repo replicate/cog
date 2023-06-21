@@ -10,8 +10,8 @@ build:
     # - "libgl1-mesa-glx"
     # - "libglib2.0-0"
 
-  # python version in the form '3.8' or '3.8.12'
-  python_version: "3.8"
+  # python version in the form '3.11' or '3.11.4'
+  python_version: "3.11"
 
   # a list of packages in the format <package-name>==<version>
   # python_packages:
