@@ -363,7 +363,7 @@ func torchvisionGPUPackage(ver, cuda string) (name, cpuVersion, findLinks, extra
 // TODO(andreas): clean up this hack by actually parsing the torch_stable.html list in the generator
 func torchStripCPUSuffixForM1(version string, goos string, goarch string) string {
 	// TODO(andreas): clean up this hack
-	if util.IsM1Mac(goos, goarch) {
+	if util.IsAppleSiliconMac(goos, goarch) {
 		return strings.ReplaceAll(version, "+cpu", "")
 	}
 	return version

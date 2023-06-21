@@ -9,10 +9,12 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/mattn/go-isatty"
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -86,6 +88,16 @@ func generateDockerArgs(options internalRunOptions) []string {
 	return dockerArgs
 }
 
+func generateEnv(options internalRunOptions) []string {
+	env := os.Environ()
+	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
+		// Fixes "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested"
+		env = append(env, "DOCKER_DEFAULT_PLATFORM=linux/amd64")
+	}
+
+	return env
+}
+
 func Run(options RunOptions) error {
 	return RunWithIO(options, os.Stdin, os.Stdout, os.Stderr)
 }
@@ -103,7 +115,7 @@ func RunWithIO(options RunOptions, stdin io.Reader, stdout, stderr io.Writer) er
 
 	dockerArgs := generateDockerArgs(internalOptions)
 	cmd := exec.Command("docker", dockerArgs...)
-	cmd.Env = os.Environ()
+	cmd.Env = generateEnv(internalOptions)
 	cmd.Stdout = stdout
 	cmd.Stdin = stdin
 	cmd.Stderr = stderrMultiWriter
@@ -129,7 +141,7 @@ func RunDaemon(options RunOptions, stderr io.Writer) (string, error) {
 
 	dockerArgs := generateDockerArgs(internalOptions)
 	cmd := exec.Command("docker", dockerArgs...)
-	cmd.Env = os.Environ()
+	cmd.Env = generateEnv(internalOptions)
 	cmd.Stderr = stderrMultiWriter
 
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
