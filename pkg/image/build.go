@@ -91,20 +91,18 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		labels["org.cogmodel.openapi_schema"] = string(schemaJSON)
 	}
 
-	commit, err := gitHead(dir)
-	if err != nil {
-		console.Warnf("Failed to determine Git commit: %s", err)
-	}
-	if commit != "" {
-		labels["org.opencontainers.image.revision"] = commit
-	}
+	if isGitRepo(dir) {
+		if commit, err := gitHead(dir); commit != "" && err == nil {
+			labels["org.opencontainers.image.revision"] = commit
+		} else {
+			console.Info("Unable to determine Git commit")
+		}
 
-	tag, err := gitTag(dir)
-	if err != nil {
-		console.Warnf("Failed to determine Git tag: %s", err)
-	}
-	if tag != "" {
-		labels["org.opencontainers.image.version"] = tag
+		if tag, err := gitTag(dir); tag != "" && err == nil {
+			labels["org.opencontainers.image.version"] = tag
+		} else {
+			console.Info("Unable to determine Git tag")
+		}
 	}
 
 	if err := docker.BuildAddLabelsToImage(imageName, labels); err != nil {
@@ -138,33 +136,40 @@ func BuildBase(cfg *config.Config, dir string, progressOutput string) (string, e
 	return imageName, nil
 }
 
-func gitHead(dir string) (string, error) {
+func isGitRepo(dir string) bool {
 	if _, err := os.Stat(path.Join(dir, ".git")); os.IsNotExist(err) {
-		return "", nil
+		return false
 	}
+
+	return true
+}
+
+func gitHead(dir string) (string, error) {
 	cmd := exec.Command("git", "rev-parse", "HEAD")
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}
+
 	commit := string(bytes.TrimSpace(out))
+
 	return commit, nil
 }
 
 func gitTag(dir string) (string, error) {
-	if _, err := os.Stat(path.Join(dir, ".git")); os.IsNotExist(err) {
-		return "", nil
-	}
 	cmd := exec.Command("git", "describe", "--tags", "--dirty")
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}
+
 	tag := string(bytes.TrimSpace(out))
+
 	return tag, nil
 }
+
 func buildWeightsImage(dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string) error {
 	if err := makeDockerignoreForWeightsImage(); err != nil {
 		return fmt.Errorf("Failed to create .dockerignore file: %w", err)
