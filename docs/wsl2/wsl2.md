@@ -1,7 +1,11 @@
 # Using `cog` on Windows 11 with WSL 2
 
+- [0. Prerequisites](#0-prerequisites)
 - [1. Install the GPU driver](#1-install-the-gpu-driver)
 - [2. Unlocking features](#2-unlocking-features)
+  - [2.1. Unlock WSL2](#21-unlock-wsl2)
+  - [2.2. Unlock virtualization](#22-unlock-virtualization)
+  - [2.3. Reboot](#23-reboot)
 - [3. Update MS Linux kernel](#3-update-ms-linux-kernel)
 - [4. Configure WSL 2](#4-configure-wsl-2)
 - [5. Configure CUDA WSL-Ubuntu Toolkit](#5-configure-cuda-wsl-ubuntu-toolkit)
@@ -10,7 +14,7 @@
 - [8. Run a model in WSL 2](#8-run-a-model-in-wsl-2)
 - [9. References](#9-references)
 
-Running cog on Windows is now possible thanks to WSL 2. Follow this guide to enable WSL 2 and GPU passthrough on Windows 11. 
+Running cog on Windows is now possible thanks to WSL 2. Follow this guide to enable WSL 2 and GPU passthrough on Windows 11.
 
 **Windows 10 is not officially supported, as you need to be on an insider build in order to use GPU passthrough.**
 
@@ -82,14 +86,14 @@ wsl cat /proc/version
 This will return a complicated string such as:
 
 ```sh
-Linux version 5.10.102.1-microsoft-standard-WSL2 (oe-user@oe-host) (x86_64-msft-linux-gcc (GCC) 9.3.0, GNU ld (GNU Binutils) 2.34.0.20200220) 
+Linux version 5.10.102.1-microsoft-standard-WSL2 (oe-user@oe-host) (x86_64-msft-linux-gcc (GCC) 9.3.0, GNU ld (GNU Binutils) 2.34.0.20200220)
 ```
 
 The version we are interested in is `Linux version 5.10.102.1`. At this point, you should have updated your kernel to be at least `Linux version 5.10.43.3`.
 
 If you can't get the correct kernel version to show:
 
-Open `Settings` → `Windows Update` → `Advanced options` and ensure `Receive updates for other Microsoft products` is enabled. Then go to  `Windows Update` again and click `Check for updates`.
+Open `Settings` → `Windows Update` → `Advanced options` and ensure `Receive updates for other Microsoft products` is enabled. Then go to `Windows Update` again and click `Check for updates`.
 
 ## 4. Configure WSL 2
 
@@ -170,6 +174,7 @@ Finally, make sure it works. Let's try running `afiaka87/glid-3-xl` locally:
 ```bash
 cog predict 'r8.im/afiaka87/glid-3-xl' -i prompt="a fresh avocado floating in the water" -o prediction.json
 ```
+
 ![Output from a running cog prediction in Windows Terminal](images/cog_model_output.png)
 
 While your prediction is running, you can use `Task Manager` to keep an eye on GPU memory consumption:
