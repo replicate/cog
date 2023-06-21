@@ -2,6 +2,8 @@ import argparse
 import logging
 import os
 import signal
+import socket
+import sys
 import textwrap
 import threading
 from enum import Enum, auto, unique
@@ -290,6 +292,11 @@ class Server(uvicorn.Server):
         os.kill(os.getpid(), signal.SIGKILL)
 
 
+def is_port_in_use(port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(("localhost", port)) == 0
+
+
 def signal_ignore(signum: Any, frame: Any) -> None:
     log.warn("Got a signal to exit, ignoring it...", signal=signal.Signals(signum).name)
 
@@ -360,6 +367,10 @@ if __name__ == "__main__":
     )
 
     port = int(os.getenv("PORT", 5000))
+    if is_port_in_use(port):
+        log.error(f"Port {port} is already in use")
+        sys.exit(1)
+
     server_config = uvicorn.Config(
         app,
         host="0.0.0.0",
