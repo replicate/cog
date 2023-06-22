@@ -85,7 +85,7 @@ pytest==7.3.2
     # via
     #   cog (pyproject.toml)
     #   pytest-xdist
-pytest-httpserver==1.0.6
+pytest-httpserver==1.0.8
     # via cog (pyproject.toml)
 pytest-xdist==3.3.1
     # via cog (pyproject.toml)
