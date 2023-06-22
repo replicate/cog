@@ -94,5 +94,7 @@ extend-exclude = [
 "test-integration/*" = [
   "S101", # Use of assert
   "S311", # Standard pseudo-random generators are not suitable for cryptographic purposes
+  "S603", # subprocess call - check for execution of untrusted input
+  "S607", # Starting a process with a partial executable path"
   "ANN",
 ]
