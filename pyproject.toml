@@ -26,16 +26,17 @@ dependencies = [
 optional-dependencies = { "dev" = [
   "black",
   "build",
-  "httpx",
   "hypothesis",
   "mypy",
-  "numpy",
-  "pillow",
   "pytest",
   "pytest-httpserver",
   "pytest-xdist",
   "responses",
   "ruff",
+], "test-integration" = [
+  "httpx",
+  "numpy",
+  "pillow",
 ] }
 
 dynamic = ["version"]
