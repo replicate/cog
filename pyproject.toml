@@ -26,6 +26,7 @@ dependencies = [
 optional-dependencies = { "dev" = [
   "black",
   "build",
+  "httpx",
   "hypothesis",
   "mypy",
   "pytest",
@@ -34,7 +35,6 @@ optional-dependencies = { "dev" = [
   "responses",
   "ruff",
 ], "test-integration" = [
-  "httpx",
   "numpy",
   "pillow",
 ] }

@@ -6,6 +6,7 @@
 #
 anyio==3.7.0
     # via
+    #   httpcore
     #   starlette
     #   watchfiles
 attrs==23.1.0
@@ -17,7 +18,10 @@ black==23.3.0
 build==0.10.0
     # via cog (pyproject.toml)
 certifi==2023.5.7
-    # via requests
+    # via
+    #   httpcore
+    #   httpx
+    #   requests
 charset-normalizer==3.1.0
     # via requests
 click==8.1.3
@@ -29,14 +33,21 @@ execnet==1.9.0
 fastapi==0.97.0
     # via cog (pyproject.toml)
 h11==0.14.0
-    # via uvicorn
+    # via
+    #   httpcore
+    #   uvicorn
+httpcore==0.17.2
+    # via httpx
 httptools==0.5.0
     # via uvicorn
+httpx==0.24.1
+    # via cog (pyproject.toml)
 hypothesis==6.76.0
     # via cog (pyproject.toml)
 idna==3.4
     # via
     #   anyio
+    #   httpx
     #   requests
 iniconfig==2.0.0
     # via pytest
@@ -88,7 +99,10 @@ responses==0.22.0
 ruff==0.0.272
     # via cog (pyproject.toml)
 sniffio==1.3.0
-    # via anyio
+    # via
+    #   anyio
+    #   httpcore
+    #   httpx
 sortedcontainers==2.4.0
     # via hypothesis
 starlette==0.27.0
