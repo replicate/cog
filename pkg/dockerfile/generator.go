@@ -107,7 +107,7 @@ func (g *Generator) GenerateBase() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	run, err := g.run()
+	run, err := g.runCommands()
 	if err != nil {
 		return "", err
 	}
@@ -175,7 +175,7 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 	if err != nil {
 		return "", "", "", err
 	}
-	run, err := g.run()
+	runCommands, err := g.runCommands()
 	if err != nil {
 		return "", "", "", err
 	}
@@ -189,16 +189,15 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 		installPython,
 		installCog,
 		aptInstalls,
+		pipInstalls,
+		runCommands,
 	}
 
 	for _, p := range append(modelDirs, modelFiles...) {
 		base = append(base, "", fmt.Sprintf("COPY --from=%s --link %[2]s %[2]s", "weights", path.Join("/src", p)))
 	}
 
-	// the dependencies and code layers
 	base = append(base,
-		pipInstalls,
-		run,
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
 		`CMD ["python", "-m", "cog.server.http"]`,
@@ -348,7 +347,7 @@ func (g *Generator) pipInstalls() (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-func (g *Generator) run() (string, error) {
+func (g *Generator) runCommands() (string, error) {
 	runCommands := g.Config.Build.Run
 
 	// For backwards compatibility

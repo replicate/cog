@@ -354,12 +354,12 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia
 		testInstallPython("3.8") +
 		testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-COPY --from=weights --link /src/checkpoints /src/checkpoints
-COPY --from=weights --link /src/models /src/models
-COPY --from=weights --link /src/root-large /src/root-large
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
 RUN cowsay moo
+COPY --from=weights --link /src/checkpoints /src/checkpoints
+COPY --from=weights --link /src/models /src/models
+COPY --from=weights --link /src/root-large /src/root-large
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
