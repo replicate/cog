@@ -2,17 +2,23 @@ import os
 import tempfile
 
 import cog
-import numpy as np
+import pytest
 from cog.files import upload_file
 from cog.json import make_encodeable, upload_files
 from pydantic import BaseModel
 
+try:
+    import numpy as np
+    numpy_imported = True
+except ImportError:
+    numpy_imported = False
 
+@pytest.mark.skipif(not numpy_imported, reason="numpy could not be imported")
 def test_make_encodeable_recursively_encodes_tuples():
     result = make_encodeable((np.float32(0.1), np.float32(0.2)))
     assert type(result[0]) == float
 
-
+@pytest.mark.skipif(not numpy_imported, reason="numpy could not be imported")
 def test_make_encodeable_encodes_pydantic_models():
     class Model(BaseModel):
         text: str
@@ -23,7 +29,7 @@ def test_make_encodeable_encodes_pydantic_models():
         "number": 5,
     }
 
-
+@pytest.mark.skipif(not numpy_imported, reason="numpy could not be imported")
 def test_make_encodeable_ignores_files():
     class Model(BaseModel):
         path: cog.Path
@@ -36,7 +42,7 @@ def test_make_encodeable_ignores_files():
     model = Model(path=path)
     assert make_encodeable(model) == {"path": path}
 
-
+@pytest.mark.skipif(not numpy_imported, reason="numpy could not be imported")
 def test_upload_files():
     temp_dir = tempfile.mkdtemp()
     temp_path = os.path.join(temp_dir, "my_file.txt")
@@ -47,7 +53,7 @@ def test_upload_files():
         "path": "data:text/plain;base64,ZmlsZSBjb250ZW50"
     }
 
-
+@pytest.mark.skipif(not numpy_imported, reason="numpy could not be imported")
 def test_numpy():
     class Model(BaseModel):
         ndarray: np.ndarray
