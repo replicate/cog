@@ -1,5 +1,10 @@
 {
   "recommendations": [
-    "golang.go"
+    "charliermarsh.ruff",
+    "esbenp.prettier-vscode",
+    "golang.go",
+    "ms-python.black-formatter",
+    "ms-python.python",
+    "ms-python.vscode-pylance"
   ]
 }
