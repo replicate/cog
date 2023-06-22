@@ -84,7 +84,7 @@ jobs:
           cache: "pip"
       - name: Install Python dependencies
         run: |
-          python -m pip install -r requirements.txt -r requirements-dev.txt .
+          python -m pip install -r requirements.txt -r requirements-dev.txt -r test-integration/requirements.txt .
           yes | python -m mypy --install-types replicate || true
       - name: Test
         run: make test-integration
