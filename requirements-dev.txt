@@ -13,7 +13,6 @@ attrs==23.1.0
     # via
     #   cog (pyproject.toml)
     #   hypothesis
-    #   pytest
 black==23.3.0
     # via cog (pyproject.toml)
 build==0.10.0
@@ -69,10 +68,6 @@ packaging==23.1
     #   pytest
 pathspec==0.11.1
     # via black
-pep517==0.13.0
-    # via build
-pillow==9.5.0
-    # via cog (pyproject.toml)
 platformdirs==3.5.1
     # via black
 pluggy==1.0.0
@@ -81,6 +76,8 @@ pydantic==1.10.8
     # via
     #   cog (pyproject.toml)
     #   fastapi
+pyproject-hooks==1.0.0
+    # via build
 pytest==7.3.2
     # via
     #   cog (pyproject.toml)

@@ -59,7 +59,7 @@ def test_predict_writes_files_to_files(tmpdir_factory):
     )
     assert result.stdout == b""
     with open(out_dir / "output.bmp", "rb") as f:
-        assert len(f.read()) == 195894
+        assert len(f.read()) == 30
 
 
 def test_predict_writes_files_to_files_with_custom_name(tmpdir_factory):
@@ -74,7 +74,7 @@ def test_predict_writes_files_to_files_with_custom_name(tmpdir_factory):
     )
     assert result.stdout == b""
     with open(out_dir / "myoutput.bmp", "rb") as f:
-        assert len(f.read()) == 195894
+        assert len(f.read()) == 30
 
 
 def test_predict_writes_multiple_files_to_files(tmpdir_factory):

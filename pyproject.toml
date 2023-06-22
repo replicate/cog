@@ -30,7 +30,6 @@ optional-dependencies = { "dev" = [
   "hypothesis",
   "mypy",
   "numpy",
-  "pillow",
   "pytest",
   "pytest-httpserver",
   "pytest-xdist",
