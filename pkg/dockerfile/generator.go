@@ -189,15 +189,14 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 		installPython,
 		installCog,
 		aptInstalls,
+		pipInstalls,
 	}
 
 	for _, p := range append(modelDirs, modelFiles...) {
 		base = append(base, "", fmt.Sprintf("COPY --from=%s --link %[2]s %[2]s", "weights", path.Join("/src", p)))
 	}
 
-	// the dependencies and code layers
 	base = append(base,
-		pipInstalls,
 		run,
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
