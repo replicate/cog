@@ -75,7 +75,7 @@ pillow==9.5.0
     # via cog (pyproject.toml)
 platformdirs==3.5.1
     # via black
-pluggy==1.0.0
+pluggy==1.2.0
     # via pytest
 pydantic==1.10.8
     # via
