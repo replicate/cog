@@ -98,6 +98,18 @@ build:
         f.write(cog_yaml)
 
     subprocess.run(
+        ["git", "config", "--global", "user.email", "noreply@replicate.com"],
+        cwd=tmpdir,
+        check=True,
+    )
+
+    subprocess.run(
+        ["git", "config", "--global", "user.name", "Replicate Test Bot"],
+        cwd=tmpdir,
+        check=True,
+    )
+
+    subprocess.run(
         ["git", "init"],
         cwd=tmpdir,
         check=True,
