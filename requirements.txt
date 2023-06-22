@@ -48,7 +48,7 @@ typing-extensions==4.6.3
     # via
     #   cog (pyproject.toml)
     #   pydantic
-urllib3==2.0.2
+urllib3==2.0.3
     # via requests
 uvicorn[standard]==0.22.0
     # via cog (pyproject.toml)

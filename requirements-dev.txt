@@ -123,7 +123,7 @@ typing-extensions==4.6.3
     #   cog (pyproject.toml)
     #   mypy
     #   pydantic
-urllib3==2.0.2
+urllib3==2.0.3
     # via
     #   requests
     #   responses
