@@ -1,4 +1,3 @@
-
 from cog import BasePredictor, Input, Path
 
 

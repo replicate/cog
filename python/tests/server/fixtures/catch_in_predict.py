@@ -8,4 +8,3 @@ class Predictor:
                 time.sleep(10)
             except:
                 pass
-

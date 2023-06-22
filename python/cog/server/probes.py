@@ -9,7 +9,6 @@ PathLike = Union[Path, str, None]
 
 
 class ProbeHelper:
-
     _root = Path("/var/run/cog")
     _enabled = False
 
