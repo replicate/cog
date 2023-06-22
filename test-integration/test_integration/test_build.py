@@ -3,10 +3,11 @@ import subprocess
 from pathlib import Path
 
 
-def test_build_without_predictor(docker_image):
+def test_build_without_predictor(cog_path, docker_image):
     project_dir = Path(__file__).parent / "fixtures/no-predictor-project"
+
     subprocess.run(
-        ["cog", "build", "-t", docker_image],
+        [cog_path, "build", "-t", docker_image],
         cwd=project_dir,
         check=True,
     )
@@ -33,7 +34,7 @@ def test_build_without_predictor(docker_image):
     assert "org.cogmodel.openapi_schema" not in labels
 
 
-def test_build_names_uses_image_option_in_cog_yaml(tmpdir, docker_image):
+def test_build_names_uses_image_option_in_cog_yaml(cog_path, tmpdir, docker_image):
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = f"""
 image: {docker_image}
@@ -43,7 +44,7 @@ build:
         f.write(cog_yaml)
 
     subprocess.run(
-        ["cog", "build"],
+        [cog_path, "build"],
         cwd=tmpdir,
         check=True,
     )
@@ -52,10 +53,10 @@ build:
     )
 
 
-def test_build_with_model(docker_image):
+def test_build_with_model(cog_path, docker_image):
     project_dir = Path(__file__).parent / "fixtures/file-project"
     subprocess.run(
-        ["cog", "build", "-t", docker_image],
+        [cog_path, "build", "-t", docker_image],
         cwd=project_dir,
         check=True,
     )
@@ -88,7 +89,7 @@ def test_build_with_model(docker_image):
     }
 
 
-def test_build_gpu_model_on_cpu(tmpdir, docker_image):
+def test_build_gpu_model_on_cpu(cog_path, tmpdir, docker_image):
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
 build:
@@ -126,7 +127,7 @@ build:
     )
 
     subprocess.run(
-        ["cog", "build", "-t", docker_image],
+        [cog_path, "build", "-t", docker_image],
         cwd=tmpdir,
         check=True,
     )
@@ -169,16 +170,16 @@ build:
     assert len(labels["org.opencontainers.image.revision"]) > 0
 
 
-def test_build_with_cog_init_templates(tmpdir, docker_image):
+def test_build_with_cog_init_templates(cog_path, tmpdir, docker_image):
     subprocess.run(
-        ["cog", "init"],
+        [cog_path, "init"],
         cwd=tmpdir,
         capture_output=True,
         check=True,
     )
 
     build_process = subprocess.run(
-        ["cog", "build", "-t", docker_image],
+        [cog_path, "build", "-t", docker_image],
         cwd=tmpdir,
         capture_output=True,
         check=True,

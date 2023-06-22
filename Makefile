@@ -56,13 +56,13 @@ test-go: pkg/dockerfile/embed/cog.whl | check-fmt vet lint-go
 	$(GO) get gotest.tools/gotestsum
 	$(GO) run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
 
-.PHONY: test-integration
-test-integration: cog
-	cd test-integration/ && $(MAKE) PATH="$(PWD):$(PATH)" test
-
 .PHONY: test-python
 test-python:
 	$(PYTEST) -n auto -vv python/tests
+
+.PHONY: test-integration
+test-integration: cog
+	$(PYTEST) -n auto -vv test-integration --cog-path=$(shell pwd)/cog
 
 .PHONY: test
 test: test-go test-python test-integration
