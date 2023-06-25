@@ -217,8 +217,7 @@ cog push
 The Docker image is now accessible to anyone or any system that has access to this Docker registry.
 
 > **Note**
-> When you build an image, Cog copies large files to a separate layer before copying source code. This reduces the time needed to rebuild after making changes to code. For best results, put any weights, checkpoints, or other model files in a separate subdirectory.
-> If you put both weights and code in the same directory, Cog will NOT copy the weights to a distinct layer, and you will have to wait for the weights to be copied every time you make a change to the code.
+> Model repos often contain large data files, like weights and checkpoints. If you put these files in their own subdirectory, Cog can copy these files into a separate Docker layer, which reduces the time needed to rebuild after making changes to code.
 >
 > ```shell
 > # ✅ Yes
