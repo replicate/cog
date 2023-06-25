@@ -26,6 +26,7 @@ mkdir cog-quickstart
 cd cog-quickstart
 
 ```
+
 ## Run commands
 
 The simplest thing you can do with Cog is run a command inside a Docker environment.
@@ -38,11 +39,14 @@ build:
 ```
 
 Then, you can run any command inside this environment. For example, enter
+
 ```bash
 cog run python
 
 ```
+
 and you'll get an interactive Python shell:
+
 ```none
 ✓ Building Docker image from cog.yaml... Successfully built 8f54020c8981
 Running 'python' in Docker with the current directory mounted as a volume...
@@ -53,6 +57,7 @@ Python 3.8.10 (default, May 12 2021, 23:32:14)
 Type "help", "copyright", "credits" or "license" for more information.
 >>>
 ```
+
 (Hit Ctrl-D to exit the Python shell.)
 
 Inside this Docker environment you can do anything – run a Jupyter notebook, your training script, your evaluation script, and so on.
@@ -72,6 +77,7 @@ curl -O $WEIGHTS_URL
 Then, we need to write some code to describe how predictions are run on the model.
 
 Save this to `predict.py`:
+
 ```python
 from typing import Any
 from cog import BasePredictor, Input, Path
@@ -118,13 +124,16 @@ IMAGE_URL=https://gist.githubusercontent.com/bfirsh/3c2115692682ae260932a67d93fd
 curl $IMAGE_URL > input.jpg
 
 ```
+
 Now, let's run the model using Cog:
 
 ```bash
 cog predict -i image=@input.jpg
 
 ```
+
 If you see the following output
+
 ```
 [
   [
@@ -144,6 +153,7 @@ If you see the following output
   ]
 ]
 ```
+
 then it worked!
 
 Note: The first time you run `cog predict`, the build process will be triggered to generate a Docker container that can run your model. The next time you run `cog predict` the pre-built container will be used.
@@ -162,7 +172,7 @@ cog build -t resnet
 Once you've built the image, you can optionally view the generated dockerfile to get a sense of what Cog is doing under the hood:
 
 ```bash
-cog debug dockerfile
+cog debug
 ```
 
 You can run this image with `cog predict` by passing the filename as an argument:
@@ -180,6 +190,7 @@ docker run -d --rm -p 5000:5000 resnet
 ```
 
 We can send inputs directly with `curl`:
+
 ```bash
 curl http://localhost:5000/predictions -X POST \
     -H 'Content-Type: application/json' \
@@ -204,6 +215,32 @@ cog push
 ```
 
 The Docker image is now accessible to anyone or any system that has access to this Docker registry.
+
+> **Note**
+> Model repos often contain large data files, like weights and checkpoints. If you put these files in their own subdirectory, Cog can copy these files into a separate Docker layer, which reduces the time needed to rebuild after making changes to code.
+>
+> ```shell
+> # ✅ Yes
+> .
+> ├── checkpoints/
+> │   └── weights.ckpt
+> ├── predict.py
+> └── cog.yaml
+>
+> # ❌ No
+> .
+> ├── weights.ckpt # <- Don't put weights in root directory
+> ├── predict.py
+> └── cog.yaml
+>
+> # ❌ No
+> .
+> ├── checkpoints/
+> │   ├── weights.ckpt
+> │   └── load_weights.py # <- Don't put code in weights directory
+> ├── predict.py
+> └── cog.yaml
+> ```
 
 ## Next steps
 
