@@ -44,60 +44,29 @@ func initCommand(args []string) error {
 		return err
 	}
 
-	// cog.yaml
-	cogYamlPath := path.Join(cwd, "cog.yaml")
-
-	cogYamlPathExists, err := files.Exists(cogYamlPath)
-	if err != nil {
-		return err
+	fileContentMap := map[string][]byte{
+		"cog.yaml":      cogYamlContent,
+		"predict.py":    predictPyContent,
+		".dockerignore": dockerignoreContent,
 	}
 
-	if cogYamlPathExists {
-		return fmt.Errorf("Found an existing cog.yaml.\nExiting without overwriting (to be on the safe side!)")
+	for filename, content := range fileContentMap {
+		filePath := path.Join(cwd, filename)
+		fileExists, err := files.Exists(filePath)
+		if err != nil {
+			return err
+		}
+
+		if fileExists {
+			return fmt.Errorf("Found an existing %s.\nExiting without overwriting (to be on the safe side!)", filename)
+		}
+
+		err = os.WriteFile(filePath, content, 0o644)
+		if err != nil {
+			return fmt.Errorf("Error writing %s: %w", filePath, err)
+		}
+		console.Infof("✅ Created %s", filePath)
 	}
-
-	err = os.WriteFile(cogYamlPath, cogYamlContent, 0o644)
-	if err != nil {
-		return fmt.Errorf("Error writing %s: %w", cogYamlPath, err)
-	}
-	console.Infof("✅ Created %s", cogYamlPath)
-
-	// predict.py
-	predictPyPath := path.Join(cwd, "predict.py")
-
-	predictPyPathExists, err := files.Exists(predictPyPath)
-	if err != nil {
-		return err
-	}
-
-	if predictPyPathExists {
-		return fmt.Errorf("Found an existing predict.py.\nExiting without overwriting (to be on the safe side!)")
-	}
-
-	err = os.WriteFile(predictPyPath, predictPyContent, 0o644)
-	if err != nil {
-		return fmt.Errorf("Error writing %s: %w", predictPyPath, err)
-	}
-	console.Infof("✅ Created %s", predictPyPath)
-
-	// .dockerignore
-	dockerignorePath := path.Join(cwd, ".dockerignore")
-
-	dockerignorePathExists, err := files.Exists(dockerignorePath)
-	if err != nil {
-		return err
-	}
-
-	if dockerignorePathExists {
-		return fmt.Errorf("Found an existing .dockerignore.\nExiting without overwriting (to be on the safe side!)")
-	}
-
-	err = os.WriteFile(dockerignorePath, dockerignoreContent, 0o644)
-	if err != nil {
-		return fmt.Errorf("Error writing %s: %w", dockerignorePath, err)
-	}
-
-	console.Infof("✅ Created %s", dockerignorePath)
 
 	console.Infof("\nDone! For next steps, check out the docs at https://cog.run/docs/getting-started")
 
