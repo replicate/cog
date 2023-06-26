@@ -99,7 +99,7 @@ requests==2.31.0
     # via
     #   cog (pyproject.toml)
     #   responses
-responses==0.22.0
+responses==0.23.1
     # via cog (pyproject.toml)
 ruff==0.0.272
     # via cog (pyproject.toml)
