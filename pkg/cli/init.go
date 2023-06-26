@@ -13,6 +13,9 @@ import (
 	"github.com/replicate/cog/pkg/util/files"
 )
 
+//go:embed init-templates/.dockerignore
+var dockerignoreContent []byte
+
 //go:embed init-templates/cog.yaml
 var cogYamlContent []byte
 
@@ -76,6 +79,25 @@ func initCommand(args []string) error {
 		return fmt.Errorf("Error writing %s: %w", predictPyPath, err)
 	}
 	console.Infof("✅ Created %s", predictPyPath)
+
+	// .dockerignore
+	dockerignorePath := path.Join(cwd, ".dockerignore")
+
+	dockerignorePathExists, err := files.Exists(dockerignorePath)
+	if err != nil {
+		return err
+	}
+
+	if dockerignorePathExists {
+		return fmt.Errorf("Found an existing .dockerignore.\nExiting without overwriting (to be on the safe side!)")
+	}
+
+	err = os.WriteFile(dockerignorePath, dockerignoreContent, 0o644)
+	if err != nil {
+		return fmt.Errorf("Error writing %s: %w", dockerignorePath, err)
+	}
+
+	console.Infof("✅ Created %s", dockerignorePath)
 
 	console.Infof("\nDone! For next steps, check out the docs at https://cog.run/docs/getting-started")
 
