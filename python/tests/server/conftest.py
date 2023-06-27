@@ -1,6 +1,7 @@
 import os
 import threading
 import time
+import sys
 from contextlib import ExitStack
 from typing import Any, Dict, Optional
 from unittest import mock
@@ -9,6 +10,9 @@ import pytest
 from attrs import define
 from cog.server.http import create_app
 from fastapi.testclient import TestClient
+
+sys.path.append("pkg/image")
+import openapi_schema
 
 
 @define
@@ -74,4 +78,12 @@ def client(request):
         c = make_client(fixture_name=fixture_name, **options)
         stack.enter_context(c)
         wait_for_setup(c)
+        c.ref = fixture_name
         yield c
+
+
+@pytest.fixture
+def static_schema(client) -> dict:
+    ref = _fixture_path(client.ref)
+    module_path = ref.split(":", 1)[0]
+    return openapi_schema.extract_file(module_path)

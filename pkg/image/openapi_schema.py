@@ -57,7 +57,7 @@ def parse_args(code: str) -> "list[tuple[ast.arg, ast.expr]]":
 
 def extract_info(code: str) -> dict:
     """Parse the schemas from a file with a predict function"""
-    inputs: dict[str, dict] = {}
+    inputs: dict[str, dict] = {"title": "Input", "type": "object"}
     schemas: dict[str, dict] = {}
     for arg, default in parse_args(code):
         if isinstance(default, ast.Call) and get_call_name(default) == "Input":
@@ -84,7 +84,7 @@ def extract_info(code: str) -> dict:
                 input["type"] = OPENAPI_TYPES.get(
                     get_annotation(arg.annotation), "number"
                 )  # need to handle other types
-            inputs[arg.arg] = input
+            inputs["properties"][arg.arg] = input
 
     output = {
         "title": "Output",
@@ -97,7 +97,7 @@ def extract_info(code: str) -> dict:
 
 
 def extract_file(fname: "str | Path") -> dict:
-    return extract_file(open(fname).read())
+    return extract_info(open(fname).read())
 
 
 if __name__ == "__main__":

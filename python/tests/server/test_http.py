@@ -1,6 +1,8 @@
 import base64
 import io
 import time
+import json # rm
+import sys
 import unittest.mock as mock
 
 import responses
@@ -25,11 +27,13 @@ def test_predict_works_with_functions(client, match):
 
 
 @uses_predictor("openapi_complex_input")
-def test_openapi_specification(client):
+def test_openapi_specification(client, static_schema):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
     schema = resp.json()
+    json.dump(schema, open("/tmp/schema.json", "w"))
+    assert schema == static_schema
     assert schema["openapi"] == "3.0.2"
     assert schema["info"] == {"title": "Cog", "version": "0.1.0"}
     assert schema["paths"]["/"] == {
@@ -190,11 +194,14 @@ def test_openapi_specification(client):
 
 
 @uses_predictor("openapi_custom_output_type")
-def test_openapi_specification_with_custom_user_defined_output_type(client):
+def test_openapi_specification_with_custom_user_defined_output_type(
+    client, static_schema
+):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
     schema = resp.json()
+    assert schema == static_schema
     assert schema["components"]["schemas"]["Output"] == {
         "$ref": "#/components/schemas/MyOutput",
         "title": "Output",
@@ -219,11 +226,12 @@ def test_openapi_specification_with_custom_user_defined_output_type(client):
 
 @uses_predictor("openapi_output_type")
 def test_openapi_specification_with_custom_user_defined_output_type_called_output(
-    client,
+    client, static_schema
 ):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
-
+    schema = resp.json()
+    assert schema == static_schema
     assert resp.json()["components"]["schemas"]["Output"] == {
         "properties": {
             "foo_number": {"default": "42", "title": "Foo Number", "type": "integer"},
