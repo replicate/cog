@@ -30,7 +30,7 @@ build:
   system_packages:
     - "libgl1-mesa-glx"
     - "libglib2.0-0"
-  python_version: "3.8"
+  python_version: "3.11"
   python_packages:
     - "torch==1.8.1"
 predict: "predict.py:Predictor"

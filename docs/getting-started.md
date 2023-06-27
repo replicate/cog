@@ -35,7 +35,7 @@ The first thing you need to do is create a file called `cog.yaml`:
 
 ```yaml
 build:
-  python_version: "3.8"
+  python_version: "3.11"
 ```
 
 Then, you can run any command inside this environment. For example, enter
@@ -52,7 +52,7 @@ and you'll get an interactive Python shell:
 Running 'python' in Docker with the current directory mounted as a volume...
 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-Python 3.8.10 (default, May 12 2021, 23:32:14)
+Python 3.11.1 (main, Jan 27 2023, 10:52:46)
 [GCC 9.3.0] on linux
 Type "help", "copyright", "credits" or "license" for more information.
 >>>
@@ -110,10 +110,10 @@ We also need to point Cog at this, and tell it what Python dependencies to insta
 
 ```yaml
 build:
-  python_version: "3.8"
+  python_version: "3.11"
   python_packages:
-    - pillow==9.1.0
-    - tensorflow==2.8.0
+    - pillow==9.5.0
+    - tensorflow==2.12.0
 predict: "predict.py:Predictor"
 ```
 
