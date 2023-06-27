@@ -2,11 +2,13 @@ package image
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
@@ -16,6 +18,9 @@ import (
 )
 
 const dockerignoreBackupPath = ".dockerignore.cog.bak"
+
+//go:embed openapi_schema.py
+var python_schema_script string
 
 // Build a Cog model from a config
 //
@@ -58,9 +63,22 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	}
 
 	console.Info("Adding labels to image...")
-	schema, err := GenerateOpenAPISchema(imageName, cfg.Build.GPU)
+	filename := strings.Split(cfg.Predict, ":")[0]
+	cmd := exec.Command("python3", "-c", python_schema_script, filename)
+	cmd.Stderr = os.Stderr
+	schemaBytes, err := cmd.Output()
+
+	// schema, err := GenerateOpenAPISchema(imageName, cfg.Build.GPU)
 	if err != nil {
 		return fmt.Errorf("Failed to get type signature: %w", err)
+	}
+
+	var schema *interface{}
+	if err := json.Unmarshal(schemaBytes, &schema); err != nil {
+		// Exit code was 0, but JSON was not returned.
+		// This is verbose, but print so anything that gets printed in Python bubbles up here.
+		console.Info(string(schemaBytes))
+		return fmt.Errorf("Failed to convert type signature to JSON: %w", err)
 	}
 	configJSON, err := json.Marshal(cfg)
 	if err != nil {
