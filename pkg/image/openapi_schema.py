@@ -12,7 +12,7 @@ OPENAPI_TYPES = {
 }
 
 
-def get_value(node: ast.AST) -> int | float | complex | str | list:
+def get_value(node: ast.AST) -> "int | float | complex | str | list":
     """Return the value of constant or list of constants"""
     if isinstance(node, ast.Constant):
         return node.value
@@ -21,7 +21,7 @@ def get_value(node: ast.AST) -> int | float | complex | str | list:
     raise ValueError("Unexpected node type", type(node))
 
 
-def get_annotation(node: ast.AST | None) -> str:
+def get_annotation(node: "ast.AST | None") -> str:
     """Return the annotation as a string"""
     if isinstance(node, ast.Name):
         return node.id
@@ -45,7 +45,7 @@ def find(obj: ast.AST, name: str) -> ast.AST:
     return next(node for node in ast.walk(obj) if getattr(node, "name", "") == name)
 
 
-def parse_args(code: str) -> list[tuple[ast.arg, ast.expr]]:
+def parse_args(code: str) -> "list[tuple[ast.arg, ast.expr]]":
     """Parse argument, default pairs from a file with a predict function"""
     tree = ast.parse(code)
     predict = find(tree, "predict")
@@ -96,10 +96,14 @@ def extract_info(code: str) -> dict:
     return schema
 
 
+def extract_file(fname: "str | Path") -> dict:
+    return extract_file(open(fname).read())
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         p = Path(sys.argv[1])
         if p.exists():
-            print(json.dumps(extract_info(p.open().read())))
+            print(json.dumps(extract_file(p)))
     else:
         print(json.dumps(extract_info(sys.stdin.read())))
