@@ -261,12 +261,17 @@ func (g *Generator) installTini() string {
 	//
 	// N.B. If you remove/change this, consider removing/changing the `has_init`
 	// image label applied in image/build.go.
-	lines := []string{
-		`RUN --mount=type=cache,target=/var/cache/apt set -eux; \
+
+	install := `RUN set -eux; \`
+	if g.Config.Build.GPU {
+		install = `RUN --mount=type=cache,target=/var/cache/apt set -eux; \
 apt-get update -qq; \
 apt-get install -qqy --no-install-recommends curl; \
-rm -rf /var/lib/apt/lists/*; \
-TINI_VERSION=v0.19.0; \
+rm -rf /var/lib/apt/lists/*; \`
+	}
+	lines := []string{
+		install,
+		`TINI_VERSION=v0.19.0; \
 TINI_ARCH="$(dpkg --print-architecture)"; \
 curl -sSL -o /sbin/tini "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_ARCH}"; \
 chmod +x /sbin/tini`,
