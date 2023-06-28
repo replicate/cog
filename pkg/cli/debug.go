@@ -27,7 +27,7 @@ func newDebugCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(debug)
-	addNoWeightsImageFlag(debug)
+	addSeparateWeightsFlag(debug)
 	cmd.Flags().StringVarP(&imageName, "image-name", "", "", "The image name to use for the generated Dockerfile")
 
 	return cmd
@@ -49,27 +49,27 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	if buildNoWeightsImage {
+	if buildSeparateWeights {
+		if imageName == "" {
+			imageName = config.DockerImageName(projectDir)
+		}
+
+		weightsDockerfile, RunnerDockerfile, dockerignore, err := generator.Generate(imageName)
+		if err != nil {
+			return err
+		}
+
+		console.Output(fmt.Sprintf("=== Weights Dockerfile contents:\n%s\n===\n", weightsDockerfile))
+		console.Output(fmt.Sprintf("=== Runner Dockerfile contents:\n%s\n===\n", RunnerDockerfile))
+		console.Output(fmt.Sprintf("=== DockerIgnore contents:\n%s===\n", dockerignore))
+	} else {
 		dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 		if err != nil {
 			return err
 		}
+
 		console.Output(dockerfile)
-		return nil
 	}
-
-	if imageName == "" {
-		imageName = config.DockerImageName(projectDir)
-	}
-
-	weightsDockerfile, RunnerDockerfile, dockerignore, err := generator.Generate(imageName)
-	if err != nil {
-		return err
-	}
-
-	console.Output(fmt.Sprintf("=== Weights Dockerfile contents:\n%s\n===\n", weightsDockerfile))
-	console.Output(fmt.Sprintf("=== Runner Dockerfile contents:\n%s\n===\n", RunnerDockerfile))
-	console.Output(fmt.Sprintf("=== DockerIgnore contents:\n%s===\n", dockerignore))
 
 	return nil
 }
