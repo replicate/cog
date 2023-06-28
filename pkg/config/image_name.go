@@ -24,7 +24,11 @@ func DockerImageName(projectDir string) string {
 		projectName = projectName[:length]
 	}
 
-	return prefix + projectName
+	if !strings.HasPrefix(projectName, prefix) {
+		projectName = prefix + projectName
+	}
+
+	return projectName
 }
 
 // BaseDockerImageName returns the Docker image name for base images
