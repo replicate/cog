@@ -262,7 +262,7 @@ func (g *Generator) installTini() string {
 	// N.B. If you remove/change this, consider removing/changing the `has_init`
 	// image label applied in image/build.go.
 
-    // python:3 includes curl, so it does not need to be installed
+	// python:3 includes curl, so it does not need to be installed
 	install := `RUN set -eux; \`
 	// nvidia/cuda does not include curl, so it must be installed
 	if g.Config.Build.GPU {
