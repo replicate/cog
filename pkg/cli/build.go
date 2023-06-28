@@ -10,7 +10,7 @@ import (
 )
 
 var buildTag string
-var buildNoWeightsImage bool
+var buildSeparateWeights bool
 var buildSecrets []string
 var buildNoCache bool
 var buildProgressOutput string
@@ -25,7 +25,7 @@ func newBuildCommand() *cobra.Command {
 	addBuildProgressOutputFlag(cmd)
 	addSecretsFlag(cmd)
 	addNoCacheFlag(cmd)
-	addNoWeightsImageFlag(cmd)
+	addSeparateWeightsFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
 }
@@ -44,7 +44,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		imageName = config.DockerImageName(projectDir)
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildNoWeightsImage, buildProgressOutput); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildProgressOutput); err != nil {
 		return err
 	}
 
@@ -69,6 +69,6 @@ func addNoCacheFlag(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&buildNoCache, "no-cache", false, "Do not use cache when building the image")
 }
 
-func addNoWeightsImageFlag(cmd *cobra.Command) {
-	cmd.Flags().BoolVar(&buildNoWeightsImage, "no-weights-image", false, "Do not separate weights from code in image layers")
+func addSeparateWeightsFlag(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&buildSeparateWeights, "separate-weights", false, "Separate model weights from code in image layers")
 }

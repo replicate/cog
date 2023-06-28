@@ -27,7 +27,7 @@ func newDebugCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(debug)
-	addNoWeightsImageFlag(debug)
+	addSeparateWeightsFlag(debug)
 	cmd.Flags().StringVarP(&imageName, "image-name", "", "", "The image name to use for the generated Dockerfile")
 
 	return cmd
@@ -49,7 +49,7 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	if buildNoWeightsImage {
+	if !buildSeparateWeights {
 		dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 		if err != nil {
 			return err

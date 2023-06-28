@@ -25,7 +25,7 @@ func newPushCommand() *cobra.Command {
 	addBuildProgressOutputFlag(cmd)
 	addSecretsFlag(cmd)
 	addNoCacheFlag(cmd)
-	addNoWeightsImageFlag(cmd)
+	addSeparateWeightsFlag(cmd)
 
 	return cmd
 }
@@ -45,7 +45,7 @@ func push(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push registry.hooli.corp/hotdog-detector'")
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildNoWeightsImage, buildProgressOutput); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildProgressOutput); err != nil {
 		return err
 	}
 

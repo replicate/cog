@@ -20,7 +20,7 @@ const dockerignoreBackupPath = ".dockerignore.cog.bak"
 // Build a Cog model from a config
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
-func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, noWeightsImage bool, progressOutput string) error {
+func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, progressOutput string) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 
 	generator, err := dockerfile.NewGenerator(cfg, dir)
@@ -33,8 +33,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}
 	}()
 
-	// By default, generate a Dockerfile that separates model weights from code.
-	if !noWeightsImage {
+	if separateWeights {
 		weightsDockerfile, runnerDockerfile, dockerignore, err := generator.Generate(imageName)
 		if err != nil {
 			return fmt.Errorf("Failed to generate Dockerfile: %w", err)
