@@ -60,7 +60,7 @@ class Predictor(BasePredictor):
 Now, you can run predictions on this model:
 
 ```console
-$ cog predict -i @input.jpg
+$ cog predict -i image=@input.jpg
 --> Building Docker image...
 --> Running Prediction...
 --> Output written to output.jpg
