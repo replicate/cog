@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 # An output object called `Output` needs to be special cased because pydantic tries to dedupe it with the internal `Output`
 class Output(BaseModel):
-    foo_number: int = "42"
+    foo_number: int = "42" # this can't be right... it's a string?
     foo_string: str = "meaning of life"
 
 

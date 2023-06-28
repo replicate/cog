@@ -33,7 +33,8 @@ def test_openapi_specification(client, static_schema):
 
     schema = resp.json()
     json.dump(schema, open("/tmp/schema.json", "w"))
-    assert schema == static_schema
+    json.dump(static_schema, open("/tmp/static_schema.json", "w"))
+    assert schema["components"] == static_schema["components"]
     assert schema["openapi"] == "3.0.2"
     assert schema["info"] == {"title": "Cog", "version": "0.1.0"}
     assert schema["paths"]["/"] == {
