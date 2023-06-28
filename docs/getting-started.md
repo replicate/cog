@@ -217,7 +217,7 @@ cog push
 The Docker image is now accessible to anyone or any system that has access to this Docker registry.
 
 > **Note**
-> Model repos often contain large data files, like weights and checkpoints. If you put these files in their own subdirectory, Cog can copy these files into a separate Docker layer, which reduces the time needed to rebuild after making changes to code.
+> Model repos often contain large data files, like weights and checkpoints. If you put these files in their own subdirectory and run `cog build` with the `--separate-weights` flag, Cog will copy these files into a separate Docker layer, which reduces the time needed to rebuild after making changes to code.
 >
 > ```shell
 > # ✅ Yes
