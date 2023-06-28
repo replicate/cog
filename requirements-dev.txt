@@ -13,7 +13,6 @@ attrs==23.1.0
     # via
     #   cog (pyproject.toml)
     #   hypothesis
-    #   pytest
 black==23.3.0
     # via cog (pyproject.toml)
 build==0.10.0
@@ -67,10 +66,9 @@ packaging==23.1
     #   black
     #   build
     #   pytest
+    #   pytest-rerunfailures
 pathspec==0.11.1
     # via black
-pep517==0.13.0
-    # via build
 pillow==9.5.0
     # via cog (pyproject.toml)
 platformdirs==3.5.1
@@ -81,11 +79,16 @@ pydantic==1.10.9
     # via
     #   cog (pyproject.toml)
     #   fastapi
+pyproject-hooks==1.0.0
+    # via build
 pytest==7.4.0
     # via
     #   cog (pyproject.toml)
+    #   pytest-rerunfailures
     #   pytest-xdist
 pytest-httpserver==1.0.8
+    # via cog (pyproject.toml)
+pytest-rerunfailures==11.1.2
     # via cog (pyproject.toml)
 pytest-xdist==3.3.1
     # via cog (pyproject.toml)
@@ -94,6 +97,7 @@ python-dotenv==1.0.0
 pyyaml==6.0
     # via
     #   cog (pyproject.toml)
+    #   responses
     #   uvicorn
 requests==2.31.0
     # via
@@ -114,9 +118,7 @@ starlette==0.27.0
     # via fastapi
 structlog==23.1.0
     # via cog (pyproject.toml)
-toml==0.10.2
-    # via responses
-types-toml==0.10.8.6
+types-pyyaml==6.0.12.10
     # via responses
 typing-extensions==4.6.3
     # via
