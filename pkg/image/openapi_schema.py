@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-BASE_SCHEMA = '{"components":{"schemas":{"HTTPValidationError":{"properties":{"detail":{"items":{"$ref":"#/components/schemas/ValidationError"},"title":"Detail","type":"array"}},"title":"HTTPValidationError","type":"object"},"PredictionRequest":{"properties":{"created_at":{"format":"date-time","title":"Created At","type":"string"},"id":{"title":"Id","type":"string"},"input":{"$ref":"#/components/schemas/Input"},"output_file_prefix":{"title":"Output File Prefix","type":"string"},"webhook":{"format":"uri","maxLength":65536,"minLength":1,"title":"Webhook","type":"string"},"webhook_events_filter":{"default":["start","output","logs","completed"],"items":{"$ref":"#/components/schemas/WebhookEvent"},"type":"array","uniqueItems":true}},"title":"PredictionRequest","type":"object"},"PredictionResponse":{"properties":{"completed_at":{"format":"date-time","title":"Completed At","type":"string"},"created_at":{"format":"date-time","title":"Created At","type":"string"},"error":{"title":"Error","type":"string"},"id":{"title":"Id","type":"string"},"input":{"$ref":"#/components/schemas/Input"},"logs":{"default":"","title":"Logs","type":"string"},"metrics":{"title":"Metrics","type":"object"},"output":{"$ref":"#/components/schemas/Output"},"started_at":{"format":"date-time","title":"Started At","type":"string"},"status":{"$ref":"#/components/schemas/Status"},"version":{"title":"Version","type":"string"}},"title":"PredictionResponse","type":"object"},"Status":{"description":"An enumeration.","enum":["starting","processing","succeeded","canceled","failed"],"title":"Status","type":"string"},"ValidationError":{"properties":{"loc":{"items":{"anyOf":[{"type":"string"},{"type":"integer"}]},"title":"Location","type":"array"},"msg":{"title":"Message","type":"string"},"type":{"title":"Error Type","type":"string"}},"required":["loc","msg","type"],"title":"ValidationError","type":"object"},"WebhookEvent":{"description":"An enumeration.","enum":["start","output","logs","completed"],"title":"WebhookEvent","type":"string"}}},"info":{"title":"Cog","version":"0.1.0"},"openapi":"3.0.2","paths":{"/":{"get":{"operationId":"root__get","responses":{"200":{"content":{"application/json":{"schema":{"title":"Response Root  Get"}}},"description":"Successful Response"}},"summary":"Root"}},"/health-check":{"get":{"operationId":"healthcheck_health_check_get","responses":{"200":{"content":{"application/json":{"schema":{"title":"Response Healthcheck Health Check Get"}}},"description":"Successful Response"}},"summary":"Healthcheck"}},"/predictions":{"post":{"description":"Run a single prediction on the model","operationId":"predict_predictions_post","parameters":[{"in":"header","name":"prefer","required":false,"schema":{"title":"Prefer","type":"string"}}],"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/PredictionRequest"}}}},"responses":{"200":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/PredictionResponse"}}},"description":"Successful Response"},"422":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}},"description":"Validation Error"}},"summary":"Predict"}},"/predictions/{prediction_id}":{"put":{"description":"Run a single prediction on the model (idempotent creation).","operationId":"predict_idempotent_predictions__prediction_id__put","parameters":[{"in":"path","name":"prediction_id","required":true,"schema":{"title":"Prediction ID","type":"string"}},{"in":"header","name":"prefer","required":false,"schema":{"title":"Prefer","type":"string"}}],"requestBody":{"content":{"application/json":{"schema":{"allOf":[{"$ref":"#/components/schemas/PredictionRequest"}],"title":"Prediction Request"}}},"required":true},"responses":{"200":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/PredictionResponse"}}},"description":"Successful Response"},"422":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}},"description":"Validation Error"}},"summary":"Predict Idempotent"}},"/predictions/{prediction_id}/cancel":{"post":{"description":"Cancel a running prediction","operationId":"cancel_predictions__prediction_id__cancel_post","parameters":[{"in":"path","name":"prediction_id","required":true,"schema":{"title":"Prediction ID","type":"string"}}],"responses":{"200":{"content":{"application/json":{"schema":{"title":"Response Cancel Predictions  Prediction Id  Cancel Post"}}},"description":"Successful Response"},"422":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}},"description":"Validation Error"}},"summary":"Cancel"}},"/shutdown":{"post":{"operationId":"start_shutdown_shutdown_post","responses":{"200":{"content":{"application/json":{"schema":{"title":"Response Start Shutdown Shutdown Post"}}},"description":"Successful Response"}},"summary":"Start Shutdown"}}}}'
+BASE_SCHEMA = '{"components":{"schemas":{"HTTPValidationError":{"properties":{"detail":{"items":{"$ref":"#/components/schemas/ValidationError"},"title":"Detail","type":"array"}},"title":"HTTPValidationError","type":"object"},"PredictionRequest":{"properties":{"created_at":{"format":"date-time","title":"Created At","type":"string"},"id":{"title":"Id","type":"string"},"input":{"$ref":"#/components/schemas/Input"},"output_file_prefix":{"title":"Output File Prefix","type":"string"},"webhook":{"format":"uri","maxLength":65536,"minLength":1,"title":"Webhook","type":"string"},"webhook_events_filter":{"default":["start","output","logs","completed"],"items":{"$ref":"#/components/schemas/WebhookEvent"},"type":"array"}},"title":"PredictionRequest","type":"object"},"PredictionResponse":{"properties":{"completed_at":{"format":"date-time","title":"Completed At","type":"string"},"created_at":{"format":"date-time","title":"Created At","type":"string"},"error":{"title":"Error","type":"string"},"id":{"title":"Id","type":"string"},"input":{"$ref":"#/components/schemas/Input"},"logs":{"default":"","title":"Logs","type":"string"},"metrics":{"title":"Metrics","type":"object"},"output":{"$ref":"#/components/schemas/Output"},"started_at":{"format":"date-time","title":"Started At","type":"string"},"status":{"$ref":"#/components/schemas/Status"},"version":{"title":"Version","type":"string"}},"title":"PredictionResponse","type":"object"},"Status":{"description":"An enumeration.","enum":["starting","processing","succeeded","canceled","failed"],"title":"Status","type":"string"},"ValidationError":{"properties":{"loc":{"items":{"anyOf":[{"type":"string"},{"type":"integer"}]},"title":"Location","type":"array"},"msg":{"title":"Message","type":"string"},"type":{"title":"Error Type","type":"string"}},"required":["loc","msg","type"],"title":"ValidationError","type":"object"},"WebhookEvent":{"description":"An enumeration.","enum":["start","output","logs","completed"],"title":"WebhookEvent","type":"string"}}},"info":{"title":"Cog","version":"0.1.0"},"openapi":"3.0.2","paths":{"/":{"get":{"operationId":"root__get","responses":{"200":{"content":{"application/json":{"schema":{"title":"Response Root  Get"}}},"description":"Successful Response"}},"summary":"Root"}},"/health-check":{"get":{"operationId":"healthcheck_health_check_get","responses":{"200":{"content":{"application/json":{"schema":{"title":"Response Healthcheck Health Check Get"}}},"description":"Successful Response"}},"summary":"Healthcheck"}},"/predictions":{"post":{"description":"Run a single prediction on the model","operationId":"predict_predictions_post","parameters":[{"in":"header","name":"prefer","required":false,"schema":{"title":"Prefer","type":"string"}}],"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/PredictionRequest"}}}},"responses":{"200":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/PredictionResponse"}}},"description":"Successful Response"},"422":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}},"description":"Validation Error"}},"summary":"Predict"}},"/predictions/{prediction_id}":{"put":{"description":"Run a single prediction on the model (idempotent creation).","operationId":"predict_idempotent_predictions__prediction_id__put","parameters":[{"in":"path","name":"prediction_id","required":true,"schema":{"title":"Prediction ID","type":"string"}},{"in":"header","name":"prefer","required":false,"schema":{"title":"Prefer","type":"string"}}],"requestBody":{"content":{"application/json":{"schema":{"allOf":[{"$ref":"#/components/schemas/PredictionRequest"}],"title":"Prediction Request"}}},"required":true},"responses":{"200":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/PredictionResponse"}}},"description":"Successful Response"},"422":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}},"description":"Validation Error"}},"summary":"Predict Idempotent"}},"/predictions/{prediction_id}/cancel":{"post":{"description":"Cancel a running prediction","operationId":"cancel_predictions__prediction_id__cancel_post","parameters":[{"in":"path","name":"prediction_id","required":true,"schema":{"title":"Prediction ID","type":"string"}}],"responses":{"200":{"content":{"application/json":{"schema":{"title":"Response Cancel Predictions  Prediction Id  Cancel Post"}}},"description":"Successful Response"},"422":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}},"description":"Validation Error"}},"summary":"Cancel"}},"/shutdown":{"post":{"operationId":"start_shutdown_shutdown_post","responses":{"200":{"content":{"application/json":{"schema":{"title":"Response Start Shutdown Shutdown Post"}}},"description":"Successful Response"}},"summary":"Start Shutdown"}}}}'
 OPENAPI_TYPES = {
     "str": "string",  # includes dates, files
     "int": "integer",
@@ -64,7 +64,7 @@ def parse_args(tree: ast.AST) -> "list[tuple[ast.arg, ast.expr | ellipsis]]":
 def parse_assignment(assignment: ast.AST) -> "tuple[str | None, dict | None]":
     """Parse an assignment into an OpenAPI object property"""
     if isinstance(assignment, ast.AnnAssign):
-        assert isinstance(assignment.target, ast.Name) # shouldn't be an Attribute
+        assert isinstance(assignment.target, ast.Name)  # shouldn't be an Attribute
         default = {"default": get_value(assignment.value)} if assignment.value else {}
         return assignment.target.id, {
             "title": assignment.target.id.replace("_", " ").title(),
@@ -154,17 +154,14 @@ For example:
             "items": {
                 "type": OPENAPI_TYPES.get(slice, slice),
                 **format,
-                **array_type,
-                **display_type,
             },
+            **array_type,
+            **display_type,
         }
     if name in BASE_TYPES:
         # otherwise figure this out...
         format = {"format": "uri"} if name in ("Path", "File") else {}
-        return {}, {
-            "title": "Output",
-            "type": OPENAPI_TYPES.get(name, name),
-        }
+        return {}, {"title": "Output", "type": OPENAPI_TYPES.get(name, name), **format}
     # it must be a custom object
     schema = {name: parse_class(find(tree, name))}
     return schema, {
@@ -173,10 +170,14 @@ For example:
     }
 
 
-def extract_info(code: str, fn: str = "predict") -> dict:
+KEPT_ATTRS = ("description", "default", "ge", "le", "max_length", "min_length", "regex")
+
+
+def extract_info(code: str) -> dict:
     """Parse the schemas from a file with a predict function"""
     tree = ast.parse(code)
-    inputs = {"title": "Input", "type": "object", "properties": {}, "required": []}
+    inputs = {"title": "Input", "type": "object", "properties": {}}
+    required: "list[str]" = []
     schemas: "dict[str, dict]" = {}
     for arg, default in parse_args(tree):
         if arg.arg == "self":
@@ -194,20 +195,11 @@ def extract_info(code: str, fn: str = "predict") -> dict:
         arg_type = OPENAPI_TYPES.get(get_annotation(arg.annotation), "string")
         if get_annotation(arg.annotation) in ("Path", "File"):
             input["format"] = "uri"
-        attrs = (
-            "description",
-            "default",
-            "ge",
-            "le",
-            "max_length",
-            "min_length",
-            "regex",
-        )
-        for attr in attrs:
+        for attr in KEPT_ATTRS:
             if attr in kws:
                 input[attr] = kws[attr]
         if "default" not in input:
-            inputs["required"].append(arg.arg) # type: ignore
+            required.append(arg.arg)
         if "choices" in kws and isinstance(kws["choices"], list):
             input["allOf"] = [{"$ref": f"#/components/schemas/{arg.arg}"}]
             # could use type(kws["choices"][0]).__name__
@@ -220,7 +212,9 @@ def extract_info(code: str, fn: str = "predict") -> dict:
         else:
             input["title"] = arg.arg.replace("_", " ").title()
             input["type"] = arg_type
-        inputs["properties"][arg.arg] = input # type: ignore
+        inputs["properties"][arg.arg] = input  # type: ignore
+    if required:
+        inputs["required"] = required
     # List[Path], list[Path], str, Iterator[str], MyOutput, Output
     return_schema, output = parse_return_annotation(tree, "predict")
     schema = json.loads(BASE_SCHEMA)
@@ -235,7 +229,7 @@ def extract_info(code: str, fn: str = "predict") -> dict:
 
 
 def extract_file(fname: "str | Path") -> dict:
-    return extract_info(open(fname).read())
+    return extract_info(open(fname, encoding="utf-8").read())
 
 
 if __name__ == "__main__":
