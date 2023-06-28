@@ -13,6 +13,9 @@ import (
 	"github.com/replicate/cog/pkg/util/files"
 )
 
+//go:embed init-templates/.dockerignore
+var dockerignoreContent []byte
+
 //go:embed init-templates/cog.yaml
 var cogYamlContent []byte
 
@@ -41,41 +44,29 @@ func initCommand(args []string) error {
 		return err
 	}
 
-	// cog.yaml
-	cogYamlPath := path.Join(cwd, "cog.yaml")
-
-	cogYamlPathExists, err := files.Exists(cogYamlPath)
-	if err != nil {
-		return err
+	fileContentMap := map[string][]byte{
+		"cog.yaml":      cogYamlContent,
+		"predict.py":    predictPyContent,
+		".dockerignore": dockerignoreContent,
 	}
 
-	if cogYamlPathExists {
-		return fmt.Errorf("Found an existing cog.yaml.\nExiting without overwriting (to be on the safe side!)")
-	}
+	for filename, content := range fileContentMap {
+		filePath := path.Join(cwd, filename)
+		fileExists, err := files.Exists(filePath)
+		if err != nil {
+			return err
+		}
 
-	err = os.WriteFile(cogYamlPath, cogYamlContent, 0o644)
-	if err != nil {
-		return fmt.Errorf("Error writing %s: %w", cogYamlPath, err)
-	}
-	console.Infof("✅ Created %s", cogYamlPath)
+		if fileExists {
+			return fmt.Errorf("Found an existing %s.\nExiting without overwriting (to be on the safe side!)", filename)
+		}
 
-	// predict.py
-	predictPyPath := path.Join(cwd, "predict.py")
-
-	predictPyPathExists, err := files.Exists(predictPyPath)
-	if err != nil {
-		return err
+		err = os.WriteFile(filePath, content, 0o644)
+		if err != nil {
+			return fmt.Errorf("Error writing %s: %w", filePath, err)
+		}
+		console.Infof("✅ Created %s", filePath)
 	}
-
-	if predictPyPathExists {
-		return fmt.Errorf("Found an existing predict.py.\nExiting without overwriting (to be on the safe side!)")
-	}
-
-	err = os.WriteFile(predictPyPath, predictPyContent, 0o644)
-	if err != nil {
-		return fmt.Errorf("Error writing %s: %w", predictPyPath, err)
-	}
-	console.Infof("✅ Created %s", predictPyPath)
 
 	console.Infof("\nDone! For next steps, check out the docs at https://cog.run/docs/getting-started")
 
