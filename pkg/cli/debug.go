@@ -49,27 +49,27 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	if !buildSeparateWeights {
+	if buildSeparateWeights {
+		if imageName == "" {
+			imageName = config.DockerImageName(projectDir)
+		}
+
+		weightsDockerfile, RunnerDockerfile, dockerignore, err := generator.Generate(imageName)
+		if err != nil {
+			return err
+		}
+
+		console.Output(fmt.Sprintf("=== Weights Dockerfile contents:\n%s\n===\n", weightsDockerfile))
+		console.Output(fmt.Sprintf("=== Runner Dockerfile contents:\n%s\n===\n", RunnerDockerfile))
+		console.Output(fmt.Sprintf("=== DockerIgnore contents:\n%s===\n", dockerignore))
+	} else {
 		dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 		if err != nil {
 			return err
 		}
+
 		console.Output(dockerfile)
-		return nil
 	}
-
-	if imageName == "" {
-		imageName = config.DockerImageName(projectDir)
-	}
-
-	weightsDockerfile, RunnerDockerfile, dockerignore, err := generator.Generate(imageName)
-	if err != nil {
-		return err
-	}
-
-	console.Output(fmt.Sprintf("=== Weights Dockerfile contents:\n%s\n===\n", weightsDockerfile))
-	console.Output(fmt.Sprintf("=== Runner Dockerfile contents:\n%s\n===\n", RunnerDockerfile))
-	console.Output(fmt.Sprintf("=== DockerIgnore contents:\n%s===\n", dockerignore))
 
 	return nil
 }
