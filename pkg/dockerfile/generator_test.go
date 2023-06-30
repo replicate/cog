@@ -16,13 +16,8 @@ import (
 func testTini() string {
 	return `RUN --mount=type=cache,target=/var/cache/apt set -eux; \
 apt-get update -qq; \
-apt-get install -qqy --no-install-recommends curl; \
-rm -rf /var/lib/apt/lists/*; \
-TINI_VERSION=v0.19.0; \
-TINI_ARCH="$(dpkg --print-architecture)"; \
-curl -sSL -o /sbin/tini "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_ARCH}"; \
-chmod +x /sbin/tini
-ENTRYPOINT ["/sbin/tini", "--"]
+apt-get install -qqy --no-install-recommends tini;
+ENTRYPOINT ["/usr/bin/tini", "--"]
 `
 }
 
