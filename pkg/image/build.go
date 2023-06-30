@@ -48,9 +48,21 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			return fmt.Errorf("Failed to build runner Docker image: %w", err)
 		}
 	} else {
-		dockerfileContents, err := generator.GenerateDockerfileWithoutSeparateWeights()
-		if err != nil {
-			return fmt.Errorf("Failed to generate Dockerfile: %w", err)
+		fmt.Println("trying existing dockerfile")
+		fmt.Println(dir)
+		// if Dockerfile exists, use that instead
+		var dockerfileContents string
+		maybeDockerfile := path.Join(dir, "Dockerfile")
+		contents, err := os.ReadFile(maybeDockerfile)
+		if err == nil {
+			console.Info(fmt.Sprintf("Using existing Dockerfile at %s...", path.Join(dir, "Dockerfile")))
+			dockerfileContents = string(contents)
+		} else {
+			// fmt.Printf("Failed to read Dockerfile: %+v\n", err)
+			dockerfileContents, err = generator.GenerateDockerfileWithoutSeparateWeights()
+			if err != nil {
+				return fmt.Errorf("Failed to generate Dockerfile: %w", err)
+			}
 		}
 		if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput); err != nil {
 			return fmt.Errorf("Failed to build Docker image: %w", err)

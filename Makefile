@@ -23,7 +23,7 @@ all: cog
 
 pkg/dockerfile/embed/cog.whl: python/* python/cog/* python/cog/server/* python/cog/command/*
 	@echo "Building Python library"
-	rm -rf dist
+	#rm -rf dist
 	$(PYTHON) -m pip install build && $(PYTHON) -m build --wheel
 	mkdir -p pkg/dockerfile/embed
 	cp dist/*.whl $@
