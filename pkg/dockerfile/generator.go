@@ -114,6 +114,7 @@ func (g *Generator) GenerateBase() (string, error) {
 
 	return strings.Join(filterEmpty([]string{
 		"#syntax=docker/dockerfile:1.4",
+		g.tiniStage(),
 		"FROM " + baseImage,
 		g.preamble(),
 		g.installTini(),
@@ -183,6 +184,7 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 	base := []string{
 		"#syntax=docker/dockerfile:1.4",
 		fmt.Sprintf("FROM %s AS %s", imageName+"-weights", "weights"),
+		g.tiniStage(),
 		"FROM " + baseImage,
 		g.preamble(),
 		g.installTini(),
@@ -255,6 +257,16 @@ ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin`
 }
 
+func (g *Generator) tiniStage() string {
+	lines := []string{
+		`FROM curlimages/curl AS downloader`,
+		`ARG TINI_VERSION=0.19.0`,
+		`WORKDIR /tmp`,
+		`RUN curl -fsSL -O "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini" && chmod +x tini`,
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (g *Generator) installTini() string {
 	// Install tini as the image entrypoint to provide signal handling and process
 	// reaping appropriate for PID 1.
@@ -262,14 +274,7 @@ func (g *Generator) installTini() string {
 	// N.B. If you remove/change this, consider removing/changing the `has_init`
 	// image label applied in image/build.go.
 	lines := []string{
-		`RUN --mount=type=cache,target=/var/cache/apt set -eux; \
-apt-get update -qq; \
-apt-get install -qqy --no-install-recommends curl; \
-rm -rf /var/lib/apt/lists/*; \
-TINI_VERSION=v0.19.0; \
-TINI_ARCH="$(dpkg --print-architecture)"; \
-curl -sSL -o /sbin/tini "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_ARCH}"; \
-chmod +x /sbin/tini`,
+		`COPY --link --from=downloader /tmp/tini /sbin/tini`,
 		`ENTRYPOINT ["/sbin/tini", "--"]`,
 	}
 	return strings.Join(lines, "\n")
