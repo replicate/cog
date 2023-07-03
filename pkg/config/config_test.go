@@ -171,9 +171,9 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 		cuda  string
 		cuDNN string
 	}{
+		{"2.0.1+cu118", "11.8", "8"},
 		{"1.8.0", "11.1.1", "8"},
 		{"1.7.0", "11.0.3", "8"},
-		{"1.5.1", "10.2", "8"},
 	} {
 		config := &Config{
 			Build: &Build{
@@ -214,8 +214,8 @@ func TestUnsupportedTorch(t *testing.T) {
 	config = &Config{
 		Build: &Build{
 			GPU:           true,
-			CUDA:          "9.1",
-			PythonVersion: "3.8",
+			CUDA:          "11.8",
+			PythonVersion: "3.10",
 			PythonPackages: []string{
 				"torch==0.4.1",
 			},
@@ -223,7 +223,7 @@ func TestUnsupportedTorch(t *testing.T) {
 	}
 	err = config.ValidateAndComplete("")
 	require.NoError(t, err)
-	require.Equal(t, "9.1", config.Build.CUDA)
+	require.Equal(t, "11.8", config.Build.CUDA)
 	require.Equal(t, "7", config.Build.CuDNN)
 
 }
@@ -252,7 +252,7 @@ func TestUnsupportedTensorflow(t *testing.T) {
 	config = &Config{
 		Build: &Build{
 			GPU:           true,
-			CUDA:          "9.1",
+			CUDA:          "11.8",
 			PythonVersion: "3.8",
 			PythonPackages: []string{
 				"tensorflow==0.4.1",
@@ -261,7 +261,7 @@ func TestUnsupportedTensorflow(t *testing.T) {
 	}
 	err = config.ValidateAndComplete("")
 	require.NoError(t, err)
-	require.Equal(t, "9.1", config.Build.CUDA)
+	require.Equal(t, "11.8", config.Build.CUDA)
 	require.Equal(t, "7", config.Build.CuDNN)
 }
 
@@ -276,12 +276,12 @@ func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 				"torchaudio==0.7.2",
 				"foo==1.0.0",
 			},
-			CUDA: "10.1",
+			CUDA: "11.8",
 		},
 	}
 	err := config.ValidateAndComplete("")
 	require.NoError(t, err)
-	require.Equal(t, "10.1", config.Build.CUDA)
+	require.Equal(t, "11.8", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 
 	requirements, err := config.PythonRequirementsForArch("", "")
@@ -305,7 +305,7 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 				"torchaudio==0.7.2",
 				"foo==1.0.0",
 			},
-			CUDA: "10.1",
+			CUDA: "11.8",
 		},
 	}
 	err := config.ValidateAndComplete("")
@@ -330,7 +330,7 @@ func TestPythonPackagesForArchTensorflowGPU(t *testing.T) {
 				"tensorflow==1.15.0",
 				"foo==1.0.0",
 			},
-			CUDA: "10.0",
+			CUDA: "11.8",
 		},
 	}
 	err := config.ValidateAndComplete("")
