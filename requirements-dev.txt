@@ -69,7 +69,7 @@ packaging==23.1
     #   pytest-rerunfailures
 pathspec==0.11.1
     # via black
-pillow==9.5.0
+pillow==10.0.0
     # via cog (pyproject.toml)
 platformdirs==3.5.1
     # via black
