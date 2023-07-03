@@ -1,19 +1,5 @@
 [
   {
-    "Torch": "2.0.1+cu118",
-    "Torchvision": "0.15.2",
-    "Torchaudio": "2.0.2",
-    "FindLinks": "",
-    "ExtraIndexURL": "https://download.pytorch.org/whl/cu118",
-    "CUDA": "11.8",
-    "Pythons": [
-      "3.10",
-      "3.11",
-      "3.8",
-      "3.9"
-    ]
-  },
-  {
     "Torch": "2.0.1+cpu",
     "Torchvision": "0.15.2",
     "Torchaudio": "2.0.2",
@@ -34,6 +20,20 @@
     "FindLinks": "",
     "ExtraIndexURL": "https://download.pytorch.org/whl/cu117",
     "CUDA": "11.7",
+    "Pythons": [
+      "3.10",
+      "3.11",
+      "3.8",
+      "3.9"
+    ]
+  },
+  {
+    "Torch": "2.0.1+cu118",
+    "Torchvision": "0.15.2",
+    "Torchaudio": "2.0.2",
+    "FindLinks": "",
+    "ExtraIndexURL": "https://download.pytorch.org/whl/cu118",
+    "CUDA": "11.8",
     "Pythons": [
       "3.10",
       "3.11",
