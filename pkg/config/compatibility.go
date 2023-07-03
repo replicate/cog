@@ -76,51 +76,48 @@ type CUDABaseImage struct {
 	Ubuntu  string
 }
 
-func (i *CUDABaseImage) UnmarshalJSON(data []byte) error {
-	var tag string
-	if err := json.Unmarshal(data, &tag); err != nil {
-		return err
-	}
-	parts := strings.Split(tag, "-")
-	if len(parts) != 4 {
-		return fmt.Errorf("Tag must be in the format <cudaVersion>-cudnn<cudnnVersion>-{devel,runtime}-ubuntu<ubuntuVersion>. Invalid tag: %s", tag)
-	}
-	i.Tag = tag
-	i.CUDA = parts[0]
-	i.CuDNN = strings.Split(parts[1], "cudnn")[1]
-	i.IsDevel = parts[2] == "devel"
-	i.Ubuntu = strings.Split(parts[3], "ubuntu")[1]
-	return nil
-}
-
 func (i *CUDABaseImage) ImageTag() string {
 	return "nvidia/cuda:" + i.Tag
 }
 
-//go:generate go run ../../tools/generate_compatibility_matrices/main.go -tf-output tf_compatability_matrix.json -torch-output torch_compatability_matrix.json -cuda-images-output cuda_base_image_tags.json
+//go:generate go run ../../tools/compatgen/main.go cuda -o cuda_base_images.json
+//go:embed cuda_base_images.json
+var cudaBaseImagesData []byte
+var CUDABaseImages []CUDABaseImage
 
+//go:generate go run ../../tools/compatgen/main.go tensorflow -o tf_compatability_matrix.json
 //go:embed tf_compatability_matrix.json
 var tfCompatibilityMatrixData []byte
 var TFCompatibilityMatrix []TFCompatibility
 
+//go:generate go run ../../tools/compatgen/main.go torch -o torch_compatability_matrix.json
 //go:embed torch_compatability_matrix.json
 var torchCompatibilityMatrixData []byte
 var TorchCompatibilityMatrix []TorchCompatibility
 
-//go:embed cuda_base_image_tags.json
-var cudaBaseImageTagsData []byte
-var CUDABaseImages []CUDABaseImage
-
 func init() {
+	if err := json.Unmarshal(cudaBaseImagesData, &CUDABaseImages); err != nil {
+		console.Fatalf("Failed to load embedded CUDA base images: %s", err)
+	}
+
 	if err := json.Unmarshal(tfCompatibilityMatrixData, &TFCompatibilityMatrix); err != nil {
 		console.Fatalf("Failed to load embedded Tensorflow compatibility matrix: %s", err)
 	}
-	if err := json.Unmarshal(torchCompatibilityMatrixData, &TorchCompatibilityMatrix); err != nil {
+
+	var torchCompatibilityMatrix []TorchCompatibility
+	if err := json.Unmarshal(torchCompatibilityMatrixData, &torchCompatibilityMatrix); err != nil {
 		console.Fatalf("Failed to load embedded PyTorch compatibility matrix: %s", err)
 	}
-	if err := json.Unmarshal(cudaBaseImageTagsData, &CUDABaseImages); err != nil {
-		console.Fatalf("Failed to load embedded CUDA base images: %s", err)
+	filteredTorchCompatibilityMatrix := []TorchCompatibility{}
+	for _, compat := range torchCompatibilityMatrix {
+		for _, cudaBaseImage := range CUDABaseImages {
+			if compat.CUDA == nil || strings.HasPrefix(cudaBaseImage.CUDA, *compat.CUDA) {
+				filteredTorchCompatibilityMatrix = append(filteredTorchCompatibilityMatrix, compat)
+				break
+			}
+		}
 	}
+	TorchCompatibilityMatrix = filteredTorchCompatibilityMatrix
 }
 
 func cudasFromTorch(ver string) ([]string, error) {
