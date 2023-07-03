@@ -28,6 +28,10 @@ pkg/dockerfile/embed/cog.whl: python/* python/cog/* python/cog/server/* python/c
 	mkdir -p pkg/dockerfile/embed
 	cp dist/*.whl $@
 
+.PHONY: compatibility-matrices
+compatibility-matrices:
+	$(GO) run tools/generate_compatibility_matrices/main.go
+
 .PHONY: cog
 cog: pkg/dockerfile/embed/cog.whl
 	$(eval COG_VERSION ?= $(shell git describe --tags --match 'v*' --abbrev=0)+dev)
@@ -67,7 +71,6 @@ test-python:
 .PHONY: test
 test: test-go test-python test-integration
 
-
 .PHONY: fmt
 fmt:
 	$(GO) run golang.org/x/tools/cmd/goimports -w -d .
@@ -80,7 +83,6 @@ generate:
 .PHONY: vet
 vet:
 	$(GO) vet ./...
-
 
 .PHONY: check-fmt
 check-fmt:
