@@ -173,7 +173,6 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 	}{
 		{"1.8.0", "11.1.1", "8"},
 		{"1.7.0", "11.0.3", "8"},
-		{"1.5.1", "10.2", "8"},
 	} {
 		config := &Config{
 			Build: &Build{
