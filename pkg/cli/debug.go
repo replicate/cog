@@ -17,17 +17,11 @@ func newDebugCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "debug",
 		Hidden: true,
+		Short:  "Generate a Dockerfile from " + global.ConfigFilename,
 		RunE:   cmdDockerfile,
 	}
 
-	debug := &cobra.Command{
-		Use:    "debug",
-		Short:  "Generate a Dockerfile from " + global.ConfigFilename,
-		Hidden: true,
-	}
-
-	cmd.AddCommand(debug)
-	addSeparateWeightsFlag(debug)
+	addSeparateWeightsFlag(cmd)
 	cmd.Flags().StringVarP(&imageName, "image-name", "", "", "The image name to use for the generated Dockerfile")
 
 	return cmd
