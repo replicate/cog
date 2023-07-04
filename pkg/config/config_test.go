@@ -146,29 +146,24 @@ func TestValidateAndCompleteCUDAForAllTF(t *testing.T) {
 	}
 }
 
-// func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
-// 	// test that all torch versions fill out cuda
-// 	for _, compat := range TorchCompatibilityMatrix {
-// 		config := &Config{
-// 			Build: &Build{
-// 				GPU:           true,
-// 				PythonVersion: "3.8",
-// 				PythonPackages: []string{
-// 					"torch==" + compat.TorchVersion(),
-// 				},
-// 			},
-// 		}
+func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
+	for _, compat := range TorchCompatibilityMatrix {
+		config := &Config{
+			Build: &Build{
+				GPU:           compat.CUDA != nil,
+				PythonVersion: "3.8",
+				PythonPackages: []string{
+					"torch==" + compat.TorchVersion(),
+				},
+			},
+		}
 
-// 		for _, cudaBaseImage := range CUDABaseImages {
-// 			if compat.CUDA == nil || strings.HasPrefix(cudaBaseImage.CUDA, *compat.CUDA) {
-// 				err := config.ValidateAndComplete("")
-// 				require.NoError(t, err)
-// 				require.NotEqual(t, "", config.Build.CUDA)
-// 				require.NotEqual(t, "", config.Build.CuDNN)
-// 			}
-// 		}
-// 	}
-// }
+		err := config.ValidateAndComplete("")
+		require.NoError(t, err)
+		require.NotEqual(t, "", config.Build.CUDA)
+		require.NotEqual(t, "", config.Build.CuDNN)
+	}
+}
 
 func TestValidateAndCompleteCUDAForSelectedTorch(t *testing.T) {
 	for _, tt := range []struct {
@@ -317,9 +312,8 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 
 	requirements, err := config.PythonRequirementsForArch("", "")
 	require.NoError(t, err)
-	expected := `--find-links https://download.pytorch.org/whl/torch_stable.html
-torch==1.7.1+cpu
-torchvision==0.8.2+cpu
+	expected := `torch==1.7.1
+torchvision==0.8.2
 torchaudio==0.7.2
 foo==1.0.0`
 	require.Equal(t, expected, requirements)

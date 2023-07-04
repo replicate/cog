@@ -14,6 +14,11 @@
           "type": "string",
           "description": "Cog automatically picks the correct version of CUDA to install, but this lets you override it for whatever reason."
         },
+        "cudnn": {
+          "$id": "#/properties/build/properties/cudnn",
+          "type": "string",
+          "description": "Cog automatically picks the correct version of cuDNN to install, but this lets you override it for whatever reason."
+        },
         "gpu": {
           "$id": "#/properties/build/properties/gpu",
           "type": "boolean",

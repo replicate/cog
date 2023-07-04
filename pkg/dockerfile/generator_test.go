@@ -166,8 +166,7 @@ COPY . /src`
 	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
 
-	require.Equal(t, `--find-links https://download.pytorch.org/whl/torch_stable.html
-torch==1.5.1+cpu
+	require.Equal(t, `torch==1.5.1
 pandas==1.2.0.12`, string(requirements))
 }
 

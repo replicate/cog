@@ -111,7 +111,7 @@ func init() {
 	filteredTorchCompatibilityMatrix := []TorchCompatibility{}
 	for _, compat := range torchCompatibilityMatrix {
 		for _, cudaBaseImage := range CUDABaseImages {
-			if compat.CUDA == nil || strings.HasPrefix(cudaBaseImage.CUDA, *compat.CUDA) {
+			if compat.CUDA != nil && version.Matches(*compat.CUDA, cudaBaseImage.CUDA) {
 				filteredTorchCompatibilityMatrix = append(filteredTorchCompatibilityMatrix, compat)
 				break
 			}
@@ -192,7 +192,7 @@ func resolveMinorToPatch(minor string) (string, error) {
 func latestCuDNNForCUDA(cuda string) (string, error) {
 	cuDNNs := []string{}
 	for _, image := range CUDABaseImages {
-		if version.Equal(image.CUDA, cuda) {
+		if version.Matches(cuda, image.CUDA) {
 			cuDNNs = append(cuDNNs, image.CuDNN)
 		}
 	}
@@ -241,7 +241,7 @@ func versionGreater(a string, b string) (bool, error) {
 
 func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
 	for _, image := range CUDABaseImages {
-		if version.Equal(image.CUDA, cuda) && image.CuDNN == cuDNN {
+		if version.Matches(cuda, image.CUDA) && image.CuDNN == cuDNN {
 			return image.ImageTag(), nil
 		}
 	}
