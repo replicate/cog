@@ -7,16 +7,13 @@ import (
 )
 
 func TestLatestCuDNNForCUDA(t *testing.T) {
-	actual, err := latestCuDNNForCUDA("10.2")
+	actual, err := latestCuDNNForCUDA("11.8")
 	require.NoError(t, err)
 	require.Equal(t, "8", actual)
 }
 
 func TestResolveMinorToPatch(t *testing.T) {
-	cuda, err := resolveMinorToPatch("10.2")
-	require.NoError(t, err)
-	require.Equal(t, "10.2", cuda)
-	cuda, err = resolveMinorToPatch("11.3")
+	cuda, err := resolveMinorToPatch("11.3")
 	require.NoError(t, err)
 	require.Equal(t, "11.3.1", cuda)
 	_, err = resolveMinorToPatch("1214348324.432879432")
