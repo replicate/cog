@@ -317,9 +317,8 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 
 	requirements, err := config.PythonRequirementsForArch("", "")
 	require.NoError(t, err)
-	expected := `--find-links https://download.pytorch.org/whl/torch_stable.html
-torch==1.7.1+cpu
-torchvision==0.8.2+cpu
+	expected := `torch==1.7.1
+torchvision==0.8.2
 torchaudio==0.7.2
 foo==1.0.0`
 	require.Equal(t, expected, requirements)
