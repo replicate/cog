@@ -13,15 +13,16 @@ import (
 	"github.com/replicate/cog/pkg/config"
 )
 
-func testTini() string {
-	return `RUN --mount=type=cache,target=/var/cache/apt set -eux; \
-apt-get update -qq; \
-apt-get install -qqy --no-install-recommends curl; \
-rm -rf /var/lib/apt/lists/*; \
-TINI_VERSION=v0.19.0; \
-TINI_ARCH="$(dpkg --print-architecture)"; \
-curl -sSL -o /sbin/tini "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_ARCH}"; \
-chmod +x /sbin/tini
+func testTiniStage() string {
+	return `FROM curlimages/curl AS downloader
+ARG TINI_VERSION=0.19.0
+WORKDIR /tmp
+RUN curl -fsSL -O "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini" && chmod +x tini
+`
+}
+
+func testInstallTini() string {
+	return `COPY --link --from=downloader /tmp/tini /sbin/tini
 ENTRYPOINT ["/sbin/tini", "--"]
 `
 }
@@ -79,11 +80,12 @@ predict: predict.py:Predictor
 
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
-FROM python:3.8
+` + testTiniStage() +
+		`FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + testTini() + testInstallCog(gen.relativeTmpDir) + `
+` + testInstallTini() + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -109,11 +111,12 @@ predict: predict.py:Predictor
 
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
-FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
+` + testTiniStage() +
+		`FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + testTini() + testInstallPython("3.8") + testInstallCog(gen.relativeTmpDir) + `
+` + testInstallTini() + testInstallPython("3.8") + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -148,11 +151,12 @@ predict: predict.py:Predictor
 
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
-FROM python:3.8
+` + testTiniStage() +
+		`FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + testTini() + testInstallCog(gen.relativeTmpDir) + `
+` + testInstallTini() + testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
@@ -196,11 +200,12 @@ predict: predict.py:Predictor
 
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
-FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
+` + testTiniStage() +
+		`FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + testTini() +
+` + testInstallTini() +
 		testInstallPython("3.8") +
 		testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
@@ -242,11 +247,12 @@ build:
 
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
-FROM python:3.8
+` + testTiniStage() +
+		`FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + testTini() + testInstallCog(gen.relativeTmpDir) + `
+` + testInstallTini() + testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 RUN cowsay moo
 WORKDIR /src
@@ -346,11 +352,12 @@ COPY root-large /src/root-large`
 	// model copy should be run before dependency install and code copy
 	expected = `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
-FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
+` + testTiniStage() +
+		`FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + testTini() +
+` + testInstallTini() +
 		testInstallPython("3.8") +
 		testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
@@ -420,11 +427,12 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
-FROM python:3.8
+` + testTiniStage() +
+		`FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + testTini() + testInstallCog(gen.relativeTmpDir) + `
+` + testInstallTini() + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
