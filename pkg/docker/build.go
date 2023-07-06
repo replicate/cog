@@ -23,6 +23,11 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 		args = append(args, "--platform", "linux/amd64", "--load")
 	}
 
+	buildArg := os.Getenv("BUILD_ARG")
+	if buildArg != "" {
+		args = append(args, fmt.Sprintf("--build-arg=%s", buildArg))
+	}
+
 	for _, secret := range secrets {
 		args = append(args, "--secret", secret)
 	}
