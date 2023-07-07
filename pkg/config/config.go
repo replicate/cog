@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -195,32 +196,32 @@ func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 }
 
 func (c *Config) ValidateAndComplete(projectDir string) error {
-	// TODO(andreas): return all errors at once, rather than
-	// whack-a-mole one at a time with errs := []error{}, etc.
-
 	// TODO(andreas): validate that torch/torchvision/torchaudio are compatible
 	// TODO(andreas): warn if user specifies tensorflow-gpu instead of tensorflow
 	// TODO(andreas): use pypi api to validate that all python versions exist
 
+	errs := []error{}
+
 	err := ValidateConfig(c, "")
 	if err != nil {
-		return err
+		errs = append(errs, err)
 	}
+
 	if c.Predict != "" {
 		if len(strings.Split(c.Predict, ".py:")) != 2 {
-			return fmt.Errorf("'predict' in cog.yaml must be in the form 'predict.py:Predictor")
+			errs = append(errs, fmt.Errorf("'predict' in cog.yaml must be in the form 'predict.py:Predictor"))
 		}
 	}
 
 	if len(c.Build.PythonPackages) > 0 && c.Build.PythonRequirements != "" {
-		return fmt.Errorf("Only one of python_packages or python_requirements can be set in your cog.yaml, not both")
+		errs = append(errs, fmt.Errorf("Only one of python_packages or python_requirements can be set in your cog.yaml, not both"))
 	}
 
 	// Load python_requirements into memory to simplify reading it multiple times
 	if c.Build.PythonRequirements != "" {
 		fh, err := os.Open(path.Join(projectDir, c.Build.PythonRequirements))
 		if err != nil {
-			return err
+			errs = append(errs, fmt.Errorf("Failed to open python_requirements file: %w", err))
 		}
 		// Use scanner to handle CRLF endings
 		scanner := bufio.NewScanner(fh)
@@ -236,8 +237,12 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 
 	if c.Build.GPU {
 		if err := c.validateAndCompleteCUDA(); err != nil {
-			return err
+			errs = append(errs, err)
 		}
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 
 	return nil
