@@ -30,7 +30,7 @@ build:
   system_packages:
     - "libgl1-mesa-glx"
     - "libglib2.0-0"
-  python_version: "3.8"
+  python_version: "3.11"
   python_packages:
     - "torch==1.8.1"
 predict: "predict.py:Predictor"
@@ -60,7 +60,7 @@ class Predictor(BasePredictor):
 Now, you can run predictions on this model:
 
 ```console
-$ cog predict -i @input.jpg
+$ cog predict -i image=@input.jpg
 --> Building Docker image...
 --> Running Prediction...
 --> Output written to output.jpg

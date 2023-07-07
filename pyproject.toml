@@ -33,6 +33,7 @@ optional-dependencies = { "dev" = [
   "pillow",
   "pytest",
   "pytest-httpserver",
+  "pytest-rerunfailures",
   "pytest-xdist",
   "responses",
   "ruff",

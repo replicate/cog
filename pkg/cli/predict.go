@@ -157,10 +157,11 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 		return err
 	}
 
-	inputs, err := parseInputFlags(inputFlags, schema)
+	inputs, err := parseInputFlags(inputFlags)
 	if err != nil {
 		return err
 	}
+
 	prediction, err := predictor.Predict(inputs)
 	if err != nil {
 		return err
@@ -271,50 +272,26 @@ func handleMultipleFileOutput(prediction *predict.Response, outputSchema *openap
 	return nil
 }
 
-func parseInputFlags(inputs []string, schema *openapi3.T) (predict.Inputs, error) {
-	var err error
+func parseInputFlags(inputs []string) (predict.Inputs, error) {
 	keyVals := map[string]string{}
 	for _, input := range inputs {
 		var name, value string
 
 		// Default input name is "input"
 		if !strings.Contains(input, "=") {
-			name, err = getFirstInput(schema)
-			if err != nil {
-				return nil, err
-			}
-			value = input
-		} else {
-			split := strings.SplitN(input, "=", 2)
-			name = split[0]
-			value = split[1]
+			return nil, fmt.Errorf("Failed to parse input '%s', expected format is 'name=value'", input)
 		}
+
+		split := strings.SplitN(input, "=", 2)
+		name = split[0]
+		value = split[1]
+
 		if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
 			value = value[1 : len(value)-1]
 		}
+
 		keyVals[name] = value
 	}
-	return predict.NewInputs(keyVals), nil
-}
 
-func getFirstInput(schema *openapi3.T) (string, error) {
-	inputProperties := schema.Components.Schemas["Input"].Value.Properties
-	for k, v := range inputProperties {
-		val, ok := v.Value.Extensions["x-order"]
-		if !ok {
-			continue
-		}
-		rawMsg, ok := val.(json.RawMessage)
-		if !ok {
-			continue
-		}
-		var order int
-		if err := json.Unmarshal(rawMsg, &order); err != nil {
-			return "", err
-		}
-		if order == 0 {
-			return k, nil
-		}
-	}
-	return "", fmt.Errorf("Could not determine the default input based on the order of the inputs. Please specify inputs in the format '-i name=value'")
+	return predict.NewInputs(keyVals), nil
 }
