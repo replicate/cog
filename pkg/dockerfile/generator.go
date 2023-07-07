@@ -115,7 +115,7 @@ func (g *Generator) GenerateBase() (string, error) {
 	return strings.Join(filterEmpty([]string{
 		"#syntax=docker/dockerfile:1.4",
 		g.tiniStage(),
-		"FROM " + baseImage,
+		"FROM " + "PEW PEW PEW",
 		g.preamble(),
 		g.installTini(),
 		installPython,
