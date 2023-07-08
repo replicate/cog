@@ -76,51 +76,48 @@ type CUDABaseImage struct {
 	Ubuntu  string
 }
 
-func (i *CUDABaseImage) UnmarshalJSON(data []byte) error {
-	var tag string
-	if err := json.Unmarshal(data, &tag); err != nil {
-		return err
-	}
-	parts := strings.Split(tag, "-")
-	if len(parts) != 4 {
-		return fmt.Errorf("Tag must be in the format <cudaVersion>-cudnn<cudnnVersion>-{devel,runtime}-ubuntu<ubuntuVersion>. Invalid tag: %s", tag)
-	}
-	i.Tag = tag
-	i.CUDA = parts[0]
-	i.CuDNN = strings.Split(parts[1], "cudnn")[1]
-	i.IsDevel = parts[2] == "devel"
-	i.Ubuntu = strings.Split(parts[3], "ubuntu")[1]
-	return nil
-}
-
 func (i *CUDABaseImage) ImageTag() string {
 	return "nvidia/cuda:" + i.Tag
 }
 
-//go:generate go run ../../tools/generate_compatibility_matrices/main.go -tf-output tf_compatability_matrix.json -torch-output torch_compatability_matrix.json -cuda-images-output cuda_base_image_tags.json
+//go:generate go run ../../tools/compatgen/main.go cuda -o cuda_base_images.json
+//go:embed cuda_base_images.json
+var cudaBaseImagesData []byte
+var CUDABaseImages []CUDABaseImage
 
+//go:generate go run ../../tools/compatgen/main.go tensorflow -o tf_compatability_matrix.json
 //go:embed tf_compatability_matrix.json
 var tfCompatibilityMatrixData []byte
 var TFCompatibilityMatrix []TFCompatibility
 
+//go:generate go run ../../tools/compatgen/main.go torch -o torch_compatability_matrix.json
 //go:embed torch_compatability_matrix.json
 var torchCompatibilityMatrixData []byte
 var TorchCompatibilityMatrix []TorchCompatibility
 
-//go:embed cuda_base_image_tags.json
-var cudaBaseImageTagsData []byte
-var CUDABaseImages []CUDABaseImage
-
 func init() {
+	if err := json.Unmarshal(cudaBaseImagesData, &CUDABaseImages); err != nil {
+		console.Fatalf("Failed to load embedded CUDA base images: %s", err)
+	}
+
 	if err := json.Unmarshal(tfCompatibilityMatrixData, &TFCompatibilityMatrix); err != nil {
 		console.Fatalf("Failed to load embedded Tensorflow compatibility matrix: %s", err)
 	}
-	if err := json.Unmarshal(torchCompatibilityMatrixData, &TorchCompatibilityMatrix); err != nil {
+
+	var torchCompatibilityMatrix []TorchCompatibility
+	if err := json.Unmarshal(torchCompatibilityMatrixData, &torchCompatibilityMatrix); err != nil {
 		console.Fatalf("Failed to load embedded PyTorch compatibility matrix: %s", err)
 	}
-	if err := json.Unmarshal(cudaBaseImageTagsData, &CUDABaseImages); err != nil {
-		console.Fatalf("Failed to load embedded CUDA base images: %s", err)
+	filteredTorchCompatibilityMatrix := []TorchCompatibility{}
+	for _, compat := range torchCompatibilityMatrix {
+		for _, cudaBaseImage := range CUDABaseImages {
+			if compat.CUDA != nil && version.Matches(*compat.CUDA, cudaBaseImage.CUDA) {
+				filteredTorchCompatibilityMatrix = append(filteredTorchCompatibilityMatrix, compat)
+				break
+			}
+		}
 	}
+	TorchCompatibilityMatrix = filteredTorchCompatibilityMatrix
 }
 
 func cudasFromTorch(ver string) ([]string, error) {
@@ -195,7 +192,7 @@ func resolveMinorToPatch(minor string) (string, error) {
 func latestCuDNNForCUDA(cuda string) (string, error) {
 	cuDNNs := []string{}
 	for _, image := range CUDABaseImages {
-		if version.Equal(image.CUDA, cuda) {
+		if version.Matches(cuda, image.CUDA) {
 			cuDNNs = append(cuDNNs, image.CuDNN)
 		}
 	}
@@ -244,7 +241,7 @@ func versionGreater(a string, b string) (bool, error) {
 
 func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
 	for _, image := range CUDABaseImages {
-		if version.Equal(image.CUDA, cuda) && image.CuDNN == cuDNN {
+		if version.Matches(cuda, image.CUDA) && image.CuDNN == cuDNN {
 			return image.ImageTag(), nil
 		}
 	}
@@ -363,7 +360,7 @@ func torchvisionGPUPackage(ver, cuda string) (name, cpuVersion, findLinks, extra
 // TODO(andreas): clean up this hack by actually parsing the torch_stable.html list in the generator
 func torchStripCPUSuffixForM1(version string, goos string, goarch string) string {
 	// TODO(andreas): clean up this hack
-	if util.IsM1Mac(goos, goarch) {
+	if util.IsAppleSiliconMac(goos, goarch) {
 		return strings.ReplaceAll(version, "+cpu", "")
 	}
 	return version

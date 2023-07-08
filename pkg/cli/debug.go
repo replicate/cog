@@ -11,31 +11,29 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
+var imageName string
+
 func newDebugCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "debug",
 		Hidden: true,
+		Short:  "Generate a Dockerfile from " + global.ConfigFilename,
 		RunE:   cmdDockerfile,
 	}
 
-	debug := &cobra.Command{
-		Use:    "debug",
-		Short:  "Generate a Dockerfile from " + global.ConfigFilename,
-		Hidden: true,
-	}
-
-	cmd.AddCommand(debug)
+	addSeparateWeightsFlag(cmd)
+	cmd.Flags().StringVarP(&imageName, "image-name", "", "", "The image name to use for the generated Dockerfile")
 
 	return cmd
 }
 
 func cmdDockerfile(cmd *cobra.Command, args []string) error {
-	config, projectDir, err := config.GetConfig(projectDirFlag)
+	cfg, projectDir, err := config.GetConfig(projectDirFlag)
 	if err != nil {
 		return err
 	}
 
-	generator, err := dockerfile.NewGenerator(config, projectDir)
+	generator, err := dockerfile.NewGenerator(cfg, projectDir)
 	if err != nil {
 		return fmt.Errorf("Error creating Dockerfile generator: %w", err)
 	}
@@ -44,10 +42,28 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 			console.Warnf("Error cleaning up after build: %v", err)
 		}
 	}()
-	out, err := generator.Generate()
-	if err != nil {
-		return err
+
+	if buildSeparateWeights {
+		if imageName == "" {
+			imageName = config.DockerImageName(projectDir)
+		}
+
+		weightsDockerfile, RunnerDockerfile, dockerignore, err := generator.Generate(imageName)
+		if err != nil {
+			return err
+		}
+
+		console.Output(fmt.Sprintf("=== Weights Dockerfile contents:\n%s\n===\n", weightsDockerfile))
+		console.Output(fmt.Sprintf("=== Runner Dockerfile contents:\n%s\n===\n", RunnerDockerfile))
+		console.Output(fmt.Sprintf("=== DockerIgnore contents:\n%s===\n", dockerignore))
+	} else {
+		dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
+		if err != nil {
+			return err
+		}
+
+		console.Output(dockerfile)
 	}
-	console.Output(out)
+
 	return nil
 }

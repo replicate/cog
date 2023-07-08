@@ -2,16 +2,17 @@ import argparse
 import logging
 import os
 import signal
+import socket
+import sys
 import textwrap
 import threading
-from datetime import datetime, timezone
-from typing import Any, Callable, Optional, Union
+from enum import Enum, auto, unique
+from typing import Any, Callable, Dict, Optional, Union
 
 import structlog
 import uvicorn
 from anyio import CapacityLimiter
 from anyio.lowlevel import RunVar
-from enum import Enum, auto, unique
 from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -46,10 +47,11 @@ class Health(Enum):
 
 
 def create_app(
-    predictor_ref: str,
-    shutdown_event: threading.Event,
+    config: Dict[str, Any],
+    shutdown_event: Optional[threading.Event],
     threads: int = 1,
     upload_url: Optional[str] = None,
+    mode: str = "predict",
 ) -> FastAPI:
     app = FastAPI(
         title="Cog",  # TODO: mention model name?
@@ -59,6 +61,8 @@ def create_app(
     app.state.health = Health.STARTING
     app.state.setup_result = None
     app.state.setup_result_payload = None
+
+    predictor_ref = get_predictor_ref(config, mode)
 
     runner = PredictionRunner(
         predictor_ref=predictor_ref,
@@ -194,7 +198,7 @@ def create_app(
             response = PredictionResponse(**async_result.get().dict())
         except ValidationError as e:
             _log_invalid_output(e)
-            raise HTTPException(status_code=500)
+            raise HTTPException(status_code=500, detail=str(e)) from e
         except InvalidStateException as e:
             _log_invalid_output(e)
             raise HTTPException(
@@ -227,7 +231,8 @@ def create_app(
     @app.post("/shutdown")
     def start_shutdown() -> Any:
         log.info("shutdown requested via http")
-        shutdown_event.set()
+        if shutdown_event is not None:
+            shutdown_event.set()
         return JSONResponse({}, status_code=200)
 
     def _check_setup_result() -> Any:
@@ -292,6 +297,11 @@ class Server(uvicorn.Server):
         os.kill(os.getpid(), signal.SIGKILL)
 
 
+def is_port_in_use(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(("localhost", port)) == 0
+
+
 def signal_ignore(signum: Any, frame: Any) -> None:
     log.warn("Got a signal to exit, ignoring it...", signal=signal.Signals(signum).name)
 
@@ -326,6 +336,14 @@ if __name__ == "__main__":
         default=False,
         help="Ignore SIGTERM and wait for a request to /shutdown (or a SIGINT) before exiting",
     )
+    parser.add_argument(
+        "--x-mode",
+        dest="mode",
+        type=str,
+        default="predict",
+        choices=["predict", "train"],
+        help="Experimental: Run in 'predict' or 'train' mode",
+    )
     args = parser.parse_args()
 
     # log level is configurable so we can make it quiet or verbose for `cog predict`
@@ -345,15 +363,19 @@ if __name__ == "__main__":
             threads = os.cpu_count()
 
     shutdown_event = threading.Event()
-    predictor_ref = get_predictor_ref(config)
     app = create_app(
-        predictor_ref=predictor_ref,
+        config=config,
         shutdown_event=shutdown_event,
         threads=threads,
         upload_url=args.upload_url,
+        mode=args.mode,
     )
 
     port = int(os.getenv("PORT", 5000))
+    if is_port_in_use(port):
+        log.error(f"Port {port} is already in use")
+        sys.exit(1)
+
     server_config = uvicorn.Config(
         app,
         host="0.0.0.0",

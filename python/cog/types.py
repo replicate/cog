@@ -1,16 +1,22 @@
+import base64
 import io
 import mimetypes
 import os
-import base64
 import pathlib
-import requests
 import shutil
 import tempfile
-from typing import Any, Callable, Dict, Iterator, List, TypeVar, Union
-from urllib.parse import urlparse
+import urllib
+from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
 
+import requests
 from pydantic import Field
-from pydantic.typing import NoArgAnyCallable
+
+FILENAME_ILLEGAL_CHARS = set("\u0000/")
+
+# Linux allows files up to 255 bytes long. We enforce a slightly shorter
+# filename so that there's room for prefixes added by
+# tempfile.NamedTemporaryFile, etc.
+FILENAME_MAX_LENGTH = 200
 
 
 def Input(
@@ -48,12 +54,10 @@ class File(io.IOBase):
         if isinstance(value, io.IOBase):
             return value
 
-        parsed_url = urlparse(value)
+        parsed_url = urllib.parse.urlparse(value)
         if parsed_url.scheme == "data":
-            # https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URIs
-            # TODO: decode properly. this maybe? https://github.com/fcurella/python-datauri/
-            header, encoded = parsed_url.path.split(",", 1)
-            return io.BytesIO(base64.b64decode(encoded))
+            res = urllib.request.urlopen(value)
+            return io.BytesIO(res.read())
         elif parsed_url.scheme == "http" or parsed_url.scheme == "https":
             return URLFile(value)
         else:
@@ -102,25 +106,27 @@ class URLPath(pathlib.PosixPath):
     pathlib.Path) checks.
     """
 
-    def __init__(self, *, source: str, filename: str, fileobj: io.IOBase):
+    _path: Optional[Path]
+
+    def __init__(self, *, source: str, filename: str, fileobj: io.IOBase) -> None:
         self.source = source
         self.filename = filename
         self.fileobj = fileobj
 
         self._path = None
 
-    def convert(self):
+    def convert(self) -> Path:
         if self._path is None:
             dest = tempfile.NamedTemporaryFile(suffix=self.filename, delete=False)
             shutil.copyfileobj(self.fileobj, dest)
             self._path = Path(dest.name)
         return self._path
 
-    def unlink(self):
+    def unlink(self, missing_ok: bool = False) -> None:
         if self._path and self._path.exists():
-            self._path.unlink()
+            self._path.unlink(missing_ok=missing_ok)
 
-    def __str__(self):
+    def __str__(self) -> str:
         # FastAPI's jsonable_encoder will encode subclasses of pathlib.Path by
         # calling str() on them
         return self.source
@@ -135,42 +141,42 @@ class URLFile(io.IOBase):
 
     __slots__ = ("__target__", "__url__")
 
-    def __init__(self, url):
+    def __init__(self, url: str) -> None:
         object.__setattr__(self, "__url__", url)
 
     # We provide __getstate__ and __setstate__ explicitly to ensure that the
     # object is always picklable.
-    def __getstate__(self):
+    def __getstate__(self) -> Dict[str, Any]:
         return {"url": object.__getattribute__(self, "__url__")}
 
-    def __setstate__(self, state):
+    def __setstate__(self, state: Dict[str, Any]) -> None:
         object.__setattr__(self, "__url__", state["url"])
 
     # Proxy getattr/setattr/delattr through to the response object.
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: Any) -> None:
         if hasattr(type(self), name):
             object.__setattr__(self, name, value)
         else:
             setattr(self.__wrapped__, name, value)
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         if name in ("__target__", "__wrapped__", "__url__"):
             raise AttributeError(name)
         else:
             return getattr(self.__wrapped__, name)
 
-    def __delattr__(self, name):
+    def __delattr__(self, name: str) -> None:
         if hasattr(type(self), name):
             object.__delattr__(self, name)
         else:
             delattr(self.__wrapped__, name)
 
     # Luckily the only dunder method on HTTPResponse is __iter__
-    def __iter__(self):
+    def __iter__(self) -> Iterator[bytes]:
         return iter(self.__wrapped__)
 
     @property
-    def __wrapped__(self):
+    def __wrapped__(self) -> Any:
         try:
             return object.__getattribute__(self, "__target__")
         except AttributeError:
@@ -181,7 +187,7 @@ class URLFile(io.IOBase):
             object.__setattr__(self, "__target__", resp.raw)
             return resp.raw
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         try:
             target = object.__getattribute__(self, "__target__")
         except AttributeError:
@@ -190,20 +196,38 @@ class URLFile(io.IOBase):
             )
         else:
             return "<{} at 0x{:x} wrapping {!r}>".format(
-                type(self).__name__, id(self), target, id(target)
+                type(self).__name__,
+                id(self),
+                target,
             )
 
 
 def get_filename(url: str) -> str:
-    parsed_url = urlparse(url)
+    parsed_url = urllib.parse.urlparse(url)
+
     if parsed_url.scheme == "data":
-        header, _ = parsed_url.path.split(",", 1)
-        mime_type, _ = header.split(";", 1)
+        resp = urllib.request.urlopen(url)
+        mime_type = resp.headers.get_content_type()
         extension = mimetypes.guess_extension(mime_type)
         if extension is None:
             return "file"
         return "file" + extension
-    return os.path.basename(parsed_url.path)
+
+    basename = os.path.basename(parsed_url.path)
+    basename = urllib.parse.unquote_plus(basename)
+
+    # If the filename is too long, we truncate it (appending '~' to denote the
+    # truncation) while preserving the file extension.
+    # - truncate it
+    # - append a tilde
+    # - preserve the file extension
+    if _len_bytes(basename) > FILENAME_MAX_LENGTH:
+        basename = _truncate_filename_bytes(basename, length=FILENAME_MAX_LENGTH)
+
+    for c in FILENAME_ILLEGAL_CHARS:
+        basename = basename.replace(c, "_")
+
+    return basename
 
 
 Item = TypeVar("Item")
@@ -230,3 +254,17 @@ class ConcatenateIterator(Iterator[Item]):
     @classmethod
     def validate(cls, value: Any) -> Iterator:
         return value
+
+
+def _len_bytes(s, encoding="utf-8"):
+    return len(s.encode(encoding))
+
+
+def _truncate_filename_bytes(s, length, encoding="utf-8"):
+    """
+    Truncate a filename to at most `length` bytes, preserving file extension
+    and avoiding text encoding corruption from truncation.
+    """
+    root, ext = os.path.splitext(s.encode(encoding))
+    root = root[: length - len(ext) - 1]
+    return root.decode(encoding, "ignore") + "~" + ext.decode(encoding)

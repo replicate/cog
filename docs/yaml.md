@@ -6,9 +6,9 @@ It has three keys: [`build`](#build), [`image`](#image), and [`predict`](#predic
 
 ```yaml
 build:
-  python_version: "3.8"
+  python_version: "3.11"
   python_packages:
-    - pytorch==1.4.0
+    - pytorch==2.0.1
   system_packages:
     - "ffmpeg"
     - "libavcodec-dev"
@@ -58,16 +58,27 @@ build:
     - tensorflow==2.5.0
 ```
 
-### `python_version`
+### `python_requirements`
 
-The minor (`3.8`) or patch (`3.8.1`) version of Python to use. For example:
+A pip requirements file specifying the Python packages to install. For example:
 
 ```yaml
 build:
-  python_version: "3.8.1"
+  python_requirements: requirements.txt
 ```
 
-Cog supports all active branches of Python: 3.7, 3.8, 3.9, 3.10.
+Your `cog.yaml` file can set either `python_packages` or `python_requirements`, but not both. Use `python_requirements` when you need to configure options like `--extra-index-url` or `--trusted-host` to fetch Python package dependencies.
+
+### `python_version`
+
+The minor (`3.11`) or patch (`3.11.1`) version of Python to use. For example:
+
+```yaml
+build:
+  python_version: "3.11.1"
+```
+
+Cog supports all active branches of Python: 3.8, 3.9, 3.10, 3.11.
 
 Note that these are the versions supported **in the Docker container**, not your host machine. You can run any version(s) of Python you wish on your host machine.
 
@@ -85,6 +96,20 @@ build:
 ```
 
 Your code is _not_ available to commands in `run`. This is so we can build your image efficiently when running locally.
+
+Each command in `run` can be either a string or a dictionary in the following format:
+
+```yaml
+build:
+  run:
+    - command: pip install
+      mounts:
+        - type: secret
+          id: pip
+          target: /etc/pip.conf
+```
+
+You can use secret mounts to securely pass credentials to setup commands, without baking them into the image. For more information, see [Dockerfile reference](https://docs.docker.com/engine/reference/builder/#run---mounttypesecret).
 
 ### `system_packages`
 

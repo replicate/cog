@@ -1,13 +1,14 @@
 import os
 import threading
 import time
+from contextlib import ExitStack
 from typing import Any, Dict, Optional
+from unittest import mock
 
-from attrs import define
-from fastapi.testclient import TestClient
 import pytest
-
+from attrs import define
 from cog.server.http import create_app
+from fastapi.testclient import TestClient
 
 
 @define
@@ -17,8 +18,12 @@ class AppConfig:
 
 
 def _fixture_path(name):
+    # HACK: `name` can either be in the form "<name>.py:Predictor" or just "<name>".
+    if ":" not in name:
+        name = f"{name}.py:Predictor"
+
     test_dir = os.path.dirname(os.path.realpath(__file__))
-    return os.path.join(test_dir, f"fixtures/{name}.py") + ":Predictor"
+    return os.path.join(test_dir, f"fixtures/{name}")
 
 
 def uses_predictor(name):
@@ -37,9 +42,9 @@ def make_client(fixture_name: str, upload_url: Optional[str] = None):
     """
     Creates a fastapi test client for an app that uses the requested Predictor.
     """
-    predictor_ref = _fixture_path(fixture_name)
+    config = {"predict": _fixture_path(fixture_name)}
     app = create_app(
-        predictor_ref=predictor_ref,
+        config=config,
         shutdown_event=threading.Event(),
         upload_url=upload_url,
     )
@@ -60,7 +65,13 @@ def client(request):
     fixture_name = request.param.predictor_fixture
     options = request.param.options
 
-    # Use context manager to trigger setup/shutdown events.
-    with make_client(fixture_name=fixture_name, **options) as c:
+    with ExitStack() as stack:
+        if "env" in options:
+            stack.enter_context(mock.patch.dict(os.environ, options["env"]))
+            del options["env"]
+
+        # Use context manager to trigger setup/shutdown events.
+        c = make_client(fixture_name=fixture_name, **options)
+        stack.enter_context(c)
         wait_for_setup(c)
         yield c

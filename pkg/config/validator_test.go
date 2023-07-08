@@ -79,3 +79,15 @@ func TestValidatePythonVersionIsRequired(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Additional property python_versions is not allowed")
 }
+
+func TestValidateNullListsAllowed(t *testing.T) {
+	config := `build:
+  gpu: true
+  python_version: "3.8"
+  system_packages:
+  python_packages:
+  run:`
+
+	err := Validate(config, "1.0")
+	require.NoError(t, err)
+}

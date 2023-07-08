@@ -3,7 +3,6 @@ import tempfile
 from typing import Iterator
 
 from cog import BasePredictor, Path
-
 from PIL import Image
 
 

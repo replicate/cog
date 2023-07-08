@@ -4,22 +4,25 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
 )
 
-func testTini() string {
-	return `RUN --mount=type=cache,target=/var/cache/apt set -eux; \
-apt-get update -qq; \
-apt-get install -qqy --no-install-recommends curl; \
-rm -rf /var/lib/apt/lists/*; \
-TINI_VERSION=v0.19.0; \
-TINI_ARCH="$(dpkg --print-architecture)"; \
-curl -sSL -o /sbin/tini "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_ARCH}"; \
-chmod +x /sbin/tini
+func testTiniStage() string {
+	return `FROM curlimages/curl AS downloader
+ARG TINI_VERSION=0.19.0
+WORKDIR /tmp
+RUN curl -fsSL -O "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini" && chmod +x tini
+`
+}
+
+func testInstallTini() string {
+	return `COPY --link --from=downloader /tmp/tini /sbin/tini
 ENTRYPOINT ["/sbin/tini", "--"]
 `
 }
@@ -72,15 +75,17 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	actual, err := gen.Generate()
+	_, actual, _, err := gen.Generate("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	expected := `# syntax = docker/dockerfile:1.2
-FROM python:3.8
+	expected := `#syntax=docker/dockerfile:1.4
+FROM r8.im/replicate/cog-test-weights AS weights
+` + testTiniStage() +
+		`FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + testTini() + testInstallCog(gen.relativeTmpDir) + `
+` + testInstallTini() + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -101,15 +106,17 @@ predict: predict.py:Predictor
 	require.NoError(t, conf.ValidateAndComplete(""))
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	actual, err := gen.Generate()
+	_, actual, _, err := gen.Generate("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	expected := `# syntax = docker/dockerfile:1.2
-FROM nvidia/cuda:11.2.0-cudnn8-devel-ubuntu20.04
+	expected := `#syntax=docker/dockerfile:1.4
+FROM r8.im/replicate/cog-test-weights AS weights
+` + testTiniStage() +
+		`FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + testTini() + testInstallPython("3.8") + testInstallCog(gen.relativeTmpDir) + `
+` + testInstallTini() + testInstallPython("3.8") + testInstallCog(gen.relativeTmpDir) + `
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -139,15 +146,17 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	actual, err := gen.Generate()
+	_, actual, _, err := gen.Generate("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	expected := `# syntax = docker/dockerfile:1.2
-FROM python:3.8
+	expected := `#syntax=docker/dockerfile:1.4
+FROM r8.im/replicate/cog-test-weights AS weights
+` + testTiniStage() +
+		`FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + testTini() + testInstallCog(gen.relativeTmpDir) + `
+` + testInstallTini() + testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
@@ -161,8 +170,7 @@ COPY . /src`
 	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
 
-	require.Equal(t, `--find-links https://download.pytorch.org/whl/torch_stable.html
-torch==1.5.1+cpu
+	require.Equal(t, `torch==1.5.1
 pandas==1.2.0.12`, string(requirements))
 }
 
@@ -176,8 +184,8 @@ build:
     - ffmpeg
     - cowsay
   python_packages:
-    - torch==1.5.1
-    - pandas==1.2.0.12
+    - torch==2.0.1
+    - pandas==2.0.3
   run:
     - "cowsay moo"
 predict: predict.py:Predictor
@@ -187,15 +195,17 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	actual, err := gen.Generate()
+	_, actual, _, err := gen.Generate("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	expected := `# syntax = docker/dockerfile:1.2
-FROM nvidia/cuda:10.2-cudnn8-devel-ubuntu18.04
+	expected := `#syntax=docker/dockerfile:1.4
+FROM r8.im/replicate/cog-test-weights AS weights
+` + testTiniStage() +
+		`FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + testTini() +
+` + testInstallTini() +
 		testInstallPython("3.8") +
 		testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
@@ -211,8 +221,9 @@ COPY . /src`
 
 	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
-	require.Equal(t, `torch==1.5.1
-pandas==1.2.0.12`, string(requirements))
+	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118
+torch==2.0.1+cu118
+pandas==2.0.3`, string(requirements))
 }
 
 // pre_install is deprecated but supported for backwards compatibility
@@ -231,15 +242,17 @@ build:
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	actual, err := gen.Generate()
+	_, actual, _, err := gen.Generate("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	expected := `# syntax = docker/dockerfile:1.2
-FROM python:3.8
+	expected := `#syntax=docker/dockerfile:1.4
+FROM r8.im/replicate/cog-test-weights AS weights
+` + testTiniStage() +
+		`FROM python:3.8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + testTini() + testInstallCog(gen.relativeTmpDir) + `
+` + testInstallTini() + testInstallCog(gen.relativeTmpDir) + `
 RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 RUN cowsay moo
 WORKDIR /src
@@ -263,8 +276,167 @@ build:
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	actual, err := gen.Generate()
+	_, actual, _, err := gen.Generate("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 	fmt.Println(actual)
 	require.Contains(t, actual, `pip install -r /tmp/requirements.txt`)
+}
+
+// mockFileInfo is a test type to mock os.FileInfo
+type mockFileInfo struct {
+	size int64
+}
+
+func (mfi mockFileInfo) Size() int64 {
+	return mfi.size
+}
+func (mfi mockFileInfo) Name() string {
+	return ""
+}
+func (mfi mockFileInfo) Mode() os.FileMode {
+	return 0
+}
+func (mfi mockFileInfo) ModTime() time.Time {
+	return time.Time{}
+}
+func (mfi mockFileInfo) IsDir() bool {
+	return false
+}
+func (mfi mockFileInfo) Sys() interface{} {
+	return nil
+}
+
+const sizeThreshold = 10 * 1024 * 1024
+
+func TestGenerateWithLargeModels(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	conf, err := config.FromYAML([]byte(`
+build:
+  gpu: true
+  system_packages:
+    - ffmpeg
+    - cowsay
+  python_packages:
+    - torch==2.0.1
+    - pandas==2.0.3
+  run:
+    - "cowsay moo"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	gen, err := NewGenerator(conf, tmpDir)
+	require.NoError(t, err)
+
+	gen.fileWalker = func(root string, walkFn filepath.WalkFunc) error {
+		for _, path := range []string{"checkpoints/large-a", "models/large-b", "root-large"} {
+			walkFn(path, mockFileInfo{size: sizeThreshold}, nil)
+		}
+		return nil
+	}
+
+	modelDockerfile, runnerDockerfile, dockerignore, err := gen.Generate("r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	expected := `#syntax=docker/dockerfile:1.4
+FROM scratch
+
+COPY checkpoints /src/checkpoints
+COPY models /src/models
+COPY root-large /src/root-large`
+
+	require.Equal(t, expected, modelDockerfile)
+
+	// model copy should be run before dependency install and code copy
+	expected = `#syntax=docker/dockerfile:1.4
+FROM r8.im/replicate/cog-test-weights AS weights
+` + testTiniStage() +
+		`FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+` + testInstallTini() +
+		testInstallPython("3.8") +
+		testInstallCog(gen.relativeTmpDir) + `
+RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
+COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
+RUN cowsay moo
+COPY --from=weights --link /src/checkpoints /src/checkpoints
+COPY --from=weights --link /src/models /src/models
+COPY --from=weights --link /src/root-large /src/root-large
+WORKDIR /src
+EXPOSE 5000
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`
+
+	require.Equal(t, expected, runnerDockerfile)
+
+	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
+	require.NoError(t, err)
+	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118
+torch==2.0.1+cu118
+pandas==2.0.3`, string(requirements))
+
+	expected = `# generated by replicate/cog
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+checkpoints
+checkpoints/**/*
+models
+models/**/*
+root-large
+`
+	require.Equal(t, expected, dockerignore)
+}
+
+func TestGenerateDockerfileWithoutSeparateWeights(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	conf, err := config.FromYAML([]byte(`
+build:
+  gpu: false
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	gen, err := NewGenerator(conf, tmpDir)
+	require.NoError(t, err)
+	actual, err := gen.GenerateDockerfileWithoutSeparateWeights()
+	require.NoError(t, err)
+
+	expected := `#syntax=docker/dockerfile:1.4
+` + testTiniStage() +
+		`FROM python:3.8
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+` + testInstallTini() + testInstallCog(gen.relativeTmpDir) + `
+WORKDIR /src
+EXPOSE 5000
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`
+
+	require.Equal(t, expected, actual)
 }

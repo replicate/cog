@@ -19,15 +19,20 @@
   "[jsonc]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
-  "python.formatting.provider": "black",
+  "[python]": {
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll": true,
+      "source.organizeImports": true
+    },
+    "editor.defaultFormatter": null
+  },
   "python.languageServer": "Pylance",
   "python.testing.pytestArgs": ["-vvv", "python"],
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
-  "[python]": {
-    "editor.defaultFormatter": "ms-python.python",
-    "editor.formatOnSave": true
-  },
+  "python.formatting.provider": "black",
   "python.linting.mypyEnabled": true,
-  "python.linting.mypyArgs": ["--show-column-numbers", "--no-pretty"]
+  "python.linting.mypyArgs": ["--show-column-numbers", "--no-pretty"],
+  "ruff.args": ["--config=pyproject.toml"]
 }

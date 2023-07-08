@@ -70,5 +70,14 @@ func run(cmd *cobra.Command, args []string) error {
 
 	console.Info("")
 	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
-	return docker.Run(runOptions)
+
+	err = docker.Run(runOptions)
+	if runOptions.GPUs != "" && err == docker.ErrMissingDeviceDriver {
+		console.Info("Missing device driver, re-trying without GPU")
+
+		runOptions.GPUs = ""
+		err = docker.Run(runOptions)
+	}
+
+	return err
 }

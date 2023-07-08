@@ -26,6 +26,7 @@ mkdir cog-quickstart
 cd cog-quickstart
 
 ```
+
 ## Run commands
 
 The simplest thing you can do with Cog is run a command inside a Docker environment.
@@ -34,25 +35,29 @@ The first thing you need to do is create a file called `cog.yaml`:
 
 ```yaml
 build:
-  python_version: "3.8"
+  python_version: "3.11"
 ```
 
 Then, you can run any command inside this environment. For example, enter
+
 ```bash
 cog run python
 
 ```
+
 and you'll get an interactive Python shell:
+
 ```none
 ✓ Building Docker image from cog.yaml... Successfully built 8f54020c8981
 Running 'python' in Docker with the current directory mounted as a volume...
 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-Python 3.8.10 (default, May 12 2021, 23:32:14)
+Python 3.11.1 (main, Jan 27 2023, 10:52:46)
 [GCC 9.3.0] on linux
 Type "help", "copyright", "credits" or "license" for more information.
 >>>
 ```
+
 (Hit Ctrl-D to exit the Python shell.)
 
 Inside this Docker environment you can do anything – run a Jupyter notebook, your training script, your evaluation script, and so on.
@@ -72,6 +77,7 @@ curl -O $WEIGHTS_URL
 Then, we need to write some code to describe how predictions are run on the model.
 
 Save this to `predict.py`:
+
 ```python
 from typing import Any
 from cog import BasePredictor, Input, Path
@@ -104,10 +110,10 @@ We also need to point Cog at this, and tell it what Python dependencies to insta
 
 ```yaml
 build:
-  python_version: "3.8"
+  python_version: "3.11"
   python_packages:
-    - pillow==9.1.0
-    - tensorflow==2.8.0
+    - pillow==9.5.0
+    - tensorflow==2.12.0
 predict: "predict.py:Predictor"
 ```
 
@@ -118,13 +124,16 @@ IMAGE_URL=https://gist.githubusercontent.com/bfirsh/3c2115692682ae260932a67d93fd
 curl $IMAGE_URL > input.jpg
 
 ```
+
 Now, let's run the model using Cog:
 
 ```bash
 cog predict -i image=@input.jpg
 
 ```
+
 If you see the following output
+
 ```
 [
   [
@@ -144,6 +153,7 @@ If you see the following output
   ]
 ]
 ```
+
 then it worked!
 
 Note: The first time you run `cog predict`, the build process will be triggered to generate a Docker container that can run your model. The next time you run `cog predict` the pre-built container will be used.
@@ -162,7 +172,7 @@ cog build -t resnet
 Once you've built the image, you can optionally view the generated dockerfile to get a sense of what Cog is doing under the hood:
 
 ```bash
-cog debug dockerfile
+cog debug
 ```
 
 You can run this image with `cog predict` by passing the filename as an argument:
@@ -180,6 +190,7 @@ docker run -d --rm -p 5000:5000 resnet
 ```
 
 We can send inputs directly with `curl`:
+
 ```bash
 curl http://localhost:5000/predictions -X POST \
     -H 'Content-Type: application/json' \
@@ -204,6 +215,32 @@ cog push
 ```
 
 The Docker image is now accessible to anyone or any system that has access to this Docker registry.
+
+> **Note**
+> Model repos often contain large data files, like weights and checkpoints. If you put these files in their own subdirectory and run `cog build` with the `--separate-weights` flag, Cog will copy these files into a separate Docker layer, which reduces the time needed to rebuild after making changes to code.
+>
+> ```shell
+> # ✅ Yes
+> .
+> ├── checkpoints/
+> │   └── weights.ckpt
+> ├── predict.py
+> └── cog.yaml
+>
+> # ❌ No
+> .
+> ├── weights.ckpt # <- Don't put weights in root directory
+> ├── predict.py
+> └── cog.yaml
+>
+> # ❌ No
+> .
+> ├── checkpoints/
+> │   ├── weights.ckpt
+> │   └── load_weights.py # <- Don't put code in weights directory
+> ├── predict.py
+> └── cog.yaml
+> ```
 
 ## Next steps
 

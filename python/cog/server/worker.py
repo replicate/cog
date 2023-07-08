@@ -9,7 +9,7 @@ from multiprocessing.connection import Connection
 from typing import Any, Dict, Iterable, Optional, TextIO, Union
 
 from ..json import make_encodeable
-from ..predictor import BasePredictor, load_predictor_from_ref
+from ..predictor import BasePredictor, get_predict, load_predictor_from_ref, run_setup
 from .eventtypes import (
     Done,
     Heartbeat,
@@ -41,7 +41,7 @@ class WorkerState(Enum):
 
 
 class Worker:
-    def __init__(self, predictor_ref: str, tee_output: bool = True):
+    def __init__(self, predictor_ref: str, tee_output: bool = True) -> None:
         self._state = WorkerState.NEW
         self._allow_cancel = False
 
@@ -123,7 +123,7 @@ class Worker:
 
         if done:
             if done.error and raise_on_error:
-                raise FatalWorkerException(raise_on_error)
+                raise FatalWorkerException(raise_on_error + ": " + done.error_detail)
             else:
                 self._state = WorkerState.READY
                 self._allow_cancel = False
@@ -143,7 +143,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         predictor_ref: str,
         events: Connection,
         tee_output: bool = True,
-    ):
+    ) -> None:
         self._predictor_ref = predictor_ref
         self._predictor: Optional[BasePredictor] = None
         self._events = events
@@ -180,7 +180,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         done = Done()
         try:
             self._predictor = load_predictor_from_ref(self._predictor_ref)
-            self._predictor.setup()
+            # Could be a function or a class
+            if hasattr(self._predictor, "setup"):
+                run_setup(self._predictor)
         except Exception as e:
             traceback.print_exc()
             done.error = True
@@ -211,7 +213,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         done = Done()
         self._cancelable = True
         try:
-            result = self._predictor.predict(**payload)
+            predict = get_predict(self._predictor)
+            result = predict(**payload)
+
             if result:
                 if isinstance(result, types.GeneratorType):
                     self._events.send(PredictionOutputType(multi=True))

@@ -1,5 +1,6 @@
 import time
 
+
 class Predictor:
     def setup(self):
         print("did setup")

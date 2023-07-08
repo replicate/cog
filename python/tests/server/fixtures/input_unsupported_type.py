@@ -1,5 +1,5 @@
-from pydantic import BaseModel
 from cog import BasePredictor
+from pydantic import BaseModel
 
 
 class Input(BaseModel):

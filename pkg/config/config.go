@@ -2,6 +2,8 @@ package config
 
 import (
 	"bufio"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -19,16 +21,25 @@ import (
 // TODO(andreas): custom cpu/gpu installs
 // TODO(andreas): suggest valid torchvision versions (e.g. if the user wants to use 0.8.0, suggest 0.8.1)
 
+type RunItem struct {
+	Command string `json:"command,omitempty" yaml:"command"`
+	Mounts  []struct {
+		Type   string `json:"type,omitempty" yaml:"type"`
+		ID     string `json:"id,omitempty" yaml:"id"`
+		Target string `json:"target,omitempty" yaml:"target"`
+	} `json:"mounts,omitempty" yaml:"mounts"`
+}
+
 type Build struct {
-	GPU                bool     `json:"gpu,omitempty" yaml:"gpu"`
-	PythonVersion      string   `json:"python_version,omitempty" yaml:"python_version"`
-	PythonRequirements string   `json:"python_requirements,omitempty" yaml:"python_requirements"`
-	PythonPackages     []string `json:"python_packages,omitempty" yaml:"python_packages"` // Deprecated, but included for backwards compatibility
-	Run                []string `json:"run,omitempty" yaml:"run"`
-	SystemPackages     []string `json:"system_packages,omitempty" yaml:"system_packages"`
-	PreInstall         []string `json:"pre_install,omitempty" yaml:"pre_install"` // Deprecated, but included for backwards compatibility
-	CUDA               string   `json:"cuda,omitempty" yaml:"cuda"`
-	CuDNN              string   `json:"cudnn,omitempty" yaml:"cudnn"`
+	GPU                bool      `json:"gpu,omitempty" yaml:"gpu"`
+	PythonVersion      string    `json:"python_version,omitempty" yaml:"python_version"`
+	PythonRequirements string    `json:"python_requirements,omitempty" yaml:"python_requirements"`
+	PythonPackages     []string  `json:"python_packages,omitempty" yaml:"python_packages"` // Deprecated, but included for backwards compatibility
+	Run                []RunItem `json:"run,omitempty" yaml:"run"`
+	SystemPackages     []string  `json:"system_packages,omitempty" yaml:"system_packages"`
+	PreInstall         []string  `json:"pre_install,omitempty" yaml:"pre_install"` // Deprecated, but included for backwards compatibility
+	CUDA               string    `json:"cuda,omitempty" yaml:"cuda"`
+	CuDNN              string    `json:"cudnn,omitempty" yaml:"cudnn"`
 
 	pythonRequirementsContent []string
 }
@@ -42,6 +53,7 @@ type Config struct {
 	Build   *Build `json:"build" yaml:"build"`
 	Image   string `json:"image,omitempty" yaml:"image"`
 	Predict string `json:"predict,omitempty" yaml:"predict"`
+	Train   string `json:"train,omitempty" yaml:"train"`
 }
 
 func DefaultConfig() *Config {
@@ -51,6 +63,80 @@ func DefaultConfig() *Config {
 			PythonVersion: "3.8",
 		},
 	}
+}
+
+func (r *RunItem) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var commandOrMap interface{}
+	if err := unmarshal(&commandOrMap); err != nil {
+		return err
+	}
+
+	switch v := commandOrMap.(type) {
+	case string:
+		r.Command = v
+	case map[interface{}]interface{}:
+		var data []byte
+		var err error
+
+		if data, err = yaml.Marshal(v); err != nil {
+			return err
+		}
+
+		aux := struct {
+			Command string `yaml:"command"`
+			Mounts  []struct {
+				Type   string `yaml:"type"`
+				ID     string `yaml:"id"`
+				Target string `yaml:"target"`
+			} `yaml:"mounts,omitempty"`
+		}{}
+
+		if err := yaml.Unmarshal(data, &aux); err != nil {
+			return err
+		}
+
+		*r = RunItem(aux)
+	default:
+		return fmt.Errorf("unexpected type %T for RunItem", v)
+	}
+
+	return nil
+}
+
+func (r *RunItem) UnmarshalJSON(data []byte) error {
+	var commandOrMap interface{}
+	if err := json.Unmarshal(data, &commandOrMap); err != nil {
+		return err
+	}
+
+	switch v := commandOrMap.(type) {
+	case string:
+		r.Command = v
+	case map[string]interface{}:
+		aux := struct {
+			Command string `json:"command"`
+			Mounts  []struct {
+				Type   string `json:"type"`
+				ID     string `json:"id"`
+				Target string `json:"target"`
+			} `json:"mounts,omitempty"`
+		}{}
+
+		jsonData, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+
+		if err := json.Unmarshal(jsonData, &aux); err != nil {
+			return err
+		}
+
+		*r = RunItem(aux)
+	default:
+		return fmt.Errorf("unexpected type %T for RunItem", v)
+	}
+
+	return nil
 }
 
 func FromYAML(contents []byte) (*Config, error) {
@@ -110,32 +196,32 @@ func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 }
 
 func (c *Config) ValidateAndComplete(projectDir string) error {
-	// TODO(andreas): return all errors at once, rather than
-	// whack-a-mole one at a time with errs := []error{}, etc.
-
 	// TODO(andreas): validate that torch/torchvision/torchaudio are compatible
 	// TODO(andreas): warn if user specifies tensorflow-gpu instead of tensorflow
 	// TODO(andreas): use pypi api to validate that all python versions exist
 
+	errs := []error{}
+
 	err := ValidateConfig(c, "")
 	if err != nil {
-		return err
+		errs = append(errs, err)
 	}
+
 	if c.Predict != "" {
 		if len(strings.Split(c.Predict, ".py:")) != 2 {
-			return fmt.Errorf("'predict' in cog.yaml must be in the form 'predict.py:Predictor")
+			errs = append(errs, fmt.Errorf("'predict' in cog.yaml must be in the form 'predict.py:Predictor"))
 		}
 	}
 
 	if len(c.Build.PythonPackages) > 0 && c.Build.PythonRequirements != "" {
-		return fmt.Errorf("Only one of python_packages or python_requirements can be set in your cog.yaml, not both")
+		errs = append(errs, fmt.Errorf("Only one of python_packages or python_requirements can be set in your cog.yaml, not both"))
 	}
 
 	// Load python_requirements into memory to simplify reading it multiple times
 	if c.Build.PythonRequirements != "" {
 		fh, err := os.Open(path.Join(projectDir, c.Build.PythonRequirements))
 		if err != nil {
-			return err
+			errs = append(errs, fmt.Errorf("Failed to open python_requirements file: %w", err))
 		}
 		// Use scanner to handle CRLF endings
 		scanner := bufio.NewScanner(fh)
@@ -151,8 +237,12 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 
 	if c.Build.GPU {
 		if err := c.validateAndCompleteCUDA(); err != nil {
-			return err
+			errs = append(errs, err)
 		}
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 
 	return nil

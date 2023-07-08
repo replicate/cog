@@ -1,15 +1,13 @@
-from datetime import datetime
 import base64
 import io
-import responses
-from responses import matchers
 import time
-
-from PIL import Image
-import pytest
 import unittest.mock as mock
 
-from .conftest import make_client, uses_predictor
+import responses
+from PIL import Image
+from responses import matchers
+
+from .conftest import uses_predictor, uses_predictor_with_client_options
 
 
 @uses_predictor("setup")
@@ -18,19 +16,11 @@ def test_setup_is_called(client, match):
     assert resp.status_code == 200
     assert resp.json() == match({"status": "succeeded", "output": "bar"})
 
-
-def test_predict_before_setup_complete():
-    client = make_client("sleep")
-    resp = client.post("/predictions")
-    assert resp.status_code == 503
-    assert resp.json() == {"detail": "Server not ready. Try again later"}
-
-
-def test_shutdown_before_setup_complete():
-    client = make_client("sleep")
-    resp = client.post("/shutdown")
+@uses_predictor("function.py:predict")
+def test_predict_works_with_functions(client, match):
+    resp = client.post("/predictions", json={"input": {"text": "baz"}})
     assert resp.status_code == 200
-
+    assert resp.json() == match({"status": "succeeded", "output": "hello baz"})
 
 @uses_predictor("openapi_complex_input")
 def test_openapi_specification(client):
@@ -262,7 +252,7 @@ def test_openapi_specification_with_yield(client):
 
 
 @uses_predictor("yield_concatenate_iterator")
-def test_openapi_specification_with_yield(client):
+def test_openapi_specification_with_yield_with_concatenate_iterator(client):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
@@ -429,6 +419,17 @@ def test_prediction_idempotent_endpoint_conflict(client, match):
     assert resp1.json() == match({"id": "abcd1234", "status": "processing"})
     assert resp2.status_code == 409
 
+    
+@uses_predictor("sleep")
+def test_predict_before_setup_complete():
+    resp = client.post("/predictions")
+    assert resp.status_code == 503
+    assert resp.json() == {"detail": "Server not ready. Try again later"}
+
+@uses_predictor("sleep")
+def test_shutdown_before_setup_complete():
+    resp = client.post("/shutdown")
+    assert resp.status_code == 200
 
 # a basic end-to-end test for async predictions. if you're adding more
 # exhaustive tests of webhooks, consider adding them to test_runner.py
@@ -492,3 +493,13 @@ def test_prediction_cancel(client):
 
     resp = client.post("/predictions/123/cancel")
     assert resp.status_code == 200
+
+
+@uses_predictor_with_client_options(
+    "setup_weights",
+    env={"COG_WEIGHTS": "data:text/plain; charset=utf-8;base64,aGVsbG8="},
+)
+def test_weights_are_read_from_environment_variables(client, match):
+    resp = client.post("/predictions")
+    assert resp.status_code == 200
+    assert resp.json() == match({"status": "succeeded", "output": "hello"})

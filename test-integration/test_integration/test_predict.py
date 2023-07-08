@@ -1,8 +1,9 @@
-from pathlib import Path
 import pathlib
 import shutil
-import pytest
 import subprocess
+from pathlib import Path
+
+import pytest
 
 from .util import random_string
 
@@ -10,7 +11,7 @@ from .util import random_string
 def test_predict_takes_string_inputs_and_returns_strings_to_stdout():
     project_dir = Path(__file__).parent / "fixtures/string-project"
     result = subprocess.run(
-        ["cog", "predict", "-i", "world"],
+        ["cog", "predict", "-i", "s=world"],
         cwd=project_dir,
         check=True,
         capture_output=True,
@@ -22,7 +23,7 @@ def test_predict_takes_string_inputs_and_returns_strings_to_stdout():
 def test_predict_takes_int_inputs_and_returns_ints_to_stdout():
     project_dir = Path(__file__).parent / "fixtures/int-project"
     result = subprocess.run(
-        ["cog", "predict", "-i", "2"],
+        ["cog", "predict", "-i", "num=2"],
         cwd=project_dir,
         check=True,
         capture_output=True,
@@ -90,11 +91,11 @@ def test_predict_writes_multiple_files_to_files(tmpdir_factory):
         capture_output=True,
     )
     assert result.stdout == b""
-    with open(out_dir / "output.0.txt", "r") as f:
+    with open(out_dir / "output.0.txt") as f:
         assert f.read() == "foo"
-    with open(out_dir / "output.1.txt", "r") as f:
+    with open(out_dir / "output.1.txt") as f:
         assert f.read() == "bar"
-    with open(out_dir / "output.2.txt", "r") as f:
+    with open(out_dir / "output.2.txt") as f:
         assert f.read() == "baz"
 
 
@@ -102,7 +103,7 @@ def test_predict_writes_strings_to_files(tmpdir_factory):
     project_dir = Path(__file__).parent / "fixtures/string-project"
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
     result = subprocess.run(
-        ["cog", "predict", "-i", "world", "-o", out_dir / "out.txt"],
+        ["cog", "predict", "-i", "s=world", "-o", out_dir / "out.txt"],
         cwd=project_dir,
         check=True,
         capture_output=True,
@@ -126,7 +127,7 @@ def test_predict_runs_an_existing_image(tmpdir_factory):
         # Run in another directory to ensure it doesn't use cog.yaml
         another_directory = tmpdir_factory.mktemp("project")
         result = subprocess.run(
-            ["cog", "predict", image_name, "-i", "world"],
+            ["cog", "predict", image_name, "-i", "s=world"],
             cwd=another_directory,
             check=True,
             capture_output=True,
@@ -162,7 +163,7 @@ def test_predict_with_remote_image(tmpdir_factory):
 def test_predict_in_subdirectory_with_imports(tmpdir_factory):
     project_dir = Path(__file__).parent / "fixtures/subdirectory-project"
     result = subprocess.run(
-        ["cog", "predict", "-i", "world"],
+        ["cog", "predict", "-i", "s=world"],
         cwd=project_dir,
         check=True,
         capture_output=True,
@@ -176,6 +177,7 @@ def test_predict_many_inputs(tmpdir_factory):
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
     shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
     inputs = {
+        "no_default": "hello",
         "path": "@path.txt",
         "image": "@image.jpg",
         "choices": "foo",
@@ -186,8 +188,7 @@ def test_predict_many_inputs(tmpdir_factory):
     with open(out_dir / "image.jpg", "w") as fh:
         fh.write("")
     cmd = ["cog", "predict"]
-    # If no name is specified, it defaults to the first
-    cmd += ["-i", "hello"]
+
     for k, v in inputs.items():
         cmd += ["-i", f"{k}={v}"]
 

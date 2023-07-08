@@ -11,22 +11,35 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-func Build(dir, dockerfile, imageName string, progressOutput string) error {
+func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, progressOutput string) error {
 	var args []string
-	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
-		args = m1BuildxBuildArgs()
-	} else {
-		args = buildKitBuildArgs()
+
+	args = append(args,
+		"buildx", "build",
+	)
+
+	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
+		// Fixes "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested"
+		args = append(args, "--platform", "linux/amd64", "--load")
 	}
+
+	for _, secret := range secrets {
+		args = append(args, "--secret", secret)
+	}
+
+	if noCache {
+		args = append(args, "--no-cache")
+	}
+
 	args = append(args,
 		"--file", "-",
-		"--build-arg", "BUILDKIT_INLINE_CACHE=1",
+		"--cache-to", "type=inline",
 		"--tag", imageName,
 		"--progress", progressOutput,
 		".",
 	)
+
 	cmd := exec.Command("docker", args...)
-	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
 	cmd.Dir = dir
 	cmd.Stdout = os.Stderr // redirect stdout to stderr - build output is all messaging
 	cmd.Stderr = os.Stderr
@@ -37,12 +50,15 @@ func Build(dir, dockerfile, imageName string, progressOutput string) error {
 }
 
 func BuildAddLabelsToImage(image string, labels map[string]string) error {
-	dockerfile := "FROM " + image
 	var args []string
-	if util.IsM1Mac(runtime.GOOS, runtime.GOARCH) {
-		args = m1BuildxBuildArgs()
-	} else {
-		args = buildKitBuildArgs()
+
+	args = append(args,
+		"buildx", "build",
+	)
+
+	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
+		// Fixes "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested"
+		args = append(args, "--platform", "linux/amd64", "--load")
 	}
 
 	args = append(args,
@@ -57,6 +73,8 @@ func BuildAddLabelsToImage(image string, labels map[string]string) error {
 	// We're not using context, but Docker requires we pass a context
 	args = append(args, ".")
 	cmd := exec.Command("docker", args...)
+
+	dockerfile := "FROM " + image
 	cmd.Stdin = strings.NewReader(dockerfile)
 
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
@@ -66,12 +84,4 @@ func BuildAddLabelsToImage(image string, labels map[string]string) error {
 		return err
 	}
 	return nil
-}
-
-func m1BuildxBuildArgs() []string {
-	return []string{"buildx", "build", "--platform", "linux/amd64", "--load"}
-}
-
-func buildKitBuildArgs() []string {
-	return []string{"build"}
 }

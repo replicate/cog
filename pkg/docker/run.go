@@ -9,10 +9,12 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/mattn/go-isatty"
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -86,6 +88,16 @@ func generateDockerArgs(options internalRunOptions) []string {
 	return dockerArgs
 }
 
+func generateEnv(options internalRunOptions) []string {
+	env := os.Environ()
+	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
+		// Fixes "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested"
+		env = append(env, "DOCKER_DEFAULT_PLATFORM=linux/amd64")
+	}
+
+	return env
+}
+
 func Run(options RunOptions) error {
 	return RunWithIO(options, os.Stdin, os.Stdout, os.Stderr)
 }
@@ -103,7 +115,7 @@ func RunWithIO(options RunOptions, stdin io.Reader, stdout, stderr io.Writer) er
 
 	dockerArgs := generateDockerArgs(internalOptions)
 	cmd := exec.Command("docker", dockerArgs...)
-	cmd.Env = os.Environ()
+	cmd.Env = generateEnv(internalOptions)
 	cmd.Stdout = stdout
 	cmd.Stdin = stdin
 	cmd.Stderr = stderrMultiWriter
@@ -111,7 +123,8 @@ func RunWithIO(options RunOptions, stdin io.Reader, stdout, stderr io.Writer) er
 
 	err := cmd.Run()
 	if err != nil {
-		if strings.Contains(stderrCopy.String(), "could not select device driver") {
+		stderrString := stderrCopy.String()
+		if strings.Contains(stderrString, "could not select device driver") || strings.Contains(stderrString, "nvidia-container-cli: initialization error") {
 			return ErrMissingDeviceDriver
 		}
 		return err
@@ -119,22 +132,31 @@ func RunWithIO(options RunOptions, stdin io.Reader, stdout, stderr io.Writer) er
 	return nil
 }
 
-func RunDaemon(options RunOptions) (string, error) {
+func RunDaemon(options RunOptions, stderr io.Writer) (string, error) {
 	internalOptions := internalRunOptions{RunOptions: options}
 	internalOptions.Detach = true
 
+	stderrCopy := new(bytes.Buffer)
+	stderrMultiWriter := io.MultiWriter(stderr, stderrCopy)
+
 	dockerArgs := generateDockerArgs(internalOptions)
 	cmd := exec.Command("docker", dockerArgs...)
-	cmd.Env = os.Environ()
-	// TODO: display errors more elegantly?
-	cmd.Stderr = os.Stderr
+	cmd.Env = generateEnv(internalOptions)
+	cmd.Stderr = stderrMultiWriter
 
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
 
 	containerID, err := cmd.Output()
+
+	stderrString := stderrCopy.String()
+	if strings.Contains(stderrString, "could not select device driver") || strings.Contains(stderrString, "nvidia-container-cli: initialization error") {
+		return "", ErrMissingDeviceDriver
+	}
+
 	if err != nil {
 		return "", err
 	}
+
 	return strings.TrimSpace(string(containerID)), nil
 }
 

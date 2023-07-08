@@ -1,36 +1,111 @@
-from abc import ABC, abstractmethod
-from collections.abc import Iterator
 import enum
 import importlib.util
 import inspect
+import io
 import os.path
+from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from pathlib import Path
-from pydantic import create_model, BaseModel, Field
-from pydantic.fields import FieldInfo
-from typing import Any, Callable, Dict, List, Type
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Type,
+    Union,
+    get_args,
+    get_origin,
+)
 
-# Added in Python 3.8. Can be from typing if we drop support for <3.8.
-from typing_extensions import get_origin, get_args, Annotated
 import yaml
+from pydantic import BaseModel, Field, create_model
+from pydantic.fields import FieldInfo
+
+# Added in Python 3.9. Can be from typing if we drop support for <3.9
+from typing_extensions import Annotated
 
 from .errors import ConfigDoesNotExist, PredictorNotSet
-from .types import Input, Path as CogPath, File as CogFile, URLPath
-
+from .types import (
+    File as CogFile,
+)
+from .types import (
+    Input,
+    URLPath,
+)
+from .types import (
+    Path as CogPath,
+)
 
 ALLOWED_INPUT_TYPES = [str, int, float, bool, CogFile, CogPath]
 
 
 class BasePredictor(ABC):
-    def setup(self) -> None:
+    def setup(self, weights: Optional[Union[CogFile, CogPath]] = None) -> None:
         """
         An optional method to prepare the model so multiple predictions run efficiently.
         """
+        return
 
     @abstractmethod
     def predict(self, **kwargs: Any) -> Any:
         """
         Run a single prediction on the model
         """
+        pass
+
+
+def run_setup(predictor: BasePredictor) -> None:
+    weights_type = get_weights_type(predictor.setup)
+
+    # No weights need to be passed, so just run setup() without any arguments.
+    if weights_type is None:
+        predictor.setup()
+        return
+
+    weights: Union[io.IOBase, Path, None]
+
+    weights_url = os.environ.get("COG_WEIGHTS")
+    weights_path = "weights"
+
+    # TODO: Cog{File,Path}.validate(...) methods accept either "real"
+    # paths/files or URLs to those things. In future we can probably tidy this
+    # up a little bit.
+    if weights_url:
+        if weights_type == CogFile:
+            weights = CogFile.validate(weights_url)
+        elif weights_type == CogPath:
+            weights = CogPath.validate(weights_url)
+        else:
+            raise ValueError(
+                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+            )
+    elif os.path.exists(weights_path):
+        if weights_type == CogFile:
+            weights = open(weights_path, "rb")
+        elif weights_type == CogPath:
+            weights = CogPath(weights_path)
+        else:
+            raise ValueError(
+                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+            )
+    else:
+        weights = None
+
+    predictor.setup(weights=weights)
+
+
+def get_weights_type(setup_function: Callable) -> Optional[Any]:
+    signature = inspect.signature(setup_function)
+    if "weights" not in signature.parameters:
+        return None
+    Type = signature.parameters["weights"].annotation
+    # Handle Optional. It is Union[Type, None]
+    if get_origin(Type) == Union:
+        args = get_args(Type)
+        if len(args) == 2 and args[1] is type(None):
+            Type = get_args(Type)[0]
+    return Type
 
 
 def run_prediction(
@@ -56,10 +131,10 @@ def load_config() -> Dict[str, Any]:
     try:
         with open(config_path) as fh:
             config = yaml.safe_load(fh)
-    except FileNotFoundError:
+    except FileNotFoundError as e:
         raise ConfigDoesNotExist(
             f"Could not find {config_path}",
-        )
+        ) from e
     return config
 
 
@@ -72,13 +147,16 @@ def load_predictor(config: Dict[str, Any]) -> BasePredictor:
     return load_predictor_from_ref(ref)
 
 
-def get_predictor_ref(config: Dict[str, Any]) -> str:
-    if "predict" not in config:
+def get_predictor_ref(config: Dict[str, Any], mode: str = "predict") -> str:
+    if mode not in ["predict", "train"]:
+        raise ValueError(f"Invalid mode: {mode}")
+
+    if mode not in config:
         raise PredictorNotSet(
-            "Can't run predictions: 'predict' option not found in cog.yaml"
+            f"Can't run predictions: '{mode}' option not found in cog.yaml"
         )
 
-    return config["predict"]
+    return config[mode]
 
 
 def load_predictor_from_ref(ref: str) -> BasePredictor:
@@ -89,8 +167,11 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
-    predictor_class = getattr(module, class_name)
-    return predictor_class()
+    predictor = getattr(module, class_name)
+    # It could be a class or a function
+    if inspect.isclass(predictor):
+        return predictor()
+    return predictor
 
 
 # Base class for inputs, constructed dynamically in get_input_type().
@@ -112,9 +193,13 @@ class BaseInput(BaseModel):
             # Note this is pathlib.Path, which cog.Path is a subclass of. A pathlib.Path object shouldn't make its way here,
             # but both have an unlink() method, so may as well be safe.
             elif isinstance(value, Path):
-                # This could be missing_ok=True when we drop support for Python 3.7
-                if value.exists():
-                    value.unlink()
+                value.unlink(missing_ok=True)
+
+
+def get_predict(predictor: Any) -> Callable:
+    if hasattr(predictor, "predict"):
+        return predictor.predict
+    return predictor
 
 
 def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
@@ -131,7 +216,8 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
         text: str
     """
 
-    signature = inspect.signature(predictor.predict)
+    predict = get_predict(predictor)
+    signature = inspect.signature(predict)
     create_model_kwargs = {}
 
     order = 0
@@ -191,15 +277,15 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
         __module__=__name__,
         __validators__=None,
         **create_model_kwargs,
-    )
+    )  # type: ignore
 
 
 def get_output_type(predictor: BasePredictor) -> Type[BaseModel]:
     """
     Creates a Pydantic Output model from the return type annotation of a Predictor's predict() method.
     """
-
-    signature = inspect.signature(predictor.predict)
+    predict = get_predict(predictor)
+    signature = inspect.signature(predict)
     if signature.return_annotation is inspect.Signature.empty:
         raise TypeError(
             """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.

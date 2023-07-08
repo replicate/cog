@@ -14,6 +14,11 @@
           "type": "string",
           "description": "Cog automatically picks the correct version of CUDA to install, but this lets you override it for whatever reason."
         },
+        "cudnn": {
+          "$id": "#/properties/build/properties/cudnn",
+          "type": "string",
+          "description": "Cog automatically picks the correct version of cuDNN to install, but this lets you override it for whatever reason."
+        },
         "gpu": {
           "$id": "#/properties/build/properties/gpu",
           "type": "boolean",
@@ -26,7 +31,7 @@
         },
         "python_packages": {
           "$id": "#/properties/build/properties/python_packages",
-          "type": "array",
+          "type": ["array", "null"],
           "description": "A list of Python packages to install, in the format `package==version`.",
           "additionalItems": true,
           "items": {
@@ -41,7 +46,7 @@
         },
         "pre_install": {
           "$id": "#/properties/build/properties/pre_install",
-          "type": "array",
+          "type": ["array", "null"],
           "description": "A list of setup commands to run in the environment before your Python packages are installed.",
           "additionalItems": true,
           "items": {
@@ -61,7 +66,7 @@
         },
         "system_packages": {
           "$id": "#/properties/build/properties/system_packages",
-          "type": "array",
+          "type": ["array", "null"],
           "description": "A list of Ubuntu APT packages to install.",
           "additionalItems": true,
           "items": {
@@ -76,7 +81,7 @@
         },
         "run": {
           "$id": "#/properties/build/properties/run",
-          "type": "array",
+          "type": ["array", "null"],
           "description": "A list of setup commands to run in the environment after your system packages and Python packages have been installed. If you're familiar with Docker, it's like a `RUN` instruction in your `Dockerfile`.",
           "additionalItems": true,
           "items": {
@@ -85,6 +90,35 @@
               {
                 "$id": "#/properties/build/properties/run/items/anyOf/0",
                 "type": "string"
+              },
+              {
+                "$id": "#/properties/build/properties/run/items/anyOf/1",
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  },
+                  "mounts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": ["secret"]
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "target": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["type", "id", "target"]
+                    }
+                  }
+                },
+                "required": ["command"]
               }
             ]
           }
@@ -99,6 +133,11 @@
     },
     "predict": {
       "$id": "#/properties/predict",
+      "type": "string",
+      "description": "The pointer to the `Predictor` object in your code, which defines how predictions are run on your model."
+    },
+    "train": {
+      "$id": "#/properties/train",
       "type": "string",
       "description": "The pointer to the `Predictor` object in your code, which defines how predictions are run on your model."
     }

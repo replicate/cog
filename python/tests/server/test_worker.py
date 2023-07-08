@@ -1,21 +1,9 @@
-import importlib
 import os
-import sys
 import time
 from typing import Any, Optional
 
 import pytest
 from attrs import define
-from hypothesis import Verbosity, given, settings
-from hypothesis import strategies as st
-from hypothesis.stateful import (
-    Bundle,
-    RuleBasedStateMachine,
-    consumes,
-    precondition,
-    rule,
-)
-
 from cog.server.eventtypes import (
     Done,
     Heartbeat,
@@ -25,6 +13,13 @@ from cog.server.eventtypes import (
 )
 from cog.server.exceptions import FatalWorkerException, InvalidStateException
 from cog.server.worker import Worker
+from hypothesis import given, settings
+from hypothesis import strategies as st
+from hypothesis.stateful import (
+    RuleBasedStateMachine,
+    precondition,
+    rule,
+)
 
 # Set a longer deadline on CI as the instances are a bit slower.
 settings.register_profile("ci", max_examples=100, deadline=1000)
@@ -40,7 +35,6 @@ SETUP_FATAL_FIXTURES = [
     ("exit_in_setup", {}),
     ("exit_on_import", {}),
     ("missing_predictor", {}),
-    ("missing_setup", {}),
     ("nonexistent_file", {}),  # this fixture doesn't even exist
 ]
 
@@ -396,16 +390,17 @@ def test_heartbeats_cancel():
     try:
         _process(w.setup())
 
-        canceled = False
         heartbeat_count = 0
         start = time.time()
 
+        canceled = False
         for event in w.predict({"sleep": 10}, poll=0.1):
             if isinstance(event, Heartbeat):
                 heartbeat_count += 1
             if time.time() - start > 0.5:
-                w.cancel()
-                canceled = True
+                if not canceled:
+                    w.cancel()
+                    canceled = True
 
         elapsed = time.time() - start
 

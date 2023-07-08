@@ -1,6 +1,7 @@
 import os
 import signal
 
+
 class Predictor:
     def setup(self):
         print("did setup")

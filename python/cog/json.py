@@ -1,6 +1,6 @@
+import io
 from datetime import datetime
 from enum import Enum
-import io
 from types import GeneratorType
 from typing import Any, Callable
 

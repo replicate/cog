@@ -5,7 +5,7 @@ from cog import BasePredictor, Input, Path
 
 
 class Predictor(BasePredictor):
-    def setup(self):
+    def setup(self) -> None:
         """Load the model into memory to make running multiple predictions efficient"""
         # self.model = torch.load("./weights.pth")
 

@@ -9,11 +9,10 @@ PathLike = Union[Path, str, None]
 
 
 class ProbeHelper:
-
     _root = Path("/var/run/cog")
     _enabled = False
 
-    def __init__(self, root: PathLike = None):
+    def __init__(self, root: PathLike = None) -> None:
         if "KUBERNETES_SERVICE_HOST" not in os.environ:
             log.info("Not running in Kubernetes: disabling probe helpers.")
             return

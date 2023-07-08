@@ -1,0 +1,101 @@
+[build-system]
+requires = ["setuptools", "setuptools_scm[toml]"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cog"
+description = "Containers for machine learning"
+readme = "README.md"
+authors = [{ name = "Replicate", email = "team@replicate.com" }]
+license.file = "LICENSE"
+urls."Source" = "https://github.com/replicate/cog"
+
+requires-python = ">=3.8"
+dependencies = [
+  # intentionally loose. perhaps these should be vendored to not collide with user code?
+  "attrs>=20.1,<24",
+  "fastapi>=0.75.2,<1",
+  "pydantic>=1.9,<2",
+  "PyYAML",
+  "requests>=2,<3",
+  "structlog>=20,<24",
+  "typing_extensions>=4.1.0",
+  "uvicorn[standard]>=0.12,<1",
+]
+
+optional-dependencies = { "dev" = [
+  "black",
+  "build",
+  "httpx",
+  "hypothesis",
+  "mypy",
+  "numpy",
+  "pillow",
+  "pytest",
+  "pytest-httpserver",
+  "pytest-rerunfailures",
+  "pytest-xdist",
+  "responses",
+  "ruff",
+] }
+
+dynamic = ["version"]
+
+[tool.setuptools_scm]
+write_to = "python/cog/_version.py"
+
+[tool.mypy]
+plugins = "pydantic.mypy"
+disallow_untyped_defs = true
+# TODO: remove this and bring the codebase inline with the current mypy default
+no_implicit_optional = false
+exclude = ["python/tests/"]
+
+[tool.setuptools]
+package-dir = { "" = "python" }
+
+[tool.ruff]
+select = [
+  "E",   # pycodestyle error
+  "F",   # Pyflakes
+  "I",   # isort
+  "W",   # pycodestyle warning
+  "UP",  # pyupgrade
+  "S",   # flake8-bandit
+  "B",   # flake8-bugbear
+  "ANN", # flake8-annotations
+]
+ignore = [
+  "E501",   # Line too long
+  "S101",   # Use of `assert` detected"
+  "S113",   # Probable use of requests call without timeout
+  "B008",   # Do not perform function call in argument defaults
+  "ANN001", # Missing type annotation for function argument
+  "ANN002", # Missing type annotation for `*args`
+  "ANN003", # Missing type annotation for `**kwargs`
+  "ANN101", # Missing type annotation for self in method
+  "ANN102", # Missing type annotation for cls in classmethod
+  "ANN401", # Dynamically typed expressions are disallowed
+]
+extend-exclude = [
+  "python/tests/server/fixtures/*",
+  "test-integration/test_integration/fixtures/*",
+]
+
+[tool.ruff.per-file-ignores]
+"python/cog/server/http.py" = [
+  "S104", # Possible binding to all interfaces
+]
+"python/tests/*" = [
+  "S101", # Use of assert
+  "S104", # Possible binding to all interfaces
+  "S301", # pickle can be unsafe when used to deserialize untrusted data
+  "ANN",
+]
+"test-integration/*" = [
+  "S101", # Use of assert
+  "S311", # Standard pseudo-random generators are not suitable for cryptographic purposes
+  "S603", # subprocess call - check for execution of untrusted input
+  "S607", # Starting a process with a partial executable path"
+  "ANN",
+]
