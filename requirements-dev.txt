@@ -120,7 +120,7 @@ structlog==23.1.0
     # via cog (pyproject.toml)
 types-pyyaml==6.0.12.10
     # via responses
-typing-extensions==4.6.3
+typing-extensions==4.7.1
     # via
     #   cog (pyproject.toml)
     #   mypy
