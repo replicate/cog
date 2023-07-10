@@ -38,7 +38,7 @@ h11==0.14.0
     #   uvicorn
 httpcore==0.17.2
     # via httpx
-httptools==0.5.0
+httptools==0.6.0
     # via uvicorn
 httpx==0.24.1
     # via cog (pyproject.toml)
