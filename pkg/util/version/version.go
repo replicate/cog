@@ -85,3 +85,20 @@ func EqualMinor(v1 string, v2 string) bool {
 func Greater(v1 string, v2 string) bool {
 	return MustVersion(v1).Greater(MustVersion(v2))
 }
+
+func (v *Version) Matches(other *Version) bool {
+	switch {
+	case v.Major != other.Major:
+		return false
+	case v.Minor != other.Minor:
+		return false
+	case v.Patch != 0 && v.Patch != other.Patch:
+		return false
+	default:
+		return true
+	}
+}
+
+func Matches(v1 string, v2 string) bool {
+	return MustVersion(v1).Matches(MustVersion(v2))
+}

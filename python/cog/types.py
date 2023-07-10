@@ -5,11 +5,18 @@ import os
 import pathlib
 import shutil
 import tempfile
+import urllib
 from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
-from urllib.parse import urlparse
 
 import requests
 from pydantic import Field
+
+FILENAME_ILLEGAL_CHARS = set("\u0000/")
+
+# Linux allows files up to 255 bytes long. We enforce a slightly shorter
+# filename so that there's room for prefixes added by
+# tempfile.NamedTemporaryFile, etc.
+FILENAME_MAX_LENGTH = 200
 
 
 def Input(
@@ -47,12 +54,10 @@ class File(io.IOBase):
         if isinstance(value, io.IOBase):
             return value
 
-        parsed_url = urlparse(value)
+        parsed_url = urllib.parse.urlparse(value)
         if parsed_url.scheme == "data":
-            # https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URIs
-            # TODO: decode properly. this maybe? https://github.com/fcurella/python-datauri/
-            header, encoded = parsed_url.path.split(",", 1)
-            return io.BytesIO(base64.b64decode(encoded))
+            res = urllib.request.urlopen(value)
+            return io.BytesIO(res.read())
         elif parsed_url.scheme == "http" or parsed_url.scheme == "https":
             return URLFile(value)
         else:
@@ -198,15 +203,31 @@ class URLFile(io.IOBase):
 
 
 def get_filename(url: str) -> str:
-    parsed_url = urlparse(url)
+    parsed_url = urllib.parse.urlparse(url)
+
     if parsed_url.scheme == "data":
-        header, _ = parsed_url.path.split(",", 1)
-        mime_type, _ = header.split(";", 1)
+        resp = urllib.request.urlopen(url)
+        mime_type = resp.headers.get_content_type()
         extension = mimetypes.guess_extension(mime_type)
         if extension is None:
             return "file"
         return "file" + extension
-    return os.path.basename(parsed_url.path)
+
+    basename = os.path.basename(parsed_url.path)
+    basename = urllib.parse.unquote_plus(basename)
+
+    # If the filename is too long, we truncate it (appending '~' to denote the
+    # truncation) while preserving the file extension.
+    # - truncate it
+    # - append a tilde
+    # - preserve the file extension
+    if _len_bytes(basename) > FILENAME_MAX_LENGTH:
+        basename = _truncate_filename_bytes(basename, length=FILENAME_MAX_LENGTH)
+
+    for c in FILENAME_ILLEGAL_CHARS:
+        basename = basename.replace(c, "_")
+
+    return basename
 
 
 Item = TypeVar("Item")
@@ -233,3 +254,17 @@ class ConcatenateIterator(Iterator[Item]):
     @classmethod
     def validate(cls, value: Any) -> Iterator:
         return value
+
+
+def _len_bytes(s, encoding="utf-8"):
+    return len(s.encode(encoding))
+
+
+def _truncate_filename_bytes(s, length, encoding="utf-8"):
+    """
+    Truncate a filename to at most `length` bytes, preserving file extension
+    and avoiding text encoding corruption from truncation.
+    """
+    root, ext = os.path.splitext(s.encode(encoding))
+    root = root[: length - len(ext) - 1]
+    return root.decode(encoding, "ignore") + "~" + ext.decode(encoding)
