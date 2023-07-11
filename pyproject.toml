@@ -10,7 +10,7 @@ authors = [{ name = "Replicate", email = "team@replicate.com" }]
 license.file = "LICENSE"
 urls."Source" = "https://github.com/replicate/cog"
 
-requires-python = ">=3.8"
+requires-python = ">=3.7"
 dependencies = [
   # intentionally loose. perhaps these should be vendored to not collide with user code?
   "attrs>=20.1,<24",
