@@ -2,6 +2,7 @@ package image
 
 import (
 	"bytes"
+	// blank import for embeds
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -20,7 +21,7 @@ import (
 const dockerignoreBackupPath = ".dockerignore.cog.bak"
 
 //go:embed openapi_schema.py
-var python_schema_script string
+var pythonSchemaScript string
 
 // Build a Cog model from a config
 //
@@ -66,7 +67,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	var schema *interface{}
 	if staticSchema {
 		filename := strings.Split(cfg.Predict, ":")[0]
-		cmd := exec.Command("python3", "-c", python_schema_script, filename)
+		cmd := exec.Command("python3", "-c", pythonSchemaScript, filename)
 		cmd.Stderr = os.Stderr
 		schemaBytes, err := cmd.Output()
 		if err != nil {
