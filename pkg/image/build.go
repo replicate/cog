@@ -25,7 +25,7 @@ var python_schema_script string
 // Build a Cog model from a config
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
-func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, progressOutput string) error {
+func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, progressOutput string, staticSchema bool) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 
 	generator, err := dockerfile.NewGenerator(cfg, dir)
@@ -62,22 +62,26 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	}
 
 	console.Info("Adding labels to image...")
-	filename := strings.Split(cfg.Predict, ":")[0]
-	cmd := exec.Command("python3", "-c", python_schema_script, filename)
-	cmd.Stderr = os.Stderr
-	schemaBytes, err := cmd.Output()
-
-	// schema, err := GenerateOpenAPISchema(imageName, cfg.Build.GPU)
-	if err != nil {
-		return fmt.Errorf("Failed to get type signature: %w", err)
-	}
 
 	var schema *interface{}
-	if err := json.Unmarshal(schemaBytes, &schema); err != nil {
-		// Exit code was 0, but JSON was not returned.
-		// This is verbose, but print so anything that gets printed in Python bubbles up here.
-		console.Info(string(schemaBytes))
-		return fmt.Errorf("Failed to convert type signature to JSON: %w", err)
+	if staticSchema {
+		filename := strings.Split(cfg.Predict, ":")[0]
+		cmd := exec.Command("python3", "-c", python_schema_script, filename)
+		cmd.Stderr = os.Stderr
+		schemaBytes, err := cmd.Output()
+		if err != nil {
+			return fmt.Errorf("Failed to get type signature: %w", err)
+		}
+		var schema *interface{}
+		if err := json.Unmarshal(schemaBytes, &schema); err != nil {
+			console.Info(string(schemaBytes))
+			return fmt.Errorf("Failed to convert type signature to JSON: %w", err)
+		}
+	} else {
+		schema, err = GenerateOpenAPISchema(imageName, cfg.Build.GPU)
+		if err != nil {
+			return fmt.Errorf("Failed to get type signature: %w", err)
+		}
 	}
 	configJSON, err := json.Marshal(cfg)
 	if err != nil {
