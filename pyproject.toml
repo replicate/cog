@@ -19,6 +19,7 @@ dependencies = [
   "PyYAML",
   "requests>=2,<3",
   "structlog>=20,<24",
+  'typing-compat; python_version < "3.8"',
   "typing_extensions>=4.1.0",
   "uvicorn[standard]>=0.12,<1",
 ]

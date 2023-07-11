@@ -14,9 +14,12 @@ from typing import (
     Optional,
     Type,
     Union,
-    get_args,
-    get_origin,
 )
+
+try:
+    from typing import get_args, get_origin
+except ImportError:  # Python < 3.8
+    from typing_compat import get_args, get_origin
 
 import yaml
 from pydantic import BaseModel, Field, create_model
