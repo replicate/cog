@@ -71,7 +71,7 @@ pathspec==0.11.1
     # via black
 pillow==10.0.0
     # via cog (pyproject.toml)
-platformdirs==3.5.1
+platformdirs==3.8.1
     # via black
 pluggy==1.0.0
     # via pytest
