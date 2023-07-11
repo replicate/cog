@@ -42,7 +42,7 @@ httptools==0.6.0
     # via uvicorn
 httpx==0.24.1
     # via cog (pyproject.toml)
-hypothesis==6.80.0
+hypothesis==6.79.4
     # via cog (pyproject.toml)
 idna==3.4
     # via
@@ -59,7 +59,7 @@ mypy-extensions==1.0.0
     # via
     #   black
     #   mypy
-numpy==1.24.1
+numpy==1.21.6
     # via cog (pyproject.toml)
 packaging==23.1
     # via
