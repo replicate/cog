@@ -123,8 +123,13 @@ class URLPath(pathlib.PosixPath):
         return self._path
 
     def unlink(self, missing_ok: bool = False) -> None:
-        if self._path and self._path.exists():
-            self._path.unlink(missing_ok=missing_ok)
+        if self._path:
+            # TODO: use unlink(missing_ok=...) when we drop Python 3.7 support.
+            try:
+                self._path.unlink()
+            except FileNotFoundError:
+                if not missing_ok:
+                    raise
 
     def __str__(self) -> str:
         # FastAPI's jsonable_encoder will encode subclasses of pathlib.Path by

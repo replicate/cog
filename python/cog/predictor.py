@@ -196,7 +196,10 @@ class BaseInput(BaseModel):
             # Note this is pathlib.Path, which cog.Path is a subclass of. A pathlib.Path object shouldn't make its way here,
             # but both have an unlink() method, so may as well be safe.
             elif isinstance(value, Path):
-                value.unlink(missing_ok=True)
+                try:
+                    value.unlink()
+                except FileNotFoundError:
+                    pass
 
 
 def get_predict(predictor: Any) -> Callable:
