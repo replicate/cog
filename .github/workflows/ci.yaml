@@ -36,7 +36,7 @@ jobs:
           python-version: 3.11
       - name: Install Python dependencies
         run: |
-          python -m pip install -r requirements-dev.txt .
+          python -m pip install '.[dev]'
           yes | python -m mypy --install-types replicate || true
       - name: Build
         run: make cog
@@ -60,7 +60,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install Python dependencies
         run: |
-          python -m pip install -r requirements-dev.txt .
+          python -m pip install '.[dev]'
           yes | python -m mypy --install-types replicate || true
       - name: Test
         run: make test-python
@@ -81,7 +81,7 @@ jobs:
           python-version: 3.11
       - name: Install Python dependencies
         run: |
-          python -m pip install -r requirements-dev.txt .
+          python -m pip install '.[dev]'
           yes | python -m mypy --install-types replicate || true
       - name: Test
         run: make test-integration
