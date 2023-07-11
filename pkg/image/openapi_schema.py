@@ -117,6 +117,9 @@ BASE_TYPES = ["str", "int", "float", "bool", "File", "Path"]
 def resolve_name(node: ast.expr) -> str:
     if isinstance(node, ast.Name):
         return node.id
+    if isinstance(node, ast.Index):
+        # depricated, but needed for py3.8
+        return resolve_name(node.value)
     if isinstance(node, ast.Attribute):
         return node.attr
     if isinstance(node, ast.Subscript):
