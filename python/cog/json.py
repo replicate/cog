@@ -8,13 +8,6 @@ from pydantic import BaseModel
 
 from .types import Path
 
-try:
-    import numpy as np  # type: ignore
-
-    has_numpy = True
-except ImportError:
-    has_numpy = False
-
 
 def make_encodeable(obj: Any) -> Any:
     """
@@ -24,6 +17,13 @@ def make_encodeable(obj: Any) -> Any:
 
     Somewhat based on FastAPI's jsonable_encoder().
     """
+    try:
+        import numpy as np  # type: ignore
+
+        has_numpy = True
+    except ImportError:
+        has_numpy = False
+
     if isinstance(obj, BaseModel):
         return make_encodeable(obj.dict(exclude_unset=True))
     if isinstance(obj, dict):
