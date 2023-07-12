@@ -158,7 +158,7 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 		return "", "", "", err
 	}
 	installPython := ""
-	if g.Config.Build.GPU {
+	if g.Config.Build.GPU && g.Config.Build.UseCudaBaseImage {
 		installPython, err = g.installPythonCUDA()
 		if err != nil {
 			return "", "", "", err
@@ -245,10 +245,10 @@ func (g *Generator) Cleanup() error {
 }
 
 func (g *Generator) baseImage() (string, error) {
-	if g.Config.Build.GPU {
+	if g.Config.Build.GPU && g.Config.Build.UseCudaBaseImage {
 		return g.Config.CUDABaseImageTag()
 	}
-	return "python:" + g.Config.Build.PythonVersion, nil
+	return "python:" + g.Config.Build.PythonVersion + "-slim", nil
 }
 
 func (g *Generator) preamble() string {
