@@ -8,13 +8,6 @@ from pydantic import BaseModel
 
 from .types import Path
 
-try:
-    import numpy as np  # type: ignore
-
-    has_numpy = True
-except ImportError:
-    has_numpy = False
-
 
 def make_encodeable(obj: Any) -> Any:
     """
@@ -34,6 +27,12 @@ def make_encodeable(obj: Any) -> Any:
         return obj.value
     if isinstance(obj, datetime):
         return obj.isoformat()
+    try:
+        import numpy as np  # type: ignore
+
+        has_numpy = True
+    except ImportError:
+        has_numpy = False
     if has_numpy:
         if isinstance(obj, np.integer):
             return int(obj)
