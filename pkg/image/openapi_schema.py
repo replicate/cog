@@ -199,7 +199,7 @@ def extract_info(code: str) -> dict:
             continue
         if isinstance(default, ast.Call) and get_call_name(default) == "Input":
             kws = {kw.arg: get_value(kw.value) for kw in default.keywords}
-        elif isinstance(default, (ast.Constant, ast.List, ast.Tuple)):
+        elif isinstance(default, (ast.Constant, ast.List, ast.Tuple, ast.Str, ast.Num)):
             kws = {"default": get_value(default)}  # could be None
         elif default == ...:  # no default
             kws = {}
