@@ -1,7 +1,7 @@
 import ast
 import json
-import typing
 import sys
+import typing
 from pathlib import Path
 
 try:
@@ -33,6 +33,11 @@ def get_value(node: ast.AST) -> "int | float | complex | str | list":
     """Return the value of constant or list of constants"""
     if isinstance(node, ast.Constant):
         return node.value
+    # for python3.7, were deprecated for Constant
+    if isinstance(node, (ast.Str, ast.Bytes)):
+        return node.s
+    if isinstance(node, ast.Num):
+        return node.n
     if isinstance(node, (ast.List, ast.Tuple)):
         return [get_value(e) for e in node.elts]
     raise ValueError("Unexpected node type", type(node))
