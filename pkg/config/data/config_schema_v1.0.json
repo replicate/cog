@@ -24,6 +24,11 @@
           "type": "boolean",
           "description": "Enable GPUs for this model. When enabled, the [nvidia-docker](https://github.com/NVIDIA/nvidia-docker) base image will be used, and Cog will automatically figure out what versions of CUDA and cuDNN to use based on the version of Python, PyTorch, and Tensorflow that you are using."
         },
+        "use_cuda_base_image": {
+          "$id": "#/properties/build/properties/use_cuda_base_image",
+          "type": "boolean",
+          "description": "When enabled, the [nvidia-docker](https://github.com/NVIDIA/nvidia-docker) base image will be used. This is not normally necessary for torch, but may be necessary for other frameworks."
+        },
         "python_version": {
           "$id": "#/properties/build/properties/python_version",
           "type": ["string", "number"],
