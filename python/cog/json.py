@@ -17,13 +17,6 @@ def make_encodeable(obj: Any) -> Any:
 
     Somewhat based on FastAPI's jsonable_encoder().
     """
-    try:
-        import numpy as np  # type: ignore
-
-        has_numpy = True
-    except ImportError:
-        has_numpy = False
-
     if isinstance(obj, BaseModel):
         return make_encodeable(obj.dict(exclude_unset=True))
     if isinstance(obj, dict):
@@ -34,6 +27,12 @@ def make_encodeable(obj: Any) -> Any:
         return obj.value
     if isinstance(obj, datetime):
         return obj.isoformat()
+    try:
+        import numpy as np  # type: ignore
+
+        has_numpy = True
+    except ImportError:
+        has_numpy = False
     if has_numpy:
         if isinstance(obj, np.integer):
             return int(obj)
