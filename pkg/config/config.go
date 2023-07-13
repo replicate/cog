@@ -31,9 +31,7 @@ type RunItem struct {
 }
 
 type Build struct {
-	GPU bool `json:"gpu,omitempty" yaml:"gpu"`
-	// UseSystemCuda? something about jax?
-	UseCudaBaseImage   bool      `json:"use_cuda_base_image,omitempty" yaml:"use_cuda_base_image"`
+	GPU                bool      `json:"gpu,omitempty" yaml:"gpu"`
 	PythonVersion      string    `json:"python_version,omitempty" yaml:"python_version"`
 	PythonRequirements string    `json:"python_requirements,omitempty" yaml:"python_requirements"`
 	PythonPackages     []string  `json:"python_packages,omitempty" yaml:"python_packages"` // Deprecated, but included for backwards compatibility
@@ -61,9 +59,8 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Build: &Build{
-			GPU:              false,
-			PythonVersion:    "3.8",
-			UseCudaBaseImage: true,
+			GPU:           false,
+			PythonVersion: "3.8",
 		},
 	}
 }

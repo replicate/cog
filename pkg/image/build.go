@@ -20,7 +20,7 @@ const dockerignoreBackupPath = ".dockerignore.cog.bak"
 // Build a Cog model from a config
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
-func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, progressOutput string) error {
+func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage bool, progressOutput string) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 
 	generator, err := dockerfile.NewGenerator(cfg, dir)
@@ -32,6 +32,10 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			console.Warnf("Error cleaning up Dockerfile generator: %s", err)
 		}
 	}()
+
+	if useCudaBaseImage {
+		generator.SetUseCudaBaseImage(true)
+	}
 
 	if separateWeights {
 		weightsDockerfile, runnerDockerfile, dockerignore, err := generator.Generate(imageName)
@@ -110,7 +114,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	return nil
 }
 
-func BuildBase(cfg *config.Config, dir string, progressOutput string) (string, error) {
+func BuildBase(cfg *config.Config, dir string, useCudaBaseImage bool, progressOutput string) (string, error) {
 	// TODO: better image management so we don't eat up disk space
 	// https://github.com/replicate/cog/issues/80
 	imageName := config.BaseDockerImageName(dir)
@@ -125,6 +129,11 @@ func BuildBase(cfg *config.Config, dir string, progressOutput string) (string, e
 			console.Warnf("Error cleaning up Dockerfile generator: %s", err)
 		}
 	}()
+
+	if useCudaBaseImage {
+		generator.SetUseCudaBaseImage(true)
+	}
+
 	dockerfileContents, err := generator.GenerateBase()
 	if err != nil {
 		return "", fmt.Errorf("Failed to generate Dockerfile: %w", err)

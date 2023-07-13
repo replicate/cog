@@ -23,6 +23,7 @@ func newRunCommand() *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 	}
 	addBuildProgressOutputFlag(cmd)
+	addUseCudaBaseImageFlag(cmd)
 
 	flags := cmd.Flags()
 	// Flags after first argment are considered args and passed to command
@@ -41,7 +42,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	imageName, err := image.BuildBase(cfg, projectDir, buildProgressOutput)
+	imageName, err := image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, buildProgressOutput)
 	if err != nil {
 		return err
 	}
