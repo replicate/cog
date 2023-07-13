@@ -31,7 +31,7 @@ def test_build_without_predictor(docker_image):
     # Deprecated. Remove for 1.0.
     assert len(labels["org.cogmodel.cog_version"]) > 0
     assert json.loads(labels["org.cogmodel.config"]) == {
-        "build": {"python_version": "3.8"}
+        "build": {"python_version": "3.8", "use_cuda_base_image": True}
     }
     assert "org.cogmodel.openapi_schema" not in labels
 
@@ -155,6 +155,7 @@ build:
             "gpu": True,
             "cuda": "11.8",
             "cudnn": "8",
+            "use_cuda_base_image": True,
         }
     }
     assert "run.cog.openapi_schema" not in labels
@@ -167,6 +168,7 @@ build:
             "gpu": True,
             "cuda": "11.8",
             "cudnn": "8",
+            "use_cuda_base_image": True,
         }
     }
     assert "org.cogmodel.openapi_schema" not in labels
