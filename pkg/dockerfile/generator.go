@@ -262,7 +262,7 @@ func (g *Generator) tiniStage() string {
 		`FROM curlimages/curl AS downloader`,
 		`ARG TINI_VERSION=0.19.0`,
 		`WORKDIR /tmp`,
-		`RUN curl -fsSL -O "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini" && chmod +x tini`,
+		`RUN curl -fsSL -O "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini-amd64" && chmod +x tini`,
 	}
 	return strings.Join(lines, "\n")
 }
