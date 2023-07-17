@@ -37,7 +37,6 @@ linters:
     - typecheck
     - unconvert
     - unused
-    - varcheck
   # - unparam
   fast: false
 
