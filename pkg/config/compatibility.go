@@ -85,13 +85,13 @@ func (i *CUDABaseImage) ImageTag() string {
 var cudaBaseImagesData []byte
 var CUDABaseImages []CUDABaseImage
 
-//go:generate go run ../../tools/compatgen/main.go tensorflow -o tf_compatability_matrix.json
-//go:embed tf_compatability_matrix.json
+//go:generate go run ../../tools/compatgen/main.go tensorflow -o tf_compatibility_matrix.json
+//go:embed tf_compatibility_matrix.json
 var tfCompatibilityMatrixData []byte
 var TFCompatibilityMatrix []TFCompatibility
 
-//go:generate go run ../../tools/compatgen/main.go torch -o torch_compatability_matrix.json
-//go:embed torch_compatability_matrix.json
+//go:generate go run ../../tools/compatgen/main.go torch -o torch_compatibility_matrix.json
+//go:embed torch_compatibility_matrix.json
 var torchCompatibilityMatrixData []byte
 var TorchCompatibilityMatrix []TorchCompatibility
 
