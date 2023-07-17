@@ -35,7 +35,6 @@ linters:
     - misspell
     - revive
     - staticcheck
-    - structcheck
     # - stylecheck
     - typecheck
     - unconvert
