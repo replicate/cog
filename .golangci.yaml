@@ -26,6 +26,7 @@ linters:
     - exportloopref
     # - gci
     - gocritic
+    - gosec
     - govet
     - ineffassign
     - misspell
@@ -51,6 +52,9 @@ linters-settings:
   #     - standard # Captures all standard packages if they do not match another section.
   #     - default # Contains all imports that could not be matched to another section type.
   #     - prefix(github.com/replicate) # Groups all imports with the specified Prefix.
+  gosec:
+    excludes:
+      - G306 # Expect WriteFile permissions to be 0600 or less
   govet:
     # report about shadowed variables
     check-shadowing: false
