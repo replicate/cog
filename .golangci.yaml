@@ -63,8 +63,6 @@ linters-settings:
     # Default is to use a neutral variety of English.
     # Setting locale to US will correct the British spelling of 'colour' to 'color'.
     locale: US
-    ignore-words:
-      - compatability # TODO(andreas): fix this
   revive:
     rules:
       - name: unused-parameter
