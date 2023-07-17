@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/docker/docker/api/types"
+
 	"github.com/replicate/cog/pkg/util/console"
 )
 
