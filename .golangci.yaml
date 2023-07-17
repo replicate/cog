@@ -20,7 +20,6 @@ run:
 linters:
   disable-all: true
   enable:
-    - deadcode
     - errcheck
     - exportloopref
     - gocritic
@@ -37,6 +36,7 @@ linters:
     # - stylecheck
     - typecheck
     - unconvert
+    - unused
     - varcheck
   # - unparam
   fast: false
