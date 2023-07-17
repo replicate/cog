@@ -25,6 +25,7 @@ linters:
     - errcheck
     - exportloopref
     - gocritic
+    # - goimports
     - gosimple
     - govet
     - ineffassign
@@ -52,10 +53,10 @@ linters-settings:
   golint:
     # minimal confidence for issues, default is 0.8
     min-confidence: 0.8
-  goimports:
-    # put imports beginning with prefix after 3rd-party packages;
-    # it's a comma-separated list of prefixes
-    local-prefixes: github.com/replicate/cog/
+  # goimports:
+  #   # put imports beginning with prefix after 3rd-party packages;
+  #   # it's a comma-separated list of prefixes
+  #   local-prefixes: github.com/replicate/cog/
   maligned:
     # print struct with more effective memory layout or not, false by default
     suggest-new: true
