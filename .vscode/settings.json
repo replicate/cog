@@ -13,6 +13,7 @@
   "go.lintTool": "golangci-lint",
   "go.formatTool": "goimports",
   "go.testOnSave": true,
+  "gopls": { "formatting.local": "github.com/replicate/cog" },
   "[json]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
