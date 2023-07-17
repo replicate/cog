@@ -78,6 +78,11 @@ linters-settings:
     line-length: 160
     # tab width in spaces. Default to 1.
     tab-width: 1
+  revive:
+    rules:
+      - name: unused-parameter
+        severity: warning
+        disabled: true
   unused:
     # treat code as a program (not a library) and report unused exported identifiers; default is false.
     # XXX: if you enable this setting, unused will report a lot of false-positives in text editors:
