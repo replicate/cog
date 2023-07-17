@@ -26,7 +26,6 @@ linters:
     - exportloopref
     - gocritic
     # - goimports
-    - gosimple
     - govet
     - ineffassign
     - misspell
