@@ -63,7 +63,6 @@ linters-settings:
   revive:
     rules:
       - name: unused-parameter
-        severity: warning
         disabled: true
   unused:
     # treat code as a program (not a library) and report unused exported identifiers; default is false.
