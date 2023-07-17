@@ -27,7 +27,6 @@ linters:
     - gocritic
     # - gofumpt
     # - goimports
-    - golint
     - gosimple
     - govet
     - ineffassign
