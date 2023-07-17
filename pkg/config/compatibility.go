@@ -10,7 +10,6 @@ import (
 
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
-
 	"github.com/replicate/cog/pkg/util/version"
 )
 

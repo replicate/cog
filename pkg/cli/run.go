@@ -4,11 +4,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/util/console"
-	"github.com/spf13/cobra"
 )
 
 var (
