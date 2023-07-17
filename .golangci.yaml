@@ -56,9 +56,6 @@ linters-settings:
   #   # put imports beginning with prefix after 3rd-party packages;
   #   # it's a comma-separated list of prefixes
   #   local-prefixes: github.com/replicate/cog/
-  maligned:
-    # print struct with more effective memory layout or not, false by default
-    suggest-new: true
   misspell:
     # Correct spellings using locale preferences for US or UK.
     # Default is to use a neutral variety of English.
@@ -123,7 +120,6 @@ linters-settings:
       - unslice
       - valSwap
       - weakCond
-
       # Unused
       # - yodaStyleExpr
       # - appendAssign
@@ -155,7 +151,6 @@ issues:
     - path: _test\.go$|^tests/|^samples/
       linters:
         - errcheck
-        - maligned
 
   # Independently from option `exclude` we use default exclude patterns,
   # it can be disabled by this option. To list all
