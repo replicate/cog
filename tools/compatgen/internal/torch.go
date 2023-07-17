@@ -8,6 +8,7 @@ import (
 	"github.com/anaskhan96/soup"
 
 	"github.com/hashicorp/go-version"
+
 	"github.com/replicate/cog/pkg/config"
 )
 
