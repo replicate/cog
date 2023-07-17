@@ -36,7 +36,7 @@ func WaitForHTTPOK(url string, timeout time.Duration) error {
 		}
 
 		time.Sleep(100 * time.Millisecond)
-		resp, err := http.Get(url)
+		resp, err := http.Get(url) //#nosec G107
 		if err != nil {
 			continue
 		}

@@ -105,7 +105,7 @@ func (p *Predictor) waitForContainerReady() error {
 			return fmt.Errorf("Container exited unexpectedly")
 		}
 
-		resp, err := http.Get(url)
+		resp, err := http.Get(url) //#nosec G107
 		if err != nil {
 			continue
 		}
