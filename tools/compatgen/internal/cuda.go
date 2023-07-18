@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/anaskhan96/soup"
+
 	"github.com/replicate/cog/pkg/config"
 )
 

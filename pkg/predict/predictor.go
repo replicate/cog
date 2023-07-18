@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
+
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
@@ -105,7 +106,7 @@ func (p *Predictor) waitForContainerReady() error {
 			return fmt.Errorf("Container exited unexpectedly")
 		}
 
-		resp, err := http.Get(url)
+		resp, err := http.Get(url) //#nosec G107
 		if err != nil {
 			continue
 		}

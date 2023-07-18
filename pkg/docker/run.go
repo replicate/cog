@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/mattn/go-isatty"
+
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -161,7 +162,7 @@ func RunDaemon(options RunOptions, stderr io.Writer) (string, error) {
 }
 
 func GetPort(containerID string, containerPort int) (int, error) {
-	cmd := exec.Command("docker", "port", containerID, fmt.Sprintf("%d", containerPort))
+	cmd := exec.Command("docker", "port", containerID, fmt.Sprintf("%d", containerPort)) //#nosec G204
 	cmd.Env = os.Environ()
 	cmd.Stderr = os.Stderr
 
