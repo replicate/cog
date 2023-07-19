@@ -1,7 +1,6 @@
 import base64
 import io
 import time
-import json  # rm
 import unittest.mock as mock
 
 import responses
@@ -249,8 +248,6 @@ def test_openapi_specification_with_yield(client, static_schema):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
     schema = resp.json()
-    json.dump(schema, open("/tmp/schema.json", "w"))
-    json.dump(static_schema, open("/tmp/static_schema.json", "w"))
     assert schema == static_schema
     assert schema["components"]["schemas"]["Output"] == {
         "title": "Output",
