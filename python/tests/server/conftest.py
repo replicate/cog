@@ -10,9 +10,7 @@ import pytest
 from attrs import define
 from cog.server.http import create_app
 from fastapi.testclient import TestClient
-
-sys.path.append("pkg/image")
-import openapi_schema
+from cog.command import ast_openapi_schema
 
 
 @define
@@ -86,4 +84,4 @@ def client(request):
 def static_schema(client) -> dict:
     ref = _fixture_path(client.ref)
     module_path = ref.split(":", 1)[0]
-    return openapi_schema.extract_file(module_path)
+    return ast_openapi_schema.extract_file(module_path)

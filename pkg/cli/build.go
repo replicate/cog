@@ -15,7 +15,7 @@ var buildSeparateWeights bool
 var buildSecrets []string
 var buildNoCache bool
 var buildProgressOutput string
-var buildStaticSchema bool
+var buildSchemaFile string
 
 func newBuildCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -28,7 +28,7 @@ func newBuildCommand() *cobra.Command {
 	addSecretsFlag(cmd)
 	addNoCacheFlag(cmd)
 	addSeparateWeightsFlag(cmd)
-	addStaticSchmeaFlag(cmd)
+	addSchemaFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
 }
@@ -47,7 +47,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		imageName = config.DockerImageName(projectDir)
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildProgressOutput, buildStaticSchema); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildProgressOutput, buildSchemaFile); err != nil {
 		return err
 	}
 
@@ -76,6 +76,6 @@ func addSeparateWeightsFlag(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&buildSeparateWeights, "separate-weights", false, "Separate model weights from code in image layers")
 }
 
-func addStaticSchmeaFlag(cmd *cobra.Command) {
-	cmd.Flags().BoolVar(&buildStaticSchema, "static-schema", false, "Generate OpenAPI schema by statically parsing the code instead of running the model")
+func addSchemaFlag(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&buildSchemaFile, "openapi-schema", "", "Read OpenAPI schema from a file")
 }
