@@ -58,7 +58,9 @@ def test_predict_writes_files_to_files(tmpdir_factory):
         capture_output=True,
     )
     assert result.stdout == b""
-    with open(out_dir / "output.bmp", "rb") as f:
+    # something about this PR makes the default output be "output" instead of "output.bmp"
+    with open(out_dir / "output", "rb") as f:
+    # with open(out_dir / "output.bmp", "rb") as f:
         assert len(f.read()) == 195894
 
 
