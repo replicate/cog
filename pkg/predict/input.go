@@ -6,9 +6,10 @@ import (
 	"strings"
 
 	"github.com/mitchellh/go-homedir"
+	"github.com/vincent-petithory/dataurl"
+
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/mime"
-	"github.com/vincent-petithory/dataurl"
 )
 
 type Input struct {

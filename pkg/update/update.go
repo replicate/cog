@@ -33,10 +33,7 @@ func DisplayAndCheckForRelease() error {
 
 	if s.Version != global.Version {
 		console.Debugf("Resetting update message because Cog has been upgraded")
-		if err := writeState(&state{Message: "", LastChecked: time.Now(), Version: global.Version}); err != nil {
-			return err
-		}
-		return nil
+		return writeState(&state{Message: "", LastChecked: time.Now(), Version: global.Version})
 	}
 
 	if time.Since(s.LastChecked) > time.Hour {

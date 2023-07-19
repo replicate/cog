@@ -7,7 +7,7 @@ import (
 )
 
 // ConsoleInstance is the global instance of console, so we don't have to pass it around everywhere
-var ConsoleInstance *Console = &Console{
+var ConsoleInstance = &Console{
 	Color:     true,
 	Level:     InfoLevel,
 	IsMachine: false,

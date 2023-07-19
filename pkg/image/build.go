@@ -249,11 +249,7 @@ func backupDockerignore() error {
 	}
 
 	// rename the .dockerignore file to a new name
-	if err := os.Rename(".dockerignore", dockerignoreBackupPath); err != nil {
-		return err
-	}
-
-	return nil
+	return os.Rename(".dockerignore", dockerignoreBackupPath)
 }
 
 func restoreDockerignore() error {
@@ -269,8 +265,5 @@ func restoreDockerignore() error {
 		return err
 	}
 
-	if err := os.Rename(dockerignoreBackupPath, ".dockerignore"); err != nil {
-		return err
-	}
-	return nil
+	return os.Rename(dockerignoreBackupPath, ".dockerignore")
 }

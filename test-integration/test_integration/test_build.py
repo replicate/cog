@@ -1,6 +1,9 @@
 import json
+import os
 import subprocess
 from pathlib import Path
+
+import pytest
 
 
 def test_build_without_predictor(docker_image):
@@ -89,6 +92,9 @@ def test_build_with_model(docker_image):
 
 
 def test_build_gpu_model_on_cpu(tmpdir, docker_image):
+    if os.environ.get("CI") != "true":
+        pytest.skip("only runs on CI environment")
+
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
 build:

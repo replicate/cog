@@ -14,9 +14,12 @@ from typing import (
     Optional,
     Type,
     Union,
-    get_args,
-    get_origin,
 )
+
+try:
+    from typing import get_args, get_origin
+except ImportError:  # Python < 3.8
+    from typing_compat import get_args, get_origin
 
 import yaml
 from pydantic import BaseModel, Field, create_model
@@ -193,7 +196,10 @@ class BaseInput(BaseModel):
             # Note this is pathlib.Path, which cog.Path is a subclass of. A pathlib.Path object shouldn't make its way here,
             # but both have an unlink() method, so may as well be safe.
             elif isinstance(value, Path):
-                value.unlink(missing_ok=True)
+                try:
+                    value.unlink()
+                except FileNotFoundError:
+                    pass
 
 
 def get_predict(predictor: Any) -> Callable:
