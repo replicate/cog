@@ -75,18 +75,20 @@ func NewGenerator(config *config.Config, dir string) (*Generator, error) {
 	}
 
 	return &Generator{
-		Config:         config,
-		Dir:            dir,
-		GOOS:           runtime.GOOS,
-		GOARCH:         runtime.GOOS,
-		tmpDir:         tmpDir,
-		relativeTmpDir: relativeTmpDir,
-		fileWalker:     filepath.Walk,
+		Config:           config,
+		Dir:              dir,
+		GOOS:             runtime.GOOS,
+		GOARCH:           runtime.GOOS,
+		tmpDir:           tmpDir,
+		relativeTmpDir:   relativeTmpDir,
+		fileWalker:       filepath.Walk,
+		useCudaBaseImage: true,
 	}, nil
 }
 
-func (g *Generator) SetUseCudaBaseImage(useCudaBaseImage bool) {
-	g.useCudaBaseImage = useCudaBaseImage
+func (g *Generator) SetUseCudaBaseImage(argumentValue string) {
+	// "false" -> false, "true" -> true, "auto" -> true, "asdf" -> true
+	g.useCudaBaseImage = argumentValue != "false"
 }
 
 func (g *Generator) GenerateBase() (string, error) {
