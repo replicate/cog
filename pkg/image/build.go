@@ -77,6 +77,11 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 				return fmt.Errorf("Failed to convert type signature to JSON: %w", err)
 			}
 		}
+		// Maybe this should go in tmpdir instead
+		schemaFile = path.Join(dir, "openapi_schema.json")
+		if err := os.WriteFile(schemaFile, schemaJSON, 0644); err != nil {
+			return fmt.Errorf("Failed to write schema file: %w", err)
+		}
 	}
 	configJSON, err := json.Marshal(cfg)
 	if err != nil {
