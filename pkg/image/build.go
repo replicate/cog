@@ -79,7 +79,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}
 		// Maybe this should go in tmpdir instead
 		schemaFile = path.Join(dir, "openapi_schema.json")
-		if err := os.WriteFile(schemaFile, schemaJSON, 0644); err != nil {
+		if err := os.WriteFile(schemaFile, schemaJSON, 0o644); err != nil {
 			return fmt.Errorf("Failed to write schema file: %w", err)
 		}
 	}
