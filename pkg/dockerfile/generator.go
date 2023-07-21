@@ -48,6 +48,8 @@ type Generator struct {
 	GOOS   string
 	GOARCH string
 
+	useCudaBaseImage bool
+
 	// absolute path to tmpDir, a directory that will be cleaned up
 	tmpDir string
 	// tmpDir relative to Dir
@@ -73,14 +75,20 @@ func NewGenerator(config *config.Config, dir string) (*Generator, error) {
 	}
 
 	return &Generator{
-		Config:         config,
-		Dir:            dir,
-		GOOS:           runtime.GOOS,
-		GOARCH:         runtime.GOOS,
-		tmpDir:         tmpDir,
-		relativeTmpDir: relativeTmpDir,
-		fileWalker:     filepath.Walk,
+		Config:           config,
+		Dir:              dir,
+		GOOS:             runtime.GOOS,
+		GOARCH:           runtime.GOOS,
+		tmpDir:           tmpDir,
+		relativeTmpDir:   relativeTmpDir,
+		fileWalker:       filepath.Walk,
+		useCudaBaseImage: true,
 	}, nil
+}
+
+func (g *Generator) SetUseCudaBaseImage(argumentValue string) {
+	// "false" -> false, "true" -> true, "auto" -> true, "asdf" -> true
+	g.useCudaBaseImage = argumentValue != "false"
 }
 
 func (g *Generator) GenerateBase() (string, error) {
@@ -158,7 +166,7 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 		return "", "", "", err
 	}
 	installPython := ""
-	if g.Config.Build.GPU {
+	if g.Config.Build.GPU && g.useCudaBaseImage {
 		installPython, err = g.installPythonCUDA()
 		if err != nil {
 			return "", "", "", err
@@ -245,10 +253,10 @@ func (g *Generator) Cleanup() error {
 }
 
 func (g *Generator) baseImage() (string, error) {
-	if g.Config.Build.GPU {
+	if g.Config.Build.GPU && g.useCudaBaseImage {
 		return g.Config.CUDABaseImageTag()
 	}
-	return "python:" + g.Config.Build.PythonVersion, nil
+	return "python:" + g.Config.Build.PythonVersion + "-slim", nil
 }
 
 func (g *Generator) preamble() string {

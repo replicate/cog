@@ -59,6 +59,7 @@ var typeToExtension = map[string]string{
 	"font/woff2": ".woff2",
 
 	"image/bmp":                ".bmp",
+	"image/x-ms-bmp":           ".bmp",
 	"image/gif":                ".gif",
 	"image/jpeg":               ".jpg",
 	"image/png":                ".png",
