@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 
@@ -56,6 +57,9 @@ type Generator struct {
 	relativeTmpDir string
 
 	fileWalker weights.FileWalker
+
+	modelDirs  []string
+	modelFiles []string
 }
 
 func NewGenerator(config *config.Config, dir string) (*Generator, error) {
@@ -156,7 +160,7 @@ func (g *Generator) GenerateDockerfileWithoutSeparateWeights() (string, error) {
 // - dockerignoreContents: A string that represents the .dockerignore content.
 // - err: An error object if an error occurred during Dockerfile generation; otherwise nil.
 func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile string, dockerignoreContents string, err error) {
-	weightsBase, modelDirs, modelFiles, err := g.generateForWeights()
+	weightsBase, g.modelDirs, g.modelFiles, err = g.generateForWeights()
 	if err != nil {
 		return "", "", "", fmt.Errorf("Failed to generate Dockerfile for model weights files: %w", err)
 	}
@@ -203,7 +207,7 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 		runCommands,
 	}
 
-	for _, p := range append(modelDirs, modelFiles...) {
+	for _, p := range append(g.modelDirs, g.modelFiles...) {
 		base = append(base, "", fmt.Sprintf("COPY --from=%s --link %[2]s %[2]s", "weights", path.Join("/src", p)))
 	}
 
@@ -214,7 +218,7 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 		`COPY . /src`,
 	)
 
-	dockerignoreContents = makeDockerignoreForWeights(modelDirs, modelFiles)
+	dockerignoreContents = makeDockerignoreForWeights(g.modelDirs, g.modelFiles)
 	return weightsBase, strings.Join(filterEmpty(base), "\n"), dockerignoreContents, nil
 }
 
@@ -414,4 +418,60 @@ func filterEmpty(list []string) []string {
 		}
 	}
 	return filtered
+}
+
+// IsWeightsChanged returns true if the model weights have changed since the last build
+func (g *Generator) IsWeightsChanged() (*weights.Hash, bool, error) {
+	h := weights.NewHash()
+
+	// walk through each file under the model directory and calculate the hash
+	for _, dir := range g.modelDirs {
+		err := g.fileWalker(dir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() {
+				return nil
+			}
+
+			return h.AddFileHash(path)
+		})
+		if err != nil {
+			return nil, false, err
+		}
+	}
+
+	// calculate the hash of each model file
+	for _, path := range g.modelFiles {
+		err := h.AddFileHash(path)
+		if err != nil {
+			return nil, false, err
+		}
+	}
+
+	// load the previous hash records from .cog/weights_hash.json
+	oldh, exists, err := g.loadWeightsHash()
+	if err != nil {
+		return nil, false, err
+	}
+
+	// if the file doesn't exist, return true
+	// Because this is the first time and we need to build
+	if !exists {
+		return h, true, nil
+	}
+
+	isChanged := !reflect.DeepEqual(h.ToMap(), oldh.ToMap())
+	return h, isChanged, nil
+}
+
+func (g *Generator) loadWeightsHash() (*weights.Hash, bool, error) {
+	h := weights.NewHash()
+	if err := h.Load(); err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return h, true, nil
 }

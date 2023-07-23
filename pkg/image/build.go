@@ -40,8 +40,23 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 		}
 
-		if err := buildWeightsImage(dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput); err != nil {
-			return fmt.Errorf("Failed to build model weights Docker image: %w", err)
+		if err := backupDockerignore(); err != nil {
+			return fmt.Errorf("Failed to backup .dockerignore file: %w", err)
+		}
+		h, changed, err := generator.IsWeightsChanged()
+		if err != nil {
+			return fmt.Errorf("Failed to check if weights changed: %w", err)
+		}
+		if changed {
+			if err := buildWeightsImage(dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput); err != nil {
+				return fmt.Errorf("Failed to build model weights Docker image: %w", err)
+			}
+			err := h.Save()
+			if err != nil {
+				return fmt.Errorf("Failed to save weights hash: %w", err)
+			}
+		} else {
+			console.Info("Weights unchanged, skip rebuilding and use cached image...")
 		}
 
 		if err := buildRunnerImage(dir, runnerDockerfile, dockerignore, imageName, secrets, noCache, progressOutput); err != nil {
@@ -197,10 +212,6 @@ func buildRunnerImage(dir, dockerfileContents, dockerignoreContents, imageName s
 }
 
 func makeDockerignoreForWeightsImage() error {
-	if err := backupDockerignore(); err != nil {
-		return fmt.Errorf("Failed to backup .dockerignore file: %w", err)
-	}
-
 	if err := writeDockerignore(dockerfile.DockerignoreHeader); err != nil {
 		return fmt.Errorf("Failed to write .dockerignore file: %w", err)
 	}
