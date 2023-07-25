@@ -16,6 +16,7 @@ var buildSecrets []string
 var buildNoCache bool
 var buildProgressOutput string
 var buildSchemaFile string
+var buildUseCudaBaseImage string
 
 func newBuildCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -29,6 +30,7 @@ func newBuildCommand() *cobra.Command {
 	addNoCacheFlag(cmd)
 	addSeparateWeightsFlag(cmd)
 	addSchemaFlag(cmd)
+	addUseCudaBaseImageFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
 }
@@ -47,7 +49,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		imageName = config.DockerImageName(projectDir)
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildProgressOutput, buildSchemaFile); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile); err != nil {
 		return err
 	}
 
@@ -78,4 +80,8 @@ func addSeparateWeightsFlag(cmd *cobra.Command) {
 
 func addSchemaFlag(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&buildSchemaFile, "openapi-schema", "", "Read OpenAPI schema from a file")
+}
+
+func addUseCudaBaseImageFlag(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&buildUseCudaBaseImage, "use-cuda-base-image", "auto", "Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects")
 }

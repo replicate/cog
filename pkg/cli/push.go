@@ -22,11 +22,12 @@ func newPushCommand() *cobra.Command {
 		RunE:    push,
 		Args:    cobra.MaximumNArgs(1),
 	}
-	addBuildProgressOutputFlag(cmd)
 	addSecretsFlag(cmd)
 	addNoCacheFlag(cmd)
 	addSeparateWeightsFlag(cmd)
 	addSchemaFlag(cmd)
+	addUseCudaBaseImageFlag(cmd)
+	addBuildProgressOutputFlag(cmd)
 
 	return cmd
 }
@@ -46,7 +47,7 @@ func push(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push registry.hooli.corp/hotdog-detector'")
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildProgressOutput, buildSchemaFile); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile); err != nil {
 		return err
 	}
 
