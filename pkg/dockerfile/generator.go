@@ -97,7 +97,7 @@ func (g *Generator) GenerateBase() (string, error) {
 		return "", err
 	}
 	installPython := ""
-	if g.Config.Build.GPU {
+	if g.Config.Build.GPU && g.useCudaBaseImage {
 		installPython, err = g.installPythonCUDA()
 		if err != nil {
 			return "", err
