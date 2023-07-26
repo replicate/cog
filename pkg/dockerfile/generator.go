@@ -92,6 +92,10 @@ func (g *Generator) SetUseCudaBaseImage(argumentValue string) {
 }
 
 func (g *Generator) GenerateBase() (string, error) {
+	pipInstallStage, err := g.pipInstallStage()
+	if err != nil {
+		return "", err
+	}
 	baseImage, err := g.baseImage()
 	if err != nil {
 		return "", err
@@ -107,10 +111,6 @@ func (g *Generator) GenerateBase() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	pipInstalls, err := g.pipInstalls()
-	if err != nil {
-		return "", err
-	}
 	installCog, err := g.installCog()
 	if err != nil {
 		return "", err
@@ -122,13 +122,14 @@ func (g *Generator) GenerateBase() (string, error) {
 
 	return strings.Join(filterEmpty([]string{
 		"#syntax=docker/dockerfile:1.4",
+		pipInstallStage,
 		"FROM " + baseImage,
 		g.preamble(),
 		g.installTini(),
 		installPython,
 		installCog,
 		aptInstalls,
-		pipInstalls,
+		g.pipInstalls(),
 		run,
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
@@ -159,7 +160,10 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 	if err != nil {
 		return "", "", "", fmt.Errorf("Failed to generate Dockerfile for model weights files: %w", err)
 	}
-
+	pipInstallStage, err := g.pipInstallStage()
+	if err != nil {
+		return "", "", "", err
+	}
 	baseImage, err := g.baseImage()
 	if err != nil {
 		return "", "", "", err
@@ -175,10 +179,6 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 	if err != nil {
 		return "", "", "", err
 	}
-	pipInstalls, err := g.pipInstalls()
-	if err != nil {
-		return "", "", "", err
-	}
 	installCog, err := g.installCog()
 	if err != nil {
 		return "", "", "", err
@@ -190,6 +190,7 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 
 	base := []string{
 		"#syntax=docker/dockerfile:1.4",
+		pipInstallStage,
 		fmt.Sprintf("FROM %s AS %s", imageName+"-weights", "weights"),
 		"FROM " + baseImage,
 		g.preamble(),
@@ -197,7 +198,7 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 		installPython,
 		installCog,
 		aptInstalls,
-		pipInstalls,
+		g.pipInstalls(),
 		runCommands,
 	}
 
@@ -337,7 +338,7 @@ func (g *Generator) installCog() (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-func (g *Generator) pipInstalls() (string, error) {
+func (g *Generator) pipInstallStage() (string, error) {
 	requirements, err := g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH)
 	if err != nil {
 		return "", err
@@ -346,13 +347,20 @@ func (g *Generator) pipInstalls() (string, error) {
 		return "", nil
 	}
 
-	lines, containerPath, err := g.writeTemp("requirements.txt", []byte(requirements))
+	copyLine, containerPath, err := g.writeTemp("requirements.txt", []byte(requirements))
 	if err != nil {
 		return "", err
 	}
-
-	lines = append(lines, "RUN --mount=type=cache,target=/root/.cache/pip pip install -r "+containerPath)
+	lines := []string{
+		`FROM python:` + g.Config.Build.PythonVersion + `-slim as deps`,
+		copyLine[0],
+		"RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r "+containerPath
+	}
 	return strings.Join(lines, "\n"), nil
+}
+
+func (g *Generator) pipInstalls() string {
+	return "COPY --from=deps /dep /src\n"
 }
 
 func (g *Generator) runCommands() (string, error) {
