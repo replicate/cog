@@ -58,7 +58,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			console.Info(fmt.Sprintf("Using existing Dockerfile at %s...", path.Join(dir, "Dockerfile")))
 			dockerfileContents = string(contents)
 		} else {
-			// maybe clarify that there's no dockerfile in this code path, but that might be too noisy 
+			// maybe clarify that there's no dockerfile in this code path, but that might be too noisy
 			dockerfileContents, err = generator.GenerateDockerfileWithoutSeparateWeights()
 			if err != nil {
 				return fmt.Errorf("Failed to generate Dockerfile: %w", err)
