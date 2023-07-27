@@ -1,8 +1,8 @@
 package weights
 
 import (
-	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"hash/crc32"
@@ -15,7 +15,7 @@ const weightsHashFilename = ".cog/weights_hash.json"
 // FileHash defines the struct to store the hash of a single file
 type FileHash struct {
 	Path string `json:"path"`
-	// CRC32 is the base64-encoded CRC32 hash checksum of the file
+	// CRC32 is the hexadecimal-encoded CRC32 hash checksum of the file
 	CRC32 string `json:"crc32"`
 }
 
@@ -73,10 +73,10 @@ func (h *Hash) AddFileHash(path string) error {
 	}
 	checksum := crc32Algo.Sum32()
 
-	// base64 encode above checksum
+	// encode checksum as hexadecimal string
 	bytes := make([]byte, 4)
 	binary.LittleEndian.PutUint32(bytes, checksum)
-	encoded := base64.StdEncoding.EncodeToString(bytes)
+	encoded := hex.EncodeToString(bytes)
 
 	h.FileHashes = append(h.FileHashes, FileHash{
 		Path:  path,
