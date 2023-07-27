@@ -13,9 +13,11 @@ import (
 	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 const dockerignoreBackupPath = ".dockerignore.cog.bak"
+const weightsManifestPath = ".cog/cache/weights_manifest.json"
 
 // Build a Cog model from a config
 //
@@ -40,8 +42,26 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 		}
 
-		if err := buildWeightsImage(dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput); err != nil {
-			return fmt.Errorf("Failed to build model weights Docker image: %w", err)
+		if err := backupDockerignore(); err != nil {
+			return fmt.Errorf("Failed to backup .dockerignore file: %w", err)
+		}
+
+		weightsManifest, err := generator.GenerateWeightsManifest()
+		if err != nil {
+			return fmt.Errorf("Failed to generate weights manifest: %w", err)
+		}
+		cachedManifest, err := weights.LoadManifest(weightsManifestPath)
+		changed := err != nil && weightsManifest.Equal(cachedManifest)
+		if changed {
+			if err := buildWeightsImage(dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput); err != nil {
+				return fmt.Errorf("Failed to build model weights Docker image: %w", err)
+			}
+			err := weightsManifest.Save(weightsManifestPath)
+			if err != nil {
+				return fmt.Errorf("Failed to save weights hash: %w", err)
+			}
+		} else {
+			console.Info("Weights unchanged, skip rebuilding and use cached image...")
 		}
 
 		if err := buildRunnerImage(dir, runnerDockerfile, dockerignore, imageName, secrets, noCache, progressOutput); err != nil {
