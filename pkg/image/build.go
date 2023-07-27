@@ -13,9 +13,11 @@ import (
 	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 const dockerignoreBackupPath = ".dockerignore.cog.bak"
+const weightsManifestPath = ".cog/cache/weights_manifest.json"
 
 // Build a Cog model from a config
 //
@@ -43,15 +45,18 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		if err := backupDockerignore(); err != nil {
 			return fmt.Errorf("Failed to backup .dockerignore file: %w", err)
 		}
-		h, changed, err := generator.IsWeightsChanged()
+
+		weightsManifest, err := generator.GenerateWeightsManifest()
 		if err != nil {
-			return fmt.Errorf("Failed to check if weights changed: %w", err)
+			return fmt.Errorf("Failed to generate weights manifest: %w", err)
 		}
+		cachedManifest, err := weights.LoadManifest(weightsManifestPath)
+		changed := err != nil && weightsManifest.Equal(cachedManifest)
 		if changed {
 			if err := buildWeightsImage(dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput); err != nil {
 				return fmt.Errorf("Failed to build model weights Docker image: %w", err)
 			}
-			err := h.Save()
+			err := weightsManifest.Save(weightsManifestPath)
 			if err != nil {
 				return fmt.Errorf("Failed to save weights hash: %w", err)
 			}
@@ -212,6 +217,10 @@ func buildRunnerImage(dir, dockerfileContents, dockerignoreContents, imageName s
 }
 
 func makeDockerignoreForWeightsImage() error {
+	if err := backupDockerignore(); err != nil {
+		return fmt.Errorf("Failed to backup .dockerignore file: %w", err)
+	}
+
 	if err := writeDockerignore(dockerfile.DockerignoreHeader); err != nil {
 		return fmt.Errorf("Failed to write .dockerignore file: %w", err)
 	}

@@ -7,7 +7,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strings"
 
@@ -420,9 +419,8 @@ func filterEmpty(list []string) []string {
 	return filtered
 }
 
-// IsWeightsChanged returns true if the model weights have changed since the last build
-func (g *Generator) IsWeightsChanged() (*weights.Hash, bool, error) {
-	h := weights.NewHash()
+func (g *Generator) GenerateWeightsManifest() (*weights.Manifest, error) {
+	m := weights.NewManifest()
 
 	// walk through each file under the model directory and calculate the hash
 	for _, dir := range g.modelDirs {
@@ -434,44 +432,20 @@ func (g *Generator) IsWeightsChanged() (*weights.Hash, bool, error) {
 				return nil
 			}
 
-			return h.AddFileHash(path)
+			return m.AddFile(path)
 		})
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 	}
 
 	// calculate the hash of each model file
 	for _, path := range g.modelFiles {
-		err := h.AddFileHash(path)
+		err := m.AddFile(path)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 	}
 
-	// load the previous hash records from .cog/weights_hash.json
-	oldh, exists, err := g.loadWeightsHash()
-	if err != nil {
-		return nil, false, err
-	}
-
-	// if the file doesn't exist, return true
-	// Because this is the first time and we need to build
-	if !exists {
-		return h, true, nil
-	}
-
-	isChanged := !reflect.DeepEqual(h.ToMap(), oldh.ToMap())
-	return h, isChanged, nil
-}
-
-func (g *Generator) loadWeightsHash() (*weights.Hash, bool, error) {
-	h := weights.NewHash()
-	if err := h.Load(); err != nil {
-		if os.IsNotExist(err) {
-			return nil, false, nil
-		}
-		return nil, false, err
-	}
-	return h, true, nil
+	return m, nil
 }
