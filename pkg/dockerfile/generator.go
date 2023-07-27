@@ -422,7 +422,6 @@ func filterEmpty(list []string) []string {
 func (g *Generator) GenerateWeightsManifest() (*weights.Manifest, error) {
 	m := weights.NewManifest()
 
-	// walk through each file under the model directory and calculate the hash
 	for _, dir := range g.modelDirs {
 		err := g.fileWalker(dir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -439,7 +438,6 @@ func (g *Generator) GenerateWeightsManifest() (*weights.Manifest, error) {
 		}
 	}
 
-	// calculate the hash of each model file
 	for _, path := range g.modelFiles {
 		err := m.AddFile(path)
 		if err != nil {
