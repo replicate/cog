@@ -111,10 +111,6 @@ func (g *Generator) GenerateBase() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	installCog, err := g.installCog()
-	if err != nil {
-		return "", err
-	}
 	run, err := g.runCommands()
 	if err != nil {
 		return "", err
@@ -127,7 +123,6 @@ func (g *Generator) GenerateBase() (string, error) {
 		g.preamble(),
 		g.installTini(),
 		installPython,
-		installCog,
 		aptInstalls,
 		g.pipInstalls(),
 		run,
@@ -179,10 +174,6 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 	if err != nil {
 		return "", "", "", err
 	}
-	installCog, err := g.installCog()
-	if err != nil {
-		return "", "", "", err
-	}
 	runCommands, err := g.runCommands()
 	if err != nil {
 		return "", "", "", err
@@ -196,7 +187,6 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 		g.preamble(),
 		g.installTini(),
 		installPython,
-		installCog,
 		aptInstalls,
 		g.pipInstalls(),
 		runCommands,
@@ -334,11 +324,15 @@ func (g *Generator) installCog() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	lines = append(lines, fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install %s", containerPath))
+	lines = append(lines, fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep %s", containerPath))
 	return strings.Join(lines, "\n"), nil
 }
 
 func (g *Generator) pipInstallStage() (string, error) {
+	installCog, err := g.installCog()
+	if err != nil {
+		return "", err
+	}
 	requirements, err := g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH)
 	if err != nil {
 		return "", err
@@ -352,15 +346,17 @@ func (g *Generator) pipInstallStage() (string, error) {
 		return "", err
 	}
 	lines := []string{
-		`FROM python:` + g.Config.Build.PythonVersion + `-slim as deps`,
+		// Not slim, so that we can compile wheels
+		`FROM python:` + g.Config.Build.PythonVersion + ` as deps`,
+		installCog,
 		copyLine[0],
-		"RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r "+containerPath
+		"RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r " + containerPath,
 	}
 	return strings.Join(lines, "\n"), nil
 }
 
 func (g *Generator) pipInstalls() string {
-	return "COPY --from=deps /dep /src\n"
+	return "COPY --from=deps --link /dep /src\n"
 }
 
 func (g *Generator) runCommands() (string, error) {
