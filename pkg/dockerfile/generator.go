@@ -338,7 +338,8 @@ func (g *Generator) pipInstallStage() (string, error) {
 		return "", err
 	}
 	if strings.Trim(requirements, "") == "" {
-		return "", nil
+		return `FROM python:` + g.Config.Build.PythonVersion + ` as deps
+` + installCog, nil
 	}
 
 	copyLine, containerPath, err := g.writeTemp("requirements.txt", []byte(requirements))
@@ -356,7 +357,7 @@ func (g *Generator) pipInstallStage() (string, error) {
 }
 
 func (g *Generator) pipInstalls() string {
-	return "COPY --from=deps --link /dep /src\n"
+	return "COPY --from=deps --link /dep /src"
 }
 
 func (g *Generator) runCommands() (string, error) {
