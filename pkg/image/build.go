@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/dockerfile"
@@ -77,18 +78,38 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}
 	}
 
-	console.Info("Adding labels to image...")
+	console.Info("Validating model schema...")
 	schema, err := GenerateOpenAPISchema(imageName, cfg.Build.GPU)
 	if err != nil {
 		return fmt.Errorf("Failed to get type signature: %w", err)
 	}
+	schemaJSON, err := json.Marshal(schema)
+	if err != nil {
+		return fmt.Errorf("Failed to convert type signature to JSON: %w", err)
+	}
+	if len(schema) > 0 {
+		loader := openapi3.NewLoader()
+		loader.IsExternalRefsAllowed = true
+		doc, err := loader.LoadFromData(schemaJSON)
+		if err != nil {
+			return fmt.Errorf("Failed to load model schema JSON: %w", err)
+		}
+		err = doc.Validate(loader.Context)
+		if err != nil {
+			return err
+		}
+	}
+
+	console.Info("Adding labels to image...")
+
+	// We used to set the cog_version and config labels in Dockerfile, because we didn't require running the
+	// built image to get those. But, the escaping of JSON inside a label inside a Dockerfile was gnarly, and
+	// doesn't seem to be a problem here, so do it here instead.
 	configJSON, err := json.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("Failed to convert config to JSON: %w", err)
 	}
-	// We used to set the cog_version and config labels in Dockerfile, because we didn't require running the
-	// built image to get those. But, the escaping of JSON inside a label inside a Dockerfile was gnarly, and
-	// doesn't seem to be a problem here, so do it here instead.
+
 	labels := map[string]string{
 		global.LabelNamespace + "version": global.Version,
 		global.LabelNamespace + "config":  string(bytes.TrimSpace(configJSON)),
@@ -102,11 +123,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	}
 
 	// OpenAPI schema is not set if there is no predictor.
-	if len((*schema).(map[string]interface{})) != 0 {
-		schemaJSON, err := json.Marshal(schema)
-		if err != nil {
-			return fmt.Errorf("Failed to convert type signature to JSON: %w", err)
-		}
+	if len(schema) > 0 {
 		labels[global.LabelNamespace+"openapi_schema"] = string(schemaJSON)
 		labels["org.cogmodel.openapi_schema"] = string(schemaJSON)
 	}
