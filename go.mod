@@ -19,7 +19,7 @@ require (
 	github.com/xeipuuv/gojsonschema v1.2.0
 	github.com/xeonx/timeago v1.0.0-rc5
 	golang.org/x/sys v0.10.0
-	golang.org/x/tools v0.11.0
+	golang.org/x/tools v0.11.1
 	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools/gotestsum v1.10.1
 	sigs.k8s.io/yaml v1.3.0
