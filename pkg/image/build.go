@@ -51,8 +51,8 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		if err != nil {
 			return fmt.Errorf("Failed to generate weights manifest: %w", err)
 		}
-		cachedManifest, err := weights.LoadManifest(weightsManifestPath)
-		changed := err != nil && weightsManifest.Equal(cachedManifest)
+		cachedManifest, _ := weights.LoadManifest(weightsManifestPath)
+		changed := cachedManifest == nil || !weightsManifest.Equal(cachedManifest)
 		if changed {
 			if err := buildWeightsImage(dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput); err != nil {
 				return fmt.Errorf("Failed to build model weights Docker image: %w", err)
