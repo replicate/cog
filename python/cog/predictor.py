@@ -1,8 +1,20 @@
+import time
+import sys
+
+
+def logtime(msg: str) -> None:
+    print(f"===TIME {time.time():.4f} {msg}===", file=sys.stderr)
+
+
+logtime("top of predictor.py")
+
+
 import enum
 import importlib.util
 import inspect
 import io
 import os.path
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
@@ -14,14 +26,10 @@ from typing import (
     Optional,
     Type,
     Union,
+    get_args,
+    get_origin,
 )
 
-try:
-    from typing import get_args, get_origin
-except ImportError:  # Python < 3.8
-    from typing_compat import get_args, get_origin
-
-import yaml
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
@@ -129,8 +137,11 @@ def load_config() -> Dict[str, Any]:
     """
     Reads cog.yaml and returns it as a dict.
     """
+    import yaml
+
     # Assumes the working directory is /src
     config_path = os.path.abspath("cog.yaml")
+
     try:
         with open(config_path) as fh:
             config = yaml.safe_load(fh)
@@ -162,14 +173,22 @@ def get_predictor_ref(config: Dict[str, Any], mode: str = "predict") -> str:
     return config[mode]
 
 
+# we're overwriting to replace this
+# module_from_spec does not set sys.modules, causing predict.py to be evaluated twice
+# importlib.import_module does not have this problem
+
+
 def load_predictor_from_ref(ref: str) -> BasePredictor:
     module_path, class_name = ref.split(":", 1)
     module_name = os.path.basename(module_path).split(".py", 1)[0]
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    assert spec is not None
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
+    # spec = importlib.util.spec_from_file_location(module_name, module_path)
+    # assert spec is not None
+    # module = importlib.util.module_from_spec(spec)
+    # assert spec.loader is not None
+    # spec.loader.exec_module(module)
+    print("=== running import_module ===", file=sys.stderr)
+    module = importlib.import_module(module_name)
+    print("=== ran import_module ===", file=sys.stderr)
     predictor = getattr(module, class_name)
     # It could be a class or a function
     if inspect.isclass(predictor):
@@ -196,10 +215,7 @@ class BaseInput(BaseModel):
             # Note this is pathlib.Path, which cog.Path is a subclass of. A pathlib.Path object shouldn't make its way here,
             # but both have an unlink() method, so may as well be safe.
             elif isinstance(value, Path):
-                try:
-                    value.unlink()
-                except FileNotFoundError:
-                    pass
+                value.unlink(missing_ok=True)
 
 
 def get_predict(predictor: Any) -> Callable:

@@ -2,13 +2,11 @@ import base64
 import io
 import mimetypes
 import os
-from urllib.parse import urlparse
-
-import requests
 
 
 def upload_file(fh: io.IOBase, output_file_prefix: str = None) -> str:
     fh.seek(0)
+    import requests
 
     if output_file_prefix is not None:
         name = getattr(fh, "name", "output")
@@ -38,8 +36,10 @@ def guess_filename(obj: io.IOBase) -> str:
 
 
 def put_file_to_signed_endpoint(
-    fh: io.IOBase, endpoint: str, client: requests.Session
+    fh: io.IOBase, endpoint: str, client: "requests.Session"
 ) -> str:
+    import requests
+    from urllib.parse import urlparse
     fh.seek(0)
 
     filename = guess_filename(fh)
