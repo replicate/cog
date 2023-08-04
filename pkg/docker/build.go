@@ -56,6 +56,8 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 
 	args = append(args,
 		"--file", "-",
+		"--sbom=true",
+		"--provenance=true",
 		"--tag", imageName,
 		"--progress", progressOutput,
 		".",
