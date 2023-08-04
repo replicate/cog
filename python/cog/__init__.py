@@ -1,13 +1,4 @@
-import time
-import sys
-
-
-def logtime(msg: str) -> None:
-    print(f"===TIME {time.time():.4f} {msg}===", file=sys.stderr)
-
-
-logtime("cog/__init__.py")
-# never mind all this, predict.py will just have to from cog.predictor import BasePredictor
+# never mind all this, predict.py will just have to `from cog.predictor import BasePredictor`
 
 # from pydantic import BaseModel
 

@@ -1,14 +1,3 @@
-import time
-import sys
-
-
-def logtime(msg: str) -> None:
-    print(f"===TIME {time.time():.4f} {msg}===", file=sys.stderr)
-
-
-logtime("top of http")
-
-
 import argparse
 import logging
 import os
@@ -31,7 +20,6 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from pydantic.error_wrappers import ErrorWrapper
 
-logtime("http lib imports done")
 from .. import schema
 from ..files import upload_file
 from ..json import upload_files
@@ -47,7 +35,6 @@ from .runner import PredictionRunner, RunnerBusyError, UnknownPredictionError
 
 log = structlog.get_logger("cog.server.http")
 
-logtime("http local imports done")
 
 
 @unique
@@ -66,7 +53,6 @@ def create_app(
     upload_url: Optional[str] = None,
     mode: str = "predict",
 ) -> FastAPI:
-    logtime("create_app starting")
     app = FastAPI(
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
@@ -77,7 +63,6 @@ def create_app(
     app.state.setup_result_payload = None
 
     predictor_ref = get_predictor_ref(config, mode)
-    logtime("get_predictor_ref")
 
     runner = PredictionRunner(
         predictor_ref=predictor_ref,
@@ -86,7 +71,6 @@ def create_app(
     )
     # TODO: avoid loading predictor code in this process
     # predictor = load_predictor_from_ref(predictor_ref)
-    # logtime("loaded predictor")
 
     InputType = dict #get_input_type(predictor)
     OutputType = list # get_output_type(predictor)
@@ -98,12 +82,10 @@ def create_app(
 
     @app.on_event("startup")
     def startup() -> None:
-        logtime("http app startup")
         # https://github.com/tiangolo/fastapi/issues/4221
         RunVar("_default_thread_limiter").set(CapacityLimiter(threads))  # type: ignore
 
         app.state.setup_result = runner.setup()
-        logtime("http app startup done")
 
     @app.on_event("shutdown")
     def shutdown() -> None:
@@ -140,7 +122,6 @@ def create_app(
         """
         Run a single prediction on the model
         """
-        logtime("http prediction start")
         if runner.is_busy():
             return JSONResponse(
                 {"detail": "Already running a prediction"}, status_code=409
@@ -150,7 +131,6 @@ def create_app(
         respond_async = prefer == "respond-async"
 
         res = _predict(request=request, respond_async=respond_async)
-        logtime("http prediction done")
         return res
 
     @app.put(
@@ -331,7 +311,6 @@ def signal_set_event(event: threading.Event) -> Callable:
 
 
 if __name__ == "__main__":
-    logtime("http __main__")
     parser = argparse.ArgumentParser(description="Cog HTTP server")
     parser.add_argument(
         "--threads",
