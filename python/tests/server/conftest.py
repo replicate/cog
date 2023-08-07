@@ -1,16 +1,15 @@
 import os
 import threading
 import time
-import sys
 from contextlib import ExitStack
 from typing import Any, Dict, Optional
 from unittest import mock
 
 import pytest
 from attrs import define
+from cog.command import ast_openapi_schema
 from cog.server.http import create_app
 from fastapi.testclient import TestClient
-from cog.command import ast_openapi_schema
 
 
 @define

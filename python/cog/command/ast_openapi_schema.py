@@ -1,7 +1,6 @@
 import ast
 import json
 import sys
-import typing
 from pathlib import Path
 
 try:
@@ -10,7 +9,287 @@ except (AssertionError, AttributeError):
     # bad "compat" with python3.8
     ast.unparse = repr
 
-BASE_SCHEMA = '{"components":{"schemas":{"HTTPValidationError":{"properties":{"detail":{"items":{"$ref":"#/components/schemas/ValidationError"},"title":"Detail","type":"array"}},"title":"HTTPValidationError","type":"object"},"PredictionRequest":{"properties":{"created_at":{"format":"date-time","title":"Created At","type":"string"},"id":{"title":"Id","type":"string"},"input":{"$ref":"#/components/schemas/Input"},"output_file_prefix":{"title":"Output File Prefix","type":"string"},"webhook":{"format":"uri","maxLength":65536,"minLength":1,"title":"Webhook","type":"string"},"webhook_events_filter":{"default":["start","output","logs","completed"],"items":{"$ref":"#/components/schemas/WebhookEvent"},"type":"array"}},"title":"PredictionRequest","type":"object"},"PredictionResponse":{"properties":{"completed_at":{"format":"date-time","title":"Completed At","type":"string"},"created_at":{"format":"date-time","title":"Created At","type":"string"},"error":{"title":"Error","type":"string"},"id":{"title":"Id","type":"string"},"input":{"$ref":"#/components/schemas/Input"},"logs":{"default":"","title":"Logs","type":"string"},"metrics":{"title":"Metrics","type":"object"},"output":{"$ref":"#/components/schemas/Output"},"started_at":{"format":"date-time","title":"Started At","type":"string"},"status":{"$ref":"#/components/schemas/Status"},"version":{"title":"Version","type":"string"}},"title":"PredictionResponse","type":"object"},"Status":{"description":"An enumeration.","enum":["starting","processing","succeeded","canceled","failed"],"title":"Status","type":"string"},"ValidationError":{"properties":{"loc":{"items":{"anyOf":[{"type":"string"},{"type":"integer"}]},"title":"Location","type":"array"},"msg":{"title":"Message","type":"string"},"type":{"title":"Error Type","type":"string"}},"required":["loc","msg","type"],"title":"ValidationError","type":"object"},"WebhookEvent":{"description":"An enumeration.","enum":["start","output","logs","completed"],"title":"WebhookEvent","type":"string"}}},"info":{"title":"Cog","version":"0.1.0"},"openapi":"3.0.2","paths":{"/":{"get":{"operationId":"root__get","responses":{"200":{"content":{"application/json":{"schema":{"title":"Response Root  Get"}}},"description":"Successful Response"}},"summary":"Root"}},"/health-check":{"get":{"operationId":"healthcheck_health_check_get","responses":{"200":{"content":{"application/json":{"schema":{"title":"Response Healthcheck Health Check Get"}}},"description":"Successful Response"}},"summary":"Healthcheck"}},"/predictions":{"post":{"description":"Run a single prediction on the model","operationId":"predict_predictions_post","parameters":[{"in":"header","name":"prefer","required":false,"schema":{"title":"Prefer","type":"string"}}],"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/PredictionRequest"}}}},"responses":{"200":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/PredictionResponse"}}},"description":"Successful Response"},"422":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}},"description":"Validation Error"}},"summary":"Predict"}},"/predictions/{prediction_id}":{"put":{"description":"Run a single prediction on the model (idempotent creation).","operationId":"predict_idempotent_predictions__prediction_id__put","parameters":[{"in":"path","name":"prediction_id","required":true,"schema":{"title":"Prediction ID","type":"string"}},{"in":"header","name":"prefer","required":false,"schema":{"title":"Prefer","type":"string"}}],"requestBody":{"content":{"application/json":{"schema":{"allOf":[{"$ref":"#/components/schemas/PredictionRequest"}],"title":"Prediction Request"}}},"required":true},"responses":{"200":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/PredictionResponse"}}},"description":"Successful Response"},"422":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}},"description":"Validation Error"}},"summary":"Predict Idempotent"}},"/predictions/{prediction_id}/cancel":{"post":{"description":"Cancel a running prediction","operationId":"cancel_predictions__prediction_id__cancel_post","parameters":[{"in":"path","name":"prediction_id","required":true,"schema":{"title":"Prediction ID","type":"string"}}],"responses":{"200":{"content":{"application/json":{"schema":{"title":"Response Cancel Predictions  Prediction Id  Cancel Post"}}},"description":"Successful Response"},"422":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}},"description":"Validation Error"}},"summary":"Cancel"}},"/shutdown":{"post":{"operationId":"start_shutdown_shutdown_post","responses":{"200":{"content":{"application/json":{"schema":{"title":"Response Start Shutdown Shutdown Post"}}},"description":"Successful Response"}},"summary":"Start Shutdown"}}}}'
+BASE_SCHEMA = """
+{
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": { "$ref": "#/components/schemas/ValidationError" },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "PredictionRequest": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": { "title": "Id", "type": "string" },
+          "input": { "$ref": "#/components/schemas/Input" },
+          "output_file_prefix": {
+            "title": "Output File Prefix",
+            "type": "string"
+          },
+          "webhook": {
+            "format": "uri",
+            "maxLength": 65536,
+            "minLength": 1,
+            "title": "Webhook",
+            "type": "string"
+          },
+          "webhook_events_filter": {
+            "default": ["start", "output", "logs", "completed"],
+            "items": { "$ref": "#/components/schemas/WebhookEvent" },
+            "type": "array"
+          }
+        },
+        "title": "PredictionRequest",
+        "type": "object"
+      },
+      "PredictionResponse": {
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": { "title": "Error", "type": "string" },
+          "id": { "title": "Id", "type": "string" },
+          "input": { "$ref": "#/components/schemas/Input" },
+          "logs": { "default": "", "title": "Logs", "type": "string" },
+          "metrics": { "title": "Metrics", "type": "object" },
+          "output": { "$ref": "#/components/schemas/Output" },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": { "$ref": "#/components/schemas/Status" },
+          "version": { "title": "Version", "type": "string" }
+        },
+        "title": "PredictionResponse",
+        "type": "object"
+      },
+      "Status": {
+        "description": "An enumeration.",
+        "enum": ["starting", "processing", "succeeded", "canceled", "failed"],
+        "title": "Status",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": { "anyOf": [{ "type": "string" }, { "type": "integer" }] },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": { "title": "Message", "type": "string" },
+          "type": { "title": "Error Type", "type": "string" }
+        },
+        "required": ["loc", "msg", "type"],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WebhookEvent": {
+        "description": "An enumeration.",
+        "enum": ["start", "output", "logs", "completed"],
+        "title": "WebhookEvent",
+        "type": "string"
+      }
+    }
+  },
+  "info": { "title": "Cog", "version": "0.1.0" },
+  "openapi": "3.0.2",
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "title": "Response Root  Get" }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Root"
+      }
+    },
+    "/health-check": {
+      "get": {
+        "operationId": "healthcheck_health_check_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "title": "Response Healthcheck Health Check Get" }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Healthcheck"
+      }
+    },
+    "/predictions": {
+      "post": {
+        "description": "Run a single prediction on the model",
+        "operationId": "predict_predictions_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "prefer",
+            "required": false,
+            "schema": { "title": "Prefer", "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PredictionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PredictionResponse" }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Predict"
+      }
+    },
+    "/predictions/{prediction_id}": {
+      "put": {
+        "description": "Run a single prediction on the model (idempotent creation).",
+        "operationId": "predict_idempotent_predictions__prediction_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "prediction_id",
+            "required": true,
+            "schema": { "title": "Prediction ID", "type": "string" }
+          },
+          {
+            "in": "header",
+            "name": "prefer",
+            "required": false,
+            "schema": { "title": "Prefer", "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [{ "$ref": "#/components/schemas/PredictionRequest" }],
+                "title": "Prediction Request"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PredictionResponse" }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Predict Idempotent"
+      }
+    },
+    "/predictions/{prediction_id}/cancel": {
+      "post": {
+        "description": "Cancel a running prediction",
+        "operationId": "cancel_predictions__prediction_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "prediction_id",
+            "required": true,
+            "schema": { "title": "Prediction ID", "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Cancel Predictions  Prediction Id  Cancel Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel"
+      }
+    },
+    "/shutdown": {
+      "post": {
+        "operationId": "start_shutdown_shutdown_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "title": "Response Start Shutdown Shutdown Post" }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Start Shutdown"
+      }
+    }
+  }
+}
+"""
+
 OPENAPI_TYPES = {
     "str": "string",  # includes dates, files
     "int": "integer",
@@ -63,7 +342,7 @@ def get_call_name(call: ast.Call) -> str:
     raise ValueError("Unexpected node type", type(call), ast.unparse(call))
 
 
-def parse_args(tree: ast.AST) -> "list[tuple[ast.arg, ast.expr | ellipsis]]":
+def parse_args(tree: ast.AST) -> "list[tuple[ast.arg, ast.expr | Ellipsis]]":
     """Parse argument, default pairs from a file with a predict function"""
     predict = find(tree, "predict")
     assert isinstance(predict, ast.FunctionDef)
