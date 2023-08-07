@@ -91,6 +91,17 @@ def test_build_with_model(docker_image):
     }
 
 
+def test_build_invalid_schema(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/invalid-int-project"
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode > 0
+    assert "invalid default: number must be at least 2" in build_process.stderr.decode()
+
+
 def test_build_gpu_model_on_cpu(tmpdir, docker_image):
     if os.environ.get("CI") != "true":
         pytest.skip("only runs on CI environment")

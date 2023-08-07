@@ -8,14 +8,18 @@ import (
 	"os/exec"
 	"path"
 
+	"github.com/getkin/kin-openapi/openapi3"
+
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 const dockerignoreBackupPath = ".dockerignore.cog.bak"
+const weightsManifestPath = ".cog/cache/weights_manifest.json"
 
 // Build a Cog model from a config
 //
@@ -40,8 +44,26 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 		}
 
-		if err := buildWeightsImage(dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput); err != nil {
-			return fmt.Errorf("Failed to build model weights Docker image: %w", err)
+		if err := backupDockerignore(); err != nil {
+			return fmt.Errorf("Failed to backup .dockerignore file: %w", err)
+		}
+
+		weightsManifest, err := generator.GenerateWeightsManifest()
+		if err != nil {
+			return fmt.Errorf("Failed to generate weights manifest: %w", err)
+		}
+		cachedManifest, _ := weights.LoadManifest(weightsManifestPath)
+		changed := cachedManifest == nil || !weightsManifest.Equal(cachedManifest)
+		if changed {
+			if err := buildWeightsImage(dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput); err != nil {
+				return fmt.Errorf("Failed to build model weights Docker image: %w", err)
+			}
+			err := weightsManifest.Save(weightsManifestPath)
+			if err != nil {
+				return fmt.Errorf("Failed to save weights hash: %w", err)
+			}
+		} else {
+			console.Info("Weights unchanged, skip rebuilding and use cached image...")
 		}
 
 		if err := buildRunnerImage(dir, runnerDockerfile, dockerignore, imageName, secrets, noCache, progressOutput); err != nil {
@@ -57,40 +79,58 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}
 	}
 
-	console.Info("Adding labels to image...")
+	console.Info("Validating model schema...")
 
+	var schema map[string]interface{}
 	var schemaJSON []byte
+
 	if schemaFile != "" {
 		// We were passed a schema file, so use that
 		schemaJSON, err = os.ReadFile(schemaFile)
 		if err != nil {
 			return fmt.Errorf("Failed to read schema file: %w", err)
 		}
+
+		schema = make(map[string]interface{})
+		err = json.Unmarshal(schemaJSON, &schema)
+		if err != nil {
+			return fmt.Errorf("Failed to parse schema file: %w", err)
+		}
 	} else {
-		schema, err := GenerateOpenAPISchema(imageName, cfg.Build.GPU)
+		schema, err = GenerateOpenAPISchema(imageName, cfg.Build.GPU)
 		if err != nil {
 			return fmt.Errorf("Failed to get type signature: %w", err)
 		}
-		// OpenAPI schema is not set if there is no predictor.
-		if len((*schema).(map[string]interface{})) != 0 {
-			schemaJSON, err = json.Marshal(schema)
-			if err != nil {
-				return fmt.Errorf("Failed to convert type signature to JSON: %w", err)
-			}
-		}
-		// Maybe this should go in tmpdir instead
-		schemaFile = path.Join(dir, "openapi_schema.json")
-		if err := os.WriteFile(schemaFile, schemaJSON, 0o644); err != nil {
-			return fmt.Errorf("Failed to write schema file: %w", err)
+
+		schemaJSON, err = json.Marshal(schema)
+		if err != nil {
+			return fmt.Errorf("Failed to convert type signature to JSON: %w", err)
 		}
 	}
+
+	if len(schema) > 0 {
+		loader := openapi3.NewLoader()
+		loader.IsExternalRefsAllowed = true
+		doc, err := loader.LoadFromData(schemaJSON)
+		if err != nil {
+			return fmt.Errorf("Failed to load model schema JSON: %w", err)
+		}
+		err = doc.Validate(loader.Context)
+		if err != nil {
+			return err
+		}
+	}
+
+	console.Info("Adding labels to image...")
+
+	// We used to set the cog_version and config labels in Dockerfile, because we didn't require running the
+	// built image to get those. But, the escaping of JSON inside a label inside a Dockerfile was gnarly, and
+	// doesn't seem to be a problem here, so do it here instead.
 	configJSON, err := json.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("Failed to convert config to JSON: %w", err)
 	}
-	// We used to set the cog_version and config labels in Dockerfile, because we didn't require running the
-	// built image to get those. But, the escaping of JSON inside a label inside a Dockerfile was gnarly, and
-	// doesn't seem to be a problem here, so do it here instead.
+
 	labels := map[string]string{
 		global.LabelNamespace + "version": global.Version,
 		global.LabelNamespace + "config":  string(bytes.TrimSpace(configJSON)),
