@@ -144,7 +144,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		"org.cogmodel.config":      string(bytes.TrimSpace(configJSON)),
 	}
 
-	if schemaJSON != nil {
+	if len(schema) > 0 {
 		labels[global.LabelNamespace+"openapi_schema"] = string(schemaJSON)
 		labels["org.cogmodel.openapi_schema"] = string(schemaJSON)
 	}
