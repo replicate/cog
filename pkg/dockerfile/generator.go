@@ -56,6 +56,9 @@ type Generator struct {
 	relativeTmpDir string
 
 	fileWalker weights.FileWalker
+
+	modelDirs  []string
+	modelFiles []string
 }
 
 func NewGenerator(config *config.Config, dir string) (*Generator, error) {
@@ -151,7 +154,7 @@ func (g *Generator) GenerateDockerfileWithoutSeparateWeights() (string, error) {
 // - dockerignoreContents: A string that represents the .dockerignore content.
 // - err: An error object if an error occurred during Dockerfile generation; otherwise nil.
 func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile string, dockerignoreContents string, err error) {
-	weightsBase, modelDirs, modelFiles, err := g.generateForWeights()
+	weightsBase, g.modelDirs, g.modelFiles, err = g.generateForWeights()
 	if err != nil {
 		return "", "", "", fmt.Errorf("Failed to generate Dockerfile for model weights files: %w", err)
 	}
@@ -192,7 +195,7 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 		runCommands,
 	}
 
-	for _, p := range append(modelDirs, modelFiles...) {
+	for _, p := range append(g.modelDirs, g.modelFiles...) {
 		base = append(base, "", fmt.Sprintf("COPY --from=%s --link %[2]s %[2]s", "weights", path.Join("/src", p)))
 	}
 
@@ -203,7 +206,7 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 		`COPY . /src`,
 	)
 
-	dockerignoreContents = makeDockerignoreForWeights(modelDirs, modelFiles)
+	dockerignoreContents = makeDockerignoreForWeights(g.modelDirs, g.modelFiles)
 	return weightsBase, strings.Join(filterEmpty(base), "\n"), dockerignoreContents, nil
 }
 
@@ -414,4 +417,33 @@ func filterEmpty(list []string) []string {
 		}
 	}
 	return filtered
+}
+
+func (g *Generator) GenerateWeightsManifest() (*weights.Manifest, error) {
+	m := weights.NewManifest()
+
+	for _, dir := range g.modelDirs {
+		err := g.fileWalker(dir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() {
+				return nil
+			}
+
+			return m.AddFile(path)
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	for _, path := range g.modelFiles {
+		err := m.AddFile(path)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return m, nil
 }

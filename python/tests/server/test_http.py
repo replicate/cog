@@ -25,11 +25,12 @@ def test_predict_works_with_functions(client, match):
 
 
 @uses_predictor("openapi_complex_input")
-def test_openapi_specification(client):
+def test_openapi_specification(client, static_schema):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
     schema = resp.json()
+    assert schema == static_schema
     assert schema["openapi"] == "3.0.2"
     assert schema["info"] == {"title": "Cog", "version": "0.1.0"}
     assert schema["paths"]["/"] == {
@@ -190,11 +191,14 @@ def test_openapi_specification(client):
 
 
 @uses_predictor("openapi_custom_output_type")
-def test_openapi_specification_with_custom_user_defined_output_type(client):
+def test_openapi_specification_with_custom_user_defined_output_type(
+    client, static_schema
+):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
     schema = resp.json()
+    assert schema == static_schema
     assert schema["components"]["schemas"]["Output"] == {
         "$ref": "#/components/schemas/MyOutput",
         "title": "Output",
@@ -219,11 +223,12 @@ def test_openapi_specification_with_custom_user_defined_output_type(client):
 
 @uses_predictor("openapi_output_type")
 def test_openapi_specification_with_custom_user_defined_output_type_called_output(
-    client,
+    client, static_schema
 ):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
-
+    schema = resp.json()
+    assert schema == static_schema
     assert resp.json()["components"]["schemas"]["Output"] == {
         "properties": {
             "foo_number": {"default": "42", "title": "Foo Number", "type": "integer"},
@@ -239,11 +244,12 @@ def test_openapi_specification_with_custom_user_defined_output_type_called_outpu
 
 
 @uses_predictor("openapi_output_yield")
-def test_openapi_specification_with_yield(client):
+def test_openapi_specification_with_yield(client, static_schema):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
-
-    assert resp.json()["components"]["schemas"]["Output"] == {
+    schema = resp.json()
+    assert schema == static_schema
+    assert schema["components"]["schemas"]["Output"] == {
         "title": "Output",
         "type": "array",
         "items": {
@@ -254,11 +260,15 @@ def test_openapi_specification_with_yield(client):
 
 
 @uses_predictor("yield_concatenate_iterator")
-def test_openapi_specification_with_yield_with_concatenate_iterator(client):
+def test_openapi_specification_with_yield_with_concatenate_iterator(
+    client, static_schema
+):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
-    assert resp.json()["components"]["schemas"]["Output"] == {
+    schema = resp.json()
+    assert schema == static_schema
+    assert schema["components"]["schemas"]["Output"] == {
         "title": "Output",
         "type": "array",
         "items": {
@@ -270,11 +280,13 @@ def test_openapi_specification_with_yield_with_concatenate_iterator(client):
 
 
 @uses_predictor("openapi_output_list")
-def test_openapi_specification_with_list(client):
+def test_openapi_specification_with_list(client, static_schema):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
-    assert resp.json()["components"]["schemas"]["Output"] == {
+    schema = resp.json()
+    assert schema == static_schema
+    assert schema["components"]["schemas"]["Output"] == {
         "title": "Output",
         "type": "array",
         "items": {
@@ -284,11 +296,12 @@ def test_openapi_specification_with_list(client):
 
 
 @uses_predictor("openapi_input_int_choices")
-def test_openapi_specification_with_int_choices(client):
+def test_openapi_specification_with_int_choices(client, static_schema):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
     schema = resp.json()
+    assert schema == static_schema
     schemas = schema["components"]["schemas"]
 
     assert schemas["Input"]["properties"]["pick_a_number_any_number"] == {

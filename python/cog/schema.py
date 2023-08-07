@@ -24,8 +24,11 @@ class WebhookEvent(str, Enum):
     COMPLETED = "completed"
 
     @classmethod
-    def default_events(cls) -> t.Set["WebhookEvent"]:
-        return {cls.START, cls.OUTPUT, cls.LOGS, cls.COMPLETED}
+    def default_events(cls) -> t.List["WebhookEvent"]:
+        # if this is a set, it gets serialized to an array with an unstable ordering
+        # so even though it's logically a set, have it as a list for deterministic schemas
+        # note: this change removes "uniqueItems":true
+        return [cls.START, cls.OUTPUT, cls.LOGS, cls.COMPLETED]
 
 
 class PredictionBaseModel(pydantic.BaseModel, extra=pydantic.Extra.allow):
@@ -41,7 +44,7 @@ class PredictionRequest(PredictionBaseModel):
 
     webhook: t.Optional[pydantic.AnyHttpUrl]
     webhook_events_filter: t.Optional[
-        t.Set[WebhookEvent]
+        t.List[WebhookEvent]
     ] = WebhookEvent.default_events()
 
     @classmethod

@@ -3,7 +3,6 @@ import pickle
 
 import pytest
 import responses
-
 from cog.types import URLFile, get_filename
 
 
