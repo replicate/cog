@@ -115,9 +115,10 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		if err != nil {
 			return fmt.Errorf("Failed to load model schema JSON: %w", err)
 		}
+
 		err = doc.Validate(loader.Context)
 		if err != nil {
-			return err
+			return fmt.Errorf("Model schema is invalid: %w\n\n%s", err, string(schemaJSON))
 		}
 	}
 
