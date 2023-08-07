@@ -360,7 +360,9 @@ func (g *Generator) pipInstallStage() (string, error) {
 }
 
 func (g *Generator) pipInstalls() string {
-	return "COPY --from=deps --link /dep /src"
+	// placing packages in workdir makes imports faster but seems to break integration tests"
+	// return "COPY --from=deps --link /dep COPY --from=deps /src"
+	return "COPY --from=deps --link /dep COPY /usr/local/lib/python" + g.Config.Build.PythonVersion + "/site-packages"
 }
 
 func (g *Generator) runCommands() (string, error) {
