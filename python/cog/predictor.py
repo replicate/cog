@@ -175,9 +175,7 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
     # module = importlib.util.module_from_spec(spec)
     # assert spec.loader is not None
     # spec.loader.exec_module(module)
-    print("=== running import_module ===", file=sys.stderr)
     module = importlib.import_module(module_name)
-    print("=== ran import_module ===", file=sys.stderr)
     predictor = getattr(module, class_name)
     # It could be a class or a function
     if inspect.isclass(predictor):
