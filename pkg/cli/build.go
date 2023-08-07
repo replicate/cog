@@ -79,7 +79,7 @@ func addSeparateWeightsFlag(cmd *cobra.Command) {
 }
 
 func addSchemaFlag(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&buildSchemaFile, "openapi-schema", "", "Read OpenAPI schema from a file")
+	cmd.Flags().StringVar(&buildSchemaFile, "openapi-schema", "", "Load OpenAPI schema from a file")
 }
 
 func addUseCudaBaseImageFlag(cmd *cobra.Command) {
