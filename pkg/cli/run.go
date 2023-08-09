@@ -31,6 +31,7 @@ func newRunCommand() *cobra.Command {
 
 	// This is called `publish` for consistency with `docker run`
 	cmd.Flags().StringArrayVarP(&runPorts, "publish", "p", []string{}, "Publish a container's port to the host, e.g. -p 8000")
+	cmd.Flags().StringArrayVarP(&envFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
 
 	flags.SetInterspersed(false)
 
@@ -55,6 +56,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	runOptions := docker.RunOptions{
 		Args:    args,
+		Env:     envFlags,
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: []docker.Volume{{Source: projectDir, Destination: "/src"}},
