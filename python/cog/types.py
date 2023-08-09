@@ -1,4 +1,3 @@
-import base64
 import io
 import os
 import pathlib
@@ -56,7 +55,7 @@ class File(io.IOBase):
 
         parsed_url = urllib.parse.urlparse(value)
         if parsed_url.scheme == "data":
-            res = urllib.request.urlopen(value)
+            res = urllib.request.urlopen(value)  # noqa: S310
             return io.BytesIO(res.read())
         elif parsed_url.scheme == "http" or parsed_url.scheme == "https":
             return URLFile(value)
@@ -216,7 +215,7 @@ def get_filename(url: str) -> str:
 
     if parsed_url.scheme == "data":
         import mimetypes
-        resp = urllib.request.urlopen(url)
+        resp = urllib.request.urlopen(url)  # noqa: S310
         mime_type = resp.headers.get_content_type()
         extension = mimetypes.guess_extension(mime_type)
         if extension is None:
@@ -266,11 +265,11 @@ class ConcatenateIterator(Iterator[Item]):
         return value
 
 
-def _len_bytes(s, encoding="utf-8"):
+def _len_bytes(s, encoding="utf-8") -> int:
     return len(s.encode(encoding))
 
 
-def _truncate_filename_bytes(s, length, encoding="utf-8"):
+def _truncate_filename_bytes(s, length, encoding="utf-8") -> str:
     """
     Truncate a filename to at most `length` bytes, preserving file extension
     and avoiding text encoding corruption from truncation.

@@ -9,6 +9,7 @@ import (
 	"path"
 
 	"github.com/getkin/kin-openapi/openapi3"
+
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/dockerfile"
@@ -23,7 +24,7 @@ const weightsManifestPath = ".cog/cache/weights_manifest.json"
 // Build a Cog model from a config
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
-func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string) error {
+func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 
 	generator, err := dockerfile.NewGenerator(cfg, dir)
@@ -51,8 +52,8 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		if err != nil {
 			return fmt.Errorf("Failed to generate weights manifest: %w", err)
 		}
-		cachedManifest, err := weights.LoadManifest(weightsManifestPath)
-		changed := err != nil && weightsManifest.Equal(cachedManifest)
+		cachedManifest, _ := weights.LoadManifest(weightsManifestPath)
+		changed := cachedManifest == nil || !weightsManifest.Equal(cachedManifest)
 		if changed {
 			if err := buildWeightsImage(dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput); err != nil {
 				return fmt.Errorf("Failed to build model weights Docker image: %w", err)
@@ -79,14 +80,34 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	}
 
 	console.Info("Validating model schema...")
-	schema, err := GenerateOpenAPISchema(imageName, cfg.Build.GPU)
-	if err != nil {
-		return fmt.Errorf("Failed to get type signature: %w", err)
+
+	var schema map[string]interface{}
+	var schemaJSON []byte
+
+	if schemaFile != "" {
+		// We were passed a schema file, so use that
+		schemaJSON, err = os.ReadFile(schemaFile)
+		if err != nil {
+			return fmt.Errorf("Failed to read schema file: %w", err)
+		}
+
+		schema = make(map[string]interface{})
+		err = json.Unmarshal(schemaJSON, &schema)
+		if err != nil {
+			return fmt.Errorf("Failed to parse schema file: %w", err)
+		}
+	} else {
+		schema, err = GenerateOpenAPISchema(imageName, cfg.Build.GPU)
+		if err != nil {
+			return fmt.Errorf("Failed to get type signature: %w", err)
+		}
+
+		schemaJSON, err = json.Marshal(schema)
+		if err != nil {
+			return fmt.Errorf("Failed to convert type signature to JSON: %w", err)
+		}
 	}
-	schemaJSON, err := json.Marshal(schema)
-	if err != nil {
-		return fmt.Errorf("Failed to convert type signature to JSON: %w", err)
-	}
+
 	if len(schema) > 0 {
 		loader := openapi3.NewLoader()
 		loader.IsExternalRefsAllowed = true
@@ -94,9 +115,10 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		if err != nil {
 			return fmt.Errorf("Failed to load model schema JSON: %w", err)
 		}
+
 		err = doc.Validate(loader.Context)
 		if err != nil {
-			return err
+			return fmt.Errorf("Model schema is invalid: %w\n\n%s", err, string(schemaJSON))
 		}
 	}
 
@@ -122,7 +144,6 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		"org.cogmodel.config":      string(bytes.TrimSpace(configJSON)),
 	}
 
-	// OpenAPI schema is not set if there is no predictor.
 	if len(schema) > 0 {
 		labels[global.LabelNamespace+"openapi_schema"] = string(schemaJSON)
 		labels["org.cogmodel.openapi_schema"] = string(schemaJSON)
