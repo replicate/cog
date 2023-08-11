@@ -360,8 +360,9 @@ func (g *Generator) pipInstallStage() (string, error) {
 }
 
 func (g *Generator) pipInstalls() string {
-	// placing packages in workdir makes imports faster but seems to break integration tests"
+	// placing packages in workdir makes imports faster but seems to break integration tests
 	// return "COPY --from=deps --link /dep COPY --from=deps /src"
+	// ...except it's actually /root/.pyenv/versions/3.8.17/lib/python3.8/site-packages
 	return "COPY --from=deps --link /dep /usr/local/lib/python" + g.Config.Build.PythonVersion + "/site-packages"
 }
 
