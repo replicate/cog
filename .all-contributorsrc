@@ -342,8 +342,18 @@
       "contributions": [
         "doc"
       ]
+    },
+    {
+      "login": "technillogue",
+      "name": "technillogue",
+      "avatar_url": "https://avatars.githubusercontent.com/u/945691?v=4",
+      "profile": "http://technillogue.github.io",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
-  "skipCi": true
+  "skipCi": true,
+  "commitType": "docs"
 }
