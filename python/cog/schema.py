@@ -84,3 +84,9 @@ class PredictionResponse(PredictionBaseModel):
             input=(t.Optional[input_type], None),
             output=(output_type, None),
         )
+
+class TrainingRequest(PredictionRequest):
+    pass
+
+class TrainingResponse(PredictionResponse):
+    pass
