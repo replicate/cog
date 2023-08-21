@@ -224,12 +224,6 @@ class BaseInput(BaseModel):
                     pass
 
 
-def get_predict(predictor: Any) -> Callable[..., Any]:
-    if hasattr(predictor, "predict"):
-        return predictor.predict
-    return predictor
-
-
 def validate_input_type(type: Type[Any], name: str) -> None:
     if type is inspect.Signature.empty:
         raise TypeError(
@@ -247,22 +241,7 @@ def validate_input_type(type: Type[Any], name: str) -> None:
             )
 
 
-def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
-    """
-    Creates a Pydantic Input model from the arguments of a Predictor's predict() method.
-
-    class Predictor(BasePredictor):
-        def predict(self, text: str):
-            ...
-
-    programmatically creates a model like this:
-
-    class Input(BaseModel):
-        text: str
-    """
-
-    predict = get_predict(predictor)
-    signature = inspect.signature(predict)
+def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any]:
     create_model_kwargs = {}
 
     order = 0
@@ -308,13 +287,39 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
 
         create_model_kwargs[name] = (InputType, default)
 
+    return create_model_kwargs
+
+
+def get_predict(predictor: Any) -> Callable[..., Any]:
+    if hasattr(predictor, "predict"):
+        return predictor.predict
+    return predictor
+
+
+def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
+    """
+    Creates a Pydantic Input model from the arguments of a Predictor's predict() method.
+
+    class Predictor(BasePredictor):
+        def predict(self, text: str):
+            ...
+
+    programmatically creates a model like this:
+
+    class Input(BaseModel):
+        text: str
+    """
+
+    predict = get_predict(predictor)
+    signature = inspect.signature(predict)
+
     return create_model(
         "Input",
         __config__=None,
         __base__=BaseInput,
         __module__=__name__,
         __validators__=None,
-        **create_model_kwargs,
+        **get_input_create_model_kwargs(signature),
     )  # type: ignore
 
 
@@ -322,6 +327,7 @@ def get_output_type(predictor: BasePredictor) -> Type[BaseModel]:
     """
     Creates a Pydantic Output model from the return type annotation of a Predictor's predict() method.
     """
+
     predict = get_predict(predictor)
     signature = inspect.signature(predict)
     OutputType: Type[BaseModel]
@@ -358,6 +364,80 @@ For example:
         OutputType = Output
 
     return OutputType
+
+
+def get_train(predictor: Any) -> Callable[..., Any]:
+    if hasattr(predictor, "train"):
+        return predictor.train
+    return predictor
+
+
+def get_training_input_type(predictor: BasePredictor) -> Type[BaseInput]:
+    """
+    Creates a Pydantic Input model from the arguments of a Predictor's train() method.
+
+    def train(self, text: str):
+        ...
+
+    programmatically creates a model like this:
+
+    class TrainingInput(BaseModel):
+        text: str
+    """
+
+    train = get_train(predictor)
+    signature = inspect.signature(train)
+
+    return create_model(
+        "TrainingInput",
+        __config__=None,
+        __base__=BaseInput,
+        __module__=__name__,
+        __validators__=None,
+        **get_input_create_model_kwargs(signature),
+    )  # type: ignore
+
+
+def get_training_output_type(predictor: BasePredictor) -> Type[BaseModel]:
+    """
+    Creates a Pydantic Output model from the return type annotation of a train() method.
+    """
+
+    # class TrainingOutput(BaseModel):
+    #     weights: CogFile
+
+    # return TrainingOutput
+
+    train = get_train(predictor)
+    signature = inspect.signature(train)
+
+    # raise NotImplementedError(f"{signature.return_annotation}")
+
+    if signature.return_annotation is inspect.Signature.empty:
+        raise TypeError(
+            """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
+
+For example:
+
+    from typing import Any
+
+    def train(
+        self,
+        n: int
+    ) -> Any:
+        ...
+"""
+        )
+    else:
+        OutputType = signature.return_annotation
+
+    return create_model(
+        "Trainingoutput",
+        __config__=None,
+        __module__=__name__,
+        __root__=OutputType,
+        __validators__=None,
+    )  # type: ignore
 
 
 def human_readable_type_name(t: Type[Any]) -> str:
