@@ -199,3 +199,14 @@ def test_predict_many_inputs(tmpdir_factory):
         capture_output=True,
     )
     assert result.stdout.decode() == "hello default 20 world jpg foo 6\n"
+
+def test_predict_unescapes_newlines():
+    project_dir = Path(__file__).parent / "fixtures/string-project"
+    result = subprocess.run(
+        ["cog", "predict", "-i", 's="wo\\nrld"'],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+    )
+    # stdout should be clean without any log messages so it can be piped to other commands
+    assert result.stdout == b"hello wo\nrld\n"

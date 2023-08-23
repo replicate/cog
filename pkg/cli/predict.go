@@ -278,19 +278,23 @@ func handleMultipleFileOutput(prediction *predict.Response, outputSchema *openap
 func parseInputFlags(inputs []string) (predict.Inputs, error) {
 	keyVals := map[string]string{}
 	for _, input := range inputs {
-		var name, value string
-
-		// Default input name is "input"
 		if !strings.Contains(input, "=") {
 			return nil, fmt.Errorf("Failed to parse input '%s', expected format is 'name=value'", input)
 		}
 
 		split := strings.SplitN(input, "=", 2)
-		name = split[0]
-		value = split[1]
+		name := split[0]
+		rawValue := split[1]
 
-		if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
-			value = value[1 : len(value)-1]
+		// Attempt to unmarshal a JSON string value as a string. This will fail if
+		// the input isn't a JSON string, in which case, we use the raw value.
+		var value string
+		err := json.Unmarshal([]byte(rawValue), &value)
+		if err != nil {
+			value = rawValue
+			if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
+				value = value[1 : len(value)-1]
+			}
 		}
 
 		keyVals[name] = value
