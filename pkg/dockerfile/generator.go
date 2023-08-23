@@ -251,6 +251,18 @@ func (g *Generator) baseImage() (string, error) {
 	return "python:" + g.Config.Build.PythonVersion + "-slim", nil
 }
 
+func (g *Generator) sitePackagesLocation() string {
+	// placing packages in workdir would make imports faster but can break some tests
+	// maybe more flags?
+	// TODO(sylv) talk to fly about how to deal with experimental options like this
+	// if os.Getenv("INSTALL_PACKAGES_TO_WORKDIR") != "" { return "/src" }h
+	py := g.Config.Build.PythonVersion
+	if g.Config.Build.GPU && g.useCudaBaseImage {
+		return "/root/.pyenv/versions/" + py + ".17/lib/python" + py + "/site-packages"
+	}
+	return "/usr/local/lib/python" + py + "/site-packages"
+}
+
 func (g *Generator) preamble() string {
 	return `ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -318,6 +330,7 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get insta
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
 	pip install "wheel<1"`, py, py), nil
+	// kind of need to determine which specific version latest is (3.8 -> 3.8.17)
 }
 
 func (g *Generator) installCog() (string, error) {
@@ -363,7 +376,8 @@ func (g *Generator) pipInstalls() string {
 	// placing packages in workdir makes imports faster but seems to break integration tests
 	// return "COPY --from=deps --link /dep COPY --from=deps /src"
 	// ...except it's actually /root/.pyenv/versions/3.8.17/lib/python3.8/site-packages
-	return "COPY --from=deps --link /dep /usr/local/lib/python" + g.Config.Build.PythonVersion + "/site-packages"
+	target := g.sitePackagesLocation()
+	return "COPY --from=deps --link /dep " + target
 }
 
 func (g *Generator) runCommands() (string, error) {
