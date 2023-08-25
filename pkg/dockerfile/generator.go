@@ -258,7 +258,7 @@ func (g *Generator) sitePackagesLocation() string {
 	// if os.Getenv("INSTALL_PACKAGES_TO_WORKDIR") != "" { return "/src" }h
 	py := g.Config.Build.PythonVersion
 	if g.Config.Build.GPU && g.useCudaBaseImage {
-		return "/root/.pyenv/versions/" + py + ".17/lib/python" + py + "/site-packages"
+		return "/root/.pyenv/versions/" + py + ".18/lib/python" + py + "/site-packages"
 	}
 	return "/usr/local/lib/python" + py + "/site-packages"
 }
