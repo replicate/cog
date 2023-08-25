@@ -34,9 +34,6 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep /tmp/cog-0.0.
 func testPipInstallStage(relativeTmpDir string) string {
 	return `FROM python:3.8 as deps
 ` + testInstallCog(relativeTmpDir)
-	// + `
-	// COPY ` + relativeTmpDir + `/requirements.txt /tmp/requirements.txt
-	// RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt`
 }
 
 func testInstallPython(version string) string {
