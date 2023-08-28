@@ -331,7 +331,16 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get insta
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
 	pip install "wheel<1"`, py, py), nil
-	// kind of need to determine which specific version latest is (3.8 -> 3.8.17)
+	// for sitePackagesLocation, kind of need to determine which specific version latest is (3.8 -> 3.8.17 or 3.8.18)
+	// install-latest essentially does pyenv install --list | grep $py | tail -1
+	// pyenv install aka python-build gets its list of python versions from https://github.com/pyenv/pyenv/tree/master/plugins/python-build/share/python-build
+	// 1. you could fetch this from the api like "https://api.github.com/repos/pyenv/pyenv/contents/plugins/python-build/share/python-build"
+	// but that gives you every file, not just directories
+	// 2. you could also try having a separate stage that's just pyenv-installer | bash, and build that stage first to run pyenv install --list from go
+	// probably not really slower but still pretty annoying just to generate the cuda base image
+	// 3. could also embed python versions in the cog binary and have a github PR bot thing keep it up to date with the pyenv repo
+	// (edge case where user has cached pyenv install stage but a newer version of cog)
+	// 4. could also wimp and not do the install stage for cuda images 
 }
 
 func (g *Generator) installCog() (string, error) {
