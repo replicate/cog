@@ -148,6 +148,7 @@ sudo make install
 - [Deploy models with Cog](docs/deploy.md)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's environment
 - [Prediction interface reference](docs/python.md) to learn how the `Predictor` interface works
+- [Training interface reference](docs/training.md) to learn how to add a fine-tuning API to your model
 - [HTTP API reference](docs/http.md) to learn how to use the HTTP API that models serve
 
 ## Need help?
