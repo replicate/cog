@@ -258,7 +258,7 @@ func (g *Generator) sitePackagesLocation() string {
 	// if os.Getenv("INSTALL_PACKAGES_TO_WORKDIR") != "" { return "/src" }
 	py := g.Config.Build.PythonVersion
 	if g.Config.Build.GPU && g.useCudaBaseImage {
-    	// ...
+		// ...
 		return "/root/.pyenv/versions/" + py + ".18/lib/python" + py + "/site-packages"
 	}
 	return "/usr/local/lib/python" + py + "/site-packages"
@@ -340,7 +340,7 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get insta
 	// probably not really slower but still pretty annoying just to generate the cuda base image
 	// 3. could also embed python versions in the cog binary and have a github PR bot thing keep it up to date with the pyenv repo
 	// (edge case where user has cached pyenv install stage but a newer version of cog)
-	// 4. could also wimp and not do the install stage for cuda images 
+	// 4. could also wimp and not do the install stage for cuda images
 }
 
 func (g *Generator) installCog() (string, error) {
