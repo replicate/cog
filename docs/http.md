@@ -2,9 +2,38 @@
 
 When a Cog Docker image is run, it serves an HTTP API for making predictions. For more information, take a look at [the documentation for deploying models](deploy.md).
 
+## Running the server
+
+First, build your model:
+
+```
+cog build -t my-model
+```
+
+Then, start the Docker container:
+
+```console
+# If your model uses a CPU:
+docker run -d -p 5001:5000 my-model
+
+# If your model uses a GPU:
+docker run -d -p 5001:5000 --gpus all my-model
+
+# If you're on an M1 Mac:
+docker run -d -p 5001:5000 --platform=linux/amd64 my-model
+```
+
+The server is now running locally on port 5001.
+
+To view the OpenAPI schema, open [localhost:5001/openapi.json](http://localhost:5001/openapi.json) in your browser or use cURL to make requests:
+
+```console
+curl http://localhost:5001/openapi.json
+```
+
 ## `GET /openapi.json`
 
-The [OpenAPI](https://swagger.io/specification/) specification of the API, which is derived from the input and output types specified in your model's [Predictor](python.md) object.
+The [OpenAPI](https://swagger.io/specification/) specification of the API, which is derived from the input and output types specified in your model's [Predictor](python.md) and [Training](training.md) objects.
 
 ## `POST /predictions` (synchronous)
 
@@ -48,7 +77,6 @@ Content-Type: application/json
 Or, with curl:
 
     curl -X POST -H "Content-Type: application/json" -d '{"input": {"image": "https://example.com/image.jpg", "text": "Hello world!"}}' http://localhost:5000/predictions
-
 
 ## `POST /predictions` (asynchronous)
 
