@@ -31,7 +31,17 @@ To view the OpenAPI schema, open [localhost:5001/openapi.json](http://localhost:
 curl http://localhost:5001/openapi.json
 ```
 
-## `GET /openapi.json`
+## Stopping the server
+
+To stop the server, run:
+
+```console
+docker kill my-model
+```
+
+## API
+
+### `GET /openapi.json`
 
 The [OpenAPI](https://swagger.io/specification/) specification of the API, which is derived from the input and output types specified in your model's [Predictor](python.md) and [Training](training.md) objects.
 
