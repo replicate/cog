@@ -17,7 +17,7 @@ Then, start the Docker container:
     # If your model uses a GPU:
     docker run -d -p 5000:5000 --gpus all my-model
 
-    # if you're on an M1 Mac:
+    # If you're on an M1 Mac:
     docker run -d -p 5000:5000 --platform=linux/amd64 my-model
 
 Port 5000 is now serving the API:
