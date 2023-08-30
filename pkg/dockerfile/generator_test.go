@@ -120,7 +120,8 @@ FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-` + testTini() + testInstallPython("3.8") + `COPY --from=deps --link /dep /root/.pyenv/versions/3.8.18/lib/python3.8/site-packages
+` + testTini() + testInstallPython("3.8") + `COPY --from=deps --link /dep /dep
+RUN ln -s /dep/* $(pyenv prefix)/lib/python*/site-packages
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -213,7 +214,8 @@ ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ` + testTini() +
 		testInstallPython("3.8") + `RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-COPY --from=deps --link /dep /root/.pyenv/versions/3.8.18/lib/python3.8/site-packages
+COPY --from=deps --link /dep /dep
+RUN ln -s /dep/* $(pyenv prefix)/lib/python*/site-packages
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
@@ -364,7 +366,8 @@ ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ` + testTini() +
 		testInstallPython("3.8") + `RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-COPY --from=deps --link /dep /root/.pyenv/versions/3.8.18/lib/python3.8/site-packages
+COPY --from=deps --link /dep /dep
+RUN ln -s /dep/* $(pyenv prefix)/lib/python*/site-packages
 RUN cowsay moo
 COPY --from=weights --link /src/checkpoints /src/checkpoints
 COPY --from=weights --link /src/models /src/models

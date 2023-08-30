@@ -386,8 +386,16 @@ func (g *Generator) pipInstalls() string {
 	// placing packages in workdir makes imports faster but seems to break integration tests
 	// return "COPY --from=deps --link /dep COPY --from=deps /src"
 	// ...except it's actually /root/.pyenv/versions/3.8.17/lib/python3.8/site-packages
-	target := g.sitePackagesLocation()
-	return "COPY --from=deps --link /dep " + target
+	py := g.Config.Build.PythonVersion
+	if g.Config.Build.GPU && g.useCudaBaseImage {
+		return strings.Join(
+			[]string{
+				"COPY --from=deps --link /dep /dep",
+				"RUN ln -s /dep/* $(pyenv prefix)/lib/python*/site-packages",
+			},
+			"\n")
+	}
+	return "COPY --from=deps --link /dep /usr/local/lib/python" + py + "/site-packages"
 }
 
 func (g *Generator) runCommands() (string, error) {
