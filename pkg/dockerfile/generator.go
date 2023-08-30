@@ -251,19 +251,6 @@ func (g *Generator) baseImage() (string, error) {
 	return "python:" + g.Config.Build.PythonVersion + "-slim", nil
 }
 
-func (g *Generator) sitePackagesLocation() string {
-	// placing packages in workdir would make imports faster but can break some tests
-	// maybe more flags?
-	// TODO(sylv) maybe talk to fly about how to deal with experimental options like this
-	// if os.Getenv("INSTALL_PACKAGES_TO_WORKDIR") != "" { return "/src" }
-	py := g.Config.Build.PythonVersion
-	if g.Config.Build.GPU && g.useCudaBaseImage {
-		// ...
-		return "/root/.pyenv/versions/" + py + ".18/lib/python" + py + "/site-packages"
-	}
-	return "/usr/local/lib/python" + py + "/site-packages"
-}
-
 func (g *Generator) preamble() string {
 	return `ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
