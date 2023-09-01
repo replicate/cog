@@ -1,14 +1,9 @@
 import io
-import mimetypes
 import os
 import pathlib
-import shutil
-import tempfile
-import urllib
 from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
-
-import requests
-from pydantic import Field
+from .lazy import LazyModule
+urllib = LazyModule("urllib")
 
 FILENAME_ILLEGAL_CHARS = set("\u0000/")
 
@@ -29,6 +24,7 @@ def Input(
     choices: List[Union[str, int]] = None,
 ) -> Any:
     """Input is similar to pydantic.Field, but doesn't require a default value to be the first argument."""
+    from pydantic import Field
     return Field(
         default,
         description=description,
@@ -40,6 +36,10 @@ def Input(
         choices=choices,
     )
 
+# if the pydantic stuff is turned off
+# Field defaults don't get converted into the actual defaults, so do that
+def Input(default, **kwargs):
+    return default
 
 class File(io.IOBase):
     validate_always = True
@@ -116,6 +116,9 @@ class URLPath(pathlib.PosixPath):
 
     def convert(self) -> Path:
         if self._path is None:
+            import shutil
+            import tempfile
+
             dest = tempfile.NamedTemporaryFile(suffix=self.filename, delete=False)
             shutil.copyfileobj(self.fileobj, dest)
             self._path = Path(dest.name)
@@ -184,6 +187,7 @@ class URLFile(io.IOBase):
         try:
             return object.__getattribute__(self, "__target__")
         except AttributeError:
+            import requests
             url = object.__getattribute__(self, "__url__")
             resp = requests.get(url, stream=True)
             resp.raise_for_status()
@@ -210,6 +214,7 @@ def get_filename(url: str) -> str:
     parsed_url = urllib.parse.urlparse(url)
 
     if parsed_url.scheme == "data":
+        import mimetypes
         resp = urllib.request.urlopen(url)  # noqa: S310
         mime_type = resp.headers.get_content_type()
         extension = mimetypes.guess_extension(mime_type)

@@ -1,7 +1,10 @@
-from pydantic import BaseModel
+# never mind all this, predict.py will just have to `from cog.predictor import BasePredictor`
 
-from .predictor import BasePredictor
-from .types import ConcatenateIterator, File, Input, Path
+# from pydantic import BaseModel
+
+# from .predictor import BasePredictor
+# from .types import ConcatenateIterator, File, Input, Path
+
 
 try:
     from ._version import __version__
@@ -11,10 +14,11 @@ except ImportError:
 
 __all__ = [
     "__version__",
-    "BaseModel",
-    "BasePredictor",
-    "ConcatenateIterator",
-    "File",
-    "Input",
-    "Path",
+    # "BaseModel",
+    # "BasePredictor",
+    # "ConcatenateIterator",
+    # "File",
+    # "Input",
+    # "Path",
 ]
+

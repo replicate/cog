@@ -36,6 +36,7 @@ from .runner import PredictionRunner, RunnerBusyError, UnknownPredictionError
 log = structlog.get_logger("cog.server.http")
 
 
+
 @unique
 class Health(Enum):
     UNKNOWN = auto()
@@ -69,10 +70,10 @@ def create_app(
         upload_url=upload_url,
     )
     # TODO: avoid loading predictor code in this process
-    predictor = load_predictor_from_ref(predictor_ref)
+    # predictor = load_predictor_from_ref(predictor_ref)
 
-    InputType = get_input_type(predictor)
-    OutputType = get_output_type(predictor)
+    InputType = dict #get_input_type(predictor)
+    OutputType = list # get_output_type(predictor)
 
     PredictionRequest = schema.PredictionRequest.with_types(input_type=InputType)
     PredictionResponse = schema.PredictionResponse.with_types(
@@ -129,7 +130,8 @@ def create_app(
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
 
-        return _predict(request=request, respond_async=respond_async)
+        res = _predict(request=request, respond_async=respond_async)
+        return res
 
     @app.put(
         "/predictions/{prediction_id}",
