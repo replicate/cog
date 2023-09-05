@@ -27,7 +27,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v4
         with:
           go-version-file: go.mod
@@ -54,7 +54,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
@@ -72,7 +72,7 @@ jobs:
     name: "Test integration"
     runs-on: ubuntu-latest-16-cores
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v4
         with:
           go-version-file: go.mod
@@ -96,7 +96,7 @@ jobs:
       cog_version: ${{ steps.build-python-package.outputs.version }}
     runs-on: ubuntu-latest-8-cores
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: actions/setup-go@v4
