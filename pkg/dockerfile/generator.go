@@ -352,9 +352,18 @@ func (g *Generator) pipInstallStage() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Not slim, so that we can compile wheels
+	fromLine := `FROM python:` + g.Config.Build.PythonVersion + ` as deps`
+	// Sometimes, in order to run `pip install` successfully, some system packages need to be installed
+	// or some other change needs to happen
+	// this is a bodge to support that
+	// it will be reverted when we add custom dockerfiles 
+	buildStageDeps := os.Getenv("REPLICATE_EXPERIMENTAL_BUILD_STAGE_DEPS")
+	if buildStageDeps != "" {
+		fromLine = fromLine + "\nRUN " + buildStageDeps
+	}
 	lines := []string{
-		// Not slim, so that we can compile wheels
-		`FROM python:` + g.Config.Build.PythonVersion + ` as deps`,
+		fromLine,
 		installCog,
 		copyLine[0],
 		"RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r " + containerPath,
