@@ -89,6 +89,7 @@ FROM python:3.8-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `COPY --from=deps --link /dep /usr/local/lib/python3.8/site-packages
 WORKDIR /src
 EXPOSE 5000
@@ -120,6 +121,7 @@ FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + testInstallPython("3.8") + `RUN --mount=type=bind,from=deps,source=/dep,target=/dep cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages || true
 WORKDIR /src
 EXPOSE 5000
@@ -162,6 +164,7 @@ FROM python:3.8-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 COPY --from=deps --link /dep /usr/local/lib/python3.8/site-packages
 RUN cowsay moo
@@ -211,6 +214,7 @@ FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() +
 		testInstallPython("3.8") + `RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=bind,from=deps,source=/dep,target=/dep cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages || true
@@ -255,6 +259,7 @@ FROM python:3.8-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY --from=deps --link /dep /usr/local/lib/python3.8/site-packages
 RUN cowsay moo
@@ -362,6 +367,7 @@ FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() +
 		testInstallPython("3.8") + `RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=bind,from=deps,source=/dep,target=/dep cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages || true
@@ -434,6 +440,7 @@ FROM python:3.8-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `COPY --from=deps --link /dep /usr/local/lib/python3.8/site-packages
 WORKDIR /src
 EXPOSE 5000
