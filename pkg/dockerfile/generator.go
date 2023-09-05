@@ -358,7 +358,7 @@ func (g *Generator) pipInstallStage() (string, error) {
 	// or some other change needs to happen
 	// this is a bodge to support that
 	// it will be reverted when we add custom dockerfiles 
-	buildStageDeps := os.Getenv("REPLICATE_EXPERIMENTAL_BUILD_STAGE_DEPS")
+	buildStageDeps := os.Getenv("COG_EXPERIMENTAL_BUILD_STAGE_DEPS")
 	if buildStageDeps != "" {
 		fromLine = fromLine + "\nRUN " + buildStageDeps
 	}
