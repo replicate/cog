@@ -357,7 +357,7 @@ func (g *Generator) pipInstallStage() (string, error) {
 	// Sometimes, in order to run `pip install` successfully, some system packages need to be installed
 	// or some other change needs to happen
 	// this is a bodge to support that
-	// it will be reverted when we add custom dockerfiles 
+	// it will be reverted when we add custom dockerfiles
 	buildStageDeps := os.Getenv("COG_EXPERIMENTAL_BUILD_STAGE_DEPS")
 	if buildStageDeps != "" {
 		fromLine = fromLine + "\nRUN " + buildStageDeps
