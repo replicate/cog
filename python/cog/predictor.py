@@ -432,7 +432,7 @@ For example:
         OutputType = signature.return_annotation
 
     return create_model(
-        "Trainingoutput",
+        "TrainingOutput",
         __config__=None,
         __module__=__name__,
         __root__=OutputType,
