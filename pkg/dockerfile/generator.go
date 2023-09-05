@@ -95,6 +95,10 @@ func (g *Generator) SetUseCudaBaseImage(argumentValue string) {
 }
 
 func (g *Generator) GenerateBase() (string, error) {
+	pipInstallStage, err := g.pipInstallStage()
+	if err != nil {
+		return "", err
+	}
 	baseImage, err := g.baseImage()
 	if err != nil {
 		return "", err
@@ -110,14 +114,6 @@ func (g *Generator) GenerateBase() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	pipInstalls, err := g.pipInstalls()
-	if err != nil {
-		return "", err
-	}
-	installCog, err := g.installCog()
-	if err != nil {
-		return "", err
-	}
 	run, err := g.runCommands()
 	if err != nil {
 		return "", err
@@ -125,13 +121,13 @@ func (g *Generator) GenerateBase() (string, error) {
 
 	return strings.Join(filterEmpty([]string{
 		"#syntax=docker/dockerfile:1.4",
+		pipInstallStage,
 		"FROM " + baseImage,
 		g.preamble(),
 		g.installTini(),
 		installPython,
-		installCog,
 		aptInstalls,
-		pipInstalls,
+		g.pipInstalls(),
 		run,
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
@@ -162,7 +158,10 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 	if err != nil {
 		return "", "", "", fmt.Errorf("Failed to generate Dockerfile for model weights files: %w", err)
 	}
-
+	pipInstallStage, err := g.pipInstallStage()
+	if err != nil {
+		return "", "", "", err
+	}
 	baseImage, err := g.baseImage()
 	if err != nil {
 		return "", "", "", err
@@ -178,14 +177,6 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 	if err != nil {
 		return "", "", "", err
 	}
-	pipInstalls, err := g.pipInstalls()
-	if err != nil {
-		return "", "", "", err
-	}
-	installCog, err := g.installCog()
-	if err != nil {
-		return "", "", "", err
-	}
 	runCommands, err := g.runCommands()
 	if err != nil {
 		return "", "", "", err
@@ -193,14 +184,14 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 
 	base := []string{
 		"#syntax=docker/dockerfile:1.4",
+		pipInstallStage,
 		fmt.Sprintf("FROM %s AS %s", imageName+"-weights", "weights"),
 		"FROM " + baseImage,
 		g.preamble(),
 		g.installTini(),
 		installPython,
-		installCog,
 		aptInstalls,
-		pipInstalls,
+		g.pipInstalls(),
 		runCommands,
 	}
 
@@ -327,6 +318,9 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get insta
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
 	pip install "wheel<1"`, py, py), nil
+	// for sitePackagesLocation, kind of need to determine which specific version latest is (3.8 -> 3.8.17 or 3.8.18)
+	// install-latest essentially does pyenv install --list | grep $py | tail -1
+	// there are many bad options, but a symlink to $(pyenv prefix) is the least bad one
 }
 
 func (g *Generator) installCog() (string, error) {
@@ -336,26 +330,52 @@ func (g *Generator) installCog() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	lines = append(lines, fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install %s", containerPath))
+	lines = append(lines, fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep %s", containerPath))
 	return strings.Join(lines, "\n"), nil
 }
 
-func (g *Generator) pipInstalls() (string, error) {
+func (g *Generator) pipInstallStage() (string, error) {
+	installCog, err := g.installCog()
+	if err != nil {
+		return "", err
+	}
 	requirements, err := g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH)
 	if err != nil {
 		return "", err
 	}
 	if strings.Trim(requirements, "") == "" {
-		return "", nil
+		return `FROM python:` + g.Config.Build.PythonVersion + ` as deps
+` + installCog, nil
 	}
 
-	lines, containerPath, err := g.writeTemp("requirements.txt", []byte(requirements))
+	copyLine, containerPath, err := g.writeTemp("requirements.txt", []byte(requirements))
 	if err != nil {
 		return "", err
 	}
-
-	lines = append(lines, "RUN --mount=type=cache,target=/root/.cache/pip pip install -r "+containerPath)
+	lines := []string{
+		// Not slim, so that we can compile wheels
+		`FROM python:` + g.Config.Build.PythonVersion + ` as deps`,
+		installCog,
+		copyLine[0],
+		"RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r " + containerPath,
+	}
 	return strings.Join(lines, "\n"), nil
+}
+
+func (g *Generator) pipInstalls() string {
+	// placing packages in workdir makes imports faster but seems to break integration tests
+	// return "COPY --from=deps --link /dep COPY --from=deps /src"
+	// ...except it's actually /root/.pyenv/versions/3.8.17/lib/python3.8/site-packages
+	py := g.Config.Build.PythonVersion
+	if g.Config.Build.GPU && g.useCudaBaseImage {
+		return strings.Join(
+			[]string{
+				"COPY --from=deps --link /dep /dep",
+				"RUN ln -s /dep/* $(pyenv prefix)/lib/python*/site-packages",
+			},
+			"\n")
+	}
+	return "COPY --from=deps --link /dep /usr/local/lib/python" + py + "/site-packages"
 }
 
 func (g *Generator) runCommands() (string, error) {
