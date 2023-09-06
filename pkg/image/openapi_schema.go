@@ -14,7 +14,7 @@ import (
 
 // GenerateOpenAPISchema by running the image and executing Cog
 // This will be run as part of the build process then added as a label to the image. It can be retrieved more efficiently with the label by using GetOpenAPISchema
-func GenerateOpenAPISchema(imageName string, enableGPU bool) (*interface{}, error) {
+func GenerateOpenAPISchema(imageName string, enableGPU bool) (map[string]any, error) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
@@ -44,7 +44,7 @@ func GenerateOpenAPISchema(imageName string, enableGPU bool) (*interface{}, erro
 		console.Info(stderr.String())
 		return nil, err
 	}
-	var schema *interface{}
+	var schema map[string]any
 	if err := json.Unmarshal(stdout.Bytes(), &schema); err != nil {
 		// Exit code was 0, but JSON was not returned.
 		// This is verbose, but print so anything that gets printed in Python bubbles up here.

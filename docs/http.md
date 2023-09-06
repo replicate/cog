@@ -2,11 +2,63 @@
 
 When a Cog Docker image is run, it serves an HTTP API for making predictions. For more information, take a look at [the documentation for deploying models](deploy.md).
 
-## `GET /openapi.json`
+## Contents
 
-The [OpenAPI](https://swagger.io/specification/) specification of the API, which is derived from the input and output types specified in your model's [Predictor](python.md) object.
+- [Running the server](#running-the-server)
+- [Stopping the server](#stopping-the-server)
+- [API](#api)
+  - [`GET /openapi.json`](#get-openapijson)
+  - [`POST /predictions` (synchronous)](#post-predictions-synchronous)
+  - [`POST /predictions` (asynchronous)](#post-predictions-asynchronous)
+    - [Webhooks](#webhooks)
+  - [`PUT /predictions/` (synchronous)](#put-predictions-synchronous)
+  - [`PUT /predictions/` (asynchronous)](#put-predictions-asynchronous)
+  - [`POST /predictions/{prediction_id}/cancel`](#post-predictionscancel)
 
-## `POST /predictions` (synchronous)
+## Running the server
+
+First, build your model:
+
+```
+cog build -t my-model
+```
+
+Then, start the Docker container:
+
+```console
+# If your model uses a CPU:
+docker run -d -p 5001:5000 my-model
+
+# If your model uses a GPU:
+docker run -d -p 5001:5000 --gpus all my-model
+
+# If you're on an M1 Mac:
+docker run -d -p 5001:5000 --platform=linux/amd64 my-model
+```
+
+The server is now running locally on port 5001.
+
+To view the OpenAPI schema, open [localhost:5001/openapi.json](http://localhost:5001/openapi.json) in your browser or use cURL to make requests:
+
+```console
+curl http://localhost:5001/openapi.json
+```
+
+## Stopping the server
+
+To stop the server, run:
+
+```console
+docker kill my-model
+```
+
+## API
+
+### `GET /openapi.json`
+
+The [OpenAPI](https://swagger.io/specification/) specification of the API, which is derived from the input and output types specified in your model's [Predictor](python.md) and [Training](training.md) objects.
+
+### `POST /predictions` (synchronous)
 
 Make a single prediction. The request body should be a JSON object with the following fields:
 
@@ -49,8 +101,7 @@ Or, with curl:
 
     curl -X POST -H "Content-Type: application/json" -d '{"input": {"image": "https://example.com/image.jpg", "text": "Hello world!"}}' http://localhost:5000/predictions
 
-
-## `POST /predictions` (asynchronous)
+### `POST /predictions` (asynchronous)
 
 Make a single prediction without waiting for the prediction to complete.
 
@@ -86,7 +137,7 @@ using the provided `--upload-url` as a prefix, in much the same way that
 works the same way for both synchronous and asynchronous prediction creation.
 This will be addressed in a future version of Cog.
 
-### Webhooks
+#### Webhooks
 
 Clients can (and should, if a prediction is created asynchronously) provide a
 `webhook` parameter at the top level of the prediction request, e.g.
@@ -132,7 +183,7 @@ Prefer: respond-async
 }
 ```
 
-## `PUT /predictions/<prediction_id>` (synchronous)
+### `PUT /predictions/<prediction_id>` (synchronous)
 
 Make a single prediction.
 
@@ -146,7 +197,7 @@ supplied prediction ID is unique. We recommend you use base32-encoded UUID4s
 (stripped of any padding characters) to ensure forward compatibility: these will
 be 26 ASCII characters long.
 
-## `PUT /predictions/<prediction_id>` (asynchronous)
+### `PUT /predictions/<prediction_id>` (asynchronous)
 
 Make a single prediction without waiting for the prediction to complete.
 
@@ -170,7 +221,7 @@ be 26 ASCII characters long.
 the caller's responsibility to make sure that earlier predictions are complete
 before new ones (with new IDs) are created.
 
-## `POST /predictions/<prediction_id>/cancel`
+### `POST /predictions/<prediction_id>/cancel`
 
 While an asynchronous prediction is running, clients can cancel it by making a
 request to `POST /predictions/<prediction_id>/cancel`. The prediction `id` must

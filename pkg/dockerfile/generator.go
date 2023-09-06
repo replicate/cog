@@ -56,6 +56,9 @@ type Generator struct {
 	relativeTmpDir string
 
 	fileWalker weights.FileWalker
+
+	modelDirs  []string
+	modelFiles []string
 }
 
 func NewGenerator(config *config.Config, dir string) (*Generator, error) {
@@ -92,26 +95,22 @@ func (g *Generator) SetUseCudaBaseImage(argumentValue string) {
 }
 
 func (g *Generator) GenerateBase() (string, error) {
+	pipInstallStage, err := g.pipInstallStage()
+	if err != nil {
+		return "", err
+	}
 	baseImage, err := g.baseImage()
 	if err != nil {
 		return "", err
 	}
 	installPython := ""
-	if g.Config.Build.GPU {
+	if g.Config.Build.GPU && g.useCudaBaseImage {
 		installPython, err = g.installPythonCUDA()
 		if err != nil {
 			return "", err
 		}
 	}
 	aptInstalls, err := g.aptInstalls()
-	if err != nil {
-		return "", err
-	}
-	pipInstalls, err := g.pipInstalls()
-	if err != nil {
-		return "", err
-	}
-	installCog, err := g.installCog()
 	if err != nil {
 		return "", err
 	}
@@ -122,14 +121,13 @@ func (g *Generator) GenerateBase() (string, error) {
 
 	return strings.Join(filterEmpty([]string{
 		"#syntax=docker/dockerfile:1.4",
-		g.tiniStage(),
+		pipInstallStage,
 		"FROM " + baseImage,
 		g.preamble(),
 		g.installTini(),
 		installPython,
-		installCog,
 		aptInstalls,
-		pipInstalls,
+		g.pipInstalls(),
 		run,
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
@@ -156,11 +154,14 @@ func (g *Generator) GenerateDockerfileWithoutSeparateWeights() (string, error) {
 // - dockerignoreContents: A string that represents the .dockerignore content.
 // - err: An error object if an error occurred during Dockerfile generation; otherwise nil.
 func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile string, dockerignoreContents string, err error) {
-	weightsBase, modelDirs, modelFiles, err := g.generateForWeights()
+	weightsBase, g.modelDirs, g.modelFiles, err = g.generateForWeights()
 	if err != nil {
 		return "", "", "", fmt.Errorf("Failed to generate Dockerfile for model weights files: %w", err)
 	}
-
+	pipInstallStage, err := g.pipInstallStage()
+	if err != nil {
+		return "", "", "", err
+	}
 	baseImage, err := g.baseImage()
 	if err != nil {
 		return "", "", "", err
@@ -176,14 +177,6 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 	if err != nil {
 		return "", "", "", err
 	}
-	pipInstalls, err := g.pipInstalls()
-	if err != nil {
-		return "", "", "", err
-	}
-	installCog, err := g.installCog()
-	if err != nil {
-		return "", "", "", err
-	}
 	runCommands, err := g.runCommands()
 	if err != nil {
 		return "", "", "", err
@@ -191,19 +184,18 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 
 	base := []string{
 		"#syntax=docker/dockerfile:1.4",
+		pipInstallStage,
 		fmt.Sprintf("FROM %s AS %s", imageName+"-weights", "weights"),
-		g.tiniStage(),
 		"FROM " + baseImage,
 		g.preamble(),
 		g.installTini(),
 		installPython,
-		installCog,
 		aptInstalls,
-		pipInstalls,
+		g.pipInstalls(),
 		runCommands,
 	}
 
-	for _, p := range append(modelDirs, modelFiles...) {
+	for _, p := range append(g.modelDirs, g.modelFiles...) {
 		base = append(base, "", fmt.Sprintf("COPY --from=%s --link %[2]s %[2]s", "weights", path.Join("/src", p)))
 	}
 
@@ -214,7 +206,7 @@ func (g *Generator) Generate(imageName string) (weightsBase string, dockerfile s
 		`COPY . /src`,
 	)
 
-	dockerignoreContents = makeDockerignoreForWeights(modelDirs, modelFiles)
+	dockerignoreContents = makeDockerignoreForWeights(g.modelDirs, g.modelFiles)
 	return weightsBase, strings.Join(filterEmpty(base), "\n"), dockerignoreContents, nil
 }
 
@@ -265,16 +257,6 @@ ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin`
 }
 
-func (g *Generator) tiniStage() string {
-	lines := []string{
-		`FROM curlimages/curl AS downloader`,
-		`ARG TINI_VERSION=0.19.0`,
-		`WORKDIR /tmp`,
-		`RUN curl -fsSL -O "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini" && chmod +x tini`,
-	}
-	return strings.Join(lines, "\n")
-}
-
 func (g *Generator) installTini() string {
 	// Install tini as the image entrypoint to provide signal handling and process
 	// reaping appropriate for PID 1.
@@ -282,7 +264,14 @@ func (g *Generator) installTini() string {
 	// N.B. If you remove/change this, consider removing/changing the `has_init`
 	// image label applied in image/build.go.
 	lines := []string{
-		`COPY --link --from=downloader /tmp/tini /sbin/tini`,
+		`RUN --mount=type=cache,target=/var/cache/apt set -eux; \
+apt-get update -qq; \
+apt-get install -qqy --no-install-recommends curl; \
+rm -rf /var/lib/apt/lists/*; \
+TINI_VERSION=v0.19.0; \
+TINI_ARCH="$(dpkg --print-architecture)"; \
+curl -sSL -o /sbin/tini "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_ARCH}"; \
+chmod +x /sbin/tini`,
 		`ENTRYPOINT ["/sbin/tini", "--"]`,
 	}
 	return strings.Join(lines, "\n")
@@ -329,6 +318,9 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get insta
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
 	pip install "wheel<1"`, py, py), nil
+	// for sitePackagesLocation, kind of need to determine which specific version latest is (3.8 -> 3.8.17 or 3.8.18)
+	// install-latest essentially does pyenv install --list | grep $py | tail -1
+	// there are many bad options, but a symlink to $(pyenv prefix) is the least bad one
 }
 
 func (g *Generator) installCog() (string, error) {
@@ -338,26 +330,61 @@ func (g *Generator) installCog() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	lines = append(lines, fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install %s", containerPath))
+	lines = append(lines, fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep %s", containerPath))
 	return strings.Join(lines, "\n"), nil
 }
 
-func (g *Generator) pipInstalls() (string, error) {
+func (g *Generator) pipInstallStage() (string, error) {
+	installCog, err := g.installCog()
+	if err != nil {
+		return "", err
+	}
 	requirements, err := g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH)
 	if err != nil {
 		return "", err
 	}
 	if strings.Trim(requirements, "") == "" {
-		return "", nil
+		return `FROM python:` + g.Config.Build.PythonVersion + ` as deps
+` + installCog, nil
 	}
 
-	lines, containerPath, err := g.writeTemp("requirements.txt", []byte(requirements))
+	copyLine, containerPath, err := g.writeTemp("requirements.txt", []byte(requirements))
 	if err != nil {
 		return "", err
 	}
-
-	lines = append(lines, "RUN --mount=type=cache,target=/root/.cache/pip pip install -r "+containerPath)
+	// Not slim, so that we can compile wheels
+	fromLine := `FROM python:` + g.Config.Build.PythonVersion + ` as deps`
+	// Sometimes, in order to run `pip install` successfully, some system packages need to be installed
+	// or some other change needs to happen
+	// this is a bodge to support that
+	// it will be reverted when we add custom dockerfiles
+	buildStageDeps := os.Getenv("COG_EXPERIMENTAL_BUILD_STAGE_DEPS")
+	if buildStageDeps != "" {
+		fromLine = fromLine + "\nRUN " + buildStageDeps
+	}
+	lines := []string{
+		fromLine,
+		installCog,
+		copyLine[0],
+		"RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r " + containerPath,
+	}
 	return strings.Join(lines, "\n"), nil
+}
+
+func (g *Generator) pipInstalls() string {
+	// placing packages in workdir makes imports faster but seems to break integration tests
+	// return "COPY --from=deps --link /dep COPY --from=deps /src"
+	// ...except it's actually /root/.pyenv/versions/3.8.17/lib/python3.8/site-packages
+	py := g.Config.Build.PythonVersion
+	if g.Config.Build.GPU && g.useCudaBaseImage {
+		return strings.Join(
+			[]string{
+				"COPY --from=deps --link /dep /dep",
+				"RUN ln -s /dep/* $(pyenv prefix)/lib/python*/site-packages",
+			},
+			"\n")
+	}
+	return "COPY --from=deps --link /dep /usr/local/lib/python" + py + "/site-packages"
 }
 
 func (g *Generator) runCommands() (string, error) {
@@ -414,4 +441,33 @@ func filterEmpty(list []string) []string {
 		}
 	}
 	return filtered
+}
+
+func (g *Generator) GenerateWeightsManifest() (*weights.Manifest, error) {
+	m := weights.NewManifest()
+
+	for _, dir := range g.modelDirs {
+		err := g.fileWalker(dir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() {
+				return nil
+			}
+
+			return m.AddFile(path)
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	for _, path := range g.modelFiles {
+		err := m.AddFile(path)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return m, nil
 }

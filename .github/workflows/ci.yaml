@@ -27,11 +27,11 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v4
         with:
           go-version-file: go.mod
-      - uses: actions/setup-python@v3
+      - uses: actions/setup-python@v4
         with:
           python-version: 3.11
       - name: Install Python dependencies
@@ -54,8 +54,8 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install Python dependencies
@@ -72,11 +72,11 @@ jobs:
     name: "Test integration"
     runs-on: ubuntu-latest-16-cores
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v4
         with:
           go-version-file: go.mod
-      - uses: actions/setup-python@v3
+      - uses: actions/setup-python@v4
         with:
           python-version: 3.11
       - name: Install Python dependencies
@@ -96,7 +96,7 @@ jobs:
       cog_version: ${{ steps.build-python-package.outputs.version }}
     runs-on: ubuntu-latest-8-cores
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: actions/setup-go@v4
@@ -104,7 +104,7 @@ jobs:
           go-version-file: go.mod
       - name: Build
         run: make cog
-      - uses: goreleaser/goreleaser-action@v2
+      - uses: goreleaser/goreleaser-action@v4
         with:
           version: latest
           args: release --clean
