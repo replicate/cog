@@ -70,8 +70,6 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			return fmt.Errorf("Failed to build runner Docker image: %w", err)
 		}
 	} else {
-		fmt.Println("trying existing dockerfile")
-		fmt.Println(dir)
 		// if Dockerfile exists, use that instead
 		var dockerfileContents string
 		maybeDockerfile := path.Join(dir, "Dockerfile")
@@ -80,7 +78,6 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			console.Info(fmt.Sprintf("Using existing Dockerfile at %s...", path.Join(dir, "Dockerfile")))
 			dockerfileContents = string(contents)
 		} else {
-			// maybe clarify that there's no dockerfile in this code path, but that might be too noisy
 			dockerfileContents, err = generator.GenerateDockerfileWithoutSeparateWeights()
 			if err != nil {
 				return fmt.Errorf("Failed to generate Dockerfile: %w", err)
