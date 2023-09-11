@@ -380,7 +380,7 @@ func (g *Generator) pipInstalls() string {
 		return strings.Join(
 			[]string{
 				"COPY --from=deps --link /dep /dep",
-				"RUN ln -s /dep/* $(pyenv prefix)/lib/python*/site-packages",
+				"RUN ln --force -s /dep/* $(pyenv prefix)/lib/python*/site-packages",
 			},
 			"\n")
 	}
