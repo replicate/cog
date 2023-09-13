@@ -24,6 +24,7 @@ func newRunCommand() *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 	}
 	addBuildProgressOutputFlag(cmd)
+	addDockerfileFlag(cmd)
 	addUseCudaBaseImageFlag(cmd)
 
 	flags := cmd.Flags()

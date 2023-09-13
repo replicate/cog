@@ -47,6 +47,7 @@ the prediction on that.`,
 
 	addUseCudaBaseImageFlag(cmd)
 	addBuildProgressOutputFlag(cmd)
+	addDockerfileFlag(cmd)
 
 	cmd.Flags().StringArrayVarP(&inputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")

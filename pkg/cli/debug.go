@@ -23,6 +23,7 @@ func newDebugCommand() *cobra.Command {
 
 	addSeparateWeightsFlag(cmd)
 	addUseCudaBaseImageFlag(cmd)
+	addDockerfileFlag(cmd)
 	cmd.Flags().StringVarP(&imageName, "image-name", "", "", "The image name to use for the generated Dockerfile")
 
 	return cmd
