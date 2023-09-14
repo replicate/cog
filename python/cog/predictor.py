@@ -3,6 +3,7 @@ import importlib.util
 import inspect
 import io
 import os.path
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
@@ -15,6 +16,7 @@ from typing import (
     Type,
     Union,
 )
+from unittest.mock import patch
 
 try:
     from typing import get_args, get_origin
@@ -169,7 +171,12 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
-    spec.loader.exec_module(module)
+
+    # Remove any sys.argv while importing predictor to avoid conflicts when
+    # user code calls argparse.Parser.parse_args in production
+    with patch("sys.argv", sys.argv[:1]):
+        spec.loader.exec_module(module)
+
     predictor = getattr(module, class_name)
     # It could be a class or a function
     if inspect.isclass(predictor):
