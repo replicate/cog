@@ -21,7 +21,7 @@ require (
 	golang.org/x/sys v0.12.0
 	golang.org/x/tools v0.13.0
 	gopkg.in/yaml.v2 v2.4.0
-	gotest.tools/gotestsum v1.10.1
+	gotest.tools/gotestsum v1.11.0
 	sigs.k8s.io/yaml v1.3.0
 )
 
@@ -44,6 +44,7 @@ require (
 	github.com/ashanbrown/forbidigo v1.6.0 // indirect
 	github.com/ashanbrown/makezero v1.1.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/bitfield/gotestdox v0.2.1 // indirect
 	github.com/bkielbasa/cyclop v1.2.1 // indirect
 	github.com/blizzy78/varnamelen v0.8.0 // indirect
 	github.com/bombsimon/wsl/v3 v3.4.0 // indirect
