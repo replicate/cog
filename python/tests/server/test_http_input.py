@@ -3,6 +3,7 @@ import os
 
 import pytest
 import responses
+from fastapi.exceptions import FastAPIError
 
 from .conftest import make_client, uses_predictor
 
@@ -213,5 +214,5 @@ def test_choices_int(client):
 
 
 def test_untyped_inputs():
-    with pytest.raises(TypeError):
+    with pytest.raises(FastAPIError):
         make_client("input_untyped")
