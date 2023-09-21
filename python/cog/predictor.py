@@ -182,6 +182,8 @@ class BaseInput(BaseModel):
         # But, after validation, we want to pass the actual value to predict(), not the enum object
         use_enum_values = True
 
+        arbitrary_types_allowed = True
+
     def cleanup(self) -> None:
         """
         Cleanup any temporary files created by the input.
