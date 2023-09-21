@@ -73,6 +73,7 @@ var typeToExtension = map[string]string{
 	"text/csv":        ".csv",
 	"text/html":       ".html",
 	"text/javascript": ".js",
+	"text/markdown":   ".md",
 	"text/plain":      ".txt",
 
 	"video/3gpp":      ".3gp",
