@@ -214,6 +214,19 @@ def get_predict(predictor: Any) -> Callable:
         return predictor.predict
     return predictor
 
+def validate_input_type(type: Type, name: str) -> None:
+    if type is inspect.Signature.empty:
+            raise TypeError(
+                f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
+            )
+    elif type not in ALLOWED_INPUT_TYPES:
+        if hasattr(type, "__origin__") and (type.__origin__ is Union or type.__origin__ is list):
+            for t in get_args(type):
+                validate_input_type(t, name)
+        else:
+            raise TypeError(
+                f"Unsupported input type {human_readable_type_name(type)} for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
+            )
 
 def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
     """
@@ -238,14 +251,7 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
     for name, parameter in signature.parameters.items():
         InputType = parameter.annotation
 
-        if InputType is inspect.Signature.empty:
-            raise TypeError(
-                f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
-            )
-        elif InputType not in ALLOWED_INPUT_TYPES:
-            raise TypeError(
-                f"Unsupported input type {human_readable_type_name(InputType)} for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
-            )
+        validate_input_type(InputType, name)
 
         # if no default is specified, create an empty, required input
         if parameter.default is inspect.Signature.empty:

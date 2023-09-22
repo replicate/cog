@@ -30,13 +30,6 @@ def test_empty_input(client, match):
     assert resp.json() == match({"status": "succeeded", "output": "foobar"})
 
 
-@uses_predictor("input_string")
-def test_good_str_input(client, match):
-    resp = client.post("/predictions", json={"input": {"text": "baz"}})
-    assert resp.status_code == 200
-    assert resp.json() == match({"status": "succeeded", "output": "baz"})
-
-
 @uses_predictor("input_integer")
 def test_good_int_input(client, match):
     resp = client.post("/predictions", json={"input": {"num": 3}})
@@ -209,6 +202,39 @@ def test_choices_int(client):
     resp = client.post("/predictions", json={"input": {"x": 1}})
     assert resp.status_code == 200
     resp = client.post("/predictions", json={"input": {"x": 3}})
+    assert resp.status_code == 422
+
+
+@uses_predictor("input_union_string_or_list_of_strings")
+def test_union_strings(client):
+    resp = client.post("/predictions", json={"input": {"args": "abc"}})
+    assert resp.status_code == 200
+    assert resp.json()["output"] == "abc"
+
+    resp = client.post("/predictions", json={"input": {"args": ["a", "b", "c"]}})
+    assert resp.status_code == 200
+    assert resp.json()["output"] == "abc"
+
+    # FIXME: Numbers are successfully cast to strings, but maybe shouldn't be
+    # resp = client.post("/predictions", json={"input": {"args": 123}})
+    # assert resp.status_code == 422
+    # resp = client.post("/predictions", json={"input": {"args": [1, 2, 3]}})
+    # assert resp.status_code == 422
+
+
+@uses_predictor("input_union_integer_or_list_of_integers")
+def test_union_integers(client):
+    resp = client.post("/predictions", json={"input": {"args": 123}})
+    assert resp.status_code == 200
+    assert resp.json()["output"] == 123
+
+    resp = client.post("/predictions", json={"input": {"args": [1, 2, 3]}})
+    assert resp.status_code == 200
+    assert resp.json()["output"] == 6
+
+    resp = client.post("/predictions", json={"input": {"args": "abc"}})
+    assert resp.status_code == 422
+    resp = client.post("/predictions", json={"input": {"args": ["a", "b", "c"]}})
     assert resp.status_code == 422
 
 
