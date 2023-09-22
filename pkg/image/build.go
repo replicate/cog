@@ -91,45 +91,37 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 
 	console.Info("Validating model schema...")
 
-	var schema map[string]interface{}
 	var schemaJSON []byte
-
 	if schemaFile != "" {
-		// We were passed a schema file, so use that
-		schemaJSON, err := os.ReadFile(schemaFile)
+		data, err := os.ReadFile(schemaFile)
 		if err != nil {
 			return fmt.Errorf("Failed to read schema file: %w", err)
 		}
 
-		schema = make(map[string]interface{})
-		err = json.Unmarshal(schemaJSON, &schema)
-		if err != nil {
-			return fmt.Errorf("Failed to parse schema file: %w", err)
-		}
+		schemaJSON = data
 	} else {
 		schema, err := GenerateOpenAPISchema(imageName, cfg.Build.GPU)
 		if err != nil {
 			return fmt.Errorf("Failed to get type signature: %w", err)
 		}
 
-		schemaJSON, err = json.Marshal(schema)
+		data, err := json.Marshal(schema)
 		if err != nil {
 			return fmt.Errorf("Failed to convert type signature to JSON: %w", err)
 		}
+
+		schemaJSON = data
 	}
 
-	if len(schema) > 0 {
-		loader := openapi3.NewLoader()
-		loader.IsExternalRefsAllowed = true
-		doc, err := loader.LoadFromData(schemaJSON)
-		if err != nil {
-			return fmt.Errorf("Failed to load model schema JSON: %w", err)
-		}
-
-		err = doc.Validate(loader.Context)
-		if err != nil {
-			return fmt.Errorf("Model schema is invalid: %w\n\n%s", err, string(schemaJSON))
-		}
+	loader := openapi3.NewLoader()
+	loader.IsExternalRefsAllowed = true
+	doc, err := loader.LoadFromData(schemaJSON)
+	if err != nil {
+		return fmt.Errorf("Failed to load model schema JSON: %w", err)
+	}
+	err = doc.Validate(loader.Context)
+	if err != nil {
+		return fmt.Errorf("Model schema is invalid: %w\n\n%s", err, string(schemaJSON))
 	}
 
 	console.Info("Adding labels to image...")
@@ -143,20 +135,18 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	}
 
 	labels := map[string]string{
-		global.LabelNamespace + "version": global.Version,
-		global.LabelNamespace + "config":  string(bytes.TrimSpace(configJSON)),
+		global.LabelNamespace + "version":        global.Version,
+		global.LabelNamespace + "config":         string(bytes.TrimSpace(configJSON)),
+		global.LabelNamespace + "openapi_schema": string(schemaJSON),
 		// Mark the image as having an appropriate init entrypoint. We can use this
 		// to decide how/if to shim the image.
 		global.LabelNamespace + "has_init": "true",
-		// Backwards compatibility. Remove for 1.0.
-		"org.cogmodel.deprecated":  "The org.cogmodel labels are deprecated. Use run.cog.",
-		"org.cogmodel.cog_version": global.Version,
-		"org.cogmodel.config":      string(bytes.TrimSpace(configJSON)),
-	}
 
-	if len(schema) > 0 {
-		labels[global.LabelNamespace+"openapi_schema"] = string(schemaJSON)
-		labels["org.cogmodel.openapi_schema"] = string(schemaJSON)
+		// Backwards compatibility. Remove for 1.0.
+		"org.cogmodel.deprecated":     "The org.cogmodel labels are deprecated. Use run.cog.",
+		"org.cogmodel.cog_version":    global.Version,
+		"org.cogmodel.config":         string(bytes.TrimSpace(configJSON)),
+		"org.cogmodel.openapi_schema": string(schemaJSON),
 	}
 
 	if isGitRepo(dir) {
