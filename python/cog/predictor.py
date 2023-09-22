@@ -239,13 +239,7 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
         InputType = parameter.annotation
 
         if InputType is inspect.Signature.empty:
-            raise TypeError(
-                f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
-            )
-        elif InputType not in ALLOWED_INPUT_TYPES:
-            raise TypeError(
-                f"Unsupported input type {human_readable_type_name(InputType)} for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}."
-            )
+            InputType = Any
 
         # if no default is specified, create an empty, required input
         if parameter.default is inspect.Signature.empty:
