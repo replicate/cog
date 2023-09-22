@@ -17,7 +17,7 @@ var buildNoCache bool
 var buildProgressOutput string
 var buildSchemaFile string
 var buildUseCudaBaseImage string
-var buildDockerfilePath string
+var buildDockerfileFile string
 
 func newBuildCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -51,7 +51,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		imageName = config.DockerImageName(projectDir)
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfilePath); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile); err != nil {
 		return err
 	}
 
@@ -89,6 +89,6 @@ func addUseCudaBaseImageFlag(cmd *cobra.Command) {
 }
 
 func addDockerfileFlag(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&buildDockerfilePath, "dockerfile", "", "Path to a Dockerfile. If the flag is passed but no value is provided, defaults to the Dockerfile in the working directory.")
+	cmd.Flags().StringVar(&buildDockerfileFile, "dockerfile", "", "Path to a Dockerfile. If the flag is passed but no value is provided, defaults to the Dockerfile in the working directory.")
 	cmd.Flags().Lookup("dockerfile").NoOptDefVal = "Dockerfile"
 }
