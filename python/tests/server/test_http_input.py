@@ -217,6 +217,15 @@ def test_untyped_inputs():
         make_client("input_untyped")
 
 
-def test_input_with_unsupported_type():
-    with pytest.raises(TypeError):
-        make_client("input_unsupported_type")
+@uses_predictor("input_custom_type")
+def test_input_with_custom_type(client, match):
+    resp = client.post("/predictions", json={"input": {"outer": {"inner": "baz"}}})
+    assert resp.status_code == 200
+    assert resp.json() == match({"status": "succeeded", "output": "baz"})
+
+
+@uses_predictor("input_no_types.py:predict")
+def test_input_with_no_types(client, match):
+    resp = client.post("/predictions", json={"input": "baz"})
+    assert resp.status_code == 200
+    assert resp.json() == match({"status": "succeeded", "output": "hello baz"})

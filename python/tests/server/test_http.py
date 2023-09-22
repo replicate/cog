@@ -190,6 +190,31 @@ def test_openapi_specification(client, static_schema):
     }
 
 
+@uses_predictor("input_custom_type")
+def test_openapi_specification_with_custom_input_type(client):
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+    schema = resp.json()
+    assert schema["components"]["schemas"]["Input"] == {
+        "properties": {
+            "outer": {
+                "allOf": [{"$ref": "#/components/schemas/Outer"}],
+                "title": "Outer",
+                "x-order": 0,
+            }
+        },
+        "required": ["outer"],
+        "title": "Input",
+        "type": "object",
+    }
+    assert schema["components"]["schemas"]["Outer"] == {
+        "properties": {"inner": {"title": "Inner", "type": "string"}},
+        "required": ["inner"],
+        "title": "Outer",
+        "type": "object",
+    }
+
+
 @uses_predictor("openapi_custom_output_type")
 def test_openapi_specification_with_custom_user_defined_output_type(
     client, static_schema
