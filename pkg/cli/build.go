@@ -17,6 +17,7 @@ var buildNoCache bool
 var buildProgressOutput string
 var buildSchemaFile string
 var buildUseCudaBaseImage string
+var buildDockerfileFile string
 
 func newBuildCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -31,6 +32,7 @@ func newBuildCommand() *cobra.Command {
 	addSeparateWeightsFlag(cmd)
 	addSchemaFlag(cmd)
 	addUseCudaBaseImageFlag(cmd)
+	addDockerfileFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
 }
@@ -49,7 +51,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		imageName = config.DockerImageName(projectDir)
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile); err != nil {
 		return err
 	}
 
@@ -84,4 +86,8 @@ func addSchemaFlag(cmd *cobra.Command) {
 
 func addUseCudaBaseImageFlag(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&buildUseCudaBaseImage, "use-cuda-base-image", "auto", "Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects")
+}
+
+func addDockerfileFlag(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&buildDockerfileFile, "dockerfile", "", "Path to a Dockerfile. If the flag is passed but no value is provided, defaults to the Dockerfile in the working directory.")
 }

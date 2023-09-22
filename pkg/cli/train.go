@@ -31,6 +31,7 @@ It will build the model in the current directory and train it.`,
 	}
 
 	addBuildProgressOutputFlag(cmd)
+	addDockerfileFlag(cmd)
 	addUseCudaBaseImageFlag(cmd)
 
 	cmd.Flags().StringArrayVarP(&trainInputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")

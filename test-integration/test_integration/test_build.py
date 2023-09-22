@@ -8,32 +8,13 @@ import pytest
 
 def test_build_without_predictor(docker_image):
     project_dir = Path(__file__).parent / "fixtures/no-predictor-project"
-    subprocess.run(
+    build_process = subprocess.run(
         ["cog", "build", "-t", docker_image],
         cwd=project_dir,
-        check=True,
+        capture_output=True,
     )
-    assert docker_image in str(
-        subprocess.run(["docker", "images"], capture_output=True, check=True).stdout
-    )
-    image = json.loads(
-        subprocess.run(
-            ["docker", "image", "inspect", docker_image],
-            capture_output=True,
-            check=True,
-        ).stdout
-    )
-    labels = image[0]["Config"]["Labels"]
-    assert len(labels["run.cog.version"]) > 0
-    assert json.loads(labels["run.cog.config"]) == {"build": {"python_version": "3.8"}}
-    assert "run.cog.openapi_schema" not in labels
-
-    # Deprecated. Remove for 1.0.
-    assert len(labels["org.cogmodel.cog_version"]) > 0
-    assert json.loads(labels["org.cogmodel.config"]) == {
-        "build": {"python_version": "3.8"}
-    }
-    assert "org.cogmodel.openapi_schema" not in labels
+    assert build_process.returncode > 0
+    assert "Model schema is invalid" in build_process.stderr.decode()
 
 
 def test_build_names_uses_image_option_in_cog_yaml(tmpdir, docker_image):
@@ -42,8 +23,20 @@ def test_build_names_uses_image_option_in_cog_yaml(tmpdir, docker_image):
 image: {docker_image}
 build:
   python_version: 3.8
+predict: predict.py:Predictor
 """
         f.write(cog_yaml)
+
+    with open(tmpdir / "predict.py", "w") as f:
+        code = """
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+
+"""
+        f.write(code)
 
     subprocess.run(
         ["cog", "build"],
@@ -111,8 +104,20 @@ def test_build_gpu_model_on_cpu(tmpdir, docker_image):
 build:
   python_version: 3.8
   gpu: true
+predict: predict.py:Predictor
 """
         f.write(cog_yaml)
+
+    with open(tmpdir / "predict.py", "w") as f:
+        code = """
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+
+"""
+        f.write(code)
 
     subprocess.run(
         ["git", "config", "--global", "user.email", "noreply@replicate.com"],
@@ -166,9 +171,10 @@ build:
             "gpu": True,
             "cuda": "11.8",
             "cudnn": "8",
-        }
+        },
+        "predict": "predict.py:Predictor",
     }
-    assert "run.cog.openapi_schema" not in labels
+    assert "run.cog.openapi_schema" in labels
 
     # Deprecated. Remove for 1.0.
     assert len(labels["org.cogmodel.cog_version"]) > 0
@@ -178,9 +184,10 @@ build:
             "gpu": True,
             "cuda": "11.8",
             "cudnn": "8",
-        }
+        },
+        "predict": "predict.py:Predictor",
     }
-    assert "org.cogmodel.openapi_schema" not in labels
+    assert "org.cogmodel.openapi_schema" in labels
 
     assert len(labels["org.opencontainers.image.version"]) > 0
     assert len(labels["org.opencontainers.image.revision"]) > 0
