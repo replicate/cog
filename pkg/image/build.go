@@ -141,11 +141,6 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	if err != nil {
 		return fmt.Errorf("Failed to convert config to JSON: %w", err)
 	}
-	// useful for tricking kubernetes/version_deployment.go into not reinstalling pip
-	fakeCogVersion := os.Getenv("FAKE_COG_VERSION")
-	if fakeCogVersion != "" {
-		global.Version = fakeCogVersion
-	}
 
 	labels := map[string]string{
 		global.LabelNamespace + "version": global.Version,
