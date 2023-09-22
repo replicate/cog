@@ -51,7 +51,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		imageName = config.DockerImageName(projectDir)
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfilePath); err != nil {
 		return err
 	}
 
