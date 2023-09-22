@@ -89,5 +89,5 @@ func addUseCudaBaseImageFlag(cmd *cobra.Command) {
 }
 
 func addDockerfileFlag(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&buildDockerfileFile, "dockerfile", "", "Path to a Dockerfile. If the flag is passed but no value is provided, defaults to the Dockerfile in the working directory.")
+	cmd.Flags().StringVar(&buildDockerfileFile, "dockerfile", "", "Path to a Dockerfile. If set, cog will use this Dockerfile instead of generating one from cog.yaml")
 }
