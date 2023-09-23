@@ -3,7 +3,19 @@ import os
 import selectors
 import threading
 import uuid
+import fcntl
 from typing import Callable, Optional, Sequence, TextIO
+
+# Constant for `F_SETPIPE_SZ`, as Python's `fcntl` module doesn't have this
+# defined until Python 3.10.
+F_SETPIPE_SZ = 1031
+
+def get_max_pipe_size():
+    try:
+        with open("/proc/sys/fs/pipe-max-size", "r") as pipe_file:
+            return int(pipe_file.read())
+    except IOError as e:
+        return 1024 * 1024
 
 
 class WrappedStream:
@@ -15,6 +27,7 @@ class WrappedStream:
 
     def wrap(self) -> None:
         r, w = os.pipe()
+        fcntl.fcntl(r, F_SETPIPE_SZ, get_max_pipe_size())
 
         # Save a copy of the original stream file descriptor.
         original_fd = self._stream.fileno()
