@@ -4,7 +4,6 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/image"
@@ -91,9 +90,4 @@ func addUseCudaBaseImageFlag(cmd *cobra.Command) {
 
 func addDockerfileFlag(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&buildDockerfileFile, "dockerfile", "", "Path to a Dockerfile. If set, cog will use this Dockerfile instead of generating one from cog.yaml")
-	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		if f.Name == "dockerfile" {
-			f.Hidden = true
-		}
-	})
 }
