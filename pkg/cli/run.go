@@ -14,7 +14,12 @@ import (
 
 var (
 	runPorts []string
+	gpusFlag string
 )
+
+func addGpusFlag(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&gpusFlag, "gpus", "", "GPU devices to add to the container, in the same format as `docker run --gpus`.")
+}
 
 func newRunCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -26,6 +31,7 @@ func newRunCommand() *cobra.Command {
 	addBuildProgressOutputFlag(cmd)
 	addDockerfileFlag(cmd)
 	addUseCudaBaseImageFlag(cmd)
+	addGpusFlag(cmd)
 
 	flags := cmd.Flags()
 	// Flags after first argment are considered args and passed to command
@@ -51,7 +57,9 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	gpus := ""
-	if cfg.Build.GPU {
+	if gpusFlag != "" {
+		gpus = gpusFlag
+	} else if cfg.Build.GPU {
 		gpus = "all"
 	}
 
@@ -77,7 +85,9 @@ func run(cmd *cobra.Command, args []string) error {
 	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
 
 	err = docker.Run(runOptions)
-	if runOptions.GPUs != "" && err == docker.ErrMissingDeviceDriver {
+	// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
+	// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
+	if runOptions.GPUs == "all" && err == docker.ErrMissingDeviceDriver {
 		console.Info("Missing device driver, re-trying without GPU")
 
 		runOptions.GPUs = ""
