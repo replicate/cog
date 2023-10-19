@@ -377,12 +377,7 @@ func (g *Generator) pipInstalls() string {
 	// ...except it's actually /root/.pyenv/versions/3.8.17/lib/python3.8/site-packages
 	py := g.Config.Build.PythonVersion
 	if g.Config.Build.GPU && g.useCudaBaseImage {
-		return strings.Join(
-			[]string{
-				"COPY --from=deps --link /dep /dep",
-				"RUN ln --force -s /dep/* $(pyenv prefix)/lib/python*/site-packages || true",
-			},
-			"\n")
+		return "RUN --mount=type=bind,from=deps,source=/dep,target=/dep cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages || true"
 	}
 	return "COPY --from=deps --link /dep /usr/local/lib/python" + py + "/site-packages"
 }
