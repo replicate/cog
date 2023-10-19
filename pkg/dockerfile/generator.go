@@ -377,6 +377,9 @@ func (g *Generator) pipInstalls() string {
 	// ...except it's actually /root/.pyenv/versions/3.8.17/lib/python3.8/site-packages
 	py := g.Config.Build.PythonVersion
 	if g.Config.Build.GPU && g.useCudaBaseImage {
+		// this requires buildkit!
+		// we should check for buildkit and otherwise revert to symlinks or copying into /src
+		// we mount to avoid copying, which avoids having two copies in this layer
 		return "RUN --mount=type=bind,from=deps,source=/dep,target=/dep cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages || true"
 	}
 	return "COPY --from=deps --link /dep /usr/local/lib/python" + py + "/site-packages"
