@@ -106,3 +106,13 @@ This section lists the relevant environment variables for Cog's built-in queue w
 This determines whether to enable or disable the usage of OpenTelemetry. OpenTelemetry (OTEL) is an open-source technology used to capture and measure metrics, traces, and logs. It is used for Cog's queue worker.
 
 This can either be set / unset in order to determine whether or not to enable OpenTelemtry. If it is set, then Cog will handle the necessary setup for OpenTelemtry. Otherwise, OpenTelemetry calls will be treated as no-ops. If OpenTelemetry is enabled, the OTLP exporter may also need to be [configured via environment variables](https://opentelemetry-python.readthedocs.io/en/latest/sdk/environment_variables.html).
+
+
+## Docker Image
+
+### `NVIDIA_DRIVER_CAPABILITIES`
+This [controls which Nvidia driver libraries/binaries will be mounted inside the container](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/docker-specialized.html#driver-capabilities). The generated Docker image will set this to  `all` which will mount all Nvidia driver libraries/binaries inside the container beyond the default `utility` and `compute` capabilities.
+
+`graphics`, `video`, and `display` add additional interesting capabilities beyond the default that may be useful for some models running in the container. `graphics` is required for accelerated OpenGL support. `video` is required for accelerated video encoding/decoding. `display` is required for accelerated X11 support.
+
+This is set to `all`, is non-configurable, and is documented here as an environment variable of interest. Setting or changing this during runtime inside the image will have no effect.
