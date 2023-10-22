@@ -1,4 +1,5 @@
 import argparse
+import contextlib
 import logging
 import os
 import signal
@@ -52,15 +53,6 @@ def create_app(
     upload_url: Optional[str] = None,
     mode: str = "predict",
 ) -> FastAPI:
-    app = FastAPI(
-        title="Cog",  # TODO: mention model name?
-        # version=None # TODO
-    )
-
-    app.state.health = Health.STARTING
-    app.state.setup_result = None
-    app.state.setup_result_payload = None
-
     predictor_ref = get_predictor_ref(config, mode)
 
     runner = PredictionRunner(
@@ -68,6 +60,26 @@ def create_app(
         shutdown_event=shutdown_event,
         upload_url=upload_url,
     )
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app: FastAPI) -> None:
+        # https://github.com/tiangolo/fastapi/issues/4221
+        RunVar("_default_thread_limiter").set(CapacityLimiter(threads))  # type: ignore
+
+        app.state.setup_result = runner.setup()
+        yield
+        runner.shutdown()
+
+    app = FastAPI(
+        title="Cog",  # TODO: mention model name?
+        # version=None # TODO
+        lifespan=lifespan,
+    )
+
+    app.state.health = Health.STARTING
+    app.state.setup_result = None
+    app.state.setup_result_payload = None
+
     # TODO: avoid loading predictor code in this process
     predictor = load_predictor_from_ref(predictor_ref)
 
@@ -78,17 +90,6 @@ def create_app(
     PredictionResponse = schema.PredictionResponse.with_types(
         input_type=InputType, output_type=OutputType
     )
-
-    @app.on_event("startup")
-    def startup() -> None:
-        # https://github.com/tiangolo/fastapi/issues/4221
-        RunVar("_default_thread_limiter").set(CapacityLimiter(threads))  # type: ignore
-
-        app.state.setup_result = runner.setup()
-
-    @app.on_event("shutdown")
-    def shutdown() -> None:
-        runner.shutdown()
 
     @app.get("/")
     def root() -> Any:
