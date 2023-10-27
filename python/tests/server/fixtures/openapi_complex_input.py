@@ -6,7 +6,7 @@ class Predictor(BasePredictor):
         self,
         no_default: str,
         default_without_input: str = "default",
-        input_with_default: int = Input(default=10),
+        input_with_default: int = Input(default=-10),
         path: Path = Input(description="Some path"),
         image: File = Input(description="Some path"),
         choices: str = Input(choices=["foo", "bar"]),
