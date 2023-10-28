@@ -73,7 +73,7 @@ class PredictionRunner:
 
         return handle_error
 
-    def setup(self) -> Task["dict[str, Any]"]:
+    def setup(self) -> "Task[dict[str, Any]]":
         if self.is_busy():
             raise RunnerBusyError()
         self._result = asyncio.create_task(setup(worker=self._worker))
@@ -84,7 +84,7 @@ class PredictionRunner:
     # no longer have to support Python 3.8
     def predict(
         self, prediction: schema.PredictionRequest, upload: bool = True
-    ) -> Tuple[schema.PredictionResponse, Task[schema.PredictionResponse]]:
+    ) -> Tuple[schema.PredictionResponse, "Task[schema.PredictionResponse]"]:
         # It's the caller's responsibility to not call us if we're busy.
         if self.is_busy():
             # If self._result is set, but self._response is not, we're still
