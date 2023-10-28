@@ -203,8 +203,7 @@ def create_app(
             return JSONResponse(jsonable_encoder(initial_response), status_code=202)
 
         try:
-            res = await async_result
-            response = PredictionResponse(res.dict())
+            response = PredictionResponse(**(await async_result).dict())
         except ValidationError as e:
             _log_invalid_output(e)
             raise HTTPException(status_code=500, detail=str(e)) from e
