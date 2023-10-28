@@ -107,7 +107,7 @@ def create_app(
 
     @app.get("/health-check")
     async def healthcheck() -> Any:
-        _check_setup_result()
+        await _check_setup_result()
         if app.state.health == Health.READY:
             health = Health.BUSY if runner.is_busy() else Health.READY
         else:
@@ -137,7 +137,7 @@ def create_app(
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
 
-        return _predict(request=request, respond_async=respond_async)
+        return await _predict(request=request, respond_async=respond_async)
 
     @limited
     @app.put(
@@ -172,9 +172,9 @@ def create_app(
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
 
-        return _predict(request=request, respond_async=respond_async)
+        return await _predict(request=request, respond_async=respond_async)
 
-    def _predict(
+    async def _predict(
         *, request: PredictionRequest, respond_async: bool = False
     ) -> Response:
         # [compat] If no body is supplied, assume that this model can be run
@@ -203,7 +203,8 @@ def create_app(
             return JSONResponse(jsonable_encoder(initial_response), status_code=202)
 
         try:
-            response = PredictionResponse(**async_result.get().dict())
+            res = await async_result
+            response = PredictionResponse(res.dict())
         except ValidationError as e:
             _log_invalid_output(e)
             raise HTTPException(status_code=500, detail=str(e)) from e
@@ -239,14 +240,14 @@ def create_app(
             shutdown_event.set()
         return JSONResponse({}, status_code=200)
 
-    def _check_setup_result() -> Any:
+    async def _check_setup_result() -> Any:
         if app.state.setup_result is None:
             return
 
-        if not app.state.setup_result.ready():
+        if not app.state.setup_result.done():
             return
 
-        result = app.state.setup_result.get()
+        result = await app.state.setup_result
 
         if result["status"] == schema.Status.SUCCEEDED:
             app.state.health = Health.READY

@@ -1,6 +1,8 @@
+import asyncio
 import io
 import threading
 import traceback
+from asyncio import Task
 from datetime import datetime, timezone
 from multiprocessing.pool import AsyncResult, ThreadPool
 from typing import Any, Callable, Dict, Optional, Tuple
@@ -46,7 +48,7 @@ class PredictionRunner:
         self._threadpool = ThreadPool(processes=1)
 
         self._response: Optional[schema.PredictionResponse] = None
-        self._result: Optional[AsyncResult] = None
+        self._result: Optional[Task] = None
 
         self._worker = Worker(predictor_ref=predictor_ref)
         self._should_cancel = threading.Event()
@@ -54,33 +56,35 @@ class PredictionRunner:
         self._shutdown_event = shutdown_event
         self._upload_url = upload_url
 
-    def setup(self) -> AsyncResult:
-        if self.is_busy():
-            raise RunnerBusyError()
-
-        def handle_error(error: BaseException) -> None:
+    def make_error_handler(self, activity: str) -> Callable:
+        def handle_error(task: Task) -> None:
+            exc = task.exception()
+            if not exc:
+                return
             # Re-raise the exception in order to more easily capture exc_info,
             # and then trigger shutdown, as we have no easy way to resume
             # worker state if an exception was thrown.
             try:
-                raise error
+                raise exc
             except Exception:
-                log.error("caught exception while running setup", exc_info=True)
+                log.error(f"caught exception while running {activity}", exc_info=True)
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
 
-        self._result = self._threadpool.apply_async(
-            func=setup,
-            kwds={"worker": self._worker},
-            error_callback=handle_error,
-        )
+        return handle_error
+
+    def setup(self) -> Task["dict[str, Any]"]:
+        if self.is_busy():
+            raise RunnerBusyError()
+        self._result = asyncio.create_task(setup(worker=self._worker))
+        self._result.add_done_callback(self.make_error_handler("setup"))
         return self._result
 
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
     # no longer have to support Python 3.8
     def predict(
         self, prediction: schema.PredictionRequest, upload: bool = True
-    ) -> Tuple[schema.PredictionResponse, AsyncResult]:
+    ) -> Tuple[schema.PredictionResponse, Task[schema.PredictionResponse]]:
         # It's the caller's responsibility to not call us if we're busy.
         if self.is_busy():
             # If self._result is set, but self._response is not, we're still
@@ -101,33 +105,20 @@ class PredictionRunner:
         upload_url = self._upload_url if upload else None
         event_handler = create_event_handler(prediction, upload_url=upload_url)
 
-        def cleanup(_: Optional[Any] = None) -> None:
+        def handle_cleanup(_: Task) -> None:
             if hasattr(prediction.input, "cleanup"):
                 prediction.input.cleanup()
 
-        def handle_error(error: BaseException) -> None:
-            # Re-raise the exception in order to more easily capture exc_info,
-            # and then trigger shutdown, as we have no easy way to resume
-            # worker state if an exception was thrown.
-            try:
-                raise error
-            except Exception:
-                log.error("caught exception while running prediction", exc_info=True)
-                if self._shutdown_event is not None:
-                    self._shutdown_event.set()
-
         self._response = event_handler.response
-        self._result = self._threadpool.apply_async(
-            func=predict,
-            kwds={
-                "worker": self._worker,
-                "request": prediction,
-                "event_handler": event_handler,
-                "should_cancel": self._should_cancel,
-            },
-            callback=cleanup,
-            error_callback=handle_error,
+        coro = predict(
+            worker=self._worker,
+            request=prediction,
+            event_handler=event_handler,
+            should_cancel=self._should_cancel,
         )
+        self._result = asyncio.create_task(coro)
+        self._result.add_done_callback(handle_cleanup)
+        self._result.add_done_callback(self.make_error_handler("prediction"))
 
         return (self._response, self._result)
 
@@ -135,7 +126,7 @@ class PredictionRunner:
         if self._result is None:
             return False
 
-        if not self._result.ready():
+        if not self._result.done():
             return True
 
         self._response = None
@@ -287,12 +278,13 @@ class PredictionEventHandler:
             raise FileUploadError("Got error trying to upload output files") from error
 
 
-def setup(*, worker: Worker) -> Dict[str, Any]:
+async def setup(*, worker: Worker) -> Dict[str, Any]:
     logs = []
     status = None
     started_at = datetime.now(tz=timezone.utc)
 
     try:
+        # will be async
         for event in worker.setup():
             if isinstance(event, Log):
                 logs.append(event.message)
@@ -323,7 +315,7 @@ def setup(*, worker: Worker) -> Dict[str, Any]:
     }
 
 
-def predict(
+async def predict(
     *,
     worker: Worker,
     request: schema.PredictionRequest,
@@ -335,7 +327,7 @@ def predict(
     structlog.contextvars.bind_contextvars(prediction_id=request.id)
 
     try:
-        return _predict(
+        return await _predict(
             worker=worker,
             request=request,
             event_handler=event_handler,
@@ -348,7 +340,7 @@ def predict(
         raise
 
 
-def _predict(
+async def _predict(
     *,
     worker: Worker,
     request: schema.PredictionRequest,
@@ -370,7 +362,7 @@ def _predict(
                 event_handler.failed(error=str(e))
                 log.warn("failed to download url path from input", exc_info=True)
                 return event_handler.response
-
+    # will be async
     for event in worker.predict(input_dict, poll=0.1):
         if should_cancel.is_set():
             worker.cancel()
