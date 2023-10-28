@@ -360,6 +360,7 @@ async def _predict(
                 return event_handler.response
     # will be async
     for event in worker.predict(input_dict, poll=0.1):
+        await asyncio.sleep(0)
         if should_cancel.is_set():
             worker.cancel()
             should_cancel.clear()
