@@ -1,10 +1,8 @@
 import asyncio
 import io
-import threading
 import traceback
 from asyncio import Task
 from datetime import datetime, timezone
-from multiprocessing.pool import AsyncResult, ThreadPool
 from typing import Any, Callable, Dict, Optional, Tuple
 
 import requests
@@ -41,17 +39,14 @@ class PredictionRunner:
         self,
         *,
         predictor_ref: str,
-        shutdown_event: Optional[threading.Event],
+        shutdown_event: Optional[asyncio.Event],
         upload_url: Optional[str] = None,
     ) -> None:
-        self._thread = None
-        self._threadpool = ThreadPool(processes=1)
-
         self._response: Optional[schema.PredictionResponse] = None
         self._result: Optional[Task] = None
 
         self._worker = Worker(predictor_ref=predictor_ref)
-        self._should_cancel = threading.Event()
+        self._should_cancel = asyncio.Event()
 
         self._shutdown_event = shutdown_event
         self._upload_url = upload_url
@@ -135,8 +130,7 @@ class PredictionRunner:
 
     def shutdown(self) -> None:
         self._worker.terminate()
-        self._threadpool.terminate()
-        self._threadpool.join()
+        # TODO: cancel setup or predict task
 
     def cancel(self, prediction_id: Optional[str] = None) -> None:
         if not self.is_busy():
@@ -316,7 +310,7 @@ async def predict(
     worker: Worker,
     request: schema.PredictionRequest,
     event_handler: PredictionEventHandler,
-    should_cancel: threading.Event,
+    should_cancel: asyncio.Event,
 ) -> schema.PredictionResponse:
     # Set up logger context within prediction thread.
     structlog.contextvars.clear_contextvars()
@@ -341,7 +335,7 @@ async def _predict(
     worker: Worker,
     request: schema.PredictionRequest,
     event_handler: PredictionEventHandler,
-    should_cancel: threading.Event,
+    should_cancel: asyncio.Event,
 ) -> schema.PredictionResponse:
     initial_prediction = request.dict()
 
