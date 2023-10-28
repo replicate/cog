@@ -91,7 +91,7 @@ def create_app(
         runner.shutdown()
 
     @app.get("/")
-    def root() -> Any:
+    async def root() -> Any:
         return {
             # "cog_version": "", # TODO
             "docs_url": "/docs",
@@ -99,7 +99,7 @@ def create_app(
         }
 
     @app.get("/health-check")
-    def healthcheck() -> Any:
+    async def healthcheck() -> Any:
         _check_setup_result()
         if app.state.health == Health.READY:
             health = Health.BUSY if runner.is_busy() else Health.READY
@@ -117,7 +117,7 @@ def create_app(
         response_model=PredictionResponse,
         response_model_exclude_unset=True,
     )
-    def predict(request: PredictionRequest = Body(default=None), prefer: Union[str, None] = Header(default=None)) -> Any:  # type: ignore
+    async def predict(request: PredictionRequest = Body(default=None), prefer: Union[str, None] = Header(default=None)) -> Any:  # type: ignore
         """
         Run a single prediction on the model
         """
@@ -136,7 +136,7 @@ def create_app(
         response_model=PredictionResponse,
         response_model_exclude_unset=True,
     )
-    def predict_idempotent(
+    async def predict_idempotent(
         prediction_id: str = Path(..., title="Prediction ID"),
         request: PredictionRequest = Body(..., title="Prediction Request"),
         prefer: Union[str, None] = Header(default=None),
@@ -210,7 +210,7 @@ def create_app(
         return JSONResponse(content=encoded_response)
 
     @app.post("/predictions/{prediction_id}/cancel")
-    def cancel(prediction_id: str = Path(..., title="Prediction ID")) -> Any:
+    async def cancel(prediction_id: str = Path(..., title="Prediction ID")) -> Any:
         """
         Cancel a running prediction
         """
@@ -224,7 +224,7 @@ def create_app(
             return JSONResponse({}, status_code=200)
 
     @app.post("/shutdown")
-    def start_shutdown() -> Any:
+    async def start_shutdown() -> Any:
         log.info("shutdown requested via http")
         if shutdown_event is not None:
             shutdown_event.set()
