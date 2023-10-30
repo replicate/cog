@@ -145,7 +145,7 @@ def test_openapi_specification(client, static_schema):
             "input_with_default": {
                 "title": "Input With Default",
                 "type": "integer",
-                "default": 10,
+                "default": -10,
                 "x-order": 2,
             },
             "path": {
