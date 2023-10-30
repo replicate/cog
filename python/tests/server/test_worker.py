@@ -57,6 +57,11 @@ OUTPUT_FIXTURES = [
         lambda x: f"hello, {x['name']}",
     ),
     (
+        "async_hello",
+        {"name": ST_NAMES},
+        lambda x: f"hello, {x['name']}",
+    ),
+    (
         "count_up",
         {"upto": st.integers(min_value=0, max_value=100)},
         lambda x: list(range(x["upto"])),
