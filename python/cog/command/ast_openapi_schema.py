@@ -347,7 +347,7 @@ def get_call_name(call: ast.Call) -> str:
 def parse_args(tree: ast.AST) -> "list[tuple[ast.arg, ast.expr | Ellipsis]]":
     """Parse argument, default pairs from a file with a predict function"""
     predict = find(tree, "predict")
-    assert isinstance(predict, ast.FunctionDef)
+    assert isinstance(predict, (ast.FunctionDef, ast.AsyncFunctionDef))
     args = predict.args.args  # [-len(defaults) :]
     # use Ellipsis instead of None here to distinguish a default of None
     defaults = [...] * (len(args) - len(predict.args.defaults)) + predict.args.defaults
@@ -415,7 +415,7 @@ def resolve_name(node: ast.expr) -> str:
 
 def parse_return_annotation(tree: ast.AST, fn: str = "predict") -> "tuple[dict, dict]":
     predict = find(tree, fn)
-    if not isinstance(predict, ast.FunctionDef):
+    if not isinstance(predict, (ast.FunctionDef, ast.AsyncFunctionDef)):
         raise ValueError("Could not find predict function")
     annotation = predict.returns
     if not annotation:
