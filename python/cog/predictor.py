@@ -6,7 +6,7 @@ import os.path
 import sys
 import types
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Iterator, AsyncIterator
 from pathlib import Path
 from typing import (
     Any,
@@ -341,7 +341,7 @@ For example:
         OutputType = signature.return_annotation
 
     # The type that goes in the response is a list of the yielded type
-    if get_origin(OutputType) is Iterator:
+    if get_origin(OutputType) in {Iterator, AsyncIterator}:
         # Annotated allows us to attach Field annotations to the list, which we use to mark that this is an iterator
         # https://pydantic-docs.helpmanual.io/usage/schema/#typingannotated-fields
         field = Field(**{"x-cog-array-type": "iterator"})  # type: ignore
