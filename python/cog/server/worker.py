@@ -173,12 +173,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._stream_redirector.start()
 
         self._setup()
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-        loop.run_until_complete(self._loop())
-
+        asyncio.run(self._loop())
         self._stream_redirector.shutdown()
 
     def _setup(self) -> None:
