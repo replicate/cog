@@ -151,7 +151,7 @@ def create_event_handler(
         prediction.webhook_events_filter or schema.WebhookEvent.default_events()
     )
 
-    webhook_sender = None
+    webhook_sender: Optional[Callable] = None
     if webhook is not None:
         webhook_sender = webhook_caller_filtered(webhook, events_filter)
 
@@ -194,8 +194,7 @@ class PredictionEventHandler:
 
         self._webhook_sender = webhook_sender
         self._file_uploader = file_uploader
-
-        self._send_webhook(schema.WebhookEvent.START)
+        asyncio.create_task(self._send_webhook(schema.WebhookEvent.START))
 
     @property
     def response(self) -> schema.PredictionResponse:
@@ -208,19 +207,19 @@ class PredictionEventHandler:
         # redis_queue. In future we can consider whether it makes sense to send
         # one here.
 
-    def append_output(self, output: Any) -> None:
+    async def append_output(self, output: Any) -> None:
         assert isinstance(
             self.p.output, list
         ), "Cannot append output before setting output"
         self.p.output.append(self._upload_files(output))
-        self._send_webhook(schema.WebhookEvent.OUTPUT)
+        await self._send_webhook(schema.WebhookEvent.OUTPUT)
 
-    def append_logs(self, logs: str) -> None:
+    async def append_logs(self, logs: str) -> None:
         assert self.p.logs is not None
         self.p.logs += logs
-        self._send_webhook(schema.WebhookEvent.LOGS)
+        await self._send_webhook(schema.WebhookEvent.LOGS)
 
-    def succeeded(self) -> None:
+    async def succeeded(self) -> None:
         log.info("prediction succeeded")
         self.p.status = schema.Status.SUCCEEDED
         self._set_completed_at()
@@ -231,28 +230,28 @@ class PredictionEventHandler:
         self.p.metrics = {
             "predict_time": (self.p.completed_at - self.p.started_at).total_seconds()
         }
-        self._send_webhook(schema.WebhookEvent.COMPLETED)
+        await self._send_webhook(schema.WebhookEvent.COMPLETED)
 
-    def failed(self, error: str) -> None:
+    async def failed(self, error: str) -> None:
         log.info("prediction failed", error=error)
         self.p.status = schema.Status.FAILED
         self.p.error = error
         self._set_completed_at()
-        self._send_webhook(schema.WebhookEvent.COMPLETED)
+        await self._send_webhook(schema.WebhookEvent.COMPLETED)
 
-    def canceled(self) -> None:
+    async def canceled(self) -> None:
         log.info("prediction canceled")
         self.p.status = schema.Status.CANCELED
         self._set_completed_at()
-        self._send_webhook(schema.WebhookEvent.COMPLETED)
+        await self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     def _set_completed_at(self) -> None:
         self.p.completed_at = datetime.now(tz=timezone.utc)
 
-    def _send_webhook(self, event: schema.WebhookEvent) -> None:
+    async def _send_webhook(self, event: schema.WebhookEvent) -> None:
         if self._webhook_sender is not None:
             dict_response = jsonable_encoder(self.response.dict(exclude_unset=True))
-            self._webhook_sender(dict_response, event)
+            await self._webhook_sender(dict_response, event)
 
     def _upload_files(self, output: Any) -> Any:
         if self._file_uploader is None:
@@ -325,8 +324,8 @@ async def predict(
         )
     except Exception as e:
         tb = traceback.format_exc()
-        event_handler.append_logs(tb)
-        event_handler.failed(error=str(e))
+        await event_handler.append_logs(tb)
+        await event_handler.failed(error=str(e))
         raise
 
 
@@ -348,8 +347,8 @@ async def _predict(
                 input_dict[k] = v.convert()
             except requests.exceptions.RequestException as e:
                 tb = traceback.format_exc()
-                event_handler.append_logs(tb)
-                event_handler.failed(error=str(e))
+                await event_handler.append_logs(tb)
+                await event_handler.failed(error=str(e))
                 log.warn("failed to download url path from input", exc_info=True)
                 return event_handler.response
     # will be async
@@ -368,11 +367,11 @@ async def _predict(
             pass
 
         elif isinstance(event, Log):
-            event_handler.append_logs(event.message)
+            await event_handler.append_logs(event.message)
 
         elif isinstance(event, PredictionOutputType):
             if output_type is not None:
-                event_handler.failed(error="Predictor returned unexpected output")
+                await event_handler.failed(error="Predictor returned unexpected output")
                 break
 
             output_type = event
@@ -380,21 +379,21 @@ async def _predict(
                 event_handler.set_output([])
         elif isinstance(event, PredictionOutput):
             if output_type is None:
-                event_handler.failed(error="Predictor returned unexpected output")
+                await event_handler.failed(error="Predictor returned unexpected output")
                 break
 
             if output_type.multi:
-                event_handler.append_output(event.payload)
+                await event_handler.append_output(event.payload)
             else:
                 event_handler.set_output(event.payload)
 
         elif isinstance(event, Done):
             if event.canceled:
-                event_handler.canceled()
+                await event_handler.canceled()
             elif event.error:
-                event_handler.failed(error=str(event.error_detail))
+                await event_handler.failed(error=str(event.error_detail))
             else:
-                event_handler.succeeded()
+                await event_handler.succeeded()
 
         else:
             log.warn("received unexpected event from worker", data=event)
