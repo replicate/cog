@@ -1,4 +1,6 @@
 import argparse
+import asyncio
+import functools
 import logging
 import os
 import signal
@@ -79,9 +81,20 @@ def create_app(
         input_type=InputType, output_type=OutputType
     )
 
+    http_semaphore = asyncio.Semaphore(threads)
+
+    def limited(f: Callable) -> Callable:
+        @functools.wraps(f)
+        async def wrapped(*args: Any, **kwargs: Any) -> Any:
+            async with http_semaphore:
+                return await f(*args, **kwargs)
+
+        return wrapped
+
     @app.on_event("startup")
     def startup() -> None:
         # https://github.com/tiangolo/fastapi/issues/4221
+        # potentially no longer necessary?
         RunVar("_default_thread_limiter").set(CapacityLimiter(threads))  # type: ignore
 
         app.state.setup_result = runner.setup()
@@ -112,6 +125,7 @@ def create_app(
             }
         )
 
+    @limited
     @app.post(
         "/predictions",
         response_model=PredictionResponse,
@@ -131,6 +145,7 @@ def create_app(
 
         return _predict(request=request, respond_async=respond_async)
 
+    @limited
     @app.put(
         "/predictions/{prediction_id}",
         response_model=PredictionResponse,
