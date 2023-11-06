@@ -1,3 +1,4 @@
+import asyncio
 import os
 import threading
 from datetime import datetime
@@ -75,7 +76,8 @@ async def test_prediction_runner_called_while_busy(runner):
 
     assert runner.is_busy()
     with pytest.raises(RunnerBusyError):
-        await runner.predict(request)[1]
+        _, task = runner.predict(request)
+        await task
 
     # Await to ensure that the first prediction is scheduled before we
     # attempt to shut down the runner.
@@ -90,7 +92,7 @@ async def test_prediction_runner_called_while_busy_idempotent(runner):
     runner.predict(request)
     _, async_result = runner.predict(request)
 
-    response = await async_result
+    response = await asyncio.wait_for(async_result, timeout=1)
     assert response.id == "abcd1234"
     assert response.output == "done in 0.1 seconds"
     assert response.status == "succeeded"

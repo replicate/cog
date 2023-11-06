@@ -203,7 +203,8 @@ def create_app(
             return JSONResponse(jsonable_encoder(initial_response), status_code=202)
 
         try:
-            response = PredictionResponse(**(await async_result).dict())
+            prediction = await async_result
+            response = PredictionResponse(**prediction.dict())
         except ValidationError as e:
             _log_invalid_output(e)
             raise HTTPException(status_code=500, detail=str(e)) from e
@@ -246,7 +247,8 @@ def create_app(
         if not app.state.setup_result.done():
             return
 
-        result = await app.state.setup_result
+        # this can raise CancelledError
+        result = app.state.setup_result.result()
 
         if result["status"] == schema.Status.SUCCEEDED:
             app.state.health = Health.READY
