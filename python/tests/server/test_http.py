@@ -425,7 +425,6 @@ def test_prediction_idempotent_endpoint_conflict(client, match):
         json={"input": {"sleep": 1}},
         headers={"Prefer": "respond-async"},
     )
-    time.sleep(0.001)
     resp2 = client.put(
         "/predictions/5678efgh",
         json={"input": {"sleep": 1}},
@@ -493,11 +492,11 @@ def test_prediction_cancel(client):
     )
     assert resp.status_code == 202
 
-    resp = client.post("/predictions/123/cancel")
-    assert resp.status_code == 200
-
     resp = client.post("/predictions/456/cancel")
     assert resp.status_code == 404
+
+    resp = client.post("/predictions/123/cancel")
+    assert resp.status_code == 200
 
 
 @uses_predictor_with_client_options(

@@ -129,8 +129,9 @@ class PredictionRunner:
         return False
 
     def shutdown(self) -> None:
+        if self._result:
+            self._result.cancel()
         self._worker.terminate()
-        # TODO: cancel setup or predict task
 
     def cancel(self, prediction_id: Optional[str] = None) -> None:
         if not self.is_busy():
@@ -280,6 +281,7 @@ async def setup(*, worker: Worker) -> Dict[str, Any]:
     try:
         # will be async
         for event in worker.setup():
+            await asyncio.sleep(0)
             if isinstance(event, Log):
                 logs.append(event.message)
             elif isinstance(event, Done):
