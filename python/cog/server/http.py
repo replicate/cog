@@ -13,8 +13,6 @@ from typing import Any, Callable, Dict, Optional, Union
 
 import structlog
 import uvicorn
-from anyio import CapacityLimiter
-from anyio.lowlevel import RunVar
 from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -93,10 +91,6 @@ def create_app(
 
     @app.on_event("startup")
     def startup() -> None:
-        # https://github.com/tiangolo/fastapi/issues/4221
-        # potentially no longer necessary?
-        RunVar("_default_thread_limiter").set(CapacityLimiter(threads))  # type: ignore
-
         app.state.setup_result = runner.setup()
 
     @app.on_event("shutdown")
