@@ -38,7 +38,7 @@ def webhook_caller_filtered(
 ) -> Callable:
     upstream_caller = webhook_caller(webhook)
 
-    def caller(response: Any, event: WebhookEvent) -> None:
+    async def caller(response: Any, event: WebhookEvent) -> None:
         if event in webhook_events_filter:
             upstream_caller(response)
 

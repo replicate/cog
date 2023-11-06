@@ -35,6 +35,7 @@ optional-dependencies = { "dev" = [
   'numpy; python_version >= "3.8"',
   "pillow",
   "pytest",
+  "pytest-asyncio",
   "pytest-httpserver",
   "pytest-rerunfailures",
   "pytest-xdist",
