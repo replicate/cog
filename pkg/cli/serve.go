@@ -3,6 +3,7 @@ package cli
 import (
 	"embed"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"tailscale.com/tsnet"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
@@ -19,6 +21,8 @@ import (
 
 //go:embed form/*
 var content embed.FS
+
+var tailscale string
 
 func newServeCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -38,6 +42,7 @@ func newServeCommand() *cobra.Command {
 	// This is called `publish` for consistency with `docker run`
 	cmd.Flags().StringArrayVarP(&runPorts, "publish", "p", []string{"5000"}, "Publish a container's port to the host, e.g. -p 8000")
 	cmd.Flags().StringArrayVarP(&envFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
+	cmd.Flags().StringVarP(&tailscale, "tailscale", "t", "", "Use Tailscale name expose funnel...")
 
 	flags.SetInterspersed(false)
 
@@ -116,7 +121,24 @@ func serve(cmd *cobra.Command, args []string) error {
 	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
 
 	go func() {
-		if err := proxy(8080, "http://localhost:5000"); err != nil {
+		handler, err := buildHandler("http://localhost:5000")
+		if err != nil {
+			return
+		}
+
+		if tailscale != "" {
+			s := &tsnet.Server{Hostname: tailscale}
+			defer s.Close()
+
+			ln, err := s.ListenFunnel("tcp", ":443") // does TLS
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer ln.Close()
+
+			log.Fatal(http.Serve(ln, handler))
+		}
+		if err := proxy(8080, handler); err != nil {
 			console.Error(err.Error())
 		}
 	}()
@@ -134,23 +156,29 @@ func serve(cmd *cobra.Command, args []string) error {
 	return err
 }
 
-func proxy(listenPort int, targetHost string) error {
+func proxy(listenPort int, handler http.Handler) error {
+	http.Handle("/", handler)
+	return http.ListenAndServe(":"+strconv.Itoa(listenPort), nil)
+}
+
+func buildHandler(targetHost string) (http.Handler, error) {
 	targetURL, err := url.Parse(targetHost)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Print("Request: ")
+		fmt.Print("Request: ")
+		fmt.Print("Request: ")
+		fmt.Print("Request: ")
+		fmt.Println(r.URL.Path)
 		if strings.HasPrefix(r.URL.Path, "/form") {
-			// Serve from embedded content
 			http.FileServer(http.FS(content)).ServeHTTP(w, r)
 		} else {
-			// Proxy the request
 			proxy.ServeHTTP(w, r)
 		}
-	})
-	http.Handle("/", handler)
-	return http.ListenAndServe(":"+strconv.Itoa(listenPort), nil)
+	}), nil
 }
