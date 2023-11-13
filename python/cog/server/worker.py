@@ -11,7 +11,13 @@ from multiprocessing.connection import Connection
 from typing import Any, Dict, Iterable, Optional, TextIO, Union
 
 from ..json import make_encodeable
-from ..predictor import BasePredictor, get_predict, load_predictor_from_ref, run_setup
+from ..predictor import (
+    BasePredictor,
+    get_predict,
+    load_predictor_from_ref,
+    run_setup,
+    run_setup_async,
+)
 from .eventtypes import (
     Done,
     Heartbeat,
@@ -181,9 +187,14 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         done = Done()
         try:
             self._predictor = load_predictor_from_ref(self._predictor_ref)
+            if is_async_predictor(self._predictor):
+                self.loop = get_loop()
             # Could be a function or a class
             if hasattr(self._predictor, "setup"):
-                run_setup(self._predictor)
+                if inspect.iscoroutinefunction(self._predictor.setup):
+                    self.loop.run_until_complete(run_setup_async(self._predictor))
+                else:
+                    run_setup(self._predictor)
         except Exception as e:
             traceback.print_exc()
             done.error = True
@@ -255,3 +266,17 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             original_stream.write(data)
             original_stream.flush()
         self._events.send(Log(data, source=stream_name))
+
+
+def get_loop() -> asyncio.AbstractEventLoop:
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.new_event_loop()
+
+
+def is_async_predictor(predictor: BasePredictor) -> bool:
+    predict = get_predict(predictor)
+    if inspect.iscoroutinefunction(predict) or inspect.isasyncgenfunction(predict):
+        return True
+    return inspect.iscoroutinefunction(getattr(predictor, "setup", None))
