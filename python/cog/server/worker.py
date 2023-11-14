@@ -1,5 +1,3 @@
-import asyncio
-import inspect
 import multiprocessing
 import os
 import signal
@@ -126,8 +124,9 @@ class Worker:
         if done:
             if done.error and raise_on_error:
                 raise FatalWorkerException(raise_on_error + ": " + done.error_detail)
-            self._state = WorkerState.READY
-            self._allow_cancel = False
+            else:
+                self._state = WorkerState.READY
+                self._allow_cancel = False
 
         # If we dropped off the end off the end of the loop, check if it's
         # because the child process died.
@@ -173,7 +172,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._stream_redirector.start()
 
         self._setup()
-        asyncio.run(self._loop())
+        self._loop()
+
         self._stream_redirector.shutdown()
 
     def _setup(self) -> None:
@@ -198,17 +198,17 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             self._stream_redirector.drain()
             self._events.send(done)
 
-    async def _loop(self) -> None:
+    def _loop(self) -> None:
         while True:
             ev = self._events.recv()
             if isinstance(ev, Shutdown):
                 break
-            if isinstance(ev, PredictionInput):
-                await self._predict(ev.payload)
+            elif isinstance(ev, PredictionInput):
+                self._predict(ev.payload)
             else:
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
 
-    async def _predict(self, payload: Dict[str, Any]) -> None:
+    def _predict(self, payload: Dict[str, Any]) -> None:
         assert self._predictor
         done = Done()
         self._cancelable = True
@@ -217,18 +217,10 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             result = predict(**payload)
 
             if result:
-                if inspect.isasyncgen(result):
-                    self._events.send(PredictionOutputType(multi=True))
-                    async for r in result:
-                        self._events.send(PredictionOutput(payload=make_encodeable(r)))
-                elif inspect.isgenerator(result):
+                if isinstance(result, types.GeneratorType):
                     self._events.send(PredictionOutputType(multi=True))
                     for r in result:
                         self._events.send(PredictionOutput(payload=make_encodeable(r)))
-                elif inspect.isawaitable(result):
-                    result = await result
-                    self._events.send(PredictionOutputType(multi=False))
-                    self._events.send(PredictionOutput(payload=make_encodeable(result)))
                 else:
                     self._events.send(PredictionOutputType(multi=False))
                     self._events.send(PredictionOutput(payload=make_encodeable(result)))
