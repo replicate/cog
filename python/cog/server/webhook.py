@@ -32,6 +32,11 @@ def _get_version() -> str:
 _user_agent = f"cog-worker/{_get_version()}"
 _response_interval = float(os.environ.get("COG_THROTTLE_RESPONSE_INTERVAL", 0.5))
 
+# HACK: signal that we should skip the start webhook when the response interval
+# is tuned below 100ms. This should help us get output sooner for models that
+# are latency sensitive.
+SKIP_START_EVENT = _response_interval < 0.1
+
 
 def webhook_caller_filtered(
     webhook: str, webhook_events_filter: Set[WebhookEvent]
