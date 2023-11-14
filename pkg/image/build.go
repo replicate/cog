@@ -89,10 +89,9 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}
 	}
 
-	console.Info("Validating model schema...")
-
 	var schemaJSON []byte
 	if schemaFile != "" {
+		console.Infof("Validating model schema from %s...", schemaFile)
 		data, err := os.ReadFile(schemaFile)
 		if err != nil {
 			return fmt.Errorf("Failed to read schema file: %w", err)
@@ -100,6 +99,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 
 		schemaJSON = data
 	} else {
+		console.Info("Validating model schema...")
 		schema, err := GenerateOpenAPISchema(imageName, cfg.Build.GPU)
 		if err != nil {
 			return fmt.Errorf("Failed to get type signature: %w", err)
