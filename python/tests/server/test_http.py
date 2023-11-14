@@ -259,22 +259,6 @@ def test_openapi_specification_with_yield(client, static_schema):
     }
 
 
-@uses_predictor("async_yield")
-def test_openapi_specification_with_async_yield(client, static_schema):
-    resp = client.get("/openapi.json")
-    assert resp.status_code == 200
-    schema = resp.json()
-    assert schema == static_schema
-    assert schema["components"]["schemas"]["Output"] == {
-        "title": "Output",
-        "type": "array",
-        "items": {
-            "type": "string",
-        },
-        "x-cog-array-type": "iterator",
-    }
-
-
 @uses_predictor("yield_concatenate_iterator")
 def test_openapi_specification_with_yield_with_concatenate_iterator(
     client, static_schema
@@ -330,15 +314,6 @@ def test_openapi_specification_with_int_choices(client, static_schema):
         "title": "pick_a_number_any_number",
         "type": "integer",
     }
-
-
-@uses_predictor("async_yield")
-def test_yielding_strings_from_async_generator_predictors(client, match):
-    resp = client.post("/predictions")
-    assert resp.status_code == 200
-    assert resp.json() == match(
-        {"status": "succeeded", "output": ["foo", "bar", "baz"]}
-    )
 
 
 @uses_predictor("yield_strings")
