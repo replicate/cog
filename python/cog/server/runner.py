@@ -16,7 +16,7 @@ from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
 from .probes import ProbeHelper
-from .webhook import webhook_caller_filtered
+from .webhook import SKIP_START_EVENT, webhook_caller_filtered
 from .worker import Worker
 
 log = structlog.get_logger("cog.server.runner")
@@ -210,7 +210,11 @@ class PredictionEventHandler:
         self._webhook_sender = webhook_sender
         self._file_uploader = file_uploader
 
-        self._send_webhook(schema.WebhookEvent.START)
+        # HACK: don't send an initial webhook if we're trying to optimize for
+        # latency (this guarantees that the first output webhook won't be
+        # throttled.)
+        if not SKIP_START_EVENT:
+            self._send_webhook(schema.WebhookEvent.START)
 
     @property
     def response(self) -> schema.PredictionResponse:
