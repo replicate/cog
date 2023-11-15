@@ -3,6 +3,7 @@ package cli
 import (
 	"embed"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"tailscale.com/tsnet"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
@@ -19,6 +21,9 @@ import (
 
 //go:embed form/*
 var content embed.FS
+
+var tailscale string
+var proxyPort int
 
 func newServeCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -38,6 +43,7 @@ func newServeCommand() *cobra.Command {
 	// This is called `publish` for consistency with `docker run`
 	cmd.Flags().StringArrayVarP(&runPorts, "publish", "p", []string{"5000"}, "Publish a container's port to the host, e.g. -p 8000")
 	cmd.Flags().StringArrayVarP(&envFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
+	cmd.Flags().StringVarP(&tailscale, "tailscale", "t", "", "Use Tailscale name expose funnel...")
 
 	flags.SetInterspersed(false)
 
@@ -109,18 +115,39 @@ func serve(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		runOptions.Ports = append(runOptions.Ports, docker.Port{HostPort: port, ContainerPort: port})
+		runOptions.Ports = append(runOptions.Ports, docker.Port{HostPort: port, ContainerPort: 5000})
 	}
 
 	console.Info("")
 	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
 
 	go func() {
-		if err := proxy(8080, "http://localhost:5000"); err != nil {
+		handler, err := buildHandler(fmt.Sprintf("http://localhost:%s", runPorts[0]))
+		if err != nil {
+			return
+		}
+		fmt.Println("Proxy to listen on port", 8080)
+
+		if tailscale != "" {
+			s := &tsnet.Server{Hostname: tailscale}
+			defer s.Close()
+
+			ln, err := s.ListenFunnel("tcp", ":443") // does TLS
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer ln.Close()
+
+			log.Fatal(http.Serve(ln, handler))
+		}
+
+		err = proxy(8080, handler)
+		if err != nil {
 			console.Error(err.Error())
 		}
 	}()
 
+	fmt.Println(runOptions)
 	err := docker.Run(runOptions)
 	// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
 	// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
@@ -134,23 +161,30 @@ func serve(cmd *cobra.Command, args []string) error {
 	return err
 }
 
-func proxy(listenPort int, targetHost string) error {
+func proxy(listenPort int, handler http.Handler) error {
+	fmt.Println("Proxy is listening on port", listenPort)
+	http.Handle("/", handler)
+	return http.ListenAndServe(":"+strconv.Itoa(listenPort), nil)
+}
+
+func buildHandler(targetHost string) (http.Handler, error) {
 	targetURL, err := url.Parse(targetHost)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Print("Request: ")
+		fmt.Print("Request: ")
+		fmt.Print("Request: ")
+		fmt.Print("Request: ")
+		fmt.Println(r.URL.Path)
 		if strings.HasPrefix(r.URL.Path, "/form") {
-			// Serve from embedded content
 			http.FileServer(http.FS(content)).ServeHTTP(w, r)
 		} else {
-			// Proxy the request
 			proxy.ServeHTTP(w, r)
 		}
-	})
-	http.Handle("/", handler)
-	return http.ListenAndServe(":"+strconv.Itoa(listenPort), nil)
+	}), nil
 }
