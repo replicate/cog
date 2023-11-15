@@ -209,6 +209,7 @@ Each parameter of the `predict()` method must be annotated with a type. The meth
 - `int`: an integer
 - `float`: a floating point number
 - `bool`: a boolean
+- `None`: can be used in optional arguments
 - [`cog.File`](#file): a file-like object representing a file
 - [`cog.Path`](#path): a path to a file on disk
 
