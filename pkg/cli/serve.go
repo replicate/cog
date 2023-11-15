@@ -23,6 +23,7 @@ import (
 var content embed.FS
 
 var tailscale string
+var proxyPort int
 
 func newServeCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -121,10 +122,11 @@ func serve(cmd *cobra.Command, args []string) error {
 	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
 
 	go func() {
-		handler, err := buildHandler(fmt.Sprintf("http://localhost:%s", runPorts))
+		handler, err := buildHandler(fmt.Sprintf("http://localhost:%s", runPorts[0]))
 		if err != nil {
 			return
 		}
+		fmt.Println("Proxy to listen on port", 8080)
 
 		if tailscale != "" {
 			s := &tsnet.Server{Hostname: tailscale}
@@ -138,11 +140,14 @@ func serve(cmd *cobra.Command, args []string) error {
 
 			log.Fatal(http.Serve(ln, handler))
 		}
-		if err := proxy(8080, handler); err != nil {
+
+		err = proxy(8080, handler)
+		if err != nil {
 			console.Error(err.Error())
 		}
 	}()
 
+	fmt.Println(runOptions)
 	err := docker.Run(runOptions)
 	// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
 	// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
@@ -157,6 +162,7 @@ func serve(cmd *cobra.Command, args []string) error {
 }
 
 func proxy(listenPort int, handler http.Handler) error {
+	fmt.Println("Proxy is listening on port", listenPort)
 	http.Handle("/", handler)
 	return http.ListenAndServe(":"+strconv.Itoa(listenPort), nil)
 }
