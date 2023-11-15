@@ -80,7 +80,7 @@ async def run_setup_async(predictor: BasePredictor) -> None:
         return await maybe_coro
 
 
-def get_weights_argument(predictor: BasePredictor) -> Union[io.IOBase, CogPath, None]:
+def get_weights_argument(predictor: BasePredictor) -> Union[CogFile, CogPath, None]:
     # by the time we get here we assume predictor has a setup method
     weights_type = get_weights_type(predictor.setup)
     if weights_type is None:
@@ -112,7 +112,7 @@ def get_weights_argument(predictor: BasePredictor) -> Union[io.IOBase, CogPath, 
     return None
 
 
-def get_weights_type(setup_function: Callable) -> Optional[Any]:
+def get_weights_type(setup_function: Callable[[Any], Optional[Awaitable[None]]]) -> Optional[Any]:
     signature = inspect.signature(setup_function)
     if "weights" not in signature.parameters:
         return None

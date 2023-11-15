@@ -35,7 +35,9 @@ class RunnerBusyError(Exception):
 class UnknownPredictionError(Exception):
     pass
 
+
 PredictionTask: "typing.TypeAlias" = "Task[schema.PredictionResponse]"
+
 
 class PredictionRunner:
     def __init__(
@@ -318,7 +320,7 @@ async def setup(*, worker: Worker) -> schema.PredictionResponse:
         logs="".join(logs),
         error=None,
         metrics=None,
-        status=status
+        status=status,
     )
 
 
@@ -405,7 +407,7 @@ async def _predict(
             else:
                 event_handler.set_output(event.payload)
 
-        elif isinstance(event, Done): # pyright: ignore reportUnnecessaryIsinstance
+        elif isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
             if event.canceled:
                 event_handler.canceled()
             elif event.error:
@@ -413,7 +415,7 @@ async def _predict(
             else:
                 event_handler.succeeded()
 
-        else: # shouldn't happen, exhausted the type
+        else:  # shouldn't happen, exhausted the type
             log.warn("received unexpected event from worker", data=event)
 
     return event_handler.response
