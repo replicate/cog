@@ -121,7 +121,7 @@ func serve(cmd *cobra.Command, args []string) error {
 	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
 
 	go func() {
-		handler, err := buildHandler("http://localhost:5000")
+		handler, err := buildHandler(fmt.Sprintf("http://localhost:%s", runPorts))
 		if err != nil {
 			return
 		}
