@@ -97,7 +97,11 @@ class Worker:
             self._child.join()
 
     def cancel(self) -> None:
-        if self._allow_cancel and self._child.is_alive() and self._child.pid is not None:
+        if (
+            self._allow_cancel
+            and self._child.is_alive()
+            and self._child.pid is not None
+        ):
             os.kill(self._child.pid, signal.SIGUSR1)
             self._allow_cancel = False
 
