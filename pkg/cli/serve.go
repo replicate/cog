@@ -115,7 +115,7 @@ func serve(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		runOptions.Ports = append(runOptions.Ports, docker.Port{HostPort: port, ContainerPort: port})
+		runOptions.Ports = append(runOptions.Ports, docker.Port{HostPort: port, ContainerPort: 5000})
 	}
 
 	console.Info("")
