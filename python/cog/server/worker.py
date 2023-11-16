@@ -68,13 +68,13 @@ class Worker:
 
     def predict(
         self, payload: Dict[str, Any], poll: Optional[float] = None
-    ) -> Iterator[_PublicEventType]:
+    ) -> None: #Iterator[_PublicEventType]:
         self._assert_state(WorkerState.READY)
         self._state = WorkerState.PROCESSING
         self._allow_cancel = True
         self._events.send(PredictionInput(payload=payload))
 
-        return self._wait(poll=poll)
+        # return self._wait(poll=poll)
 
     def shutdown(self) -> None:
         if self._state == WorkerState.DEFUNCT:

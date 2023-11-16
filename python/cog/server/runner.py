@@ -55,6 +55,7 @@ class PredictionRunner:
 
         self._shutdown_event = shutdown_event
         self._upload_url = upload_url
+        self.prediction_handlers: dict[str, PredictionEventHandler] = {}
 
     def make_error_handler(self, activity: str) -> Callable[[PredictionTask], None]:
         def handle_error(task: PredictionTask) -> None:
@@ -104,6 +105,7 @@ class PredictionRunner:
         self._should_cancel.clear()
         upload_url = self._upload_url if upload else None
         event_handler = create_event_handler(prediction, upload_url=upload_url)
+        self.prediction_handlers[prediction.id] = event_handler
 
         def handle_cleanup(_: PredictionTask) -> None:
             input = cast(Any, prediction.input)
@@ -111,7 +113,7 @@ class PredictionRunner:
                 input.cleanup()
 
         self._response = event_handler.response
-        coro = predict(
+        coro = self._predict(
             worker=self._worker,
             request=prediction,
             event_handler=event_handler,
@@ -146,6 +148,101 @@ class PredictionRunner:
         if prediction_id is not None and prediction_id != self._response.id:
             raise UnknownPredictionError()
         self._should_cancel.set()
+
+    async def _predict(
+        self,
+        worker: Worker,
+        request: schema.PredictionRequest,
+        event_handler: PredictionEventHandler,
+        should_cancel: asyncio.Event,
+    ) -> schema.PredictionResponse:
+        # Set up logger context within prediction thread.
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(prediction_id=request.id)
+
+        try:
+            return await self.__predict(
+                worker=worker,
+                request=request,
+                event_handler=event_handler,
+                should_cancel=should_cancel,
+            )
+        except Exception as e:
+            tb = traceback.format_exc()
+            event_handler.append_logs(tb)
+            event_handler.failed(error=str(e))
+            raise
+
+    async def __predict(
+        self,
+        worker: Worker,
+        request: schema.PredictionRequest,
+        event_handler: PredictionEventHandler,
+        should_cancel: asyncio.Event,
+    ) -> schema.PredictionResponse:
+        initial_prediction = request.dict()
+
+        output_type = None
+        input_dict = initial_prediction["input"]
+
+        for k, v in input_dict.items():
+            if isinstance(v, types.URLPath):
+                try:
+                    input_dict[k] = v.convert()
+                except requests.exceptions.RequestException as e:
+                    tb = traceback.format_exc()
+                    event_handler.append_logs(tb)
+                    event_handler.failed(error=str(e))
+                    log.warn("failed to download url path from input", exc_info=True)
+                    return event_handler.response
+        # will be async
+        for event in worker.predict(input_dict, poll=0.1):
+            await asyncio.sleep(0)
+            if should_cancel.is_set():
+                worker.cancel()
+                should_cancel.clear()
+
+            if isinstance(event, Heartbeat):
+                # Heartbeat events exist solely to ensure that we have a
+                # regular opportunity to check for cancelation and
+                # timeouts.
+                #
+                # We don't need to do anything with them.
+                pass
+
+            elif isinstance(event, Log):
+                event_handler.append_logs(event.message)
+
+            elif isinstance(event, PredictionOutputType):
+                if output_type is not None:
+                    event_handler.failed(error="Predictor returned unexpected output")
+                    break
+
+                output_type = event
+                if output_type.multi:
+                    event_handler.set_output([])
+            elif isinstance(event, PredictionOutput):
+                if output_type is None:
+                    event_handler.failed(error="Predictor returned unexpected output")
+                    break
+
+                if output_type.multi:
+                    event_handler.append_output(event.payload)
+                else:
+                    event_handler.set_output(event.payload)
+
+            elif isinstance(event, Done):
+                if event.canceled:
+                    event_handler.canceled()
+                elif event.error:
+                    event_handler.failed(error=str(event.error_detail))
+                else:
+                    event_handler.succeeded()
+
+            else:
+                log.warn("received unexpected event from worker", data=event)
+
+        return event_handler.response
 
 
 def create_event_handler(
@@ -322,103 +419,6 @@ async def setup(*, worker: Worker) -> schema.PredictionResponse:
         metrics=None,
         status=status,
     )
-
-
-async def predict(
-    *,
-    worker: Worker,
-    request: schema.PredictionRequest,
-    event_handler: PredictionEventHandler,
-    should_cancel: asyncio.Event,
-) -> schema.PredictionResponse:
-    # Set up logger context within prediction thread.
-    structlog.contextvars.clear_contextvars()
-    structlog.contextvars.bind_contextvars(prediction_id=request.id)
-
-    try:
-        return await _predict(
-            worker=worker,
-            request=request,
-            event_handler=event_handler,
-            should_cancel=should_cancel,
-        )
-    except Exception as e:
-        tb = traceback.format_exc()
-        event_handler.append_logs(tb)
-        event_handler.failed(error=str(e))
-        raise
-
-
-async def _predict(
-    *,
-    worker: Worker,
-    request: schema.PredictionRequest,
-    event_handler: PredictionEventHandler,
-    should_cancel: asyncio.Event,
-) -> schema.PredictionResponse:
-    initial_prediction = request.dict()
-
-    output_type = None
-    input_dict = initial_prediction["input"]
-
-    for k, v in input_dict.items():
-        if isinstance(v, types.URLPath):
-            try:
-                input_dict[k] = v.convert()
-            except requests.exceptions.RequestException as e:
-                tb = traceback.format_exc()
-                event_handler.append_logs(tb)
-                event_handler.failed(error=str(e))
-                log.warn("failed to download url path from input", exc_info=True)
-                return event_handler.response
-    # will be async
-    for event in worker.predict(input_dict, poll=0.1):
-        await asyncio.sleep(0)
-        if should_cancel.is_set():
-            worker.cancel()
-            should_cancel.clear()
-
-        if isinstance(event, Heartbeat):
-            # Heartbeat events exist solely to ensure that we have a
-            # regular opportunity to check for cancelation and
-            # timeouts.
-            #
-            # We don't need to do anything with them.
-            pass
-
-        elif isinstance(event, Log):
-            event_handler.append_logs(event.message)
-
-        elif isinstance(event, PredictionOutputType):
-            if output_type is not None:
-                event_handler.failed(error="Predictor returned unexpected output")
-                break
-
-            output_type = event
-            if output_type.multi:
-                event_handler.set_output([])
-        elif isinstance(event, PredictionOutput):
-            if output_type is None:
-                event_handler.failed(error="Predictor returned unexpected output")
-                break
-
-            if output_type.multi:
-                event_handler.append_output(event.payload)
-            else:
-                event_handler.set_output(event.payload)
-
-        elif isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
-            if event.canceled:
-                event_handler.canceled()
-            elif event.error:
-                event_handler.failed(error=str(event.error_detail))
-            else:
-                event_handler.succeeded()
-
-        else:  # shouldn't happen, exhausted the type
-            log.warn("received unexpected event from worker", data=event)
-
-    return event_handler.response
 
 
 def _make_file_upload_http_client() -> requests.Session:
