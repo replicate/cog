@@ -11,7 +11,7 @@ build:
     - pytorch==2.0.1
   system_packages:
     - "ffmpeg"
-    - "libavcodec-dev"
+    - "git"
 predict: "predict.py:Predictor"
 ```
 
@@ -49,13 +49,23 @@ When you use `cog run` or `cog predict`, Cog will automatically pass the `--gpus
 
 ### `python_packages`
 
-A list of Python packages to install, in the format `package==version`. For example:
+A list of Python packages to install from the PyPi package index, in the format `package==version`. For example:
 
 ```yaml
 build:
   python_packages:
     - pillow==8.3.1
     - tensorflow==2.5.0
+```
+
+To install Git-hosted Python packages, add `git` to the `system_packages` list, then use the `git+https://` syntax to specify the package name. For example:
+
+````yaml
+build:
+  system_packages:
+    - "git"
+  python_packages:
+    - "git+https://github.com/m-bain/whisperX.git"
 ```
 
 ### `python_requirements`
@@ -65,7 +75,7 @@ A pip requirements file specifying the Python packages to install. For example:
 ```yaml
 build:
   python_requirements: requirements.txt
-```
+````
 
 Your `cog.yaml` file can set either `python_packages` or `python_requirements`, but not both. Use `python_requirements` when you need to configure options like `--extra-index-url` or `--trusted-host` to fetch Python package dependencies.
 
