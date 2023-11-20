@@ -88,6 +88,11 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		// Use existing image
 		imageName = args[0]
 
+		// If the image name contains '=', then it's probably a mistake
+		if strings.Contains(imageName, "=") {
+			return fmt.Errorf("Invalid image name '%s'. Did you forget `-i`?", imageName)
+		}
+
 		exists, err := docker.ImageExists(imageName)
 		if err != nil {
 			return fmt.Errorf("Failed to determine if %s exists: %w", imageName, err)
