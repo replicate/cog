@@ -37,6 +37,7 @@ It will build the model in the current directory and train it.`,
 
 	cmd.Flags().StringArrayVarP(&trainInputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringArrayVarP(&envFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
+	cmd.Flags().StringVarP(&outPath, "output", "o", "weights", "Output path")
 
 	return cmd
 }
@@ -45,7 +46,6 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	imageName := ""
 	volumes := []docker.Volume{}
 	gpus := ""
-	weightsPath := "weights"
 
 	// Build image
 
@@ -103,5 +103,5 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	return predictIndividualInputs(predictor, trainInputFlags, weightsPath)
+	return predictIndividualInputs(predictor, trainInputFlags, outPath)
 }
