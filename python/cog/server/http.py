@@ -74,7 +74,8 @@ def create_app(
     InputType = get_input_type(predictor)
     OutputType = get_output_type(predictor)
 
-    PredictionRequest = schema.PredictionRequest.with_types(input_type=InputType)
+    class PredictionRequest(schema.PredictionRequest.with_types(input_type=InputType)):
+        pass
     PredictionResponse = schema.PredictionResponse.with_types(
         input_type=InputType, output_type=OutputType
     )
