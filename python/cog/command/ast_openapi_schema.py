@@ -310,7 +310,7 @@ def find(obj: ast.AST, name: str) -> ast.AST:
     return next(node for node in ast.walk(obj) if getattr(node, "name", "") == name)
 
 
-def get_value(node: ast.AST) -> "int | float | complex | str | list":
+def get_value(node: ast.AST) -> "int | float | complex | str | list | bytes":
     """Return the value of constant or list of constants"""
     if isinstance(node, ast.Constant):
         return node.value
@@ -355,12 +355,22 @@ def parse_args(tree: ast.AST) -> "list[tuple[ast.arg, ast.expr | types.EllipsisT
     defaults = [...] * (len(args) - len(predict.args.defaults)) + predict.args.defaults
     return list(zip(args, defaults))
 
+def _decode_val(val: "int | float | complex | str | list | bytes") -> "int | float | complex | str | list":
+    if isinstance(val, bytes):
+        return val.decode("utf-8")
+    else:
+        return val
 
 def parse_assignment(assignment: ast.AST) -> "tuple[str | None, dict | None]":
     """Parse an assignment into an OpenAPI object property"""
     if isinstance(assignment, ast.AnnAssign):
         assert isinstance(assignment.target, ast.Name)  # shouldn't be an Attribute
-        default = {"default": get_value(assignment.value)} if assignment.value else {}
+        default = {}
+        if assignment.value:
+            try:
+                default = {"default": _decode_val(get_value(assignment.value))}
+            except UnicodeDecodeError:
+                pass
         return assignment.target.id, {
             "title": assignment.target.id.replace("_", " ").title(),
             "type": OPENAPI_TYPES[get_annotation(assignment.annotation)],
