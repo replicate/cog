@@ -7,7 +7,7 @@ import sys
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
-from types import UnionType
+import types
 from typing import (
     Any,
     Callable,
@@ -224,7 +224,7 @@ def validate_input_type(type: Type, name: str) -> None:
                 f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
             )
     elif type not in ALLOWED_INPUT_TYPES:
-        if get_origin(type) in (Union, List, UnionType, list):
+        if get_origin(type) in (Union, List, list) or (hasattr(types, "UnionType") and get_origin(type) is types.UnionType):
             for t in get_args(type):
                 validate_input_type(t, name)
         else:
