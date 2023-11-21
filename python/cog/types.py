@@ -4,7 +4,8 @@ import os
 import pathlib
 import shutil
 import tempfile
-import urllib
+import urllib.parse
+import urllib.request
 from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
 
 import requests

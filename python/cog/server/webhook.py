@@ -13,14 +13,12 @@ log = structlog.get_logger(__name__)
 
 
 def _get_version() -> str:
-    use_importlib = True
     try:
-        from importlib.metadata import version
-    except ImportError:
-        use_importlib = False
-
-    try:
-        if use_importlib:
+        try:
+            from importlib.metadata import version
+        except ImportError:
+            pass
+        else:
             return version("cog")
         import pkg_resources
 

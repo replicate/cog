@@ -1,6 +1,8 @@
 import ast
 import json
 import sys
+import types
+import typing
 from pathlib import Path
 
 try:
@@ -320,7 +322,7 @@ def get_value(node: ast.AST) -> "int | float | complex | str | list":
     if isinstance(node, (ast.List, ast.Tuple)):
         return [get_value(e) for e in node.elts]
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
-            return -get_value(node.operand)
+            return -typing.cast(int | float | complex, get_value(node.operand))
     raise ValueError("Unexpected node type", type(node))
 
 
@@ -344,7 +346,7 @@ def get_call_name(call: ast.Call) -> str:
     raise ValueError("Unexpected node type", type(call), ast.unparse(call))
 
 
-def parse_args(tree: ast.AST) -> "list[tuple[ast.arg, ast.expr | Ellipsis]]":
+def parse_args(tree: ast.AST) -> "list[tuple[ast.arg, ast.expr | types.EllipsisType]]":
     """Parse argument, default pairs from a file with a predict function"""
     predict = find(tree, "predict")
     assert isinstance(predict, ast.FunctionDef)
@@ -404,8 +406,8 @@ def resolve_name(node: ast.expr) -> str:
     if isinstance(node, ast.Name):
         return node.id
     if isinstance(node, ast.Index):
-        # depricated, but needed for py3.8
-        return resolve_name(node.value)
+        # deprecated, but needed for py3.8
+        return resolve_name(node.value) # type: ignore
     if isinstance(node, ast.Attribute):
         return node.attr
     if isinstance(node, ast.Subscript):

@@ -15,13 +15,14 @@ from typing import (
     Optional,
     Type,
     Union,
+    cast,
 )
 from unittest.mock import patch
 
 try:
     from typing import get_args, get_origin
 except ImportError:  # Python < 3.8
-    from typing_compat import get_args, get_origin
+    from typing_compat import get_args, get_origin  # type: ignore
 
 import yaml
 from pydantic import BaseModel, Field, create_model
@@ -76,18 +77,20 @@ def run_setup(predictor: BasePredictor) -> None:
     # TODO: Cog{File,Path}.validate(...) methods accept either "real"
     # paths/files or URLs to those things. In future we can probably tidy this
     # up a little bit.
+    # TODO: CogFile/CogPath should have subclasses for each of the subtypes
     if weights_url:
         if weights_type == CogFile:
-            weights = CogFile.validate(weights_url)
+            weights = cast(CogFile, CogFile.validate(weights_url))
         elif weights_type == CogPath:
-            weights = CogPath.validate(weights_url)
+            # TODO: So this can be a url. evil!
+            weights = cast(CogPath, CogPath.validate(weights_url))
         else:
             raise ValueError(
                 f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
             )
     elif os.path.exists(weights_path):
         if weights_type == CogFile:
-            weights = open(weights_path, "rb")
+            weights = cast(CogFile, open(weights_path, "rb"))
         elif weights_type == CogPath:
             weights = CogPath(weights_path)
         else:
@@ -220,7 +223,7 @@ def validate_input_type(type: Type, name: str) -> None:
                 f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
             )
     elif type not in ALLOWED_INPUT_TYPES:
-        if hasattr(type, "__origin__") and (type.__origin__ is Union or type.__origin__ is list):
+        if get_origin(type) in (Union, List):
             for t in get_args(type):
                 validate_input_type(t, name)
         else:
@@ -305,6 +308,7 @@ def get_output_type(predictor: BasePredictor) -> Type[BaseModel]:
     """
     predict = get_predict(predictor)
     signature = inspect.signature(predict)
+    OutputType: Type[BaseModel]
     if signature.return_annotation is inspect.Signature.empty:
         raise TypeError(
             """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
@@ -327,7 +331,7 @@ For example:
     if get_origin(OutputType) is Iterator:
         # Annotated allows us to attach Field annotations to the list, which we use to mark that this is an iterator
         # https://pydantic-docs.helpmanual.io/usage/schema/#typingannotated-fields
-        OutputType = Annotated[List[get_args(OutputType)[0]], Field(**{"x-cog-array-type": "iterator"})]  # type: ignore
+        OutputType: Type[BaseModel] = Annotated[List[get_args(OutputType)[0]], Field(**{"x-cog-array-type": "iterator"})]  # type: ignore
 
     if not hasattr(OutputType, "__name__") or OutputType.__name__ != "Output":
         # Wrap the type in a model called "Output" so it is a consistent name in the OpenAPI schema

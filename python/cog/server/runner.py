@@ -3,7 +3,7 @@ import io
 import traceback
 from asyncio import Task
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple, cast
 
 import requests
 import structlog
@@ -101,8 +101,9 @@ class PredictionRunner:
         event_handler = create_event_handler(prediction, upload_url=upload_url)
 
         def handle_cleanup(_: Task) -> None:
-            if hasattr(prediction.input, "cleanup"):
-                prediction.input.cleanup()
+            input = cast(Any, prediction.input)
+            if hasattr(input, "cleanup"):
+                input.cleanup()
 
         self._response = event_handler.response
         coro = predict(
