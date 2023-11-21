@@ -67,12 +67,12 @@ class Worker:
         return self._wait(raise_on_error="Predictor errored during setup")
 
     def predict(
-        self, payload: Dict[str, Any], poll: Optional[float] = None
+        self, id: str, payload: Dict[str, Any], poll: Optional[float] = None
     ) -> None: #Iterator[_PublicEventType]:
         self._assert_state(WorkerState.READY)
         self._state = WorkerState.PROCESSING
         self._allow_cancel = True
-        self._events.send(PredictionInput(payload=payload))
+        self._events.send(PredictionInput(id=id, payload=payload))
 
         # return self._wait(poll=poll)
 
