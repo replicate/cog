@@ -322,7 +322,7 @@ def get_value(node: ast.AST) -> "int | float | complex | str | list | bytes":
     if isinstance(node, (ast.List, ast.Tuple)):
         return [get_value(e) for e in node.elts]
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
-            return -typing.cast(int | float | complex, get_value(node.operand))
+            return -typing.cast(typing.Union[int, float, complex], get_value(node.operand))
     raise ValueError("Unexpected node type", type(node))
 
 
