@@ -23,6 +23,12 @@ def setup_logging(*, log_level: int = logging.NOTSET) -> None:
     uvicorn and application logs are consistent.
     """
 
+    root = logging.getLogger()
+    # If handlers already exist on the root logger, then setup_logging() has
+    # already been called. This makes setup_logging idempotent.
+    if root.handlers:
+        return
+
     # Switch to human-friendly log output if LOG_FORMAT environment variable is
     # set to "development".
     development_logs = os.environ.get("LOG_FORMAT", "") == "development"
@@ -75,7 +81,6 @@ def setup_logging(*, log_level: int = logging.NOTSET) -> None:
     handler = logging.StreamHandler()
     handler.setFormatter(formatter)
 
-    root = logging.getLogger()
     root.addHandler(handler)
     root.setLevel(log_level)
 
