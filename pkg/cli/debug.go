@@ -15,9 +15,9 @@ var imageName string
 
 func newDebugCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "debug",
-		Short:  "Generate a Dockerfile from " + global.ConfigFilename,
-		RunE:   cmdDockerfile,
+		Use:   "debug",
+		Short: "Generate a Dockerfile from " + global.ConfigFilename,
+		RunE:  cmdDockerfile,
 	}
 
 	addSeparateWeightsFlag(cmd)
