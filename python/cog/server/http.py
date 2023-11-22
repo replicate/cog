@@ -99,7 +99,7 @@ def create_app(
         T = TypeVar("T")
     def limited(f: "Callable[P, Awaitable[T]]") -> "Callable[P, Awaitable[T]]":
         @functools.wraps(f)
-        async def wrapped(*args: P.args, **kwargs: P.kwargs) -> T:
+        async def wrapped(*args: "P.args", **kwargs: "P.kwargs") -> "T":
             async with http_semaphore:
                 return await f(*args, **kwargs)
 
