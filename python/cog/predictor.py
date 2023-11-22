@@ -2,8 +2,10 @@ import enum
 import importlib.util
 import inspect
 import io
+import logging
 import os.path
 import sys
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
@@ -31,6 +33,7 @@ from pydantic.fields import FieldInfo
 from typing_extensions import Annotated
 
 from .errors import ConfigDoesNotExist, PredictorNotSet
+from .logging import setup_logging
 from .types import (
     File as CogFile,
 )
@@ -43,6 +46,11 @@ from .types import (
 )
 
 ALLOWED_INPUT_TYPES = [str, int, float, bool, CogFile, CogPath]
+
+
+log_level = logging.getLevelName(os.environ.get("COG_LOG_LEVEL", "INFO").upper())
+setup_logging(log_level=log_level)
+log = logging.getLogger(__name__)
 
 
 class BasePredictor(ABC):
@@ -61,11 +69,18 @@ class BasePredictor(ABC):
 
 
 def run_setup(predictor: BasePredictor) -> None:
+    def run_setup_log_duration(weights: Optional[Union[CogFile, CogPath]] = None):
+        start_time = time.time()
+        log.debug(f"starting Predictor.setup()")
+        predictor.setup(weights=weights)
+        elapsed_time = time.time() - start_time
+        log.debug(f"predictor.setup() succeeded in {int(elapsed_time)}s")
+
     weights_type = get_weights_type(predictor.setup)
 
     # No weights need to be passed, so just run setup() without any arguments.
     if weights_type is None:
-        predictor.setup()
+        run_setup_log_duration()
         return
 
     weights: Union[io.IOBase, Path, None]
@@ -97,7 +112,7 @@ def run_setup(predictor: BasePredictor) -> None:
     else:
         weights = None
 
-    predictor.setup(weights=weights)
+    run_setup_log_duration(weights=weights)
 
 
 def get_weights_type(setup_function: Callable) -> Optional[Any]:
