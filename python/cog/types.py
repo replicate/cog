@@ -257,7 +257,7 @@ class ConcatenateIterator(Iterator[Item]):
         yield cls.validate
 
     @classmethod
-    def validate(cls, value: Any) -> Iterator:
+    def validate(cls, value: Iterator[Any]) -> Iterator[Any]:
         return value
 
 

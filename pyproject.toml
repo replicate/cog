@@ -67,6 +67,7 @@ reportUnknownLambdaType = "error"
 reportUnneccesaryIsInstance = "warning"
 reportUnneccesaryComparison = "warning"
 reportUnnecessaryContains = "warning"
+reportMissingTypeArgument = "error"
 reportUnusedExpression = "warning"
 
 [tool.setuptools]

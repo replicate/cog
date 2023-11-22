@@ -1,4 +1,5 @@
 import time
+from typing import Any, Dict
 
 from ..schema import Status
 
@@ -8,7 +9,7 @@ class ResponseThrottler:
         self.last_sent_response_time = 0.0
         self.response_interval = response_interval
 
-    def should_send_response(self, response: dict) -> bool:
+    def should_send_response(self, response: Dict[str, Any]) -> bool:
         if Status.is_terminal(response["status"]):
             return True
 

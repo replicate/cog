@@ -9,7 +9,19 @@ import sys
 import textwrap
 import threading
 from enum import Enum, auto, unique
-from typing import Any, Callable, Dict, Optional, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    Optional,
+    TypeVar,
+    Union,
+)
+
+if TYPE_CHECKING:
+    from typing import ParamSpec
 
 import structlog
 import uvicorn
@@ -82,9 +94,12 @@ def create_app(
 
     http_semaphore = asyncio.Semaphore(threads)
 
-    def limited(f: Callable) -> Callable:
+    if TYPE_CHECKING:
+        P = ParamSpec("P")
+        T = TypeVar("T")
+    def limited(f: "Callable[P, Awaitable[T]]") -> "Callable[P, Awaitable[T]]":
         @functools.wraps(f)
-        async def wrapped(*args: Any, **kwargs: Any) -> Any:
+        async def wrapped(*args: P.args, **kwargs: P.kwargs) -> T:
             async with http_semaphore:
                 return await f(*args, **kwargs)
 
@@ -313,7 +328,7 @@ def signal_ignore(signum: Any, frame: Any) -> None:
     log.warn("Got a signal to exit, ignoring it...", signal=signal.Signals(signum).name)
 
 
-def signal_set_event(event: threading.Event) -> Callable:
+def signal_set_event(event: threading.Event) -> Callable[[Any, Any], None]:
     def _signal_set_event(signum: Any, frame: Any) -> None:
         event.set()
 

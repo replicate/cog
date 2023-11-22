@@ -168,7 +168,7 @@ def create_event_handler(
     return event_handler
 
 
-def generate_file_uploader(upload_url: str) -> Callable:
+def generate_file_uploader(upload_url: str) -> Callable[[Any], Any]:
     client = _make_file_upload_http_client()
 
     def file_uploader(output: Any) -> Any:
@@ -184,8 +184,8 @@ class PredictionEventHandler:
     def __init__(
         self,
         p: schema.PredictionResponse,
-        webhook_sender: Optional[Callable] = None,
-        file_uploader: Optional[Callable] = None,
+        webhook_sender: Optional[Callable[[Any, schema.WebhookEvent], None]] = None,
+        file_uploader: Optional[Callable[[Any], Any]] = None,
     ) -> None:
         log.info("starting prediction")
         self.p = p
