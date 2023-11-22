@@ -495,7 +495,8 @@ KEPT_ATTRS = ("description", "default", "ge", "le", "max_length", "min_length", 
 def extract_info(code: str) -> "JSONDict":
     """Parse the schemas from a file with a predict function"""
     tree = ast.parse(code)
-    inputs = {"title": "Input", "type": "object", "properties": {}}
+    properties: "JSONDict" = {}
+    inputs: "JSONDict" = {"title": "Input", "type": "object", "properties": properties}
     required: "list[str]" = []
     schemas: "JSONDict" = {}
     for arg, default in parse_args(tree):
@@ -514,7 +515,7 @@ def extract_info(code: str) -> "JSONDict":
             kws = {}
         else:
             raise ValueError("Unexpected default value", default)
-        input: "JSONDict" = {"x-order": len(inputs["properties"])}
+        input: "JSONDict" = {"x-order": len(properties)}
         # need to handle other types?
         arg_type = OPENAPI_TYPES.get(get_annotation(arg.annotation), "string")
         if get_annotation(arg.annotation) in ("Path", "File"):
@@ -536,13 +537,13 @@ def extract_info(code: str) -> "JSONDict":
         else:
             input["title"] = arg.arg.replace("_", " ").title()
             input["type"] = arg_type
-        inputs["properties"][arg.arg] = input  # type: ignore
+        properties[arg.arg] = input
     if required:
-        inputs["required"] = required
+        inputs["required"] = list(required)
     # List[Path], list[Path], str, Iterator[str], MyOutput, Output
     return_schema, output = parse_return_annotation(tree, "predict")
     schema: "JSONDict" = json.loads(BASE_SCHEMA)
-    components = {
+    components: "JSONDict" = {
         "Input": inputs,
         "Output": output,
         **schemas,
