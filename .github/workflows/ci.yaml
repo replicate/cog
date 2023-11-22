@@ -67,6 +67,24 @@ jobs:
         env:
           HYPOTHESIS_PROFILE: ci
 
+  typecheck-python:
+    name: "Typecheck Python"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - name: Install Python dependencies
+        run: |
+          python -m pip install '.[dev]'
+      - name: Run typechecking
+        run: |
+          python -m pyright
+
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-integration:
     name: "Test integration"
