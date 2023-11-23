@@ -3,7 +3,8 @@ import io
 import traceback
 from asyncio import Task
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Optional, Tuple, cast
+from typing import Any, Callable, Optional, Tuple, cast
+import typing # TypeAlias, py3.10
 
 import requests
 import structlog
@@ -33,6 +34,7 @@ class RunnerBusyError(Exception):
 class UnknownPredictionError(Exception):
     pass
 
+PredictionTask: "typing.TypeAlias" = Task[schema.PredictionResponse]
 
 class PredictionRunner:
     def __init__(
@@ -43,7 +45,7 @@ class PredictionRunner:
         upload_url: Optional[str] = None,
     ) -> None:
         self._response: Optional[schema.PredictionResponse] = None
-        self._result: Optional[Task] = None
+        self._result: "Optional[PredictionTask]" = None
 
         self._worker = Worker(predictor_ref=predictor_ref)
         self._should_cancel = asyncio.Event()
@@ -51,8 +53,8 @@ class PredictionRunner:
         self._shutdown_event = shutdown_event
         self._upload_url = upload_url
 
-    def make_error_handler(self, activity: str) -> Callable:
-        def handle_error(task: Task) -> None:
+    def make_error_handler(self, activity: str) -> Callable[[PredictionTask], None]:
+        def handle_error(task: PredictionTask) -> None:
             exc = task.exception()
             if not exc:
                 return
@@ -68,7 +70,7 @@ class PredictionRunner:
 
         return handle_error
 
-    def setup(self) -> "Task[dict[str, Any]]":
+    def setup(self) -> "Task[schema.PredictionResponse]":
         if self.is_busy():
             raise RunnerBusyError()
         self._result = asyncio.create_task(setup(worker=self._worker))
@@ -100,7 +102,7 @@ class PredictionRunner:
         upload_url = self._upload_url if upload else None
         event_handler = create_event_handler(prediction, upload_url=upload_url)
 
-        def handle_cleanup(_: Task) -> None:
+        def handle_cleanup(_: PredictionTask) -> None:
             input = cast(Any, prediction.input)
             if hasattr(input, "cleanup"):
                 input.cleanup()
@@ -274,7 +276,7 @@ class PredictionEventHandler:
             raise FileUploadError("Got error trying to upload output files") from error
 
 
-async def setup(*, worker: Worker) -> Dict[str, Any]:
+async def setup(*, worker: Worker) -> schema.PredictionResponse:
     logs = []
     status = None
     started_at = datetime.now(tz=timezone.utc)
@@ -304,12 +306,12 @@ async def setup(*, worker: Worker) -> Dict[str, Any]:
         probes = ProbeHelper()
         probes.ready()
 
-    return {
+    return schema.PredictionResponse(**{
         "logs": "".join(logs),
         "status": status,
         "started_at": started_at,
         "completed_at": completed_at,
-    }
+    })
 
 
 async def predict(
