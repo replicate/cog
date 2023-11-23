@@ -310,17 +310,17 @@ def find(obj: ast.AST, name: str) -> ast.AST:
     return next(node for node in ast.walk(obj) if getattr(node, "name", "") == name)
 
 if typing.TYPE_CHECKING:
-    AstVal: "typing.TypeAlias" = int | float | complex | str | list["AstVal"] | bytes | None
-    AstValNoBytes: "typing.TypeAlias" = int | float | str | list["AstValNoBytes"]
-    JSONObject: "typing.TypeAlias" = int | float | str | list["JSONObject"] | "JSONDict" | None
-    JSONDict: "typing.TypeAlias" = dict[str, "JSONObject"]
+    AstVal: "typing.TypeAlias" = "int | float | complex | str | list[AstVal] | bytes | None"
+    AstValNoBytes: "typing.TypeAlias" = "int | float | str | list[AstValNoBytes]"
+    JSONObject: "typing.TypeAlias" = "int | float | str | list[JSONObject] | JSONDict | None"
+    JSONDict: "typing.TypeAlias" = "dict[str, JSONObject]"
 
 
-def toSerializable(val: "AstVal") -> "JSONObject":
+def to_serializable(val: "AstVal") -> "JSONObject":
     if isinstance(val, bytes):
         return val.decode("utf-8")
     elif isinstance(val, list):
-        return [toSerializable(x) for x in val]
+        return [to_serializable(x) for x in val]
     elif isinstance(val, complex):
         msg = "complex inputs are not supported"
         raise ValueError(msg)
@@ -379,7 +379,7 @@ def parse_assignment(assignment: ast.AST) -> "None | tuple[str, JSONObject]":
         default = {}
         if assignment.value:
             try:
-                default = {"default": toSerializable(get_value(assignment.value))}
+                default = {"default": to_serializable(get_value(assignment.value))}
             except UnicodeDecodeError:
                 pass
         return assignment.target.id, {
@@ -389,7 +389,7 @@ def parse_assignment(assignment: ast.AST) -> "None | tuple[str, JSONObject]":
         }
     if isinstance(assignment, ast.Assign):
         if len(assignment.targets) == 1 and isinstance(assignment.targets[0], ast.Name):
-            value = toSerializable(get_value(assignment.value))
+            value = to_serializable(get_value(assignment.value))
             return assignment.targets[0].id, {
                 "title": assignment.targets[0].id.replace("_", " ").title(),
                 "type": OPENAPI_TYPES[type(value).__name__],
@@ -508,9 +508,9 @@ def extract_info(code: str) -> "JSONDict":
                 if kw.arg is None:
                     msg = "unknown argument for Input"
                     raise ValueError(msg)
-                kws[kw.arg] = toSerializable(get_value(kw.value))
+                kws[kw.arg] = to_serializable(get_value(kw.value))
         elif isinstance(default, (ast.Constant, ast.List, ast.Tuple, ast.Str, ast.Num)):
-            kws = {"default": toSerializable(get_value(default))}  # could be None
+            kws = {"default": to_serializable(get_value(default))}  # could be None
         elif default == ...:  # no default
             kws = {}
         else:
