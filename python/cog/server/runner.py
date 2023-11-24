@@ -35,7 +35,7 @@ class RunnerBusyError(Exception):
 class UnknownPredictionError(Exception):
     pass
 
-PredictionTask: "typing.TypeAlias" = Task[schema.PredictionResponse]
+PredictionTask: "typing.TypeAlias" = "Task[schema.PredictionResponse]"
 
 class PredictionRunner:
     def __init__(
