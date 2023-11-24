@@ -1,10 +1,11 @@
 import asyncio
 import io
+import threading
 import traceback
+import typing  # TypeAlias, py3.10
 from asyncio import Task
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional, Tuple, cast
-import typing # TypeAlias, py3.10
 
 import requests
 import structlog
@@ -41,7 +42,7 @@ class PredictionRunner:
         self,
         *,
         predictor_ref: str,
-        shutdown_event: Optional[asyncio.Event],
+        shutdown_event: Optional[threading.Event],
         upload_url: Optional[str] = None,
     ) -> None:
         self._response: Optional[schema.PredictionResponse] = None

@@ -59,7 +59,7 @@ class Health(Enum):
 
 def create_app(
     config: Dict[str, Any],
-    shutdown_event: Optional[asyncio.Event],
+    shutdown_event: Optional[threading.Event],
     threads: int = 1,
     upload_url: Optional[str] = None,
     mode: str = "predict",
@@ -328,7 +328,7 @@ def signal_ignore(signum: Any, frame: Any) -> None:
     log.warn("Got a signal to exit, ignoring it...", signal=signal.Signals(signum).name)
 
 
-def signal_set_event(event: threading.Event | asyncio.Event) -> Callable[[Any, Any], None]:
+def signal_set_event(event: threading.Event) -> Callable[[Any, Any], None]:
     def _signal_set_event(signum: Any, frame: Any) -> None:
         event.set()
 
@@ -384,7 +384,7 @@ if __name__ == "__main__":
         else:
             threads = max(1, len(os.sched_getaffinity(0)))
 
-    shutdown_event = asyncio.Event()
+    shutdown_event = threading.Event()
     app = create_app(
         config=config,
         shutdown_event=shutdown_event,
@@ -416,7 +416,7 @@ if __name__ == "__main__":
     s.start()
 
     try:
-        asyncio.run(shutdown_event.wait())
+        shutdown_event.wait()
     except KeyboardInterrupt:
         pass
 
