@@ -56,6 +56,13 @@ class Health(Enum):
     BUSY = auto()
     SETUP_FAILED = auto()
 
+class State:
+    health: Health
+    setup_result: "Optional[asyncio.Task[schema.PredictionResponse]]"
+    setup_result_payload: Optional[schema.PredictionResponse]
+
+class MyFastAPI(FastAPI):
+    state: State
 
 def create_app(
     config: Dict[str, Any],
@@ -63,8 +70,8 @@ def create_app(
     threads: int = 1,
     upload_url: Optional[str] = None,
     mode: str = "predict",
-) -> FastAPI:
-    app = FastAPI(
+) -> MyFastAPI:
+    app = MyFastAPI(
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
     )
@@ -266,7 +273,7 @@ def create_app(
         # this can raise CancelledError
         result = app.state.setup_result.result()
 
-        if result["status"] == schema.Status.SUCCEEDED:
+        if result.status == schema.Status.SUCCEEDED:
             app.state.health = Health.READY
         else:
             app.state.health = Health.SETUP_FAILED

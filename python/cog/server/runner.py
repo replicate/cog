@@ -307,12 +307,19 @@ async def setup(*, worker: Worker) -> schema.PredictionResponse:
         probes = ProbeHelper()
         probes.ready()
 
-    return schema.PredictionResponse(**{
-        "logs": "".join(logs),
-        "status": status,
-        "started_at": started_at,
-        "completed_at": completed_at,
-    })
+    return schema.PredictionResponse(
+        input={},
+        output=None,
+        id=None,
+        version=None,
+        created_at=None,
+        started_at=started_at,
+        completed_at=completed_at,
+        logs="".join(logs),
+        error=None,
+        metrics=None,
+        status=status
+    )
 
 
 async def predict(

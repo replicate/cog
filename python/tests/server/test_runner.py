@@ -48,10 +48,10 @@ async def test_prediction_runner_setup():
     try:
         result = await runner.setup()
 
-        assert result["status"] == Status.SUCCEEDED
-        assert result["logs"] == ""
-        assert isinstance(result["started_at"], datetime)
-        assert isinstance(result["completed_at"], datetime)
+        assert result.status == Status.SUCCEEDED
+        assert result.logs == ""
+        assert isinstance(result.started_at, datetime)
+        assert isinstance(result.completed_at, datetime)
     finally:
         runner.shutdown()
 
