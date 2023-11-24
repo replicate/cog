@@ -30,7 +30,6 @@ optional-dependencies = { "dev" = [
   "httpx",
   'hypothesis<6.80.0; python_version < "3.8"',
   'hypothesis; python_version >= "3.8"',
-  "mypy",
   'numpy<1.22.0; python_version < "3.8"',
   'numpy; python_version >= "3.8"',
   "pillow",
@@ -48,13 +47,6 @@ dynamic = ["version"]
 
 [tool.setuptools_scm]
 write_to = "python/cog/_version.py"
-
-[tool.mypy]
-plugins = "pydantic.mypy"
-disallow_untyped_defs = true
-# TODO: remove this and bring the codebase inline with the current mypy default
-no_implicit_optional = false
-exclude = ["python/tests/"]
 
 [tool.pyright]
 # TODO: remove this and bring the codebase inline with the current default

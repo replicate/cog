@@ -23,7 +23,8 @@ def upload_file(fh: io.IOBase, output_file_prefix: str = None) -> str:
         b = b.encode("utf-8")
     encoded_body = base64.b64encode(b)
     if getattr(fh, "name", None):
-        # despite doing a getattr check here, mypy complains that io.IOBase has no attribute name
+        # despite doing a getattr check here, pyright complains that io.IOBase has no attribute name
+        # TODO: switch to typing.IO[]?
         mime_type = mimetypes.guess_type(fh.name)[0]  # type: ignore
     else:
         mime_type = "application/octet-stream"
