@@ -397,7 +397,7 @@ async def _predict(
             else:
                 event_handler.set_output(event.payload)
 
-        elif isinstance(event, Done):
+        elif isinstance(event, Done): # pyright: ignore reportUnnecessaryIsinstance
             if event.canceled:
                 event_handler.canceled()
             elif event.error:
@@ -405,7 +405,7 @@ async def _predict(
             else:
                 event_handler.succeeded()
 
-        else:
+        else: # shouldn't happen, exhausted the type
             log.warn("received unexpected event from worker", data=event)
 
     return event_handler.response

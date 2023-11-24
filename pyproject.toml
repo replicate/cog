@@ -57,9 +57,9 @@ include = ["python"]
 exclude = ["python/tests"]
 reportMissingParameterType = "error"
 reportUnknownLambdaType = "error"
-reportUnneccesaryIsInstance = "warning"
-reportUnneccesaryComparison = "warning"
-reportUnnecessaryContains = "warning"
+reportUnnecessaryIsInstance = "warning"
+reportUnnecessaryComparison = "warning"
+reportUnneesssaryContains = "warning"
 reportMissingTypeArgument = "error"
 reportUnusedExpression = "warning"
 
