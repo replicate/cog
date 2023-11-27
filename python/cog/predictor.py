@@ -42,7 +42,7 @@ from .types import (
     Path as CogPath,
 )
 
-ALLOWED_INPUT_TYPES = [str, int, float, bool, CogFile, CogPath]
+ALLOWED_INPUT_TYPES = [str, int, float, bool, CogFile, CogPath, None]
 
 
 class BasePredictor(ABC):
