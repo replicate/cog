@@ -207,26 +207,6 @@ func latestCuDNNForCUDA(cuda string) (string, error) {
 	return cuDNNs[0], nil
 }
 
-func latestTF() TFCompatibility {
-	var latest *TFCompatibility
-	for _, compat := range TFCompatibilityMatrix {
-		compat := compat
-		if latest == nil {
-			latest = &compat
-		} else {
-			greater, err := versionGreater(compat.TF, latest.TF)
-			if err != nil {
-				// should never happen
-				panic(fmt.Sprintf("Invalid tensorflow version: %s", err))
-			}
-			if greater {
-				latest = &compat
-			}
-		}
-	}
-	return *latest
-}
-
 func versionGreater(a string, b string) (bool, error) {
 	// TODO(andreas): use library
 	aVer, err := version.NewVersion(a)
