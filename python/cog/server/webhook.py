@@ -13,14 +13,12 @@ log = structlog.get_logger(__name__)
 
 
 def _get_version() -> str:
-    use_importlib = True
     try:
-        from importlib.metadata import version
-    except ImportError:
-        use_importlib = False
-
-    try:
-        if use_importlib:
+        try:
+            from importlib.metadata import version
+        except ImportError:
+            pass
+        else:
             return version("cog")
         import pkg_resources
 
@@ -39,8 +37,8 @@ SKIP_START_EVENT = _response_interval < 0.1
 
 
 def webhook_caller_filtered(
-    webhook: str, webhook_events_filter: Set[WebhookEvent]
-) -> Callable:
+    webhook: str, webhook_events_filter: Set[WebhookEvent],
+) -> Callable[[Any, WebhookEvent], None]:
     upstream_caller = webhook_caller(webhook)
 
     def caller(response: Any, event: WebhookEvent) -> None:
@@ -50,7 +48,7 @@ def webhook_caller_filtered(
     return caller
 
 
-def webhook_caller(webhook: str) -> Callable:
+def webhook_caller(webhook: str) -> Callable[[Any], None]:
     # TODO: we probably don't need to create new sessions and new throttlers
     # for every prediction.
     throttler = ResponseThrottler(response_interval=_response_interval)

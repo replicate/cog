@@ -4,6 +4,7 @@ import inspect
 import io
 import os.path
 import sys
+import types
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
@@ -15,13 +16,14 @@ from typing import (
     Optional,
     Type,
     Union,
+    cast,
 )
 from unittest.mock import patch
 
 try:
     from typing import get_args, get_origin
 except ImportError:  # Python < 3.8
-    from typing_compat import get_args, get_origin
+    from typing_compat import get_args, get_origin  # type: ignore
 
 import yaml
 from pydantic import BaseModel, Field, create_model
@@ -42,7 +44,7 @@ from .types import (
     Path as CogPath,
 )
 
-ALLOWED_INPUT_TYPES = [str, int, float, bool, CogFile, CogPath]
+ALLOWED_INPUT_TYPES: List[Type[Any]] = [str, int, float, bool, CogFile, CogPath]
 
 
 class BasePredictor(ABC):
@@ -76,18 +78,20 @@ def run_setup(predictor: BasePredictor) -> None:
     # TODO: Cog{File,Path}.validate(...) methods accept either "real"
     # paths/files or URLs to those things. In future we can probably tidy this
     # up a little bit.
+    # TODO: CogFile/CogPath should have subclasses for each of the subtypes
     if weights_url:
         if weights_type == CogFile:
-            weights = CogFile.validate(weights_url)
+            weights = cast(CogFile, CogFile.validate(weights_url))
         elif weights_type == CogPath:
-            weights = CogPath.validate(weights_url)
+            # TODO: So this can be a url. evil!
+            weights = cast(CogPath, CogPath.validate(weights_url))
         else:
             raise ValueError(
                 f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
             )
     elif os.path.exists(weights_path):
         if weights_type == CogFile:
-            weights = open(weights_path, "rb")
+            weights = cast(CogFile, open(weights_path, "rb"))
         elif weights_type == CogPath:
             weights = CogPath(weights_path)
         else:
@@ -100,7 +104,7 @@ def run_setup(predictor: BasePredictor) -> None:
     predictor.setup(weights=weights)
 
 
-def get_weights_type(setup_function: Callable) -> Optional[Any]:
+def get_weights_type(setup_function: Callable[[Any], None]) -> Optional[Any]:
     signature = inspect.signature(setup_function)
     if "weights" not in signature.parameters:
         return None
@@ -114,7 +118,7 @@ def get_weights_type(setup_function: Callable) -> Optional[Any]:
 
 
 def run_prediction(
-    predictor: BasePredictor, inputs: Dict[Any, Any], cleanup_functions: List[Callable]
+    predictor: BasePredictor, inputs: Dict[Any, Any], cleanup_functions: List[Callable[[], None]],
 ) -> Any:
     """
     Run the predictor on the inputs, and append resulting paths
@@ -209,18 +213,18 @@ class BaseInput(BaseModel):
                     pass
 
 
-def get_predict(predictor: Any) -> Callable:
+def get_predict(predictor: Any) -> Callable[..., Any]:
     if hasattr(predictor, "predict"):
         return predictor.predict
     return predictor
 
-def validate_input_type(type: Type, name: str) -> None:
+def validate_input_type(type: Type[Any], name: str) -> None:
     if type is inspect.Signature.empty:
             raise TypeError(
                 f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
             )
     elif type not in ALLOWED_INPUT_TYPES:
-        if hasattr(type, "__origin__") and (type.__origin__ is Union or type.__origin__ is list):
+        if get_origin(type) in (Union, List, list) or (hasattr(types, "UnionType") and get_origin(type) is types.UnionType): # noqa: E721
             for t in get_args(type):
                 validate_input_type(t, name)
         else:
@@ -305,6 +309,7 @@ def get_output_type(predictor: BasePredictor) -> Type[BaseModel]:
     """
     predict = get_predict(predictor)
     signature = inspect.signature(predict)
+    OutputType: Type[BaseModel]
     if signature.return_annotation is inspect.Signature.empty:
         raise TypeError(
             """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
@@ -327,7 +332,7 @@ For example:
     if get_origin(OutputType) is Iterator:
         # Annotated allows us to attach Field annotations to the list, which we use to mark that this is an iterator
         # https://pydantic-docs.helpmanual.io/usage/schema/#typingannotated-fields
-        OutputType = Annotated[List[get_args(OutputType)[0]], Field(**{"x-cog-array-type": "iterator"})]  # type: ignore
+        OutputType: Type[BaseModel] = Annotated[List[get_args(OutputType)[0]], Field(**{"x-cog-array-type": "iterator"})]  # type: ignore
 
     if not hasattr(OutputType, "__name__") or OutputType.__name__ != "Output":
         # Wrap the type in a model called "Output" so it is a consistent name in the OpenAPI schema
@@ -339,7 +344,7 @@ For example:
     return OutputType
 
 
-def human_readable_type_name(t: Type) -> str:
+def human_readable_type_name(t: Type[Any]) -> str:
     """
     Generates a useful-for-humans label for a type. For builtin types, it's just the class name (eg "str" or "int"). For other types, it includes the module (eg "pathlib.Path" or "cog.File").
 
@@ -357,5 +362,5 @@ def human_readable_type_name(t: Type) -> str:
         return str(t)
 
 
-def readable_types_list(type_list: List[Type]) -> str:
+def readable_types_list(type_list: List[Type[Any]]) -> str:
     return ", ".join(human_readable_type_name(t) for t in type_list)

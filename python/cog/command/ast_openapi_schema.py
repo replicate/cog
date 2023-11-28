@@ -1,6 +1,8 @@
 import ast
 import json
 import sys
+import types
+import typing
 from pathlib import Path
 
 try:
@@ -307,8 +309,25 @@ def find(obj: ast.AST, name: str) -> ast.AST:
     """Find a particular named node in a tree"""
     return next(node for node in ast.walk(obj) if getattr(node, "name", "") == name)
 
+if typing.TYPE_CHECKING:
+    AstVal: "typing.TypeAlias" = "int | float | complex | str | list[AstVal] | bytes | None"
+    AstValNoBytes: "typing.TypeAlias" = "int | float | str | list[AstValNoBytes]"
+    JSONObject: "typing.TypeAlias" = "int | float | str | list[JSONObject] | JSONDict | None"
+    JSONDict: "typing.TypeAlias" = "dict[str, JSONObject]"
 
-def get_value(node: ast.AST) -> "int | float | complex | str | list":
+
+def to_serializable(val: "AstVal") -> "JSONObject":
+    if isinstance(val, bytes):
+        return val.decode("utf-8")
+    elif isinstance(val, list):
+        return [to_serializable(x) for x in val]
+    elif isinstance(val, complex):
+        msg = "complex inputs are not supported"
+        raise ValueError(msg)
+    else:
+        return val
+
+def get_value(node: ast.AST) -> "AstVal":
     """Return the value of constant or list of constants"""
     if isinstance(node, ast.Constant):
         return node.value
@@ -320,7 +339,7 @@ def get_value(node: ast.AST) -> "int | float | complex | str | list":
     if isinstance(node, (ast.List, ast.Tuple)):
         return [get_value(e) for e in node.elts]
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
-            return -get_value(node.operand)
+            return -typing.cast(typing.Union[int, float, complex], get_value(node.operand))
     raise ValueError("Unexpected node type", type(node))
 
 
@@ -344,7 +363,7 @@ def get_call_name(call: ast.Call) -> str:
     raise ValueError("Unexpected node type", type(call), ast.unparse(call))
 
 
-def parse_args(tree: ast.AST) -> "list[tuple[ast.arg, ast.expr | Ellipsis]]":
+def parse_args(tree: ast.AST) -> "list[tuple[ast.arg, ast.expr | types.EllipsisType]]":
     """Parse argument, default pairs from a file with a predict function"""
     predict = find(tree, "predict")
     assert isinstance(predict, ast.FunctionDef)
@@ -353,12 +372,16 @@ def parse_args(tree: ast.AST) -> "list[tuple[ast.arg, ast.expr | Ellipsis]]":
     defaults = [...] * (len(args) - len(predict.args.defaults)) + predict.args.defaults
     return list(zip(args, defaults))
 
-
-def parse_assignment(assignment: ast.AST) -> "tuple[str | None, dict | None]":
+def parse_assignment(assignment: ast.AST) -> "None | tuple[str, JSONObject]":
     """Parse an assignment into an OpenAPI object property"""
     if isinstance(assignment, ast.AnnAssign):
         assert isinstance(assignment.target, ast.Name)  # shouldn't be an Attribute
-        default = {"default": get_value(assignment.value)} if assignment.value else {}
+        default = {}
+        if assignment.value:
+            try:
+                default = {"default": to_serializable(get_value(assignment.value))}
+            except UnicodeDecodeError:
+                pass
         return assignment.target.id, {
             "title": assignment.target.id.replace("_", " ").title(),
             "type": OPENAPI_TYPES[get_annotation(assignment.annotation)],
@@ -366,21 +389,21 @@ def parse_assignment(assignment: ast.AST) -> "tuple[str | None, dict | None]":
         }
     if isinstance(assignment, ast.Assign):
         if len(assignment.targets) == 1 and isinstance(assignment.targets[0], ast.Name):
-            value = get_value(assignment.value)
+            value = to_serializable(get_value(assignment.value))
             return assignment.targets[0].id, {
                 "title": assignment.targets[0].id.replace("_", " ").title(),
                 "type": OPENAPI_TYPES[type(value).__name__],
                 "default": value,
             }
         raise ValueError("Unexpected assignment", assignment)
-    return None, None
+    return None
 
 
-def parse_class(classdef: ast.AST) -> dict:
+def parse_class(classdef: ast.AST) -> "JSONDict":
     """Parse a class definition into an OpenAPI object"""
     assert isinstance(classdef, ast.ClassDef)
     properties = {
-        key: property for key, property in map(parse_assignment, classdef.body) if key
+        assignment[0]: assignment[1] for assignment in map(parse_assignment, classdef.body) if assignment
     }
     return {
         "title": classdef.name,
@@ -404,8 +427,8 @@ def resolve_name(node: ast.expr) -> str:
     if isinstance(node, ast.Name):
         return node.id
     if isinstance(node, ast.Index):
-        # depricated, but needed for py3.8
-        return resolve_name(node.value)
+        # deprecated, but needed for py3.8
+        return resolve_name(node.value) # type: ignore
     if isinstance(node, ast.Attribute):
         return node.attr
     if isinstance(node, ast.Subscript):
@@ -413,7 +436,7 @@ def resolve_name(node: ast.expr) -> str:
     raise ValueError("Unexpected node type", type(node), ast.unparse(node))
 
 
-def parse_return_annotation(tree: ast.AST, fn: str = "predict") -> "tuple[dict, dict]":
+def parse_return_annotation(tree: ast.AST, fn: str = "predict") -> "tuple[JSONDict, JSONDict]":
     predict = find(tree, fn)
     if not isinstance(predict, ast.FunctionDef):
         raise ValueError("Could not find predict function")
@@ -459,7 +482,7 @@ For example:
         format = {"format": "uri"} if name in ("Path", "File") else {}
         return {}, {"title": "Output", "type": OPENAPI_TYPES.get(name, name), **format}
     # it must be a custom object
-    schema = {name: parse_class(find(tree, name))}
+    schema: "JSONDict" = {name: parse_class(find(tree, name))}
     return schema, {
         "title": "Output",
         "$ref": f"#/components/schemas/{name}",
@@ -469,24 +492,30 @@ For example:
 KEPT_ATTRS = ("description", "default", "ge", "le", "max_length", "min_length", "regex")
 
 
-def extract_info(code: str) -> dict:
+def extract_info(code: str) -> "JSONDict":
     """Parse the schemas from a file with a predict function"""
     tree = ast.parse(code)
-    inputs = {"title": "Input", "type": "object", "properties": {}}
+    properties: "JSONDict" = {}
+    inputs: "JSONDict" = {"title": "Input", "type": "object", "properties": properties}
     required: "list[str]" = []
-    schemas: "dict[str, dict]" = {}
+    schemas: "JSONDict" = {}
     for arg, default in parse_args(tree):
         if arg.arg == "self":
             continue
         if isinstance(default, ast.Call) and get_call_name(default) == "Input":
-            kws = {kw.arg: get_value(kw.value) for kw in default.keywords}
+            kws = {}
+            for kw in default.keywords:
+                if kw.arg is None:
+                    msg = "unknown argument for Input"
+                    raise ValueError(msg)
+                kws[kw.arg] = to_serializable(get_value(kw.value))
         elif isinstance(default, (ast.Constant, ast.List, ast.Tuple, ast.Str, ast.Num)):
-            kws = {"default": get_value(default)}  # could be None
+            kws = {"default": to_serializable(get_value(default))}  # could be None
         elif default == ...:  # no default
             kws = {}
         else:
             raise ValueError("Unexpected default value", default)
-        input: dict = {"x-order": len(inputs["properties"])}
+        input: "JSONDict" = {"x-order": len(properties)}
         # need to handle other types?
         arg_type = OPENAPI_TYPES.get(get_annotation(arg.annotation), "string")
         if get_annotation(arg.annotation) in ("Path", "File"):
@@ -508,23 +537,25 @@ def extract_info(code: str) -> dict:
         else:
             input["title"] = arg.arg.replace("_", " ").title()
             input["type"] = arg_type
-        inputs["properties"][arg.arg] = input  # type: ignore
+        properties[arg.arg] = input
     if required:
-        inputs["required"] = required
+        inputs["required"] = list(required)
     # List[Path], list[Path], str, Iterator[str], MyOutput, Output
     return_schema, output = parse_return_annotation(tree, "predict")
-    schema = json.loads(BASE_SCHEMA)
-    components = {
+    schema: "JSONDict" = json.loads(BASE_SCHEMA)
+    components: "JSONDict" = {
         "Input": inputs,
         "Output": output,
         **schemas,
         **return_schema,
     }
-    schema["components"]["schemas"].update(components)
+    # trust me, typechecker, I know BASE_SCHEMA
+    x: "JSONDict" = schema["components"]["schemas"] # type: ignore
+    x.update(components)
     return schema
 
 
-def extract_file(fname: "str | Path") -> dict:
+def extract_file(fname: "str | Path") -> "JSONObject":
     return extract_info(open(fname, encoding="utf-8").read())
 
 

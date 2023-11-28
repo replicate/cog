@@ -4,7 +4,8 @@ import os
 import pathlib
 import shutil
 import tempfile
-import urllib
+import urllib.parse
+import urllib.request
 from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
 
 import requests
@@ -256,15 +257,15 @@ class ConcatenateIterator(Iterator[Item]):
         yield cls.validate
 
     @classmethod
-    def validate(cls, value: Any) -> Iterator:
+    def validate(cls, value: Iterator[Any]) -> Iterator[Any]:
         return value
 
 
-def _len_bytes(s, encoding="utf-8") -> int:
+def _len_bytes(s: str, encoding: str="utf-8") -> int:
     return len(s.encode(encoding))
 
 
-def _truncate_filename_bytes(s, length, encoding="utf-8") -> str:
+def _truncate_filename_bytes(s: str, length: int, encoding: str="utf-8") -> str:
     """
     Truncate a filename to at most `length` bytes, preserving file extension
     and avoiding text encoding corruption from truncation.

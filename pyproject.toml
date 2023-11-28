@@ -30,10 +30,10 @@ optional-dependencies = { "dev" = [
   "httpx",
   'hypothesis<6.80.0; python_version < "3.8"',
   'hypothesis; python_version >= "3.8"',
-  "mypy",
   'numpy<1.22.0; python_version < "3.8"',
   'numpy; python_version >= "3.8"',
   "pillow",
+  "pyright",
   "pytest",
   "pytest-asyncio",
   "pytest-httpserver",
@@ -48,12 +48,20 @@ dynamic = ["version"]
 [tool.setuptools_scm]
 write_to = "python/cog/_version.py"
 
-[tool.mypy]
-plugins = "pydantic.mypy"
-disallow_untyped_defs = true
-# TODO: remove this and bring the codebase inline with the current mypy default
-no_implicit_optional = false
-exclude = ["python/tests/"]
+[tool.pyright]
+# TODO: remove this and bring the codebase inline with the current default
+strictParameterNoneValue = false
+# legacy behavior, fixed in PEP688
+disableBytesTypePromotions = true
+include = ["python"]
+exclude = ["python/tests"]
+reportMissingParameterType = "error"
+reportUnknownLambdaType = "error"
+reportUnnecessaryIsInstance = "warning"
+reportUnnecessaryComparison = "warning"
+reportUnneesssaryContains = "warning"
+reportMissingTypeArgument = "error"
+reportUnusedExpression = "warning"
 
 [tool.setuptools]
 package-dir = { "" = "python" }

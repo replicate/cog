@@ -9,7 +9,19 @@ import sys
 import textwrap
 import threading
 from enum import Enum, auto, unique
-from typing import Any, Callable, Dict, Optional, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    Optional,
+    TypeVar,
+    Union,
+)
+
+if TYPE_CHECKING:
+    from typing import ParamSpec
 
 import structlog
 import uvicorn
@@ -44,6 +56,13 @@ class Health(Enum):
     BUSY = auto()
     SETUP_FAILED = auto()
 
+class State:
+    health: Health
+    setup_result: "Optional[asyncio.Task[schema.PredictionResponse]]"
+    setup_result_payload: Optional[schema.PredictionResponse]
+
+class MyFastAPI(FastAPI):
+    state: State
 
 def create_app(
     config: Dict[str, Any],
@@ -51,8 +70,8 @@ def create_app(
     threads: int = 1,
     upload_url: Optional[str] = None,
     mode: str = "predict",
-) -> FastAPI:
-    app = FastAPI(
+) -> MyFastAPI:
+    app = MyFastAPI(
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
     )
@@ -74,16 +93,20 @@ def create_app(
     InputType = get_input_type(predictor)
     OutputType = get_output_type(predictor)
 
-    PredictionRequest = schema.PredictionRequest.with_types(input_type=InputType)
+    class PredictionRequest(schema.PredictionRequest.with_types(input_type=InputType)):
+        pass
     PredictionResponse = schema.PredictionResponse.with_types(
         input_type=InputType, output_type=OutputType
     )
 
     http_semaphore = asyncio.Semaphore(threads)
 
-    def limited(f: Callable) -> Callable:
+    if TYPE_CHECKING:
+        P = ParamSpec("P")
+        T = TypeVar("T")
+    def limited(f: "Callable[P, Awaitable[T]]") -> "Callable[P, Awaitable[T]]":
         @functools.wraps(f)
-        async def wrapped(*args: Any, **kwargs: Any) -> Any:
+        async def wrapped(*args: "P.args", **kwargs: "P.kwargs") -> "T":
             async with http_semaphore:
                 return await f(*args, **kwargs)
 
@@ -175,7 +198,7 @@ def create_app(
         return await _predict(request=request, respond_async=respond_async)
 
     async def _predict(
-        *, request: PredictionRequest, respond_async: bool = False
+        *, request: Optional[PredictionRequest], respond_async: bool = False
     ) -> Response:
         # [compat] If no body is supplied, assume that this model can be run
         # with empty input. This will throw a ValidationError if that's not
@@ -250,7 +273,7 @@ def create_app(
         # this can raise CancelledError
         result = app.state.setup_result.result()
 
-        if result["status"] == schema.Status.SUCCEEDED:
+        if result.status == schema.Status.SUCCEEDED:
             app.state.health = Health.READY
         else:
             app.state.health = Health.SETUP_FAILED
@@ -312,7 +335,7 @@ def signal_ignore(signum: Any, frame: Any) -> None:
     log.warn("Got a signal to exit, ignoring it...", signal=signal.Signals(signum).name)
 
 
-def signal_set_event(event: threading.Event) -> Callable:
+def signal_set_event(event: threading.Event) -> Callable[[Any, Any], None]:
     def _signal_set_event(signum: Any, frame: Any) -> None:
         event.set()
 
@@ -361,12 +384,12 @@ if __name__ == "__main__":
 
     config = load_config()
 
-    threads = args.threads
+    threads: Optional[int] = args.threads
     if threads is None:
         if config.get("build", {}).get("gpu", False):
             threads = 1
         else:
-            threads = os.cpu_count()
+            threads = max(1, len(os.sched_getaffinity(0)))
 
     shutdown_event = threading.Event()
     app = create_app(
