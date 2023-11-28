@@ -150,7 +150,8 @@ func compatibleCuDNNsForCUDA(cuda string) []string {
 }
 
 func defaultCUDA() string {
-	return latestTF().CUDA
+	// TODO: change this to latestTF().CUDA once replicate supports >= 12 everywhere
+	return "11.8"
 }
 
 func latestCUDAFrom(cudas []string) string {
