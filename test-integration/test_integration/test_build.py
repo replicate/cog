@@ -169,7 +169,7 @@ class Predictor(BasePredictor):
         "build": {
             "python_version": "3.8",
             "gpu": True,
-            "cuda": "12.2",
+            "cuda": "11.8",
             "cudnn": "8",
         },
         "predict": "predict.py:Predictor",
@@ -182,7 +182,7 @@ class Predictor(BasePredictor):
         "build": {
             "python_version": "3.8",
             "gpu": True,
-            "cuda": "12.2",
+            "cuda": "11.8",
             "cudnn": "8",
         },
         "predict": "predict.py:Predictor",
