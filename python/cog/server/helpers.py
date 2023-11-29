@@ -163,6 +163,7 @@ class StreamRedirector(threading.Thread):
                         self.drain_event.set()
                         drain_tokens_seen = 0
 
+
 X = TypeVar("X")
 Y = TypeVar("Y")
 Coro = Coroutine[None, None, Any]
@@ -202,6 +203,7 @@ async def select(
         print(task, "was completed simultaniously as another selected task, canceling")
         task.cancel()
     return result_task.result()
+
 
 # functionally this is the exact same thing as aioprocessing but 0.1% the code
 # however it's still worse than just using actual asynchronous io

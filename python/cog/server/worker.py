@@ -76,7 +76,7 @@ class Worker:
 
         # A pipe with which to communicate with the child worker.
         events, child_events = _spawn.Pipe()
-        self._events: "AsyncPipe[_PublicEventType]" = AsyncPipe(events)
+        self._events: "AsyncPipe[tuple[str, _PublicEventType]]" = AsyncPipe(events)
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
         self._terminating = False
         self._mux = Mux()
@@ -135,7 +135,7 @@ class Worker:
                 f"Invalid operation: state is {self._state} (must be {state})"
             )
 
-    _read_events_task: Optional[asyncio.Task[None]] = None
+    _read_events_task: "Optional[asyncio.Task[None]]" = None
 
     def _ensure_event_reader(self) -> None:
         def handle_error(task: "asyncio.Task[None]") -> None:
@@ -283,14 +283,21 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
 
     async def _loop_async(self) -> None:
-        while True:
-            ev = self._events.recv()
-            if isinstance(ev, Shutdown):
-                break
-            if isinstance(ev, PredictionInput):
-                await self._predict_async(ev)
-            else:
-                print(f"Got unexpected event: {ev}", file=sys.stderr)
+        events: "AsyncPipe[tuple[str, _PublicEventType]]" = AsyncPipe(self._events)
+        with events.executor:
+            while True:
+                try:
+                    ev = await events.coro_recv()
+                except asyncio.CancelledError:
+                    return
+                if isinstance(ev, Shutdown):
+                    return
+                if isinstance(ev, PredictionInput):
+                    # keep track of these so they can be cancelled
+                    await self._predict_async(ev)
+                # handle Cancel
+                else:
+                    print(f"Got unexpected event: {ev}", file=sys.stderr)
 
     def _loop(self) -> None:
         if is_async(get_predict(self._predictor)):
