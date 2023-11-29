@@ -49,6 +49,18 @@ class WorkerState(Enum):
     DEFUNCT = auto()
 
 
+class Mux:
+    def __init__(self):
+        self.outs: dict[str, asyncio.Queue] = {}
+
+    def write(self, item):
+        self.outs[item["id"]].put(item)
+
+    def read(self, id: str):
+        while 1:
+            yield self.outs[id].get()
+
+
 class Worker:
     def __init__(self, predictor_ref: str, tee_output: bool = True) -> None:
         self._state = WorkerState.NEW
@@ -130,7 +142,7 @@ class Worker:
                     yield Heartbeat()
                 continue
             ev = await self._events.coro_recv()
-            if ev is None: # event loop closed or child died
+            if ev is None:  # event loop closed or child died
                 break
             yield ev
 
