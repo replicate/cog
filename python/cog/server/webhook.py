@@ -37,7 +37,8 @@ SKIP_START_EVENT = _response_interval < 0.1
 
 
 def webhook_caller_filtered(
-    webhook: str, webhook_events_filter: Set[WebhookEvent],
+    webhook: str,
+    webhook_events_filter: Set[WebhookEvent],
 ) -> Callable[[Any, WebhookEvent], None]:
     upstream_caller = webhook_caller(webhook)
 

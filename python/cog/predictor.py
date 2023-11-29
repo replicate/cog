@@ -6,10 +6,11 @@ import os.path
 import sys
 import types
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Iterator, AsyncIterator
 from pathlib import Path
 from typing import (
     Any,
+    Awaitable,
     Callable,
     Dict,
     List,
@@ -48,7 +49,9 @@ ALLOWED_INPUT_TYPES: List[Type[Any]] = [str, int, float, bool, CogFile, CogPath]
 
 
 class BasePredictor(ABC):
-    def setup(self, weights: Optional[Union[CogFile, CogPath]] = None) -> None:
+    def setup(
+        self, weights: Optional[Union[CogFile, CogPath]] = None
+    ) -> Optional[Awaitable[None]]:
         """
         An optional method to prepare the model so multiple predictions run efficiently.
         """
@@ -63,15 +66,25 @@ class BasePredictor(ABC):
 
 
 def run_setup(predictor: BasePredictor) -> None:
-    weights_type = get_weights_type(predictor.setup)
-
-    # No weights need to be passed, so just run setup() without any arguments.
-    if weights_type is None:
+    weights = get_weights_argument(predictor)
+    if weights:
+        predictor.setup(weights=weights)
+    else:
         predictor.setup()
-        return
 
-    weights: Union[io.IOBase, Path, None]
 
+async def run_setup_async(predictor: BasePredictor) -> None:
+    weights = get_weights_argument(predictor)
+    maybe_coro = predictor.setup(weights=weights) if weights else predictor.setup()
+    if maybe_coro:
+        return await maybe_coro
+
+
+def get_weights_argument(predictor: BasePredictor) -> Union[CogFile, CogPath, None]:
+    # by the time we get here we assume predictor has a setup method
+    weights_type = get_weights_type(predictor.setup)
+    if weights_type is None:
+        return None
     weights_url = os.environ.get("COG_WEIGHTS")
     weights_path = "weights"
 
@@ -81,30 +94,25 @@ def run_setup(predictor: BasePredictor) -> None:
     # TODO: CogFile/CogPath should have subclasses for each of the subtypes
     if weights_url:
         if weights_type == CogFile:
-            weights = cast(CogFile, CogFile.validate(weights_url))
-        elif weights_type == CogPath:
+            return cast(CogFile, CogFile.validate(weights_url))
+        if weights_type == CogPath:
             # TODO: So this can be a url. evil!
-            weights = cast(CogPath, CogPath.validate(weights_url))
-        else:
-            raise ValueError(
-                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
-            )
-    elif os.path.exists(weights_path):
+            return cast(CogPath, CogPath.validate(weights_url))
+        raise ValueError(
+            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+        )
+    if os.path.exists(weights_path):
         if weights_type == CogFile:
-            weights = cast(CogFile, open(weights_path, "rb"))
-        elif weights_type == CogPath:
-            weights = CogPath(weights_path)
-        else:
-            raise ValueError(
-                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
-            )
-    else:
-        weights = None
-
-    predictor.setup(weights=weights)
+            return cast(CogFile, open(weights_path, "rb"))
+        if weights_type == CogPath:
+            return CogPath(weights_path)
+        raise ValueError(
+            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+        )
+    return None
 
 
-def get_weights_type(setup_function: Callable[[Any], None]) -> Optional[Any]:
+def get_weights_type(setup_function: Callable[[Any], Optional[Awaitable[None]]]) -> Optional[Any]:
     signature = inspect.signature(setup_function)
     if "weights" not in signature.parameters:
         return None
@@ -118,7 +126,9 @@ def get_weights_type(setup_function: Callable[[Any], None]) -> Optional[Any]:
 
 
 def run_prediction(
-    predictor: BasePredictor, inputs: Dict[Any, Any], cleanup_functions: List[Callable[[], None]],
+    predictor: BasePredictor,
+    inputs: Dict[Any, Any],
+    cleanup_functions: List[Callable[[], None]],
 ) -> Any:
     """
     Run the predictor on the inputs, and append resulting paths
@@ -218,19 +228,23 @@ def get_predict(predictor: Any) -> Callable[..., Any]:
         return predictor.predict
     return predictor
 
+
 def validate_input_type(type: Type[Any], name: str) -> None:
     if type is inspect.Signature.empty:
-            raise TypeError(
-                f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
-            )
+        raise TypeError(
+            f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
+        )
     elif type not in ALLOWED_INPUT_TYPES:
-        if get_origin(type) in (Union, List, list) or (hasattr(types, "UnionType") and get_origin(type) is types.UnionType): # noqa: E721
+        if get_origin(type) in (Union, List, list) or (
+            hasattr(types, "UnionType") and get_origin(type) is types.UnionType
+        ):  # noqa: E721
             for t in get_args(type):
                 validate_input_type(t, name)
         else:
             raise TypeError(
                 f"Unsupported input type {human_readable_type_name(type)} for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
             )
+
 
 def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
     """
@@ -329,7 +343,7 @@ For example:
         OutputType = signature.return_annotation
 
     # The type that goes in the response is a list of the yielded type
-    if get_origin(OutputType) is Iterator:
+    if get_origin(OutputType) in {Iterator, AsyncIterator}:
         # Annotated allows us to attach Field annotations to the list, which we use to mark that this is an iterator
         # https://pydantic-docs.helpmanual.io/usage/schema/#typingannotated-fields
         OutputType: Type[BaseModel] = Annotated[List[get_args(OutputType)[0]], Field(**{"x-cog-array-type": "iterator"})]  # type: ignore

@@ -56,13 +56,16 @@ class Health(Enum):
     BUSY = auto()
     SETUP_FAILED = auto()
 
+
 class State:
     health: Health
     setup_result: "Optional[asyncio.Task[schema.PredictionResponse]]"
     setup_result_payload: Optional[schema.PredictionResponse]
 
+
 class MyFastAPI(FastAPI):
     state: State
+
 
 def create_app(
     config: Dict[str, Any],
@@ -95,6 +98,7 @@ def create_app(
 
     class PredictionRequest(schema.PredictionRequest.with_types(input_type=InputType)):
         pass
+
     PredictionResponse = schema.PredictionResponse.with_types(
         input_type=InputType, output_type=OutputType
     )
@@ -104,6 +108,7 @@ def create_app(
     if TYPE_CHECKING:
         P = ParamSpec("P")
         T = TypeVar("T")
+
     def limited(f: "Callable[P, Awaitable[T]]") -> "Callable[P, Awaitable[T]]":
         @functools.wraps(f)
         async def wrapped(*args: "P.args", **kwargs: "P.kwargs") -> "T":
@@ -148,7 +153,10 @@ def create_app(
         response_model=PredictionResponse,
         response_model_exclude_unset=True,
     )
-    async def predict(request: PredictionRequest = Body(default=None), prefer: Union[str, None] = Header(default=None)) -> Any:  # type: ignore
+    async def predict(
+        request: PredictionRequest = Body(default=None),
+        prefer: Union[str, None] = Header(default=None),
+    ) -> Any:  # type: ignore
         """
         Run a single prediction on the model
         """

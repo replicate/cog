@@ -7,6 +7,7 @@ from attrs import define, field, validators
 #
 @define
 class PredictionInput:
+    id: str
     payload: Dict[str, Any]
 
 
@@ -25,16 +26,19 @@ class Log:
 
 @define
 class PredictionOutput:
+    id: str
     payload: Any
 
 
 @define
 class PredictionOutputType:
+    id: str
     multi: bool = False
 
 
 @define
 class Done:
+    id: str
     canceled: bool = False
     error: bool = False
     error_detail: str = ""
