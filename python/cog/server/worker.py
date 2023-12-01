@@ -61,9 +61,23 @@ class Mux:
     async def write(self, id: str, item: _PublicEventType) -> None:
         await self.outs[id].put(item)
 
-    async def read(self, id: str) -> AsyncIterator[_PublicEventType]:
+    async def read(
+        self, id: str, poll: Optional[float] = None
+    ) -> AsyncIterator[_PublicEventType]:
+        if poll:
+            send_heartbeats = True
+        else:
+            poll = 0.1
+            send_heartbeats = False
         while 1:
-            event = await race(self.outs[id].get(), self.shutdown.wait())
+            try:
+                event = await race(
+                    self.outs[id].get(), self.shutdown.wait(), timeout=poll
+                )
+            except TimeoutError:
+                if send_heartbeats:
+                    yield Heartbeat()
+                continue
             if event is True:  # wait() would return True
                 break
             yield event
@@ -98,7 +112,9 @@ class Worker:
         self, payload: Dict[str, Any], poll: Optional[float] = None
     ) -> AsyncIterator[_PublicEventType]:
         if self._shutting_down:
-            raise InvalidStateException("cannot accept new predictions because shutdown requested")
+            raise InvalidStateException(
+                "cannot accept new predictions because shutdown requested"
+            )
         self._assert_state(WorkerState.READY)
         self._state = WorkerState.PROCESSING
         self._allow_cancel = True
