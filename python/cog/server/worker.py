@@ -61,9 +61,21 @@ class Mux:
     async def write(self, id: str, item: _PublicEventType) -> None:
         await self.outs[id].put(item)
 
-    async def read(self, id: str) -> AsyncIterator[_PublicEventType]:
+    async def read(
+        self, id: str, poll: Optional[float] = None
+    ) -> AsyncIterator[_PublicEventType]:
+        if poll:
+            send_heartbeats = True
+        else:
+            poll = 0.1
+            send_heartbeats = False
         while 1:
-            event = await select(self.outs[id].get(), self.shutdown.wait())
+            try:
+                event = await select(self.outs[id].get(), self.shutdown.wait(), timeout=poll)
+            except TimeoutError:
+                if send_heartbeats:
+                    yield Heartbeat()
+                continue
             if event is True:
                 break
             yield event
