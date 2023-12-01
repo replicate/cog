@@ -104,9 +104,16 @@ class Worker:
     def setup(self) -> AsyncIterator[_PublicEventType]:
         self._assert_state(WorkerState.NEW)
         self._state = WorkerState.STARTING
-        self._child.start()
 
-        return self._wait(raise_on_error="Predictor errored during setup")
+        async def inner() -> AsyncIterator[_PublicEventType]:
+            self._child.start()
+            self._ensure_event_reader()
+            async for event in self._mux.read("SETUP", poll=0.1):
+                yield event
+                if isinstance(event, Done) and event.error:
+                    raise FatalWorkerException(
+                        "Predictor errored during setup: " + event.error_detail
+                    )
 
     def predict(
         self, payload: Dict[str, Any], poll: Optional[float] = None
@@ -143,7 +150,11 @@ class Worker:
             self._child.terminate()
             self._child.join()
         self._events.shutdown()
+        if self._read_events_task:
+            self._read_events_task.cancel()
 
+    # FIXME: this will need to use a combination
+    # of signals and Cancel events on the pipe
     def cancel(self) -> None:
         if (
             self._allow_cancel
@@ -178,48 +189,9 @@ class Worker:
             if result is None:  # event loop closed or child died
                 break
             id, event = result
+            if id == "LOG" and self._state == WorkerState.STARTING:
+                id = "SETUP"
             await self._mux.write(id, event)
-
-    async def _wait(
-        self, poll: Optional[float] = None, raise_on_error: Optional[str] = None
-    ) -> AsyncIterator[_PublicEventType]:
-        done = None
-
-        if poll:
-            send_heartbeats = True
-        else:
-            poll = 0.1
-            send_heartbeats = False
-
-        while self._child.is_alive() and not done:
-            if not self._events.poll(poll):
-                if send_heartbeats:
-                    yield Heartbeat()
-                continue
-            result = await self._events.coro_recv()
-            if result is None:  # event loop closed or child died
-                break
-            id, ev = result
-            yield ev
-
-            if isinstance(ev, Done):
-                done = ev
-
-        if done:
-            if done.error and raise_on_error:
-                raise FatalWorkerException(raise_on_error + ": " + done.error_detail)
-            self._state = WorkerState.READY
-            self._allow_cancel = False
-            if self._shutting_down:
-                self.terminate()
-
-        # If we dropped off the end off the end of the loop, check if it's
-        # because the child process died.
-        if not self._child.is_alive() and not self._terminating.is_set():
-            exitcode = self._child.exitcode
-            raise FatalWorkerException(
-                f"Prediction failed for an unknown reason. It might have run out of memory? (exitcode {exitcode})"
-            )
 
 
 class _ChildWorker(_spawn.Process):  # type: ignore
@@ -251,6 +223,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         ws_stdout.wrap()
         ws_stderr.wrap()
 
+        # using a thread for this can potentially cause a deadlock
+        # however, if we made this async, we might interfere with a user's event loop
         self._stream_redirector = StreamRedirector(
             [ws_stdout, ws_stderr], self._stream_write_hook
         )
