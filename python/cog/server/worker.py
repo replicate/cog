@@ -35,7 +35,7 @@ from .exceptions import (
     FatalWorkerException,
     InvalidStateException,
 )
-from .helpers import AsyncPipe, StreamRedirector, WrappedStream
+from .helpers import AsyncPipe, StreamRedirector, WrappedStream, select
 
 _spawn = multiprocessing.get_context("spawn")
 
@@ -52,10 +52,11 @@ class WorkerState(Enum):
 
 
 class Mux:
-    def __init__(self) -> None:
-        self.outs: defaultdict[str, asyncio.Queue[_PublicEventType]] = defaultdict(
+    def __init__(self, terminating: asyncio.Event) -> None:
+        self.outs: "defaultdict[str, asyncio.Queue[_PublicEventType]]" = defaultdict(
             asyncio.Queue
         )
+        self.terminating = terminating
 
     async def write(self, id: str, item: _PublicEventType) -> None:
         await self.outs[id].put(item)
@@ -78,8 +79,8 @@ class Worker:
         events, child_events = _spawn.Pipe()
         self._events: "AsyncPipe[tuple[str, _PublicEventType]]" = AsyncPipe(events)
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
-        self._terminating = False
-        self._mux = Mux()
+        self._terminating = asyncio.Event()
+        self._mux = Mux(self._terminating)
 
     def setup(self) -> AsyncIterator[_PublicEventType]:
         self._assert_state(WorkerState.NEW)
@@ -103,7 +104,7 @@ class Worker:
         if self._state == WorkerState.DEFUNCT:
             return
 
-        self._terminating = True
+        self._terminating.set()
 
         if self._child.is_alive():
             self._events.send(Shutdown())
@@ -112,7 +113,7 @@ class Worker:
         if self._state == WorkerState.DEFUNCT:
             return
 
-        self._terminating = True
+        self._terminating.set()
         self._state = WorkerState.DEFUNCT
 
         if self._child.is_alive():
@@ -188,7 +189,7 @@ class Worker:
 
         # If we dropped off the end off the end of the loop, check if it's
         # because the child process died.
-        if not self._child.is_alive() and not self._terminating:
+        if not self._child.is_alive() and not self._terminating.is_set():
             exitcode = self._child.exitcode
             raise FatalWorkerException(
                 f"Prediction failed for an unknown reason. It might have run out of memory? (exitcode {exitcode})"

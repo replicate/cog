@@ -237,3 +237,8 @@ class AsyncPipe(Generic[X]):
         loop = asyncio.get_running_loop()
         # believe it or not this can still deadlock!
         return await loop.run_in_executor(self.executor, self._recv)
+
+    async def coro_recv_with_exit(self, exit: asyncio.Event) -> Optional[X]:
+        result = await select(self.coro_recv(), exit.wait())
+        if result is not True:  # wait() would return True
+            return result
