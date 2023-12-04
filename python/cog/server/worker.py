@@ -81,6 +81,9 @@ class Worker:
         events, child_events = _spawn.Pipe()
         self._events: "AsyncPipe[tuple[str, _PublicEventType]]" = AsyncPipe(events)
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
+        # shutdown requested
+        self._shutting_down = False
+        # stop reading events
         self._terminating = asyncio.Event()
         self._mux = Mux(self._terminating)
 
@@ -94,6 +97,8 @@ class Worker:
     def predict(
         self, payload: Dict[str, Any], poll: Optional[float] = None
     ) -> AsyncIterator[_PublicEventType]:
+        if self._shutting_down:
+            raise InvalidStateException("cannot accept new predictions because shutdown requested")
         self._assert_state(WorkerState.READY)
         self._state = WorkerState.PROCESSING
         self._allow_cancel = True
@@ -105,8 +110,8 @@ class Worker:
     def shutdown(self) -> None:
         if self._state == WorkerState.DEFUNCT:
             return
-
-        self._terminating.set()
+        # shutdown requested, but keep reading events
+        self._shutting_down = True
 
         if self._child.is_alive():
             self._events.send(Shutdown())
@@ -189,6 +194,8 @@ class Worker:
                 raise FatalWorkerException(raise_on_error + ": " + done.error_detail)
             self._state = WorkerState.READY
             self._allow_cancel = False
+            if self._shutting_down:
+                self.terminate()
 
         # If we dropped off the end off the end of the loop, check if it's
         # because the child process died.
