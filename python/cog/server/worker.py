@@ -107,6 +107,7 @@ class Worker:
         # stop reading events
         self._terminating = asyncio.Event()
         self._mux = Mux(self._terminating)
+        self._predictions_in_flight = set()
 
     def setup(self) -> AsyncIterator[_PublicEventType]:
         self._assert_state(WorkerState.NEW)
@@ -128,10 +129,14 @@ class Worker:
         return inner()
 
     @contextlib.asynccontextmanager
-    async def prediction_ctx(self) -> AsyncIterator[None]:
+    async def prediction_ctx(self, input: PredictionInput) -> AsyncIterator[None]:
         async with self._semaphore:
             self._allow_cancel = True
-            yield
+            self._predictions_in_flight.add(input.id)
+            try:
+                yield
+            finally:
+                self._predictions_in_flight.remove(input.id)
         if self._semaphore._value == self._concurrent:
             self._state = WorkerState.IDLE
             self._allow_cancel = False
@@ -147,8 +152,8 @@ class Worker:
         self._state = WorkerState.PROCESSING
 
         async def inner() -> AsyncIterator[_PublicEventType]:
-            async with self.prediction_ctx():
-                input = PredictionInput(payload=payload)
+            input = PredictionInput(payload=payload)
+            async with self.prediction_ctx(input):
                 self._events.send(input)
                 self._ensure_event_reader()
                 async for event in self._mux.read(input.id, poll=poll):
@@ -223,6 +228,8 @@ class Worker:
             id, event = result
             if id == "LOG" and self._state == WorkerState.STARTING:
                 id = "SETUP"
+            if id == "LOG" and len(self._predictions_in_flight) == 1:
+                id = list(self._predictions_in_flight)[0]
             await self._mux.write(id, event)
         # If we dropped off the end off the end of the loop, check if it's
         # because the child process died.
