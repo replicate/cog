@@ -33,7 +33,7 @@ from .exceptions import (
     FatalWorkerException,
     InvalidStateException,
 )
-from .helpers import StreamRedirector, WrappedStream
+from .helpers import AsyncPipe, StreamRedirector, WrappedStream
 
 _spawn = multiprocessing.get_context("spawn")
 
@@ -55,7 +55,8 @@ class Worker:
         self._allow_cancel = False
 
         # A pipe with which to communicate with the child worker.
-        self._events, child_events = _spawn.Pipe()
+        events, child_events = _spawn.Pipe()
+        self._events: "AsyncPipe[_PublicEventType]" = AsyncPipe(events)
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
         self._terminating = False
 
@@ -97,6 +98,7 @@ class Worker:
         if self._child.is_alive():
             self._child.terminate()
             self._child.join()
+        self._events.shutdown()
 
     def cancel(self) -> None:
         if (
@@ -129,9 +131,9 @@ class Worker:
                 if send_heartbeats:
                     yield Heartbeat()
                 continue
-            # this needs aioprocessing.Pipe or similar
-            # multiprocessing.Pipe is not async
-            ev = self._events.recv()
+            ev = await self._events.coro_recv()
+            if ev is None: # event loop closed or child died
+                break
             yield ev
 
             if isinstance(ev, Done):
