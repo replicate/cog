@@ -9,7 +9,7 @@ import traceback
 import types
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
-from typing import Any, Dict, Iterator, Optional, TextIO, Union
+from typing import Any, AsyncIterator, Dict, Iterator, Optional, TextIO, Union
 
 from ..json import make_encodeable
 from ..predictor import (
@@ -59,22 +59,24 @@ class Worker:
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
         self._terminating = False
 
-    def setup(self) -> Iterator[_PublicEventType]:
+    async def setup(self) -> AsyncIterator[_PublicEventType]:
         self._assert_state(WorkerState.NEW)
         self._state = WorkerState.STARTING
         self._child.start()
 
-        return self._wait(raise_on_error="Predictor errored during setup")
+        async for e in self._wait(raise_on_error="Predictor errored during setup"):
+            yield e
 
-    def predict(
+    async def predict(
         self, payload: Dict[str, Any], poll: Optional[float] = None
-    ) -> Iterator[_PublicEventType]:
+    ) -> AsyncIterator[_PublicEventType]:
         self._assert_state(WorkerState.READY)
         self._state = WorkerState.PROCESSING
         self._allow_cancel = True
         self._events.send(PredictionInput(payload=payload))
 
-        return self._wait(poll=poll)
+        async for e in self._wait(poll=poll):
+            yield e
 
     def shutdown(self) -> None:
         if self._state == WorkerState.DEFUNCT:
@@ -111,9 +113,9 @@ class Worker:
                 f"Invalid operation: state is {self._state} (must be {state})"
             )
 
-    def _wait(
+    async def _wait(
         self, poll: Optional[float] = None, raise_on_error: Optional[str] = None
-    ) -> Iterator[_PublicEventType]:
+    ) -> AsyncIterator[_PublicEventType]:
         done = None
 
         if poll:
