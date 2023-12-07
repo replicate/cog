@@ -9,11 +9,14 @@ from multiprocessing.connection import Connection
 from typing import (
     Any,
     Callable,
+    Coroutine,
     Generic,
     Optional,
     Sequence,
     TextIO,
     TypeVar,
+    Union,
+    overload,
 )
 
 
@@ -161,6 +164,44 @@ class StreamRedirector(threading.Thread):
                         drain_tokens_seen = 0
 
 X = TypeVar("X")
+Y = TypeVar("Y")
+Coro = Coroutine[None, None, Any]
+
+
+@overload
+async def select(
+    x: Coroutine[None, None, X],
+    y: Coroutine[None, None, Y],
+    *,
+    timeout: Optional[float] = None,
+) -> Union[X, Y]:
+    ...
+
+
+@overload
+async def select(*awaitables: Coro, timeout: Optional[float] = None) -> Any:
+    ...
+
+
+async def select(
+    x: Coro, y: Coro, *awaitables: Coro, timeout: Optional[float] = None
+) -> Any:
+    tasks = [asyncio.create_task(a) for a in (x, y) + awaitables]
+    wait = asyncio.wait(tasks, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+    done, pending = await wait
+    for task in pending:
+        task.cancel()
+    if not done:
+        raise TimeoutError
+    # done is an unorded set but we want to preserve original order
+    result_task, *others = (t for t in tasks if t in done)
+    # during shutdown, some of the other completed tasks might be an error
+    # cancel them instead of handling the error to avoid the warning
+    # "Task exception was never retrieved"
+    for task in others:
+        print(task, "was completed simultaniously as another selected task, canceling")
+        task.cancel()
+    return result_task.result()
 
 # functionally this is the exact same thing as aioprocessing but 0.1% the code
 # however it's still worse than just using actual asynchronous io
