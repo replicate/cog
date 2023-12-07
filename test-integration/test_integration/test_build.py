@@ -95,10 +95,8 @@ def test_build_invalid_schema(docker_image):
     assert "invalid default: number must be at least 2" in build_process.stderr.decode()
 
 
+@pytest.mark.skipif(os.environ.get("CI") != "true", reason="only runs in CI")
 def test_build_gpu_model_on_cpu(tmpdir, docker_image):
-    if os.environ.get("CI") != "true":
-        pytest.skip("only runs on CI environment")
-
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
 build:
