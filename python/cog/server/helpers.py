@@ -3,17 +3,20 @@ import concurrent.futures
 import io
 import os
 import selectors
+import sys
 import threading
 import uuid
 from multiprocessing.connection import Connection
 from typing import (
     Any,
     Callable,
+    Coroutine,
     Generic,
     Optional,
     Sequence,
     TextIO,
     TypeVar,
+    Union,
 )
 
 
@@ -160,7 +163,35 @@ class StreamRedirector(threading.Thread):
                         self.drain_event.set()
                         drain_tokens_seen = 0
 
+
 X = TypeVar("X")
+Y = TypeVar("Y")
+
+
+async def race(
+    x: Coroutine[None, None, X],
+    y: Coroutine[None, None, Y],
+    timeout: Optional[float] = None,
+) -> Union[X, Y]:
+    tasks = [asyncio.create_task(x), asyncio.create_task(y)]
+    wait = asyncio.wait(tasks, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+    done, pending = await wait
+    for task in pending:
+        task.cancel()
+    if not done:
+        raise TimeoutError
+    # done is an unordered set but we want to preserve original order
+    result_task, *others = (t for t in tasks if t in done)
+    # during shutdown, some of the other completed tasks might be an error
+    # cancel them instead of handling the error to avoid the warning
+    # "Task exception was never retrieved"
+    for task in others:
+        msg = "was completed at the same time as another selected task, canceling"
+        # FIXME: ues a logger?
+        print(task, msg, file=sys.stderr)
+        task.cancel()
+    return result_task.result()
+
 
 # functionally this is the exact same thing as aioprocessing but 0.1% the code
 # however it's still worse than just using actual asynchronous io
