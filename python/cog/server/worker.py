@@ -87,6 +87,16 @@ class Worker:
         self._terminating = asyncio.Event()
         self._mux = Mux(self._terminating)
 
+    # @contextlib.contextmanager
+    # def ctx(self):
+    #     self._events = AsyncPipe(events)
+    #     with self._events.executor:
+    #         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
+    #         yield self
+    #         if self._child.is_alive():
+    #             self._child.terminate()
+    #             self._child.join()
+
     def setup(self) -> AsyncIterator[_PublicEventType]:
         self._assert_state(WorkerState.NEW)
         self._state = WorkerState.STARTING

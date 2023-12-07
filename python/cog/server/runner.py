@@ -66,6 +66,13 @@ class PredictionRunner:
         self._shutdown_event = shutdown_event
         self._upload_url = upload_url
 
+    # @contextlib.contextmanager
+    # def ctx(self) -> Iterator["PredictionRunner"]:
+    #     with Worker(predictor_ref=self.predictor_ref) as self._worker:
+    #         yield self
+    #         if self._result:
+    #             self._result.cancel()
+
     def make_error_handler(self, activity: str) -> Callable[[RunnerTask], None]:
         def handle_error(task: RunnerTask) -> None:
             exc = task.exception()
