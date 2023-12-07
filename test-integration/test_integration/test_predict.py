@@ -5,8 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from .util import random_string
-
 
 def test_predict_takes_string_inputs_and_returns_strings_to_stdout():
     project_dir = Path(__file__).parent / "fixtures/string-project"
