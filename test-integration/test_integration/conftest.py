@@ -1,9 +1,8 @@
 import os
-import subprocess
-
 import pytest
 
 from .util import random_string
+from .util import remove_docker_image
 
 
 def pytest_sessionstart(session):
@@ -20,6 +19,4 @@ def docker_image(docker_image_name):
     yield docker_image_name
     # We expect the image to exist by this point and will fail if it doesn't.
     # If you just need a name, use docker_image_name.
-    subprocess.run(
-        ["docker", "rmi", docker_image_name], check=True, capture_output=True
-    )
+    remove_docker_image(docker_image_name)
