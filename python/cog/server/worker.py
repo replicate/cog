@@ -35,7 +35,7 @@ from .exceptions import (
     FatalWorkerException,
     InvalidStateException,
 )
-from .helpers import AsyncPipe, StreamRedirector, WrappedStream
+from .helpers import AsyncPipe, StreamRedirector, WrappedStream, race
 
 _spawn = multiprocessing.get_context("spawn")
 
@@ -63,7 +63,9 @@ class Mux:
 
     async def read(self, id: str) -> AsyncIterator[_PublicEventType]:
         while 1:
-            event = await self.outs[id].get()
+            event = await race(self.outs[id].get(), self.shutdown.wait())
+            if event is True:  # wait() would return True
+                break
             yield event
             if isinstance(event, Done):
                 self.outs.pop(id)
@@ -148,9 +150,10 @@ class Worker:
             self._read_events_task = asyncio.create_task(self._read_events())
             self._read_events_task.add_done_callback(handle_error)
 
-    async def _read_events(self, poll: Optional[float] = None) -> None:
-        while self._child.is_alive():
-            result = await self._events.coro_recv()
+    async def _read_events(self) -> None:
+        while self._child.is_alive() and not self._terminating.is_set():
+            # this can still be running when the task is destroyed
+            result = await self._events.coro_recv_with_exit(self._terminating)
             if result is None:  # event loop closed or child died
                 break
             id, event = result
