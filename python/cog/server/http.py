@@ -57,14 +57,17 @@ class Health(Enum):
     SETUP_FAILED = auto()
 
 
-class State:
+class MyState:
     health: Health
     setup_result: "Optional[asyncio.Task[schema.PredictionResponse]]"
     setup_result_payload: Optional[schema.PredictionResponse]
 
 
 class MyFastAPI(FastAPI):
-    state: State
+    # TODO: not, strictly speaking, legal
+    # https://github.com/microsoft/pyright/issues/5933
+    # but it'd need a FastAPI patch to fix
+    state: MyState # type: ignore
 
 
 def create_app(
