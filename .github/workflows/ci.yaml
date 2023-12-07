@@ -39,6 +39,8 @@ jobs:
           python -m pip install '.[dev]'
       - name: Build
         run: make cog
+      - name: Lint
+        run: make lint-go
       - name: Test
         run: make test-go
 
@@ -66,7 +68,7 @@ jobs:
           HYPOTHESIS_PROFILE: ci
 
   typecheck-python:
-    name: "Typecheck Python"
+    name: "Typecheck and lint Python"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -81,7 +83,7 @@ jobs:
           python -m pip install '.[dev]'
       - name: Run typechecking
         run: |
-          python -m pyright
+          make lint-python
 
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-integration:
