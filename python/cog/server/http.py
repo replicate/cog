@@ -67,7 +67,7 @@ class MyFastAPI(FastAPI):
     # TODO: not, strictly speaking, legal
     # https://github.com/microsoft/pyright/issues/5933
     # but it'd need a FastAPI patch to fix
-    state: MyState # type: ignore
+    state: MyState  # type: ignore
 
 
 def create_app(
