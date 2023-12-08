@@ -60,7 +60,7 @@ class Worker:
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
         self._terminating = False
 
-    async def setup(self) -> AsyncIterator[_PublicEventType]:
+    def setup(self) -> AsyncIterator[_PublicEventType]:
         self._assert_state(WorkerState.NEW)
         self._state = WorkerState.STARTING
         self._child.start()
