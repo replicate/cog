@@ -595,7 +595,6 @@ class WorkerState(RuleBasedStateMachine):
         self.worker.shutdown()
         # really make sure everything is shut down and cleaned up
         self.worker.terminate()
-        self.await_(asyncio.sleep(0.01))
 
 
 TestWorkerState = WorkerState.TestCase
