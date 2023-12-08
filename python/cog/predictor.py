@@ -1,12 +1,11 @@
 import enum
 import importlib.util
 import inspect
-import io
 import os.path
 import sys
 import types
 from abc import ABC, abstractmethod
-from collections.abc import Iterator, AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import (
     Any,
@@ -50,7 +49,7 @@ ALLOWED_INPUT_TYPES: List[Type[Any]] = [str, int, float, bool, CogFile, CogPath]
 
 class BasePredictor(ABC):
     def setup(
-        self, weights: Optional[Union[CogFile, CogPath]] = None
+            self, weights: Optional[Union[CogFile, CogPath]] = None
     ) -> Optional[Awaitable[None]]:
         """
         An optional method to prepare the model so multiple predictions run efficiently.
@@ -126,9 +125,9 @@ def get_weights_type(setup_function: Callable[[Any], Optional[Awaitable[None]]])
 
 
 def run_prediction(
-    predictor: BasePredictor,
-    inputs: Dict[Any, Any],
-    cleanup_functions: List[Callable[[], None]],
+        predictor: BasePredictor,
+        inputs: Dict[Any, Any],
+        cleanup_functions: List[Callable[[], None]],
 ) -> Any:
     """
     Run the predictor on the inputs, and append resulting paths
@@ -236,7 +235,7 @@ def validate_input_type(type: Type[Any], name: str) -> None:
         )
     elif type not in ALLOWED_INPUT_TYPES:
         if get_origin(type) in (Union, List, list) or (
-            hasattr(types, "UnionType") and get_origin(type) is types.UnionType
+                hasattr(types, "UnionType") and get_origin(type) is types.UnionType
         ):  # noqa: E721
             for t in get_args(type):
                 validate_input_type(t, name)
@@ -346,7 +345,8 @@ For example:
     if get_origin(OutputType) in {Iterator, AsyncIterator}:
         # Annotated allows us to attach Field annotations to the list, which we use to mark that this is an iterator
         # https://pydantic-docs.helpmanual.io/usage/schema/#typingannotated-fields
-        OutputType: Type[BaseModel] = Annotated[List[get_args(OutputType)[0]], Field(**{"x-cog-array-type": "iterator"})]  # type: ignore
+        OutputType: Type[BaseModel] = Annotated[
+            List[get_args(OutputType)[0]], Field(**{"x-cog-array-type": "iterator"})]  # type: ignore
 
     if not hasattr(OutputType, "__name__") or OutputType.__name__ != "Output":
         # Wrap the type in a model called "Output" so it is a consistent name in the OpenAPI schema

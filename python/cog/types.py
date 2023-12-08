@@ -200,11 +200,7 @@ class URLFile(io.IOBase):
                 type(self).__name__, id(self), object.__getattribute__(self, "__url__")
             )
         else:
-            return "<{} at 0x{:x} wrapping {!r}>".format(
-                type(self).__name__,
-                id(self),
-                target,
-            )
+            return f"<{type(self).__name__} at 0x{id(self):x} wrapping {target!r}>"
 
 
 def get_filename(url: str) -> str:
