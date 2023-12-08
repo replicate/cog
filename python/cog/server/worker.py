@@ -65,10 +65,9 @@ class Worker:
         self._state = WorkerState.STARTING
         self._child.start()
 
-        async for e in self._wait(raise_on_error="Predictor errored during setup"):
-            yield e
+        return self._wait(raise_on_error="Predictor errored during setup")
 
-    async def predict(
+    def predict(
         self, payload: Dict[str, Any], poll: Optional[float] = None
     ) -> AsyncIterator[_PublicEventType]:
         self._assert_state(WorkerState.READY)
@@ -76,8 +75,7 @@ class Worker:
         self._allow_cancel = True
         self._events.send(PredictionInput(payload=payload))
 
-        async for e in self._wait(poll=poll):
-            yield e
+        return self._wait(poll=poll)
 
     def shutdown(self) -> None:
         if self._state == WorkerState.DEFUNCT:
