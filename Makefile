@@ -105,5 +105,5 @@ mod-tidy:
 
 .PHONY: install-python # install dev dependencies
 install-python:
-	python -c 'import sys; exit(0) if sys.version_info >= (3, 10) else print("\n\nWarning: python >=3.10 is needed (not installed) to pass linting (pyright)\n\n")'
+	$(PYTHON) -c 'import sys; exit(0) if sys.version_info >= (3, 10) else print("\n\nWarning: python >=3.10 is needed (not installed) to pass linting (pyright)\n\n")'
 	$(PYTHON) -m pip install '.[dev]'
