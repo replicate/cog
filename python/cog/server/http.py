@@ -125,6 +125,10 @@ def create_app(
                 }
             )
 
+        @app.on_event("shutdown")
+        def shutdown_startup_failed() -> None:
+            pass
+
         return app
 
     runner = PredictionRunner(
