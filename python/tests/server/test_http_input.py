@@ -1,8 +1,12 @@
 import base64
 import os
+import threading
 
 import pytest
 import responses
+from cog import schema
+from cog.server.http import create_app, Health
+from tests.server.conftest import _fixture_path
 
 from .conftest import make_client, uses_predictor
 
@@ -239,10 +243,24 @@ def test_union_integers(client):
 
 
 def test_untyped_inputs():
-    with pytest.raises(TypeError):
-        make_client("input_untyped")
+    config = {"predict": _fixture_path("input_untyped")}
+    app = create_app(
+        config=config,
+        shutdown_event=threading.Event(),
+        upload_url="input_untyped",
+    )
+    assert app.state.health == Health.SETUP_FAILED
+    assert app.state.setup_result_payload.status == schema.Status.FAILED
+    assert app.state.setup_result_payload.error.startswith("TypeError('No input type provided for parameter `input`")
 
 
 def test_input_with_unsupported_type():
-    with pytest.raises(TypeError):
-        make_client("input_unsupported_type")
+    config = {"predict": _fixture_path("input_unsupported_type")}
+    app = create_app(
+        config=config,
+        shutdown_event=threading.Event(),
+        upload_url="input_untyped",
+    )
+    assert app.state.health == Health.SETUP_FAILED
+    assert app.state.setup_result_payload.status == schema.Status.FAILED
+    assert app.state.setup_result_payload.error.startswith("TypeError('Unsupported input type input_unsupported_type.Input for parameter `input`")

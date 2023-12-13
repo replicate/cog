@@ -99,6 +99,8 @@ def create_app(
     try:
         # TODO: avoid loading predictor code in this process
         predictor = load_predictor_from_ref(predictor_ref)
+        InputType = get_input_type(predictor)
+        OutputType = get_output_type(predictor)
     except Exception as ex:
         app.state.health = Health.SETUP_FAILED
         response = schema.PredictionResponse(input={},
@@ -118,7 +120,7 @@ def create_app(
         async def healthcheck_startup_failed() -> Any:
             return jsonable_encoder(
                 {
-                    "status": app.state.health,
+                    "status": app.state.health.name,
                     "setup": app.state.setup_result_payload,
                 }
             )
@@ -130,9 +132,6 @@ def create_app(
         shutdown_event=shutdown_event,
         upload_url=upload_url,
     )
-
-    InputType = get_input_type(predictor)
-    OutputType = get_output_type(predictor)
 
     class PredictionRequest(schema.PredictionRequest.with_types(input_type=InputType)):
         pass
