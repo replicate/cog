@@ -4,16 +4,20 @@ on:
   push:
     branches:
       - main
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: 3.x
-      - run: |
-          pip install mkdocs-material
+
+      - name: Copy top-level docs like README and CONTRIBUTING
+        run: |
           sed 's/docs\///g' README.md > ./docs/README.md
           cp CONTRIBUTING.md ./docs/
+
+      - name: Deploy
+        run: |
+          pip install mkdocs-material
           mkdocs gh-deploy --force
