@@ -3,12 +3,12 @@ import io
 import threading
 import traceback
 import typing  # TypeAlias, py3.10
-from asyncio import Task
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional, Tuple, cast
+from typing import Any, Callable, Optional, Tuple, Union, cast
 
 import requests
 import structlog
+from attrs import define
 from fastapi.encoders import jsonable_encoder
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry  # type: ignore
@@ -36,7 +36,17 @@ class UnknownPredictionError(Exception):
     pass
 
 
-PredictionTask: "typing.TypeAlias" = "Task[schema.PredictionResponse]"
+@define
+class SetupResult:
+    started_at: datetime
+    completed_at: datetime
+    logs: str
+    status: schema.Status
+
+
+PredictionTask: "typing.TypeAlias" = "asyncio.Task[schema.PredictionResponse]"
+SetupTask: "typing.TypeAlias" = "asyncio.Task[SetupResult]"
+RunnerTask: "typing.TypeAlias" = Union[PredictionTask, SetupTask]
 
 
 class PredictionRunner:
@@ -48,7 +58,7 @@ class PredictionRunner:
         upload_url: Optional[str] = None,
     ) -> None:
         self._response: Optional[schema.PredictionResponse] = None
-        self._result: "Optional[PredictionTask]" = None
+        self._result: Optional[RunnerTask] = None
 
         self._worker = Worker(predictor_ref=predictor_ref)
         self._should_cancel = asyncio.Event()
@@ -56,8 +66,8 @@ class PredictionRunner:
         self._shutdown_event = shutdown_event
         self._upload_url = upload_url
 
-    def make_error_handler(self, activity: str) -> Callable[[PredictionTask], None]:
-        def handle_error(task: PredictionTask) -> None:
+    def make_error_handler(self, activity: str) -> Callable[[RunnerTask], None]:
+        def handle_error(task: RunnerTask) -> None:
             exc = task.exception()
             if not exc:
                 return
@@ -73,7 +83,7 @@ class PredictionRunner:
 
         return handle_error
 
-    def setup(self) -> "Task[schema.PredictionResponse]":
+    def setup(self) -> SetupTask:
         if self.is_busy():
             raise RunnerBusyError()
         self._result = asyncio.create_task(setup(worker=self._worker))
@@ -84,7 +94,7 @@ class PredictionRunner:
     # no longer have to support Python 3.8
     def predict(
         self, prediction: schema.PredictionRequest, upload: bool = True
-    ) -> Tuple[schema.PredictionResponse, "Task[schema.PredictionResponse]"]:
+    ) -> Tuple[schema.PredictionResponse, PredictionTask]:
         # It's the caller's responsibility to not call us if we're busy.
         if self.is_busy():
             # If self._result is set, but self._response is not, we're still
@@ -93,7 +103,8 @@ class PredictionRunner:
                 raise RunnerBusyError()
             assert self._result is not None
             if prediction.id is not None and prediction.id == self._response.id:
-                return (self._response, self._result)
+                result = cast(PredictionTask, self._result)
+                return (self._response, result)
             raise RunnerBusyError()
 
         # Set up logger context for main thread. The same thing happens inside
@@ -279,7 +290,7 @@ class PredictionEventHandler:
             raise FileUploadError("Got error trying to upload output files") from error
 
 
-async def setup(*, worker: Worker) -> schema.PredictionResponse:
+async def setup(*, worker: Worker) -> SetupResult:
     logs = []
     status = None
     started_at = datetime.now(tz=timezone.utc)
@@ -309,17 +320,10 @@ async def setup(*, worker: Worker) -> schema.PredictionResponse:
         probes = ProbeHelper()
         probes.ready()
 
-    return schema.PredictionResponse(
-        input={},
-        output=None,
-        id=None,
-        version=None,
-        created_at=None,
+    return SetupResult(
         started_at=started_at,
         completed_at=completed_at,
         logs="".join(logs),
-        error=None,
-        metrics=None,
         status=status,
     )
 

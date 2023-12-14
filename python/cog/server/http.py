@@ -23,6 +23,7 @@ from typing import (
 if TYPE_CHECKING:
     from typing import ParamSpec
 
+import attrs
 import structlog
 import uvicorn
 from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
@@ -43,7 +44,13 @@ from ..predictor import (
     load_config,
     load_predictor_from_ref,
 )
-from .runner import PredictionRunner, RunnerBusyError, UnknownPredictionError
+from .runner import (
+    PredictionRunner,
+    RunnerBusyError,
+    SetupResult,
+    SetupTask,
+    UnknownPredictionError,
+)
 
 log = structlog.get_logger("cog.server.http")
 
@@ -59,8 +66,8 @@ class Health(Enum):
 
 class MyState:
     health: Health
-    setup_result: "Optional[asyncio.Task[schema.PredictionResponse]]"
-    setup_result_payload: Optional[schema.PredictionResponse]
+    setup_task: Optional[SetupTask]
+    setup_result: Optional[SetupResult]
 
 
 class MyFastAPI(FastAPI):
@@ -83,8 +90,8 @@ def create_app(
     )
 
     app.state.health = Health.STARTING
+    app.state.setup_task = None
     app.state.setup_result = None
-    app.state.setup_result_payload = None
 
     predictor_ref = get_predictor_ref(config, mode)
 
@@ -122,7 +129,7 @@ def create_app(
 
     @app.on_event("startup")
     def startup() -> None:
-        app.state.setup_result = runner.setup()
+        app.state.setup_task = runner.setup()
 
     @app.on_event("shutdown")
     def shutdown() -> None:
@@ -138,7 +145,7 @@ def create_app(
 
     @app.get("/health-check")
     async def healthcheck() -> Any:
-        await _check_setup_result()
+        await _check_setup_task()
         if app.state.health == Health.READY:
             health = Health.BUSY if runner.is_busy() else Health.READY
         else:
@@ -146,7 +153,7 @@ def create_app(
         return jsonable_encoder(
             {
                 "status": health.name,
-                "setup": app.state.setup_result_payload,
+                "setup": attrs.asdict(app.state.setup_result),
             }
         )
 
@@ -274,25 +281,25 @@ def create_app(
             shutdown_event.set()
         return JSONResponse({}, status_code=200)
 
-    async def _check_setup_result() -> Any:
-        if app.state.setup_result is None:
+    async def _check_setup_task() -> Any:
+        if app.state.setup_task is None:
             return
 
-        if not app.state.setup_result.done():
+        if not app.state.setup_task.done():
             return
 
         # this can raise CancelledError
-        result = app.state.setup_result.result()
+        result = app.state.setup_task.result()
 
         if result.status == schema.Status.SUCCEEDED:
             app.state.health = Health.READY
         else:
             app.state.health = Health.SETUP_FAILED
 
-        app.state.setup_result_payload = result
+        app.state.setup_result = result
 
-        # Reset app.state.setup_result so future calls are a no-op
-        app.state.setup_result = None
+        # Reset app.state.setup_task so future calls are a no-op
+        app.state.setup_task = None
 
     return app
 
