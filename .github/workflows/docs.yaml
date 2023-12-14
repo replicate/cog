@@ -13,7 +13,7 @@ jobs:
         with:
           python-version: 3.x
       - run: |
-           pip install mkdocs-material
+          pip install mkdocs-material
           sed 's/docs\///g' README.md > ./docs/README.md
           cp CONTRIBUTING.md ./docs/
           mkdocs gh-deploy --force
