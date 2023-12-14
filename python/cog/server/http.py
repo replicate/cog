@@ -8,7 +8,8 @@ import socket
 import sys
 import textwrap
 import threading
-from datetime import datetime
+import traceback
+from datetime import datetime, timezone
 from enum import Enum, auto, unique
 from typing import (
     TYPE_CHECKING,
@@ -93,6 +94,7 @@ def create_app(
     app.state.health = Health.STARTING
     app.state.setup_task = None
     app.state.setup_result = None
+    started_at = datetime.now(tz=timezone.utc)
 
     predictor_ref = get_predictor_ref(config, mode)
 
@@ -101,33 +103,31 @@ def create_app(
         predictor = load_predictor_from_ref(predictor_ref)
         InputType = get_input_type(predictor)
         OutputType = get_output_type(predictor)
-    except Exception as ex:
+    except Exception:
         app.state.health = Health.SETUP_FAILED
-        response = schema.PredictionResponse(input={},
-                                             output=None,
-                                             id=predictor_ref,
-                                             version=None,
-                                             created_at=datetime.now(),
-                                             started_at=datetime.now(),
-                                             completed_at=None,
-                                             logs="",
-                                             error=repr(ex),
-                                             status=schema.Status.FAILED,
-                                             metrics=None)
-        app.state.setup_result_payload = response
+        result = SetupResult(
+            started_at=started_at,
+            completed_at=datetime.now(tz=timezone.utc),
+            logs="Error while loading predictor:\n\n" + traceback.format_exc(),
+            status=schema.Status.FAILED,
+        )
+        app.state.setup_result = result
 
         @app.get("/health-check")
         async def healthcheck_startup_failed() -> Any:
             return jsonable_encoder(
                 {
                     "status": app.state.health.name,
-                    "setup": app.state.setup_result_payload,
+                    "setup": attrs.asdict(app.state.setup_result),
                 }
             )
 
-        @app.on_event("shutdown")
-        def shutdown_startup_failed() -> None:
-            pass
+        @app.post("/shutdown")
+        async def start_shutdown_startup_failed() -> Any:
+            log.info("shutdown requested via http")
+            if shutdown_event is not None:
+                shutdown_event.set()
+            return JSONResponse({}, status_code=200)
 
         return app
 

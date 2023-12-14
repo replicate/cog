@@ -250,8 +250,8 @@ def test_untyped_inputs():
         upload_url="input_untyped",
     )
     assert app.state.health == Health.SETUP_FAILED
-    assert app.state.setup_result_payload.status == schema.Status.FAILED
-    assert app.state.setup_result_payload.error.startswith("TypeError('No input type provided for parameter `input`")
+    assert app.state.setup_result.status == schema.Status.FAILED
+    assert app.state.setup_result.logs.find("TypeError: No input type provided for parameter") != -1
 
 
 def test_input_with_unsupported_type():
@@ -262,5 +262,5 @@ def test_input_with_unsupported_type():
         upload_url="input_untyped",
     )
     assert app.state.health == Health.SETUP_FAILED
-    assert app.state.setup_result_payload.status == schema.Status.FAILED
-    assert app.state.setup_result_payload.error.startswith("TypeError('Unsupported input type input_unsupported_type.Input for parameter `input`")
+    assert app.state.setup_result.status == schema.Status.FAILED
+    assert app.state.setup_result.logs.find("TypeError: Unsupported input type input_unsupported_type.") != -1
