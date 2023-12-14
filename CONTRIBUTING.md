@@ -175,6 +175,14 @@ docker run -p 5001:5000 --init --platform=linux/amd64 cog-file-project
 
 Then visit [localhost:5001](http://localhost:5001) in your browser.
 
+## Running the docs server
+
+To run the docs website server locally:
+
+```sh
+make run-docs-server
+```
+
 ## Publishing a release
 
 This project has a [GitHub Actions workflow](https://github.com/replicate/cog/blob/39cfc5c44ab81832886c9139ee130296f1585b28/.github/workflows/ci.yaml#L107) that uses [goreleaser](https://goreleaser.com/quick-start/#quick-start) to facilitate the process of publishing new releases. The release process is triggered by manually creating and pushing a new git tag.

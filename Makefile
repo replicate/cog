@@ -107,3 +107,11 @@ mod-tidy:
 install-python:
 	$(PYTHON) -c 'import sys; exit(0) if sys.version_info >= (3, 10) else print("\n\nWarning: python >=3.10 is needed (not installed) to pass linting (pyright)\n\n")'
 	$(PYTHON) -m pip install '.[dev]'
+
+
+.PHONY: run-docs-server
+run-docs-server:
+	pip install mkdocs-material
+	sed 's/docs\///g' README.md > ./docs/README.md
+	cp CONTRIBUTING.md ./docs/
+	mkdocs serve
