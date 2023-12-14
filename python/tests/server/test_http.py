@@ -16,13 +16,11 @@ def test_setup_is_called(client, match):
     assert resp.status_code == 200
     assert resp.json() == match({"status": "succeeded", "output": "bar"})
 
-
 @uses_predictor("function.py:predict")
 def test_predict_works_with_functions(client, match):
     resp = client.post("/predictions", json={"input": {"text": "baz"}})
     assert resp.status_code == 200
     assert resp.json() == match({"status": "succeeded", "output": "hello baz"})
-
 
 @uses_predictor("openapi_complex_input")
 def test_openapi_specification(client, static_schema):
@@ -459,6 +457,17 @@ def test_prediction_idempotent_endpoint_conflict(client, match):
     assert resp1.json() == match({"id": "abcd1234", "status": "processing"})
     assert resp2.status_code == 409
 
+    
+@uses_predictor("sleep")
+def test_predict_before_setup_complete():
+    resp = client.post("/predictions")
+    assert resp.status_code == 503
+    assert resp.json() == {"detail": "Server not ready. Try again later"}
+
+@uses_predictor("sleep")
+def test_shutdown_before_setup_complete():
+    resp = client.post("/shutdown")
+    assert resp.status_code == 200
 
 # a basic end-to-end test for async predictions. if you're adding more
 # exhaustive tests of webhooks, consider adding them to test_runner.py
