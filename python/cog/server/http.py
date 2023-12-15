@@ -360,6 +360,13 @@ def signal_set_event(event: threading.Event) -> Callable[[Any, Any], None]:
     return _signal_set_event
 
 
+def _cpu_count() -> int:
+    try:
+        return len(os.sched_getaffinity(0)) or 1  # type: ignore
+    except AttributeError:  # not available on every platform
+        return os.cpu_count() or 1
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Cog HTTP server")
     parser.add_argument(
@@ -407,7 +414,7 @@ if __name__ == "__main__":
         if config.get("build", {}).get("gpu", False):
             threads = 1
         else:
-            threads = max(1, len(os.sched_getaffinity(0)))
+            threads = _cpu_count()
 
     shutdown_event = threading.Event()
     app = create_app(
