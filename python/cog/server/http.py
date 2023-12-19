@@ -115,12 +115,8 @@ def create_app(
 
         @app.get("/health-check")
         async def healthcheck_startup_failed() -> Any:
-            return jsonable_encoder(
-                {
-                    "status": app.state.health.name,
-                    "setup": attrs.asdict(app.state.setup_result),
-                }
-            )
+            setup = attrs.asdict(app.state.setup_result)
+            return jsonable_encoder({"status": app.state.health.name, "setup": setup})
 
         @app.post("/shutdown")
         async def start_shutdown_startup_failed() -> Any:
@@ -181,12 +177,8 @@ def create_app(
             health = Health.BUSY if runner.is_busy() else Health.READY
         else:
             health = app.state.health
-        return jsonable_encoder(
-            {
-                "status": health.name,
-                "setup": attrs.asdict(app.state.setup_result),
-            }
-        )
+        setup = attrs.asdict(app.state.setup_result) if app.state.setup_result else {}
+        return jsonable_encoder({"status": health.name, "setup": setup})
 
     @limited
     @app.post(
