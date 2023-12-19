@@ -150,8 +150,7 @@ sudo chmod +x /usr/local/bin/cog
 If you're using macOS and you previously installed Cog with Homebrew, run the following:
 
 ```console
-brew update
-brew install cog
+brew upgrade cog
 ```
 
 ## Next steps
