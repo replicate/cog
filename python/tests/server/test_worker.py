@@ -126,38 +126,34 @@ def _sync_process(events) -> Result:
     result = Result()
     stdout = []
     stderr = []
-    try:
-        for event in events:
-            if isinstance(event, Log) and event.source == "stdout":
-                stdout.append(event.message)
-            elif isinstance(event, Log) and event.source == "stderr":
-                stderr.append(event.message)
-            elif isinstance(event, Heartbeat):
-                result.heartbeat_count += 1
-            elif isinstance(event, Done):
-                assert not result.done
-                result.done = event
-            elif isinstance(event, PredictionOutput):
-                assert result.output_type, "Should get output type before any output"
-                if result.output_type.multi:
-                    result.output.append(event.payload)
-                else:
-                    assert (
-                        result.output is None
-                    ), "Should not get multiple outputs for output type single"
-                    result.output = event.payload
-            elif isinstance(event, PredictionOutputType):
-                assert (
-                    result.output_type is None
-                ), "Should not get multiple output type events"
-                result.output_type = event
-                if result.output_type.multi:
-                    result.output = []
+    for event in events:
+        if isinstance(event, Log) and event.source == "stdout":
+            stdout.append(event.message)
+        elif isinstance(event, Log) and event.source == "stderr":
+            stderr.append(event.message)
+        elif isinstance(event, Heartbeat):
+            result.heartbeat_count += 1
+        elif isinstance(event, Done):
+            assert not result.done
+            result.done = event
+        elif isinstance(event, PredictionOutput):
+            assert result.output_type, "Should get output type before any output"
+            if result.output_type.multi:
+                result.output.append(event.payload)
             else:
-                pytest.fail(f"saw unexpected event: {event}")
-    except Exception as exc:
-        result.exception = exc
-        raise
+                assert (
+                    result.output is None
+                ), "Should not get multiple outputs for output type single"
+                result.output = event.payload
+        elif isinstance(event, PredictionOutputType):
+            assert (
+                result.output_type is None
+            ), "Should not get multiple output type events"
+            result.output_type = event
+            if result.output_type.multi:
+                result.output = []
+        else:
+            pytest.fail(f"saw unexpected event: {event}")
     result.stdout = "".join(stdout)
     result.stderr = "".join(stderr)
     return result
@@ -526,7 +522,6 @@ class WorkerState(RuleBasedStateMachine):
         assert result.stderr == ""
         assert result.done == Done()
 
-    @precondition(lambda x: x.setup_done)
     @rule(name=ST_NAMES, steps=st.integers(min_value=0, max_value=10))
     def predict(self, name, steps):
         try:
@@ -547,8 +542,6 @@ class WorkerState(RuleBasedStateMachine):
         except StopAsyncIteration:
             self.predict_generator = None
             self._check_predict_events()
-        except InvalidStateException:
-            pass
 
     def _check_predict_events(self):
         assert isinstance(self.predict_events[-1], Done)

@@ -188,6 +188,7 @@ class AsyncPipe(Generic[X]):
         while not self.exiting.is_set():
             if self.conn.poll(0.01):
                 return self.conn.recv()
+        return None
 
     async def coro_recv(self) -> Optional[X]:
         loop = asyncio.get_running_loop()
