@@ -158,7 +158,7 @@ class Predictor(BasePredictor):
         return Output(text="hello", file=io.StringIO("hello"))
 ```
 
-Each of the output object's properties must be one of the supported output types. For the full list, see [Input and output types](#input-and-output-types).
+Each of the output object's properties must be one of the supported output types. For the full list, see [Input and output types](#input-and-output-types). Also, make sure to name the output class as `Output` and nothing else.
 
 ### Returning a list
 
