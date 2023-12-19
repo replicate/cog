@@ -7,7 +7,15 @@ import responses
 from PIL import Image
 from responses import matchers
 
-from .conftest import uses_predictor, uses_predictor_with_client_options
+from .conftest import make_client, uses_predictor, uses_predictor_with_client_options
+
+
+def test_setup_healthcheck():
+    client = make_client(fixture_name="slow_setup")
+    resp = client.get("/health-check")
+    data = resp.json()
+    assert data["status"] == "STARTING"
+    assert data["setup"] == {}
 
 
 @uses_predictor("setup")
