@@ -31,7 +31,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: 3.11
       - name: Install Python dependencies
@@ -56,7 +56,7 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install Python dependencies
@@ -75,7 +75,7 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - name: Install Python dependencies
@@ -94,7 +94,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: 3.11
       - name: Install Python dependencies
