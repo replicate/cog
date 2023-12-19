@@ -138,6 +138,22 @@ make
 sudo make install
 ```
 
+## Upgrade
+
+If you previously installed Cog from a GitHub Releases URL, you can upgrade to the latest version by running the same commands you used to install it:
+
+```console
+sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
+sudo chmod +x /usr/local/bin/cog
+```
+
+If you're using macOS and you previously installed Cog with Homebrew, run the following:
+
+```console
+brew update
+brew install cog
+```
+
 ## Next steps
 
 - [Get started with an example model](docs/getting-started.md)
