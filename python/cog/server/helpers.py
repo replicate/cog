@@ -206,7 +206,7 @@ class AsyncPipe(Generic[X]):
 
     def shutdown(self) -> None:
         self.exiting.set()
-        self.executor.shutdown(wait=False)
+        self.executor.shutdown(wait=True)
         # if we ever need cancel_futures (introduced 3.9), we can copy it in from
         # https://github.com/python/cpython/blob/3.11/Lib/concurrent/futures/thread.py#L216-L235
 
