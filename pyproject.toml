@@ -33,7 +33,7 @@ optional-dependencies = { "dev" = [
   'numpy<1.22.0; python_version < "3.8"',
   'numpy; python_version >= "3.8"',
   "pillow",
-  "pyright==1.1.341",
+  "pyright==1.1.344",
   "pytest",
   "pytest-asyncio",
   "pytest-httpserver",
