@@ -250,6 +250,6 @@ class Predictor(BasePredictor):
         # To output `cog.Path` objects the file needs to exist, so create a temporary file first.
         # This file will automatically be deleted by Cog after it has been returned.
         output_path = Path(tempfile.mkdtemp()) / "upscaled.png"
-        upscaled_image.save(output)
+        upscaled_image.save(output_path)
         return Path(output_path)
 ```
