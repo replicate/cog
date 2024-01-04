@@ -18,7 +18,10 @@ builds:
 archives:
   - format: binary
     name_template: >-
-      {{ .ProjectName }}_{{ .Os }}_
+      {{ .ProjectName }}_
+      {{- if eq .Os "darwin" }}Darwin
+      {{- else if eq .Os "linux" }}Linux
+      {{- else }}{{ .Os }}{{ end -}}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end -}}
