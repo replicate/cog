@@ -115,8 +115,6 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 
 ## Install
 
-<a id="upgrade"></a>
-
 If you're using macOS, you can install Cog using Homebrew:
 
 ```console
