@@ -18,8 +18,8 @@ if __name__ == "__main__":
             config = load_config()
             app = create_app(config, shutdown_event=None)
             schema = app.openapi()
-    except (ConfigDoesNotExist, PredictorNotSet):
-        # If there is no cog.yaml or 'predict' has not been set, then there is no type signature.
-        # Not an error, there just isn't anything.
-        warnings.warn("no cog.yaml or 'predict' has not been set")
+    except ConfigDoesNotExist:
+        warnings.warn("no cog.yaml found or present")
+    except PredictorNotSet:
+        warnings.warn("no predict method found in Predictor")
     print(json.dumps(schema, indent=2))
