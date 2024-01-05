@@ -142,7 +142,7 @@ There are a few concepts used throughout Cog that might be helpful to understand
 - **Prediction**: A single run of the model, that takes **input** and produces **output**.
 - **Predictor**: Defines how Cog runs **predictions** on a **model**.
 
-## Runnings tests
+## Running tests
 
 To run the entire test suite:
 
