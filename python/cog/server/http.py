@@ -127,10 +127,16 @@ def create_app(
 
     try:
         predictor_ref = get_predictor_ref(config, mode)
-        # TODO: avoid loading predictor code in this process
-        predictor = load_predictor_from_ref(predictor_ref)
-        InputType = get_input_type(predictor)
-        OutputType = get_output_type(predictor)
+        # use openapi schema if schema file exists in predict model dir (cloud/k8s run)
+        if os.path.exists(schema.OPENAPI_SCHEMA_FILE):
+            log.info(f"using {schema.OPENAPI_SCHEMA_FILE} file")
+            schema_model = schema.create_schema_model(schema.OPENAPI_SCHEMA_FILE)
+            InputType = schema_model.Input
+            OutputType = schema_model.Output
+        else:
+            predictor = load_predictor_from_ref(predictor_ref)
+            InputType = get_input_type(predictor)
+            OutputType = get_output_type(predictor)
     except Exception:
         msg = "Error while loading predictor:\n\n" + traceback.format_exc()
         add_setup_failed_routes(app, started_at, msg)
