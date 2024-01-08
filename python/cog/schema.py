@@ -3,6 +3,12 @@ from datetime import datetime
 from enum import Enum
 
 import pydantic
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import importlib.util
+import os.path
+import sys
+import subprocess
 
 
 class Status(str, Enum):
@@ -84,3 +90,20 @@ class PredictionResponse(PredictionBaseModel):
             input=(t.Optional[input_type], None),
             output=(output_type, None),
         )
+
+
+def create_schema_model(openapi_schema_path="/home/dmitri/SOURCE/Replicate/cog/openapi_schema.json"):
+    with TemporaryDirectory() as temporary_directory_name:
+        temporary_directory = Path(temporary_directory_name)
+        output = Path(temporary_directory / 'model.py')
+        command = ["datamodel-codegen", "--input-file-type", "openapi",
+                   "--input", openapi_schema_path,
+                   "--output", output]
+        result = subprocess.run(command, capture_output=True, text=True)
+        module_name = os.path.basename(output).rstrip('.py')
+        spec = importlib.util.spec_from_file_location(module_name, output)
+        module = importlib.util.module_from_spec(spec)
+        # Execute the module in its own namespace
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        return module

@@ -99,10 +99,9 @@ def create_app(
     predictor_ref = get_predictor_ref(config, mode)
 
     try:
-        # TODO: avoid loading predictor code in this process
-        predictor = load_predictor_from_ref(predictor_ref)
-        InputType = get_input_type(predictor)
-        OutputType = get_output_type(predictor)
+        schema_model = schema.create_schema_model()
+        InputType = schema_model.Input
+        OutputType = schema_model.Output
     except Exception:
         app.state.health = Health.SETUP_FAILED
         result = SetupResult(
@@ -391,6 +390,11 @@ def _cpu_count() -> int:
 
 
 if __name__ == "__main__":
+
+    import pydevd_pycharm
+
+    pydevd_pycharm.settrace('172.16.0.110', port=30000, suspend=False)
+
     parser = argparse.ArgumentParser(description="Cog HTTP server")
     parser.add_argument(
         "--threads",
