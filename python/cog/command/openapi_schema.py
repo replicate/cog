@@ -4,7 +4,6 @@ python -m cog.command.specification
 This prints a JSON object describing the inputs of the model.
 """
 import json
-import warnings
 
 from ..errors import ConfigDoesNotExist, PredictorNotSet
 from ..predictor import load_config
@@ -19,7 +18,7 @@ if __name__ == "__main__":
             app = create_app(config, shutdown_event=None)
             schema = app.openapi()
     except ConfigDoesNotExist:
-        raise ConfigDoesNotExist("no cog.yaml found or present")
+        raise ConfigDoesNotExist("no cog.yaml found or present") from None
     except PredictorNotSet:
-        raise PredictorNotSet("no predict method found in Predictor")
+        raise PredictorNotSet("no predict method found in Predictor") from None
     print(json.dumps(schema, indent=2))
