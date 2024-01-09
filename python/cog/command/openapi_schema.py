@@ -19,7 +19,7 @@ if __name__ == "__main__":
             app = create_app(config, shutdown_event=None)
             schema = app.openapi()
     except ConfigDoesNotExist:
-        warnings.warn("no cog.yaml found or present")
+        raise ConfigDoesNotExist("no cog.yaml found or present")
     except PredictorNotSet:
-        warnings.warn("no predict method found in Predictor")
+        raise PredictorNotSet("no predict method found in Predictor")
     print(json.dumps(schema, indent=2))
