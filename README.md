@@ -222,6 +222,9 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/joannejchen"><img src="https://avatars.githubusercontent.com/u/33409024?v=4?s=100" width="100px;" alt="Joanne Chen"/><br /><sub><b>Joanne Chen</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=joannejchen" title="Documentation">📖</a></td>
       <td align="center" valign="top" width="14.28%"><a href="http://technillogue.github.io"><img src="https://avatars.githubusercontent.com/u/945691?v=4?s=100" width="100px;" alt="technillogue"/><br /><sub><b>technillogue</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=technillogue" title="Code">💻</a></td>
     </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="http://aroncarroll.com"><img src="https://avatars.githubusercontent.com/u/47144?v=4?s=100" width="100px;" alt="Aron Carroll"/><br /><sub><b>Aron Carroll</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=aron" title="Documentation">📖</a> <a href="https://github.com/replicate/cog/commits?author=aron" title="Code">💻</a> <a href="#ideas-aron" title="Ideas, Planning, & Feedback">🤔</a></td>
+    </tr>
   </tbody>
 </table>
 
