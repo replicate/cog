@@ -62,7 +62,7 @@ test-integration: cog
 
 .PHONY: test-python
 test-python:
-	$(PYTEST) -n auto -vv python/tests
+	$(PYTEST) -n auto -vv python/tests $(if $(FILTER),-k "$(FILTER)",)
 
 .PHONY: test
 test: test-go test-python test-integration
