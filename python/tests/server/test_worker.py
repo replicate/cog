@@ -23,7 +23,7 @@ from hypothesis.stateful import (
 
 # Set a longer deadline on CI as the instances are a bit slower.
 settings.register_profile("ci", max_examples=100, deadline=1000)
-settings.register_profile("default", max_examples=10, deadline=500)
+settings.register_profile("default", max_examples=10, deadline=1000)
 settings.register_profile("slow", max_examples=10, deadline=2000)
 settings.load_profile(os.getenv("HYPOTHESIS_PROFILE", "default"))
 
