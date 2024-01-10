@@ -356,14 +356,37 @@ For example:
         field = Field(**{"x-cog-array-type": "iterator"})  # type: ignore
         OutputType: Type[BaseModel] = Annotated[List[get_args(OutputType)[0]], field]  # type: ignore
 
-    if not hasattr(OutputType, "__name__") or OutputType.__name__ != "Output":
-        # Wrap the type in a model called "Output" so it is a consistent name in the OpenAPI schema
+    name = OutputType.__name__ if hasattr(OutputType, "__name__") else ""
+
+    if name == "Output":
+        return OutputType
+
+    # We wrap the OutputType in an Output class to
+    # ensure consistent naming of the interface in the schema.
+    #
+    # NOTE: If the OutputType.__name__ is "TrainingOutput" then cannot use
+    # `__root__` here because this will create a reference for the Object.
+    # e.g.
+    #   {'title': 'Output', '$ref': '#/definitions/TrainingOutput' ... }
+    #
+    # And this reference may conflict with other objects at which
+    # point the item will be namespaced and break our parsing. e.g.
+    #   {'title': 'Output', '$ref': '#/definitions/predict_TrainingOutput' ... }
+    #
+    # So we work around this by inheriting from the original class rather
+    # than using "__root__".
+    if name == "TrainingOutput":
+
+        class Output(OutputType):  # type: ignore
+            pass
+
+        return Output
+    else:
+
         class Output(BaseModel):
             __root__: OutputType  # type: ignore
 
-        OutputType = Output
-
-    return OutputType
+        return Output
 
 
 def get_train(predictor: Any) -> Callable[..., Any]:
@@ -403,15 +426,8 @@ def get_training_output_type(predictor: BasePredictor) -> Type[BaseModel]:
     Creates a Pydantic Output model from the return type annotation of a train() method.
     """
 
-    # class TrainingOutput(BaseModel):
-    #     weights: CogFile
-
-    # return TrainingOutput
-
     train = get_train(predictor)
     signature = inspect.signature(train)
-
-    # raise NotImplementedError(f"{signature.return_annotation}")
 
     if signature.return_annotation is inspect.Signature.empty:
         raise TypeError(
@@ -429,15 +445,28 @@ For example:
 """
         )
     else:
-        OutputType = signature.return_annotation
+        TrainingOutputType = signature.return_annotation
 
-    return create_model(
-        "TrainingOutput",
-        __config__=None,
-        __module__=__name__,
-        __root__=OutputType,
-        __validators__=None,
-    )  # type: ignore
+    name = (
+        TrainingOutputType.__name__ if hasattr(TrainingOutputType, "__name__") else ""
+    )
+    # We wrap the OutputType in a TrainingOutput class to
+    # ensure consistent naming of the interface in the schema
+    # See comment in get_output_type for more info.
+    if name == "TrainingOutput":
+        return TrainingOutputType
+
+    if name == "Output":
+
+        class TrainingOutput(TrainingOutputType):  # type: ignore
+            pass
+
+        return TrainingOutput
+
+    class TrainingOutput(BaseModel):
+        __root__: TrainingOutputType  # type: ignore
+
+    return TrainingOutput
 
 
 def human_readable_type_name(t: Type[Any]) -> str:
