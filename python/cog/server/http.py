@@ -163,9 +163,11 @@ def create_app(
         TrainingInputType = get_training_input_type(trainer)
         TrainingOutputType = get_training_output_type(trainer)
 
-        TrainingRequest = schema.TrainingRequest.with_types(
-            input_type=TrainingInputType
-        )
+        class TrainingRequest(
+            schema.TrainingRequest.with_types(input_type=TrainingInputType)
+        ):
+            pass
+
         TrainingResponse = schema.TrainingResponse.with_types(
             input_type=TrainingInputType, output_type=TrainingOutputType
         )
