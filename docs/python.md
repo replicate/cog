@@ -50,7 +50,8 @@ Prepare the model so multiple predictions run efficiently.
 
 Use this _optional_ method to include any expensive one-off operations in here like loading trained models, instantiate data transformations, etc.
 
-Baking your weights into the image could cause it to be large and increase your build times. Instead, you should download the weights (e.g. using [`pget`](https://github.com/replicate/pget)) or use the `--separate-weights` flag when calling `cog build` to bake these into a [separate layer](https://github.com/replicate/cog/blob/12ac02091d93beebebed037f38a0c99cd8749806/docs/getting-started.md?plain=1#L219).
+This method is also where you should download the weights for your model (e.g. using [`pget`](https://github.com/replicate/pget)). Storing your weights with your image directly can cause long `cog build` times and large images.
+> If this is not an option for you, you can use the `--separate-weights` flag on `cog build` to store weights in a [separate layer](https://github.com/replicate/cog/blob/12ac02091d93beebebed037f38a0c99cd8749806/docs/getting-started.md?plain=1#L219).
 
 ### `Predictor.predict(**kwargs)`
 
