@@ -50,7 +50,7 @@ Prepare the model so multiple predictions run efficiently.
 
 Use this _optional_ method to include any expensive one-off operations in here like loading trained models, instantiate data transformations, etc.
 
-It's best not to download model weights or any other files in this function. You should bake these into the image when you build it. This means your model doesn't depend on any other system being available and accessible. It also means the Docker image ID becomes an immutable identifier for the precise model you're running, instead of the combination of the image ID and whatever files it might have downloaded.
+Baking your weights into the image could cause it to be large and increase your build times. Instead, you should download the weights (e.g. using [`pget`](https://github.com/replicate/pget)) or use the `--separate-weights` flag when calling `cog build` to bake these into a [separate layer](https://github.com/replicate/cog/blob/12ac02091d93beebebed037f38a0c99cd8749806/docs/getting-started.md?plain=1#L219).
 
 ### `Predictor.predict(**kwargs)`
 
