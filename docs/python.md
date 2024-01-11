@@ -50,9 +50,7 @@ Prepare the model so multiple predictions run efficiently.
 
 Use this _optional_ method to include any expensive one-off operations in here like loading trained models, instantiate data transformations, etc.
 
-Many models use this method to download their weights (e.g. using [`pget`](https://github.com/replicate/pget)). 
-
-This has some advantages:
+Many models use this method to download their weights (e.g. using [`pget`](https://github.com/replicate/pget)). This has some advantages:
 - Smaller image sizes
 - Faster build times
 - Faster pushes and inference on [Replicate](https://replicate.com)
@@ -63,7 +61,8 @@ As an alternative, some choose to store their weights directly in the image. You
 
 While this will increase your image size and build time, it offers other advantages:
 - Faster `setup()` time
-- Ensures idempotency and reduces your model's reliance on external systems- Preserves reproducibility as your model will be self-contained in the image
+- Ensures idempotency and reduces your model's reliance on external systems
+- - Preserves reproducibility as your model will be self-contained in the image
 
 > When using this method, you should use the `--separate-weights` flag on `cog build` to store weights in a [separate layer](https://github.com/replicate/cog/blob/12ac02091d93beebebed037f38a0c99cd8749806/docs/getting-started.md?plain=1#L219).
 
