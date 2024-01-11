@@ -255,7 +255,8 @@ func (g *Generator) preamble() string {
 	return `ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-ENV NVIDIA_DRIVER_CAPABILITIES=all`
+ENV NVIDIA_DRIVER_CAPABILITIES=all
+RUN sed -i -e 's/http:\/\/archive\.ubuntu\.com\/ubuntu\//mirror:\/\/mirrors\.ubuntu\.com\/mirrors\.txt/' /etc/apt/sources.list`
 }
 
 func (g *Generator) installTini() string {
