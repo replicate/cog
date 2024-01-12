@@ -24,7 +24,7 @@ from .exceptions import (
     FatalWorkerException,
     InvalidStateException,
 )
-from .helpers import StreamRedirector, WrappedStream
+from .helpers import StreamRedirector, WrappedStream, increase_conn_size
 
 _spawn = multiprocessing.get_context("spawn")
 
