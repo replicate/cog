@@ -309,15 +309,10 @@ def find(obj: ast.AST, name: str) -> ast.AST:
     """Find a particular named node in a tree"""
     return next(node for node in ast.walk(obj) if getattr(node, "name", "") == name)
 
-
 if typing.TYPE_CHECKING:
-    AstVal: "typing.TypeAlias" = (
-        "int | float | complex | str | list[AstVal] | bytes | None"
-    )
+    AstVal: "typing.TypeAlias" = "int | float | complex | str | list[AstVal] | bytes | None"
     AstValNoBytes: "typing.TypeAlias" = "int | float | str | list[AstValNoBytes]"
-    JSONObject: "typing.TypeAlias" = (
-        "int | float | str | list[JSONObject] | JSONDict | None"
-    )
+    JSONObject: "typing.TypeAlias" = "int | float | str | list[JSONObject] | JSONDict | None"
     JSONDict: "typing.TypeAlias" = "dict[str, JSONObject]"
 
 
@@ -332,7 +327,6 @@ def to_serializable(val: "AstVal") -> "JSONObject":
     else:
         return val
 
-
 def get_value(node: ast.AST) -> "AstVal":
     """Return the value of constant or list of constants"""
     if isinstance(node, ast.Constant):
@@ -345,7 +339,7 @@ def get_value(node: ast.AST) -> "AstVal":
     if isinstance(node, (ast.List, ast.Tuple)):
         return [get_value(e) for e in node.elts]
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
-        return -typing.cast(typing.Union[int, float, complex], get_value(node.operand))
+            return -typing.cast(typing.Union[int, float, complex], get_value(node.operand))
     raise ValueError("Unexpected node type", type(node))
 
 
@@ -372,12 +366,11 @@ def get_call_name(call: ast.Call) -> str:
 def parse_args(tree: ast.AST) -> "list[tuple[ast.arg, ast.expr | types.EllipsisType]]":
     """Parse argument, default pairs from a file with a predict function"""
     predict = find(tree, "predict")
-    assert isinstance(predict, (ast.FunctionDef, ast.AsyncFunctionDef))
+    assert isinstance(predict, ast.FunctionDef)
     args = predict.args.args  # [-len(defaults) :]
     # use Ellipsis instead of None here to distinguish a default of None
     defaults = [...] * (len(args) - len(predict.args.defaults)) + predict.args.defaults
     return list(zip(args, defaults))
-
 
 def parse_assignment(assignment: ast.AST) -> "None | tuple[str, JSONObject]":
     """Parse an assignment into an OpenAPI object property"""
@@ -410,9 +403,7 @@ def parse_class(classdef: ast.AST) -> "JSONDict":
     """Parse a class definition into an OpenAPI object"""
     assert isinstance(classdef, ast.ClassDef)
     properties = {
-        assignment[0]: assignment[1]
-        for assignment in map(parse_assignment, classdef.body)
-        if assignment
+        assignment[0]: assignment[1] for assignment in map(parse_assignment, classdef.body) if assignment
     }
     return {
         "title": classdef.name,
@@ -437,7 +428,7 @@ def resolve_name(node: ast.expr) -> str:
         return node.id
     if isinstance(node, ast.Index):
         # deprecated, but needed for py3.8
-        return resolve_name(node.value)  # type: ignore
+        return resolve_name(node.value) # type: ignore
     if isinstance(node, ast.Attribute):
         return node.attr
     if isinstance(node, ast.Subscript):
@@ -445,11 +436,9 @@ def resolve_name(node: ast.expr) -> str:
     raise ValueError("Unexpected node type", type(node), ast.unparse(node))
 
 
-def parse_return_annotation(
-    tree: ast.AST, fn: str = "predict"
-) -> "tuple[JSONDict, JSONDict]":
+def parse_return_annotation(tree: ast.AST, fn: str = "predict") -> "tuple[JSONDict, JSONDict]":
     predict = find(tree, fn)
-    if not isinstance(predict, (ast.FunctionDef, ast.AsyncFunctionDef)):
+    if not isinstance(predict, ast.FunctionDef):
         raise ValueError("Could not find predict function")
     annotation = predict.returns
     if not annotation:
@@ -561,7 +550,7 @@ def extract_info(code: str) -> "JSONDict":
         **return_schema,
     }
     # trust me, typechecker, I know BASE_SCHEMA
-    x: "JSONDict" = schema["components"]["schemas"]  # type: ignore
+    x: "JSONDict" = schema["components"]["schemas"] # type: ignore
     x.update(components)
     return schema
 

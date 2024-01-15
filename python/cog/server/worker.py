@@ -1,6 +1,3 @@
-import asyncio
-import contextlib
-import inspect
 import multiprocessing
 import os
 import signal
@@ -9,16 +6,10 @@ import traceback
 import types
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
-from typing import Any, Dict, Iterator, Optional, TextIO, Union
+from typing import Any, Dict, Iterable, Optional, TextIO, Union
 
 from ..json import make_encodeable
-from ..predictor import (
-    BasePredictor,
-    get_predict,
-    load_predictor_from_ref,
-    run_setup,
-    run_setup_async,
-)
+from ..predictor import BasePredictor, get_predict, load_predictor_from_ref, run_setup
 from .eventtypes import (
     Done,
     Heartbeat,
@@ -59,7 +50,7 @@ class Worker:
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
         self._terminating = False
 
-    def setup(self) -> Iterator[_PublicEventType]:
+    def setup(self) -> Iterable[_PublicEventType]:
         self._assert_state(WorkerState.NEW)
         self._state = WorkerState.STARTING
         self._child.start()
@@ -68,7 +59,7 @@ class Worker:
 
     def predict(
         self, payload: Dict[str, Any], poll: Optional[float] = None
-    ) -> Iterator[_PublicEventType]:
+    ) -> Iterable[_PublicEventType]:
         self._assert_state(WorkerState.READY)
         self._state = WorkerState.PROCESSING
         self._allow_cancel = True
@@ -97,11 +88,7 @@ class Worker:
             self._child.join()
 
     def cancel(self) -> None:
-        if (
-            self._allow_cancel
-            and self._child.is_alive()
-            and self._child.pid is not None
-        ):
+        if self._allow_cancel and self._child.is_alive() and self._child.pid is not None:
             os.kill(self._child.pid, signal.SIGUSR1)
             self._allow_cancel = False
 
@@ -113,7 +100,7 @@ class Worker:
 
     def _wait(
         self, poll: Optional[float] = None, raise_on_error: Optional[str] = None
-    ) -> Iterator[_PublicEventType]:
+    ) -> Iterable[_PublicEventType]:
         done = None
 
         if poll:
@@ -138,8 +125,9 @@ class Worker:
         if done:
             if done.error and raise_on_error:
                 raise FatalWorkerException(raise_on_error + ": " + done.error_detail)
-            self._state = WorkerState.READY
-            self._allow_cancel = False
+            else:
+                self._state = WorkerState.READY
+                self._allow_cancel = False
 
         # If we dropped off the end off the end of the loop, check if it's
         # because the child process died.
@@ -183,35 +171,19 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             [ws_stdout, ws_stderr], self._stream_write_hook
         )
         self._stream_redirector.start()
+
         self._setup()
         self._loop()
+
         self._stream_redirector.shutdown()
 
     def _setup(self) -> None:
-        with self._handle_setup_error():
-            # we need to load the predictor to know if setup is async
-            self._predictor = load_predictor_from_ref(self._predictor_ref)
-            # if users want to access the same event loop from setup and predict,
-            # both have to be async. if setup isn't async, it doesn't matter if we
-            # create the event loop here or after setup
-            #
-            # otherwise, if setup is sync and the user does new_event_loop to use a ClientSession,
-            # then tries to use the same session from async predict, they would get an error.
-            # that's significant if connections are open and would need to be discarded
-            if is_async_predictor(self._predictor):
-                self.loop = get_loop()
-            # Could be a function or a class
-            if hasattr(self._predictor, "setup"):
-                if inspect.iscoroutinefunction(self._predictor.setup):
-                    self.loop.run_until_complete(run_setup_async(self._predictor))
-                else:
-                    run_setup(self._predictor)
-
-    @contextlib.contextmanager
-    def _handle_setup_error(self) -> Iterator[None]:
         done = Done()
         try:
-            yield
+            self._predictor = load_predictor_from_ref(self._predictor_ref)
+            # Could be a function or a class
+            if hasattr(self._predictor, "setup"):
+                run_setup(self._predictor)
         except Exception as e:
             traceback.print_exc()
             done.error = True
@@ -227,39 +199,32 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             self._stream_redirector.drain()
             self._events.send(done)
 
-    def _loop_sync(self) -> None:
-        while True:
-            ev = self._events.recv()
-            if isinstance(ev, Shutdown):
-                break
-            if isinstance(ev, PredictionInput):
-                self._predict_sync(ev.payload)
-            else:
-                print(f"Got unexpected event: {ev}", file=sys.stderr)
-
-    async def _loop_async(self) -> None:
-        while True:
-            ev = self._events.recv()
-            if isinstance(ev, Shutdown):
-                break
-            if isinstance(ev, PredictionInput):
-                await self._predict_async(ev.payload)
-            else:
-                print(f"Got unexpected event: {ev}", file=sys.stderr)
-
     def _loop(self) -> None:
-        if is_async(get_predict(self._predictor)):
-            self.loop.run_until_complete(self._loop_async())
-        else:
-            self._loop_sync()
+        while True:
+            ev = self._events.recv()
+            if isinstance(ev, Shutdown):
+                break
+            elif isinstance(ev, PredictionInput):
+                self._predict(ev.payload)
+            else:
+                print(f"Got unexpected event: {ev}", file=sys.stderr)
 
-    @contextlib.contextmanager
-    def _handle_predict_error(self) -> Iterator[None]:
+    def _predict(self, payload: Dict[str, Any]) -> None:
         assert self._predictor
         done = Done()
         self._cancelable = True
         try:
-            yield
+            predict = get_predict(self._predictor)
+            result = predict(**payload)
+
+            if result:
+                if isinstance(result, types.GeneratorType):
+                    self._events.send(PredictionOutputType(multi=True))
+                    for r in result:
+                        self._events.send(PredictionOutput(payload=make_encodeable(r)))
+                else:
+                    self._events.send(PredictionOutputType(multi=False))
+                    self._events.send(PredictionOutput(payload=make_encodeable(result)))
         except CancelationException:
             done.canceled = True
         except Exception as e:
@@ -270,33 +235,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             self._cancelable = False
         self._stream_redirector.drain()
         self._events.send(done)
-
-    async def _predict_async(self, payload: Dict[str, Any]) -> None:
-        with self._handle_predict_error():
-            predict = get_predict(self._predictor)
-            result = predict(**payload)
-            if result:
-                if inspect.isasyncgen(result):
-                    self._events.send(PredictionOutputType(multi=True))
-                    async for r in result:
-                        self._events.send(PredictionOutput(payload=make_encodeable(r)))
-                elif inspect.isawaitable(result):
-                    result = await result
-                    self._events.send(PredictionOutputType(multi=False))
-                    self._events.send(PredictionOutput(payload=make_encodeable(result)))
-
-    def _predict_sync(self, payload: Dict[str, Any]) -> None:
-        with self._handle_predict_error():
-            predict = get_predict(self._predictor)
-            result = predict(**payload)
-            if result:
-                if inspect.isgenerator(result):
-                    self._events.send(PredictionOutputType(multi=True))
-                    for r in result:
-                        self._events.send(PredictionOutput(payload=make_encodeable(r)))
-                else:
-                    self._events.send(PredictionOutputType(multi=False))
-                    self._events.send(PredictionOutput(payload=make_encodeable(result)))
 
     def _signal_handler(self, signum: int, frame: Optional[types.FrameType]) -> None:
         if signum == signal.SIGUSR1 and self._cancelable:
@@ -309,20 +247,3 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             original_stream.write(data)
             original_stream.flush()
         self._events.send(Log(data, source=stream_name))
-
-
-def get_loop() -> asyncio.AbstractEventLoop:
-    try:
-        # just in case something else created an event loop already
-        return asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.new_event_loop()
-
-
-def is_async(fn: Any) -> bool:
-    return inspect.iscoroutinefunction(fn) or inspect.isasyncgenfunction(fn)
-
-
-def is_async_predictor(predictor: BasePredictor) -> bool:
-    setup = getattr(predictor, "setup", None)
-    return is_async(setup) or is_async(get_predict(predictor))
