@@ -199,7 +199,6 @@ def fake_worker(events):
 
     return FakeWorker()
 
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize("events,calls", PREDICT_TESTS)
 async def test_predict(events, calls):

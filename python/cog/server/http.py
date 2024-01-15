@@ -73,13 +73,11 @@ class MyState:
     setup_task: Optional[SetupTask]
     setup_result: Optional[SetupResult]
 
-
 class MyFastAPI(FastAPI):
     # TODO: not, strictly speaking, legal
     # https://github.com/microsoft/pyright/issues/5933
     # but it'd need a FastAPI patch to fix
     state: MyState  # type: ignore
-
 
 def create_app(
     config: Dict[str, Any],
@@ -137,7 +135,6 @@ def create_app(
 
     class PredictionRequest(schema.PredictionRequest.with_types(input_type=InputType)):
         pass
-
     PredictionResponse = schema.PredictionResponse.with_types(
         input_type=InputType, output_type=OutputType
     )
@@ -147,7 +144,6 @@ def create_app(
     if TYPE_CHECKING:
         P = ParamSpec("P")
         T = TypeVar("T")
-
     def limited(f: "Callable[P, Awaitable[T]]") -> "Callable[P, Awaitable[T]]":
         @functools.wraps(f)
         async def wrapped(*args: "P.args", **kwargs: "P.kwargs") -> "T":
@@ -228,10 +224,7 @@ def create_app(
         response_model=PredictionResponse,
         response_model_exclude_unset=True,
     )
-    async def predict(
-        request: PredictionRequest = Body(default=None),
-        prefer: Union[str, None] = Header(default=None),
-    ) -> Any:  # type: ignore
+    async def predict(request: PredictionRequest = Body(default=None), prefer: Union[str, None] = Header(default=None)) -> Any:  # type: ignore
         """
         Run a single prediction on the model
         """
