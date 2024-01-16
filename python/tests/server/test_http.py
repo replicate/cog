@@ -345,6 +345,15 @@ def test_openapi_specification_with_int_choices(client, static_schema):
     }
 
 
+@uses_predictor("async_yield")
+def test_yielding_strings_from_async_generator_predictors(client, match):
+    resp = client.post("/predictions")
+    assert resp.status_code == 200
+    assert resp.json() == match(
+        {"status": "succeeded", "output": ["foo", "bar", "baz"]}
+    )
+
+
 @uses_trainer("train.py:train")
 def test_train_openapi_specification(client):
     resp = client.get("/openapi.json")
