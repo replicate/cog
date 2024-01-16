@@ -1,11 +1,9 @@
-import asyncio
 import os
 import threading
 from datetime import datetime
 from unittest import mock
 
 import pytest
-import pytest_asyncio
 from cog.schema import PredictionRequest, PredictionResponse, Status, WebhookEvent
 from cog.server.eventtypes import (
     Done,
@@ -28,25 +26,24 @@ def _fixture_path(name):
     return os.path.join(test_dir, f"fixtures/{name}.py") + ":Predictor"
 
 
-@pytest_asyncio.fixture
-async def runner():
+@pytest.fixture
+def runner():
     runner = PredictionRunner(
         predictor_ref=_fixture_path("sleep"), shutdown_event=threading.Event()
     )
     try:
-        await runner.setup()
+        runner.setup().get(5)
         yield runner
     finally:
         runner.shutdown()
 
 
-@pytest.mark.asyncio
-async def test_prediction_runner_setup():
+def test_prediction_runner_setup():
     runner = PredictionRunner(
         predictor_ref=_fixture_path("sleep"), shutdown_event=threading.Event()
     )
     try:
-        result = await runner.setup()
+        result = runner.setup().get(5)
 
         assert result.status == Status.SUCCEEDED
         assert result.logs == ""
@@ -56,11 +53,10 @@ async def test_prediction_runner_setup():
         runner.shutdown()
 
 
-@pytest.mark.asyncio
-async def test_prediction_runner(runner):
+def test_prediction_runner(runner):
     request = PredictionRequest(input={"sleep": 0.1})
     _, async_result = runner.predict(request)
-    response = await async_result
+    response = async_result.get(timeout=1)
     assert response.output == "done in 0.1 seconds"
     assert response.status == "succeeded"
     assert response.error is None
@@ -69,37 +65,33 @@ async def test_prediction_runner(runner):
     assert isinstance(response.completed_at, datetime)
 
 
-@pytest.mark.asyncio
-async def test_prediction_runner_called_while_busy(runner):
+def test_prediction_runner_called_while_busy(runner):
     request = PredictionRequest(input={"sleep": 0.1})
     _, async_result = runner.predict(request)
 
     assert runner.is_busy()
     with pytest.raises(RunnerBusyError):
-        _, task = runner.predict(request)
-        await task
+        runner.predict(request)
 
-    # Await to ensure that the first prediction is scheduled before we
+    # Call .get() to ensure that the first prediction is scheduled before we
     # attempt to shut down the runner.
-    await async_result
+    async_result.get()
 
 
-@pytest.mark.asyncio
-async def test_prediction_runner_called_while_busy_idempotent(runner):
+def test_prediction_runner_called_while_busy_idempotent(runner):
     request = PredictionRequest(id="abcd1234", input={"sleep": 0.1})
 
     runner.predict(request)
     runner.predict(request)
     _, async_result = runner.predict(request)
 
-    response = await asyncio.wait_for(async_result, timeout=1)
+    response = async_result.get(timeout=1)
     assert response.id == "abcd1234"
     assert response.output == "done in 0.1 seconds"
     assert response.status == "succeeded"
 
 
-@pytest.mark.asyncio
-async def test_prediction_runner_called_while_busy_idempotent_wrong_id(runner):
+def test_prediction_runner_called_while_busy_idempotent_wrong_id(runner):
     request1 = PredictionRequest(id="abcd1234", input={"sleep": 0.1})
     request2 = PredictionRequest(id="5678efgh", input={"sleep": 0.1})
 
@@ -107,20 +99,19 @@ async def test_prediction_runner_called_while_busy_idempotent_wrong_id(runner):
     with pytest.raises(RunnerBusyError):
         runner.predict(request2)
 
-    response = await async_result
+    response = async_result.get(timeout=1)
     assert response.id == "abcd1234"
     assert response.output == "done in 0.1 seconds"
     assert response.status == "succeeded"
 
 
-@pytest.mark.asyncio
-async def test_prediction_runner_cancel(runner):
+def test_prediction_runner_cancel(runner):
     request = PredictionRequest(input={"sleep": 0.5})
     _, async_result = runner.predict(request)
 
     runner.cancel()
 
-    response = await async_result
+    response = async_result.get(timeout=1)
     assert response.output is None
     assert response.status == "canceled"
     assert response.error is None
@@ -129,27 +120,25 @@ async def test_prediction_runner_cancel(runner):
     assert isinstance(response.completed_at, datetime)
 
 
-@pytest.mark.asyncio
-async def test_prediction_runner_cancel_matching_id(runner):
+def test_prediction_runner_cancel_matching_id(runner):
     request = PredictionRequest(id="abcd1234", input={"sleep": 0.5})
     _, async_result = runner.predict(request)
 
     runner.cancel(prediction_id="abcd1234")
 
-    response = await async_result
+    response = async_result.get(timeout=1)
     assert response.output is None
     assert response.status == "canceled"
 
 
-@pytest.mark.asyncio
-async def test_prediction_runner_cancel_by_mismatched_id(runner):
+def test_prediction_runner_cancel_by_mismatched_id(runner):
     request = PredictionRequest(id="abcd1234", input={"sleep": 0.5})
     _, async_result = runner.predict(request)
 
     with pytest.raises(UnknownPredictionError):
         runner.cancel(prediction_id="5678efgh")
 
-    response = await async_result
+    response = async_result.get(timeout=1)
     assert response.output == "done in 0.5 seconds"
     assert response.status == "succeeded"
 
@@ -199,15 +188,15 @@ def fake_worker(events):
 
     return FakeWorker()
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize("events,calls", PREDICT_TESTS)
-async def test_predict(events, calls):
+def test_predict(events, calls):
     worker = fake_worker(events)
     request = PredictionRequest(input={"text": "hello"}, foo="bar")
     event_handler = mock.Mock()
     should_cancel = threading.Event()
 
-    await predict(
+    predict(
         worker=worker,
         request=request,
         event_handler=event_handler,
