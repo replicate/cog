@@ -118,7 +118,8 @@ class Worker:
                 if send_heartbeats:
                     yield Heartbeat()
                 continue
-
+            # this needs aioprocessing.Pipe or similar
+            # multiprocessing.Pipe is not async
             ev = self._events.recv()
             yield ev
 
