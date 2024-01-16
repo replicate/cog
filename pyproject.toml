@@ -35,7 +35,6 @@ optional-dependencies = { "dev" = [
   "pillow",
   "pyright==1.1.345",
   "pytest",
-  "pytest-asyncio",
   "pytest-httpserver",
   "pytest-rerunfailures",
   "pytest-xdist",

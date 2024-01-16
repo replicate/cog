@@ -210,7 +210,7 @@ def create_app(
 
     @app.get("/health-check")
     async def healthcheck() -> Any:
-        await _check_setup_task()
+        _check_setup_result()
         if app.state.health == Health.READY:
             health = Health.BUSY if runner.is_busy() else Health.READY
         else:
@@ -236,7 +236,7 @@ def create_app(
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
 
-        return await _predict(request=request, respond_async=respond_async)
+        return _predict(request=request, respond_async=respond_async)
 
     @limited
     @app.put(
@@ -271,10 +271,10 @@ def create_app(
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
 
-        return await _predict(request=request, respond_async=respond_async)
+        return _predict(request=request, respond_async=respond_async)
 
-    async def _predict(
-        *, request: Optional[PredictionRequest], respond_async: bool = False
+    def _predict(
+        *, request: PredictionRequest, respond_async: bool = False
     ) -> Response:
         # [compat] If no body is supplied, assume that this model can be run
         # with empty input. This will throw a ValidationError if that's not
@@ -302,8 +302,7 @@ def create_app(
             return JSONResponse(jsonable_encoder(initial_response), status_code=202)
 
         try:
-            prediction = await async_result
-            response = PredictionResponse(**prediction.dict())
+            response = PredictionResponse(**async_result.get().dict())
         except ValidationError as e:
             _log_invalid_output(e)
             raise HTTPException(status_code=500, detail=str(e)) from e
@@ -339,15 +338,14 @@ def create_app(
             shutdown_event.set()
         return JSONResponse({}, status_code=200)
 
-    async def _check_setup_task() -> Any:
+    def _check_setup_result() -> Any:
         if app.state.setup_task is None:
             return
 
-        if not app.state.setup_task.done():
+        if not app.state.setup_task.ready():
             return
 
-        # this can raise CancelledError
-        result = app.state.setup_task.result()
+        result = app.state.setup_task.get()
 
         if result.status == schema.Status.SUCCEEDED:
             app.state.health = Health.READY
