@@ -2,13 +2,13 @@ import base64
 import os
 import threading
 
+import pytest
 import responses
 from cog import schema
-from cog.server.http import Health, create_app
-
+from cog.server.http import create_app, Health
 from tests.server.conftest import _fixture_path
 
-from .conftest import uses_predictor
+from .conftest import make_client, uses_predictor
 
 
 @uses_predictor("input_none")
@@ -251,9 +251,7 @@ def test_untyped_inputs():
     )
     assert app.state.health == Health.SETUP_FAILED
     assert app.state.setup_result.status == schema.Status.FAILED
-    assert (
-        "TypeError: No input type provided for parameter" in app.state.setup_result.logs
-    )
+    assert "TypeError: No input type provided for parameter" in app.state.setup_result.logs
 
 
 def test_input_with_unsupported_type():
@@ -265,7 +263,4 @@ def test_input_with_unsupported_type():
     )
     assert app.state.health == Health.SETUP_FAILED
     assert app.state.setup_result.status == schema.Status.FAILED
-    assert (
-        "TypeError: Unsupported input type input_unsupported_type"
-        in app.state.setup_result.logs
-    )
+    assert "TypeError: Unsupported input type input_unsupported_type" in app.state.setup_result.logs

@@ -1,15 +1,15 @@
 import enum
 import importlib.util
 import inspect
-import io
 import os.path
 import sys
 import types
 from abc import ABC, abstractmethod
-from collections.abc import Iterator, AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import (
     Any,
+    Awaitable,
     Callable,
     Dict,
     List,
@@ -48,7 +48,9 @@ ALLOWED_INPUT_TYPES: List[Type[Any]] = [str, int, float, bool, CogFile, CogPath]
 
 
 class BasePredictor(ABC):
-    def setup(self, weights: Optional[Union[CogFile, CogPath]] = None) -> None:
+    def setup(
+        self, weights: Optional[Union[CogFile, CogPath]] = None
+    ) -> Optional[Awaitable[None]]:
         """
         An optional method to prepare the model so multiple predictions run efficiently.
         """
@@ -63,15 +65,25 @@ class BasePredictor(ABC):
 
 
 def run_setup(predictor: BasePredictor) -> None:
-    weights_type = get_weights_type(predictor.setup)
-
-    # No weights need to be passed, so just run setup() without any arguments.
-    if weights_type is None:
+    weights = get_weights_argument(predictor)
+    if weights:
+        predictor.setup(weights=weights)
+    else:
         predictor.setup()
-        return
 
-    weights: Union[io.IOBase, Path, None]
 
+async def run_setup_async(predictor: BasePredictor) -> None:
+    weights = get_weights_argument(predictor)
+    maybe_coro = predictor.setup(weights=weights) if weights else predictor.setup()
+    if maybe_coro:
+        return await maybe_coro
+
+
+def get_weights_argument(predictor: BasePredictor) -> Union[CogFile, CogPath, None]:
+    # by the time we get here we assume predictor has a setup method
+    weights_type = get_weights_type(predictor.setup)
+    if weights_type is None:
+        return None
     weights_url = os.environ.get("COG_WEIGHTS")
     weights_path = "weights"
 
@@ -81,30 +93,27 @@ def run_setup(predictor: BasePredictor) -> None:
     # TODO: CogFile/CogPath should have subclasses for each of the subtypes
     if weights_url:
         if weights_type == CogFile:
-            weights = cast(CogFile, CogFile.validate(weights_url))
-        elif weights_type == CogPath:
+            return cast(CogFile, CogFile.validate(weights_url))
+        if weights_type == CogPath:
             # TODO: So this can be a url. evil!
-            weights = cast(CogPath, CogPath.validate(weights_url))
-        else:
-            raise ValueError(
-                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
-            )
-    elif os.path.exists(weights_path):
+            return cast(CogPath, CogPath.validate(weights_url))
+        raise ValueError(
+            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+        )
+    if os.path.exists(weights_path):
         if weights_type == CogFile:
-            weights = cast(CogFile, open(weights_path, "rb"))
-        elif weights_type == CogPath:
-            weights = CogPath(weights_path)
-        else:
-            raise ValueError(
-                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
-            )
-    else:
-        weights = None
-
-    predictor.setup(weights=weights)
+            return cast(CogFile, open(weights_path, "rb"))
+        if weights_type == CogPath:
+            return CogPath(weights_path)
+        raise ValueError(
+            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+        )
+    return None
 
 
-def get_weights_type(setup_function: Callable[[Any], None]) -> Optional[Any]:
+def get_weights_type(
+    setup_function: Callable[[Any], Optional[Awaitable[None]]]
+) -> Optional[Any]:
     signature = inspect.signature(setup_function)
     if "weights" not in signature.parameters:
         return None

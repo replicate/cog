@@ -247,7 +247,10 @@ def create_app(
         response_model=PredictionResponse,
         response_model_exclude_unset=True,
     )
-    async def predict(request: PredictionRequest = Body(default=None), prefer: Union[str, None] = Header(default=None)) -> Any:  # type: ignore
+    async def predict(
+        request: PredictionRequest = Body(default=None),
+        prefer: Union[str, None] = Header(default=None),
+    ) -> Any:  # type: ignore
         """
         Run a single prediction on the model
         """
