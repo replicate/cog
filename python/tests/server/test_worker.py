@@ -57,11 +57,17 @@ OUTPUT_FIXTURES = [
         lambda x: f"hello, {x['name']}",
     ),
     (
+        "async_hello",
+        {"name": ST_NAMES},
+        lambda x: f"hello, {x['name']}",
+    ),
+    (
         "count_up",
         {"upto": st.integers(min_value=0, max_value=100)},
         lambda x: list(range(x["upto"])),
     ),
     ("complex_output", {}, lambda _: {"number": 42, "text": "meaning of life"}),
+    ("async_setup_uses_same_loop_as_predict", {}, lambda _: True),
 ]
 
 SETUP_LOGS_FIXTURES = [
@@ -73,7 +79,8 @@ SETUP_LOGS_FIXTURES = [
             "setting up predictor\n"
         ),
         "writing to stderr at import time\n",
-    )
+    ),
+    ("setup_uses_async", "setup used asyncio.run! it's not very effective...\n", ""),
 ]
 
 PREDICT_LOGS_FIXTURES = [
