@@ -13,6 +13,7 @@ import subprocess
 
 from .files import get_site_packages_bin_path
 
+OPENAPI_SCHEMA_FILE = "openapi_schema.json"
 
 class Status(str, Enum):
     STARTING = "starting"

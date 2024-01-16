@@ -99,9 +99,16 @@ def create_app(
     predictor_ref = get_predictor_ref(config, mode)
 
     try:
-        schema_model = schema.create_schema_model()
-        InputType = schema_model.Input
-        OutputType = schema_model.Output
+        # use openapi schema if schema file exists in predict model dir (cloud/k8s run)
+        if os.path.exists(schema.OPENAPI_SCHEMA_FILE):
+            log.info(f"using {schema.OPENAPI_SCHEMA_FILE} file")
+            schema_model = schema.create_schema_model()
+            InputType = schema_model.Input
+            OutputType = schema_model.Output
+        else:
+            predictor = load_predictor_from_ref(predictor_ref)
+            InputType = get_input_type(predictor)
+            OutputType = get_output_type(predictor)
     except Exception:
         app.state.health = Health.SETUP_FAILED
         result = SetupResult(
