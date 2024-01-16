@@ -107,10 +107,12 @@ def create_app(
         OutputType = get_output_type(predictor)
     except Exception:
         app.state.health = Health.SETUP_FAILED
+        msg = "Error while loading predictor:\n\n" + traceback.format_exc()
+        print(msg)
         result = SetupResult(
             started_at=started_at,
             completed_at=datetime.now(tz=timezone.utc),
-            logs="Error while loading predictor:\n\n" + traceback.format_exc(),
+            logs=msg,
             status=schema.Status.FAILED,
         )
         app.state.setup_result = result
@@ -518,3 +520,8 @@ if __name__ == "__main__":
         pass
 
     s.stop()
+
+    # return error exit code when setup failed and cog is running in interactive mode (not k8s)
+    if app.state.setup_result and not args.await_explicit_shutdown:
+        if app.state.setup_result.status == schema.Status.FAILED:
+            exit(-1)
