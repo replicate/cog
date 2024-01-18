@@ -159,13 +159,13 @@ class Worker:
                 "cannot accept new predictions because shutdown requested"
             )
         self._assert_state(WorkerState.READY)
+        # this has to be eager for hypothesis...
         self._state = WorkerState.PROCESSING
 
         async def inner() -> AsyncIterator[_PublicEventType]:
             input = PredictionInput(payload=payload)
             async with self.prediction_ctx(input):
                 self._events.send(input)
-                self._ensure_event_reader()
                 async for event in self._mux.read(input.id, poll=poll):
                     yield event
 
@@ -215,6 +215,8 @@ class Worker:
 
     def _ensure_event_reader(self) -> None:
         def handle_error(task: "asyncio.Task[None]") -> None:
+            if task.cancelled():
+                return
             exc = task.exception()
             if exc:
                 logging.error("caught exception", exc_info=exc)
