@@ -295,6 +295,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._setup()
         self._loop()
         self._stream_redirector.shutdown()
+        self._events.close()
 
     def _setup(self) -> None:
         with self._handle_setup_error():
