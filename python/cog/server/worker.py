@@ -100,8 +100,10 @@ class Worker:
 
         # A pipe with which to communicate with the child worker.
         events, child_events = _spawn.Pipe()
-        self._events: "AsyncPipe[tuple[str, _PublicEventType]]" = AsyncPipe(events)
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
+        self._events: "AsyncPipe[tuple[str, _PublicEventType]]" = AsyncPipe(
+            events, self._child.is_alive
+        )
         # shutdown requested
         self._shutting_down = False
         # stop reading events

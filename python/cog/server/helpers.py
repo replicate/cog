@@ -208,8 +208,11 @@ async def select(
 # functionally this is the exact same thing as aioprocessing but 0.1% the code
 # however it's still worse than just using actual asynchronous io
 class AsyncPipe(Generic[X]):
-    def __init__(self, conn: Connection) -> None:
+    def __init__(
+        self, conn: Connection, alive: Callable[[], bool] = lambda: True
+    ) -> None:
         self.conn = conn
+        self.alive = alive
         self.exiting = threading.Event()
         self.executor = concurrent.futures.ThreadPoolExecutor(1)
 
@@ -228,8 +231,11 @@ class AsyncPipe(Generic[X]):
     def _recv(self) -> Optional[X]:
         # this ugly mess could easily be avoided with loop.connect_read_pipe
         # even loop.add_reader would help but we don't want to mess with a thread-local loop
-        while not self.exiting.is_set():
+        while not self.exiting.is_set() and not self.conn.closed and self.alive():
             if self.conn.poll(0.01):
+                if self.conn.closed or not self.alive():
+                    print("caught conn closed or unalive")
+                    return
                 return self.conn.recv()
         return None
 
