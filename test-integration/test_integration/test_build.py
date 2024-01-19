@@ -14,7 +14,7 @@ def test_build_without_predictor(docker_image):
         capture_output=True,
     )
     assert build_process.returncode > 0
-    assert "Model schema is invalid" in build_process.stderr.decode()
+    assert "Can't run predictions: 'predict' option not found" in build_process.stderr.decode()
 
 
 def test_build_names_uses_image_option_in_cog_yaml(tmpdir, docker_image):

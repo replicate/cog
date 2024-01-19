@@ -1,8 +1,8 @@
 import os
+
 import pytest
 
-from .util import random_string
-from .util import remove_docker_image
+from .util import random_string, remove_docker_image
 
 
 def pytest_sessionstart(session):

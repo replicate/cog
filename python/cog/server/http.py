@@ -96,9 +96,8 @@ def create_app(
     app.state.setup_result = None
     started_at = datetime.now(tz=timezone.utc)
 
-    predictor_ref = get_predictor_ref(config, mode)
-
     try:
+        predictor_ref = get_predictor_ref(config, mode)
         # TODO: avoid loading predictor code in this process
         predictor = load_predictor_from_ref(predictor_ref)
         InputType = get_input_type(predictor)
@@ -155,11 +154,36 @@ def create_app(
         return wrapped
 
     if "train" in config:
-        # TODO: avoid loading trainer code in this process
-        trainer = load_predictor_from_ref(config["train"])
+        try:
+            # TODO: avoid loading trainer code in this process
+            trainer = load_predictor_from_ref(config["train"])
+            TrainingInputType = get_training_input_type(trainer)
+            TrainingOutputType = get_training_output_type(trainer)
+        except Exception:
+            app.state.health = Health.SETUP_FAILED
+            msg = "Error while loading trainer:\n\n" + traceback.format_exc()
+            print(msg)
+            result = SetupResult(
+                started_at=started_at,
+                completed_at=datetime.now(tz=timezone.utc),
+                logs=msg,
+                status=schema.Status.FAILED,
+            )
+            app.state.setup_result = result
 
-        TrainingInputType = get_training_input_type(trainer)
-        TrainingOutputType = get_training_output_type(trainer)
+            @app.get("/health-check")
+            async def healthcheck_startup_failed() -> Any:
+                setup = attrs.asdict(app.state.setup_result)
+                return jsonable_encoder({"status": app.state.health.name, "setup": setup})
+
+            @app.post("/shutdown")
+            async def start_shutdown_startup_failed() -> Any:
+                log.info("shutdown requested via http")
+                if shutdown_event is not None:
+                    shutdown_event.set()
+                return JSONResponse({}, status_code=200)
+
+            return app
 
         class TrainingRequest(
             schema.TrainingRequest.with_types(input_type=TrainingInputType)
@@ -196,7 +220,13 @@ def create_app(
 
     @app.on_event("startup")
     def startup() -> None:
-        app.state.setup_task = runner.setup()
+        # check for early setup failures
+        if app.state.setup_result and app.state.setup_result.status == schema.Status.FAILED:
+            if not args.await_explicit_shutdown: # signal shutdown if interactive run
+                if shutdown_event is not None:
+                    shutdown_event.set()
+        else:
+            app.state.setup_task = runner.setup()
 
     @app.on_event("shutdown")
     def shutdown() -> None:
