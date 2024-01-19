@@ -73,11 +73,30 @@ class MyState:
     setup_task: Optional[SetupTask]
     setup_result: Optional[SetupResult]
 
+
 class MyFastAPI(FastAPI):
     # TODO: not, strictly speaking, legal
     # https://github.com/microsoft/pyright/issues/5933
     # but it'd need a FastAPI patch to fix
     state: MyState  # type: ignore
+
+
+def add_setup_failed_routes(app: MyFastAPI, started_at: datetime, msg: str) -> None:
+    print(msg)
+    result = SetupResult(
+        started_at=started_at,
+        completed_at=datetime.now(tz=timezone.utc),
+        logs=msg,
+        status=schema.Status.FAILED,
+    )
+    app.state.setup_result = result
+    app.state.health = Health.SETUP_FAILED
+
+    @app.get("/health-check")
+    async def healthcheck_startup_failed() -> Any:
+        setup = attrs.asdict(app.state.setup_result)
+        return jsonable_encoder({"status": app.state.health.name, "setup": setup})
+
 
 def create_app(
     config: Dict[str, Any],
@@ -96,37 +115,23 @@ def create_app(
     app.state.setup_result = None
     started_at = datetime.now(tz=timezone.utc)
 
-    predictor_ref = get_predictor_ref(config, mode)
+    # shutdown is needed no matter what happens
+    @app.post("/shutdown")
+    async def start_shutdown() -> Any:
+        log.info("shutdown requested via http")
+        if shutdown_event is not None:
+            shutdown_event.set()
+        return JSONResponse({}, status_code=200)
 
     try:
+        predictor_ref = get_predictor_ref(config, mode)
         # TODO: avoid loading predictor code in this process
         predictor = load_predictor_from_ref(predictor_ref)
         InputType = get_input_type(predictor)
         OutputType = get_output_type(predictor)
     except Exception:
-        app.state.health = Health.SETUP_FAILED
         msg = "Error while loading predictor:\n\n" + traceback.format_exc()
-        print(msg)
-        result = SetupResult(
-            started_at=started_at,
-            completed_at=datetime.now(tz=timezone.utc),
-            logs=msg,
-            status=schema.Status.FAILED,
-        )
-        app.state.setup_result = result
-
-        @app.get("/health-check")
-        async def healthcheck_startup_failed() -> Any:
-            setup = attrs.asdict(app.state.setup_result)
-            return jsonable_encoder({"status": app.state.health.name, "setup": setup})
-
-        @app.post("/shutdown")
-        async def start_shutdown_startup_failed() -> Any:
-            log.info("shutdown requested via http")
-            if shutdown_event is not None:
-                shutdown_event.set()
-            return JSONResponse({}, status_code=200)
-
+        add_setup_failed_routes(app, started_at, msg)
         return app
 
     runner = PredictionRunner(
@@ -137,6 +142,7 @@ def create_app(
 
     class PredictionRequest(schema.PredictionRequest.with_types(input_type=InputType)):
         pass
+
     PredictionResponse = schema.PredictionResponse.with_types(
         input_type=InputType, output_type=OutputType
     )
@@ -146,6 +152,7 @@ def create_app(
     if TYPE_CHECKING:
         P = ParamSpec("P")
         T = TypeVar("T")
+
     def limited(f: "Callable[P, Awaitable[T]]") -> "Callable[P, Awaitable[T]]":
         @functools.wraps(f)
         async def wrapped(*args: "P.args", **kwargs: "P.kwargs") -> "T":
@@ -155,11 +162,16 @@ def create_app(
         return wrapped
 
     if "train" in config:
-        # TODO: avoid loading trainer code in this process
-        trainer = load_predictor_from_ref(config["train"])
-
-        TrainingInputType = get_training_input_type(trainer)
-        TrainingOutputType = get_training_output_type(trainer)
+        try:
+            # TODO: avoid loading trainer code in this process
+            trainer = load_predictor_from_ref(config["train"])
+            TrainingInputType = get_training_input_type(trainer)
+            TrainingOutputType = get_training_output_type(trainer)
+        except Exception:
+            app.state.health = Health.SETUP_FAILED
+            msg = "Error while loading trainer:\n\n" + traceback.format_exc()
+            add_setup_failed_routes(app, started_at, msg)
+            return app
 
         class TrainingRequest(
             schema.TrainingRequest.with_types(input_type=TrainingInputType)
@@ -196,7 +208,16 @@ def create_app(
 
     @app.on_event("startup")
     def startup() -> None:
-        app.state.setup_task = runner.setup()
+        # check for early setup failures
+        if (
+            app.state.setup_result
+            and app.state.setup_result.status == schema.Status.FAILED
+        ):
+            if not args.await_explicit_shutdown:  # signal shutdown if interactive run
+                if shutdown_event is not None:
+                    shutdown_event.set()
+        else:
+            app.state.setup_task = runner.setup()
 
     @app.on_event("shutdown")
     def shutdown() -> None:
@@ -332,13 +353,6 @@ def create_app(
             return JSONResponse({}, status_code=404)
         else:
             return JSONResponse({}, status_code=200)
-
-    @app.post("/shutdown")
-    async def start_shutdown() -> Any:
-        log.info("shutdown requested via http")
-        if shutdown_event is not None:
-            shutdown_event.set()
-        return JSONResponse({}, status_code=200)
 
     def _check_setup_result() -> Any:
         if app.state.setup_task is None:
