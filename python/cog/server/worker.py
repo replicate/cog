@@ -9,7 +9,7 @@ import traceback
 import types
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
-from typing import Any, Dict, Iterator, Optional, TextIO, Union
+from typing import Any, AsyncIterator, Dict, Iterator, Optional, TextIO, Union
 
 from ..json import make_encodeable
 from ..predictor import (
@@ -33,7 +33,7 @@ from .exceptions import (
     FatalWorkerException,
     InvalidStateException,
 )
-from .helpers import StreamRedirector, WrappedStream
+from .helpers import AsyncPipe, StreamRedirector, WrappedStream
 
 _spawn = multiprocessing.get_context("spawn")
 
@@ -55,11 +55,12 @@ class Worker:
         self._allow_cancel = False
 
         # A pipe with which to communicate with the child worker.
-        self._events, child_events = _spawn.Pipe()
+        events, child_events = _spawn.Pipe()
+        self._events: "AsyncPipe[_PublicEventType]" = AsyncPipe(events)
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
         self._terminating = False
 
-    def setup(self) -> Iterator[_PublicEventType]:
+    def setup(self) -> AsyncIterator[_PublicEventType]:
         self._assert_state(WorkerState.NEW)
         self._state = WorkerState.STARTING
         self._child.start()
@@ -68,7 +69,7 @@ class Worker:
 
     def predict(
         self, payload: Dict[str, Any], poll: Optional[float] = None
-    ) -> Iterator[_PublicEventType]:
+    ) -> AsyncIterator[_PublicEventType]:
         self._assert_state(WorkerState.READY)
         self._state = WorkerState.PROCESSING
         self._allow_cancel = True
@@ -95,6 +96,7 @@ class Worker:
         if self._child.is_alive():
             self._child.terminate()
             self._child.join()
+        self._events.shutdown()
 
     def cancel(self) -> None:
         if (
@@ -111,9 +113,9 @@ class Worker:
                 f"Invalid operation: state is {self._state} (must be {state})"
             )
 
-    def _wait(
+    async def _wait(
         self, poll: Optional[float] = None, raise_on_error: Optional[str] = None
-    ) -> Iterator[_PublicEventType]:
+    ) -> AsyncIterator[_PublicEventType]:
         done = None
 
         if poll:
@@ -127,9 +129,9 @@ class Worker:
                 if send_heartbeats:
                     yield Heartbeat()
                 continue
-            # this needs aioprocessing.Pipe or similar
-            # multiprocessing.Pipe is not async
-            ev = self._events.recv()
+            ev = await self._events.coro_recv()
+            if ev is None: # event loop closed or child died
+                break
             yield ev
 
             if isinstance(ev, Done):

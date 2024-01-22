@@ -296,9 +296,7 @@ async def setup(*, worker: Worker) -> SetupResult:
     started_at = datetime.now(tz=timezone.utc)
 
     try:
-        # will be async
-        for event in worker.setup():
-            await asyncio.sleep(0)
+        async for event in worker.setup():
             if isinstance(event, Log):
                 logs.append(event.message)
             elif isinstance(event, Done):
@@ -375,9 +373,7 @@ async def _predict(
                 event_handler.failed(error=str(e))
                 log.warn("failed to download url path from input", exc_info=True)
                 return event_handler.response
-    # will be async
-    for event in worker.predict(input_dict, poll=0.1):
-        await asyncio.sleep(0)
+    async for event in worker.predict(input_dict, poll=0.1):
         if should_cancel.is_set():
             worker.cancel()
             should_cancel.clear()

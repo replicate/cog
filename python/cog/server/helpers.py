@@ -1,9 +1,20 @@
+import asyncio
+import concurrent.futures
 import io
 import os
 import selectors
 import threading
 import uuid
-from typing import Callable, Optional, Sequence, TextIO
+from multiprocessing.connection import Connection
+from typing import (
+    Any,
+    Callable,
+    Generic,
+    Optional,
+    Sequence,
+    TextIO,
+    TypeVar,
+)
 
 
 class WrappedStream:
@@ -148,3 +159,38 @@ class StreamRedirector(threading.Thread):
                     if drain_tokens_seen >= drain_tokens_needed:
                         self.drain_event.set()
                         drain_tokens_seen = 0
+
+X = TypeVar("X")
+
+# functionally this is the exact same thing as aioprocessing but 0.1% the code
+# however it's still worse than just using actual asynchronous io
+class AsyncPipe(Generic[X]):
+    def __init__(self, conn: Connection) -> None:
+        self.conn = conn
+        self.exiting = threading.Event()
+        self.executor = concurrent.futures.ThreadPoolExecutor(1)
+
+    def send(self, obj: Any) -> None:
+        self.conn.send(obj)
+
+    def shutdown(self) -> None:
+        self.exiting.set()
+        self.executor.shutdown(wait=False)
+        # if we ever need cancel_futures (introduced 3.9), we can copy it in from
+        # https://github.com/python/cpython/blob/3.11/Lib/concurrent/futures/thread.py#L216-L235
+
+    def poll(self, timeout: float = 0.0) -> bool:
+        return self.conn.poll(timeout)
+
+    def _recv(self) -> Optional[X]:
+        # this ugly mess could easily be avoided with loop.connect_read_pipe
+        # even loop.add_reader would help but we don't want to mess with a thread-local loop
+        while not self.exiting.is_set():
+            if self.conn.poll(0.01):
+                return self.conn.recv()
+        return None
+
+    async def coro_recv(self) -> Optional[X]:
+        loop = asyncio.get_running_loop()
+        # believe it or not this can still deadlock!
+        return await loop.run_in_executor(self.executor, self._recv)
