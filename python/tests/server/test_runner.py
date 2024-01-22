@@ -194,8 +194,9 @@ PREDICT_TESTS = [
 
 def fake_worker(events):
     class FakeWorker:
-        def predict(self, input_, poll=None):
-            yield from events
+        async def predict(self, input_, poll=None):
+            for event in events:
+                yield event
 
     return FakeWorker()
 

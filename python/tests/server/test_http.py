@@ -649,11 +649,12 @@ def test_prediction_cancel(client):
     )
     assert resp.status_code == 202
 
-    resp = client.post("/predictions/456/cancel")
-    assert resp.status_code == 404
-
     resp = client.post("/predictions/123/cancel")
     assert resp.status_code == 200
+
+    # if we do this cancel first, on slow machines it can be slower than the prediction
+    resp = client.post("/predictions/456/cancel")
+    assert resp.status_code == 404
 
 
 @uses_predictor_with_client_options(
