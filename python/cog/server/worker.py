@@ -46,7 +46,7 @@ _PublicEventType = Union[Done, Heartbeat, Log, PredictionOutput, PredictionOutpu
 class WorkerState(Enum):
     NEW = auto()
     STARTING = auto()
-    READY = auto()
+    IDLE = auto()
     PROCESSING = auto()
     DEFUNCT = auto()
 
@@ -87,9 +87,13 @@ class Mux:
 
 
 class Worker:
-    def __init__(self, predictor_ref: str, tee_output: bool = True) -> None:
+    def __init__(
+        self, predictor_ref: str, tee_output: bool = True, concurrent: int = 1
+    ) -> None:
         self._state = WorkerState.NEW
         self._allow_cancel = False
+        self._semaphore = asyncio.Semaphore(concurrent)
+        self._concurrent = concurrent
 
         # A pipe with which to communicate with the child worker.
         events, child_events = _spawn.Pipe()
@@ -120,10 +124,24 @@ class Worker:
             self._ensure_event_reader()
             async for event in self._mux.read("SETUP", poll=0.1):
                 yield event
-                if isinstance(event, Done) and event.error:
-                    raise FatalWorkerException(
-                        "Predictor errored during setup: " + event.error_detail
-                    )
+                if isinstance(event, Done):
+                    if event.error:
+                        raise FatalWorkerException(
+                            "Predictor errored during setup: " + event.error_detail
+                        )
+                    self._state = WorkerState.IDLE
+                    self._allow_cancel = False
+
+        return inner()
+
+    @contextlib.asynccontextmanager
+    async def prediction_ctx(self) -> AsyncIterator[None]:
+        async with self._semaphore:
+            self._allow_cancel = True
+            yield
+        if self._semaphore._value == self._concurrent:
+            self._state = WorkerState.IDLE
+            self._allow_cancel = False
 
     def predict(
         self, payload: Dict[str, Any], poll: Optional[float] = None
@@ -134,11 +152,16 @@ class Worker:
             )
         self._assert_state(WorkerState.READY)
         self._state = WorkerState.PROCESSING
-        self._allow_cancel = True
-        input = PredictionInput(payload=payload)
-        self._events.send(input)
 
-        return self._wait(poll=poll)
+        async def inner() -> AsyncIterator[_PublicEventType]:
+            async with self.prediction_ctx():
+                input = PredictionInput(payload=payload)
+                self._events.send(input)
+                self._ensure_event_reader()
+                async for event in self._mux.read(input.id, poll=poll):
+                    yield event
+
+        return inner()
 
     def shutdown(self) -> None:
         if self._state == WorkerState.DEFUNCT:
