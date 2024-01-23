@@ -57,6 +57,7 @@ class Mux:
             asyncio.Queue
         )
         self.terminating = terminating
+        self.fatal: "Optional[FatalWorkerException]" = None
 
     async def write(self, id: str, item: _PublicEventType) -> None:
         await self.outs[id].put(item)
@@ -72,7 +73,7 @@ class Mux:
         while 1:
             try:
                 event = await select(
-                    self.outs[id].get(), self.shutdown.wait(), timeout=poll
+                    self.outs[id].get(), self.terminating.wait(), timeout=poll
                 )
             except TimeoutError:
                 if send_heartbeats:
@@ -84,6 +85,8 @@ class Mux:
             if isinstance(event, Done):
                 self.outs.pop(id)
                 break
+        if self.fatal:
+            raise self.fatal
 
 
 class Worker:
@@ -225,6 +228,16 @@ class Worker:
             if id == "LOG" and self._state == WorkerState.STARTING:
                 id = "SETUP"
             await self._mux.write(id, event)
+        # If we dropped off the end off the end of the loop, check if it's
+        # because the child process died.
+        if not self._child.is_alive() and not self._terminating.is_set():
+            exitcode = self._child.exitcode
+            self._mux.fatal = FatalWorkerException(
+                f"Prediction failed for an unknown reason. It might have run out of memory? (exitcode {exitcode})"
+            )
+        # this is the same event as _terminating
+        # we need to set it so mux.reads wake up and throw an error if needed
+        self._mux.terminating.set()
 
 
 class _ChildWorker(_spawn.Process):  # type: ignore
