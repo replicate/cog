@@ -575,7 +575,6 @@ class WorkerState(RuleBasedStateMachine):
 
     def teardown(self):
         self.worker.shutdown()
-        # really make sure everything is shut down and cleaned up
         self.worker.terminate()
 
 
