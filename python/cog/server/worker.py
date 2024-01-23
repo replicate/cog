@@ -48,6 +48,7 @@ class WorkerState(Enum):
     STARTING = auto()
     IDLE = auto()
     PROCESSING = auto()
+    BUSY = auto()
     DEFUNCT = auto()
 
 
@@ -154,6 +155,9 @@ class Worker:
     @contextlib.asynccontextmanager
     async def prediction_ctx(self, input: PredictionInput) -> AsyncIterator[None]:
         async with self._semaphore:
+            if self._semaphore._value == 0:
+                # maybe this will fix hypothesis
+                self._state = WorkerState.BUSY
             self._allow_cancel = True
             self._predictions_in_flight.add(input.id)
             try:
@@ -163,6 +167,9 @@ class Worker:
         if self._semaphore._value == self._concurrent:
             self._state = WorkerState.IDLE
             self._allow_cancel = False
+        else:
+            # we just finished a prediction, so if we were BUSY we aren't anymore
+            self._state = WorkerState.PROCESSING
 
     def predict(
         self, payload: Dict[str, Any], poll: Optional[float] = None
