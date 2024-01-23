@@ -148,7 +148,6 @@ class Worker:
                             "Predictor errored during setup: " + event.error_detail
                         )
                     self._state = WorkerState.IDLE
-                    self._allow_cancel = False
 
         return inner()
 
@@ -168,12 +167,15 @@ class Worker:
     def predict(
         self, payload: Dict[str, Any], poll: Optional[float] = None
     ) -> AsyncIterator[_PublicEventType]:
+        # this has to be eager just for hypothesis
+        if self._state not in {WorkerState.PROCESSING, WorkerState.IDLE}:
+            raise InvalidStateException(
+                f"Invalid operation: state is {self._state} (must be processing or idle)"
+            )
         if self._shutting_down:
             raise InvalidStateException(
                 "cannot accept new predictions because shutdown requested"
             )
-        self._assert_state(WorkerState.READY)
-        # this has to be eager for hypothesis...
         self._state = WorkerState.PROCESSING
 
         async def inner() -> AsyncIterator[_PublicEventType]:
@@ -217,6 +219,7 @@ class Worker:
             and self._child.pid is not None
         ):
             os.kill(self._child.pid, signal.SIGUSR1)
+            # this should probably check self._semaphore._value == self._concurrent
             self._allow_cancel = False
 
     def _assert_state(self, state: WorkerState) -> None:
