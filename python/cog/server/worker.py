@@ -89,6 +89,18 @@ class Mux:
             raise self.fatal
 
 
+# def state_transition(old: WorkerState, new: WorkerState):
+#     def decorator(asyncgen: Callable[P, AsyncIterator[T]]) -> Callable[P, AsyncIterator[T]:
+#         @functools.wraps(asyncgen)
+#         def inner(self: "Worker", *args: P.args) -> AsyncIterator[T]:
+#             if self._state != old:
+#                 raise InvalidStateException(
+#                     f"Invalid operation: state is {self._state} (must be {old})"
+#                 )
+#             self._state = new
+#             return asyncgen(*args)
+
+
 class Worker:
     def __init__(
         self, predictor_ref: str, tee_output: bool = True, concurrent: int = 1
