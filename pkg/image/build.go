@@ -20,7 +20,7 @@ import (
 
 const dockerignoreBackupPath = ".dockerignore.cog.bak"
 const weightsManifestPath = ".cog/cache/weights_manifest.json"
-const bundledSchemaFile = "openapi_schema.json"
+const bundledSchemaFile = ".cog/openapi_schema.json"
 
 // Build a Cog model from a config
 //
@@ -169,7 +169,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}
 	}
 
-	if err := docker.BuildAddLabelsToImage(imageName, labels); err != nil {
+	if err := docker.BuildAddLabelsAndSchemaToImage(imageName, labels, bundledSchemaFile); err != nil {
 		return fmt.Errorf("Failed to add labels to image: %w", err)
 	}
 	return nil

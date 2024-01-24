@@ -49,7 +49,7 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 	return cmd.Run()
 }
 
-func BuildAddLabelsToImage(image string, labels map[string]string) error {
+func BuildAddLabelsAndSchemaToImage(image string, labels map[string]string, schemaFile string) error {
 	var args []string
 
 	args = append(args,
@@ -74,7 +74,8 @@ func BuildAddLabelsToImage(image string, labels map[string]string) error {
 	args = append(args, ".")
 	cmd := exec.Command("docker", args...)
 
-	dockerfile := "FROM " + image
+	dockerfile := "FROM " + image + "\n"
+	dockerfile += "COPY " + schemaFile + " .cog"
 	cmd.Stdin = strings.NewReader(dockerfile)
 
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
