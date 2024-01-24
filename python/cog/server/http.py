@@ -36,6 +36,7 @@ from pydantic import ValidationError
 from pydantic.error_wrappers import ErrorWrapper
 
 from .. import schema
+from ..errors import PredictorNotSet
 from ..files import upload_file
 from ..json import upload_files
 from ..logging import setup_logging
@@ -104,6 +105,7 @@ def create_app(
     threads: int = 1,
     upload_url: Optional[str] = None,
     mode: str = "predict",
+    is_build: bool = False
 ) -> MyFastAPI:
     app = MyFastAPI(
         title="Cog",  # TODO: mention model name?
@@ -163,48 +165,54 @@ def create_app(
 
     if "train" in config:
         try:
+            trainer_ref = get_predictor_ref(config, "train")
             # TODO: avoid loading trainer code in this process
-            trainer = load_predictor_from_ref(config["train"])
+            trainer = load_predictor_from_ref(trainer_ref)
             TrainingInputType = get_training_input_type(trainer)
             TrainingOutputType = get_training_output_type(trainer)
-        except Exception:
-            app.state.health = Health.SETUP_FAILED
-            msg = "Error while loading trainer:\n\n" + traceback.format_exc()
-            add_setup_failed_routes(app, started_at, msg)
-            return app
 
-        class TrainingRequest(
-            schema.TrainingRequest.with_types(input_type=TrainingInputType)
-        ):
-            pass
+            class TrainingRequest(
+                schema.TrainingRequest.with_types(input_type=TrainingInputType)
+            ):
+                pass
 
-        TrainingResponse = schema.TrainingResponse.with_types(
-            input_type=TrainingInputType, output_type=TrainingOutputType
-        )
+            TrainingResponse = schema.TrainingResponse.with_types(
+                input_type=TrainingInputType, output_type=TrainingOutputType
+            )
 
-        @app.post(
-            "/trainings",
-            response_model=TrainingResponse,
-            response_model_exclude_unset=True,
-        )
-        def train(request: TrainingRequest = Body(default=None), prefer: Union[str, None] = Header(default=None)) -> Any:  # type: ignore
-            return predict(request, prefer)
+            @app.post(
+                "/trainings",
+                response_model=TrainingResponse,
+                response_model_exclude_unset=True,
+            )
+            def train(request: TrainingRequest = Body(default=None),
+                      prefer: Union[str, None] = Header(default=None)) -> Any:  # type: ignore
+                return predict(request, prefer)
 
-        @app.put(
-            "/trainings/{training_id}",
-            response_model=PredictionResponse,
-            response_model_exclude_unset=True,
-        )
-        def train_idempotent(
-            training_id: str = Path(..., title="Training ID"),
-            request: TrainingRequest = Body(..., title="Training Request"),
-            prefer: Union[str, None] = Header(default=None),
-        ) -> Any:
-            return predict_idempotent(training_id, request, prefer)
+            @app.put(
+                "/trainings/{training_id}",
+                response_model=PredictionResponse,
+                response_model_exclude_unset=True,
+            )
+            def train_idempotent(
+                training_id: str = Path(..., title="Training ID"),
+                request: TrainingRequest = Body(..., title="Training Request"),
+                prefer: Union[str, None] = Header(default=None),
+            ) -> Any:
+                return predict_idempotent(training_id, request, prefer)
 
-        @app.post("/trainings/{training_id}/cancel")
-        def cancel_training(training_id: str = Path(..., title="Training ID")) -> Any:
-            return cancel(training_id)
+            @app.post("/trainings/{training_id}/cancel")
+            def cancel_training(training_id: str = Path(..., title="Training ID")) -> Any:
+                return cancel(training_id)
+
+        except Exception as e:
+            if isinstance(e, (PredictorNotSet, FileNotFoundError)) and not is_build:
+                pass  # ignore missing train.py for backward compatibility with existing "bad" models in use
+            else:
+                app.state.health = Health.SETUP_FAILED
+                msg = "Error while loading trainer:\n\n" + traceback.format_exc()
+                add_setup_failed_routes(app, started_at, msg)
+                return app
 
     @app.on_event("startup")
     def startup() -> None:
@@ -247,7 +255,8 @@ def create_app(
         response_model=PredictionResponse,
         response_model_exclude_unset=True,
     )
-    async def predict(request: PredictionRequest = Body(default=None), prefer: Union[str, None] = Header(default=None)) -> Any:  # type: ignore
+    async def predict(request: PredictionRequest = Body(default=None),
+                      prefer: Union[str, None] = Header(default=None)) -> Any:  # type: ignore
         """
         Run a single prediction on the model
         """
