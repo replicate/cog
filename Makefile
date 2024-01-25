@@ -94,6 +94,7 @@ lint-go:
 .PHONY: lint-python
 lint-python:
 	$(RUFF) python/cog
+	$(RUFF) format --check python
 	$(PYRIGHT)
 
 .PHONY: lint
