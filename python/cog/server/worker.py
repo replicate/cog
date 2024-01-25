@@ -104,12 +104,12 @@ class Mux:
 
 class Worker:
     def __init__(
-        self, predictor_ref: str, tee_output: bool = True, concurrent: int = 1
+        self, predictor_ref: str, tee_output: bool = True, concurrency: int = 1
     ) -> None:
         self._state = WorkerState.NEW
         self._allow_cancel = False
-        self._semaphore = asyncio.Semaphore(concurrent)
-        self._concurrent = concurrent
+        self._semaphore = asyncio.Semaphore(concurrency)
+        self._concurrency = concurrency
 
         # A pipe with which to communicate with the child worker.
         events, child_events = _spawn.Pipe()
@@ -169,7 +169,7 @@ class Worker:
                 yield
             finally:
                 self._predictions_in_flight.remove(input.id)
-        if self._semaphore._value == self._concurrent:
+        if self._semaphore._value == self._concurrency:
             self._state = WorkerState.IDLE
             self._allow_cancel = False
         else:

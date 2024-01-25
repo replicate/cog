@@ -56,11 +56,12 @@ class PredictionRunner:
         predictor_ref: str,
         shutdown_event: Optional[threading.Event],
         upload_url: Optional[str] = None,
+        concurrency: int = 1,
     ) -> None:
         self._response: Optional[schema.PredictionResponse] = None
         self._result: Optional[RunnerTask] = None
 
-        self._worker = Worker(predictor_ref=predictor_ref)
+        self._worker = Worker(predictor_ref=predictor_ref, concurrency=concurrency)
         self._should_cancel = asyncio.Event()
 
         self._shutdown_event = shutdown_event
