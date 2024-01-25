@@ -139,6 +139,11 @@ class Worker:
         self._state = WorkerState.STARTING
 
         async def inner() -> AsyncIterator[_PublicEventType]:
+            # in 3.10 Event started doing get_running_loop
+            # previously it stored the loop when created, which causes an error in tests
+            if sys.version_info < (3, 10):
+                self._terminating = self._mux.terminating = asyncio.Event()
+
             self._child.start()
             self._ensure_event_reader()
             async for event in self._mux.read("SETUP", poll=0.1):
@@ -250,12 +255,6 @@ class Worker:
             self._read_events_task.add_done_callback(handle_error)
 
     async def _read_events(self) -> None:
-        # in 3.10 Event started doing get_running_loop
-        # previously it stored the loop when created, which causes an error in tests
-        if sys.version_info < (3, 10):
-            self._terminating = asyncio.Event()
-            self._mux.terminating = self._terminating
-
         while self._child.is_alive() and not self._terminating.is_set():
             # this can still be running when the task is destroyed
             result = await self._events.coro_recv_with_exit(self._terminating)
