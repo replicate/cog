@@ -36,10 +36,7 @@ from .errors import ConfigDoesNotExist, PredictorNotSet
 from .types import (
     File as CogFile,
 )
-from .types import (
-    Input,
-    URLPath,
-)
+from .types import Input
 from .types import (
     Path as CogPath,
 )
@@ -49,7 +46,7 @@ ALLOWED_INPUT_TYPES: List[Type[Any]] = [str, int, float, bool, CogFile, CogPath]
 
 class BasePredictor(ABC):
     def setup(
-        self, weights: Optional[Union[CogFile, CogPath]] = None
+        self, weights: Optional[Union[CogFile, CogPath, str]] = None
     ) -> Optional[Awaitable[None]]:
         """
         An optional method to prepare the model so multiple predictions run efficiently.
@@ -79,26 +76,32 @@ async def run_setup_async(predictor: BasePredictor) -> None:
         return await maybe_coro
 
 
-def get_weights_argument(predictor: BasePredictor) -> Union[CogFile, CogPath, None]:
+def get_weights_argument(predictor: BasePredictor) -> Union[CogFile, CogPath, str, None]:
     # by the time we get here we assume predictor has a setup method
     weights_type = get_weights_type(predictor.setup)
     if weights_type is None:
         return None
     weights_url = os.environ.get("COG_WEIGHTS")
-    weights_path = "weights"
+    weights_path = "weights" # this is the source of a bug isn't it?
 
     # TODO: Cog{File,Path}.validate(...) methods accept either "real"
     # paths/files or URLs to those things. In future we can probably tidy this
     # up a little bit.
     # TODO: CogFile/CogPath should have subclasses for each of the subtypes
+
+    # this is a breaking change
+    # previously, CogPath wouldn't be converted; now it is
+    # essentially everyone needs to switch from Path to str (or a new URL type)
     if weights_url:
         if weights_type == CogFile:
             return cast(CogFile, CogFile.validate(weights_url))
         if weights_type == CogPath:
             # TODO: So this can be a url. evil!
             return cast(CogPath, CogPath.validate(weights_url))
+        if weights_type == str:
+            return weights_url
         raise ValueError(
-            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
         )
     if os.path.exists(weights_path):
         if weights_type == CogFile:
@@ -106,7 +109,7 @@ def get_weights_argument(predictor: BasePredictor) -> Union[CogFile, CogPath, No
         if weights_type == CogPath:
             return CogPath(weights_path)
         raise ValueError(
-            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
         )
     return None
 
@@ -212,16 +215,36 @@ class BaseInput(BaseModel):
         Cleanup any temporary files created by the input.
         """
         for _, value in self:
-            # Handle URLPath objects specially for cleanup.
-            if isinstance(value, URLPath):
-                value.unlink()
-            # Note this is pathlib.Path, which cog.Path is a subclass of. A pathlib.Path object shouldn't make its way here,
+            # # Handle URLPath objects specially for cleanup.
+            # if isinstance(value, URLPath):
+            #     value.unlink()
+            # Note this is pathlib.Path, of which cog.Path is a subclass of.
+            # A pathlib.Path object shouldn't make its way here,
             # but both have an unlink() method, so may as well be safe.
-            elif isinstance(value, Path):
+            #
+            # URLTempFile, DataURLTempFilePath, pathlib.Path, doesn't matter
+            # everyone can be unlinked
+            if isinstance(value, Path):
                 try:
                     value.unlink()
                 except FileNotFoundError:
                     pass
+
+    # if we had a separate method to traverse the input and apply some function to each value
+    # we could use something like these functions here
+
+    # def cleanup():
+    #     if isinstance(value, Path):
+    #         value.unlink()
+
+    # def get_tempfile():
+    #     if isinstance(value, URLTempFile):
+    #         return (value.url, value._path)
+
+    # # this one is very annoying because it's supposed to mutate
+    # def convert():
+    #     if isinstance(value, URLTempFile):
+    #         return value.convert()
 
 
 def validate_input_type(type: Type[Any], name: str) -> None:

@@ -4,6 +4,8 @@ Cog is an open-source tool that lets you package machine learning models in a st
 
 You can deploy your packaged model to your own infrastructure, or to [Replicate](https://replicate.com/).
 
+This commit is a highly experimental version of cog that supports concurrent predictions and backwards-incompatible file handling changes. It is not thoroughly tested, but needs to be released anyway.
+
 ## Highlights
 
 - 📦 **Docker containers without the pain.** Writing your own `Dockerfile` can be a bewildering process. With Cog, you define your environment with a [simple configuration file](#how-it-works) and it generates a Docker image with all the best practices: Nvidia base images, efficient caching of dependencies, installing specific Python versions, sensible environment variable defaults, and so on.
