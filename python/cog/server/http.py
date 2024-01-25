@@ -138,6 +138,7 @@ def create_app(
         predictor_ref=predictor_ref,
         shutdown_event=shutdown_event,
         upload_url=upload_url,
+        concurrency=int(config.get("concurrency", "1")),
     )
 
     class PredictionRequest(schema.PredictionRequest.with_types(input_type=InputType)):
