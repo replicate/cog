@@ -28,6 +28,9 @@ const bundledSchemaFile = ".cog/openapi_schema.json"
 func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 
+	// remove bundled schema file that may be left from previous runs
+	_ = os.Remove(bundledSchemaFile)
+
 	if dockerfileFile != "" {
 		dockerfileContents, err := os.ReadFile(dockerfileFile)
 		if err != nil {

@@ -96,7 +96,7 @@ class PredictionResponse(PredictionBaseModel):
         )
 
 
-def create_schema_model(openapi_schema_path="openapi_schema.json"):
+def create_schema_model(openapi_schema_path):
     with TemporaryDirectory() as temporary_directory_name:
         temporary_directory = Path(temporary_directory_name)
         output = Path(temporary_directory / 'model.py')

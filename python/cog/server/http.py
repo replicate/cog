@@ -80,11 +80,11 @@ class MyFastAPI(FastAPI):
 
 
 def create_app(
-        config: Dict[str, Any],
-        shutdown_event: Optional[threading.Event],
-        threads: int = 1,
-        upload_url: Optional[str] = None,
-        mode: str = "predict",
+    config: Dict[str, Any],
+    shutdown_event: Optional[threading.Event],
+    threads: int = 1,
+    upload_url: Optional[str] = None,
+    mode: str = "predict",
 ) -> MyFastAPI:
     app = MyFastAPI(
         title="Cog",  # TODO: mention model name?
@@ -102,7 +102,7 @@ def create_app(
         # use openapi schema if schema file exists in predict model dir (cloud/k8s run)
         if os.path.exists(schema.OPENAPI_SCHEMA_FILE):
             log.info(f"using {schema.OPENAPI_SCHEMA_FILE} file")
-            schema_model = schema.create_schema_model()
+            schema_model = schema.create_schema_model(schema.OPENAPI_SCHEMA_FILE)
             InputType = schema_model.Input
             OutputType = schema_model.Output
         else:
@@ -193,8 +193,8 @@ def create_app(
         response_model_exclude_unset=True,
     )
     async def predict(
-            request: PredictionRequest = Body(default=None),
-            prefer: Union[str, None] = Header(default=None),
+        request: PredictionRequest = Body(default=None),
+        prefer: Union[str, None] = Header(default=None),
     ) -> Any:  # type: ignore
         """
         Run a single prediction on the model
@@ -216,9 +216,9 @@ def create_app(
         response_model_exclude_unset=True,
     )
     async def predict_idempotent(
-            prediction_id: str = Path(..., title="Prediction ID"),
-            request: PredictionRequest = Body(..., title="Prediction Request"),
-            prefer: Union[str, None] = Header(default=None),
+        prediction_id: str = Path(..., title="Prediction ID"),
+        request: PredictionRequest = Body(..., title="Prediction Request"),
+        prefer: Union[str, None] = Header(default=None),
     ) -> Any:
         """
         Run a single prediction on the model (idempotent creation).
@@ -245,7 +245,7 @@ def create_app(
         return await _predict(request=request, respond_async=respond_async)
 
     async def _predict(
-            *, request: Optional[PredictionRequest], respond_async: bool = False
+        *, request: Optional[PredictionRequest], respond_async: bool = False
     ) -> Response:
         # [compat] If no body is supplied, assume that this model can be run
         # with empty input. This will throw a ValidationError if that's not
