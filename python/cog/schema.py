@@ -85,8 +85,10 @@ class PredictionResponse(PredictionBaseModel):
             output=(output_type, None),
         )
 
+
 class TrainingRequest(PredictionRequest):
     pass
+
 
 class TrainingResponse(PredictionResponse):
     pass

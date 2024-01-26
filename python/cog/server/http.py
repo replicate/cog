@@ -105,7 +105,7 @@ def create_app(
     threads: int = 1,
     upload_url: Optional[str] = None,
     mode: str = "predict",
-    is_build: bool = False
+    is_build: bool = False,
 ) -> MyFastAPI:
     app = MyFastAPI(
         title="Cog",  # TODO: mention model name?
@@ -185,8 +185,10 @@ def create_app(
                 response_model=TrainingResponse,
                 response_model_exclude_unset=True,
             )
-            def train(request: TrainingRequest = Body(default=None),
-                      prefer: Union[str, None] = Header(default=None)) -> Any:  # type: ignore
+            def train(
+                request: TrainingRequest = Body(default=None),
+                prefer: Union[str, None] = Header(default=None),
+            ) -> Any:  # type: ignore
                 return predict(request, prefer)
 
             @app.put(
@@ -202,7 +204,9 @@ def create_app(
                 return predict_idempotent(training_id, request, prefer)
 
             @app.post("/trainings/{training_id}/cancel")
-            def cancel_training(training_id: str = Path(..., title="Training ID")) -> Any:
+            def cancel_training(
+                training_id: str = Path(..., title="Training ID"),
+            ) -> Any:
                 return cancel(training_id)
 
         except Exception as e:
@@ -255,8 +259,10 @@ def create_app(
         response_model=PredictionResponse,
         response_model_exclude_unset=True,
     )
-    async def predict(request: PredictionRequest = Body(default=None),
-                      prefer: Union[str, None] = Header(default=None)) -> Any:  # type: ignore
+    async def predict(
+        request: PredictionRequest = Body(default=None),
+        prefer: Union[str, None] = Header(default=None),
+    ) -> Any:  # type: ignore
         """
         Run a single prediction on the model
         """
