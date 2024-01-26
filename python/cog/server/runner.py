@@ -96,17 +96,17 @@ class PredictionRunner:
     def predict(
         self, prediction: schema.PredictionRequest, upload: bool = True
     ) -> Tuple[schema.PredictionResponse, PredictionTask]:
-        # It's the caller's responsibility to not call us if we're busy.
-        if self.is_busy():
-            # If self._result is set, but self._response is not, we're still
-            # doing setup.
-            if self._response is None:
-                raise RunnerBusyError()
-            assert self._result is not None
-            if prediction.id is not None and prediction.id == self._response.id:
-                result = cast(PredictionTask, self._result)
-                return (self._response, result)
-            raise RunnerBusyError()
+        # # It's the caller's responsibility to not call us if we're busy.
+        # if self.is_busy():
+        #     # If self._result is set, but self._response is not, we're still
+        #     # doing setup.
+        #     if self._response is None:
+        #         raise RunnerBusyError()
+        #     assert self._result is not None
+        #     if prediction.id is not None and prediction.id == self._response.id:
+        #         result = cast(PredictionTask, self._result)
+        #         return (self._response, result)
+        #     raise RunnerBusyError()
 
         # Set up logger context for main thread. The same thing happens inside
         # the predict thread.
@@ -122,20 +122,21 @@ class PredictionRunner:
             if hasattr(input, "cleanup"):
                 input.cleanup()
 
-        self._response = event_handler.response
+        _response = event_handler.response
         coro = predict(
             worker=self._worker,
             request=prediction,
             event_handler=event_handler,
             should_cancel=self._should_cancel,
         )
-        self._result = asyncio.create_task(coro)
-        self._result.add_done_callback(handle_cleanup)
-        self._result.add_done_callback(self.make_error_handler("prediction"))
+        _result = asyncio.create_task(coro)
+        _result.add_done_callback(handle_cleanup)
+        _result.add_done_callback(self.make_error_handler("prediction"))
 
-        return (self._response, self._result)
+        return (_response, _result)
 
     def is_busy(self) -> bool:
+        #return False
         if self._result is None:
             return False
 
@@ -378,7 +379,8 @@ async def _predict(
         if should_cancel.is_set():
             worker.cancel()
             should_cancel.clear()
-
+        # if not isinstance(event, Heartbeat):
+        #     print("runner predict got event", event)
         if isinstance(event, Heartbeat):
             # Heartbeat events exist solely to ensure that we have a
             # regular opportunity to check for cancelation and
