@@ -194,6 +194,7 @@ class Worker:
             input = PredictionInput(payload=payload)
             async with self.prediction_ctx(input):
                 self._events.send(input)
+                print("worker sent", input)
                 async for event in self._mux.read(input.id, poll=poll):
                     yield event
 
@@ -258,6 +259,7 @@ class Worker:
         while self._child.is_alive() and not self._terminating.is_set():
             # this can still be running when the task is destroyed
             result = await self._events.coro_recv_with_exit(self._terminating)
+            print("reader got", result)
             if result is None:  # event loop closed or child died
                 break
             id, event = result
@@ -371,6 +373,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     async def _loop_async(self) -> None:
         events: "AsyncPipe[tuple[str, _PublicEventType]]" = AsyncPipe(self._events)
         with events.executor:
+            tasks = []
             while True:
                 try:
                     ev = await events.coro_recv()
@@ -380,7 +383,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     return
                 if isinstance(ev, PredictionInput):
                     # keep track of these so they can be cancelled
-                    await self._predict_async(ev)
+                    tasks.append(asyncio.create_task(self._predict_async(ev)))
                 # handle Cancel
                 else:
                     print(f"Got unexpected event: {ev}", file=sys.stderr)
