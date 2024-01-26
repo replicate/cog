@@ -123,7 +123,7 @@ class PredictionRunner:
                 input.cleanup()
 
         _response = event_handler.response
-        coro = predict(
+        coro = predict_and_handle_errors(
             worker=self._worker,
             request=prediction,
             event_handler=event_handler,
@@ -328,7 +328,7 @@ async def setup(*, worker: Worker) -> SetupResult:
     )
 
 
-async def predict(
+async def predict_and_handle_errors(
     *,
     worker: Worker,
     request: schema.PredictionRequest,
@@ -340,7 +340,7 @@ async def predict(
     structlog.contextvars.bind_contextvars(prediction_id=request.id)
 
     try:
-        return await _predict(
+        return await handle_predict_events(
             worker=worker,
             request=request,
             event_handler=event_handler,
@@ -353,7 +353,7 @@ async def predict(
         raise
 
 
-async def _predict(
+async def handle_predict_events(
     *,
     worker: Worker,
     request: schema.PredictionRequest,
