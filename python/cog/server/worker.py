@@ -11,7 +11,7 @@ import types
 from collections import defaultdict
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
-from typing import Any, AsyncIterator, Callable, Dict, Iterator, Optional, TextIO, Union
+from typing import Any, AsyncIterator, Callable, Iterator, Optional, TextIO, Union
 
 from ..json import make_encodeable
 from ..predictor import (
@@ -22,6 +22,7 @@ from ..predictor import (
     run_setup_async,
 )
 from .eventtypes import (
+    Cancel,
     Done,
     Heartbeat,
     Log,
@@ -168,7 +169,7 @@ class Worker:
         self._state = self.state_from_predictions_in_flight()
 
     def predict(
-        self, payload: Dict[str, Any], poll: Optional[float] = None
+        self, input: PredictionInput, poll: Optional[float] = None
     ) -> AsyncIterator[_PublicEventType]:
         # this has to be eager for hypothesis
         if self.is_busy():
@@ -217,13 +218,18 @@ class Worker:
 
     # FIXME: this will need to use a combination
     # of signals and Cancel events on the pipe
-    def cancel(self) -> None:
+    def cancel(self, id: str) -> None:
+        if id not in self._predictions_in_flight:
+            print("id not there", id, self._predictions_in_flight)
+            raise Exception
         if (
-            self._allow_cancel
-            and self._child.is_alive()
+            # self._allow_cancel and
+            self._child.is_alive()
             and self._child.pid is not None
         ):
             os.kill(self._child.pid, signal.SIGUSR1)
+            print("sent cancel")
+            self._events.send(Cancel(id))
             # this should probably check self._semaphore._value == self._concurrent
             self._allow_cancel = False
 
@@ -365,7 +371,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     async def _loop_async(self) -> None:
         events: "AsyncPipe[tuple[str, _PublicEventType]]" = AsyncPipe(self._events)
         with events.executor:
-            tasks = []
+            tasks: "dict[str, asyncio.Task[None]]" = {}
             while True:
                 try:
                     ev = await events.coro_recv()
@@ -375,8 +381,12 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     return
                 if isinstance(ev, PredictionInput):
                     # keep track of these so they can be cancelled
-                    tasks.append(asyncio.create_task(self._predict_async(ev)))
-                # handle Cancel
+                    tasks[ev.id] = asyncio.create_task(self._predict_async(ev))
+                elif isinstance(ev, Cancel):
+                    if ev.id in tasks:
+                        tasks[ev.id].cancel()
+                    else:
+                        print(f"Got unexpected cancellation: {ev}", file=sys.stderr)
                 else:
                     print(f"Got unexpected event: {ev}", file=sys.stderr)
 
