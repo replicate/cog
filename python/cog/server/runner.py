@@ -27,7 +27,7 @@ from .eventtypes import (
 )
 from .probes import ProbeHelper
 from .webhook import SKIP_START_EVENT, webhook_caller_filtered
-from .worker import Worker
+from .worker import InvalidStateException, Worker
 
 log = structlog.get_logger("cog.server.runner")
 
@@ -163,7 +163,7 @@ class PredictionRunner:
             self._result.cancel()
         self._worker.terminate()
 
-    def cancel(self, prediction_id: Optional[str] = None) -> None:
+    def cancel(self, prediction_id: str) -> None:
         try:
             self._worker.cancel(prediction_id)
             # if the runner is in an invalid state, predictions_in_flight would just be empty

@@ -37,7 +37,7 @@ class PredictionBaseModel(pydantic.BaseModel, extra=pydantic.Extra.allow):
 
 
 class PredictionRequest(PredictionBaseModel):
-    id: t.Optional[str] = pydantic.Field(default_factory=lambda: secrets.token_hex(4))
+    id: str = pydantic.Field(default_factory=lambda: secrets.token_hex(4))
     created_at: t.Optional[datetime]
 
     # TODO: deprecate this
