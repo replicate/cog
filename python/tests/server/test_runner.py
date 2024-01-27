@@ -19,7 +19,7 @@ from cog.server.runner import (
     PredictionRunner,
     RunnerBusyError,
     UnknownPredictionError,
-    predict,
+    predict_and_handle_errors,
 )
 
 
@@ -209,7 +209,7 @@ async def test_predict(events, calls):
     event_handler = mock.Mock()
     should_cancel = threading.Event()
 
-    await predict(
+    await predict_and_handle_errors(
         worker=worker,
         request=request,
         event_handler=event_handler,
