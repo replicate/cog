@@ -95,7 +95,7 @@ class Worker:
         self, predictor_ref: str, tee_output: bool = True, concurrency: int = 1
     ) -> None:
         self._state = WorkerState.NEW
-        self._allow_cancel = False
+        # self._allow_cancel = False
         self._semaphore = asyncio.Semaphore(concurrency)
         self._concurrency = concurrency
 
@@ -141,16 +141,10 @@ class Worker:
             raise InvalidStateException(
                 f"Invalid operation: state is {self._state} (must be IDLE, PROCESSING, or BUSY)"
             )
-        # changing _allow_cancel like this is a little bit weird
-        # because this is kind of a pure function
-        # however, we'll remove all of this cancel logic soon, dwabi
         if len(self._predictions_in_flight) == self._concurrent:
-            self._allow_cancel = True
             return WorkerState.BUSY
         if len(self._predictions_in_flight) == 0:
-            self._allow_cancel = False
             return WorkerState.IDLE
-        self._allow_cancel = True
         return WorkerState.PROCESSING
 
     def is_busy(self) -> bool:
@@ -167,9 +161,6 @@ class Worker:
                 self._predictions_in_flight.remove(input.id)
         self._state = self.state_from_predictions_in_flight()
 
-    def is_busy(self) -> bool:
-        return self._state not in {WorkerState.PROCESSING, WorkerState.IDLE}
-
     def predict(
         self, input: PredictionInput, poll: Optional[float] = None
     ) -> AsyncIterator[PublicEventType]:
@@ -182,7 +173,6 @@ class Worker:
             raise InvalidStateException(
                 "cannot accept new predictions because shutdown requested"
             )
-        input = PredictionInput(payload=payload)
         self._predictions_in_flight.add(input.id)  # idempotent ig
         self._state = self.state_from_predictions_in_flight()
 
@@ -224,11 +214,7 @@ class Worker:
         if id not in self._predictions_in_flight:
             print("id not there", id, self._predictions_in_flight)
             raise KeyError
-        if (
-            # self._allow_cancel and
-            self._child.is_alive()
-            and self._child.pid is not None
-        ):
+        if self._child.is_alive() and self._child.pid is not None:
             os.kill(self._child.pid, signal.SIGUSR1)
             print("sent cancel")
             self._events.send(Cancel(id))
@@ -291,7 +277,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._predictor: Optional[BasePredictor] = None
         self._events = events
         self._tee_output = tee_output
-        self._cancelable = False
+        # self._cancelable = False
 
         super().__init__()
 
@@ -455,6 +441,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
     def _signal_handler(self, signum: int, frame: Optional[types.FrameType]) -> None:
         if self._predictor and is_async(get_predict(self._predictor)):
+            # we could try also canceling the async task around here
             return
         if signum == signal.SIGUSR1 and self._cancelable:
             raise CancelationException()
