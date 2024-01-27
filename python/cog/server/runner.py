@@ -143,16 +143,16 @@ class PredictionRunner:
         return (_response, _result)
 
     def is_busy(self) -> bool:
+        return self._worker.is_busy()
+        # if self._result is None:
+        #     return False
+
+        # if not self._result.done():
+        #     return True
+
+        # self._response = None
+        # self._result = None
         # return False
-        if self._result is None:
-            return False
-
-        if not self._result.done():
-            return True
-
-        self._response = None
-        self._result = None
-        return False
 
     def shutdown(self) -> None:
         if self._result:
@@ -162,7 +162,7 @@ class PredictionRunner:
     def cancel(self, prediction_id: Optional[str] = None) -> None:
         try:
             self._worker.cancel(prediction_id)
-        except Exception as e:
+        except KeyError as e:
             print(e)
             raise UnknownPredictionError()
         # if not self.is_busy():
