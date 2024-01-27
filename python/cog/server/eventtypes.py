@@ -1,8 +1,8 @@
-import secrets
-from typing import Any, Dict
+from typing import Any, Dict, Union
 
-from .. import types, schema
 from attrs import define, field, validators
+
+from .. import schema, types
 
 
 # From worker parent process
@@ -60,3 +60,6 @@ class Done:
 @define
 class Heartbeat:
     pass
+
+
+PublicEventType = Union[Done, Heartbeat, Log, PredictionOutput, PredictionOutputType]
