@@ -177,11 +177,14 @@ class Worker:
             # we just finished a prediction, so if we were BUSY we aren't anymore
             self._state = WorkerState.PROCESSING
 
+    def is_busy(self) -> bool:
+        return self._state not in {WorkerState.PROCESSING, WorkerState.IDLE}
+
     def predict(
         self, input: PredictionInput, poll: Optional[float] = None
     ) -> AsyncIterator[_PublicEventType]:
         # this has to be eager just for hypothesis
-        if self._state not in {WorkerState.PROCESSING, WorkerState.IDLE}:
+        if self.is_busy():
             raise InvalidStateException(
                 f"Invalid operation: state is {self._state} (must be processing or idle)"
             )
@@ -196,8 +199,7 @@ class Worker:
             async with self.prediction_ctx(input):
                 self._events.send(input)
                 print("worker sent", input)
-                async for event in self._mux.read(input.id, poll=poll):
-                    yield event
+                return self._mux.read(input.id, poll=poll)
 
         return inner()
 
@@ -229,7 +231,7 @@ class Worker:
     def cancel(self, id: str) -> None:
         if id not in self._predictions_in_flight:
             print("id not there", id, self._predictions_in_flight)
-            raise Exception
+            raise KeyError
         if (
             # self._allow_cancel and
             self._child.is_alive()
@@ -413,6 +415,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             yield
         except CancelationException:
             done.canceled = True
+        except asyncio.CancelledError:
+            done.canceled = True
         except Exception as e:
             traceback.print_exc()
             done.error = True
@@ -458,6 +462,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     send(PredictionOutput(payload=make_encodeable(result)))
 
     def _signal_handler(self, signum: int, frame: Optional[types.FrameType]) -> None:
+        if self._predictor and is_async(get_predict(self._predictor)):
+            return
         if signum == signal.SIGUSR1 and self._cancelable:
             raise CancelationException()
 
