@@ -11,7 +11,7 @@ import types
 from collections import defaultdict
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
-from typing import Any, AsyncIterator, Callable, Iterator, Optional, TextIO, Union
+from typing import Any, AsyncIterator, Callable, Iterator, Optional, TextIO
 
 from ..json import make_encodeable
 from ..predictor import (
@@ -29,6 +29,7 @@ from .eventtypes import (
     PredictionInput,
     PredictionOutput,
     PredictionOutputType,
+    PublicEventType,
     Shutdown,
 )
 from .exceptions import (
@@ -39,8 +40,6 @@ from .exceptions import (
 from .helpers import AsyncPipe, StreamRedirector, WrappedStream, race
 
 _spawn = multiprocessing.get_context("spawn")
-
-_PublicEventType = Union[Done, Heartbeat, Log, PredictionOutput, PredictionOutputType]
 
 
 @unique
@@ -55,18 +54,18 @@ class WorkerState(Enum):
 
 class Mux:
     def __init__(self, terminating: asyncio.Event) -> None:
-        self.outs: "defaultdict[str, asyncio.Queue[_PublicEventType]]" = defaultdict(
+        self.outs: "defaultdict[str, asyncio.Queue[PublicEventType]]" = defaultdict(
             asyncio.Queue
         )
         self.terminating = terminating
         self.fatal: "Optional[FatalWorkerException]" = None
 
-    async def write(self, id: str, item: _PublicEventType) -> None:
+    async def write(self, id: str, item: PublicEventType) -> None:
         await self.outs[id].put(item)
 
     async def read(
         self, id: str, poll: Optional[float] = None
-    ) -> AsyncIterator[_PublicEventType]:
+    ) -> AsyncIterator[PublicEventType]:
         if poll:
             send_heartbeats = True
         else:
@@ -103,7 +102,7 @@ class Worker:
         # A pipe with which to communicate with the child worker.
         events, child_events = _spawn.Pipe()
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
-        self._events: "AsyncPipe[tuple[str, _PublicEventType]]" = AsyncPipe(
+        self._events: "AsyncPipe[tuple[str, PublicEventType]]" = AsyncPipe(
             events, self._child.is_alive
         )
         # shutdown requested
@@ -113,11 +112,11 @@ class Worker:
         self._mux = Mux(self._terminating)
         self._predictions_in_flight = set()
 
-    def setup(self) -> AsyncIterator[_PublicEventType]:
+    def setup(self) -> AsyncIterator[PublicEventType]:
         self._assert_state(WorkerState.NEW)
         self._state = WorkerState.STARTING
 
-        async def inner() -> AsyncIterator[_PublicEventType]:
+        async def inner() -> AsyncIterator[PublicEventType]:
             # in 3.10 Event started doing get_running_loop
             # previously it stored the loop when created, which causes an error in tests
             if sys.version_info < (3, 10):
@@ -173,7 +172,7 @@ class Worker:
 
     def predict(
         self, input: PredictionInput, poll: Optional[float] = None
-    ) -> AsyncIterator[_PublicEventType]:
+    ) -> AsyncIterator[PublicEventType]:
         # this has to be eager for hypothesis
         if self.is_busy():
             raise InvalidStateException(
@@ -187,11 +186,12 @@ class Worker:
         self._predictions_in_flight.add(input.id)  # idempotent ig
         self._state = self.state_from_predictions_in_flight()
 
-        async def inner() -> AsyncIterator[_PublicEventType]:
-            async with self._prediction_ctx(input):
+        async def inner() -> AsyncIterator[PublicEventType]:
+            async with self.prediction_ctx(input):
                 self._events.send(input)
                 print("worker sent", input)
-                return self._mux.read(input.id, poll=poll)
+                async for e in self._mux.read(input.id, poll=poll):
+                    yield e
 
         return inner()
 
@@ -371,7 +371,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
 
     async def _loop_async(self) -> None:
-        events: "AsyncPipe[tuple[str, _PublicEventType]]" = AsyncPipe(self._events)
+        events: "AsyncPipe[tuple[str, PublicEventType]]" = AsyncPipe(self._events)
         with events.executor:
             tasks: "dict[str, asyncio.Task[None]]" = {}
             while True:
@@ -418,8 +418,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._stream_redirector.drain()
         self._events.send((id, done))
 
-    def _mk_send(self, id: str) -> Callable[[_PublicEventType], None]:
-        def send(event: _PublicEventType) -> None:
+    def _mk_send(self, id: str) -> Callable[[PublicEventType], None]:
+        def send(event: PublicEventType) -> None:
             self._events.send((id, event))
 
         return send

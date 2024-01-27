@@ -4,7 +4,7 @@ import threading
 import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional, Tuple, Union, cast
+from typing import Any, AsyncIterator, Callable, Optional, Tuple, Union, cast
 
 import requests
 import structlog
@@ -23,6 +23,7 @@ from .eventtypes import (
     PredictionInput,
     PredictionOutput,
     PredictionOutputType,
+    PublicEventType,
 )
 from .probes import ProbeHelper
 from .webhook import SKIP_START_EVENT, webhook_caller_filtered
@@ -164,7 +165,7 @@ class PredictionRunner:
             self._worker.cancel(prediction_id)
         except KeyError as e:
             print(e)
-            raise UnknownPredictionError()
+            raise UnknownPredictionError() from e
         # if not self.is_busy():
         #     return
         # assert self._response is not None
@@ -303,6 +304,55 @@ class PredictionEventHandler:
             # to be failed, with a useful error message.
             raise FileUploadError("Got error trying to upload output files") from error
 
+    async def handle_event_stream(
+        self, events: AsyncIterator[PublicEventType]
+    ) -> schema.PredictionResponse:
+        output_type = None
+        async for event in events:
+            # if should_cancel.is_set():
+            #     worker.cancel(request.id)
+            #     should_cancel.clear()
+            if isinstance(event, Heartbeat):
+                # Heartbeat events exist solely to ensure that we have a
+                # regular opportunity to check for cancelation and
+                # timeouts.
+                #
+                # We don't need to do anything with them.
+                pass
+
+            elif isinstance(event, Log):
+                self.append_logs(event.message)
+
+            elif isinstance(event, PredictionOutputType):
+                if output_type is not None:
+                    self.failed(error="Predictor returned unexpected output")
+                    break
+
+                output_type = event
+                if output_type.multi:
+                    self.set_output([])
+            elif isinstance(event, PredictionOutput):
+                if output_type is None:
+                    self.failed(error="Predictor returned unexpected output")
+                    break
+
+                if output_type.multi:
+                    self.append_output(event.payload)
+                else:
+                    self.set_output(event.payload)
+
+            elif isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
+                if event.canceled:
+                    self.canceled()
+                elif event.error:
+                    self.failed(error=str(event.error_detail))
+                else:
+                    self.succeeded()
+
+            else:  # shouldn't happen, exhausted the type
+                log.warn("received unexpected event from worker", data=event)
+        return self.response
+
 
 async def setup(*, worker: Worker) -> SetupResult:
     logs = []
@@ -374,7 +424,6 @@ async def handle_predict_events(
 ) -> schema.PredictionResponse:
     # initial_prediction = request.dict()
 
-    output_type = None
     try:
         prediction_input = PredictionInput.from_request(request)
     # input_dict = initial_prediction["input"]
@@ -389,53 +438,8 @@ async def handle_predict_events(
         event_handler.failed(error=str(e))
         log.warn("failed to download url path from input", exc_info=True)
         return event_handler.response
-    async for event in worker.predict(prediction_input, poll=0.1):
-        if should_cancel.is_set():
-            worker.cancel(request.id)
-            should_cancel.clear()
-        # if not isinstance(event, Heartbeat):
-        #     print("runner predict got event", event)
-        if isinstance(event, Heartbeat):
-            # Heartbeat events exist solely to ensure that we have a
-            # regular opportunity to check for cancelation and
-            # timeouts.
-            #
-            # We don't need to do anything with them.
-            pass
-
-        elif isinstance(event, Log):
-            event_handler.append_logs(event.message)
-
-        elif isinstance(event, PredictionOutputType):
-            if output_type is not None:
-                event_handler.failed(error="Predictor returned unexpected output")
-                break
-
-            output_type = event
-            if output_type.multi:
-                event_handler.set_output([])
-        elif isinstance(event, PredictionOutput):
-            if output_type is None:
-                event_handler.failed(error="Predictor returned unexpected output")
-                break
-
-            if output_type.multi:
-                event_handler.append_output(event.payload)
-            else:
-                event_handler.set_output(event.payload)
-
-        elif isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
-            if event.canceled:
-                event_handler.canceled()
-            elif event.error:
-                event_handler.failed(error=str(event.error_detail))
-            else:
-                event_handler.succeeded()
-
-        else:  # shouldn't happen, exhausted the type
-            log.warn("received unexpected event from worker", data=event)
-
-    return event_handler.response
+    predict_events = worker.predict(prediction_input, poll=0.1)
+    return await event_handler.handle_event_stream(predict_events)
 
 
 def _make_file_upload_http_client() -> requests.Session:
