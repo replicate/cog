@@ -107,7 +107,7 @@ class Worker:
         self, predictor_ref: str, tee_output: bool = True, concurrency: int = 1
     ) -> None:
         self._state = WorkerState.NEW
-        self._allow_cancel = False
+        # self._allow_cancel = False
         self._semaphore = asyncio.Semaphore(concurrency)
         self._concurrency = concurrency
 
@@ -163,7 +163,7 @@ class Worker:
             if self._semaphore._value == 0:
                 # maybe this will fix hypothesis
                 self._state = WorkerState.BUSY
-            self._allow_cancel = True
+            # self._allow_cancel = True
             self._predictions_in_flight.add(input.id)
             try:
                 yield
@@ -171,7 +171,7 @@ class Worker:
                 self._predictions_in_flight.remove(input.id)
         if self._semaphore._value == self._concurrency:
             self._state = WorkerState.IDLE
-            self._allow_cancel = False
+            # self._allow_cancel = False
         else:
             # we just finished a prediction, so if we were BUSY we aren't anymore
             self._state = WorkerState.PROCESSING
@@ -232,11 +232,7 @@ class Worker:
         if id not in self._predictions_in_flight:
             print("id not there", id, self._predictions_in_flight)
             raise KeyError
-        if (
-            # self._allow_cancel and
-            self._child.is_alive()
-            and self._child.pid is not None
-        ):
+        if self._child.is_alive() and self._child.pid is not None:
             os.kill(self._child.pid, signal.SIGUSR1)
             print("sent cancel")
             self._events.send(Cancel(id))
@@ -299,7 +295,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._predictor: Optional[BasePredictor] = None
         self._events = events
         self._tee_output = tee_output
-        self._cancelable = False
+        # self._cancelable = False
 
         super().__init__()
 
@@ -463,6 +459,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
     def _signal_handler(self, signum: int, frame: Optional[types.FrameType]) -> None:
         if self._predictor and is_async(get_predict(self._predictor)):
+            # we could try also canceling the async task around here
             return
         if signum == signal.SIGUSR1 and self._cancelable:
             raise CancelationException()
