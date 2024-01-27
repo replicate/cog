@@ -350,8 +350,8 @@ def create_app(
         """
         Cancel a running prediction
         """
-        if not runner.is_busy():
-            return JSONResponse({}, status_code=404)
+        # if not runner.is_busy():
+        #     return JSONResponse({}, status_code=404)
         try:
             runner.cancel(prediction_id)
         except UnknownPredictionError:

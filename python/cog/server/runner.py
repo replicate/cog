@@ -93,11 +93,14 @@ class PredictionRunner:
         return handle_error
 
     def setup(self) -> SetupTask:
-        if self.is_busy():
-            raise RunnerBusyError()
-        self._result = asyncio.create_task(setup(worker=self._worker))
-        self._result.add_done_callback(self.make_error_handler("setup"))
-        return self._result
+        async def wrap_error() -> SetupResult:
+            try:
+                return await setup(worker=self._worker)
+            except InvalidStateException as e:
+                raise RunnerBusyError() from e
+        result =  asyncio.create_task(wrap_error())
+        result.add_done_callback(self.make_error_handler("setup"))
+        return result
 
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
     # no longer have to support Python 3.8
@@ -163,9 +166,12 @@ class PredictionRunner:
     def cancel(self, prediction_id: Optional[str] = None) -> None:
         try:
             self._worker.cancel(prediction_id)
+            # if the runner is in an invalid state, predictions_in_flight would just be empty
+            # and it's a keyerror anyway
         except KeyError as e:
             print(e)
             raise UnknownPredictionError() from e
+
         # if not self.is_busy():
         #     return
         # assert self._response is not None
