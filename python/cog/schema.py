@@ -1,4 +1,5 @@
 import typing as t
+import secrets
 from datetime import datetime
 from enum import Enum
 
@@ -36,7 +37,7 @@ class PredictionBaseModel(pydantic.BaseModel, extra=pydantic.Extra.allow):
 
 
 class PredictionRequest(PredictionBaseModel):
-    id: t.Optional[str]
+    id: t.Optional[str] = pydantic.Field(default_factory=lambda: secrets.token_hex(4))
     created_at: t.Optional[datetime]
 
     # TODO: deprecate this
@@ -85,8 +86,10 @@ class PredictionResponse(PredictionBaseModel):
             output=(output_type, None),
         )
 
+
 class TrainingRequest(PredictionRequest):
     pass
+
 
 class TrainingResponse(PredictionResponse):
     pass

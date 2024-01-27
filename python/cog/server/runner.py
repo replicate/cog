@@ -13,10 +13,17 @@ from fastapi.encoders import jsonable_encoder
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
-from .. import schema, types
+from .. import schema
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
-from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
+from .eventtypes import (
+    Done,
+    Heartbeat,
+    Log,
+    PredictionInput,
+    PredictionOutput,
+    PredictionOutputType,
+)
 from .probes import ProbeHelper
 from .webhook import SKIP_START_EVENT, webhook_caller_filtered
 from .worker import Worker
@@ -136,7 +143,7 @@ class PredictionRunner:
         return (_response, _result)
 
     def is_busy(self) -> bool:
-        #return False
+        # return False
         if self._result is None:
             return False
 
@@ -153,12 +160,17 @@ class PredictionRunner:
         self._worker.terminate()
 
     def cancel(self, prediction_id: Optional[str] = None) -> None:
-        if not self.is_busy():
-            return
-        assert self._response is not None
-        if prediction_id is not None and prediction_id != self._response.id:
+        try:
+            self._worker.cancel(prediction_id)
+        except Exception as e:
+            print(e)
             raise UnknownPredictionError()
-        self._should_cancel.set()
+        # if not self.is_busy():
+        #     return
+        # assert self._response is not None
+        # if prediction_id is not None and prediction_id != self._response.id:
+        #     raise UnknownPredictionError()
+        # self._should_cancel.set()
 
 
 def create_event_handler(
@@ -360,24 +372,26 @@ async def handle_predict_events(
     event_handler: PredictionEventHandler,
     should_cancel: asyncio.Event,
 ) -> schema.PredictionResponse:
-    initial_prediction = request.dict()
+    # initial_prediction = request.dict()
 
     output_type = None
-    input_dict = initial_prediction["input"]
+    try:
+        prediction_input = PredictionInput.from_request(request)
+    # input_dict = initial_prediction["input"]
 
-    for k, v in input_dict.items():
-        if isinstance(v, types.URLPath):
-            try:
-                input_dict[k] = v.convert()
-            except requests.exceptions.RequestException as e:
-                tb = traceback.format_exc()
-                event_handler.append_logs(tb)
-                event_handler.failed(error=str(e))
-                log.warn("failed to download url path from input", exc_info=True)
-                return event_handler.response
-    async for event in worker.predict(input_dict, poll=0.1):
+    # for k, v in input_dict.items():
+    #     if isinstance(v, types.URLPath):
+    #         try:
+    #             input_dict[k] = v.convert()
+    except requests.exceptions.RequestException as e:
+        tb = traceback.format_exc()
+        event_handler.append_logs(tb)
+        event_handler.failed(error=str(e))
+        log.warn("failed to download url path from input", exc_info=True)
+        return event_handler.response
+    async for event in worker.predict(prediction_input, poll=0.1):
         if should_cancel.is_set():
-            worker.cancel()
+            worker.cancel(request.id)
             should_cancel.clear()
         # if not isinstance(event, Heartbeat):
         #     print("runner predict got event", event)
