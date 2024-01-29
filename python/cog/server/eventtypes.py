@@ -10,7 +10,7 @@ from .. import schema, types
 @define
 class PredictionInput:
     payload: Dict[str, Any]
-    id: str #= field(factory=lambda: secrets.token_hex(4))
+    id: str = field(factory=lambda: secrets.token_hex(4))
 
     @classmethod
     def from_request(cls, request: schema.PredictionRequest) -> "PredictionInput":

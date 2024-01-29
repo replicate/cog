@@ -178,7 +178,7 @@ class Worker:
                 yield
             finally:
                 self._predictions_in_flight.remove(input.id)
-        self._state = self.state_from_semaphore()
+        self._state = self.state_from_predictions_in_flight()
 
     def is_busy(self) -> bool:
         return self._state not in {WorkerState.PROCESSING, WorkerState.IDLE}
@@ -196,8 +196,7 @@ class Worker:
         self._state = self.state_from_predictions_in_flight()
 
     def predict(
-        self, input: PredictionInput, poll: Optional[float] = None,
-        eager: bool = True
+        self, input: PredictionInput, poll: Optional[float] = None, eager: bool = True
     ) -> AsyncIterator[PublicEventType]:
         # this has to be eager just for hypothesis
         if isinstance(input, dict):
