@@ -359,6 +359,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 break
             if isinstance(ev, PredictionInput):
                 self._predict_sync(ev)
+            elif isinstance(ev, Cancel):
+                pass # we should have gotten a signal
             else:
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
 
