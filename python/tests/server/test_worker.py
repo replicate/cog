@@ -62,6 +62,7 @@ OUTPUT_FIXTURES = [
         lambda x: list(range(x["upto"])),
     ),
     ("complex_output", {}, lambda _: {"number": 42, "text": "meaning of life"}),
+    ("large_output", {"n": st.sampled_from([2**25])}, lambda _: [1] * 2**25),
 ]
 
 SETUP_LOGS_FIXTURES = [
