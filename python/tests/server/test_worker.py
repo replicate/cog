@@ -527,6 +527,7 @@ class WorkerState(RuleBasedStateMachine):
     def predict(self, name, steps):
         try:
             payload = {"name": name, "steps": steps}
+            self.worker.eager_predict_state_change()
             self.predict_generator = self.worker.predict(payload)
             self.predict_payload = payload
             self.predict_events = []
