@@ -447,7 +447,7 @@ def test_yielding_files_from_generator_predictors(client):
 
 @uses_predictor("input_none")
 def test_prediction_idempotent_endpoint(client, match):
-    resp = client.put("/predictions/abcd1234", json={})
+    resp = client.put("/predictions/abcd1234", json={"id": "abcd1234"})
     assert resp.status_code == 200
     assert resp.json() == match(
         {"id": "abcd1234", "status": "succeeded", "output": "foobar"}
@@ -458,9 +458,7 @@ def test_prediction_idempotent_endpoint(client, match):
 def test_prediction_idempotent_endpoint_matched_ids(client, match):
     resp = client.put(
         "/predictions/abcd1234",
-        json={
-            "id": "abcd1234",
-        },
+        json={"id": "abcd1234"},
     )
     assert resp.status_code == 200
     assert resp.json() == match(
@@ -483,12 +481,12 @@ def test_prediction_idempotent_endpoint_mismatched_ids(client, match):
 def test_prediction_idempotent_endpoint_is_idempotent(client, match):
     resp1 = client.put(
         "/predictions/abcd1234",
-        json={"input": {"sleep": 1}},
+        json={"input": {"sleep": 1}, "id": "abcd1234"},
         headers={"Prefer": "respond-async"},
     )
     resp2 = client.put(
         "/predictions/abcd1234",
-        json={"input": {"sleep": 1}},
+        json={"input": {"sleep": 1}, "id": "abcd1234"},
         headers={"Prefer": "respond-async"},
     )
     assert resp1.status_code == 202
@@ -501,12 +499,12 @@ def test_prediction_idempotent_endpoint_is_idempotent(client, match):
 def test_prediction_idempotent_endpoint_conflict(client, match):
     resp1 = client.put(
         "/predictions/abcd1234",
-        json={"input": {"sleep": 1}},
+        json={"input": {"sleep": 1}, "id": "abcd1234"},
         headers={"Prefer": "respond-async"},
     )
     resp2 = client.put(
         "/predictions/5678efgh",
-        json={"input": {"sleep": 1}},
+        json={"input": {"sleep": 1}, "id": "5678efgh"},
         headers={"Prefer": "respond-async"},
     )
     assert resp1.status_code == 202
