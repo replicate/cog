@@ -225,7 +225,7 @@ class Worker:
             print("sent cancel")
             self._events.send(Cancel(id))
             # this should probably check self._semaphore._value == self._concurrent
-            self._allow_cancel = False
+            # self._allow_cancel = False
 
     def _assert_state(self, state: WorkerState) -> None:
         if self._state != state:
