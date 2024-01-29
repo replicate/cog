@@ -37,6 +37,11 @@ class PredictionBaseModel(pydantic.BaseModel, extra=pydantic.Extra.allow):
 
 
 class PredictionRequest(PredictionBaseModel):
+    # there's a problem here where the idempotent endpoint is supposed to
+    # let you pass id in the route and omit it from the input
+    # however this fills in the default
+    # maybe it should be allowed to be optional without the factory initially
+    # and be filled in later
     id: str = pydantic.Field(default_factory=lambda: secrets.token_hex(4))
     created_at: t.Optional[datetime]
 
