@@ -141,7 +141,7 @@ class Worker:
             raise InvalidStateException(
                 f"Invalid operation: state is {self._state} (must be IDLE, PROCESSING, or BUSY)"
             )
-        if len(self._predictions_in_flight) == self._concurrent:
+        if len(self._predictions_in_flight) == self._concurrency:
             return WorkerState.BUSY
         if len(self._predictions_in_flight) == 0:
             return WorkerState.IDLE
@@ -161,10 +161,7 @@ class Worker:
                 self._predictions_in_flight.remove(input.id)
         self._state = self.state_from_predictions_in_flight()
 
-    def predict(
-        self, input: PredictionInput, poll: Optional[float] = None
-    ) -> AsyncIterator[PublicEventType]:
-        # this has to be eager for hypothesis
+    def eager_predict_state_change(self, id: str) -> None:
         if self.is_busy():
             raise InvalidStateException(
                 f"Invalid operation: state is {self._state} (must be processing or idle)"
@@ -173,11 +170,20 @@ class Worker:
             raise InvalidStateException(
                 "cannot accept new predictions because shutdown requested"
             )
-        self._predictions_in_flight.add(input.id)  # idempotent ig
+        self._predictions_in_flight.add(id)
         self._state = self.state_from_predictions_in_flight()
 
+    def predict(
+        self, input: PredictionInput, poll: Optional[float] = None, eager: bool = True
+    ) -> AsyncIterator[PublicEventType]:
+        # this has to be eager for hypothesis
+        if isinstance(input, dict):
+            input = PredictionInput(payload=input, id="1")  # just for tests
+        if eager:
+            self.eager_predict_state_change(input.id)
+
         async def inner() -> AsyncIterator[PublicEventType]:
-            async with self.prediction_ctx(input):
+            async with self._prediction_ctx(input):
                 self._events.send(input)
                 print("worker sent", input)
                 async for e in self._mux.read(input.id, poll=poll):

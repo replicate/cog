@@ -71,9 +71,9 @@ async def test_prediction_runner(runner):
 
 @pytest.mark.asyncio
 async def test_prediction_runner_called_while_busy(runner):
-    request = PredictionRequest(input={"sleep": 0.1})
+    request = PredictionRequest(input={"sleep": 1})
     _, async_result = runner.predict(request)
-
+    await asyncio.sleep(0)
     assert runner.is_busy()
     with pytest.raises(RunnerBusyError):
         _, task = runner.predict(request)
@@ -206,7 +206,7 @@ def fake_worker(events):
 async def test_predict(events, calls):
     worker = fake_worker(events)
     request = PredictionRequest(input={"text": "hello"}, foo="bar")
-    event_handler = mock.Mock()
+    event_handler = mock.AsyncMock() # has sync methods?
     should_cancel = threading.Event()
 
     await predict_and_handle_errors(

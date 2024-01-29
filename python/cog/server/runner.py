@@ -98,7 +98,8 @@ class PredictionRunner:
                 return await setup(worker=self._worker)
             except InvalidStateException as e:
                 raise RunnerBusyError() from e
-        result =  asyncio.create_task(wrap_error())
+
+        result = asyncio.create_task(wrap_error())
         result.add_done_callback(self.make_error_handler("setup"))
         return result
 
@@ -107,6 +108,8 @@ class PredictionRunner:
     def predict(
         self, prediction: schema.PredictionRequest, upload: bool = True
     ) -> Tuple[schema.PredictionResponse, PredictionTask]:
+        if self.is_busy():
+            raise RunnerBusyError()
         # # It's the caller's responsibility to not call us if we're busy.
         # if self.is_busy():
         #     # If self._result is set, but self._response is not, we're still
@@ -134,6 +137,7 @@ class PredictionRunner:
                 input.cleanup()
 
         _response = event_handler.response
+        self._worker.eager_predict_state_change(prediction.id)
         coro = predict_and_handle_errors(
             worker=self._worker,
             request=prediction,
