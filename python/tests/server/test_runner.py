@@ -76,7 +76,8 @@ async def test_prediction_runner_called_while_busy(runner):
     await asyncio.sleep(0)
     assert runner.is_busy()
     with pytest.raises(RunnerBusyError):
-        _, task = runner.predict(request)
+        request2 = PredictionRequest(input={"sleep": 1})
+        _, task = runner.predict(request2)
         await task
 
     # Await to ensure that the first prediction is scheduled before we
@@ -117,8 +118,9 @@ async def test_prediction_runner_called_while_busy_idempotent_wrong_id(runner):
 async def test_prediction_runner_cancel(runner):
     request = PredictionRequest(input={"sleep": 0.5})
     _, async_result = runner.predict(request)
+    await asyncio.sleep(0.001)
 
-    runner.cancel()
+    runner.cancel(request.id)
 
     response = await async_result
     assert response.output is None
@@ -133,8 +135,9 @@ async def test_prediction_runner_cancel(runner):
 async def test_prediction_runner_cancel_matching_id(runner):
     request = PredictionRequest(id="abcd1234", input={"sleep": 0.5})
     _, async_result = runner.predict(request)
+    await asyncio.sleep(0)
 
-    runner.cancel(prediction_id="abcd1234")
+    runner.cancel(request.id)
 
     response = await async_result
     assert response.output is None
@@ -200,13 +203,16 @@ def fake_worker(events):
 
     return FakeWorker()
 
+class FakeEventHandler(mock.AsyncMock):
+    handle_event_stream = PredictionEventHandler.handle_event_stream
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("events,calls", PREDICT_TESTS)
 async def test_predict(events, calls):
     worker = fake_worker(events)
     request = PredictionRequest(input={"text": "hello"}, foo="bar")
-    event_handler = mock.AsyncMock() # has sync methods?
+    event_handler = FakeEventHandler()
     should_cancel = threading.Event()
 
     await predict_and_handle_errors(

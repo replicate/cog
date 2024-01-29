@@ -4,7 +4,7 @@ import threading
 import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Callable, Optional, Tuple, Union, cast
+from typing import Any, AsyncIterator, Callable, Optional, Union, cast
 
 import requests
 import structlog

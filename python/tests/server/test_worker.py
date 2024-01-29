@@ -10,6 +10,7 @@ from cog.server.eventtypes import (
     Done,
     Heartbeat,
     Log,
+    PredictionInput,
     PredictionOutput,
     PredictionOutputType,
 )
@@ -298,19 +299,21 @@ async def test_cancel_is_safe():
 
     try:
         for _ in range(50):
-            w.cancel("1")
+            with pytest.raises(KeyError):
+                w.cancel("1")
 
         await _process(w.setup())
 
         for _ in range(50):
-            w.cancel("1")
+            with pytest.raises(KeyError):
+                w.cancel("1")
 
         input1 = PredictionInput({"sleep": 0.5})
         result1 = await _process(w.predict(input1))
 
         for _ in range(50):
-            w.cancel(input1.id)
-
+            with pytest.raises(KeyError):
+                w.cancel(input1.id)
 
         input2 = {"sleep": 0.1}
         result2 = await _process(w.predict(input2))
@@ -335,7 +338,7 @@ async def test_cancel_idempotency():
         await _process(w.setup())
 
         p1_done = None
-        input1 = PredictionInput({"sleep": 0.5}
+        input1 = PredictionInput({"sleep": 0.5})
 
         async for event in w.predict(input1, poll=0.01):
             # We call cancel a WHOLE BUNCH to make sure that we don't propagate
@@ -425,12 +428,13 @@ async def test_heartbeats_cancel():
         start = time.time()
 
         canceled = False
-        async for event in w.predict({"sleep": 10}, poll=0.1):
+        input = PredictionInput({"sleep": 10})
+        async for event in w.predict(input, poll=0.1):
             if isinstance(event, Heartbeat):
                 heartbeat_count += 1
             if time.time() - start > 0.5:
                 if not canceled:
-                    w.cancel()
+                    w.cancel(input.id)
                     canceled = True
 
         elapsed = time.time() - start
