@@ -127,7 +127,7 @@ def create_app(
 
     try:
         predictor_ref = get_predictor_ref(config, mode)
-        # use openapi schema if schema file exists in predict model dir (cloud/k8s run)
+        # use openapi schema if schema file exists in model dir (cloud/k8s run)
         if os.path.exists(schema.OPENAPI_SCHEMA_FILE):
             log.info(f"using {schema.OPENAPI_SCHEMA_FILE} file")
             schema_model = schema.create_schema_model(schema.OPENAPI_SCHEMA_FILE)
@@ -172,10 +172,16 @@ def create_app(
     if "train" in config:
         try:
             trainer_ref = get_predictor_ref(config, "train")
-            # TODO: avoid loading trainer code in this process
-            trainer = load_predictor_from_ref(trainer_ref)
-            TrainingInputType = get_training_input_type(trainer)
-            TrainingOutputType = get_training_output_type(trainer)
+            # use openapi schema if schema file exists in model dir (cloud/k8s run)
+            if os.path.exists(schema.OPENAPI_SCHEMA_FILE):
+                log.info(f"using {schema.OPENAPI_SCHEMA_FILE} file")
+                schema_model = schema.create_schema_model(schema.OPENAPI_SCHEMA_FILE)
+                TrainingInputType = schema_model.TrainingInputType
+                TrainingOutputType = schema_model.TrainingOutputType
+            else:
+                trainer = load_predictor_from_ref(trainer_ref)
+                TrainingInputType = get_training_input_type(trainer)
+                TrainingOutputType = get_training_output_type(trainer)
 
             class TrainingRequest(
                 schema.TrainingRequest.with_types(input_type=TrainingInputType)
