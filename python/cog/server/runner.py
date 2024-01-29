@@ -4,7 +4,7 @@ import threading
 import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Callable, Optional, Tuple, Union, cast
+from typing import Any, AsyncIterator, Callable, Optional, Union, cast
 
 import requests
 import structlog
@@ -74,6 +74,9 @@ class PredictionRunner:
 
         self._shutdown_event = shutdown_event
         self._upload_url = upload_url
+        self._predictions: "dict[str, tuple[schema.PredictionResponse, PredictionTask]]" = (
+            {}
+        )
 
     def make_error_handler(self, activity: str) -> Callable[[RunnerTask], None]:
         def handle_error(task: RunnerTask) -> None:
@@ -107,20 +110,11 @@ class PredictionRunner:
     # no longer have to support Python 3.8
     def predict(
         self, prediction: schema.PredictionRequest, upload: bool = True
-    ) -> Tuple[schema.PredictionResponse, PredictionTask]:
+    ) -> "tuple[schema.PredictionResponse, PredictionTask]":
         if self.is_busy():
+            if prediction.id in self._predictions:
+                return self._predictions[prediction.id]
             raise RunnerBusyError()
-        # # It's the caller's responsibility to not call us if we're busy.
-        # if self.is_busy():
-        #     # If self._result is set, but self._response is not, we're still
-        #     # doing setup.
-        #     if self._response is None:
-        #         raise RunnerBusyError()
-        #     assert self._result is not None
-        #     if prediction.id is not None and prediction.id == self._response.id:
-        #         result = cast(PredictionTask, self._result)
-        #         return (self._response, result)
-        #     raise RunnerBusyError()
 
         # Set up logger context for main thread. The same thing happens inside
         # the predict thread.
@@ -135,6 +129,7 @@ class PredictionRunner:
             input = cast(Any, prediction.input)
             if hasattr(input, "cleanup"):
                 input.cleanup()
+            self._predictions.pop(prediction.id)  # this might be too early
 
         _response = event_handler.response
         self._worker.eager_predict_state_change(prediction.id)
@@ -147,6 +142,7 @@ class PredictionRunner:
         _result = asyncio.create_task(coro)
         _result.add_done_callback(handle_cleanup)
         _result.add_done_callback(self.make_error_handler("prediction"))
+        self._predictions[prediction.id] = (_response, _result)
 
         return (_response, _result)
 
@@ -412,44 +408,20 @@ async def predict_and_handle_errors(
     structlog.contextvars.bind_contextvars(prediction_id=request.id)
 
     try:
-        return await handle_predict_events(
-            worker=worker,
-            request=request,
-            event_handler=event_handler,
-            should_cancel=should_cancel,
-        )
-    except Exception as e:
-        tb = traceback.format_exc()
-        event_handler.append_logs(tb)
-        event_handler.failed(error=str(e))
-        raise
-
-
-async def handle_predict_events(
-    *,
-    worker: Worker,
-    request: schema.PredictionRequest,
-    event_handler: PredictionEventHandler,
-    should_cancel: asyncio.Event,
-) -> schema.PredictionResponse:
-    # initial_prediction = request.dict()
-
-    try:
         prediction_input = PredictionInput.from_request(request)
-    # input_dict = initial_prediction["input"]
-
-    # for k, v in input_dict.items():
-    #     if isinstance(v, types.URLPath):
-    #         try:
-    #             input_dict[k] = v.convert()
+        predict_events = worker.predict(prediction_input, poll=0.1, eager=False)
+        return await event_handler.handle_event_stream(predict_events)
     except requests.exceptions.RequestException as e:
         tb = traceback.format_exc()
         event_handler.append_logs(tb)
         event_handler.failed(error=str(e))
         log.warn("failed to download url path from input", exc_info=True)
         return event_handler.response
-    predict_events = worker.predict(prediction_input, poll=0.1)
-    return await event_handler.handle_event_stream(predict_events)
+    except Exception as e:
+        tb = traceback.format_exc()
+        event_handler.append_logs(tb)
+        event_handler.failed(error=str(e))
+        raise
 
 
 def _make_file_upload_http_client() -> requests.Session:
