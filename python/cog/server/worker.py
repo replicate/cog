@@ -283,7 +283,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._predictor: Optional[BasePredictor] = None
         self._events = events
         self._tee_output = tee_output
-        # self._cancelable = False
+        self._cancelable = False
 
         super().__init__()
 
@@ -451,6 +451,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if self._predictor and is_async(get_predict(self._predictor)):
             # we could try also canceling the async task around here
             return
+        # this logic might need to be refined
         if signum == signal.SIGUSR1 and self._cancelable:
             raise CancelationException()
 
