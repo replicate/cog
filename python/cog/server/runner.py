@@ -1,11 +1,15 @@
 import asyncio
 import io
+import mimetypes
+import os
 import threading
 import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Callable, Optional, Union, cast
+from urllib.parse import urlparse
 
+import httpx
 import requests
 import structlog
 from attrs import define
@@ -14,7 +18,6 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
 from .. import schema
-from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from .eventtypes import (
     Done,
@@ -74,6 +77,7 @@ class PredictionRunner:
         self._predictions: "dict[str, tuple[schema.PredictionResponse, PredictionTask]]" = (
             {}
         )
+        self._client = httpx.Client()
 
     def make_error_handler(self, activity: str) -> Callable[[RunnerTask], None]:
         def handle_error(task: RunnerTask) -> None:
@@ -177,9 +181,52 @@ def create_event_handler(
     if webhook is not None:
         webhook_sender = webhook_caller_filtered(webhook, set(events_filter))
 
-    file_uploader = None
+    file_uploader: Optional[Callable[[Any], Any]] = None
     if upload_url is not None:
-        file_uploader = generate_file_uploader(upload_url)
+        client = requests.Session()
+        adapter = HTTPAdapter(
+            max_retries=Retry(
+                total=3,
+                backoff_factor=0.1,
+                status_forcelist=[408, 429, 500, 502, 503, 504],
+                allowed_methods=["PUT"],
+            ),
+        )
+        client.mount("http://", adapter)
+        client.mount("https://", adapter)
+
+        def file_uploader(output: Any) -> Any:
+            def upload_file(fh: io.IOBase) -> str:
+                # put file to signed endpoint
+                fh.seek(0)
+                # guess filename
+                name = getattr(fh, "name", "file")
+                filename = os.path.basename(name)
+                content_type, _ = mimetypes.guess_type(filename)
+
+                # set connect timeout to slightly more than a multiple of 3 to avoid
+                # aligning perfectly with TCP retransmission timer
+                connect_timeout = 10
+                read_timeout = 15
+
+                # ensure trailing slash
+                url_with_trailing_slash = upload_url if upload_url.endswith("/") else upload_url + "/"
+
+                resp = await client.put(
+                    url_with_trailing_slash + filename,
+                    fh,  # type: ignore
+                    headers={"Content-type": content_type},
+                    timeout=(connect_timeout, read_timeout),
+                )
+                resp.raise_for_status()
+
+                # strip any signing gubbins from the URL
+                final_url = urlparse(resp.url)._replace(query="").geturl()
+
+                return final_url
+
+            return upload_files(output, upload_file=upload_file)
+
 
     event_handler = PredictionEventHandler(
         response, webhook_sender=webhook_sender, file_uploader=file_uploader
@@ -187,17 +234,6 @@ def create_event_handler(
 
     return event_handler
 
-
-def generate_file_uploader(upload_url: str) -> Callable[[Any], Any]:
-    client = _make_file_upload_http_client()
-
-    def file_uploader(output: Any) -> Any:
-        def upload_file(fh: io.IOBase) -> str:
-            return put_file_to_signed_endpoint(fh, upload_url, client=client)
-
-        return upload_files(output, upload_file=upload_file)
-
-    return file_uploader
 
 
 class PredictionEventHandler:
@@ -403,18 +439,3 @@ async def predict_and_handle_errors(
         await event_handler.append_logs(tb)
         await event_handler.failed(error=str(e))
         raise
-
-
-def _make_file_upload_http_client() -> requests.Session:
-    session = requests.Session()
-    adapter = HTTPAdapter(
-        max_retries=Retry(
-            total=3,
-            backoff_factor=0.1,
-            status_forcelist=[408, 429, 500, 502, 503, 504],
-            allowed_methods=["PUT"],
-        ),
-    )
-    session.mount("http://", adapter)
-    session.mount("https://", adapter)
-    return session
