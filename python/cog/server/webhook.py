@@ -1,6 +1,7 @@
 import os
 from typing import Any, Callable, Set
 
+import httpx
 import requests
 import structlog
 from requests.adapters import HTTPAdapter
@@ -73,16 +74,12 @@ def webhook_caller(webhook: str) -> Callable[[Any], None]:
     return caller
 
 
-def requests_session() -> requests.Session:
-    session = requests.Session()
-    session.headers["user-agent"] = (
-        _user_agent + " " + str(session.headers["user-agent"])
-    )
+def httpx_client() -> httpx.AsyncClient:
+    headers = {"user-agent": _user_agent + " " + str(client.headers["user-agent"])}
     auth_token = os.environ.get("WEBHOOK_AUTH_TOKEN")
     if auth_token:
-        session.headers["authorization"] = "Bearer " + auth_token
-
-    return session
+        headers["authorization"] = "Bearer " + auth_token
+    return httx.AsyncClient(headers=headers)
 
 
 def requests_session_with_retries() -> requests.Session:
@@ -97,6 +94,12 @@ def requests_session_with_retries() -> requests.Session:
             status_forcelist=[429, 500, 502, 503, 504],
             allowed_methods=["POST"],
         )
+    )
+    RetryTransport(
+        max_attempts=12,
+        backoff_factor=0.1,
+        retry_status_codes=[429, 500, 502, 503, 504],
+        retryable_methods=["POST"],
     )
     session.mount("http://", adapter)
     session.mount("https://", adapter)
