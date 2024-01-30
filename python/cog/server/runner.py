@@ -1,24 +1,18 @@
 import asyncio
-import io
-import mimetypes
-import os
 import threading
 import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Callable, Optional, Union, cast
-from urllib.parse import urlparse
+from typing import Any, AsyncIterator, Awaitable, Callable, Optional, Union, cast
 
 import httpx
-import requests
 import structlog
 from attrs import define
 from fastapi.encoders import jsonable_encoder
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
 from .. import schema
-from ..json import upload_files
+from ..files import httpx_file_client, make_file_uploader
+from . import webhooks
 from .eventtypes import (
     Done,
     Heartbeat,
@@ -29,7 +23,6 @@ from .eventtypes import (
     PublicEventType,
 )
 from .probes import ProbeHelper
-from .webhook import SKIP_START_EVENT, webhook_caller_filtered
 from .worker import InvalidStateException, Worker
 
 log = structlog.get_logger("cog.server.runner")
@@ -77,7 +70,9 @@ class PredictionRunner:
         self._predictions: "dict[str, tuple[schema.PredictionResponse, PredictionTask]]" = (
             {}
         )
-        self._client = httpx.Client()
+        self._webhook_client = webhooks.httpx_client()
+        self._retry_webhook_client = webhooks.httpx_retry_client()
+        self._file_client = httpx_file_client()
 
     def make_error_handler(self, activity: str) -> Callable[[RunnerTask], None]:
         def handle_error(task: RunnerTask) -> None:
@@ -107,6 +102,35 @@ class PredictionRunner:
         result.add_done_callback(self.make_error_handler("setup"))
         return result
 
+    def create_event_handler(
+        self, prediction: schema.PredictionRequest, upload_url: Optional[str]
+    ) -> "PredictionEventHandler":
+        response = schema.PredictionResponse(**prediction.dict())
+
+        webhook = prediction.webhook
+        events_filter = (
+            prediction.webhook_events_filter or schema.WebhookEvent.default_events()
+        )
+
+        webhook_sender = None
+        if webhook is not None:
+            webhook_sender = webhooks.filtered_caller(
+                webhook,
+                set(events_filter),
+                self._webhook_client,
+                self._retry_webhook_client,
+            )
+
+        file_uploader: Optional[Callable[[Any], Any]] = None
+        if upload_url is not None:
+            file_uploader = make_file_uploader(self._file_client, upload_url)
+
+        event_handler = PredictionEventHandler(
+            response, webhook_sender=webhook_sender, file_uploader=file_uploader
+        )
+
+        return event_handler
+
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
     # no longer have to support Python 3.8
     def predict(
@@ -124,7 +148,8 @@ class PredictionRunner:
 
         self._should_cancel.clear()
         upload_url = self._upload_url if upload else None
-        event_handler = create_event_handler(prediction, upload_url=upload_url)
+        # this is supposed to send START, but we're trapped in a sync function
+        event_handler = self.create_event_handler(prediction, upload_url=upload_url)
 
         def handle_cleanup(_: PredictionTask) -> None:
             input = cast(Any, prediction.input)
@@ -167,81 +192,12 @@ class PredictionRunner:
             raise UnknownPredictionError() from e
 
 
-def create_event_handler(
-    prediction: schema.PredictionRequest, upload_url: Optional[str] = None
-) -> "PredictionEventHandler":
-    response = schema.PredictionResponse(**prediction.dict())
-
-    webhook = prediction.webhook
-    events_filter = (
-        prediction.webhook_events_filter or schema.WebhookEvent.default_events()
-    )
-
-    webhook_sender = None
-    if webhook is not None:
-        webhook_sender = webhook_caller_filtered(webhook, set(events_filter))
-
-    file_uploader: Optional[Callable[[Any], Any]] = None
-    if upload_url is not None:
-        client = requests.Session()
-        adapter = HTTPAdapter(
-            max_retries=Retry(
-                total=3,
-                backoff_factor=0.1,
-                status_forcelist=[408, 429, 500, 502, 503, 504],
-                allowed_methods=["PUT"],
-            ),
-        )
-        client.mount("http://", adapter)
-        client.mount("https://", adapter)
-
-        def file_uploader(output: Any) -> Any:
-            def upload_file(fh: io.IOBase) -> str:
-                # put file to signed endpoint
-                fh.seek(0)
-                # guess filename
-                name = getattr(fh, "name", "file")
-                filename = os.path.basename(name)
-                content_type, _ = mimetypes.guess_type(filename)
-
-                # set connect timeout to slightly more than a multiple of 3 to avoid
-                # aligning perfectly with TCP retransmission timer
-                connect_timeout = 10
-                read_timeout = 15
-
-                # ensure trailing slash
-                url_with_trailing_slash = upload_url if upload_url.endswith("/") else upload_url + "/"
-
-                resp = await client.put(
-                    url_with_trailing_slash + filename,
-                    fh,  # type: ignore
-                    headers={"Content-type": content_type},
-                    timeout=(connect_timeout, read_timeout),
-                )
-                resp.raise_for_status()
-
-                # strip any signing gubbins from the URL
-                final_url = urlparse(resp.url)._replace(query="").geturl()
-
-                return final_url
-
-            return upload_files(output, upload_file=upload_file)
-
-
-    event_handler = PredictionEventHandler(
-        response, webhook_sender=webhook_sender, file_uploader=file_uploader
-    )
-
-    return event_handler
-
-
-
 class PredictionEventHandler:
     def __init__(
         self,
         p: schema.PredictionResponse,
-        webhook_sender: Optional[Callable[[Any, schema.WebhookEvent], None]] = None,
-        file_uploader: Optional[Callable[[Any], Any]] = None,
+        webhook_sender: Optional[webhooks.WebhookSenderType] = None,
+        file_uploader: Optional[Callable[[Any], Awaitable[Any]]] = None,
     ) -> None:
         log.info("starting prediction")
         self.p = p
@@ -256,8 +212,9 @@ class PredictionEventHandler:
         # HACK: don't send an initial webhook if we're trying to optimize for
         # latency (this guarantees that the first output webhook won't be
         # throttled.)
-        if not SKIP_START_EVENT:
+        if not webhooks.SKIP_START_EVENT:
             # idk
+            # this is pretty wrong
             asyncio.create_task(self._send_webhook(schema.WebhookEvent.START))
 
     @property
@@ -266,7 +223,7 @@ class PredictionEventHandler:
 
     async def set_output(self, output: Any) -> None:
         assert self.p.output is None, "Predictor unexpectedly returned multiple outputs"
-        self.p.output = self._upload_files(output)
+        self.p.output = await self._upload_files(output)
         # We don't send a webhook for compatibility with the behaviour of
         # redis_queue. In future we can consider whether it makes sense to send
         # one here.
@@ -320,7 +277,6 @@ class PredictionEventHandler:
     async def _upload_files(self, output: Any) -> Any:
         if self._file_uploader is None:
             return output
-
         try:
             # TODO: clean up output files
             return self._file_uploader(output)
@@ -428,7 +384,7 @@ async def predict_and_handle_errors(
         prediction_input = PredictionInput.from_request(request)
         predict_events = worker.predict(prediction_input, poll=0.1, eager=False)
         return await event_handler.handle_event_stream(predict_events)
-    except requests.exceptions.RequestException as e:
+    except httpx.RequestError as e:
         tb = traceback.format_exc()
         await event_handler.append_logs(tb)
         await event_handler.failed(error=str(e))
