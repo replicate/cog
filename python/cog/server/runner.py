@@ -66,9 +66,6 @@ class PredictionRunner:
         upload_url: Optional[str] = None,
         concurrency: int = 1,
     ) -> None:
-        self._response: Optional[schema.PredictionResponse] = None
-        self._result: Optional[RunnerTask] = None
-
         self._worker = Worker(predictor_ref=predictor_ref, concurrency=concurrency)
         self._should_cancel = asyncio.Event()
 
@@ -131,7 +128,7 @@ class PredictionRunner:
                 input.cleanup()
             self._predictions.pop(prediction.id)  # this might be too early
 
-        _response = event_handler.response
+        response = event_handler.response
         self._worker.eager_predict_state_change(prediction.id)
         coro = predict_and_handle_errors(
             worker=self._worker,
@@ -141,28 +138,19 @@ class PredictionRunner:
         )
         # this is a little bit silly because we're making a sync handle
         # on a sync function that also wraps a future
-        _result = asyncio.create_task(coro)
-        _result.add_done_callback(handle_cleanup)
-        _result.add_done_callback(self.make_error_handler("prediction"))
-        self._predictions[prediction.id] = (_response, _result)
+        result = asyncio.create_task(coro)
+        result.add_done_callback(handle_cleanup)
+        result.add_done_callback(self.make_error_handler("prediction"))
+        self._predictions[prediction.id] = (response, result)
 
-        return (_response, _result)
+        return (response, result)
 
     def is_busy(self) -> bool:
         return self._worker.is_busy()
-        # if self._result is None:
-        #     return False
-
-        # if not self._result.done():
-        #     return True
-
-        # self._response = None
-        # self._result = None
-        # return False
 
     def shutdown(self) -> None:
-        if self._result:
-            self._result.cancel()
+        for _, task in self._predictions.values():
+            task.cancel()
         self._worker.terminate()
 
     def cancel(self, prediction_id: str) -> None:
@@ -173,13 +161,9 @@ class PredictionRunner:
         except KeyError as e:
             print(e)
             raise UnknownPredictionError() from e
-
-        # if not self.is_busy():
-        #     return
         # assert self._response is not None
         # if prediction_id is not None and prediction_id != self._response.id:
         #     raise UnknownPredictionError()
-        # self._should_cancel.set()
 
 
 def create_event_handler(
@@ -318,9 +302,6 @@ class PredictionEventHandler:
     ) -> schema.PredictionResponse:
         output_type = None
         async for event in events:
-            # if should_cancel.is_set():
-            #     worker.cancel(request.id)
-            #     should_cancel.clear()
             if isinstance(event, Heartbeat):
                 # Heartbeat events exist solely to ensure that we have a
                 # regular opportunity to check for cancelation and
