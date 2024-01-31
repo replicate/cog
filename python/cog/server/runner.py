@@ -3,7 +3,7 @@ import threading
 import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Awaitable, Callable, Optional, Union, cast
+from typing import Any, AsyncIterator, Callable, Optional, Union, cast
 
 import httpx
 import structlog
@@ -11,7 +11,7 @@ from attrs import define
 from fastapi.encoders import jsonable_encoder
 
 from .. import schema
-from .clients import SKIP_START_EVENT, ClientManager, WebhookSenderType
+from .clients import SKIP_START_EVENT, ClientManager
 from .eventtypes import (
     Done,
     Heartbeat,
@@ -99,32 +99,6 @@ class PredictionRunner:
         result.add_done_callback(self.make_error_handler("setup"))
         return result
 
-    def create_event_handler(
-        self, prediction: schema.PredictionRequest, upload: bool
-    ) -> "PredictionEventHandler":
-        # this is still kind of ugly
-        # it would be nicer if we could just pass self.client_manager to PredictionEventHandler
-        response = schema.PredictionResponse(**prediction.dict())
-
-        webhook = prediction.webhook
-        events_filter = (
-            prediction.webhook_events_filter or schema.WebhookEvent.default_events()
-        )
-
-        webhook_sender = self.client_manager.make_webhook_sender(webhook, events_filter)
-
-        async def file_uploader(obj: Any) -> Any:
-            if upload:
-                return await self.client_manager.upload_files(obj, self._upload_url)
-            return obj
-
-        # START event can't be sent immediately!!
-        event_handler = PredictionEventHandler(
-            response, webhook_sender=webhook_sender, file_uploader=file_uploader
-        )
-
-        return event_handler
-
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
     # no longer have to support Python 3.8
     def predict(
@@ -141,8 +115,12 @@ class PredictionRunner:
         structlog.contextvars.bind_contextvars(prediction_id=prediction.id)
 
         self._should_cancel.clear()
+
         # this is supposed to send START, but we're trapped in a sync function
-        event_handler = self.create_event_handler(prediction, upload)
+        upload_url = self._upload_url if upload else None
+        event_handler = PredictionEventHandler(
+            prediction, self.client_manager, upload_url
+        )
 
         def handle_cleanup(_: PredictionTask) -> None:
             input = cast(Any, prediction.input)
@@ -188,21 +166,23 @@ class PredictionRunner:
 class PredictionEventHandler:
     def __init__(
         self,
-        p: schema.PredictionResponse,
-        webhook_sender: Optional[WebhookSenderType] = None,
-        file_uploader: Optional[Callable[[Any], Awaitable[Any]]] = None,
+        request: schema.PredictionRequest,
+        client_manager: ClientManager,
+        upload_url: Optional[str],
     ) -> None:
         log.info("starting prediction")
-        self.p = p
+        self.p = schema.PredictionResponse(**request.dict())
         self.p.status = schema.Status.PROCESSING
         self.p.output = None
         self.p.logs = ""
         self.p.started_at = datetime.now(tz=timezone.utc)
-        # self.client_manager = client_manager
-        # self._webhook_sender = client_manager.make_webhook_sender(...)
 
-        self._webhook_sender = webhook_sender
-        self._file_uploader = file_uploader
+        self._client_manager = client_manager
+        self._webhook_sender = client_manager.make_webhook_sender(
+            request.webhook,
+            request.webhook_events_filter or schema.WebhookEvent.default_events(),
+        )
+        self._upload_url = upload_url
 
         # HACK: don't send an initial webhook if we're trying to optimize for
         # latency (this guarantees that the first output webhook won't be
@@ -265,16 +245,13 @@ class PredictionEventHandler:
         self.p.completed_at = datetime.now(tz=timezone.utc)
 
     async def _send_webhook(self, event: schema.WebhookEvent) -> None:
-        if self._webhook_sender is not None:
-            dict_response = jsonable_encoder(self.response.dict(exclude_unset=True))
-            self._webhook_sender(dict_response, event)
+        dict_response = jsonable_encoder(self.response.dict(exclude_unset=True))
+        await self._webhook_sender(dict_response, event)
 
     async def _upload_files(self, output: Any) -> Any:
-        if self._file_uploader is None:
-            return output
         try:
             # TODO: clean up output files
-            return self._file_uploader(output)
+            return await self._client_manager.upload_files(output, self._upload_url)
         except Exception as error:
             # If something goes wrong uploading a file, it's irrecoverable.
             # The re-raised exception will be caught and cause the prediction
