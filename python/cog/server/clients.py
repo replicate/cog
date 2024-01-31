@@ -80,6 +80,7 @@ def httpx_file_client() -> httpx.AsyncClient:
 # I'm somewhat sympathetic to separating webhooks and files
 # but they both have the same semantics of holding a client
 # for the lifetime of runner
+# also, both are used by PredictionEventHandler
 
 
 class ClientManager:
