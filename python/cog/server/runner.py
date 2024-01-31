@@ -199,6 +199,7 @@ class PredictionEventHandler:
     def __init__(
         self,
         p: schema.PredictionResponse,
+        client_manager: ClientManager,
         webhook_sender: Optional[webhooks.WebhookSenderType] = None,
         file_uploader: Optional[Callable[[Any], Awaitable[Any]]] = None,
     ) -> None:
@@ -208,6 +209,8 @@ class PredictionEventHandler:
         self.p.output = None
         self.p.logs = ""
         self.p.started_at = datetime.now(tz=timezone.utc)
+        self.client_manager = client_manager
+        self._webhook_sender = client_manager.make_webhook_sender(...)
 
         self._webhook_sender = webhook_sender
         self._file_uploader = file_uploader
