@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Callable, Optional, Union, cast
 
 import httpx
+import requests
 import structlog
 from attrs import define
 from fastapi.encoders import jsonable_encoder
@@ -178,6 +179,7 @@ class PredictionEventHandler:
         self.p.started_at = datetime.now(tz=timezone.utc)
 
         self._client_manager = client_manager
+        # request.webhook_events_filter should already defualt to default_events?
         self._webhook_sender = client_manager.make_webhook_sender(
             request.webhook,
             request.webhook_events_filter or schema.WebhookEvent.default_events(),
@@ -356,7 +358,8 @@ async def predict_and_handle_errors(
         prediction_input = PredictionInput.from_request(request)
         predict_events = worker.predict(prediction_input, poll=0.1, eager=False)
         return await event_handler.handle_event_stream(predict_events)
-    except httpx.RequestError as e:
+    # except httpx.RequestError as e:
+    except (httpx.RequestError, requests.exceptions.RequestException) as e:
         tb = traceback.format_exc()
         await event_handler.append_logs(tb)
         await event_handler.failed(error=str(e))

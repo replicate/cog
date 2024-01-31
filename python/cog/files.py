@@ -6,7 +6,7 @@ import os
 import requests
 
 
-async def upload_file(fh: io.IOBase, output_file_prefix: str = None) -> str:
+def upload_file(fh: io.IOBase, output_file_prefix: str = None) -> str:
     fh.seek(0)
 
     if output_file_prefix is not None:

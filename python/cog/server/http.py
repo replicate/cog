@@ -1,7 +1,6 @@
 import argparse
 import asyncio
 import functools
-import io
 import logging
 import os
 import signal
@@ -337,12 +336,9 @@ def create_app(
             raise HTTPException(status_code=500, detail=str(e)) from e
 
         response_object = response.dict()
-
-        async def prefix_upload_file(fh: io.IOBase) -> str:
-            return await upload_file(fh, request.output_file_prefix)
-
-        response_object["output"] = await upload_files(
-            response_object["output"], prefix_upload_file
+        response_object["output"] = upload_files(
+            response_object["output"],
+            upload_file=lambda fh: upload_file(fh, request.output_file_prefix),  # type: ignore
         )
 
         # FIXME: clean up output files
