@@ -6,7 +6,6 @@ from unittest import mock
 
 import pytest
 import pytest_asyncio
-
 from cog.schema import PredictionRequest, PredictionResponse, Status, WebhookEvent
 from cog.server.clients import ClientManager
 from cog.server.eventtypes import (
