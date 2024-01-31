@@ -11,8 +11,7 @@ from attrs import define
 from fastapi.encoders import jsonable_encoder
 
 from .. import schema
-from ..files import httpx_file_client, make_file_uploader
-from . import webhooks
+from .clients import SKIP_START_EVENT, ClientManager, WebhookSenderType
 from .eventtypes import (
     Done,
     Heartbeat,
@@ -70,9 +69,7 @@ class PredictionRunner:
         self._predictions: "dict[str, tuple[schema.PredictionResponse, PredictionTask]]" = (
             {}
         )
-        self._webhook_client = webhooks.httpx_client()
-        self._retry_webhook_client = webhooks.httpx_retry_client()
-        self._file_client = httpx_file_client()
+        self.client_manager = ClientManager()  # upload_url)
 
     def make_error_handler(self, activity: str) -> Callable[[RunnerTask], None]:
         def handle_error(task: RunnerTask) -> None:
@@ -103,7 +100,7 @@ class PredictionRunner:
         return result
 
     def create_event_handler(
-        self, prediction: schema.PredictionRequest, upload_url: Optional[str]
+        self, prediction: schema.PredictionRequest, upload: bool
     ) -> "PredictionEventHandler":
         # this is still kind of ugly
         # it would be nicer if we could just pass self.client_manager to PredictionEventHandler
@@ -114,18 +111,12 @@ class PredictionRunner:
             prediction.webhook_events_filter or schema.WebhookEvent.default_events()
         )
 
-        webhook_sender = None
-        if webhook is not None:
-            webhook_sender = webhooks.filtered_caller(
-                webhook,
-                set(events_filter),
-                self._webhook_client,
-                self._retry_webhook_client,
-            )
+        webhook_sender = self.client_manager.make_webhook_sender(webhook, events_filter)
 
-        file_uploader: Optional[Callable[[Any], Any]] = None
-        if upload_url is not None:
-            file_uploader = make_file_uploader(self._file_client, upload_url)
+        async def file_uploader(obj: Any) -> Any:
+            if upload:
+                return await self.client_manager.upload_files(obj, self._upload_url)
+            return obj
 
         # START event can't be sent immediately!!
         event_handler = PredictionEventHandler(
@@ -150,9 +141,8 @@ class PredictionRunner:
         structlog.contextvars.bind_contextvars(prediction_id=prediction.id)
 
         self._should_cancel.clear()
-        upload_url = self._upload_url if upload else None
         # this is supposed to send START, but we're trapped in a sync function
-        event_handler = self.create_event_handler(prediction, upload_url=upload_url)
+        event_handler = self.create_event_handler(prediction, upload)
 
         def handle_cleanup(_: PredictionTask) -> None:
             input = cast(Any, prediction.input)
@@ -199,8 +189,7 @@ class PredictionEventHandler:
     def __init__(
         self,
         p: schema.PredictionResponse,
-        client_manager: ClientManager,
-        webhook_sender: Optional[webhooks.WebhookSenderType] = None,
+        webhook_sender: Optional[WebhookSenderType] = None,
         file_uploader: Optional[Callable[[Any], Awaitable[Any]]] = None,
     ) -> None:
         log.info("starting prediction")
@@ -209,8 +198,8 @@ class PredictionEventHandler:
         self.p.output = None
         self.p.logs = ""
         self.p.started_at = datetime.now(tz=timezone.utc)
-        self.client_manager = client_manager
-        self._webhook_sender = client_manager.make_webhook_sender(...)
+        # self.client_manager = client_manager
+        # self._webhook_sender = client_manager.make_webhook_sender(...)
 
         self._webhook_sender = webhook_sender
         self._file_uploader = file_uploader
@@ -218,7 +207,7 @@ class PredictionEventHandler:
         # HACK: don't send an initial webhook if we're trying to optimize for
         # latency (this guarantees that the first output webhook won't be
         # throttled.)
-        if not webhooks.SKIP_START_EVENT:
+        if not SKIP_START_EVENT:
             # idk
             # this is pretty wrong
             asyncio.create_task(self._send_webhook(schema.WebhookEvent.START))
