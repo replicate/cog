@@ -146,9 +146,6 @@ class Worker:
             return WorkerState.IDLE
         return WorkerState.PROCESSING
 
-    def is_busy(self) -> bool:
-        return self._state not in {WorkerState.PROCESSING, WorkerState.IDLE}
-
     @contextlib.asynccontextmanager
     async def _prediction_ctx(self, input: PredictionInput) -> AsyncIterator[None]:
         async with self._semaphore:
@@ -159,6 +156,12 @@ class Worker:
             finally:
                 self._predictions_in_flight.remove(input.id)
         self._state = self.state_from_predictions_in_flight()
+
+    def is_busy(self) -> bool:
+        return self._state not in {WorkerState.PROCESSING, WorkerState.IDLE}
+
+    # what if we just also added a sync context manager to handle the eager parts?
+    # we need to hoist this into when a coro is made in http
 
     def eager_predict_state_change(self, id: str) -> None:
         if self.is_busy():
@@ -358,7 +361,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             if isinstance(ev, PredictionInput):
                 self._predict_sync(ev)
             elif isinstance(ev, Cancel):
-                pass # we should have gotten a signal
+                pass  # we should have gotten a signal
             else:
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
 

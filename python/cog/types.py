@@ -97,6 +97,7 @@ class Path(pathlib.PosixPath):
         field_schema.update(type="string", format="uri")
 
 
+# this is always used?
 class URLPath(pathlib.PosixPath):
     """
     URLPath is a nasty hack to ensure that we can defer the downloading of a
