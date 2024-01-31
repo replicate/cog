@@ -81,14 +81,7 @@ class Path(pathlib.PosixPath):
 
     @classmethod
     def validate(cls, value: Any) -> pathlib.Path:
-        if isinstance(value, pathlib.Path):
-            return value
-
-        return URLPath(
-            source=value,
-            filename=get_filename(value),
-            fileobj=File.validate(value),
-        )
+        return value_to_path(value)
 
     @classmethod
     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
@@ -97,7 +90,50 @@ class Path(pathlib.PosixPath):
         field_schema.update(type="string", format="uri")
 
 
-# this is always used?
+def value_to_path(value: Any) -> pathlib.Path:
+    if isinstance(value, pathlib.Path):
+        return value
+    if isinstance(value, io.IOBase):
+        # this shouldn't happen in this path
+        # Path is pretty much expected to be a string and not a file
+        raise ValueError
+
+    # get filename
+    parsed_url = urllib.parse.urlparse(value)
+
+    if parsed_url.scheme == "data":
+        resp = urllib.request.urlopen(value)  # noqa: S310
+        mime_type = resp.headers.get_content_type()
+        extension = mimetypes.guess_extension(mime_type)
+        if extension is None:
+            filename = "file"
+        else:
+            filename = "file" + extension
+        fileobj = io.BytesIO(resp.read())
+    elif parsed_url.scheme == "http" or parsed_url.scheme == "https":
+        filename = os.path.filename(parsed_url.path)
+        filename = urllib.parse.unquote_plus(filename)
+
+        # If the filename is too long, we truncate it (appending '~' to denote the
+        # truncation) while preserving the file extension.
+        # - truncate it
+        # - append a tilde
+        # - preserve the file extension
+        if _len_bytes(filename) > FILENAME_MAX_LENGTH:
+            filename = _truncate_filename_bytes(
+                filename, length=FILENAME_MAX_LENGTH
+            )
+
+        for c in FILENAME_ILLEGAL_CHARS:
+            filename = filename.replace(c, "_")
+
+        fileobj = URLFile(value)
+    else:
+        raise ValueError(
+            f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
+            )
+    return URLPath(source=value, filename=filename, fileobj=fileobj)
+
 class URLPath(pathlib.PosixPath):
     """
     URLPath is a nasty hack to ensure that we can defer the downloading of a
@@ -119,6 +155,7 @@ class URLPath(pathlib.PosixPath):
     def convert(self) -> Path:
         if self._path is None:
             dest = tempfile.NamedTemporaryFile(suffix=self.filename, delete=False)
+            # this is what does the download
             shutil.copyfileobj(self.fileobj, dest)
             self._path = Path(dest.name)
         return self._path
@@ -136,6 +173,10 @@ class URLPath(pathlib.PosixPath):
         # FastAPI's jsonable_encoder will encode subclasses of pathlib.Path by
         # calling str() on them
         return self.source
+
+
+# we would prefer this to stay lazy
+# except... that doesn't really work with httpx?
 
 
 class URLFile(io.IOBase):
@@ -202,34 +243,6 @@ class URLFile(io.IOBase):
             )
         else:
             return f"<{type(self).__name__} at 0x{id(self):x} wrapping {target!r}>"
-
-
-def get_filename(url: str) -> str:
-    parsed_url = urllib.parse.urlparse(url)
-
-    if parsed_url.scheme == "data":
-        resp = urllib.request.urlopen(url)  # noqa: S310
-        mime_type = resp.headers.get_content_type()
-        extension = mimetypes.guess_extension(mime_type)
-        if extension is None:
-            return "file"
-        return "file" + extension
-
-    basename = os.path.basename(parsed_url.path)
-    basename = urllib.parse.unquote_plus(basename)
-
-    # If the filename is too long, we truncate it (appending '~' to denote the
-    # truncation) while preserving the file extension.
-    # - truncate it
-    # - append a tilde
-    # - preserve the file extension
-    if _len_bytes(basename) > FILENAME_MAX_LENGTH:
-        basename = _truncate_filename_bytes(basename, length=FILENAME_MAX_LENGTH)
-
-    for c in FILENAME_ILLEGAL_CHARS:
-        basename = basename.replace(c, "_")
-
-    return basename
 
 
 Item = TypeVar("Item")
