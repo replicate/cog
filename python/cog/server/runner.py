@@ -105,6 +105,8 @@ class PredictionRunner:
     def create_event_handler(
         self, prediction: schema.PredictionRequest, upload_url: Optional[str]
     ) -> "PredictionEventHandler":
+        # this is still kind of ugly
+        # it would be nicer if we could just pass self.client_manager to PredictionEventHandler
         response = schema.PredictionResponse(**prediction.dict())
 
         webhook = prediction.webhook
@@ -125,6 +127,7 @@ class PredictionRunner:
         if upload_url is not None:
             file_uploader = make_file_uploader(self._file_client, upload_url)
 
+        # START event can't be sent immediately!!
         event_handler = PredictionEventHandler(
             response, webhook_sender=webhook_sender, file_uploader=file_uploader
         )
