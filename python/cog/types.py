@@ -102,15 +102,29 @@ def value_to_path(value: Any) -> pathlib.Path:
     parsed_url = urllib.parse.urlparse(value)
 
     if parsed_url.scheme == "data":
-        resp = urllib.request.urlopen(value)  # noqa: S310
-        mime_type = resp.headers.get_content_type()
-        extension = mimetypes.guess_extension(mime_type)
-        if extension is None:
-            filename = "file"
-        else:
-            filename = "file" + extension
-        fileobj = io.BytesIO(resp.read())
-    elif parsed_url.scheme == "http" or parsed_url.scheme == "https":
+        return BackwardsCompatibleDataURLTempFilePath(value)
+    if not (parsed_url.scheme == "http" or parsed_url.scheme == "https"):
+        raise ValueError(
+            f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
+        )
+    return URLThatCanBeConvertedToPath(value)
+
+class URLThatCanBeConvertedToPath(pathlib.PosixPath):
+    """
+    URLPath is a nasty hack to ensure that we can defer the downloading of a
+    URL passed as a path until later in prediction dispatch.
+
+    It subclasses pathlib.PosixPath only so that it can pass isinstance(_,
+    pathlib.Path) checks.
+    """
+
+    _path: Optional[Path] = None
+
+    def __init__(self, url: str) -> None:
+        self.url = url 
+
+        parsed_url = urllib.parse.urlparse(url)
+
         filename = os.path.filename(parsed_url.path)
         filename = urllib.parse.unquote_plus(filename)
 
@@ -120,43 +134,21 @@ def value_to_path(value: Any) -> pathlib.Path:
         # - append a tilde
         # - preserve the file extension
         if _len_bytes(filename) > FILENAME_MAX_LENGTH:
-            filename = _truncate_filename_bytes(
-                filename, length=FILENAME_MAX_LENGTH
-            )
+            filename = _truncate_filename_bytes(filename, length=FILENAME_MAX_LENGTH)
 
         for c in FILENAME_ILLEGAL_CHARS:
             filename = filename.replace(c, "_")
-
-        fileobj = URLFile(value)
-    else:
-        raise ValueError(
-            f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
-            )
-    return URLPath(source=value, filename=filename, fileobj=fileobj)
-
-class URLPath(pathlib.PosixPath):
-    """
-    URLPath is a nasty hack to ensure that we can defer the downloading of a
-    URL passed as a path until later in prediction dispatch.
-
-    It subclasses pathlib.PosixPath only so that it can pass isinstance(_,
-    pathlib.Path) checks.
-    """
-
-    _path: Optional[Path]
-
-    def __init__(self, *, source: str, filename: str, fileobj: io.IOBase) -> None:
-        self.source = source
         self.filename = filename
-        self.fileobj = fileobj
 
-        self._path = None
 
     def convert(self) -> Path:
         if self._path is None:
+            resp = requests.get(url, stream=True)
+            resp.raise_for_status()
+            resp.raw.decode_content = True
             dest = tempfile.NamedTemporaryFile(suffix=self.filename, delete=False)
-            # this is what does the download
-            shutil.copyfileobj(self.fileobj, dest)
+            shutil.copyfileobj(resp.raw, dest)
+            # this is our weird Path! that's weird!
             self._path = Path(dest.name)
         return self._path
 
@@ -168,6 +160,34 @@ class URLPath(pathlib.PosixPath):
             except FileNotFoundError:
                 if not missing_ok:
                     raise
+
+    def __str__(self) -> str:
+        # FastAPI's jsonable_encoder will encode subclasses of pathlib.Path by
+        # calling str() on them
+        return self.filename
+
+
+
+class BackwardsCompatibleDataURLTempFilePath(pathlib.PosixPath):
+    def __init__(self, url: str) -> None:
+        resp = urllib.request.urlopen(url)  # noqa: S310
+        mime_type = resp.headers.get_content_type()
+        extension = mimetypes.guess_extension(mime_type)
+        filename = ("file" + extension) if extension else "file"
+        self.source = filename
+        dest = tempfile.NamedTemporaryFile(suffix=filename, delete=False)
+        shutil.copyfileobj(resp, dest)
+        super().__init__(dest.name)
+
+    if sys.version_info < (3, 8):
+
+        def unlink(self, missing_ok: bool = False) -> None:
+            if self._path:
+                try:
+                    self._path.unlink()
+                except FileNotFoundError:
+                    if not missing_ok:
+                        raise
 
     def __str__(self) -> str:
         # FastAPI's jsonable_encoder will encode subclasses of pathlib.Path by
