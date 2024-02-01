@@ -18,7 +18,9 @@ class PredictionInput:
         assert request.id, "PredictionRequest must have an id"
         payload = request.dict()["input"]
         for k, v in payload.items():
-            if isinstance(v, types.URLPath):
+            if isinstance(v, types.URLThatCanBeConvertedToPath):
+                payload[k] = v.convert()
+            if isinstance(v, types.DataURLTempFilePath):
                 payload[k] = v.convert()
         return cls(payload=payload, id=request.id)
 
