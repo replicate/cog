@@ -81,7 +81,23 @@ class Path(pathlib.PosixPath):
 
     @classmethod
     def validate(cls, value: Any) -> pathlib.Path:
-        return value_to_path(value)
+        if isinstance(value, pathlib.Path):
+            return value
+        if isinstance(value, io.IOBase):
+            # this shouldn't happen in this path
+            # Path is pretty much expected to be a string and not a file
+            raise ValueError
+
+        # get filename
+        parsed_url = urllib.parse.urlparse(value)
+
+        if parsed_url.scheme == "data":
+            return DataURLTempFilePath(value)
+        if not (parsed_url.scheme == "http" or parsed_url.scheme == "https"):
+            raise ValueError(
+                f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
+            )
+        return URLThatCanBeConvertedToPath(value)
 
     @classmethod
     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
@@ -89,25 +105,6 @@ class Path(pathlib.PosixPath):
         # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
         field_schema.update(type="string", format="uri")
 
-
-def value_to_path(value: Any) -> pathlib.Path:
-    if isinstance(value, pathlib.Path):
-        return value
-    if isinstance(value, io.IOBase):
-        # this shouldn't happen in this path
-        # Path is pretty much expected to be a string and not a file
-        raise ValueError
-
-    # get filename
-    parsed_url = urllib.parse.urlparse(value)
-
-    if parsed_url.scheme == "data":
-        return BackwardsCompatibleDataURLTempFilePath(value)
-    if not (parsed_url.scheme == "http" or parsed_url.scheme == "https"):
-        raise ValueError(
-            f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
-        )
-    return URLThatCanBeConvertedToPath(value)
 
 class URLThatCanBeConvertedToPath(pathlib.PosixPath):
     """
@@ -121,11 +118,11 @@ class URLThatCanBeConvertedToPath(pathlib.PosixPath):
     _path: Optional[Path] = None
 
     def __init__(self, url: str) -> None:
-        self.url = url 
+        self.url = url
 
         parsed_url = urllib.parse.urlparse(url)
 
-        filename = os.path.filename(parsed_url.path)
+        filename = os.path.basename(parsed_url.path)
         filename = urllib.parse.unquote_plus(filename)
 
         # If the filename is too long, we truncate it (appending '~' to denote the
@@ -140,10 +137,9 @@ class URLThatCanBeConvertedToPath(pathlib.PosixPath):
             filename = filename.replace(c, "_")
         self.filename = filename
 
-
     def convert(self) -> Path:
         if self._path is None:
-            resp = requests.get(url, stream=True)
+            resp = requests.get(self.url, stream=True)
             resp.raise_for_status()
             resp.raw.decode_content = True
             dest = tempfile.NamedTemporaryFile(suffix=self.filename, delete=False)
@@ -151,6 +147,11 @@ class URLThatCanBeConvertedToPath(pathlib.PosixPath):
             # this is our weird Path! that's weird!
             self._path = Path(dest.name)
         return self._path
+
+    def __str__(self) -> str:
+        # FastAPI's jsonable_encoder will encode subclasses of pathlib.Path by
+        # calling str() on them
+        return self.filename
 
     def unlink(self, missing_ok: bool = False) -> None:
         if self._path:
@@ -161,14 +162,8 @@ class URLThatCanBeConvertedToPath(pathlib.PosixPath):
                 if not missing_ok:
                     raise
 
-    def __str__(self) -> str:
-        # FastAPI's jsonable_encoder will encode subclasses of pathlib.Path by
-        # calling str() on them
-        return self.filename
 
-
-
-class BackwardsCompatibleDataURLTempFilePath(pathlib.PosixPath):
+class DataURLTempFilePath(pathlib.PosixPath):
     def __init__(self, url: str) -> None:
         resp = urllib.request.urlopen(url)  # noqa: S310
         mime_type = resp.headers.get_content_type()
@@ -177,22 +172,24 @@ class BackwardsCompatibleDataURLTempFilePath(pathlib.PosixPath):
         self.source = filename
         dest = tempfile.NamedTemporaryFile(suffix=filename, delete=False)
         shutil.copyfileobj(resp, dest)
-        super().__init__(dest.name)
+        self._path = pathlib.Path(dest.name)
 
-    if sys.version_info < (3, 8):
-
-        def unlink(self, missing_ok: bool = False) -> None:
-            if self._path:
-                try:
-                    self._path.unlink()
-                except FileNotFoundError:
-                    if not missing_ok:
-                        raise
+    def convert(self) -> pathlib.Path:
+        return self._path
 
     def __str__(self) -> str:
         # FastAPI's jsonable_encoder will encode subclasses of pathlib.Path by
         # calling str() on them
         return self.source
+
+    def unlink(self, missing_ok: bool = False) -> None:
+        if self._path:
+            # TODO: use unlink(missing_ok=...) when we drop Python 3.7 support.
+            try:
+                self._path.unlink()
+            except FileNotFoundError:
+                if not missing_ok:
+                    raise
 
 
 # we would prefer this to stay lazy

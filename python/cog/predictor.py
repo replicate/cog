@@ -36,10 +36,7 @@ from .errors import ConfigDoesNotExist, PredictorNotSet
 from .types import (
     File as CogFile,
 )
-from .types import (
-    Input,
-    URLPath,
-)
+from .types import Input
 from .types import (
     Path as CogPath,
 )
@@ -212,12 +209,15 @@ class BaseInput(BaseModel):
         Cleanup any temporary files created by the input.
         """
         for _, value in self:
-            # Handle URLPath objects specially for cleanup.
-            if isinstance(value, URLPath):
-                value.unlink()
+            # # Handle URLPath objects specially for cleanup.
+            # if isinstance(value, URLPath):
+            #     value.unlink()
             # Note this is pathlib.Path, which cog.Path is a subclass of. A pathlib.Path object shouldn't make its way here,
             # but both have an unlink() method, so may as well be safe.
-            elif isinstance(value, Path):
+            #
+            # URLThatCanBeConvertedToPath, DataURLTempFilePath, pathlib.Path, doesn't matter
+            # everyone can be unlinked
+            if isinstance(value, Path):
                 try:
                     value.unlink()
                 except FileNotFoundError:
