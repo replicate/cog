@@ -6,6 +6,7 @@ import shutil
 import tempfile
 import urllib.parse
 import urllib.request
+import urllib.response
 from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
 
 import httpx
@@ -120,23 +121,7 @@ class URLThatCanBeConvertedToPath(pathlib.PosixPath):
 
     def __init__(self, url: str) -> None:
         self.url = url
-
-        parsed_url = urllib.parse.urlparse(url)
-
-        filename = os.path.basename(parsed_url.path)
-        filename = urllib.parse.unquote_plus(filename)
-
-        # If the filename is too long, we truncate it (appending '~' to denote the
-        # truncation) while preserving the file extension.
-        # - truncate it
-        # - append a tilde
-        # - preserve the file extension
-        if _len_bytes(filename) > FILENAME_MAX_LENGTH:
-            filename = _truncate_filename_bytes(filename, length=FILENAME_MAX_LENGTH)
-
-        for c in FILENAME_ILLEGAL_CHARS:
-            filename = filename.replace(c, "_")
-        self.filename = filename
+        self.filename = get_filename_from_url(url)
 
     async def convert(self, client: httpx.AsyncClient) -> Path:
         if self._path is None:
@@ -149,8 +134,6 @@ class URLThatCanBeConvertedToPath(pathlib.PosixPath):
             # this is our weird Path! that's weird!
             self._path = Path(dest.name)
         return self._path
-
-
 
     def __str__(self) -> str:
         # FastAPI's jsonable_encoder will encode subclasses of pathlib.Path by
@@ -170,11 +153,8 @@ class URLThatCanBeConvertedToPath(pathlib.PosixPath):
 class DataURLTempFilePath(pathlib.PosixPath):
     def __init__(self, url: str) -> None:
         resp = urllib.request.urlopen(url)  # noqa: S310
-        mime_type = resp.headers.get_content_type()
-        extension = mimetypes.guess_extension(mime_type)
-        filename = ("file" + extension) if extension else "file"
-        self.source = filename
-        dest = tempfile.NamedTemporaryFile(suffix=filename, delete=False)
+        self.source = get_filename_from_urlopen(resp)
+        dest = tempfile.NamedTemporaryFile(suffix=self.source, delete=False)
         shutil.copyfileobj(resp, dest)
         self._path = pathlib.Path(dest.name)
 
@@ -294,6 +274,31 @@ class ConcatenateIterator(Iterator[Item]):
 
 def _len_bytes(s: str, encoding: str = "utf-8") -> int:
     return len(s.encode(encoding))
+
+
+def get_filename_from_urlopen(resp: urllib.response.addinfourl) -> str:
+    mime_type = resp.headers.get_content_type()
+    extension = mimetypes.guess_extension(mime_type)
+    return ("file" + extension) if extension else "file"
+
+
+def get_filename_from_url(url: str) -> str:
+    parsed_url = urllib.parse.urlparse(url)
+
+    filename = os.path.basename(parsed_url.path)
+    filename = urllib.parse.unquote_plus(filename)
+
+    # If the filename is too long, we truncate it (appending '~' to denote the
+    # truncation) while preserving the file extension.
+    # - truncate it
+    # - append a tilde
+    # - preserve the file extension
+    if _len_bytes(filename) > FILENAME_MAX_LENGTH:
+        filename = _truncate_filename_bytes(filename, length=FILENAME_MAX_LENGTH)
+
+    for c in FILENAME_ILLEGAL_CHARS:
+        filename = filename.replace(c, "_")
+    return filename
 
 
 def _truncate_filename_bytes(s: str, length: int, encoding: str = "utf-8") -> str:

@@ -280,16 +280,8 @@ def create_app(
         Run a single prediction on the model (idempotent creation).
         """
         if request.id is not None and request.id != prediction_id:
-            raise RequestValidationError(
-                [
-                    ErrorWrapper(
-                        ValueError(
-                            "prediction ID must match the ID supplied in the URL"
-                        ),
-                        ("body", "id"),
-                    )
-                ]
-            )
+            err = ValueError("prediction ID must match the ID supplied in the URL")
+            raise RequestValidationError([ErrorWrapper(err, ("body", "id"))])
 
         # We've already checked that the IDs match, now ensure that an ID is
         # set on the prediction object
