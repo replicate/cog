@@ -6,12 +6,11 @@ from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Callable, Optional, Union, cast
 
 import httpx
-import requests
 import structlog
 from attrs import define
 from fastapi.encoders import jsonable_encoder
 
-from .. import schema
+from .. import schema, types
 from .clients import SKIP_START_EVENT, ClientManager
 from .eventtypes import (
     Done,
@@ -122,6 +121,7 @@ class PredictionRunner:
         event_handler = PredictionEventHandler(
             prediction, self.client_manager, upload_url
         )
+        response = event_handler.response
 
         def handle_cleanup(_: PredictionTask) -> None:
             input = cast(Any, prediction.input)
@@ -129,11 +129,11 @@ class PredictionRunner:
                 input.cleanup()
             self._predictions.pop(prediction.id)  # this might be too early
 
-        response = event_handler.response
         self._worker.eager_predict_state_change(prediction.id)
         coro = predict_and_handle_errors(
             worker=self._worker,
             request=prediction,
+            client=self.client_manager.download_client,
             event_handler=event_handler,
             should_cancel=self._should_cancel,
         )
@@ -347,6 +347,7 @@ async def predict_and_handle_errors(
     *,
     worker: Worker,
     request: schema.PredictionRequest,
+    client: httpx.AsyncClient,
     event_handler: PredictionEventHandler,
     should_cancel: asyncio.Event,
 ) -> schema.PredictionResponse:
@@ -356,10 +357,17 @@ async def predict_and_handle_errors(
 
     try:
         prediction_input = PredictionInput.from_request(request)
+        # FIXME: handle e.g. dict[str, list[Path]]
+        # FIXME: download files concurrently
+        for k, v in prediction_input.payload.items():
+            if isinstance(v, types.DataURLTempFilePath):
+                prediction_input.payload[k] = v.convert()
+            if isinstance(v, types.URLThatCanBeConvertedToPath):
+                real_path = await v.convert(client)
+                prediction_input.payload[k] = real_path
         predict_events = worker.predict(prediction_input, poll=0.1, eager=False)
         return await event_handler.handle_event_stream(predict_events)
-    # except httpx.RequestError as e:
-    except (httpx.RequestError, requests.exceptions.RequestException) as e:
+    except httpx.RequestError as e:
         tb = traceback.format_exc()
         await event_handler.append_logs(tb)
         await event_handler.failed(error=str(e))

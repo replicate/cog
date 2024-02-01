@@ -3,7 +3,7 @@ from typing import Any, Dict, Union
 
 from attrs import define, field, validators
 
-from .. import schema, types
+from .. import schema
 
 
 # From worker parent process
@@ -17,13 +17,7 @@ class PredictionInput:
     def from_request(cls, request: schema.PredictionRequest) -> "PredictionInput":
         assert request.id, "PredictionRequest must have an id"
         payload = request.dict()["input"]
-        for k, v in payload.items():
-            if isinstance(v, types.URLThatCanBeConvertedToPath):
-                payload[k] = v.convert()
-            if isinstance(v, types.DataURLTempFilePath):
-                payload[k] = v.convert()
         return cls(payload=payload, id=request.id)
-
 
 @define
 class Cancel:
