@@ -8,6 +8,7 @@ import urllib.parse
 import urllib.request
 from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
 
+import httpx
 import requests
 from pydantic import Field
 
@@ -137,16 +138,19 @@ class URLThatCanBeConvertedToPath(pathlib.PosixPath):
             filename = filename.replace(c, "_")
         self.filename = filename
 
-    def convert(self) -> Path:
+    async def convert(self, client: httpx.AsyncClient) -> Path:
         if self._path is None:
-            resp = requests.get(self.url, stream=True)
-            resp.raise_for_status()
-            resp.raw.decode_content = True
             dest = tempfile.NamedTemporaryFile(suffix=self.filename, delete=False)
-            shutil.copyfileobj(resp.raw, dest)
+            async with client.stream("GET", self.url) as resp:
+                resp.raise_for_status()
+                # resp.raw.decode_content = True
+                async for chunk in resp.aiter_bytes():
+                    dest.write(chunk)
             # this is our weird Path! that's weird!
             self._path = Path(dest.name)
         return self._path
+
+
 
     def __str__(self) -> str:
         # FastAPI's jsonable_encoder will encode subclasses of pathlib.Path by

@@ -50,7 +50,7 @@ def webhook_headers() -> dict[str, str]:
 
 
 def httpx_webhook_client() -> httpx.AsyncClient:
-    return httpx.AsyncClient(headers=webhook_headers())
+    return httpx.AsyncClient(headers=webhook_headers(), follow_redirects=True)
 
 
 def httpx_retry_client() -> httpx.AsyncClient:
@@ -63,7 +63,9 @@ def httpx_retry_client() -> httpx.AsyncClient:
         retry_status_codes=[429, 500, 502, 503, 504],
         retryable_methods=["POST"],
     )
-    return httpx.AsyncClient(headers=webhook_headers(), transport=transport)
+    return httpx.AsyncClient(
+        headers=webhook_headers(), transport=transport, follow_redirects=True
+    )
 
 
 def httpx_file_client() -> httpx.AsyncClient:
@@ -73,7 +75,7 @@ def httpx_file_client() -> httpx.AsyncClient:
         retry_status_codes=[408, 429, 500, 502, 503, 504],
         retryable_methods=["PUT"],
     )
-    return httpx.AsyncClient(transport=transport)
+    return httpx.AsyncClient(transport=transport, follow_redirects=True)
 
 
 # I might still split this apart or inline parts of it
@@ -89,6 +91,7 @@ class ClientManager:
         self.webhook_client = httpx_webhook_client()
         self.retry_webhook_client = httpx_retry_client()
         self.file_client = httpx_file_client()
+        self.download_client = httpx.AsyncClient(follow_redirects=True)
 
     # webhooks
 
