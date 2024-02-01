@@ -185,6 +185,8 @@ class URLFile(io.IOBase):
     URLFile is a proxy object for a :class:`urllib3.response.HTTPResponse`
     object that is created lazily. It's a file-like object constructed from a
     URL that can survive pickling/unpickling.
+
+    This is the only place Cog uses requests
     """
 
     __slots__ = ("__target__", "__url__")
