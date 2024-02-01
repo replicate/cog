@@ -1,7 +1,8 @@
+import base64
 import io
 import mimetypes
 import os
-from typing import Any, Awaitable, Callable, Collection, Dict, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Collection, Dict, Optional
 from urllib.parse import urlparse
 
 import httpx
@@ -75,7 +76,12 @@ def httpx_file_client() -> httpx.AsyncClient:
         retry_status_codes=[408, 429, 500, 502, 503, 504],
         retryable_methods=["PUT"],
     )
-    return httpx.AsyncClient(transport=transport, follow_redirects=True)
+    # set connect timeout to slightly more than a multiple of 3 to avoid
+    # aligning perfectly with TCP retransmission timer
+    # requests has no write timeout, keep that
+    # httpx default for pool is 5, use that
+    timeout = httpx.Timeout(connect=10, read=15, write=None, pool=5)
+    return httpx.AsyncClient(transport=transport, follow_redirects=True, timeout=timeout)
 
 
 # I might still split this apart or inline parts of it
@@ -92,6 +98,12 @@ class ClientManager:
         self.retry_webhook_client = httpx_retry_client()
         self.file_client = httpx_file_client()
         self.download_client = httpx.AsyncClient(follow_redirects=True)
+
+    async def aclose(self) -> None:
+        await self.webhook_client.aclose()
+        await self.retry_webhook_client.aclose()
+        await self.file_client.aclose()
+        await self.download_client.aclose()
 
     # webhooks
 
@@ -123,46 +135,56 @@ class ClientManager:
 
     # files
 
-    async def upload_file(self, fh: io.IOBase, url: str) -> str:
+    async def upload_file(self, fh: io.IOBase, url: Optional[str]) -> str:
         """put file to signed endpoint"""
         fh.seek(0)
         # try to guess the filename of the given object
         name = getattr(fh, "name", "file")
         filename = os.path.basename(name)
 
-        content_type, _ = mimetypes.guess_type(filename)
+        guess, _ = mimetypes.guess_type(filename)
+        content_type = guess or "application/octet-stream"
 
-        # set connect timeout to slightly more than a multiple of 3 to avoid
-        # aligning perfectly with TCP retransmission timer
-        connect_timeout = 10
-        read_timeout = 15
+        # this code path happens when running outside replicate without upload-url
+        # in that case we need to return data uris
+        if url is None:
+            return file_to_data_uri(fh, content_type)
 
         # ensure trailing slash
         url_with_trailing_slash = url if url.endswith("/") else url + "/"
 
+        async def chunk_file_reader() -> AsyncIterator[bytes]:
+            while 1:
+                chunk = fh.read(1024 * 1024)
+                if isinstance(chunk, str):
+                    chunk = chunk.encode("utf-8")
+                if not chunk:
+                    break
+                yield chunk
+
         resp = await self.file_client.put(
             url_with_trailing_slash + filename,
-            fh,  # type: ignore
+            content=chunk_file_reader(),
             headers={"Content-type": content_type},
-            timeout=(connect_timeout, read_timeout),
         )
         resp.raise_for_status()
 
         # strip any signing gubbins from the URL
-        final_url = urlparse(resp.url)._replace(query="").geturl()
+        final_url = urlparse(str(resp.url))._replace(query="").geturl()
 
         return final_url
 
-    async def upload_files(self, obj: Any, url: Optional[str] = None) -> Any:
+    # this previously lived in json.upload_files, but it's clearer here
+    async def upload_files(self, obj: Any, url: Optional[str]) -> Any:
         """
         Iterates through an object from make_encodeable and uploads any files.
 
         When a file is encountered, it will be passed to upload_file. Any paths will be opened and converted to files.
         """
-        # # it would be kind of cleaner to make the default file_url, but allow None
-        # # and use that to do datauris instead
-        if url is None:
-            return obj
+        # # it would be kind of cleaner to make the default file_url
+        # # instead of skipping entirely, we need to convert to datauri
+        # if url is None:
+        #     return obj
         if isinstance(obj, dict):
             return {
                 key: await self.upload_files(value, url) for key, value in obj.items()
@@ -175,3 +197,22 @@ class ClientManager:
         if isinstance(obj, io.IOBase):
             return await self.upload_file(obj, url)
         return obj
+
+    # # inputs
+    # async def convert_prediction_input(self, prediction_input: PredictionInput) -> None:
+    #     for k, v in prediction_input.payload.items():
+    #         if isinstance(v, types.DataURLTempFilePath):
+    #             prediction_input.payload[k] = v.convert()
+    #         if isinstance(v, types.URLThatCanBeConvertedToPath):
+    #             real_path = await v.convert(self.download_client)
+    #             prediction_input.payload[k] = real_path
+
+def file_to_data_uri(fh: io.IOBase, mime_type: str) -> str:
+    b = fh.read()
+    # The file handle is strings, not bytes
+    # this can happen if we're "uploading" StringIO
+    if isinstance(b, str):
+        b = b.encode("utf-8")
+    encoded_body = base64.b64encode(b)
+    s = encoded_body.decode("utf-8")
+    return f"data:{mime_type};base64,{s}"

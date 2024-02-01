@@ -19,6 +19,7 @@ class PredictionInput:
         payload = request.dict()["input"]
         return cls(payload=payload, id=request.id)
 
+
 @define
 class Cancel:
     id: str

@@ -3,7 +3,7 @@ import threading
 import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Callable, Optional, Union, cast
+from typing import Any, AsyncIterator, Callable, Optional, Union
 
 import httpx
 import structlog
@@ -102,7 +102,7 @@ class PredictionRunner:
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
     # no longer have to support Python 3.8
     def predict(
-        self, prediction: schema.PredictionRequest, upload: bool = True
+        self, prediction: schema.PredictionRequest
     ) -> "tuple[schema.PredictionResponse, PredictionTask]":
         if self.is_busy():
             if prediction.id in self._predictions:
@@ -115,9 +115,10 @@ class PredictionRunner:
         structlog.contextvars.bind_contextvars(prediction_id=prediction.id)
 
         self._should_cancel.clear()
-
+        # if upload url was not set, we can respect output_file_prefix
+        # but maybe we should just throw an error
+        upload_url = prediction.output_file_prefix or self._upload_url
         # this is supposed to send START, but we're trapped in a sync function
-        upload_url = self._upload_url if upload else None
         event_handler = PredictionEventHandler(
             prediction, self.client_manager, upload_url
         )
@@ -367,7 +368,7 @@ async def predict_and_handle_errors(
                 prediction_input.payload[k] = real_path
         predict_events = worker.predict(prediction_input, poll=0.1, eager=False)
         return await event_handler.handle_event_stream(predict_events)
-    except httpx.RequestError as e:
+    except httpx.HTTPError as e:
         tb = traceback.format_exc()
         await event_handler.append_logs(tb)
         await event_handler.failed(error=str(e))

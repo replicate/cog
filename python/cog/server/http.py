@@ -36,8 +36,6 @@ from pydantic import ValidationError
 from pydantic.error_wrappers import ErrorWrapper
 
 from .. import schema
-from ..files import upload_file
-from ..json import upload_files
 from ..logging import setup_logging
 from ..predictor import (
     get_input_type,
@@ -306,12 +304,10 @@ def create_app(
             request.input = {}
 
         try:
-            # For now, we only ask PredictionRunner to handle file uploads for
-            # async predictions. This is unfortunate but required to ensure
-            # backwards-compatible behaviour for synchronous predictions.
-            initial_response, async_result = runner.predict(
-                request, upload=respond_async
-            )
+            # Previously, we only asked PredictionRunner to handle file uploads for
+            # async predictions. However, PredictionRunner now handles data uris.
+            # If we ever want to do output_file_prefix, runner also sees that
+            initial_response, async_result = runner.predict(request)
         except RunnerBusyError:
             return JSONResponse(
                 {"detail": "Already running a prediction"}, status_code=409
@@ -327,14 +323,7 @@ def create_app(
             _log_invalid_output(e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
-        response_object = response.dict()
-        response_object["output"] = upload_files(
-            response_object["output"],
-            upload_file=lambda fh: upload_file(fh, request.output_file_prefix),  # type: ignore
-        )
-
-        # FIXME: clean up output files
-        encoded_response = jsonable_encoder(response_object)
+        encoded_response = jsonable_encoder(response.dict())
         return JSONResponse(content=encoded_response)
 
     @app.post("/predictions/{prediction_id}/cancel")
