@@ -72,47 +72,47 @@ class PredictionRunner:
         self.client_manager = ClientManager()  # upload_url)
 
     def setup(self) -> SetupTask:
+        if not self._worker.setup_is_allowed():
+            raise RunnerBusyError
+
         async def inner() -> SetupResult:
+            logs = []
+            status = None
+            started_at = datetime.now(tz=timezone.utc)
+
             try:
-                logs = []
-                status = None
-                started_at = datetime.now(tz=timezone.utc)
+                async for event in self._worker.setup():
+                    if isinstance(event, Log):
+                        logs.append(event.message)
+                    elif isinstance(event, Done):
+                        status = (
+                            schema.Status.FAILED
+                            if event.error
+                            else schema.Status.SUCCEEDED
+                        )
+            except Exception:
+                logs.append(traceback.format_exc())
+                status = schema.Status.FAILED
 
-                try:
-                    async for event in self._worker.setup():
-                        if isinstance(event, Log):
-                            logs.append(event.message)
-                        elif isinstance(event, Done):
-                            status = (
-                                schema.Status.FAILED
-                                if event.error
-                                else schema.Status.SUCCEEDED
-                            )
-                except Exception:
-                    logs.append(traceback.format_exc())
-                    status = schema.Status.FAILED
+            if status is None:
+                logs.append("Error: did not receive 'done' event from setup!")
+                status = schema.Status.FAILED
 
-                if status is None:
-                    logs.append("Error: did not receive 'done' event from setup!")
-                    status = schema.Status.FAILED
+            completed_at = datetime.now(tz=timezone.utc)
 
-                completed_at = datetime.now(tz=timezone.utc)
+            # Only if setup succeeded, mark the container as "ready".
+            if status == schema.Status.SUCCEEDED:
+                probes = ProbeHelper()
+                probes.ready()
 
-                # Only if setup succeeded, mark the container as "ready".
-                if status == schema.Status.SUCCEEDED:
-                    probes = ProbeHelper()
-                    probes.ready()
+            return SetupResult(
+                started_at=started_at,
+                completed_at=completed_at,
+                logs="".join(logs),
+                status=status,
+            )
 
-                return SetupResult(
-                    started_at=started_at,
-                    completed_at=completed_at,
-                    logs="".join(logs),
-                    status=status,
-                )
-            except InvalidStateException as e:
-                raise RunnerBusyError() from e
-
-        def simple_handle_error(task: RunnerTask) -> None:
+        def handle_error(task: RunnerTask) -> None:
             exc = task.exception()
             if not exc:
                 return
@@ -127,7 +127,7 @@ class PredictionRunner:
                     self._shutdown_event.set()
 
         result = asyncio.create_task(inner())
-        result.add_done_callback(simple_handle_error)
+        result.add_done_callback(handle_error)
         return result
 
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
