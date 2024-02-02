@@ -3,7 +3,7 @@ import threading
 import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Callable, Optional, Union, cast
+from typing import Any, AsyncIterator, Optional, Union
 
 import httpx
 import structlog
@@ -71,8 +71,14 @@ class PredictionRunner:
         )
         self.client_manager = ClientManager()  # upload_url)
 
-    def make_error_handler(self, activity: str) -> Callable[[RunnerTask], None]:
-        def handle_error(task: RunnerTask) -> None:
+    def setup(self) -> SetupTask:
+        async def inner() -> SetupResult:
+            try:
+                return await setup(worker=self._worker)
+            except InvalidStateException as e:
+                raise RunnerBusyError() from e
+
+        def simple_handle_error(task: RunnerTask) -> None:
             exc = task.exception()
             if not exc:
                 return
@@ -82,21 +88,12 @@ class PredictionRunner:
             try:
                 raise exc
             except Exception:
-                log.error(f"caught exception while running {activity}", exc_info=True)
+                log.error("caught exception while running setup", exc_info=True)
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
 
-        return handle_error
-
-    def setup(self) -> SetupTask:
-        async def wrap_error() -> SetupResult:
-            try:
-                return await setup(worker=self._worker)
-            except InvalidStateException as e:
-                raise RunnerBusyError() from e
-
-        result = asyncio.create_task(wrap_error())
-        result.add_done_callback(self.make_error_handler("setup"))
+        result = asyncio.create_task(inner())
+        result.add_done_callback(simple_handle_error)
         return result
 
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
@@ -159,7 +156,7 @@ class PredictionRunner:
                 self._worker.exit_predict(request.id)
                 # FIXME: use isinstance(BaseInput)
                 if hasattr(request.input, "cleanup"):
-                    request.input.cleanup() # type: ignore
+                    request.input.cleanup()  # type: ignore
                 # this might also, potentially, be too early
                 # since this is just before this coroutine exits
                 self._predictions.pop(request.id)
