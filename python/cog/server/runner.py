@@ -101,37 +101,35 @@ class PredictionRunner:
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
     # no longer have to support Python 3.8
     def predict(
-        self, prediction: schema.PredictionRequest
+        self, request: schema.PredictionRequest
     ) -> "tuple[schema.PredictionResponse, PredictionTask]":
         if self.is_busy():
-            if prediction.id in self._predictions:
-                return self._predictions[prediction.id]
+            if request.id in self._predictions:
+                return self._predictions[request.id]
             raise RunnerBusyError()
 
         # Set up logger context for main thread. The same thing happens inside
         # the predict thread.
         structlog.contextvars.clear_contextvars()
-        structlog.contextvars.bind_contextvars(prediction_id=prediction.id)
+        structlog.contextvars.bind_contextvars(prediction_id=request.id)
 
         # if upload url was not set, we can respect output_file_prefix
         # but maybe we should just throw an error
-        upload_url = prediction.output_file_prefix or self._upload_url
+        upload_url = request.output_file_prefix or self._upload_url
         # this is supposed to send START, but we're trapped in a sync function
-        event_handler = PredictionEventHandler(
-            prediction, self.client_manager, upload_url
-        )
+        event_handler = PredictionEventHandler(request, self.client_manager, upload_url)
         response = event_handler.response
 
         def handle_cleanup(_: PredictionTask) -> None:
-            input = cast(Any, prediction.input)
+            input = cast(Any, request.input)
             if hasattr(input, "cleanup"):
                 input.cleanup()
-            self._predictions.pop(prediction.id)  # this might be too early
+            self._predictions.pop(request.id)  # this might be too early
 
-        self._worker.eager_predict_state_change(prediction.id)
+        self._worker.eager_predict_state_change(request.id)
         coro = predict_and_handle_errors(
             worker=self._worker,
-            request=prediction,
+            request=request,
             client=self.client_manager.download_client,
             event_handler=event_handler,
         )
@@ -140,7 +138,7 @@ class PredictionRunner:
         result = asyncio.create_task(coro)
         result.add_done_callback(handle_cleanup)
         result.add_done_callback(self.make_error_handler("prediction"))
-        self._predictions[prediction.id] = (response, result)
+        self._predictions[request.id] = (response, result)
 
         return (response, result)
 
