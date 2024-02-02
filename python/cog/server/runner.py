@@ -74,7 +74,41 @@ class PredictionRunner:
     def setup(self) -> SetupTask:
         async def inner() -> SetupResult:
             try:
-                return await setup(worker=self._worker)
+                logs = []
+                status = None
+                started_at = datetime.now(tz=timezone.utc)
+
+                try:
+                    async for event in self._worker.setup():
+                        if isinstance(event, Log):
+                            logs.append(event.message)
+                        elif isinstance(event, Done):
+                            status = (
+                                schema.Status.FAILED
+                                if event.error
+                                else schema.Status.SUCCEEDED
+                            )
+                except Exception:
+                    logs.append(traceback.format_exc())
+                    status = schema.Status.FAILED
+
+                if status is None:
+                    logs.append("Error: did not receive 'done' event from setup!")
+                    status = schema.Status.FAILED
+
+                completed_at = datetime.now(tz=timezone.utc)
+
+                # Only if setup succeeded, mark the container as "ready".
+                if status == schema.Status.SUCCEEDED:
+                    probes = ProbeHelper()
+                    probes.ready()
+
+                return SetupResult(
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    logs="".join(logs),
+                    status=status,
+                )
             except InvalidStateException as e:
                 raise RunnerBusyError() from e
 
@@ -328,39 +362,3 @@ class PredictionEventHandler:
             else:  # shouldn't happen, exhausted the type
                 log.warn("received unexpected event from worker", data=event)
         return self.response
-
-
-async def setup(*, worker: Worker) -> SetupResult:
-    logs = []
-    status = None
-    started_at = datetime.now(tz=timezone.utc)
-
-    try:
-        async for event in worker.setup():
-            if isinstance(event, Log):
-                logs.append(event.message)
-            elif isinstance(event, Done):
-                status = (
-                    schema.Status.FAILED if event.error else schema.Status.SUCCEEDED
-                )
-    except Exception:
-        logs.append(traceback.format_exc())
-        status = schema.Status.FAILED
-
-    if status is None:
-        logs.append("Error: did not receive 'done' event from setup!")
-        status = schema.Status.FAILED
-
-    completed_at = datetime.now(tz=timezone.utc)
-
-    # Only if setup succeeded, mark the container as "ready".
-    if status == schema.Status.SUCCEEDED:
-        probes = ProbeHelper()
-        probes.ready()
-
-    return SetupResult(
-        started_at=started_at,
-        completed_at=completed_at,
-        logs="".join(logs),
-        status=status,
-    )
