@@ -111,6 +111,9 @@ class Worker:
         self._mux = Mux(self._terminating)
         self._predictions_in_flight = set()
 
+    def setup_is_allowed(self) -> bool:
+        return self._state == WorkerState.NEW
+
     def setup(self) -> AsyncIterator[PublicEventType]:
         self._assert_state(WorkerState.NEW)
         self._state = WorkerState.STARTING
