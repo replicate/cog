@@ -180,8 +180,6 @@ class Worker:
         self, input: PredictionInput, poll: Optional[float]
     ) -> AsyncIterator[PublicEventType]:
         # perhaps we can download the files and mutate input around here
-        if isinstance(input, dict):
-            input = PredictionInput(payload=input, id="1")  # just for tests
         # we're already tracking allowed concurrency with _predictions_in_flight
         # but we're also doing a semaphore, just in case
         # the semaphore also allows us to tell sync-submitted-work vs actually started async work
@@ -204,6 +202,10 @@ class Worker:
     def predict(  # very bad
         self, input: PredictionInput, poll: Optional[float] = None
     ) -> AsyncIterator[PublicEventType]:
+        if isinstance(input, dict):
+            input = PredictionInput(payload=input, id="1")  # just for tests
+        # still not right for tests
+        # this means the prediction is marked as done even before the generator is entered
         with self.prediction_ctx(input.id):
             return self.inner_async_predict(input, poll)
 
