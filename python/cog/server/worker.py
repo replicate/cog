@@ -95,7 +95,6 @@ class Worker:
         self, predictor_ref: str, tee_output: bool = True, concurrency: int = 1
     ) -> None:
         self._state = WorkerState.NEW
-        # self._allow_cancel = False
         self._semaphore = asyncio.Semaphore(concurrency)
         self._concurrency = concurrency
 
@@ -225,7 +224,6 @@ class Worker:
             print("sent cancel")
             self._events.send(Cancel(id))
             # this should probably check self._semaphore._value == self._concurrent
-            # self._allow_cancel = False
 
     def _assert_state(self, state: WorkerState) -> None:
         if self._state != state:

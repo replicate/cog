@@ -161,9 +161,6 @@ class PredictionRunner:
         except KeyError as e:
             print(e)
             raise UnknownPredictionError() from e
-        # assert self._response is not None
-        # if prediction_id is not None and prediction_id != self._response.id:
-        #     raise UnknownPredictionError()
 
 
 def create_event_handler(
