@@ -20,7 +20,6 @@ from cog.server.runner import (
     PredictionRunner,
     RunnerBusyError,
     UnknownPredictionError,
-    predict_and_handle_errors,
 )
 
 
@@ -215,12 +214,7 @@ async def test_predict(events, calls):
     worker = fake_worker(events)
     request = PredictionRequest(input={"text": "hello"}, foo="bar")
     event_handler = FakeEventHandler()
-
-    await predict_and_handle_errors(
-        worker=worker,
-        request=request,
-        event_handler=event_handler,
-    )
+    await event_handler.handle_event_stream(worker.predict(None))
 
     assert event_handler.method_calls == calls
 
