@@ -63,6 +63,7 @@ class PredictionRunner:
     ) -> None:
         self._worker = Worker(predictor_ref=predictor_ref, concurrency=concurrency)
 
+        # __main__ waits for this event
         self._shutdown_event = shutdown_event
         self._upload_url = upload_url
         self._predictions: "dict[str, tuple[schema.PredictionResponse, PredictionTask]]" = (
@@ -109,7 +110,7 @@ class PredictionRunner:
             raise RunnerBusyError()
 
         # Set up logger context for main thread. The same thing happens inside
-        # the predict thread.
+        # the predict thread. -- NOT, but that's fine?
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(prediction_id=request.id)
 
@@ -120,24 +121,53 @@ class PredictionRunner:
         event_handler = PredictionEventHandler(request, self.client_manager, upload_url)
         response = event_handler.response
 
-        def handle_cleanup(_: PredictionTask) -> None:
-            input = cast(Any, request.input)
-            if hasattr(input, "cleanup"):
-                input.cleanup()
-            self._predictions.pop(request.id)  # this might be too early
-
+        # this is the early part
+        # it is *still* unsatisfying
         self._worker.enter_predict(request.id)
-        coro = predict_and_handle_errors(
-            worker=self._worker,
-            request=request,
-            client=self.client_manager.download_client,
-            event_handler=event_handler,
-        )
-        # this is a little bit silly because we're making a sync handle
-        # on a sync function that also wraps a future
-        result = asyncio.create_task(coro)
-        result.add_done_callback(handle_cleanup)
-        result.add_done_callback(self.make_error_handler("prediction"))
+
+        async def async_predict_handling_errors() -> schema.PredictionResponse:
+            try:
+                prediction_input = PredictionInput.from_request(request)
+                # FIXME: handle e.g. dict[str, list[Path]]
+                # FIXME: download files concurrently
+                for k, v in prediction_input.payload.items():
+                    if isinstance(v, types.DataURLTempFilePath):
+                        prediction_input.payload[k] = v.convert()
+                    if isinstance(v, types.URLThatCanBeConvertedToPath):
+                        real_path = await v.convert(self.client_manager.download_client)
+                        prediction_input.payload[k] = real_path
+                predict_events = self._worker.inner_async_predict(
+                    prediction_input, poll=0.1
+                )
+                result = await event_handler.handle_event_stream(predict_events)
+                return result
+            except httpx.HTTPError as e:
+                tb = traceback.format_exc()
+                await event_handler.append_logs(tb)
+                await event_handler.failed(error=str(e))
+                log.warn("failed to download url path from input", exc_info=True)
+                return event_handler.response
+            except Exception as e:
+                tb = traceback.format_exc()
+                await event_handler.append_logs(tb)
+                await event_handler.failed(error=str(e))
+                log.error("caught exception while running prediction", exc_info=True)
+                if self._shutdown_event is not None:
+                    self._shutdown_event.set()
+                raise  # we don't actually want to raise anymore but w/e
+            finally:
+                self._worker.exit_predict(request.id)
+                # FIXME: use isinstance(BaseInput)
+                if hasattr(request.input, "cleanup"):
+                    request.input.cleanup() # type: ignore
+                # this might also, potentially, be too early
+                # since this is just before this coroutine exits
+                self._predictions.pop(request.id)
+
+        # this is still a little silly
+        result = asyncio.create_task(async_predict_handling_errors())
+        # result.add_done_callback(self.make_error_handler("prediction"))
+        # even after inlining we might still need a callback to surface remaining exceptions/results
         self._predictions[request.id] = (response, result)
 
         return (response, result)
@@ -337,41 +367,3 @@ async def setup(*, worker: Worker) -> SetupResult:
         logs="".join(logs),
         status=status,
     )
-
-
-async def predict_and_handle_errors(
-    *,
-    worker: Worker,
-    request: schema.PredictionRequest,
-    client: httpx.AsyncClient,
-    event_handler: PredictionEventHandler,
-) -> schema.PredictionResponse:
-    # Set up logger context within prediction thread.
-    structlog.contextvars.clear_contextvars()
-    structlog.contextvars.bind_contextvars(prediction_id=request.id)
-
-    try:
-        prediction_input = PredictionInput.from_request(request)
-        # FIXME: handle e.g. dict[str, list[Path]]
-        # FIXME: download files concurrently
-        for k, v in prediction_input.payload.items():
-            if isinstance(v, types.DataURLTempFilePath):
-                prediction_input.payload[k] = v.convert()
-            if isinstance(v, types.URLThatCanBeConvertedToPath):
-                real_path = await v.convert(client)
-                prediction_input.payload[k] = real_path
-        predict_events = worker.inner_async_predict(prediction_input, poll=0.1)
-        result = await event_handler.handle_event_stream(predict_events)
-        worker.exit_predict(request.id)
-        return result
-    except httpx.HTTPError as e:
-        tb = traceback.format_exc()
-        await event_handler.append_logs(tb)
-        await event_handler.failed(error=str(e))
-        log.warn("failed to download url path from input", exc_info=True)
-        return event_handler.response
-    except Exception as e:
-        tb = traceback.format_exc()
-        await event_handler.append_logs(tb)
-        await event_handler.failed(error=str(e))
-        raise
