@@ -157,7 +157,7 @@ class Worker:
         return self._state not in {WorkerState.PROCESSING, WorkerState.IDLE}
 
     @contextlib.asynccontextmanager
-    async def prediction_ctx(self, input: PredictionInput) -> AsyncIterator[None]:
+    async def _prediction_ctx(self, input: PredictionInput) -> AsyncIterator[None]:
         async with self._semaphore:
             self._predictions_in_flight.add(input.id)  # idempotent ig
             self._state = self.state_from_predictions_in_flight()
@@ -184,7 +184,7 @@ class Worker:
         self._state = self.state_from_predictions_in_flight()
 
         async def inner() -> AsyncIterator[_PublicEventType]:
-            async with self.prediction_ctx(input):
+            async with self._prediction_ctx(input):
                 self._events.send(input)
                 async for event in self._mux.read(input.id, poll=poll):
                     yield event
