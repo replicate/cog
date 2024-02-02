@@ -126,7 +126,7 @@ class PredictionRunner:
                 input.cleanup()
             self._predictions.pop(request.id)  # this might be too early
 
-        self._worker.eager_predict_state_change(request.id)
+        self._worker.enter_predict(request.id)
         coro = predict_and_handle_errors(
             worker=self._worker,
             request=request,
@@ -360,8 +360,10 @@ async def predict_and_handle_errors(
             if isinstance(v, types.URLThatCanBeConvertedToPath):
                 real_path = await v.convert(client)
                 prediction_input.payload[k] = real_path
-        predict_events = worker.predict(prediction_input, poll=0.1, eager=False)
-        return await event_handler.handle_event_stream(predict_events)
+        predict_events = worker.inner_async_predict(prediction_input, poll=0.1)
+        result = await event_handler.handle_event_stream(predict_events)
+        worker.exit_predict(request.id)
+        return result
     except httpx.HTTPError as e:
         tb = traceback.format_exc()
         await event_handler.append_logs(tb)
