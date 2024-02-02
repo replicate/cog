@@ -3,7 +3,7 @@ import threading
 import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Callable, Optional, Union
+from typing import Any, AsyncIterator, Callable, Optional, Union, cast
 
 import httpx
 import structlog
@@ -62,7 +62,6 @@ class PredictionRunner:
         concurrency: int = 1,
     ) -> None:
         self._worker = Worker(predictor_ref=predictor_ref, concurrency=concurrency)
-        self._should_cancel = asyncio.Event()
 
         self._shutdown_event = shutdown_event
         self._upload_url = upload_url
@@ -114,7 +113,6 @@ class PredictionRunner:
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(prediction_id=prediction.id)
 
-        self._should_cancel.clear()
         # if upload url was not set, we can respect output_file_prefix
         # but maybe we should just throw an error
         upload_url = prediction.output_file_prefix or self._upload_url
@@ -136,7 +134,6 @@ class PredictionRunner:
             request=prediction,
             client=self.client_manager.download_client,
             event_handler=event_handler,
-            should_cancel=self._should_cancel,
         )
         # this is a little bit silly because we're making a sync handle
         # on a sync function that also wraps a future
@@ -350,7 +347,6 @@ async def predict_and_handle_errors(
     request: schema.PredictionRequest,
     client: httpx.AsyncClient,
     event_handler: PredictionEventHandler,
-    should_cancel: asyncio.Event,
 ) -> schema.PredictionResponse:
     # Set up logger context within prediction thread.
     structlog.contextvars.clear_contextvars()

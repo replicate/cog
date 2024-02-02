@@ -215,13 +215,11 @@ async def test_predict(events, calls):
     worker = fake_worker(events)
     request = PredictionRequest(input={"text": "hello"}, foo="bar")
     event_handler = FakeEventHandler()
-    should_cancel = threading.Event()
 
     await predict_and_handle_errors(
         worker=worker,
         request=request,
         event_handler=event_handler,
-        should_cancel=should_cancel,
     )
 
     assert event_handler.method_calls == calls
