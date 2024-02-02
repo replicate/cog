@@ -152,13 +152,17 @@ class PredictionRunner:
         event_handler = PredictionEventHandler(request, self.client_manager, upload_url)
         response = event_handler.response
 
-        # this is the early part
-        # it is *still* unsatisfying
-        self._worker.enter_predict(request.id)
+        prediction_input = PredictionInput.from_request(request)
+        predict_ctx = self._worker.good_predict(prediction_input, poll=0.1)
+        # accept work and change state to get the future event stream,
+        # but don't enter it yet
+        event_stream = predict_ctx.__enter__()
+        # alternative: self._worker.enter_predict(request.id)
 
         async def async_predict_handling_errors() -> schema.PredictionResponse:
             try:
-                prediction_input = PredictionInput.from_request(request)
+                # this is awkward because we're mutating prediction_input
+                # after passing it to worker
                 # FIXME: handle e.g. dict[str, list[Path]]
                 # FIXME: download files concurrently
                 for k, v in prediction_input.payload.items():
@@ -167,10 +171,7 @@ class PredictionRunner:
                     if isinstance(v, types.URLThatCanBeConvertedToPath):
                         real_path = await v.convert(self.client_manager.download_client)
                         prediction_input.payload[k] = real_path
-                predict_events = self._worker.inner_async_predict(
-                    prediction_input, poll=0.1
-                )
-                result = await event_handler.handle_event_stream(predict_events)
+                result = await event_handler.handle_event_stream(event_stream)
                 return result
             except httpx.HTTPError as e:
                 tb = traceback.format_exc()
@@ -187,7 +188,11 @@ class PredictionRunner:
                     self._shutdown_event.set()
                 raise  # we don't actually want to raise anymore but w/e
             finally:
-                self._worker.exit_predict(request.id)
+                # if __enter__ threw an error we won't get here
+                # mark the prediction as done and update state
+                # ... actually, we might want to mark that part earlier
+                # even if we're still upload files we can accept new work
+                predict_ctx.__exit__(None, None, None)
                 # FIXME: use isinstance(BaseInput)
                 if hasattr(request.input, "cleanup"):
                     request.input.cleanup()  # type: ignore

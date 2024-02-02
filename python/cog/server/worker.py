@@ -176,7 +176,7 @@ class Worker:
     async def inner_async_predict(
         self, input: PredictionInput, poll: Optional[float]
     ) -> AsyncIterator[PublicEventType]:
-        # this has to be eager for hypothesis
+        # perhaps we can download the files and mutate input around here
         if isinstance(input, dict):
             input = PredictionInput(payload=input, id="1")  # just for tests
         # we're already tracking allowed concurrency with _predictions_in_flight
@@ -187,6 +187,9 @@ class Worker:
             print("worker sent", input)
             async for e in self._mux.read(input.id, poll=poll):
                 yield e
+        # we may still need to upload files but we could probably already accept new work
+        # it might be nice to exit here already
+        # self.exit_predict(input.id)
 
     @contextlib.contextmanager
     def good_predict(  # better
