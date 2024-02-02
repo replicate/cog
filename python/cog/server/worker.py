@@ -135,30 +135,43 @@ class Worker:
 
         return inner()
 
+    def state_from_predictions_in_flight(self) -> WorkerState:
+        valid_states = {WorkerState.IDLE, WorkerState.PROCESSING, WorkerState.BUSY}
+        if self._state not in valid_states:
+            raise InvalidStateException(
+                f"Invalid operation: state is {self._state} (must be IDLE, PROCESSING, or BUSY)"
+            )
+        # changing _allow_cancel like this is a little bit weird
+        # because this is kind of a pure function
+        # however, we'll remove all of this cancel logic soon, dwabi
+        if len(self._predictions_in_flight) == self._concurrent:
+            self._allow_cancel = True
+            return WorkerState.BUSY
+        if len(self._predictions_in_flight) == 0:
+            self._allow_cancel = False
+            return WorkerState.IDLE
+        self._allow_cancel = True
+        return WorkerState.PROCESSING
+
+    def is_busy(self) -> bool:
+        return self._state not in {WorkerState.PROCESSING, WorkerState.IDLE}
+
     @contextlib.asynccontextmanager
     async def prediction_ctx(self, input: PredictionInput) -> AsyncIterator[None]:
         async with self._semaphore:
-            if self._semaphore._value == 0:
-                # maybe this will fix hypothesis
-                self._state = WorkerState.BUSY
-            self._allow_cancel = True
-            self._predictions_in_flight.add(input.id)
+            self._predictions_in_flight.add(input.id)  # idempotent ig
+            self._state = self.state_from_predictions_in_flight()
             try:
                 yield
             finally:
                 self._predictions_in_flight.remove(input.id)
-        if self._semaphore._value == self._concurrent:
-            self._state = WorkerState.IDLE
-            self._allow_cancel = False
-        else:
-            # we just finished a prediction, so if we were BUSY we aren't anymore
-            self._state = WorkerState.PROCESSING
+        self._state = self.state_from_predictions_in_flight()
 
     def predict(
         self, payload: Dict[str, Any], poll: Optional[float] = None
     ) -> AsyncIterator[_PublicEventType]:
-        # this has to be eager just for hypothesis
-        if self._state not in {WorkerState.PROCESSING, WorkerState.IDLE}:
+        # this has to be eager for hypothesis
+        if self.is_busy():
             raise InvalidStateException(
                 f"Invalid operation: state is {self._state} (must be processing or idle)"
             )
@@ -166,10 +179,11 @@ class Worker:
             raise InvalidStateException(
                 "cannot accept new predictions because shutdown requested"
             )
-        self._state = WorkerState.PROCESSING
+        input = PredictionInput(payload=payload)
+        self._predictions_in_flight.add(input.id)  # idempotent ig
+        self._state = self.state_from_predictions_in_flight()
 
         async def inner() -> AsyncIterator[_PublicEventType]:
-            input = PredictionInput(payload=payload)
             async with self.prediction_ctx(input):
                 self._events.send(input)
                 async for event in self._mux.read(input.id, poll=poll):
