@@ -46,6 +46,8 @@ class SetupResult:
     logs: str
     status: schema.Status
 
+    # TODO: maybe collect events into a result here
+
 
 PredictionTask: "typing.TypeAlias" = "asyncio.Task[schema.PredictionResponse]"
 SetupTask: "typing.TypeAlias" = "asyncio.Task[SetupResult]"
@@ -75,6 +77,8 @@ class PredictionRunner:
         if not self._worker.setup_is_allowed():
             raise RunnerBusyError
 
+        # app is allowed to respond to requests and poll the state of this task
+        # while it is running
         async def inner() -> SetupResult:
             logs = []
             status = None
@@ -158,6 +162,10 @@ class PredictionRunner:
         # but don't enter it yet
         event_stream = predict_ctx.__enter__()
         # alternative: self._worker.enter_predict(request.id)
+
+        # what if instead we raised parts of worker instead of trying to access private methods?
+        # move predictions_in_flight up a level?
+        # but then how will the tests work?
 
         async def async_predict_handling_errors() -> schema.PredictionResponse:
             try:
