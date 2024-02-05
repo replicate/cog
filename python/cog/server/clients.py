@@ -8,8 +8,10 @@ from urllib.parse import urlparse
 import httpx
 import structlog
 
+from .. import types
 from ..schema import Status, WebhookEvent
 from ..types import Path
+from .eventtypes import PredictionInput
 from .response_throttler import ResponseThrottler
 from .retry_transport import RetryTransport
 
@@ -81,7 +83,9 @@ def httpx_file_client() -> httpx.AsyncClient:
     # requests has no write timeout, keep that
     # httpx default for pool is 5, use that
     timeout = httpx.Timeout(connect=10, read=15, write=None, pool=5)
-    return httpx.AsyncClient(transport=transport, follow_redirects=True, timeout=timeout)
+    return httpx.AsyncClient(
+        transport=transport, follow_redirects=True, timeout=timeout
+    )
 
 
 # I might still split this apart or inline parts of it
@@ -198,14 +202,22 @@ class ClientManager:
             return await self.upload_file(obj, url)
         return obj
 
-    # # inputs
-    # async def convert_prediction_input(self, prediction_input: PredictionInput) -> None:
-    #     for k, v in prediction_input.payload.items():
-    #         if isinstance(v, types.DataURLTempFilePath):
-    #             prediction_input.payload[k] = v.convert()
-    #         if isinstance(v, types.URLThatCanBeConvertedToPath):
-    #             real_path = await v.convert(self.download_client)
-    #             prediction_input.payload[k] = real_path
+    # inputs
+
+    # currently we only handle lists, so flattening each value would be sufficient
+    # but it would be preferable to support dicts and other collections
+
+    async def convert_prediction_input(self, prediction_input: PredictionInput) -> None:
+        # this sucks lol
+        # FIXME: handle e.g. dict[str, list[Path]]
+        # FIXME: download files concurrently
+        for k, v in prediction_input.payload.items():
+            if isinstance(v, types.DataURLTempFilePath):
+                prediction_input.payload[k] = v.convert()
+            if isinstance(v, types.URLThatCanBeConvertedToPath):
+                real_path = await v.convert(self.download_client)
+                prediction_input.payload[k] = real_path
+
 
 def file_to_data_uri(fh: io.IOBase, mime_type: str) -> str:
     b = fh.read()

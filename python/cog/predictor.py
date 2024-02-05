@@ -223,6 +223,19 @@ class BaseInput(BaseModel):
                 except FileNotFoundError:
                     pass
 
+    # def cleanup():
+    #     if isinstance(value, Path):
+    #         value.unlink()
+
+    # def get_tempfile():
+    #     if isinstance(value, URLTempFile):
+    #         return (value.url, value._path)
+
+    # # this one is very annoying because it's supposed to mutate
+    # def convert():
+    #     if isinstance(value, URLTempFile):
+    #         return value.convert()
+
 
 def validate_input_type(type: Type[Any], name: str) -> None:
     if type is inspect.Signature.empty:

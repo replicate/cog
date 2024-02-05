@@ -22,7 +22,7 @@ from .eventtypes import (
     PublicEventType,
 )
 from .probes import ProbeHelper
-from .worker import InvalidStateException, Worker
+from .worker import Worker
 
 log = structlog.get_logger("cog.server.runner")
 
