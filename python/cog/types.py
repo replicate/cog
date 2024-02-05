@@ -9,7 +9,6 @@ import urllib.request
 import urllib.response
 from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
 
-import httpx
 import requests
 from pydantic import Field
 
@@ -93,13 +92,22 @@ class Path(pathlib.PosixPath):
         # get filename
         parsed_url = urllib.parse.urlparse(value)
 
+
+        # this is the best place to convert, kinda
+        # as long as you're converting to
+        # tempfile paths
+
+
+        # this is also where you need to somehow note which tempfiles need to be filled
+        # ...
+        #
         if parsed_url.scheme == "data":
             return DataURLTempFilePath(value)
         if not (parsed_url.scheme == "http" or parsed_url.scheme == "https"):
             raise ValueError(
                 f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
             )
-        return URLThatCanBeConvertedToPath(value)
+        return URLTempFile(value)
 
     @classmethod
     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
@@ -108,7 +116,7 @@ class Path(pathlib.PosixPath):
         field_schema.update(type="string", format="uri")
 
 
-class URLThatCanBeConvertedToPath(pathlib.PosixPath):
+class URLTempFile(pathlib.PosixPath):
     """
     URLPath is a nasty hack to ensure that we can defer the downloading of a
     URL passed as a path until later in prediction dispatch.
@@ -123,16 +131,17 @@ class URLThatCanBeConvertedToPath(pathlib.PosixPath):
         self.url = url
         self.filename = get_filename_from_url(url)
 
-    async def convert(self, client: httpx.AsyncClient) -> Path:
+    def convert(self) -> Path:
+        ###
         if self._path is None:
             dest = tempfile.NamedTemporaryFile(suffix=self.filename, delete=False)
-            async with client.stream("GET", self.url) as resp:
-                resp.raise_for_status()
-                # resp.raw.decode_content = True
-                async for chunk in resp.aiter_bytes():
-                    dest.write(chunk)
-            # this is our weird Path! that's weird!
             self._path = Path(dest.name)
+            # async with client.stream("GET", self.url) as resp:
+            #     resp.raise_for_status()
+            #     # resp.raw.decode_content = True
+            #     async for chunk in resp.aiter_bytes():
+            #         dest.write(chunk)
+            # this is our weird Path! that's weird!
         return self._path
 
     def __str__(self) -> str:

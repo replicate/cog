@@ -214,7 +214,7 @@ async def test_predict(events, calls):
     worker = fake_worker(events)
     request = PredictionRequest(input={"text": "hello"}, foo="bar")
     event_handler = FakeEventHandler()
-    await event_handler.handle_event_stream(worker.predict(None))
+    await event_handler.handle_event_stream(worker.predict(request))
 
     assert event_handler.method_calls == calls
 
