@@ -58,12 +58,11 @@ class File(io.IOBase):
         if parsed_url.scheme == "data":
             res = urllib.request.urlopen(value)  # noqa: S310
             return io.BytesIO(res.read())
-        elif parsed_url.scheme == "http" or parsed_url.scheme == "https":
+        if parsed_url.scheme in {'http', 'https'}:
             return URLFile(value)
-        else:
-            raise ValueError(
-                f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
-            )
+        raise ValueError(
+            f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
+        )
 
     @classmethod
     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
@@ -117,9 +116,11 @@ class URLPath(pathlib.PosixPath):
 
     def convert(self) -> Path:
         if self._path is None:
-            dest = tempfile.NamedTemporaryFile(suffix=self.filename, delete=False)
-            shutil.copyfileobj(self.fileobj, dest)
-            self._path = Path(dest.name)
+            with tempfile.NamedTemporaryFile(suffix=self.filename, delete=False) as dest:
+                shutil.copyfileobj(self.fileobj, dest)
+                self._path = Path(dest.name)
+            
+            
         return self._path
 
     def unlink(self, missing_ok: bool = False) -> None:
@@ -165,10 +166,9 @@ class URLFile(io.IOBase):
             setattr(self.__wrapped__, name, value)
 
     def __getattr__(self, name: str) -> Any:
-        if name in ("__target__", "__wrapped__", "__url__"):
+        if name in {"__target__", "__wrapped__", "__url__"}:
             raise AttributeError(name)
-        else:
-            return getattr(self.__wrapped__, name)
+        return getattr(self.__wrapped__, name)
 
     def __delattr__(self, name: str) -> None:
         if hasattr(type(self), name):

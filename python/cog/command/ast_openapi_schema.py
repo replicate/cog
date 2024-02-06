@@ -324,13 +324,12 @@ if typing.TYPE_CHECKING:
 def to_serializable(val: "AstVal") -> "JSONObject":
     if isinstance(val, bytes):
         return val.decode("utf-8")
-    elif isinstance(val, list):
+    if isinstance(val, list):
         return [to_serializable(x) for x in val]
-    elif isinstance(val, complex):
+    if isinstance(val, complex):
         msg = "complex inputs are not supported"
         raise ValueError(msg)
-    else:
-        return val
+    return val
 
 
 def get_value(node: ast.AST) -> "AstVal":
@@ -473,7 +472,7 @@ For example:
     if isinstance(annotation, ast.Subscript):
         # forget about other subscripts like Optional, and assume otherlib.File will still be an uri
         slice = resolve_name(annotation.slice)
-        format = {"format": "uri"} if slice in ("Path", "File") else {}
+        format = {"format": "uri"} if slice in {"Path", "File"} else {}
         array_type = {"x-cog-array-type": "iterator"} if "Iterator" in name else {}
         display_type = (
             {"x-cog-array-display": "concatenate"} if "Concatenate" in name else {}
@@ -490,7 +489,7 @@ For example:
         }
     if name in BASE_TYPES:
         # otherwise figure this out...
-        format = {"format": "uri"} if name in ("Path", "File") else {}
+        format = {"format": "uri"} if name in {"Path", "File"} else {}
         return {}, {"title": "Output", "type": OPENAPI_TYPES.get(name, name), **format}
     # it must be a custom object
     schema: "JSONDict" = {name: parse_class(find(tree, name))}
@@ -529,7 +528,7 @@ def extract_info(code: str) -> "JSONDict":
         input: "JSONDict" = {"x-order": len(properties)}
         # need to handle other types?
         arg_type = OPENAPI_TYPES.get(get_annotation(arg.annotation), "string")
-        if get_annotation(arg.annotation) in ("Path", "File"):
+        if get_annotation(arg.annotation) in {"Path", "File"}:
             input["format"] = "uri"
         for attr in KEPT_ATTRS:
             if attr in kws:
