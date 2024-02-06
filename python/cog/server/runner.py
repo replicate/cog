@@ -212,6 +212,7 @@ class PredictionRunner:
             raise InvalidStateException(
                 "cannot accept new predictions because shutdown requested"
             )
+        log.info("accepted prediction %s in flight %s", id, self._predictions_in_flight)
         self._predictions_in_flight.add(id)
         self._state = self.state_from_predictions_in_flight()
 
@@ -339,11 +340,11 @@ class PredictionRunner:
 
     def cancel(self, prediction_id: str) -> None:
         if id not in self._predictions_in_flight:
-            print("id not there", prediction_id, self._predictions_in_flight)
+            log.warn("can't cancel %s (%s)", prediction_id, self._predictions_in_flight)
             raise UnknownPredictionError()
         if self._child.is_alive() and self._child.pid is not None:
             os.kill(self._child.pid, signal.SIGUSR1)
-            print("sent cancel")
+            log.info("sent cancel")
             self._events.send(Cancel(prediction_id))
             # maybe this should probably check self._semaphore._value == self._concurrent
 
