@@ -114,6 +114,7 @@ class ClientManager:
     async def send_webhook(
         self, url: str, response: Dict[str, Any], event: WebhookEvent
     ) -> None:
+        log.info("attempting webhook to url", url)
         if Status.is_terminal(response["status"]):
             # For terminal updates, retry persistently
             await self.retry_webhook_client.post(url, json=response)
