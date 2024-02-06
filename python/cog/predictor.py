@@ -46,7 +46,7 @@ ALLOWED_INPUT_TYPES: List[Type[Any]] = [str, int, float, bool, CogFile, CogPath]
 
 class BasePredictor(ABC):
     def setup(
-        self, weights: Optional[Union[CogFile, CogPath]] = None
+        self, weights: Optional[Union[CogFile, CogPath, str]] = None
     ) -> Optional[Awaitable[None]]:
         """
         An optional method to prepare the model so multiple predictions run efficiently.
@@ -76,26 +76,31 @@ async def run_setup_async(predictor: BasePredictor) -> None:
         return await maybe_coro
 
 
-def get_weights_argument(predictor: BasePredictor) -> Union[CogFile, CogPath, None]:
+def get_weights_argument(predictor: BasePredictor) -> Union[CogFile, CogPath, str, None]:
     # by the time we get here we assume predictor has a setup method
     weights_type = get_weights_type(predictor.setup)
     if weights_type is None:
         return None
     weights_url = os.environ.get("COG_WEIGHTS")
-    weights_path = "weights"
+    weights_path = "weights" # this is the source of a bug isn't it?
 
     # TODO: Cog{File,Path}.validate(...) methods accept either "real"
     # paths/files or URLs to those things. In future we can probably tidy this
     # up a little bit.
     # TODO: CogFile/CogPath should have subclasses for each of the subtypes
+
+
+    # trt has Path... so it's like expecting it to be downloaded...?
     if weights_url:
         if weights_type == CogFile:
             return cast(CogFile, CogFile.validate(weights_url))
         if weights_type == CogPath:
             # TODO: So this can be a url. evil!
             return cast(CogPath, CogPath.validate(weights_url))
+        if weights_type == str:
+            return weights_url
         raise ValueError(
-            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
         )
     if os.path.exists(weights_path):
         if weights_type == CogFile:
@@ -103,7 +108,7 @@ def get_weights_argument(predictor: BasePredictor) -> Union[CogFile, CogPath, No
         if weights_type == CogPath:
             return CogPath(weights_path)
         raise ValueError(
-            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
         )
     return None
 

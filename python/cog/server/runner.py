@@ -176,7 +176,7 @@ class PredictionRunner:
                 for k, v in prediction_input.payload.items():
                     if isinstance(v, types.DataURLTempFilePath):
                         prediction_input.payload[k] = v.convert()
-                    if isinstance(v, types.URLThatCanBeConvertedToPath):
+                    if isinstance(v, types.URLTempFile):
                         real_path = await v.convert(self.client_manager.download_client)
                         prediction_input.payload[k] = real_path
                 result = await event_handler.handle_event_stream(event_stream)

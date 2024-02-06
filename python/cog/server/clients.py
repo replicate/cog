@@ -214,7 +214,7 @@ class ClientManager:
         for k, v in prediction_input.payload.items():
             if isinstance(v, types.DataURLTempFilePath):
                 prediction_input.payload[k] = v.convert()
-            if isinstance(v, types.URLThatCanBeConvertedToPath):
+            if isinstance(v, types.URLTempFile):
                 real_path = await v.convert(self.download_client)
                 prediction_input.payload[k] = real_path
 
