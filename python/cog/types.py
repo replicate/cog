@@ -9,6 +9,7 @@ import urllib.request
 import urllib.response
 from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
 
+import httpx
 import requests
 from pydantic import Field
 
@@ -131,16 +132,16 @@ class URLTempFile(pathlib.PosixPath):
         self.url = url
         self.filename = get_filename_from_url(url)
 
-    def convert(self) -> Path:
-        ###
+    async def convert(self, client: httpx.AsyncClient) -> Path:
         if self._path is None:
             dest = tempfile.NamedTemporaryFile(suffix=self.filename, delete=False)
             self._path = Path(dest.name)
-            # async with client.stream("GET", self.url) as resp:
-            #     resp.raise_for_status()
-            #     # resp.raw.decode_content = True
-            #     async for chunk in resp.aiter_bytes():
-            #         dest.write(chunk)
+            # i want to move the download elsewhere
+            async with client.stream("GET", self.url) as resp:
+                resp.raise_for_status()
+                # resp.raw.decode_content = True
+                async for chunk in resp.aiter_bytes():
+                    dest.write(chunk)
             # this is our weird Path! that's weird!
         return self._path
 
