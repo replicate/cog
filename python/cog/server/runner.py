@@ -1,9 +1,16 @@
 import asyncio
+import contextlib
+import logging
+import multiprocessing
+import os
+import signal
+import sys
 import threading
 import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Optional, Union
+from enum import Enum, auto, unique
+from typing import Any, AsyncIterator, Iterator, Optional, Union
 
 import httpx
 import structlog
@@ -13,6 +20,7 @@ from fastapi.encoders import jsonable_encoder
 from .. import schema, types
 from .clients import SKIP_START_EVENT, ClientManager
 from .eventtypes import (
+    Cancel,
     Done,
     Heartbeat,
     Log,
@@ -20,11 +28,18 @@ from .eventtypes import (
     PredictionOutput,
     PredictionOutputType,
     PublicEventType,
+    Shutdown,
 )
+from .exceptions import (
+    FatalWorkerException,
+    InvalidStateException,
+)
+from .helpers import AsyncPipe
 from .probes import ProbeHelper
-from .worker import Worker
+from .worker import Mux, _ChildWorker
 
 log = structlog.get_logger("cog.server.runner")
+_spawn = multiprocessing.get_context("spawn")
 
 
 class FileUploadError(Exception):
@@ -37,6 +52,16 @@ class RunnerBusyError(Exception):
 
 class UnknownPredictionError(Exception):
     pass
+
+
+@unique
+class WorkerState(Enum):
+    NEW = auto()
+    STARTING = auto()
+    IDLE = auto()
+    PROCESSING = auto()
+    BUSY = auto()
+    DEFUNCT = auto()
 
 
 @define
@@ -62,9 +87,8 @@ class PredictionRunner:
         shutdown_event: Optional[threading.Event],
         upload_url: Optional[str] = None,
         concurrency: int = 1,
+        tee_output: bool = True,
     ) -> None:
-        self._worker = Worker(predictor_ref=predictor_ref, concurrency=concurrency)
-
         # __main__ waits for this event
         self._shutdown_event = shutdown_event
         self._upload_url = upload_url
@@ -73,9 +97,28 @@ class PredictionRunner:
         )
         self.client_manager = ClientManager()  # upload_url)
 
+        # worker code
+        self._state = WorkerState.NEW
+        self._semaphore = asyncio.Semaphore(concurrency)
+        self._concurrency = concurrency
+
+        # A pipe with which to communicate with the child worker.
+        events, child_events = _spawn.Pipe()
+        self._child = _ChildWorker(predictor_ref, child_events, tee_output)
+        self._events: "AsyncPipe[tuple[str, PublicEventType]]" = AsyncPipe(
+            events, self._child.is_alive
+        )
+        # shutdown requested
+        self._shutting_down = False
+        # stop reading events
+        self._terminating = asyncio.Event()
+        self._mux = Mux(self._terminating)
+        self._predictions_in_flight = set()
+
     def setup(self) -> SetupTask:
-        if not self._worker.setup_is_allowed():
+        if self._state != WorkerState.NEW:
             raise RunnerBusyError
+        self._state = WorkerState.STARTING
 
         # app is allowed to respond to requests and poll the state of this task
         # while it is running
@@ -84,16 +127,27 @@ class PredictionRunner:
             status = None
             started_at = datetime.now(tz=timezone.utc)
 
+            # in 3.10 Event started doing get_running_loop
+            # previously it stored the loop when created, which causes an error in tests
+            if sys.version_info < (3, 10):
+                self._terminating = self._mux.terminating = asyncio.Event()
+
+            self._child.start()
+            self._ensure_event_reader()
+
             try:
-                async for event in self._worker.setup():
+                async for event in self._mux.read("SETUP", poll=0.1):
                     if isinstance(event, Log):
                         logs.append(event.message)
                     elif isinstance(event, Done):
-                        status = (
-                            schema.Status.FAILED
-                            if event.error
-                            else schema.Status.SUCCEEDED
-                        )
+                        if event.error:
+                            raise FatalWorkerException(
+                                "Predictor errored during setup: " + event.error_detail
+                            )
+                            status = schema.Status.FAILED
+                        else:
+                            status = schema.Status.SUCCEEDED
+                        self._state = WorkerState.IDLE
             except Exception:
                 logs.append(traceback.format_exc())
                 status = schema.Status.FAILED
@@ -134,10 +188,49 @@ class PredictionRunner:
         result.add_done_callback(handle_error)
         return result
 
+    def state_from_predictions_in_flight(self) -> WorkerState:
+        valid_states = {WorkerState.IDLE, WorkerState.PROCESSING, WorkerState.BUSY}
+        if self._state not in valid_states:
+            raise InvalidStateException(
+                f"Invalid operation: state is {self._state} (must be IDLE, PROCESSING, or BUSY)"
+            )
+        if len(self._predictions_in_flight) == self._concurrency:
+            return WorkerState.BUSY
+        if len(self._predictions_in_flight) == 0:
+            return WorkerState.IDLE
+        return WorkerState.PROCESSING
+
+    def is_busy(self) -> bool:
+        return self._state not in {WorkerState.PROCESSING, WorkerState.IDLE}
+
+    def enter_predict(self, id: str) -> None:
+        if self.is_busy():
+            raise InvalidStateException(
+                f"Invalid operation: state is {self._state} (must be processing or idle)"
+            )
+        if self._shutting_down:
+            raise InvalidStateException(
+                "cannot accept new predictions because shutdown requested"
+            )
+        self._predictions_in_flight.add(id)
+        self._state = self.state_from_predictions_in_flight()
+
+    def exit_predict(self, id: str) -> None:
+        self._predictions_in_flight.remove(id)
+        self._state = self.state_from_predictions_in_flight()
+
+    @contextlib.contextmanager
+    def prediction_ctx(self, id: str) -> Iterator[None]:
+        self.enter_predict(id)
+        try:
+            yield
+        finally:
+            self.exit_predict(id)
+
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
     # no longer have to support Python 3.8
     def predict(
-        self, request: schema.PredictionRequest
+        self, request: schema.PredictionRequest, poll: Optional[float] = None
     ) -> "tuple[schema.PredictionResponse, PredictionTask]":
         if self.is_busy():
             if request.id in self._predictions:
@@ -157,10 +250,10 @@ class PredictionRunner:
         response = event_handler.response
 
         prediction_input = PredictionInput.from_request(request)
-        predict_ctx = self._worker.good_predict(prediction_input, poll=0.1)
+        # # predict_ctx = self._worker.good_predict(prediction_input, poll=0.1)
         # accept work and change state to get the future event stream,
         # but don't enter it yet
-        event_stream = predict_ctx.__enter__()
+        self.enter_predict(request.id)
         # alternative: self._worker.enter_predict(request.id)
 
         # what if instead we raised parts of worker instead of trying to access private methods?
@@ -179,8 +272,11 @@ class PredictionRunner:
                     if isinstance(v, types.URLTempFile):
                         real_path = await v.convert(self.client_manager.download_client)
                         prediction_input.payload[k] = real_path
-                result = await event_handler.handle_event_stream(event_stream)
-                return result
+                async with self._semaphore:
+                    self._events.send(prediction_input)
+                    event_stream = self._mux.read(prediction_input.id, poll=poll)
+                    result = await event_handler.handle_event_stream(event_stream)
+                    return result
             except httpx.HTTPError as e:
                 tb = traceback.format_exc()
                 await event_handler.append_logs(tb)
@@ -200,7 +296,7 @@ class PredictionRunner:
                 # mark the prediction as done and update state
                 # ... actually, we might want to mark that part earlier
                 # even if we're still upload files we can accept new work
-                predict_ctx.__exit__(None, None, None)
+                self.exit_predict(prediction_input.id)
                 # FIXME: use isinstance(BaseInput)
                 if hasattr(request.input, "cleanup"):
                     request.input.cleanup()  # type: ignore
@@ -216,22 +312,78 @@ class PredictionRunner:
 
         return (response, result)
 
-    def is_busy(self) -> bool:
-        return self._worker.is_busy()
-
     def shutdown(self) -> None:
+        if self._state == WorkerState.DEFUNCT:
+            return
+        # shutdown requested, but keep reading events
+        self._shutting_down = True
+
+        if self._child.is_alive():
+            self._events.send(Shutdown())
+
+    def terminate(self) -> None:
         for _, task in self._predictions.values():
             task.cancel()
-        self._worker.terminate()
+        if self._state == WorkerState.DEFUNCT:
+            return
+
+        self._terminating.set()
+        self._state = WorkerState.DEFUNCT
+
+        if self._child.is_alive():
+            self._child.terminate()
+            self._child.join()
+        self._events.shutdown()
+        if self._read_events_task:
+            self._read_events_task.cancel()
 
     def cancel(self, prediction_id: str) -> None:
-        try:
-            self._worker.cancel(prediction_id)
-            # if the runner is in an invalid state, predictions_in_flight would just be empty
-            # and it's a keyerror anyway
-        except KeyError as e:
-            print(e)
-            raise UnknownPredictionError() from e
+        if id not in self._predictions_in_flight:
+            print("id not there", prediction_id, self._predictions_in_flight)
+            raise UnknownPredictionError()
+        if self._child.is_alive() and self._child.pid is not None:
+            os.kill(self._child.pid, signal.SIGUSR1)
+            print("sent cancel")
+            self._events.send(Cancel(prediction_id))
+            # maybe this should probably check self._semaphore._value == self._concurrent
+
+    _read_events_task: "Optional[asyncio.Task[None]]" = None
+
+    def _ensure_event_reader(self) -> None:
+        def handle_error(task: "asyncio.Task[None]") -> None:
+            if task.cancelled():
+                return
+            exc = task.exception()
+            if exc:
+                logging.error("caught exception", exc_info=exc)
+
+        if not self._read_events_task:
+            self._read_events_task = asyncio.create_task(self._read_events())
+            self._read_events_task.add_done_callback(handle_error)
+
+    async def _read_events(self) -> None:
+        while self._child.is_alive() and not self._terminating.is_set():
+            # this can still be running when the task is destroyed
+            result = await self._events.coro_recv_with_exit(self._terminating)
+            print("reader got", result)
+            if result is None:  # event loop closed or child died
+                break
+            id, event = result
+            if id == "LOG" and self._state == WorkerState.STARTING:
+                id = "SETUP"
+            if id == "LOG" and len(self._predictions_in_flight) == 1:
+                id = list(self._predictions_in_flight)[0]
+            await self._mux.write(id, event)
+        # If we dropped off the end off the end of the loop, check if it's
+        # because the child process died.
+        if not self._child.is_alive() and not self._terminating.is_set():
+            exitcode = self._child.exitcode
+            self._mux.fatal = FatalWorkerException(
+                f"Prediction failed for an unknown reason. It might have run out of memory? (exitcode {exitcode})"
+            )
+        # this is the same event as _terminating
+        # we need to set it so mux.reads wake up and throw an error if needed
+        self._mux.terminating.set()
 
 
 class PredictionEventHandler:

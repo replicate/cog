@@ -29,9 +29,9 @@ dependencies = [
 optional-dependencies = { "dev" = [
   "black",
   "build",
-  "httpx",
   'hypothesis<6.80.0; python_version < "3.8"',
   'hypothesis; python_version >= "3.8"',
+  "respx",
   'numpy<1.22.0; python_version < "3.8"',
   'numpy; python_version >= "3.8"',
   "pillow",
