@@ -7,11 +7,11 @@ BINDIR = $(PREFIX)/bin
 INSTALL := install -m 0755
 INSTALL_PROGRAM := $(INSTALL)
 
-GO := go
+GO ?= go
 GOOS := $(shell $(GO) env GOOS)
 GOARCH := $(shell $(GO) env GOARCH)
 
-PYTHON := python
+PYTHON ?= python
 PYTEST := $(PYTHON) -m pytest
 PYRIGHT := $(PYTHON) -m pyright
 RUFF := $(PYTHON) -m ruff
