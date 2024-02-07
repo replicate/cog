@@ -119,8 +119,6 @@ class URLPath(pathlib.PosixPath):
             with tempfile.NamedTemporaryFile(suffix=self.filename, delete=False) as dest:
                 shutil.copyfileobj(self.fileobj, dest)
                 self._path = Path(dest.name)
-            
-            
         return self._path
 
     def unlink(self, missing_ok: bool = False) -> None:

@@ -34,9 +34,6 @@ from typing_extensions import Annotated
 
 from .errors import ConfigDoesNotExist, PredictorNotSet
 from .types import File as CogFile, Input, Path as CogPath, URLPath
-
-
-
 ALLOWED_INPUT_TYPES: List[Type[Any]] = [str, int, float, bool, CogFile, CogPath]
 
 
