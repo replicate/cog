@@ -10,7 +10,7 @@ import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
-from typing import Any, AsyncIterator, Iterator, Optional, Union
+from typing import Any, AsyncIterator, Iterator, Optional, Union, TypeVar
 
 import httpx
 import structlog
@@ -408,6 +408,7 @@ class PredictionEventHandler:
             request.webhook_events_filter or schema.WebhookEvent.default_events(),
         )
         self._upload_url = upload_url
+        self._output_type = None
 
         # HACK: don't send an initial webhook if we're trying to optimize for
         # latency (this guarantees that the first output webhook won't be
@@ -486,45 +487,42 @@ class PredictionEventHandler:
     async def handle_event_stream(
         self, events: AsyncIterator[PublicEventType]
     ) -> schema.PredictionResponse:
-        output_type = None
         async for event in events:
-            if isinstance(event, Heartbeat):
-                # Heartbeat events exist solely to ensure that we have a
-                # regular opportunity to check for cancelation and
-                # timeouts.
-                #
-                # We don't need to do anything with them.
-                pass
-
-            elif isinstance(event, Log):
-                await self.append_logs(event.message)
-
-            elif isinstance(event, PredictionOutputType):
-                if output_type is not None:
-                    await self.failed(error="Predictor returned unexpected output")
-                    break
-
-                output_type = event
-                if output_type.multi:
-                    await self.set_output([])
-            elif isinstance(event, PredictionOutput):
-                if output_type is None:
-                    await self.failed(error="Predictor returned unexpected output")
-                    break
-
-                if output_type.multi:
-                    await self.append_output(event.payload)
-                else:
-                    await self.set_output(event.payload)
-
-            elif isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
-                if event.canceled:
-                    await self.canceled()
-                elif event.error:
-                    await self.failed(error=str(event.error_detail))
-                else:
-                    await self.succeeded()
-
-            else:  # shouldn't happen, exhausted the type
-                log.warn("received unexpected event from worker", data=event)
+            await self.event_to_handle_future(event)
         return self.response
+
+    def event_to_handle_future(self, event: PublicEventType) -> Awaitable[None]:
+        if isinstance(event, Heartbeat):
+            # Heartbeat events exist solely to ensure that we have a
+            # regular opportunity to check for cancelation and
+            # timeouts.
+            # We don't need to do anything with them.
+            return
+        if isinstance(event, Log):
+            return self.append_logs(event.message)
+
+        if isinstance(event, PredictionOutputType):
+            if self._output_type is not None:
+                return self.failed(error="Predictor returned unexpected output")
+                # signal failure
+                # break
+
+            self._output_type = event
+            if self._output_type.multi:
+                return self.set_output([])
+        if isinstance(event, PredictionOutput):
+            if output_type is None:
+                return self.failed(error="Predictor returned unexpected output")
+                break
+
+            if output_type.multi:
+                return self.append_output(event.payload)
+            return self.set_output(event.payload)
+
+        if isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
+            if event.canceled:
+                return self.canceled()
+            if event.error:
+                return self.failed(error=str(event.error_detail))
+            return self.succeeded()
+        log.warn("received unexpected event from worker", data=event)
