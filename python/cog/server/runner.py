@@ -89,13 +89,19 @@ class PredictionRunner:
         concurrency: int = 1,
         tee_output: bool = True,
     ) -> None:
-        # __main__ waits for this event
-        self._shutdown_event = shutdown_event
+        self._shutdown_event = shutdown_event  # __main__ waits for this event
         self._upload_url = upload_url
         self._predictions: "dict[str, tuple[schema.PredictionResponse, PredictionTask]]" = (
             {}
         )
-        self.client_manager = ClientManager()  # upload_url)
+        self._predictions_in_flight: "set[str]" = set()
+        # it would be lovely to merge these but it's not fully clear how best to handle it
+        # since idempotent requests can kinda come whenever?
+        # p: dict[str, PredictionTask]
+        # p: dict[str, PredictionEventHandler]
+        # p: dict[str, schema.PredictionResponse]
+
+        self.client_manager = ClientManager()
 
         # worker code
         self._state = WorkerState.NEW
@@ -113,7 +119,6 @@ class PredictionRunner:
         # stop reading events
         self._terminating = asyncio.Event()
         self._mux = Mux(self._terminating)
-        self._predictions_in_flight = set()
 
     def setup(self) -> SetupTask:
         if self._state != WorkerState.NEW:
@@ -238,8 +243,7 @@ class PredictionRunner:
                 return self._predictions[request.id]
             raise RunnerBusyError()
 
-        # Set up logger context for main thread. The same thing happens inside
-        # the predict thread. -- NOT, but that's fine?
+        # Set up logger context for main thread.
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(prediction_id=request.id)
 
@@ -251,20 +255,10 @@ class PredictionRunner:
         response = event_handler.response
 
         prediction_input = PredictionInput.from_request(request)
-        # # predict_ctx = self._worker.good_predict(prediction_input, poll=0.1)
-        # accept work and change state to get the future event stream,
-        # but don't enter it yet
         self.enter_predict(request.id)
-        # alternative: self._worker.enter_predict(request.id)
-
-        # what if instead we raised parts of worker instead of trying to access private methods?
-        # move predictions_in_flight up a level?
-        # but then how will the tests work?
 
         async def async_predict_handling_errors() -> schema.PredictionResponse:
             try:
-                # this is awkward because we're mutating prediction_input
-                # after passing it to worker
                 # FIXME: handle e.g. dict[str, list[Path]]
                 # FIXME: download files concurrently
                 for k, v in prediction_input.payload.items():
@@ -293,10 +287,9 @@ class PredictionRunner:
                     self._shutdown_event.set()
                 raise  # we don't actually want to raise anymore but w/e
             finally:
-                # if __enter__ threw an error we won't get here
                 # mark the prediction as done and update state
                 # ... actually, we might want to mark that part earlier
-                # even if we're still upload files we can accept new work
+                # even if we're still uploading files we can accept new work
                 self.exit_predict(prediction_input.id)
                 # FIXME: use isinstance(BaseInput)
                 if hasattr(request.input, "cleanup"):
@@ -364,9 +357,8 @@ class PredictionRunner:
 
     async def _read_events(self) -> None:
         while self._child.is_alive() and not self._terminating.is_set():
-            # this can still be running when the task is destroyed
+            # in tests this can still be running when the task is destroyed
             result = await self._events.coro_recv_with_exit(self._terminating)
-            print("reader got", result)
             if result is None:  # event loop closed or child died
                 break
             id, event = result
@@ -382,7 +374,7 @@ class PredictionRunner:
             self._mux.fatal = FatalWorkerException(
                 f"Prediction failed for an unknown reason. It might have run out of memory? (exitcode {exitcode})"
             )
-        # this is the same event as _terminating
+        # this is the same event as self._terminating
         # we need to set it so mux.reads wake up and throw an error if needed
         self._mux.terminating.set()
 
@@ -402,10 +394,8 @@ class PredictionEventHandler:
         self.p.started_at = datetime.now(tz=timezone.utc)
 
         self._client_manager = client_manager
-        # request.webhook_events_filter should already defualt to default_events?
         self._webhook_sender = client_manager.make_webhook_sender(
-            request.webhook,
-            request.webhook_events_filter or schema.WebhookEvent.default_events(),
+            request.webhook, request.webhook_events_filter
         )
         self._upload_url = upload_url
         self._output_type = None
@@ -489,6 +479,8 @@ class PredictionEventHandler:
     ) -> schema.PredictionResponse:
         async for event in events:
             await self.event_to_handle_future(event)
+            if self.p.status == schema.Status.FAILED:
+                break
         return self.response
 
     def event_to_handle_future(self, event: PublicEventType) -> Awaitable[None]:
@@ -504,21 +496,15 @@ class PredictionEventHandler:
         if isinstance(event, PredictionOutputType):
             if self._output_type is not None:
                 return self.failed(error="Predictor returned unexpected output")
-                # signal failure
-                # break
-
             self._output_type = event
             if self._output_type.multi:
                 return self.set_output([])
         if isinstance(event, PredictionOutput):
             if output_type is None:
                 return self.failed(error="Predictor returned unexpected output")
-                break
-
             if output_type.multi:
                 return self.append_output(event.payload)
             return self.set_output(event.payload)
-
         if isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
             if event.canceled:
                 return self.canceled()
