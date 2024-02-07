@@ -33,17 +33,7 @@ from pydantic.fields import FieldInfo
 from typing_extensions import Annotated
 
 from .errors import ConfigDoesNotExist, PredictorNotSet
-from .types import (
-    File as CogFile,
-)
-from .types import (
-    Input,
-    URLPath,
-)
-from .types import (
-    Path as CogPath,
-)
-
+from .types import File as CogFile, Input, Path as CogPath, URLPath
 ALLOWED_INPUT_TYPES: List[Type[Any]] = [str, int, float, bool, CogFile, CogPath]
 
 
@@ -140,7 +130,7 @@ def load_config() -> Dict[str, Any]:
     # Assumes the working directory is /src
     config_path = os.path.abspath("cog.yaml")
     try:
-        with open(config_path) as fh:
+        with open(config_path, encoding='utf-8') as fh:
             config = yaml.safe_load(fh)
     except FileNotFoundError as e:
         raise ConfigDoesNotExist(
@@ -220,7 +210,7 @@ def validate_input_type(type: Type[Any], name: str) -> None:
         raise TypeError(
             f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
         )
-    elif type not in ALLOWED_INPUT_TYPES:
+    if type not in ALLOWED_INPUT_TYPES:
         if get_origin(type) in (Union, List, list) or (
             hasattr(types, "UnionType") and get_origin(type) is types.UnionType
         ):  # noqa: E721
@@ -337,8 +327,7 @@ For example:
         ...
 """
         )
-    else:
-        OutputType = signature.return_annotation
+    OutputType = signature.return_annotation
 
     # The type that goes in the response is a list of the yielded type
     if get_origin(OutputType) is Iterator:
@@ -372,12 +361,11 @@ For example:
             pass
 
         return Output
-    else:
 
-        class Output(BaseModel):
-            __root__: OutputType  # type: ignore
+    class Output(BaseModel):
+        __root__: OutputType  # type: ignore
 
-        return Output
+    return Output
 
 
 def get_train(predictor: Any) -> Callable[..., Any]:
@@ -435,8 +423,7 @@ For example:
         ...
 """
         )
-    else:
-        TrainingOutputType = signature.return_annotation
+    TrainingOutputType = signature.return_annotation
 
     name = (
         TrainingOutputType.__name__ if hasattr(TrainingOutputType, "__name__") else ""
@@ -469,7 +456,7 @@ def human_readable_type_name(t: Type[Any]) -> str:
     module = t.__module__
     if module == "builtins":
         return t.__qualname__
-    elif module.split(".")[0] == "cog":
+    if module.split(".")[0] == "cog":
         module = "cog"
 
     try:
