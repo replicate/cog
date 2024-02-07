@@ -84,7 +84,10 @@ def httpx_file_client() -> httpx.AsyncClient:
     # httpx default for pool is 5, use that
     timeout = httpx.Timeout(connect=10, read=15, write=None, pool=5)
     return httpx.AsyncClient(
-        transport=transport, follow_redirects=True, timeout=timeout
+        transport=transport,
+        follow_redirects=True,
+        timeout=timeout,
+        verify=os.environ["CURL_CA_BUNDLE"],
     )
 
 
