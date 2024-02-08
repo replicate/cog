@@ -351,6 +351,17 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "aron",
+      "name": "Aron Carroll",
+      "avatar_url": "https://avatars.githubusercontent.com/u/47144?v=4",
+      "profile": "http://aroncarroll.com",
+      "contributions": [
+        "doc",
+        "code",
+        "ideas"
+      ]
     }
   ],
   "contributorsPerLine": 7,

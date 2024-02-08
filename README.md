@@ -115,8 +115,6 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 
 ## Install
 
-<a id="upgrade"></a>
-
 If you're using macOS, you can install Cog using Homebrew:
 
 ```console
@@ -136,6 +134,21 @@ Alternatively, you can build Cog from source and install it with these commands:
 ```console
 make
 sudo make install
+```
+
+## Upgrade
+
+If you previously installed Cog from a GitHub Releases URL, you can upgrade to the latest version by running the same commands you used to install it:
+
+```console
+sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
+sudo chmod +x /usr/local/bin/cog
+```
+
+If you're using macOS and you previously installed Cog with Homebrew, run the following:
+
+```console
+brew upgrade cog
 ```
 
 ## Next steps
@@ -208,6 +221,9 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/philandstuff"><img src="https://avatars.githubusercontent.com/u/581269?v=4?s=100" width="100px;" alt="Philip Potter"/><br /><sub><b>Philip Potter</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aphilandstuff" title="Bug reports">🐛</a> <a href="https://github.com/replicate/cog/commits?author=philandstuff" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/joannejchen"><img src="https://avatars.githubusercontent.com/u/33409024?v=4?s=100" width="100px;" alt="Joanne Chen"/><br /><sub><b>Joanne Chen</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=joannejchen" title="Documentation">📖</a></td>
       <td align="center" valign="top" width="14.28%"><a href="http://technillogue.github.io"><img src="https://avatars.githubusercontent.com/u/945691?v=4?s=100" width="100px;" alt="technillogue"/><br /><sub><b>technillogue</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=technillogue" title="Code">💻</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="http://aroncarroll.com"><img src="https://avatars.githubusercontent.com/u/47144?v=4?s=100" width="100px;" alt="Aron Carroll"/><br /><sub><b>Aron Carroll</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=aron" title="Documentation">📖</a> <a href="https://github.com/replicate/cog/commits?author=aron" title="Code">💻</a> <a href="#ideas-aron" title="Ideas, Planning, & Feedback">🤔</a></td>
     </tr>
   </tbody>
 </table>

@@ -150,7 +150,8 @@ func compatibleCuDNNsForCUDA(cuda string) []string {
 }
 
 func defaultCUDA() string {
-	return latestTF().CUDA
+	// TODO: change this to latestTF().CUDA once replicate supports >= 12 everywhere
+	return "11.8"
 }
 
 func latestCUDAFrom(cudas []string) string {
@@ -204,26 +205,6 @@ func latestCuDNNForCUDA(cuda string) (string, error) {
 		return "", fmt.Errorf("CUDA %s is not supported by Cog", cuda)
 	}
 	return cuDNNs[0], nil
-}
-
-func latestTF() TFCompatibility {
-	var latest *TFCompatibility
-	for _, compat := range TFCompatibilityMatrix {
-		compat := compat
-		if latest == nil {
-			latest = &compat
-		} else {
-			greater, err := versionGreater(compat.TF, latest.TF)
-			if err != nil {
-				// should never happen
-				panic(fmt.Sprintf("Invalid tensorflow version: %s", err))
-			}
-			if greater {
-				latest = &compat
-			}
-		}
-	}
-	return *latest
 }
 
 func versionGreater(a string, b string) (bool, error) {

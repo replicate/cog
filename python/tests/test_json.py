@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 def test_make_encodeable_recursively_encodes_tuples():
     result = make_encodeable((np.float32(0.1), np.float32(0.2)))
-    assert type(result[0]) == float
+    assert isinstance(result[0], float)
 
 
 def test_make_encodeable_encodes_pydantic_models():

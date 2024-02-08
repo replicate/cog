@@ -48,7 +48,7 @@ class PredictionRequest(PredictionBaseModel):
     ] = WebhookEvent.default_events()
 
     @classmethod
-    def with_types(cls, input_type: t.Type) -> t.Any:
+    def with_types(cls, input_type: t.Type[t.Any]) -> t.Any:
         # [compat] Input is implicitly optional -- previous versions of the
         # Cog HTTP API allowed input to be omitted (e.g. for models that don't
         # have any inputs). We should consider changing this in future.
@@ -74,7 +74,7 @@ class PredictionResponse(PredictionBaseModel):
     metrics: t.Optional[t.Dict[str, t.Any]]
 
     @classmethod
-    def with_types(cls, input_type: t.Type, output_type: t.Type) -> t.Any:
+    def with_types(cls, input_type: t.Type[t.Any], output_type: t.Type[t.Any]) -> t.Any:
         # [compat] Input is implicitly optional -- previous versions of the
         # Cog HTTP API allowed input to be omitted (e.g. for models that don't
         # have any inputs). We should consider changing this in future.
@@ -84,3 +84,11 @@ class PredictionResponse(PredictionBaseModel):
             input=(t.Optional[input_type], None),
             output=(output_type, None),
         )
+
+
+class TrainingRequest(PredictionRequest):
+    pass
+
+
+class TrainingResponse(PredictionResponse):
+    pass

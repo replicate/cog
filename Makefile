@@ -1,4 +1,4 @@
-SHELL := /bin/bash
+SHELL := bash
 
 DESTDIR ?=
 PREFIX = /usr/local
@@ -7,13 +7,13 @@ BINDIR = $(PREFIX)/bin
 INSTALL := install -m 0755
 INSTALL_PROGRAM := $(INSTALL)
 
-GO := go
+GO ?= go
 GOOS := $(shell $(GO) env GOOS)
 GOARCH := $(shell $(GO) env GOARCH)
 
-PYTHON := python
+PYTHON ?= python
 PYTEST := $(PYTHON) -m pytest
-MYPY := $(PYTHON) -m mypy
+PYRIGHT := $(PYTHON) -m pyright
 RUFF := $(PYTHON) -m ruff
 
 default: all
@@ -62,7 +62,7 @@ test-integration: cog
 
 .PHONY: test-python
 test-python:
-	$(PYTEST) -n auto -vv python/tests
+	$(PYTEST) -n auto -vv python/tests $(if $(FILTER),-k "$(FILTER)",)
 
 .PHONY: test
 test: test-go test-python test-integration
@@ -94,7 +94,8 @@ lint-go:
 .PHONY: lint-python
 lint-python:
 	$(RUFF) python/cog
-	$(MYPY) python/cog
+	$(RUFF) format --check python
+	$(PYRIGHT)
 
 .PHONY: lint
 lint: lint-go lint-python
@@ -102,3 +103,16 @@ lint: lint-go lint-python
 .PHONY: mod-tidy
 mod-tidy:
 	$(GO) mod tidy
+
+.PHONY: install-python # install dev dependencies
+install-python:
+	$(PYTHON) -c 'import sys; exit(0) if sys.version_info >= (3, 10) else print("\n\nWarning: python >=3.10 is needed (not installed) to pass linting (pyright)\n\n")'
+	$(PYTHON) -m pip install '.[dev]'
+
+
+.PHONY: run-docs-server
+run-docs-server:
+	pip install mkdocs-material
+	sed 's/docs\///g' README.md > ./docs/README.md
+	cp CONTRIBUTING.md ./docs/
+	mkdocs serve

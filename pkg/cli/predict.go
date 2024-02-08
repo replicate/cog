@@ -48,6 +48,7 @@ the prediction on that.`,
 	addUseCudaBaseImageFlag(cmd)
 	addBuildProgressOutputFlag(cmd)
 	addDockerfileFlag(cmd)
+	addGpusFlag(cmd)
 
 	cmd.Flags().StringArrayVarP(&inputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
@@ -59,7 +60,7 @@ the prediction on that.`,
 func cmdPredict(cmd *cobra.Command, args []string) error {
 	imageName := ""
 	volumes := []docker.Volume{}
-	gpus := ""
+	gpus := gpusFlag
 
 	if len(args) == 0 {
 		// Build image
@@ -79,13 +80,18 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			Destination: "/src",
 		})
 
-		if cfg.Build.GPU {
+		if gpus == "" && cfg.Build.GPU {
 			gpus = "all"
 		}
 
 	} else {
 		// Use existing image
 		imageName = args[0]
+
+		// If the image name contains '=', then it's probably a mistake
+		if strings.Contains(imageName, "=") {
+			return fmt.Errorf("Invalid image name '%s'. Did you forget `-i`?", imageName)
+		}
 
 		exists, err := docker.ImageExists(imageName)
 		if err != nil {
@@ -101,7 +107,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		if conf.Build.GPU {
+		if gpus == "" && conf.Build.GPU {
 			gpus = "all"
 		}
 	}
@@ -129,7 +135,9 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	}()
 
 	if err := predictor.Start(os.Stderr); err != nil {
-		if gpus != "" && errors.Is(err, docker.ErrMissingDeviceDriver) {
+		// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
+		// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
+		if gpus == "all" && errors.Is(err, docker.ErrMissingDeviceDriver) {
 			console.Info("Missing device driver, re-trying without GPU")
 
 			_ = predictor.Stop()

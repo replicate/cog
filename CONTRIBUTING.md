@@ -142,7 +142,7 @@ There are a few concepts used throughout Cog that might be helpful to understand
 - **Prediction**: A single run of the model, that takes **input** and produces **output**.
 - **Predictor**: Defines how Cog runs **predictions** on a **model**.
 
-## Runnings tests
+## Running tests
 
 To run the entire test suite:
 
@@ -174,6 +174,14 @@ docker run -p 5001:5000 --init --platform=linux/amd64 cog-file-project
 ```
 
 Then visit [localhost:5001](http://localhost:5001) in your browser.
+
+## Running the docs server
+
+To run the docs website server locally:
+
+```sh
+make run-docs-server
+```
 
 ## Publishing a release
 

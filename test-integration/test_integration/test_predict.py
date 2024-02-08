@@ -5,8 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from .util import random_string
-
 
 def test_predict_takes_string_inputs_and_returns_strings_to_stdout():
     project_dir = Path(__file__).parent / "fixtures/string-project"
@@ -113,28 +111,24 @@ def test_predict_writes_strings_to_files(tmpdir_factory):
         assert f.read() == "hello world"
 
 
-def test_predict_runs_an_existing_image(tmpdir_factory):
+def test_predict_runs_an_existing_image(docker_image, tmpdir_factory):
     project_dir = Path(__file__).parent / "fixtures/string-project"
-    image_name = "cog-test-" + random_string(10)
 
-    try:
-        subprocess.run(
-            ["cog", "build", "-t", image_name],
-            cwd=project_dir,
-            check=True,
-        )
+    subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=project_dir,
+        check=True,
+    )
 
-        # Run in another directory to ensure it doesn't use cog.yaml
-        another_directory = tmpdir_factory.mktemp("project")
-        result = subprocess.run(
-            ["cog", "predict", image_name, "-i", "s=world"],
-            cwd=another_directory,
-            check=True,
-            capture_output=True,
-        )
-        assert result.stdout == b"hello world\n"
-    finally:
-        subprocess.run(["docker", "rmi", image_name], check=True)
+    # Run in another directory to ensure it doesn't use cog.yaml
+    another_directory = tmpdir_factory.mktemp("project")
+    result = subprocess.run(
+        ["cog", "predict", docker_image, "-i", "s=world"],
+        cwd=another_directory,
+        check=True,
+        capture_output=True,
+    )
+    assert result.stdout == b"hello world\n"
 
 
 # https://github.com/replicate/cog/commit/28202b12ea40f71d791e840b97a51164e7be3b3c
@@ -142,7 +136,7 @@ def test_predict_runs_an_existing_image(tmpdir_factory):
 @pytest.mark.skip("incredibly slow")
 def test_predict_with_remote_image(tmpdir_factory):
     image_name = "r8.im/replicate/hello-world@sha256:5c7d5dc6dd8bf75c1acaa8565735e7986bc5b66206b55cca93cb72c9bf15ccaa"
-    subprocess.run(["docker", "rmi", image_name], check=False)
+    subprocess.run(["docker", "rmi", "-f", image_name], check=True)
 
     # Run in another directory to ensure it doesn't use cog.yaml
     another_directory = tmpdir_factory.mktemp("project")

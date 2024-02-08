@@ -45,10 +45,10 @@ def test_prediction_runner_setup():
     try:
         result = runner.setup().get(5)
 
-        assert result["status"] == Status.SUCCEEDED
-        assert result["logs"] == ""
-        assert isinstance(result["started_at"], datetime)
-        assert isinstance(result["completed_at"], datetime)
+        assert result.status == Status.SUCCEEDED
+        assert result.logs == ""
+        assert isinstance(result.started_at, datetime)
+        assert isinstance(result.completed_at, datetime)
     finally:
         runner.shutdown()
 

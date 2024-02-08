@@ -1,0 +1,77 @@
+site_name: Cog
+repo_url: https://github.com/replicate/cog
+docs_dir: docs/
+nav:
+  - README: README.md
+  - Getting Started: getting-started.md
+  - Using your own model: getting-started-own-model.md
+  - YAML spec: yaml.md
+  - Prediction API: python.md
+  - Training API: training.md
+  - HTTP API: http.md
+  - Environment variables: environment.md
+  - Private registry: private-package-registry.md
+  - Notebooks: notebooks.md
+  - Contributing: CONTRIBUTING.md
+  - License: https://github.com/replicate/cog/blob/main/LICENSE
+
+theme:
+  name: material
+  font:
+    text: "Roboto"
+    code: "Roboto Mono"
+  favicon: cog.png
+
+  # Display a link to edit pages right on GitHub
+  features:
+    - content.action.edit
+
+  icon:
+    logo: material/cog
+    repo: simple/github
+  palette:
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: green
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+edit_uri: edit/main/docs/
+
+markdown_extensions:
+  - toc:
+      permalink: "#"
+  - markdown.extensions.codehilite:
+      guess_lang: true
+  - admonition
+  - codehilite
+  - extra
+  - pymdownx.highlight
+  - pymdownx.superfences
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  # Hide the "made with material" thing
+  generator: false
+  social:
+    - icon: simple/github
+      link: https://github.com/replicate/cog
+    - icon: simple/discord
+      link: https://discord.gg/replicate
+    - icon: simple/x
+      link: https://x.com/replicate
+    - icon: simple/youtube
+      link: https://youtube.com/@replicatehq
+
+copyright: Cog is an open-source project from <a href="https://replicate.com">Replicate</a>
