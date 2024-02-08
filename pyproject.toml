@@ -22,7 +22,6 @@ dependencies = [
   'typing-compat; python_version < "3.8"',
   "typing_extensions>=4.4.0",
   "uvicorn[standard]>=0.12,<1",
-  "datamodel-code-generator >=0.25",
 ]
 
 optional-dependencies = { "dev" = [

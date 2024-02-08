@@ -2,7 +2,6 @@ import base64
 import io
 import mimetypes
 import os
-import sys
 from urllib.parse import urlparse
 
 import requests
@@ -74,18 +73,3 @@ def ensure_trailing_slash(url: str) -> str:
         return url
     else:
         return url + "/"
-
-
-def get_site_packages_bin_path() -> str:
-    """
-    Returns python site packages bin path
-    """
-    site_packages_path = os.path.join(
-        os.path.dirname(next(p for p in sys.path if "site-packages" in p)),
-        "site-packages/bin",
-    )
-    exec_prefix_path = os.path.join(sys.exec_prefix, "bin")
-    bin_path = (
-        exec_prefix_path if exec_prefix_path != "/usr/local/bin" else site_packages_path
-    )
-    return bin_path

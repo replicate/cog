@@ -21,6 +21,7 @@ import (
 const dockerignoreBackupPath = ".dockerignore.cog.bak"
 const weightsManifestPath = ".cog/cache/weights_manifest.json"
 const bundledSchemaFile = ".cog/openapi_schema.json"
+const bundledSchemaPy = ".cog/openapi_schema.py"
 
 // Build a Cog model from a config
 //
@@ -28,8 +29,9 @@ const bundledSchemaFile = ".cog/openapi_schema.json"
 func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 
-	// remove bundled schema file that may be left from previous runs
+	// remove bundled schema files that may be left from previous builds
 	_ = os.Remove(bundledSchemaFile)
+	_ = os.Remove(bundledSchemaPy)
 
 	if dockerfileFile != "" {
 		dockerfileContents, err := os.ReadFile(dockerfileFile)
@@ -117,6 +119,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		schemaJSON = data
 	}
 
+	// save open_api schema file
 	err := os.WriteFile(bundledSchemaFile, schemaJSON, 0o644)
 	if err != nil {
 		return fmt.Errorf("Failed to store bundled schema file #{bundledSchemaFile}: %w", err)
@@ -172,7 +175,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}
 	}
 
-	if err := docker.BuildAddLabelsAndSchemaToImage(imageName, labels, bundledSchemaFile); err != nil {
+	if err := docker.BuildAddLabelsAndSchemaToImage(imageName, labels, bundledSchemaFile, bundledSchemaPy); err != nil {
 		return fmt.Errorf("Failed to add labels to image: %w", err)
 	}
 	return nil

@@ -1,20 +1,15 @@
 import importlib.util
 import os
 import os.path
-import subprocess
 import sys
 import typing as t
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from types import ModuleType
 
 import pydantic
 
-from .files import get_site_packages_bin_path
-
-OPENAPI_SCHEMA_FILE = ".cog/openapi_schema.json"
+OPENAPI_SCHEMA_PY = ".cog/openapi_schema.py"
 
 
 class Status(str, Enum):
@@ -106,26 +101,12 @@ class TrainingResponse(PredictionResponse):
     pass
 
 
-def create_schema_model(openapi_schema_path: str) -> ModuleType:
-    with TemporaryDirectory() as temporary_directory_name:
-        temporary_directory = Path(temporary_directory_name)
-        output = Path(temporary_directory / "model.py")
-        bin_path = get_site_packages_bin_path()
-        command = [
-            f"{bin_path}/datamodel-codegen",
-            "--input-file-type",
-            "openapi",
-            "--input",
-            openapi_schema_path,
-            "--output",
-            output,
-        ]
-        subprocess.run(command, capture_output=True, check=True, text=True)  # noqa: S603
-        module_name = os.path.basename(output).rstrip(".py")
-        spec = importlib.util.spec_from_file_location(module_name, str(output))
-        assert spec is not None
-        module = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        sys.modules[module_name] = module
-        spec.loader.exec_module(module)
-        return module
+def create_schema_model(openapi_model_py: str) -> ModuleType:
+    module_name = os.path.basename(openapi_model_py).rstrip(".py")
+    spec = importlib.util.spec_from_file_location(module_name, openapi_model_py)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
