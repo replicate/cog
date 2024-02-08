@@ -182,7 +182,7 @@ The `predict()` method can return a list of any of the supported output types. H
 from cog import BasePredictor, Path
 
 class Predictor(BasePredictor):
-    def predict(self) -> List[Path]:
+    def predict(self) -> list[Path]:
         predictions = ["foo", "bar", "baz"]
         output = []
         for i, prediction in enumerate(predictions):
