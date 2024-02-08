@@ -6,7 +6,7 @@ require (
 	github.com/anaskhan96/soup v1.2.5
 	github.com/docker/cli v25.0.3+incompatible
 	github.com/docker/docker v25.0.3+incompatible
-	github.com/getkin/kin-openapi v0.120.0
+	github.com/getkin/kin-openapi v0.123.0
 	github.com/golangci/golangci-lint v1.55.2
 	github.com/hashicorp/go-version v1.6.0
 	github.com/logrusorgru/aurora v2.0.3+incompatible
@@ -77,8 +77,8 @@ require (
 	github.com/fzipp/gocyclo v0.6.0 // indirect
 	github.com/ghostiam/protogetter v0.2.3 // indirect
 	github.com/go-critic/go-critic v0.9.0 // indirect
-	github.com/go-openapi/jsonpointer v0.19.6 // indirect
-	github.com/go-openapi/swag v0.22.4 // indirect
+	github.com/go-openapi/jsonpointer v0.20.2 // indirect
+	github.com/go-openapi/swag v0.22.8 // indirect
 	github.com/go-toolsmith/astcast v1.1.0 // indirect
 	github.com/go-toolsmith/astcopy v1.1.0 // indirect
 	github.com/go-toolsmith/astequal v1.1.0 // indirect
