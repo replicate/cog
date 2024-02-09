@@ -87,7 +87,7 @@ def httpx_file_client() -> httpx.AsyncClient:
         transport=transport,
         follow_redirects=True,
         timeout=timeout,
-        verify=os.environ["CURL_CA_BUNDLE"],
+        verify=os.environ.get("CURL_CA_BUNDLE"),
     )
 
 
@@ -185,6 +185,7 @@ class ClientManager:
             content=chunk_file_reader(),
             headers={"Content-Type": content_type},
         )
+        # TODO: if file size is >1MB, show upload throughput
         resp.raise_for_status()
 
         # strip any signing gubbins from the URL

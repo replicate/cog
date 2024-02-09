@@ -515,3 +515,4 @@ class PredictionEventHandler:
                 return self.failed(error=str(event.error_detail))
             return self.succeeded()
         log.warn("received unexpected event from worker", data=event)
+        return self.noop()
