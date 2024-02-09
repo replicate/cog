@@ -156,6 +156,7 @@ class ClientManager:
         # in that case we need to return data uris
         if url is None:
             return file_to_data_uri(fh, content_type)
+        assert url
 
         # ensure trailing slash
         url_with_trailing_slash = url if url.endswith("/") else url + "/"
@@ -169,10 +170,20 @@ class ClientManager:
                     break
                 yield chunk
 
+        url = url_with_trailing_slash + filename
+        if url and "internal" in url:
+            resp1 = await self.file_client.put(
+                url,
+                content=b"",
+                headers={"Content-Type": content_type},
+                follow_redirects=False,
+            )
+            if resp1.status_code == 307:
+                url = resp1.headers["Location"]
         resp = await self.file_client.put(
-            url_with_trailing_slash + filename,
+            url,
             content=chunk_file_reader(),
-            headers={"Content-type": content_type},
+            headers={"Content-Type": content_type},
         )
         resp.raise_for_status()
 

@@ -10,7 +10,7 @@ import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
-from typing import Any, AsyncIterator, Iterator, Optional, Union, TypeVar
+from typing import Any, AsyncIterator, Awaitable, Iterator, Optional, Union
 
 import httpx
 import structlog
@@ -483,13 +483,16 @@ class PredictionEventHandler:
                 break
         return self.response
 
+    async def noop(self) -> None:
+        pass
+
     def event_to_handle_future(self, event: PublicEventType) -> Awaitable[None]:
         if isinstance(event, Heartbeat):
             # Heartbeat events exist solely to ensure that we have a
             # regular opportunity to check for cancelation and
             # timeouts.
             # We don't need to do anything with them.
-            return
+            return self.noop()
         if isinstance(event, Log):
             return self.append_logs(event.message)
 
@@ -500,9 +503,9 @@ class PredictionEventHandler:
             if self._output_type.multi:
                 return self.set_output([])
         if isinstance(event, PredictionOutput):
-            if output_type is None:
+            if self._output_type is None:
                 return self.failed(error="Predictor returned unexpected output")
-            if output_type.multi:
+            if self._output_type.multi:
                 return self.append_output(event.payload)
             return self.set_output(event.payload)
         if isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
