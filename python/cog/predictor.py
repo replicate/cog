@@ -39,11 +39,12 @@ from typing_extensions import Annotated
 
 from .errors import ConfigDoesNotExist, PredictorNotSet
 from .types import (
-    File as CogFile,
-)
-from .types import (
+    CogConfig,
     Input,
     URLPath,
+)
+from .types import (
+    File as CogFile,
 )
 from .types import Path as CogPath
 from .types import Secret as CogSecret
@@ -149,10 +150,9 @@ def run_prediction(
     return result
 
 
-# TODO: make config a TypedDict
-def load_config() -> Dict[str, Any]:
+def load_config() -> CogConfig:
     """
-    Reads cog.yaml and returns it as a dict.
+    Reads cog.yaml and returns it as a typed dict.
     """
     # Assumes the working directory is /src
     config_path = os.path.abspath("cog.yaml")
@@ -166,7 +166,7 @@ def load_config() -> Dict[str, Any]:
     return config
 
 
-def load_predictor(config: Dict[str, Any]) -> BasePredictor:
+def load_predictor(config: CogConfig) -> BasePredictor:
     """
     Constructs an instance of the user-defined Predictor class from a config.
     """
@@ -175,7 +175,7 @@ def load_predictor(config: Dict[str, Any]) -> BasePredictor:
     return load_predictor_from_ref(ref)
 
 
-def get_predictor_ref(config: Dict[str, Any], mode: str = "predict") -> str:
+def get_predictor_ref(config: CogConfig, mode: str = "predict") -> str:
     if mode not in ["predict", "train"]:
         raise ValueError(f"Invalid mode: {mode}")
 

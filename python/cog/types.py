@@ -7,6 +7,7 @@ import tempfile
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
+from typing_extensions import NotRequired, TypedDict
 
 import requests
 from pydantic import Field, SecretStr
@@ -17,6 +18,23 @@ FILENAME_ILLEGAL_CHARS = set("\u0000/")
 # filename so that there's room for prefixes added by
 # tempfile.NamedTemporaryFile, etc.
 FILENAME_MAX_LENGTH = 200
+
+
+class BuildConfig(TypedDict):
+    cuda: NotRequired[str]
+    gpu: NotRequired[bool]
+    python_packages: NotRequired[List[str]]
+    system_packages: NotRequired[List[str]]
+    python_requirements: NotRequired[str]
+    python_version: NotRequired[str]
+    run: NotRequired[Union[List[str], List[dict]]]
+
+
+class CogConfig(TypedDict):
+    build: BuildConfig
+    image: NotRequired[str]
+    predict: NotRequired[str]
+    train: NotRequired[str]
 
 
 def Input(
