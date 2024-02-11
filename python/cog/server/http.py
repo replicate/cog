@@ -16,7 +16,6 @@ from typing import (
     Any,
     Awaitable,
     Callable,
-    Dict,
     Optional,
     TypeVar,
     Union,
@@ -56,6 +55,7 @@ from .runner import (
     SetupTask,
     UnknownPredictionError,
 )
+from ..types import CogConfig
 
 log = structlog.get_logger("cog.server.http")
 
@@ -100,7 +100,7 @@ def add_setup_failed_routes(app: MyFastAPI, started_at: datetime, msg: str) -> N
 
 
 def create_app(
-    config: Dict[str, Any],
+    config: CogConfig,
     shutdown_event: Optional[threading.Event],
     threads: int = 1,
     upload_url: Optional[str] = None,
