@@ -3,17 +3,20 @@ import concurrent.futures
 import io
 import os
 import selectors
+import sys
 import threading
 import uuid
 from multiprocessing.connection import Connection
 from typing import (
     Any,
     Callable,
+    Coroutine,
     Generic,
     Optional,
     Sequence,
     TextIO,
     TypeVar,
+    Union,
 )
 
 
@@ -160,13 +163,44 @@ class StreamRedirector(threading.Thread):
                         self.drain_event.set()
                         drain_tokens_seen = 0
 
+
 X = TypeVar("X")
+Y = TypeVar("Y")
+
+
+async def race(
+    x: Coroutine[None, None, X],
+    y: Coroutine[None, None, Y],
+    timeout: Optional[float] = None,
+) -> Union[X, Y]:
+    tasks = [asyncio.create_task(x), asyncio.create_task(y)]
+    wait = asyncio.wait(tasks, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+    done, pending = await wait
+    for task in pending:
+        task.cancel()
+    if not done:
+        raise TimeoutError
+    # done is an unordered set but we want to preserve original order
+    result_task, *others = (t for t in tasks if t in done)
+    # during shutdown, some of the other completed tasks might be an error
+    # cancel them instead of handling the error to avoid the warning
+    # "Task exception was never retrieved"
+    for task in others:
+        msg = "was completed at the same time as another selected task, canceling"
+        # FIXME: ues a logger?
+        print(task, msg, file=sys.stderr)
+        task.cancel()
+    return result_task.result()
+
 
 # functionally this is the exact same thing as aioprocessing but 0.1% the code
 # however it's still worse than just using actual asynchronous io
 class AsyncPipe(Generic[X]):
-    def __init__(self, conn: Connection) -> None:
+    def __init__(
+        self, conn: Connection, alive: Callable[[], bool] = lambda: True
+    ) -> None:
         self.conn = conn
+        self.alive = alive
         self.exiting = threading.Event()
         self.executor = concurrent.futures.ThreadPoolExecutor(1)
 
@@ -175,7 +209,7 @@ class AsyncPipe(Generic[X]):
 
     def shutdown(self) -> None:
         self.exiting.set()
-        self.executor.shutdown(wait=False)
+        self.executor.shutdown(wait=True)
         # if we ever need cancel_futures (introduced 3.9), we can copy it in from
         # https://github.com/python/cpython/blob/3.11/Lib/concurrent/futures/thread.py#L216-L235
 
@@ -185,8 +219,11 @@ class AsyncPipe(Generic[X]):
     def _recv(self) -> Optional[X]:
         # this ugly mess could easily be avoided with loop.connect_read_pipe
         # even loop.add_reader would help but we don't want to mess with a thread-local loop
-        while not self.exiting.is_set():
+        while not self.exiting.is_set() and not self.conn.closed and self.alive():
             if self.conn.poll(0.01):
+                if self.conn.closed or not self.alive():
+                    print("caught conn closed or unalive")
+                    return
                 return self.conn.recv()
         return None
 
@@ -194,3 +231,8 @@ class AsyncPipe(Generic[X]):
         loop = asyncio.get_running_loop()
         # believe it or not this can still deadlock!
         return await loop.run_in_executor(self.executor, self._recv)
+
+    async def coro_recv_with_exit(self, exit: asyncio.Event) -> Optional[X]:
+        result = await race(self.coro_recv(), exit.wait())
+        if result is not True:  # wait() would return True
+            return result

@@ -504,6 +504,7 @@ class WorkerState(RuleBasedStateMachine):
     def __init__(self):
         super().__init__()
         self.loop = asyncio.new_event_loop()
+        # it would be nice to parameterize this with the async equivalent
         self.worker = Worker(_fixture_path("steps"), tee_output=False)
 
         self.setup_generator = None
@@ -600,7 +601,6 @@ class WorkerState(RuleBasedStateMachine):
 
     def teardown(self):
         self.worker.shutdown()
-        # really make sure everything is shut down and cleaned up
         self.worker.terminate()
 
 
