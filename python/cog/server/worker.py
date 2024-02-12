@@ -7,6 +7,7 @@ import sys
 import traceback
 import types
 from collections import defaultdict
+from contextvars import ContextVar
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
 from typing import Any, AsyncIterator, Callable, Iterator, Optional, TextIO
@@ -111,6 +112,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         # We use SIGUSR1 to signal an interrupt for cancelation.
         signal.signal(signal.SIGUSR1, self._signal_handler)
 
+        self.prediction_id_context: ContextVar[str] = ContextVar("prediction_context")
+
+        # <could be moved into StreamRedirector>
         ws_stdout = WrappedStream("stdout", sys.stdout)
         ws_stderr = WrappedStream("stderr", sys.stderr)
         ws_stdout.wrap()
@@ -122,6 +126,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             [ws_stdout, ws_stderr], self._stream_write_hook
         )
         self._stream_redirector.start()
+        # </could be moved into StreamRedirector>
+
         self._setup()
         self._loop()
         self._stream_redirector.shutdown()
@@ -212,6 +218,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         assert self._predictor
         done = Done()
         self._cancelable = True
+        token = self.prediction_id_context.set(id)
         try:
             yield
         except CancelationException:
@@ -223,6 +230,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             done.error = True
             done.error_detail = str(e)
         finally:
+            self.prediction_id_context.reset(token)
             self._cancelable = False
         self._stream_redirector.drain()
         self._events.send((id, done))
@@ -276,7 +284,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if self._tee_output:
             original_stream.write(data)
             original_stream.flush()
-        self._events.send(("LOG", Log(data, source=stream_name)))
+        # this won't work, this fn gets called from a thread, not the async task
+        id = self.prediction_id_context.get("LOG")
+        self._events.send((id, Log(data, source=stream_name)))
 
 
 def get_loop() -> asyncio.AbstractEventLoop:
