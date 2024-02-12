@@ -1,15 +1,17 @@
 import asyncio
 import contextlib
 import inspect
+import logging
 import multiprocessing
 import os
 import signal
 import sys
 import traceback
 import types
+from collections import defaultdict
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
-from typing import Any, AsyncIterator, Dict, Iterator, Optional, TextIO, Union
+from typing import Any, AsyncIterator, Callable, Dict, Iterator, Optional, TextIO, Union
 
 from ..json import make_encodeable
 from ..predictor import (
@@ -33,7 +35,7 @@ from .exceptions import (
     FatalWorkerException,
     InvalidStateException,
 )
-from .helpers import AsyncPipe, StreamRedirector, WrappedStream
+from .helpers import AsyncPipe, StreamRedirector, WrappedStream, race
 
 _spawn = multiprocessing.get_context("spawn")
 
@@ -44,44 +46,156 @@ _PublicEventType = Union[Done, Heartbeat, Log, PredictionOutput, PredictionOutpu
 class WorkerState(Enum):
     NEW = auto()
     STARTING = auto()
-    READY = auto()
+    IDLE = auto()
     PROCESSING = auto()
+    BUSY = auto()
     DEFUNCT = auto()
 
 
+class Mux:
+    def __init__(self, terminating: asyncio.Event) -> None:
+        self.outs: "defaultdict[str, asyncio.Queue[_PublicEventType]]" = defaultdict(
+            asyncio.Queue
+        )
+        self.terminating = terminating
+        self.fatal: "Optional[FatalWorkerException]" = None
+
+    async def write(self, id: str, item: _PublicEventType) -> None:
+        await self.outs[id].put(item)
+
+    async def read(
+        self, id: str, poll: Optional[float] = None
+    ) -> AsyncIterator[_PublicEventType]:
+        if poll:
+            send_heartbeats = True
+        else:
+            poll = 0.1
+            send_heartbeats = False
+        while 1:
+            try:
+                event = await race(
+                    self.outs[id].get(), self.terminating.wait(), timeout=poll
+                )
+            except TimeoutError:
+                if send_heartbeats:
+                    yield Heartbeat()
+                continue
+            if event is True:  # wait() would return True
+                break
+            yield event
+            if isinstance(event, Done):
+                self.outs.pop(id)
+                break
+        if self.fatal:
+            raise self.fatal
+
+
 class Worker:
-    def __init__(self, predictor_ref: str, tee_output: bool = True) -> None:
+    def __init__(
+        self, predictor_ref: str, tee_output: bool = True, concurrent: int = 1
+    ) -> None:
         self._state = WorkerState.NEW
         self._allow_cancel = False
+        self._semaphore = asyncio.Semaphore(concurrent)
+        self._concurrent = concurrent
 
         # A pipe with which to communicate with the child worker.
         events, child_events = _spawn.Pipe()
-        self._events: "AsyncPipe[_PublicEventType]" = AsyncPipe(events)
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
-        self._terminating = False
+        self._events: "AsyncPipe[tuple[str, _PublicEventType]]" = AsyncPipe(
+            events, self._child.is_alive
+        )
+        # shutdown requested
+        self._shutting_down = False
+        # stop reading events
+        self._terminating = asyncio.Event()
+        self._mux = Mux(self._terminating)
+        self._predictions_in_flight = set()
 
     def setup(self) -> AsyncIterator[_PublicEventType]:
         self._assert_state(WorkerState.NEW)
         self._state = WorkerState.STARTING
-        self._child.start()
 
-        return self._wait(raise_on_error="Predictor errored during setup")
+        async def inner() -> AsyncIterator[_PublicEventType]:
+            # in 3.10 Event started doing get_running_loop
+            # previously it stored the loop when created, which causes an error in tests
+            if sys.version_info < (3, 10):
+                self._terminating = self._mux.terminating = asyncio.Event()
+
+            self._child.start()
+            self._ensure_event_reader()
+            async for event in self._mux.read("SETUP", poll=0.1):
+                yield event
+                if isinstance(event, Done):
+                    if event.error:
+                        raise FatalWorkerException(
+                            "Predictor errored during setup: " + event.error_detail
+                        )
+                    self._state = WorkerState.IDLE
+
+        return inner()
+
+    def state_from_predictions_in_flight(self) -> WorkerState:
+        valid_states = {WorkerState.IDLE, WorkerState.PROCESSING, WorkerState.BUSY}
+        if self._state not in valid_states:
+            raise InvalidStateException(
+                f"Invalid operation: state is {self._state} (must be IDLE, PROCESSING, or BUSY)"
+            )
+        # changing _allow_cancel like this is a little bit weird
+        # because this is kind of a pure function
+        # however, we'll remove all of this cancel logic soon, dwabi
+        if len(self._predictions_in_flight) == self._concurrent:
+            self._allow_cancel = True
+            return WorkerState.BUSY
+        if len(self._predictions_in_flight) == 0:
+            self._allow_cancel = False
+            return WorkerState.IDLE
+        self._allow_cancel = True
+        return WorkerState.PROCESSING
+
+    def is_busy(self) -> bool:
+        return self._state not in {WorkerState.PROCESSING, WorkerState.IDLE}
+
+    @contextlib.asynccontextmanager
+    async def _prediction_ctx(self, input: PredictionInput) -> AsyncIterator[None]:
+        async with self._semaphore:
+            self._predictions_in_flight.add(input.id)  # idempotent ig
+            self._state = self.state_from_predictions_in_flight()
+            try:
+                yield
+            finally:
+                self._predictions_in_flight.remove(input.id)
+        self._state = self.state_from_predictions_in_flight()
 
     def predict(
         self, payload: Dict[str, Any], poll: Optional[float] = None
     ) -> AsyncIterator[_PublicEventType]:
-        self._assert_state(WorkerState.READY)
-        self._state = WorkerState.PROCESSING
-        self._allow_cancel = True
-        self._events.send(PredictionInput(payload=payload))
+        # this has to be eager for hypothesis
+        if self.is_busy():
+            raise InvalidStateException(
+                f"Invalid operation: state is {self._state} (must be processing or idle)"
+            )
+        if self._shutting_down:
+            raise InvalidStateException(
+                "cannot accept new predictions because shutdown requested"
+            )
+        input = PredictionInput(payload=payload)
+        self._predictions_in_flight.add(input.id)  # idempotent ig
+        self._state = self.state_from_predictions_in_flight()
 
-        return self._wait(poll=poll)
+        async def inner() -> AsyncIterator[_PublicEventType]:
+            async with self._prediction_ctx(input):
+                self._events.send(input)
+                async for event in self._mux.read(input.id, poll=poll):
+                    yield event
+
+        return inner()
 
     def shutdown(self) -> None:
         if self._state == WorkerState.DEFUNCT:
             return
-
-        self._terminating = True
+        # shutdown requested, but keep reading events
+        self._shutting_down = True
 
         if self._child.is_alive():
             self._events.send(Shutdown())
@@ -90,14 +204,18 @@ class Worker:
         if self._state == WorkerState.DEFUNCT:
             return
 
-        self._terminating = True
+        self._terminating.set()
         self._state = WorkerState.DEFUNCT
 
         if self._child.is_alive():
             self._child.terminate()
             self._child.join()
         self._events.shutdown()
+        if self._read_events_task:
+            self._read_events_task.cancel()
 
+    # FIXME: this will need to use a combination
+    # of signals and Cancel events on the pipe
     def cancel(self) -> None:
         if (
             self._allow_cancel
@@ -105,6 +223,7 @@ class Worker:
             and self._child.pid is not None
         ):
             os.kill(self._child.pid, signal.SIGUSR1)
+            # this should probably check self._semaphore._value == self._concurrent
             self._allow_cancel = False
 
     def _assert_state(self, state: WorkerState) -> None:
@@ -113,43 +232,42 @@ class Worker:
                 f"Invalid operation: state is {self._state} (must be {state})"
             )
 
-    async def _wait(
-        self, poll: Optional[float] = None, raise_on_error: Optional[str] = None
-    ) -> AsyncIterator[_PublicEventType]:
-        done = None
+    _read_events_task: "Optional[asyncio.Task[None]]" = None
 
-        if poll:
-            send_heartbeats = True
-        else:
-            poll = 0.1
-            send_heartbeats = False
+    def _ensure_event_reader(self) -> None:
+        def handle_error(task: "asyncio.Task[None]") -> None:
+            if task.cancelled():
+                return
+            exc = task.exception()
+            if exc:
+                logging.error("caught exception", exc_info=exc)
 
-        while self._child.is_alive() and not done:
-            if not self._events.poll(poll):
-                if send_heartbeats:
-                    yield Heartbeat()
-                continue
-            ev = await self._events.coro_recv()
-            if ev is None: # event loop closed or child died
+        if not self._read_events_task:
+            self._read_events_task = asyncio.create_task(self._read_events())
+            self._read_events_task.add_done_callback(handle_error)
+
+    async def _read_events(self) -> None:
+        while self._child.is_alive() and not self._terminating.is_set():
+            # this can still be running when the task is destroyed
+            result = await self._events.coro_recv_with_exit(self._terminating)
+            if result is None:  # event loop closed or child died
                 break
-            yield ev
-
-            if isinstance(ev, Done):
-                done = ev
-
-        if done:
-            if done.error and raise_on_error:
-                raise FatalWorkerException(raise_on_error + ": " + done.error_detail)
-            self._state = WorkerState.READY
-            self._allow_cancel = False
-
+            id, event = result
+            if id == "LOG" and self._state == WorkerState.STARTING:
+                id = "SETUP"
+            if id == "LOG" and len(self._predictions_in_flight) == 1:
+                id = list(self._predictions_in_flight)[0]
+            await self._mux.write(id, event)
         # If we dropped off the end off the end of the loop, check if it's
         # because the child process died.
-        if not self._child.is_alive() and not self._terminating:
+        if not self._child.is_alive() and not self._terminating.is_set():
             exitcode = self._child.exitcode
-            raise FatalWorkerException(
+            self._mux.fatal = FatalWorkerException(
                 f"Prediction failed for an unknown reason. It might have run out of memory? (exitcode {exitcode})"
             )
+        # this is the same event as _terminating
+        # we need to set it so mux.reads wake up and throw an error if needed
+        self._mux.terminating.set()
 
 
 class _ChildWorker(_spawn.Process):  # type: ignore
@@ -181,6 +299,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         ws_stdout.wrap()
         ws_stderr.wrap()
 
+        # using a thread for this can potentially cause a deadlock
+        # however, if we made this async, we might interfere with a user's event loop
         self._stream_redirector = StreamRedirector(
             [ws_stdout, ws_stderr], self._stream_write_hook
         )
@@ -188,6 +308,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._setup()
         self._loop()
         self._stream_redirector.shutdown()
+        self._events.close()
 
     def _setup(self) -> None:
         with self._handle_setup_error():
@@ -227,7 +348,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             raise
         finally:
             self._stream_redirector.drain()
-            self._events.send(done)
+            self._events.send(("SETUP", done))
 
     def _loop_sync(self) -> None:
         while True:
@@ -235,19 +356,26 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             if isinstance(ev, Shutdown):
                 break
             if isinstance(ev, PredictionInput):
-                self._predict_sync(ev.payload)
+                self._predict_sync(ev)
             else:
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
 
     async def _loop_async(self) -> None:
-        while True:
-            ev = self._events.recv()
-            if isinstance(ev, Shutdown):
-                break
-            if isinstance(ev, PredictionInput):
-                await self._predict_async(ev.payload)
-            else:
-                print(f"Got unexpected event: {ev}", file=sys.stderr)
+        events: "AsyncPipe[tuple[str, _PublicEventType]]" = AsyncPipe(self._events)
+        with events.executor:
+            while True:
+                try:
+                    ev = await events.coro_recv()
+                except asyncio.CancelledError:
+                    return
+                if isinstance(ev, Shutdown):
+                    return
+                if isinstance(ev, PredictionInput):
+                    # keep track of these so they can be cancelled
+                    await self._predict_async(ev)
+                # handle Cancel
+                else:
+                    print(f"Got unexpected event: {ev}", file=sys.stderr)
 
     def _loop(self) -> None:
         if is_async(get_predict(self._predictor)):
@@ -256,7 +384,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             self._loop_sync()
 
     @contextlib.contextmanager
-    def _handle_predict_error(self) -> Iterator[None]:
+    def _handle_predict_error(self, id: str) -> Iterator[None]:
         assert self._predictor
         done = Done()
         self._cancelable = True
@@ -271,34 +399,42 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         finally:
             self._cancelable = False
         self._stream_redirector.drain()
-        self._events.send(done)
+        self._events.send((id, done))
 
-    async def _predict_async(self, payload: Dict[str, Any]) -> None:
-        with self._handle_predict_error():
+    def _mk_send(self, id: str) -> Callable[[_PublicEventType], None]:
+        def send(event: _PublicEventType) -> None:
+            self._events.send((id, event))
+
+        return send
+
+    async def _predict_async(self, input: PredictionInput) -> None:
+        with self._handle_predict_error(input.id):
             predict = get_predict(self._predictor)
-            result = predict(**payload)
+            result = predict(**input.payload)
+            send = self._mk_send(input.id)
             if result:
                 if inspect.isasyncgen(result):
-                    self._events.send(PredictionOutputType(multi=True))
+                    send(PredictionOutputType(multi=True))
                     async for r in result:
-                        self._events.send(PredictionOutput(payload=make_encodeable(r)))
+                        send(PredictionOutput(payload=make_encodeable(r)))
                 elif inspect.isawaitable(result):
                     result = await result
-                    self._events.send(PredictionOutputType(multi=False))
-                    self._events.send(PredictionOutput(payload=make_encodeable(result)))
+                    send(PredictionOutputType(multi=False))
+                    send(PredictionOutput(payload=make_encodeable(result)))
 
-    def _predict_sync(self, payload: Dict[str, Any]) -> None:
-        with self._handle_predict_error():
+    def _predict_sync(self, input: PredictionInput) -> None:
+        with self._handle_predict_error(input.id):
             predict = get_predict(self._predictor)
-            result = predict(**payload)
+            result = predict(**input.payload)
+            send = self._mk_send(input.id)
             if result:
                 if inspect.isgenerator(result):
-                    self._events.send(PredictionOutputType(multi=True))
+                    send(PredictionOutputType(multi=True))
                     for r in result:
-                        self._events.send(PredictionOutput(payload=make_encodeable(r)))
+                        send(PredictionOutput(payload=make_encodeable(r)))
                 else:
-                    self._events.send(PredictionOutputType(multi=False))
-                    self._events.send(PredictionOutput(payload=make_encodeable(result)))
+                    send(PredictionOutputType(multi=False))
+                    send(PredictionOutput(payload=make_encodeable(result)))
 
     def _signal_handler(self, signum: int, frame: Optional[types.FrameType]) -> None:
         if signum == signal.SIGUSR1 and self._cancelable:
@@ -310,7 +446,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if self._tee_output:
             original_stream.write(data)
             original_stream.flush()
-        self._events.send(Log(data, source=stream_name))
+        self._events.send(("LOG", Log(data, source=stream_name)))
 
 
 def get_loop() -> asyncio.AbstractEventLoop:
