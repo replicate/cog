@@ -503,6 +503,7 @@ class PredictionEventHandler:
             self._output_type = event
             if self._output_type.multi:
                 return self.set_output([])
+            return self.noop()
         if isinstance(event, PredictionOutput):
             if self._output_type is None:
                 return self.failed(error="Predictor returned unexpected output")
