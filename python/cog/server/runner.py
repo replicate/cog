@@ -138,7 +138,7 @@ class PredictionRunner:
                 self._terminating = self._mux.terminating = asyncio.Event()
 
             self._child.start()
-            self._ensure_event_reader()
+            self._start_event_reader()
 
             try:
                 async for event in self._mux.read("SETUP", poll=0.1):
@@ -343,7 +343,7 @@ class PredictionRunner:
 
     _read_events_task: "Optional[asyncio.Task[None]]" = None
 
-    def _ensure_event_reader(self) -> None:
+    def _start_event_reader(self) -> None:
         def handle_error(task: "asyncio.Task[None]") -> None:
             if task.cancelled():
                 return
