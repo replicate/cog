@@ -99,7 +99,6 @@ func getDescription(err validationError) string {
 		}
 		return err.child.Description()
 	}
-	fmt.Printf("err.parent.Description(): %s\n", err.parent.Description())
 	return err.parent.Description()
 }
 

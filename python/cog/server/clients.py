@@ -83,11 +83,12 @@ def httpx_file_client() -> httpx.AsyncClient:
     # requests has no write timeout, keep that
     # httpx default for pool is 5, use that
     timeout = httpx.Timeout(connect=10, read=15, write=None, pool=5)
+    # verify: Union[str, bool, ssl.SSLContext] = True,
     return httpx.AsyncClient(
         transport=transport,
         follow_redirects=True,
         timeout=timeout,
-        verify=os.environ.get("CURL_CA_BUNDLE"),
+        verify=os.environ.get("CURL_CA_BUNDLE", True),
     )
 
 
@@ -197,13 +198,13 @@ class ClientManager:
     async def upload_files(self, obj: Any, url: Optional[str]) -> Any:
         """
         Iterates through an object from make_encodeable and uploads any files.
-
         When a file is encountered, it will be passed to upload_file. Any paths will be opened and converted to files.
         """
         # # it would be kind of cleaner to make the default file_url
         # # instead of skipping entirely, we need to convert to datauri
         # if url is None:
         #     return obj
+        # TODO: upload concurrently
         if isinstance(obj, dict):
             return {
                 key: await self.upload_files(value, url) for key, value in obj.items()

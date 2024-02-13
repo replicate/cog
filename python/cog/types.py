@@ -149,6 +149,7 @@ class URLTempFile(pathlib.PosixPath):
         # FastAPI's jsonable_encoder will encode subclasses of pathlib.Path by
         # calling str() on them
         return self.filename
+        # honestly maybe returning self.url would be safer
 
     def unlink(self, missing_ok: bool = False) -> None:
         if self._path:

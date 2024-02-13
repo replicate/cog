@@ -50,11 +50,11 @@ type Example struct {
 }
 
 type Config struct {
-	Build   *Build `json:"build" yaml:"build"`
-	Image   string `json:"image,omitempty" yaml:"image"`
-	Predict string `json:"predict,omitempty" yaml:"predict"`
-	Train   string `json:"train,omitempty" yaml:"train"`
-    Concurrency int `json:"concurrency,omitempty" yaml:"concurrency"`
+	Build       *Build `json:"build" yaml:"build"`
+	Image       string `json:"image,omitempty" yaml:"image"`
+	Predict     string `json:"predict,omitempty" yaml:"predict"`
+	Train       string `json:"train,omitempty" yaml:"train"`
+	Concurrency int    `json:"concurrency,omitempty" yaml:"concurrency"`
 }
 
 func DefaultConfig() *Config {

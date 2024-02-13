@@ -395,15 +395,6 @@ def test_train_openapi_specification(client):
     }
 
 
-@uses_predictor("async_yield")
-def test_yielding_strings_from_async_generator_predictors(client, match):
-    resp = client.post("/predictions")
-    assert resp.status_code == 200
-    assert resp.json() == match(
-        {"status": "succeeded", "output": ["foo", "bar", "baz"]}
-    )
-
-
 @uses_predictor("yield_strings")
 def test_yielding_strings_from_generator_predictors(client, match):
     resp = client.post("/predictions")

@@ -89,8 +89,9 @@ def get_weights_argument(predictor: BasePredictor) -> Union[CogFile, CogPath, st
     # up a little bit.
     # TODO: CogFile/CogPath should have subclasses for each of the subtypes
 
-
-    # trt has Path... so it's like expecting it to be downloaded...?
+    # this is a breaking change
+    # previously, CogPath wouldn't be converted; now it is
+    # essentially everyone needs to switch from Path to str (or a new URL type)
     if weights_url:
         if weights_type == CogFile:
             return cast(CogFile, CogFile.validate(weights_url))
@@ -217,16 +218,20 @@ class BaseInput(BaseModel):
             # # Handle URLPath objects specially for cleanup.
             # if isinstance(value, URLPath):
             #     value.unlink()
-            # Note this is pathlib.Path, which cog.Path is a subclass of. A pathlib.Path object shouldn't make its way here,
+            # Note this is pathlib.Path, of which cog.Path is a subclass of.
+            # A pathlib.Path object shouldn't make its way here,
             # but both have an unlink() method, so may as well be safe.
             #
-            # URLThatCanBeConvertedToPath, DataURLTempFilePath, pathlib.Path, doesn't matter
+            # URLTempFile, DataURLTempFilePath, pathlib.Path, doesn't matter
             # everyone can be unlinked
             if isinstance(value, Path):
                 try:
                     value.unlink()
                 except FileNotFoundError:
                     pass
+
+    # if we had a separate method to traverse the input and apply some function to each value
+    # we could use something like these functions here
 
     # def cleanup():
     #     if isinstance(value, Path):
