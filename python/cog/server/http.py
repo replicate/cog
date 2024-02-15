@@ -127,12 +127,12 @@ def create_app(
 
     try:
         predictor_ref = get_predictor_ref(config, mode)
-        # use openapi schema if schema file exists in model dir (cloud/k8s run)
-        if os.path.exists(schema.OPENAPI_SCHEMA_PY):
-            log.info(f"using {schema.OPENAPI_SCHEMA_PY}")
-            schema_model = schema.create_schema_model(schema.OPENAPI_SCHEMA_PY)
-            InputType = schema_model.Input
-            OutputType = schema_model.Output
+        # use bundled schema if it exists
+        schema_module = schema.create_schema_module()
+        if schema_module is not None:
+            log.info("using bundled schema")
+            InputType = schema_module.Input
+            OutputType = schema_module.Output
         else:
             predictor = load_predictor_from_ref(predictor_ref)
             InputType = get_input_type(predictor)
@@ -172,12 +172,12 @@ def create_app(
     if "train" in config:
         try:
             trainer_ref = get_predictor_ref(config, "train")
-            # use openapi schema if schema file exists in model dir (cloud/k8s run)
-            if os.path.exists(schema.OPENAPI_SCHEMA_PY):
-                log.info(f"using {schema.OPENAPI_SCHEMA_PY}")
-                schema_model = schema.create_schema_model(schema.OPENAPI_SCHEMA_PY)
-                TrainingInputType = schema_model.TrainingInputType
-                TrainingOutputType = schema_model.TrainingOutputType
+            # use bundled schema if it exists
+            schema_module = schema.create_schema_module()
+            if schema_module is not None:
+                log.info("using bundled schema")
+                TrainingInputType = schema_module.TrainingInputType
+                TrainingOutputType = schema_module.TrainingOutputType
             else:
                 trainer = load_predictor_from_ref(trainer_ref)
                 TrainingInputType = get_training_input_type(trainer)

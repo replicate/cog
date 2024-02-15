@@ -9,7 +9,7 @@ from types import ModuleType
 
 import pydantic
 
-OPENAPI_SCHEMA_PY = ".cog/openapi_schema.py"
+BUNDLED_SCHEMA_PATH = ".cog/schema.py"
 
 
 class Status(str, Enum):
@@ -101,12 +101,14 @@ class TrainingResponse(PredictionResponse):
     pass
 
 
-def create_schema_model(openapi_model_py: str) -> ModuleType:
-    module_name = os.path.basename(openapi_model_py).rstrip(".py")
-    spec = importlib.util.spec_from_file_location(module_name, openapi_model_py)
+def create_schema_module() -> t.Optional[ModuleType]:
+    if not os.path.exists(BUNDLED_SCHEMA_PATH):
+        return None
+    name = "cog.bundled_schema"
+    spec = importlib.util.spec_from_file_location(name, BUNDLED_SCHEMA_PATH)
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
-    sys.modules[module_name] = module
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module

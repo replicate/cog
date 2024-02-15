@@ -38,6 +38,7 @@ optional-dependencies = { "dev" = [
   "pytest-httpserver",
   "pytest-rerunfailures",
   "pytest-xdist",
+  "pytest-cov",
   "responses",
   "ruff",
 ] }

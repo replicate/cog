@@ -21,7 +21,7 @@ import (
 const dockerignoreBackupPath = ".dockerignore.cog.bak"
 const weightsManifestPath = ".cog/cache/weights_manifest.json"
 const bundledSchemaFile = ".cog/openapi_schema.json"
-const bundledSchemaPy = ".cog/openapi_schema.py"
+const bundledSchemaPy = ".cog/schema.py"
 
 // Build a Cog model from a config
 //
@@ -122,7 +122,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	// save open_api schema file
 	err := os.WriteFile(bundledSchemaFile, schemaJSON, 0o644)
 	if err != nil {
-		return fmt.Errorf("Failed to store bundled schema file #{bundledSchemaFile}: %w", err)
+		return fmt.Errorf("failed to store bundled schema file %s: %w", bundledSchemaFile, err)
 	}
 
 	loader := openapi3.NewLoader()

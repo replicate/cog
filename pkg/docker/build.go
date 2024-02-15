@@ -76,7 +76,7 @@ func BuildAddLabelsAndSchemaToImage(image string, labels map[string]string, bund
 
 	dockerfile := "FROM " + image + "\n"
 	dockerfile += "COPY " + bundledSchemaFile + " .cog\n"
-	const env_path = "/tmp/venv/tools/"
+	env_path := "/tmp/venv/tools/"
 	dockerfile += "RUN python -m venv --symlinks " + env_path + " && " +
 		env_path + "/bin/python -m pip install 'datamodel-code-generator>=0.25' && " +
 		env_path + "/bin/datamodel-codegen --version && " +
