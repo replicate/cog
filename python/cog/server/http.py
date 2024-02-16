@@ -127,10 +127,16 @@ def create_app(
 
     try:
         predictor_ref = get_predictor_ref(config, mode)
-        # TODO: avoid loading predictor code in this process
-        predictor = load_predictor_from_ref(predictor_ref)
-        InputType = get_input_type(predictor)
-        OutputType = get_output_type(predictor)
+        # use bundled schema if it exists
+        schema_module = schema.create_schema_module()
+        if schema_module is not None:
+            log.info("using bundled schema")
+            InputType = schema_module.Input
+            OutputType = schema_module.Output
+        else:
+            predictor = load_predictor_from_ref(predictor_ref)
+            InputType = get_input_type(predictor)
+            OutputType = get_output_type(predictor)
     except Exception:
         msg = "Error while loading predictor:\n\n" + traceback.format_exc()
         add_setup_failed_routes(app, started_at, msg)
@@ -166,10 +172,16 @@ def create_app(
     if "train" in config:
         try:
             trainer_ref = get_predictor_ref(config, "train")
-            # TODO: avoid loading trainer code in this process
-            trainer = load_predictor_from_ref(trainer_ref)
-            TrainingInputType = get_training_input_type(trainer)
-            TrainingOutputType = get_training_output_type(trainer)
+            # use bundled schema if it exists
+            schema_module = schema.create_schema_module()
+            if schema_module is not None:
+                log.info("using bundled schema")
+                TrainingInputType = schema_module.TrainingInputType
+                TrainingOutputType = schema_module.TrainingOutputType
+            else:
+                trainer = load_predictor_from_ref(trainer_ref)
+                TrainingInputType = get_training_input_type(trainer)
+                TrainingOutputType = get_training_output_type(trainer)
 
             class TrainingRequest(
                 schema.TrainingRequest.with_types(input_type=TrainingInputType)
