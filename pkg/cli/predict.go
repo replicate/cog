@@ -184,7 +184,7 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 
 	// Generate output depending on type in schema
 	var out []byte
-	responseSchema := schema.Paths["/predictions"].Post.Responses["200"].Value.Content["application/json"].Schema.Value
+	responseSchema := schema.Paths.Value("/predictions").Post.Responses.Value("200").Value.Content["application/json"].Schema.Value
 	outputSchema := responseSchema.Properties["output"].Value
 
 	// Multiple outputs!
