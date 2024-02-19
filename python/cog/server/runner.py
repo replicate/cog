@@ -335,8 +335,9 @@ class PredictionRunner:
         if id not in self._predictions_in_flight:
             log.warn("can't cancel %s (%s)", prediction_id, self._predictions_in_flight)
             raise UnknownPredictionError()
-        if self._child.is_alive() and self._child.pid is not None:
-            os.kill(self._child.pid, signal.SIGUSR1)
+        maybe_pid = self._child.pid
+        if self._child.is_alive() and maybe_pid is not None:
+            os.kill(maybe_pid, signal.SIGUSR1)
             log.info("sent cancel")
             self._events.send(Cancel(prediction_id))
             # maybe this should probably check self._semaphore._value == self._concurrent
@@ -396,7 +397,8 @@ class PredictionEventHandler:
 
         self._client_manager = client_manager
         self._webhook_sender = client_manager.make_webhook_sender(
-            request.webhook, request.webhook_events_filter
+            request.webhook,
+            request.webhook_events_filter or schema.WebhookEvent.default_events(),
         )
         self._upload_url = upload_url
         self._output_type = None

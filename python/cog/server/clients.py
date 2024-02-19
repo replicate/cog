@@ -148,7 +148,8 @@ class ClientManager:
         fh.seek(0)
         # try to guess the filename of the given object
         name = getattr(fh, "name", "file")
-        filename = os.path.basename(name)
+        filename = os.path.basename(name) or "file"
+        assert isinstance(filename, str)
 
         guess, _ = mimetypes.guess_type(filename)
         content_type = guess or "application/octet-stream"
@@ -179,7 +180,7 @@ class ClientManager:
                 headers={"Content-Type": content_type},
                 follow_redirects=False,
             )
-            if resp1.status_code == 307:
+            if resp1.status_code == 307 and resp1.headers["Location"]:
                 url = resp1.headers["Location"]
         resp = await self.file_client.put(
             url,
