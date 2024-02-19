@@ -111,6 +111,9 @@ class Worker:
         self._mux = Mux(self._terminating)
         self._predictions_in_flight = set()
 
+    def setup_is_allowed(self) -> bool:
+        return self._state == WorkerState.NEW
+
     def setup(self) -> AsyncIterator[PublicEventType]:
         self._assert_state(WorkerState.NEW)
         self._state = WorkerState.STARTING
@@ -149,18 +152,7 @@ class Worker:
     def is_busy(self) -> bool:
         return self._state not in {WorkerState.PROCESSING, WorkerState.IDLE}
 
-    @contextlib.asynccontextmanager
-    async def _prediction_ctx(self, input: PredictionInput) -> AsyncIterator[None]:
-        async with self._semaphore:
-            self._predictions_in_flight.add(input.id)  # idempotent ig
-            self._state = self.state_from_predictions_in_flight()
-            try:
-                yield
-            finally:
-                self._predictions_in_flight.remove(input.id)
-        self._state = self.state_from_predictions_in_flight()
-
-    def eager_predict_state_change(self, id: str) -> None:
+    def enter_predict(self, id: str) -> None:
         if self.is_busy():
             raise InvalidStateException(
                 f"Invalid operation: state is {self._state} (must be processing or idle)"
@@ -172,23 +164,50 @@ class Worker:
         self._predictions_in_flight.add(id)
         self._state = self.state_from_predictions_in_flight()
 
-    def predict(
-        self, input: PredictionInput, poll: Optional[float] = None, eager: bool = True
+    def exit_predict(self, id: str) -> None:
+        self._predictions_in_flight.remove(id)
+        self._state = self.state_from_predictions_in_flight()
+
+    @contextlib.contextmanager
+    def prediction_ctx(self, id: str) -> Iterator[None]:
+        self.enter_predict(id)
+        try:
+            yield
+        finally:
+            self.exit_predict(id)
+
+    async def inner_async_predict(
+        self, input: PredictionInput, poll: Optional[float]
     ) -> AsyncIterator[PublicEventType]:
-        # this has to be eager for hypothesis
+        # perhaps we can download the files and mutate input around here
+        # we're already tracking allowed concurrency with _predictions_in_flight
+        # but we're also doing a semaphore, just in case
+        # the semaphore also allows us to tell sync-submitted-work vs actually started async work
+        async with self._semaphore:
+            self._events.send(input)
+            print("worker sent", input)
+            async for e in self._mux.read(input.id, poll=poll):
+                yield e
+        # we may still need to upload files but we could probably already accept new work
+        # it might be nice to exit here already
+        # self.exit_predict(input.id)
+
+    @contextlib.contextmanager
+    def good_predict(  # better
+        self, input: PredictionInput, poll: Optional[float] = None
+    ) -> Iterator[AsyncIterator[PublicEventType]]:
+        with self.prediction_ctx(input.id):
+            yield self.inner_async_predict(input, poll)
+
+    def predict(  # very bad
+        self, input: PredictionInput, poll: Optional[float] = None
+    ) -> AsyncIterator[PublicEventType]:
         if isinstance(input, dict):
             input = PredictionInput(payload=input, id="1")  # just for tests
-        if eager:
-            self.eager_predict_state_change(input.id)
-
-        async def inner() -> AsyncIterator[PublicEventType]:
-            async with self._prediction_ctx(input):
-                self._events.send(input)
-                print("worker sent", input)
-                async for e in self._mux.read(input.id, poll=poll):
-                    yield e
-
-        return inner()
+        # still not right for tests
+        # this means the prediction is marked as done even before the generator is entered
+        with self.prediction_ctx(input.id):
+            return self.inner_async_predict(input, poll)
 
     def shutdown(self) -> None:
         if self._state == WorkerState.DEFUNCT:
@@ -358,7 +377,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             if isinstance(ev, PredictionInput):
                 self._predict_sync(ev)
             elif isinstance(ev, Cancel):
-                pass # we should have gotten a signal
+                pass  # we should have gotten a signal
             else:
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
 

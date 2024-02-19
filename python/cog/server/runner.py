@@ -1,21 +1,17 @@
 import asyncio
-import io
 import threading
 import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Callable, Optional, Union, cast
+from typing import Any, AsyncIterator, Optional, Union
 
-import requests
+import httpx
 import structlog
 from attrs import define
 from fastapi.encoders import jsonable_encoder
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
-from .. import schema
-from ..files import put_file_to_signed_endpoint
-from ..json import upload_files
+from .. import schema, types
+from .clients import SKIP_START_EVENT, ClientManager
 from .eventtypes import (
     Done,
     Heartbeat,
@@ -26,8 +22,7 @@ from .eventtypes import (
     PublicEventType,
 )
 from .probes import ProbeHelper
-from .webhook import SKIP_START_EVENT, webhook_caller_filtered
-from .worker import InvalidStateException, Worker
+from .worker import Worker
 
 log = structlog.get_logger("cog.server.runner")
 
@@ -51,6 +46,8 @@ class SetupResult:
     logs: str
     status: schema.Status
 
+    # TODO: maybe collect events into a result here
+
 
 PredictionTask: "typing.TypeAlias" = "asyncio.Task[schema.PredictionResponse]"
 SetupTask: "typing.TypeAlias" = "asyncio.Task[SetupResult]"
@@ -67,15 +64,58 @@ class PredictionRunner:
         concurrency: int = 1,
     ) -> None:
         self._worker = Worker(predictor_ref=predictor_ref, concurrency=concurrency)
-        self._should_cancel = asyncio.Event()
 
+        # __main__ waits for this event
         self._shutdown_event = shutdown_event
         self._upload_url = upload_url
         self._predictions: "dict[str, tuple[schema.PredictionResponse, PredictionTask]]" = (
             {}
         )
+        self.client_manager = ClientManager()  # upload_url)
 
-    def make_error_handler(self, activity: str) -> Callable[[RunnerTask], None]:
+    def setup(self) -> SetupTask:
+        if not self._worker.setup_is_allowed():
+            raise RunnerBusyError
+
+        # app is allowed to respond to requests and poll the state of this task
+        # while it is running
+        async def inner() -> SetupResult:
+            logs = []
+            status = None
+            started_at = datetime.now(tz=timezone.utc)
+
+            try:
+                async for event in self._worker.setup():
+                    if isinstance(event, Log):
+                        logs.append(event.message)
+                    elif isinstance(event, Done):
+                        status = (
+                            schema.Status.FAILED
+                            if event.error
+                            else schema.Status.SUCCEEDED
+                        )
+            except Exception:
+                logs.append(traceback.format_exc())
+                status = schema.Status.FAILED
+
+            if status is None:
+                logs.append("Error: did not receive 'done' event from setup!")
+                status = schema.Status.FAILED
+
+            completed_at = datetime.now(tz=timezone.utc)
+
+            # Only if setup succeeded, mark the container as "ready".
+            if status == schema.Status.SUCCEEDED:
+                probes = ProbeHelper()
+                probes.ready()
+
+            return SetupResult(
+                started_at=started_at,
+                completed_at=completed_at,
+                logs="".join(logs),
+                status=status,
+            )
+
         def handle_error(task: RunnerTask) -> None:
             exc = task.exception()
             if not exc:
@@ -86,62 +126,93 @@ class PredictionRunner:
             try:
                 raise exc
             except Exception:
-                log.error(f"caught exception while running {activity}", exc_info=True)
+                log.error("caught exception while running setup", exc_info=True)
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
 
-        return handle_error
-
-    def setup(self) -> SetupTask:
-        async def wrap_error() -> SetupResult:
-            try:
-                return await setup(worker=self._worker)
-            except InvalidStateException as e:
-                raise RunnerBusyError() from e
-
-        result = asyncio.create_task(wrap_error())
-        result.add_done_callback(self.make_error_handler("setup"))
+        result = asyncio.create_task(inner())
+        result.add_done_callback(handle_error)
         return result
 
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
     # no longer have to support Python 3.8
     def predict(
-        self, prediction: schema.PredictionRequest, upload: bool = True
+        self, request: schema.PredictionRequest
     ) -> "tuple[schema.PredictionResponse, PredictionTask]":
         if self.is_busy():
-            if prediction.id in self._predictions:
-                return self._predictions[prediction.id]
+            if request.id in self._predictions:
+                return self._predictions[request.id]
             raise RunnerBusyError()
 
         # Set up logger context for main thread. The same thing happens inside
-        # the predict thread.
+        # the predict thread. -- NOT, but that's fine?
         structlog.contextvars.clear_contextvars()
-        structlog.contextvars.bind_contextvars(prediction_id=prediction.id)
+        structlog.contextvars.bind_contextvars(prediction_id=request.id)
 
-        self._should_cancel.clear()
-        upload_url = self._upload_url if upload else None
-        event_handler = create_event_handler(prediction, upload_url=upload_url)
-
-        def handle_cleanup(_: PredictionTask) -> None:
-            input = cast(Any, prediction.input)
-            if hasattr(input, "cleanup"):
-                input.cleanup()
-            self._predictions.pop(prediction.id)  # this might be too early
-
+        # if upload url was not set, we can respect output_file_prefix
+        # but maybe we should just throw an error
+        upload_url = request.output_file_prefix or self._upload_url
+        # this is supposed to send START, but we're trapped in a sync function
+        event_handler = PredictionEventHandler(request, self.client_manager, upload_url)
         response = event_handler.response
-        self._worker.eager_predict_state_change(prediction.id)
-        coro = predict_and_handle_errors(
-            worker=self._worker,
-            request=prediction,
-            event_handler=event_handler,
-            should_cancel=self._should_cancel,
-        )
-        # this is a little bit silly because we're making a sync handle
-        # on a sync function that also wraps a future
-        result = asyncio.create_task(coro)
-        result.add_done_callback(handle_cleanup)
-        result.add_done_callback(self.make_error_handler("prediction"))
-        self._predictions[prediction.id] = (response, result)
+
+        prediction_input = PredictionInput.from_request(request)
+        predict_ctx = self._worker.good_predict(prediction_input, poll=0.1)
+        # accept work and change state to get the future event stream,
+        # but don't enter it yet
+        event_stream = predict_ctx.__enter__()
+        # alternative: self._worker.enter_predict(request.id)
+
+        # what if instead we raised parts of worker instead of trying to access private methods?
+        # move predictions_in_flight up a level?
+        # but then how will the tests work?
+
+        async def async_predict_handling_errors() -> schema.PredictionResponse:
+            try:
+                # this is awkward because we're mutating prediction_input
+                # after passing it to worker
+                # FIXME: handle e.g. dict[str, list[Path]]
+                # FIXME: download files concurrently
+                for k, v in prediction_input.payload.items():
+                    if isinstance(v, types.DataURLTempFilePath):
+                        prediction_input.payload[k] = v.convert()
+                    if isinstance(v, types.URLTempFile):
+                        real_path = await v.convert(self.client_manager.download_client)
+                        prediction_input.payload[k] = real_path
+                result = await event_handler.handle_event_stream(event_stream)
+                return result
+            except httpx.HTTPError as e:
+                tb = traceback.format_exc()
+                await event_handler.append_logs(tb)
+                await event_handler.failed(error=str(e))
+                log.warn("failed to download url path from input", exc_info=True)
+                return event_handler.response
+            except Exception as e:
+                tb = traceback.format_exc()
+                await event_handler.append_logs(tb)
+                await event_handler.failed(error=str(e))
+                log.error("caught exception while running prediction", exc_info=True)
+                if self._shutdown_event is not None:
+                    self._shutdown_event.set()
+                raise  # we don't actually want to raise anymore but w/e
+            finally:
+                # if __enter__ threw an error we won't get here
+                # mark the prediction as done and update state
+                # ... actually, we might want to mark that part earlier
+                # even if we're still upload files we can accept new work
+                predict_ctx.__exit__(None, None, None)
+                # FIXME: use isinstance(BaseInput)
+                if hasattr(request.input, "cleanup"):
+                    request.input.cleanup()  # type: ignore
+                # this might also, potentially, be too early
+                # since this is just before this coroutine exits
+                self._predictions.pop(request.id)
+
+        # this is still a little silly
+        result = asyncio.create_task(async_predict_handling_errors())
+        # result.add_done_callback(self.make_error_handler("prediction"))
+        # even after inlining we might still need a callback to surface remaining exceptions/results
+        self._predictions[request.id] = (response, result)
 
         return (response, result)
 
@@ -163,65 +234,34 @@ class PredictionRunner:
             raise UnknownPredictionError() from e
 
 
-def create_event_handler(
-    prediction: schema.PredictionRequest, upload_url: Optional[str] = None
-) -> "PredictionEventHandler":
-    response = schema.PredictionResponse(**prediction.dict())
-
-    webhook = prediction.webhook
-    events_filter = (
-        prediction.webhook_events_filter or schema.WebhookEvent.default_events()
-    )
-
-    webhook_sender = None
-    if webhook is not None:
-        webhook_sender = webhook_caller_filtered(webhook, set(events_filter))
-
-    file_uploader = None
-    if upload_url is not None:
-        file_uploader = generate_file_uploader(upload_url)
-
-    event_handler = PredictionEventHandler(
-        response, webhook_sender=webhook_sender, file_uploader=file_uploader
-    )
-
-    return event_handler
-
-
-def generate_file_uploader(upload_url: str) -> Callable[[Any], Any]:
-    client = _make_file_upload_http_client()
-
-    def file_uploader(output: Any) -> Any:
-        def upload_file(fh: io.IOBase) -> str:
-            return put_file_to_signed_endpoint(fh, upload_url, client=client)
-
-        return upload_files(output, upload_file=upload_file)
-
-    return file_uploader
-
-
 class PredictionEventHandler:
     def __init__(
         self,
-        p: schema.PredictionResponse,
-        webhook_sender: Optional[Callable[[Any, schema.WebhookEvent], None]] = None,
-        file_uploader: Optional[Callable[[Any], Any]] = None,
+        request: schema.PredictionRequest,
+        client_manager: ClientManager,
+        upload_url: Optional[str],
     ) -> None:
         log.info("starting prediction")
-        self.p = p
+        self.p = schema.PredictionResponse(**request.dict())
         self.p.status = schema.Status.PROCESSING
         self.p.output = None
         self.p.logs = ""
         self.p.started_at = datetime.now(tz=timezone.utc)
 
-        self._webhook_sender = webhook_sender
-        self._file_uploader = file_uploader
+        self._client_manager = client_manager
+        # request.webhook_events_filter should already defualt to default_events?
+        self._webhook_sender = client_manager.make_webhook_sender(
+            request.webhook,
+            request.webhook_events_filter or schema.WebhookEvent.default_events(),
+        )
+        self._upload_url = upload_url
 
         # HACK: don't send an initial webhook if we're trying to optimize for
         # latency (this guarantees that the first output webhook won't be
         # throttled.)
         if not SKIP_START_EVENT:
             # idk
+            # this is pretty wrong
             asyncio.create_task(self._send_webhook(schema.WebhookEvent.START))
 
     @property
@@ -230,7 +270,7 @@ class PredictionEventHandler:
 
     async def set_output(self, output: Any) -> None:
         assert self.p.output is None, "Predictor unexpectedly returned multiple outputs"
-        self.p.output = self._upload_files(output)
+        self.p.output = await self._upload_files(output)
         # We don't send a webhook for compatibility with the behaviour of
         # redis_queue. In future we can consider whether it makes sense to send
         # one here.
@@ -277,17 +317,13 @@ class PredictionEventHandler:
         self.p.completed_at = datetime.now(tz=timezone.utc)
 
     async def _send_webhook(self, event: schema.WebhookEvent) -> None:
-        if self._webhook_sender is not None:
-            dict_response = jsonable_encoder(self.response.dict(exclude_unset=True))
-            self._webhook_sender(dict_response, event)
+        dict_response = jsonable_encoder(self.response.dict(exclude_unset=True))
+        await self._webhook_sender(dict_response, event)
 
     async def _upload_files(self, output: Any) -> Any:
-        if self._file_uploader is None:
-            return output
-
         try:
             # TODO: clean up output files
-            return self._file_uploader(output)
+            return await self._client_manager.upload_files(output, self._upload_url)
         except Exception as error:
             # If something goes wrong uploading a file, it's irrecoverable.
             # The re-raised exception will be caught and cause the prediction
@@ -339,82 +375,3 @@ class PredictionEventHandler:
             else:  # shouldn't happen, exhausted the type
                 log.warn("received unexpected event from worker", data=event)
         return self.response
-
-
-async def setup(*, worker: Worker) -> SetupResult:
-    logs = []
-    status = None
-    started_at = datetime.now(tz=timezone.utc)
-
-    try:
-        async for event in worker.setup():
-            if isinstance(event, Log):
-                logs.append(event.message)
-            elif isinstance(event, Done):
-                status = (
-                    schema.Status.FAILED if event.error else schema.Status.SUCCEEDED
-                )
-    except Exception:
-        logs.append(traceback.format_exc())
-        status = schema.Status.FAILED
-
-    if status is None:
-        logs.append("Error: did not receive 'done' event from setup!")
-        status = schema.Status.FAILED
-
-    completed_at = datetime.now(tz=timezone.utc)
-
-    # Only if setup succeeded, mark the container as "ready".
-    if status == schema.Status.SUCCEEDED:
-        probes = ProbeHelper()
-        probes.ready()
-
-    return SetupResult(
-        started_at=started_at,
-        completed_at=completed_at,
-        logs="".join(logs),
-        status=status,
-    )
-
-
-async def predict_and_handle_errors(
-    *,
-    worker: Worker,
-    request: schema.PredictionRequest,
-    event_handler: PredictionEventHandler,
-    should_cancel: asyncio.Event,
-) -> schema.PredictionResponse:
-    # Set up logger context within prediction thread.
-    structlog.contextvars.clear_contextvars()
-    structlog.contextvars.bind_contextvars(prediction_id=request.id)
-
-    try:
-        prediction_input = PredictionInput.from_request(request)
-        predict_events = worker.predict(prediction_input, poll=0.1, eager=False)
-        return await event_handler.handle_event_stream(predict_events)
-    except requests.exceptions.RequestException as e:
-        tb = traceback.format_exc()
-        await event_handler.append_logs(tb)
-        await event_handler.failed(error=str(e))
-        log.warn("failed to download url path from input", exc_info=True)
-        return event_handler.response
-    except Exception as e:
-        tb = traceback.format_exc()
-        await event_handler.append_logs(tb)
-        await event_handler.failed(error=str(e))
-        raise
-
-
-def _make_file_upload_http_client() -> requests.Session:
-    session = requests.Session()
-    adapter = HTTPAdapter(
-        max_retries=Retry(
-            total=3,
-            backoff_factor=0.1,
-            status_forcelist=[408, 429, 500, 502, 503, 504],
-            allowed_methods=["PUT"],
-        ),
-    )
-    session.mount("http://", adapter)
-    session.mount("https://", adapter)
-    return session

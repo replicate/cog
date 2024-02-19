@@ -537,8 +537,8 @@ class WorkerState(RuleBasedStateMachine):
         try:
             payload = {"name": name, "steps": steps}
             input = PredictionInput(payload)
-            self.worker.eager_predict_state_change(input.id)
-            self.predict_generator = self.worker.predict(input, eager=False)
+            self.worker.enter_predict(input.id)
+            self.predict_generator = self.worker.predict(input)
             self.predict_payload = input
             self.predict_events = []
         except InvalidStateException:
@@ -556,6 +556,7 @@ class WorkerState(RuleBasedStateMachine):
             self._check_predict_events()
 
     def _check_predict_events(self):
+        self.worker.exit_predict(self.predict_payload.id)
         assert isinstance(self.predict_events[-1], Done)
 
         payload = self.predict_payload.payload

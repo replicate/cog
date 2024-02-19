@@ -7,6 +7,7 @@ from unittest import mock
 import pytest
 import pytest_asyncio
 from cog.schema import PredictionRequest, PredictionResponse, Status, WebhookEvent
+from cog.server.clients import ClientManager
 from cog.server.eventtypes import (
     Done,
     Heartbeat,
@@ -19,7 +20,6 @@ from cog.server.runner import (
     PredictionRunner,
     RunnerBusyError,
     UnknownPredictionError,
-    predict_and_handle_errors,
 )
 
 
@@ -203,6 +203,7 @@ def fake_worker(events):
 
     return FakeWorker()
 
+
 class FakeEventHandler(mock.AsyncMock):
     handle_event_stream = PredictionEventHandler.handle_event_stream
 
@@ -213,51 +214,47 @@ async def test_predict(events, calls):
     worker = fake_worker(events)
     request = PredictionRequest(input={"text": "hello"}, foo="bar")
     event_handler = FakeEventHandler()
-    should_cancel = threading.Event()
-
-    await predict_and_handle_errors(
-        worker=worker,
-        request=request,
-        event_handler=event_handler,
-        should_cancel=should_cancel,
-    )
+    await event_handler.handle_event_stream(worker.predict(request))
 
     assert event_handler.method_calls == calls
 
 
-def test_prediction_event_handler():
-    p = PredictionResponse(input={"hello": "there"})
-    h = PredictionEventHandler(p)
+@pytest.mark.asyncio
+async def test_prediction_event_handler():
+    request = PredictionRequest(input={"hello": "there"}, webhook=None)
+    h = PredictionEventHandler(request, ClientManager(), upload_url=None)
+    p = h.p
+    await asyncio.sleep(0.0001)
 
     assert p.status == Status.PROCESSING
     assert p.output is None
     assert p.logs == ""
     assert isinstance(p.started_at, datetime)
 
-    h.set_output("giraffes")
+    await h.set_output("giraffes")
     assert p.output == "giraffes"
 
     # cheat and reset output behind event handler's back
     p.output = None
-    h.set_output([])
-    h.append_output("elephant")
-    h.append_output("duck")
+    await h.set_output([])
+    await h.append_output("elephant")
+    await h.append_output("duck")
     assert p.output == ["elephant", "duck"]
 
-    h.append_logs("running a prediction\n")
-    h.append_logs("still running\n")
+    await h.append_logs("running a prediction\n")
+    await h.append_logs("still running\n")
     assert p.logs == "running a prediction\nstill running\n"
 
-    h.succeeded()
+    await h.succeeded()
     assert p.status == Status.SUCCEEDED
     assert isinstance(p.completed_at, datetime)
 
-    h.failed("oops")
+    await h.failed("oops")
     assert p.status == Status.FAILED
     assert p.error == "oops"
     assert isinstance(p.completed_at, datetime)
 
-    h.canceled()
+    await h.canceled()
     assert p.status == Status.CANCELED
     assert isinstance(p.completed_at, datetime)
 
