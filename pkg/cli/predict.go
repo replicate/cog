@@ -10,8 +10,8 @@ import (
 	"strings"
 	"syscall"
 
-  libopenapi "github.com/pb33f/libopenapi/datamodel/high/base"
 	"github.com/mitchellh/go-homedir"
+	libopenapi "github.com/pb33f/libopenapi/datamodel/high/base"
 	"github.com/spf13/cobra"
 	"github.com/vincent-petithory/dataurl"
 
@@ -194,8 +194,8 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 	}
 	// Multiple outputs!
 	if outputSchema.Type[0] == "array" && outputSchema.Items.A.Schema().Type != nil && outputSchema.Items.A.Schema().Type[0] == "string" &&
-      outputSchema.Items.A.Schema().Format == "uri" {
-				return handleMultipleFileOutput(prediction, outputSchemaProxy)
+		outputSchema.Items.A.Schema().Format == "uri" {
+		return handleMultipleFileOutput(prediction, outputSchemaProxy)
 	}
 
 	if outputSchema.Type[0] == "string" && outputSchema.Format == "uri" {

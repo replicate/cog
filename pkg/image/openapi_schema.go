@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-  "github.com/pb33f/libopenapi"
+	"github.com/pb33f/libopenapi"
 
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
@@ -68,9 +68,9 @@ func GetOpenAPISchema(imageName string) (*libopenapi.Document, error) {
 	if schemaString == "" {
 		return nil, fmt.Errorf("Image %s does not appear to be a Cog model", imageName)
 	}
-	document, error := libopenapi.NewDocument([]byte(schemaString))
-	if error != nil {
-		return nil, error
+	document, err := libopenapi.NewDocument([]byte(schemaString))
+	if err != nil {
+		return nil, err
 	}
 	_, errors := document.BuildV3Model()
 	if len(errors) > 0 {

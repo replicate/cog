@@ -9,6 +9,7 @@ import (
 	"path"
 
 	"github.com/pb33f/libopenapi"
+	validator "github.com/pb33f/libopenapi-validator"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
@@ -137,6 +138,23 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			errorString += fmt.Sprintf("error: %e\n", errors[i])
 		}
 		return fmt.Errorf("Model schema is invalid, %d errors reported\n\n%s\n\n%s", len(errors), errorString, string(schemaJSON))
+	}
+
+	docValidator, validatorErrs := validator.NewValidator(document)
+	if validatorErrs != nil {
+		return fmt.Errorf("Failed to create validator: %e", validatorErrs)
+	}
+
+	valid, validationErrs := docValidator.ValidateDocument()
+
+	if !valid {
+		errorString := ""
+		for _, e := range validationErrs {
+			errorString += fmt.Sprintf("Type: %s, Failure: %s\n", e.ValidationType, e.Message)
+			errorString += fmt.Sprintf("Fix: %s\n\n", e.HowToFix)
+		}
+
+		return fmt.Errorf("Model schema doesn't match OpenAPI spec, %d errors reported\n\n%s\n\n%s", len(validationErrs), errorString, string(schemaJSON))
 	}
 
 	console.Info("Adding labels to image...")

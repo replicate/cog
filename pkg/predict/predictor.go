@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-  "github.com/pb33f/libopenapi"
+	"github.com/pb33f/libopenapi"
 
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
@@ -194,9 +194,9 @@ func (p *Predictor) GetSchema() (*libopenapi.Document, error) {
 	if err != nil {
 		return nil, err
 	}
-	document, error := libopenapi.NewDocument(body)
-	if error != nil {
-		return nil, error
+	document, err := libopenapi.NewDocument(body)
+	if err != nil {
+		return nil, err
 	}
 	_, errors := document.BuildV3Model()
 	if len(errors) > 0 {
