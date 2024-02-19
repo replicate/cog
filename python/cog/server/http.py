@@ -318,12 +318,28 @@ def create_app(
 
         try:
             prediction = await async_result
+            # previously, except for output_file_prefix, File and Path would not be uploaded yet
+            # we would do this validation step, File and Path would be unchanged, and *then*
+            # we would upload files.
+            #
+            # now, uploads are already done by PredictionEventHandler
+            # File and Path are converted to str
+            # and then this calls File.validate(url), which might download the file again
+            # not right!
             response = PredictionResponse(**prediction.dict())
+            print(response)
         except ValidationError as e:
             _log_invalid_output(e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
-        encoded_response = jsonable_encoder(response.dict())
+        dict_resp = response.dict()
+        print(dict_resp)
+        output = await runner.client_manager.upload_files(
+            dict_resp["output"], upload_url
+        )
+        dict_resp["output"] = output
+        encoded_response = jsonable_encoder(dict_resp)
+        print(encoded_response)
         return JSONResponse(content=encoded_response)
 
     @app.post("/predictions/{prediction_id}/cancel")
