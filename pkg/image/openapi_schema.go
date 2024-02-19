@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/getkin/kin-openapi/openapi3"
+  "github.com/pb33f/libopenapi"
 
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
@@ -55,7 +55,7 @@ func GenerateOpenAPISchema(imageName string, enableGPU bool) (map[string]any, er
 	return schema, nil
 }
 
-func GetOpenAPISchema(imageName string) (*openapi3.T, error) {
+func GetOpenAPISchema(imageName string) (*libopenapi.Document, error) {
 	image, err := docker.ImageInspect(imageName)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to inspect %s: %w", imageName, err)
@@ -68,5 +68,13 @@ func GetOpenAPISchema(imageName string) (*openapi3.T, error) {
 	if schemaString == "" {
 		return nil, fmt.Errorf("Image %s does not appear to be a Cog model", imageName)
 	}
-	return openapi3.NewLoader().LoadFromData([]byte(schemaString))
+	document, error := libopenapi.NewDocument([]byte(schemaString))
+	if error != nil {
+		return nil, error
+	}
+	_, errors := document.BuildV3Model()
+	if len(errors) > 0 {
+		return nil, fmt.Errorf("Failed to build OpenAPI schema: %v", errors)
+	}
+	return &document, nil
 }

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getkin/kin-openapi/openapi3"
+  "github.com/pb33f/libopenapi"
 
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
@@ -181,7 +181,7 @@ func (p *Predictor) Predict(inputs Inputs) (*Response, error) {
 	return prediction, nil
 }
 
-func (p *Predictor) GetSchema() (*openapi3.T, error) {
+func (p *Predictor) GetSchema() (*libopenapi.Document, error) {
 	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/openapi.json", p.port))
 	if err != nil {
 		return nil, err
@@ -194,7 +194,15 @@ func (p *Predictor) GetSchema() (*openapi3.T, error) {
 	if err != nil {
 		return nil, err
 	}
-	return openapi3.NewLoader().LoadFromData(body)
+	document, error := libopenapi.NewDocument(body)
+	if error != nil {
+		return nil, error
+	}
+	_, errors := document.BuildV3Model()
+	if len(errors) > 0 {
+		return nil, fmt.Errorf("Failed to build OpenAPI schema: %v", errors)
+	}
+	return &document, nil
 }
 
 func buildInputValidationErrorMessage(errorResponse *ValidationErrorResponse) error {

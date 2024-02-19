@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"path"
 
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/pb33f/libopenapi"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
@@ -125,15 +125,18 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		return fmt.Errorf("failed to store bundled schema file %s: %w", bundledSchemaFile, err)
 	}
 
-	loader := openapi3.NewLoader()
-	loader.IsExternalRefsAllowed = true
-	doc, err := loader.LoadFromData(schemaJSON)
+	document, err := libopenapi.NewDocument(schemaJSON)
 	if err != nil {
 		return fmt.Errorf("Failed to load model schema JSON: %w", err)
 	}
-	err = doc.Validate(loader.Context)
-	if err != nil {
-		return fmt.Errorf("Model schema is invalid: %w\n\n%s", err, string(schemaJSON))
+	_, errors := document.BuildV3Model()
+
+	if len(errors) > 0 {
+		errorString := ""
+		for i := range errors {
+			errorString += fmt.Sprintf("error: %e\n", errors[i])
+		}
+		return fmt.Errorf("Model schema is invalid, %d errors reported\n\n%s\n\n%s", len(errors), errorString, string(schemaJSON))
 	}
 
 	console.Info("Adding labels to image...")

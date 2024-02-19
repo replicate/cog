@@ -10,7 +10,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/getkin/kin-openapi/openapi3"
+  libopenapi "github.com/pb33f/libopenapi/datamodel/high/base"
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/vincent-petithory/dataurl"
@@ -184,15 +184,21 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 
 	// Generate output depending on type in schema
 	var out []byte
-	responseSchema := schema.Paths.Value("/predictions").Post.Responses.Value("200").Value.Content["application/json"].Schema.Value
-	outputSchema := responseSchema.Properties["output"].Value
+	v3Model, _ := (*schema).BuildV3Model()
+	outputSchemaProxy := v3Model.Model.Paths.PathItems.Value("/predictions").Post.Responses.Codes.Value("200").Content.Value("application/json").Schema.Schema().Properties.Value("output")
+	outputSchema := outputSchemaProxy.Schema()
 
+	// TODO when supporting 3.1
+	if len(outputSchema.Type) > 1 {
+		return fmt.Errorf("Multiple output types not supported")
+	}
 	// Multiple outputs!
-	if outputSchema.Type == "array" && outputSchema.Items.Value != nil && outputSchema.Items.Value.Type == "string" && outputSchema.Items.Value.Format == "uri" {
-		return handleMultipleFileOutput(prediction, outputSchema)
+	if outputSchema.Type[0] == "array" && outputSchema.Items.A.Schema().Type != nil && outputSchema.Items.A.Schema().Type[0] == "string" &&
+      outputSchema.Items.A.Schema().Format == "uri" {
+				return handleMultipleFileOutput(prediction, outputSchemaProxy)
 	}
 
-	if outputSchema.Type == "string" && outputSchema.Format == "uri" {
+	if outputSchema.Type[0] == "string" && outputSchema.Format == "uri" {
 		dataurlObj, err := dataurl.DecodeString((*prediction.Output).(string))
 		if err != nil {
 			return fmt.Errorf("Failed to decode dataurl: %w", err)
@@ -205,7 +211,7 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 				outputPath += extension
 			}
 		}
-	} else if outputSchema.Type == "string" {
+	} else if outputSchema.Type[0] == "string" {
 		// Handle strings separately because if we encode it to JSON it will be surrounded by quotes.
 		s := (*prediction.Output).(string)
 		out = []byte(s)
@@ -264,7 +270,7 @@ func writeOutput(outputPath string, output []byte) error {
 	return nil
 }
 
-func handleMultipleFileOutput(prediction *predict.Response, outputSchema *openapi3.Schema) error {
+func handleMultipleFileOutput(prediction *predict.Response, outputSchema *libopenapi.SchemaProxy) error {
 	outputs, ok := (*prediction.Output).([]interface{})
 	if !ok {
 		return fmt.Errorf("Failed to decode output")
