@@ -332,7 +332,7 @@ class PredictionRunner:
             self._read_events_task.cancel()
 
     def cancel(self, prediction_id: str) -> None:
-        if id not in self._predictions_in_flight:
+        if prediction_id not in self._predictions_in_flight:
             log.warn("can't cancel %s (%s)", prediction_id, self._predictions_in_flight)
             raise UnknownPredictionError()
         maybe_pid = self._child.pid
