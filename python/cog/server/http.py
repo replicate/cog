@@ -138,6 +138,7 @@ def create_app(
         predictor_ref=predictor_ref,
         shutdown_event=shutdown_event,
         upload_url=upload_url,
+        concurrency=int(config.get("concurrency", "1")),
     )
 
     class PredictionRequest(schema.PredictionRequest.with_types(input_type=InputType)):
@@ -262,7 +263,7 @@ def create_app(
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
 
-        return await _predict(request=request, respond_async=respond_async)
+        return await shared_predict(request=request, respond_async=respond_async)
 
     @limited
     @app.put(
@@ -297,9 +298,9 @@ def create_app(
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
 
-        return await _predict(request=request, respond_async=respond_async)
+        return await shared_predict(request=request, respond_async=respond_async)
 
-    async def _predict(
+    async def shared_predict(
         *, request: Optional[PredictionRequest], respond_async: bool = False
     ) -> Response:
         # [compat] If no body is supplied, assume that this model can be run
@@ -349,8 +350,7 @@ def create_app(
         """
         Cancel a running prediction
         """
-        if not runner.is_busy():
-            return JSONResponse({}, status_code=404)
+        # no need to check whether or not we're busy
         try:
             runner.cancel(prediction_id)
         except UnknownPredictionError:

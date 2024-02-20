@@ -19,7 +19,7 @@ from cog.server.runner import (
     PredictionRunner,
     RunnerBusyError,
     UnknownPredictionError,
-    predict,
+    predict_and_handle_errors,
 )
 
 
@@ -71,12 +71,13 @@ async def test_prediction_runner(runner):
 
 @pytest.mark.asyncio
 async def test_prediction_runner_called_while_busy(runner):
-    request = PredictionRequest(input={"sleep": 0.1})
+    request = PredictionRequest(input={"sleep": 1})
     _, async_result = runner.predict(request)
-
+    await asyncio.sleep(0)
     assert runner.is_busy()
     with pytest.raises(RunnerBusyError):
-        _, task = runner.predict(request)
+        request2 = PredictionRequest(input={"sleep": 1})
+        _, task = runner.predict(request2)
         await task
 
     # Await to ensure that the first prediction is scheduled before we
@@ -117,8 +118,9 @@ async def test_prediction_runner_called_while_busy_idempotent_wrong_id(runner):
 async def test_prediction_runner_cancel(runner):
     request = PredictionRequest(input={"sleep": 0.5})
     _, async_result = runner.predict(request)
+    await asyncio.sleep(0.001)
 
-    runner.cancel()
+    runner.cancel(request.id)
 
     response = await async_result
     assert response.output is None
@@ -133,8 +135,9 @@ async def test_prediction_runner_cancel(runner):
 async def test_prediction_runner_cancel_matching_id(runner):
     request = PredictionRequest(id="abcd1234", input={"sleep": 0.5})
     _, async_result = runner.predict(request)
+    await asyncio.sleep(0)
 
-    runner.cancel(prediction_id="abcd1234")
+    runner.cancel(request.id)
 
     response = await async_result
     assert response.output is None
@@ -194,11 +197,14 @@ PREDICT_TESTS = [
 
 def fake_worker(events):
     class FakeWorker:
-        async def predict(self, input_, poll=None):
+        async def predict(self, input_, poll=None, eager=False):
             for event in events:
                 yield event
 
     return FakeWorker()
+
+class FakeEventHandler(mock.AsyncMock):
+    handle_event_stream = PredictionEventHandler.handle_event_stream
 
 
 @pytest.mark.asyncio
@@ -206,10 +212,10 @@ def fake_worker(events):
 async def test_predict(events, calls):
     worker = fake_worker(events)
     request = PredictionRequest(input={"text": "hello"}, foo="bar")
-    event_handler = mock.Mock()
+    event_handler = FakeEventHandler()
     should_cancel = threading.Event()
 
-    await predict(
+    await predict_and_handle_errors(
         worker=worker,
         request=request,
         event_handler=event_handler,

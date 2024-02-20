@@ -4,7 +4,7 @@ import threading
 import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional, Tuple, Union, cast
+from typing import Any, AsyncIterator, Callable, Optional, Union, cast
 
 import requests
 import structlog
@@ -13,13 +13,21 @@ from fastapi.encoders import jsonable_encoder
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
-from .. import schema, types
+from .. import schema
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
-from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
+from .eventtypes import (
+    Done,
+    Heartbeat,
+    Log,
+    PredictionInput,
+    PredictionOutput,
+    PredictionOutputType,
+    PublicEventType,
+)
 from .probes import ProbeHelper
 from .webhook import SKIP_START_EVENT, webhook_caller_filtered
-from .worker import Worker
+from .worker import InvalidStateException, Worker
 
 log = structlog.get_logger("cog.server.runner")
 
@@ -56,15 +64,16 @@ class PredictionRunner:
         predictor_ref: str,
         shutdown_event: Optional[threading.Event],
         upload_url: Optional[str] = None,
+        concurrency: int = 1,
     ) -> None:
-        self._response: Optional[schema.PredictionResponse] = None
-        self._result: Optional[RunnerTask] = None
-
-        self._worker = Worker(predictor_ref=predictor_ref)
+        self._worker = Worker(predictor_ref=predictor_ref, concurrency=concurrency)
         self._should_cancel = asyncio.Event()
 
         self._shutdown_event = shutdown_event
         self._upload_url = upload_url
+        self._predictions: "dict[str, tuple[schema.PredictionResponse, PredictionTask]]" = (
+            {}
+        )
 
     def make_error_handler(self, activity: str) -> Callable[[RunnerTask], None]:
         def handle_error(task: RunnerTask) -> None:
@@ -84,27 +93,24 @@ class PredictionRunner:
         return handle_error
 
     def setup(self) -> SetupTask:
-        if self.is_busy():
-            raise RunnerBusyError()
-        self._result = asyncio.create_task(setup(worker=self._worker))
-        self._result.add_done_callback(self.make_error_handler("setup"))
-        return self._result
+        async def wrap_error() -> SetupResult:
+            try:
+                return await setup(worker=self._worker)
+            except InvalidStateException as e:
+                raise RunnerBusyError() from e
+
+        result = asyncio.create_task(wrap_error())
+        result.add_done_callback(self.make_error_handler("setup"))
+        return result
 
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
     # no longer have to support Python 3.8
     def predict(
         self, prediction: schema.PredictionRequest, upload: bool = True
-    ) -> Tuple[schema.PredictionResponse, PredictionTask]:
-        # It's the caller's responsibility to not call us if we're busy.
+    ) -> "tuple[schema.PredictionResponse, PredictionTask]":
         if self.is_busy():
-            # If self._result is set, but self._response is not, we're still
-            # doing setup.
-            if self._response is None:
-                raise RunnerBusyError()
-            assert self._result is not None
-            if prediction.id is not None and prediction.id == self._response.id:
-                result = cast(PredictionTask, self._result)
-                return (self._response, result)
+            if prediction.id in self._predictions:
+                return self._predictions[prediction.id]
             raise RunnerBusyError()
 
         # Set up logger context for main thread. The same thing happens inside
@@ -120,43 +126,41 @@ class PredictionRunner:
             input = cast(Any, prediction.input)
             if hasattr(input, "cleanup"):
                 input.cleanup()
+            self._predictions.pop(prediction.id)  # this might be too early
 
-        self._response = event_handler.response
-        coro = predict(
+        response = event_handler.response
+        self._worker.eager_predict_state_change(prediction.id)
+        coro = predict_and_handle_errors(
             worker=self._worker,
             request=prediction,
             event_handler=event_handler,
             should_cancel=self._should_cancel,
         )
-        self._result = asyncio.create_task(coro)
-        self._result.add_done_callback(handle_cleanup)
-        self._result.add_done_callback(self.make_error_handler("prediction"))
+        # this is a little bit silly because we're making a sync handle
+        # on a sync function that also wraps a future
+        result = asyncio.create_task(coro)
+        result.add_done_callback(handle_cleanup)
+        result.add_done_callback(self.make_error_handler("prediction"))
+        self._predictions[prediction.id] = (response, result)
 
-        return (self._response, self._result)
+        return (response, result)
 
     def is_busy(self) -> bool:
-        if self._result is None:
-            return False
-
-        if not self._result.done():
-            return True
-
-        self._response = None
-        self._result = None
-        return False
+        return self._worker.is_busy()
 
     def shutdown(self) -> None:
-        if self._result:
-            self._result.cancel()
+        for _, task in self._predictions.values():
+            task.cancel()
         self._worker.terminate()
 
-    def cancel(self, prediction_id: Optional[str] = None) -> None:
-        if not self.is_busy():
-            return
-        assert self._response is not None
-        if prediction_id is not None and prediction_id != self._response.id:
-            raise UnknownPredictionError()
-        self._should_cancel.set()
+    def cancel(self, prediction_id: str) -> None:
+        try:
+            self._worker.cancel(prediction_id)
+            # if the runner is in an invalid state, predictions_in_flight would just be empty
+            # and it's a keyerror anyway
+        except KeyError as e:
+            print(e)
+            raise UnknownPredictionError() from e
 
 
 def create_event_handler(
@@ -217,32 +221,33 @@ class PredictionEventHandler:
         # latency (this guarantees that the first output webhook won't be
         # throttled.)
         if not SKIP_START_EVENT:
-            self._send_webhook(schema.WebhookEvent.START)
+            # idk
+            asyncio.create_task(self._send_webhook(schema.WebhookEvent.START))
 
     @property
     def response(self) -> schema.PredictionResponse:
         return self.p
 
-    def set_output(self, output: Any) -> None:
+    async def set_output(self, output: Any) -> None:
         assert self.p.output is None, "Predictor unexpectedly returned multiple outputs"
         self.p.output = self._upload_files(output)
         # We don't send a webhook for compatibility with the behaviour of
         # redis_queue. In future we can consider whether it makes sense to send
         # one here.
 
-    def append_output(self, output: Any) -> None:
+    async def append_output(self, output: Any) -> None:
         assert isinstance(
             self.p.output, list
         ), "Cannot append output before setting output"
-        self.p.output.append(self._upload_files(output))
-        self._send_webhook(schema.WebhookEvent.OUTPUT)
+        self.p.output.append(await self._upload_files(output))
+        await self._send_webhook(schema.WebhookEvent.OUTPUT)
 
-    def append_logs(self, logs: str) -> None:
+    async def append_logs(self, logs: str) -> None:
         assert self.p.logs is not None
         self.p.logs += logs
-        self._send_webhook(schema.WebhookEvent.LOGS)
+        await self._send_webhook(schema.WebhookEvent.LOGS)
 
-    def succeeded(self) -> None:
+    async def succeeded(self) -> None:
         log.info("prediction succeeded")
         self.p.status = schema.Status.SUCCEEDED
         self._set_completed_at()
@@ -253,30 +258,30 @@ class PredictionEventHandler:
         self.p.metrics = {
             "predict_time": (self.p.completed_at - self.p.started_at).total_seconds()
         }
-        self._send_webhook(schema.WebhookEvent.COMPLETED)
+        await self._send_webhook(schema.WebhookEvent.COMPLETED)
 
-    def failed(self, error: str) -> None:
+    async def failed(self, error: str) -> None:
         log.info("prediction failed", error=error)
         self.p.status = schema.Status.FAILED
         self.p.error = error
         self._set_completed_at()
-        self._send_webhook(schema.WebhookEvent.COMPLETED)
+        await self._send_webhook(schema.WebhookEvent.COMPLETED)
 
-    def canceled(self) -> None:
+    async def canceled(self) -> None:
         log.info("prediction canceled")
         self.p.status = schema.Status.CANCELED
         self._set_completed_at()
-        self._send_webhook(schema.WebhookEvent.COMPLETED)
+        await self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     def _set_completed_at(self) -> None:
         self.p.completed_at = datetime.now(tz=timezone.utc)
 
-    def _send_webhook(self, event: schema.WebhookEvent) -> None:
+    async def _send_webhook(self, event: schema.WebhookEvent) -> None:
         if self._webhook_sender is not None:
             dict_response = jsonable_encoder(self.response.dict(exclude_unset=True))
             self._webhook_sender(dict_response, event)
 
-    def _upload_files(self, output: Any) -> Any:
+    async def _upload_files(self, output: Any) -> Any:
         if self._file_uploader is None:
             return output
 
@@ -288,6 +293,52 @@ class PredictionEventHandler:
             # The re-raised exception will be caught and cause the prediction
             # to be failed, with a useful error message.
             raise FileUploadError("Got error trying to upload output files") from error
+
+    async def handle_event_stream(
+        self, events: AsyncIterator[PublicEventType]
+    ) -> schema.PredictionResponse:
+        output_type = None
+        async for event in events:
+            if isinstance(event, Heartbeat):
+                # Heartbeat events exist solely to ensure that we have a
+                # regular opportunity to check for cancelation and
+                # timeouts.
+                #
+                # We don't need to do anything with them.
+                pass
+
+            elif isinstance(event, Log):
+                await self.append_logs(event.message)
+
+            elif isinstance(event, PredictionOutputType):
+                if output_type is not None:
+                    await self.failed(error="Predictor returned unexpected output")
+                    break
+
+                output_type = event
+                if output_type.multi:
+                    await self.set_output([])
+            elif isinstance(event, PredictionOutput):
+                if output_type is None:
+                    await self.failed(error="Predictor returned unexpected output")
+                    break
+
+                if output_type.multi:
+                    await self.append_output(event.payload)
+                else:
+                    await self.set_output(event.payload)
+
+            elif isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
+                if event.canceled:
+                    await self.canceled()
+                elif event.error:
+                    await self.failed(error=str(event.error_detail))
+                else:
+                    await self.succeeded()
+
+            else:  # shouldn't happen, exhausted the type
+                log.warn("received unexpected event from worker", data=event)
+        return self.response
 
 
 async def setup(*, worker: Worker) -> SetupResult:
@@ -326,7 +377,7 @@ async def setup(*, worker: Worker) -> SetupResult:
     )
 
 
-async def predict(
+async def predict_and_handle_errors(
     *,
     worker: Worker,
     request: schema.PredictionRequest,
@@ -338,87 +389,20 @@ async def predict(
     structlog.contextvars.bind_contextvars(prediction_id=request.id)
 
     try:
-        return await _predict(
-            worker=worker,
-            request=request,
-            event_handler=event_handler,
-            should_cancel=should_cancel,
-        )
+        prediction_input = PredictionInput.from_request(request)
+        predict_events = worker.predict(prediction_input, poll=0.1, eager=False)
+        return await event_handler.handle_event_stream(predict_events)
+    except requests.exceptions.RequestException as e:
+        tb = traceback.format_exc()
+        await event_handler.append_logs(tb)
+        await event_handler.failed(error=str(e))
+        log.warn("failed to download url path from input", exc_info=True)
+        return event_handler.response
     except Exception as e:
         tb = traceback.format_exc()
-        event_handler.append_logs(tb)
-        event_handler.failed(error=str(e))
+        await event_handler.append_logs(tb)
+        await event_handler.failed(error=str(e))
         raise
-
-
-async def _predict(
-    *,
-    worker: Worker,
-    request: schema.PredictionRequest,
-    event_handler: PredictionEventHandler,
-    should_cancel: asyncio.Event,
-) -> schema.PredictionResponse:
-    initial_prediction = request.dict()
-
-    output_type = None
-    input_dict = initial_prediction["input"]
-
-    for k, v in input_dict.items():
-        if isinstance(v, types.URLPath):
-            try:
-                input_dict[k] = v.convert()
-            except requests.exceptions.RequestException as e:
-                tb = traceback.format_exc()
-                event_handler.append_logs(tb)
-                event_handler.failed(error=str(e))
-                log.warn("failed to download url path from input", exc_info=True)
-                return event_handler.response
-    async for event in worker.predict(input_dict, poll=0.1):
-        if should_cancel.is_set():
-            worker.cancel()
-            should_cancel.clear()
-
-        if isinstance(event, Heartbeat):
-            # Heartbeat events exist solely to ensure that we have a
-            # regular opportunity to check for cancelation and
-            # timeouts.
-            #
-            # We don't need to do anything with them.
-            pass
-
-        elif isinstance(event, Log):
-            event_handler.append_logs(event.message)
-
-        elif isinstance(event, PredictionOutputType):
-            if output_type is not None:
-                event_handler.failed(error="Predictor returned unexpected output")
-                break
-
-            output_type = event
-            if output_type.multi:
-                event_handler.set_output([])
-        elif isinstance(event, PredictionOutput):
-            if output_type is None:
-                event_handler.failed(error="Predictor returned unexpected output")
-                break
-
-            if output_type.multi:
-                event_handler.append_output(event.payload)
-            else:
-                event_handler.set_output(event.payload)
-
-        elif isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
-            if event.canceled:
-                event_handler.canceled()
-            elif event.error:
-                event_handler.failed(error=str(event.error_detail))
-            else:
-                event_handler.succeeded()
-
-        else:  # shouldn't happen, exhausted the type
-            log.warn("received unexpected event from worker", data=event)
-
-    return event_handler.response
 
 
 def _make_file_upload_http_client() -> requests.Session:
