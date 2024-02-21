@@ -141,7 +141,7 @@ def test_path_temporary_files_are_removed(client, match):
     assert not os.path.exists(temporary_path)
 
 
-@pytest.mark.xfail # needs respx
+@pytest.mark.xfail  # needs respx
 @responses.activate
 @uses_predictor("input_path")
 def test_path_input_with_http_url(client, match):

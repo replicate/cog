@@ -44,7 +44,7 @@ SKIP_START_EVENT = _response_interval < 0.1
 WebhookSenderType = Callable[[Any, WebhookEvent], Awaitable[None]]
 
 
-def webhook_headers() -> dict[str, str]:
+def webhook_headers() -> "dict[str, str]":
     headers = {"user-agent": _user_agent}
     auth_token = os.environ.get("WEBHOOK_AUTH_TOKEN")
     if auth_token:
