@@ -1,4 +1,3 @@
-import secrets
 import typing as t
 from datetime import datetime
 from enum import Enum
@@ -37,15 +36,7 @@ class PredictionBaseModel(pydantic.BaseModel, extra=pydantic.Extra.allow):
 
 
 class PredictionRequest(PredictionBaseModel):
-    # there's a problem here where the idempotent endpoint is supposed to
-    # let you pass id in the route and omit it from the input
-    # however this fills in the default
-    # maybe it should be allowed to be optional without the factory initially
-    # and be filled in later
-    #
-    #
-    # actually, this changes the public api so we should really do this differently
-    id: str = pydantic.Field(default_factory=lambda: secrets.token_hex(4))
+    id: t.Optional[str]
     created_at: t.Optional[datetime]
 
     # TODO: deprecate this
@@ -94,10 +85,8 @@ class PredictionResponse(PredictionBaseModel):
             output=(output_type, None),
         )
 
-
 class TrainingRequest(PredictionRequest):
     pass
-
 
 class TrainingResponse(PredictionResponse):
     pass

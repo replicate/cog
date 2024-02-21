@@ -5,20 +5,16 @@ import time
 from typing import Any, AsyncIterator, Awaitable, Coroutine, Optional, TypeVar
 
 import pytest
-
-pytest.skip(allow_module_level=True)
 from attrs import define
 from cog.server.eventtypes import (
     Done,
     Heartbeat,
     Log,
-    PredictionInput,
     PredictionOutput,
     PredictionOutputType,
 )
 from cog.server.exceptions import FatalWorkerException, InvalidStateException
-
-# from cog.server.worker import Worker
+from cog.server.worker import Worker
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from hypothesis.stateful import (
@@ -302,24 +298,19 @@ async def test_cancel_is_safe():
 
     try:
         for _ in range(50):
-            with pytest.raises(KeyError):
-                w.cancel("1")
+            w.cancel()
 
         await _process(w.setup())
 
         for _ in range(50):
-            with pytest.raises(KeyError):
-                w.cancel("1")
+            w.cancel()
 
-        input1 = PredictionInput({"sleep": 0.5})
-        result1 = await _process(w.predict(input1))
+        result1 = await _process(w.predict({"sleep": 0.5}))
 
         for _ in range(50):
-            with pytest.raises(KeyError):
-                w.cancel(input1.id)
+            w.cancel()
 
-        input2 = {"sleep": 0.1}
-        result2 = await _process(w.predict(input2))
+        result2 = await _process(w.predict({"sleep": 0.1}))
 
         assert not result1.done.canceled
         assert not result2.done.canceled
@@ -341,22 +332,21 @@ async def test_cancel_idempotency():
         await _process(w.setup())
 
         p1_done = None
-        input1 = PredictionInput({"sleep": 0.5})
 
-        async for event in w.predict(input1, poll=0.01):
+        async for event in w.predict({"sleep": 0.5}, poll=0.01):
             # We call cancel a WHOLE BUNCH to make sure that we don't propagate
             # any of those cancelations to subsequent predictions, regardless
             # of the internal implementation of exceptions raised inside signal
             # handlers.
             for _ in range(100):
-                w.cancel(input1.id)
+                w.cancel()
 
             if isinstance(event, Done):
                 p1_done = event
 
         assert p1_done.canceled
 
-        result2 = await _process(w.predict(PredictionInput({"sleep": 0.1})))
+        result2 = await _process(w.predict({"sleep": 0.1}))
 
         assert result2.done and not result2.done.canceled
         assert result2.output == "done in 0.1 seconds"
@@ -381,11 +371,10 @@ async def test_cancel_multiple_predictions():
 
         for _ in range(5):
             canceled = False
-            input = PredictionInput({"sleep": 0.5})
 
-            async for event in w.predict(input, poll=0.01):
+            async for event in w.predict({"sleep": 0.5}, poll=0.01):
                 if not canceled:
-                    w.cancel(input.id)
+                    w.cancel()
                     canceled = True
 
                 if isinstance(event, Done):
@@ -431,13 +420,12 @@ async def test_heartbeats_cancel():
         start = time.time()
 
         canceled = False
-        input = PredictionInput({"sleep": 10})
-        async for event in w.predict(input, poll=0.1):
+        async for event in w.predict({"sleep": 10}, poll=0.1):
             if isinstance(event, Heartbeat):
                 heartbeat_count += 1
             if time.time() - start > 0.5:
                 if not canceled:
-                    w.cancel(input.id)
+                    w.cancel()
                     canceled = True
 
         elapsed = time.time() - start
@@ -539,10 +527,8 @@ class WorkerState(RuleBasedStateMachine):
     def predict(self, name, steps):
         try:
             payload = {"name": name, "steps": steps}
-            input = PredictionInput(payload)
-            self.worker.enter_predict(input.id)
-            self.predict_generator = self.worker.predict(input)
-            self.predict_payload = input
+            self.predict_generator = self.worker.predict(payload)
+            self.predict_payload = payload
             self.predict_events = []
         except InvalidStateException:
             pass
@@ -559,10 +545,9 @@ class WorkerState(RuleBasedStateMachine):
             self._check_predict_events()
 
     def _check_predict_events(self):
-        self.worker.exit_predict(self.predict_payload.id)
         assert isinstance(self.predict_events[-1], Done)
 
-        payload = self.predict_payload.payload
+        payload = self.predict_payload
         result = _sync_process(self.predict_events)
 
         expected_stdout = ["START\n"]
@@ -580,7 +565,7 @@ class WorkerState(RuleBasedStateMachine):
         if isinstance(r, InvalidStateException):
             return
 
-        self.worker.cancel(self.predict_payload.id)
+        self.worker.cancel()
         result = self.await_(_process(r))
 
         # We'd love to be able to assert result.done.canceled here, but we

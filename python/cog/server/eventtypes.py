@@ -1,9 +1,7 @@
 import secrets
-from typing import Any, Dict, Union
+from typing import Any, Dict
 
 from attrs import define, field, validators
-
-from .. import schema
 
 
 # From worker parent process
@@ -12,17 +10,6 @@ from .. import schema
 class PredictionInput:
     payload: Dict[str, Any]
     id: str = field(factory=lambda: secrets.token_hex(4))
-
-    @classmethod
-    def from_request(cls, request: schema.PredictionRequest) -> "PredictionInput":
-        assert request.id, "PredictionRequest must have an id"
-        payload = request.dict()["input"]
-        return cls(payload=payload, id=request.id)
-
-
-@define
-class Cancel:
-    id: str
 
 
 @define
@@ -58,6 +45,3 @@ class Done:
 @define
 class Heartbeat:
     pass
-
-
-PublicEventType = Union[Done, Heartbeat, Log, PredictionOutput, PredictionOutputType]
