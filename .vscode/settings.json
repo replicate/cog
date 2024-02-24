@@ -35,5 +35,5 @@
   "python.formatting.provider": "black",
   "python.linting.mypyEnabled": true,
   "python.linting.mypyArgs": ["--show-column-numbers", "--no-pretty"],
-  "ruff.args": ["--config=pyproject.toml"]
+  "ruff.lint.args": ["--config=pyproject.toml"]
 }
