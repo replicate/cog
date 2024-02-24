@@ -28,7 +28,7 @@
       "source.fixAll": "explicit",
       "source.organizeImports": "explicit"
     },
-    "editor.defaultFormatter": null
+    "editor.defaultFormatter": "charliermarsh.ruff"
   },
   "python.languageServer": "Pylance",
   "python.testing.pytestArgs": [
