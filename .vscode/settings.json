@@ -13,27 +13,31 @@
   "go.lintTool": "golangci-lint",
   "go.formatTool": "goimports",
   "go.testOnSave": true,
-  "gopls": { "formatting.local": "github.com/replicate/cog" },
+  "gopls": {
+    "formatting.local": "github.com/replicate/cog"
+  },
   "[json]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "vscode.json-language-features"
   },
   "[jsonc]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "vscode.json-language-features"
   },
   "[python]": {
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
-      "source.fixAll": true,
-      "source.organizeImports": true
+      "source.fixAll": "explicit",
+      "source.organizeImports": "explicit"
     },
     "editor.defaultFormatter": "charliermarsh.ruff"
   },
   "python.languageServer": "Pylance",
-  "python.testing.pytestArgs": ["-vvv", "python"],
+  "python.testing.pytestArgs": [
+    "-vvv",
+    "python"
+  ],
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
-  "python.formatting.provider": "black",
-  "python.linting.mypyEnabled": true,
-  "python.linting.mypyArgs": ["--show-column-numbers", "--no-pretty"],
-  "ruff.args": ["--config=pyproject.toml"]
+  "ruff.lint.args": [
+    "--config=pyproject.toml"
+  ]
 }
