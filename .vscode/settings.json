@@ -26,7 +26,7 @@
       "source.fixAll": true,
       "source.organizeImports": true
     },
-    "editor.defaultFormatter": null
+    "editor.defaultFormatter": "charliermarsh.ruff"
   },
   "python.languageServer": "Pylance",
   "python.testing.pytestArgs": ["-vvv", "python"],
