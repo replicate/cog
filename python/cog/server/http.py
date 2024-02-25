@@ -128,7 +128,7 @@ def create_app(
     try:
         predictor_ref = get_predictor_ref(config, mode)
         # use bundled schema if it exists
-        schema_module = schema.create_schema_module()
+        schema_module = None  # schema.create_schema_module() - breaks complex types, always use slow path for now
         if schema_module is not None:
             log.info("using bundled schema")
             InputType = schema_module.Input
@@ -173,7 +173,7 @@ def create_app(
         try:
             trainer_ref = get_predictor_ref(config, "train")
             # use bundled schema if it exists
-            schema_module = schema.create_schema_module()
+            schema_module = None  # schema.create_schema_module() - breaks complex types, always use slow path for now
             if schema_module is not None:
                 log.info("using bundled schema")
                 TrainingInputType = schema_module.TrainingInputType

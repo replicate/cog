@@ -193,3 +193,39 @@ def test_predict_many_inputs(tmpdir_factory):
         capture_output=True,
     )
     assert result.stdout.decode() == "hello default 20 world jpg foo 6\n"
+
+
+def test_predict_many_inputs_with_existing_image(docker_image, tmpdir_factory):
+    project_dir = Path(__file__).parent / "fixtures/many-inputs-project"
+
+    subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=project_dir,
+        check=True,
+    )
+
+    out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
+    shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
+    inputs = {
+        "no_default": "hello",
+        "path": "@path.txt",
+        "image": "@image.jpg",
+        "choices": "foo",
+        "int_choices": 3,
+    }
+    with open(out_dir / "path.txt", "w") as fh:
+        fh.write("world")
+    with open(out_dir / "image.jpg", "w") as fh:
+        fh.write("")
+    cmd = ["cog", "predict", docker_image]
+
+    for k, v in inputs.items():
+        cmd += ["-i", f"{k}={v}"]
+
+    result = subprocess.run(
+        cmd,
+        cwd=out_dir,
+        check=True,
+        capture_output=True,
+    )
+    assert result.stdout.decode() == "hello default 20 world jpg foo 6\n"
