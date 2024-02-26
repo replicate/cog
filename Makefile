@@ -95,6 +95,7 @@ lint-go:
 lint-python:
 	$(RUFF) python/cog
 	$(RUFF) format --check python
+	@$(PYTHON) -c 'import sys; sys.exit("Warning: python >=3.10 is needed (not installed) to pass linting (pyright)") if sys.version_info < (3, 10) else None'
 	$(PYRIGHT)
 
 .PHONY: lint
@@ -106,7 +107,6 @@ mod-tidy:
 
 .PHONY: install-python # install dev dependencies
 install-python:
-	$(PYTHON) -c 'import sys; exit(0) if sys.version_info >= (3, 10) else print("\n\nWarning: python >=3.10 is needed (not installed) to pass linting (pyright)\n\n")'
 	$(PYTHON) -m pip install '.[dev]'
 
 

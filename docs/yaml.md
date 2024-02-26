@@ -88,7 +88,7 @@ build:
   python_version: "3.11.1"
 ```
 
-Cog supports all active branches of Python: 3.8, 3.9, 3.10, 3.11.
+Cog supports all active branches of Python: 3.8, 3.9, 3.10, 3.11, 3.12.
 
 Note that these are the versions supported **in the Docker container**, not your host machine. You can run any version(s) of Python you wish on your host machine.
 
