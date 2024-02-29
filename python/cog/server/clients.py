@@ -188,7 +188,7 @@ class ClientManager:
             if resp1.status_code == 307 and resp1.headers["Location"]:
                 log.info("got file upload redirect from api")
                 url = resp1.headers["Location"]
-        log.info("doing real upload to", url)
+        log.info("doing real upload to %s", url)
         resp = await self.file_client.put(
             url,
             content=chunk_file_reader(),
