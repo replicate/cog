@@ -468,16 +468,14 @@ class PredictionEventHandler:
         await self._webhook_sender(dict_response, event)
 
     async def _upload_files(self, output: Any) -> Any:
-        return output
-        # we've elected to move this to http, which is unfortunate but hopefully temporary
-        # try:
-        #     # TODO: clean up output files
-        #     return await self._client_manager.upload_files(output, self._upload_url)
-        # except Exception as error:
-        #     # If something goes wrong uploading a file, it's irrecoverable.
-        #     # The re-raised exception will be caught and cause the prediction
-        #     # to be failed, with a useful error message.
-        #     raise FileUploadError("Got error trying to upload output files") from error
+        try:
+            # TODO: clean up output files
+            return await self._client_manager.upload_files(output, self._upload_url)
+        except Exception as error:
+            # If something goes wrong uploading a file, it's irrecoverable.
+            # The re-raised exception will be caught and cause the prediction
+            # to be failed, with a useful error message.
+            raise FileUploadError("Got error trying to upload output files") from error
 
     async def handle_event_stream(
         self, events: AsyncIterator[PublicEventType]
