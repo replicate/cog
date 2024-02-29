@@ -147,6 +147,7 @@ class ClientManager:
 
     async def upload_file(self, fh: io.IOBase, url: Optional[str]) -> str:
         """put file to signed endpoint"""
+        print("upload_file")
         fh.seek(0)
         # try to guess the filename of the given object
         name = getattr(fh, "name", "file")
@@ -171,11 +172,13 @@ class ClientManager:
                 if isinstance(chunk, str):
                     chunk = chunk.encode("utf-8")
                 if not chunk:
+                    print("finished reading file")
                     break
                 yield chunk
 
         url = url_with_trailing_slash + filename
         if url and "internal" in url:
+            print("doing test upload to", url)
             resp1 = await self.file_client.put(
                 url,
                 content=b"",
@@ -183,7 +186,9 @@ class ClientManager:
                 follow_redirects=False,
             )
             if resp1.status_code == 307 and resp1.headers["Location"]:
+                log.info("got file upload redirect from api")
                 url = resp1.headers["Location"]
+        log.info("doing real upload to", url)
         resp = await self.file_client.put(
             url,
             content=chunk_file_reader(),
