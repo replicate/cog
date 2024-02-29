@@ -5,6 +5,7 @@ import io
 import os.path
 import sys
 import types
+import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
@@ -19,6 +20,10 @@ from typing import (
     cast,
 )
 from unittest.mock import patch
+
+import structlog
+
+import cog.code_xforms as code_xforms
 
 try:
     from typing import get_args, get_origin
@@ -43,6 +48,8 @@ from .types import (
 from .types import (
     Path as CogPath,
 )
+
+log = structlog.get_logger("cog.server.predictor")
 
 ALLOWED_INPUT_TYPES: List[Type[Any]] = [str, int, float, bool, CogFile, CogPath]
 
@@ -170,19 +177,60 @@ def get_predictor_ref(config: Dict[str, Any], mode: str = "predict") -> str:
     return config[mode]
 
 
-def load_predictor_from_ref(ref: str) -> BasePredictor:
-    module_path, class_name = ref.split(":", 1)
-    module_name = os.path.basename(module_path).split(".py", 1)[0]
+def load_full_predictor_from_file(
+    module_name: str, module_path: str
+) -> types.ModuleType:
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
-
     # Remove any sys.argv while importing predictor to avoid conflicts when
     # user code calls argparse.Parser.parse_args in production
     with patch("sys.argv", sys.argv[:1]):
         spec.loader.exec_module(module)
+    return module
 
+
+def load_slim_predictor_from_file(
+    module_path: str,
+) -> Union[types.ModuleType, None]:
+    with open(module_path, encoding="utf-8") as file:
+        source_code = file.read()
+    stripped_source = code_xforms.strip_model_source_code(
+        source_code, "Predictor", "predict"
+    )
+    module = code_xforms.load_module_from_string(uuid.uuid4().hex, stripped_source)
+    return module
+
+
+def load_slim_predictor_from_ref(ref: str) -> BasePredictor:
+    module_path, class_name = ref.split(":", 1)
+    module_name = os.path.basename(module_path).split(".py", 1)[0]
+    module = None
+    try:
+        if sys.version_info >= (3, 9):
+            module = load_slim_predictor_from_file(module_path)
+            if not module:
+                log.warn("new predictor loader returned None")
+        else:
+            log.info("cannot use new predictor loader as current Python <3.9")
+    except Exception as e:
+        log.warn(f"new predictor loader failed: {e}")
+    finally:
+        if not module:
+            log.info("failing over to old predictor loader")
+            module = load_full_predictor_from_file(module_name, module_path)
+    predictor = getattr(module, class_name)
+    # It could be a class or a function
+    if inspect.isclass(predictor):
+        return predictor()
+    return predictor
+
+
+def load_predictor_from_ref(ref: str) -> BasePredictor:
+    module_path, class_name = ref.split(":", 1)
+    module_name = os.path.basename(module_path).split(".py", 1)[0]
+    module = load_full_predictor_from_file(module_name, module_path)
     predictor = getattr(module, class_name)
     # It could be a class or a function
     if inspect.isclass(predictor):
