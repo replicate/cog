@@ -333,13 +333,11 @@ def create_app(
             raise HTTPException(status_code=500, detail=str(e)) from e
 
         dict_resp = response.dict()
-        print(dict_resp)
         output = await runner.client_manager.upload_files(
             dict_resp["output"], upload_url
         )
         dict_resp["output"] = output
         encoded_response = jsonable_encoder(dict_resp)
-        print(encoded_response)
         return JSONResponse(content=encoded_response)
 
     @app.post("/predictions/{prediction_id}/cancel")
