@@ -238,7 +238,10 @@ def create_app(
         else:
             health = app.state.health
         setup = attrs.asdict(app.state.setup_result) if app.state.setup_result else {}
-        return jsonable_encoder({"status": health.name, "setup": setup})
+        activity = runner.activty()
+        return jsonable_encoder(
+            {"status": health.name, "setup": setup, "concurrency": activity}
+        )
 
     @limited
     @app.post(
