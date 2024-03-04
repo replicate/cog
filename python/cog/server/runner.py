@@ -251,6 +251,10 @@ class PredictionRunner:
         # but maybe we should just throw an error
         upload_url = request.output_file_prefix or self._upload_url
         # this is supposed to send START, but we're trapped in a sync function
+        # this sends START in a task, which calls jsonable_encoder on the input,
+        # which calls iter(io.BytesIO) with data uris that are File
+        # that breaks one of the tests, but happens Rarely in production,
+        # so let's ignore it for now
         event_handler = PredictionEventHandler(request, self.client_manager, upload_url)
         response = event_handler.response
 
@@ -389,6 +393,7 @@ class PredictionEventHandler:
         upload_url: Optional[str],
     ) -> None:
         log.info("starting prediction")
+        # maybe this should be a deep copy to not share File state with child worker
         self.p = schema.PredictionResponse(**request.dict())
         self.p.status = schema.Status.PROCESSING
         self.p.output = None
