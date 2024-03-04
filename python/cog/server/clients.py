@@ -72,23 +72,23 @@ def httpx_retry_client() -> httpx.AsyncClient:
 
 
 def httpx_file_client() -> httpx.AsyncClient:
+    # verify: Union[str, bool, ssl.SSLContext] = True
     transport = RetryTransport(
         max_attempts=3,
         backoff_factor=0.1,
         retry_status_codes=[408, 429, 500, 502, 503, 504],
         retryable_methods=["PUT"],
+        verify=os.environ.get("CURL_CA_BUNDLE", True),
     )
     # set connect timeout to slightly more than a multiple of 3 to avoid
     # aligning perfectly with TCP retransmission timer
     # requests has no write timeout, keep that
     # httpx default for pool is 5, use that
     timeout = httpx.Timeout(connect=10, read=15, write=None, pool=5)
-    # verify: Union[str, bool, ssl.SSLContext] = True,
     return httpx.AsyncClient(
         transport=transport,
         follow_redirects=True,
         timeout=timeout,
-        verify=os.environ.get("CURL_CA_BUNDLE", True),
     )
 
 
