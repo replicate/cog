@@ -32,8 +32,9 @@ class RetryTransport(httpx.AsyncBaseTransport):
         jitter_ratio: float = 0.1,
         retryable_methods: Optional[Iterable[str]] = None,
         retry_status_codes: Optional[Iterable[int]] = None,
+        verify: httpx._types.VerifyTypes = True,
     ) -> None:
-        self._wrapped_transport = httpx.AsyncHTTPTransport()
+        self._wrapped_transport = httpx.AsyncHTTPTransport(verify=verify)
 
         if jitter_ratio < 0 or jitter_ratio > 0.5:
             raise ValueError(
