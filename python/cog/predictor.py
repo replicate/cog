@@ -214,14 +214,14 @@ def load_slim_predictor_from_ref(ref: str) -> BasePredictor:
         if sys.version_info >= (3, 9):
             module = load_slim_predictor_from_file(module_path)
             if not module:
-                log.warn("new predictor loader returned None")
+                log.warn(f"[{module_name}] fast loader returned None")
         else:
-            log.info("cannot use new predictor loader as current Python <3.9")
+            log.warn(f"[{module_name}] cannot use fast loader as current Python <3.9")
     except Exception as e:
-        log.warn(f"new predictor loader failed: {e}")
+        log.warn(f"[{module_name}] fast loader failed: {e}")
     finally:
         if not module:
-            log.info("failing over to old predictor loader")
+            log.warn(f"[{module_name}] falling back to slow loader")
             module = load_full_predictor_from_file(module_name, module_path)
     predictor = getattr(module, class_name)
     # It could be a class or a function

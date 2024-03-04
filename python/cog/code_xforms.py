@@ -2,7 +2,7 @@ import ast
 import types
 from typing import Optional, Set, Union
 
-COG_IMPORT_MODULES = {"cog", "typing", "sys", "os"}
+COG_IMPORT_MODULES = {"cog", "typing", "sys", "os", "functools"}
 
 
 def load_module_from_string(
