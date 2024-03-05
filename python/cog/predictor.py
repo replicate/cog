@@ -90,7 +90,7 @@ def run_setup(predictor: BasePredictor) -> None:
             weights = weights_url
         else:
             raise ValueError(
-                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
             )
     elif os.path.exists(weights_path):
         if weights_type == CogFile:
@@ -99,7 +99,7 @@ def run_setup(predictor: BasePredictor) -> None:
             weights = CogPath(weights_path)
         else:
             raise ValueError(
-                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
             )
     else:
         weights = None
