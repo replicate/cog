@@ -121,7 +121,17 @@ If you're using macOS, you can install Cog using Homebrew:
 brew install cog
 ```
 
-You can also download and install the latest release of Cog
+You can run an install script which will download and install the latest release of Cog:
+```
+# via curl
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/replicate/cog/main/tools/install.sh)"
+# or via wget:
+sh -c "$(wget -qO- https://raw.githubusercontent.com/replicate/cog/main/tools/install.sh)"
+# or via fetch:
+sh -c "$(fetch -o - https://raw.githubusercontent.com/replicate/cog/main/tools/install.sh)"
+```
+
+You can also manually install the latest release of Cog
 directly from GitHub by running the following commands in a terminal:
 
 ```console
@@ -139,6 +149,15 @@ sudo make install
 ## Upgrade
 
 If you previously installed Cog from a GitHub Releases URL, you can upgrade to the latest version by running the same commands you used to install it:
+Install script:
+```
+# via curl
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/replicate/cog/main/tools/install.sh)"
+# or via wget:
+sh -c "$(wget -qO- https://raw.githubusercontent.com/replicate/cog/main/tools/install.sh)"
+# or via fetch:
+sh -c "$(fetch -o - https://raw.githubusercontent.com/replicate/cog/main/tools/install.sh)"
+```
 
 ```console
 sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
