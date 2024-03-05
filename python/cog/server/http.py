@@ -238,7 +238,7 @@ def create_app(
         else:
             health = app.state.health
         setup = attrs.asdict(app.state.setup_result) if app.state.setup_result else {}
-        activity = runner.activty()
+        activity = runner.activity_info()
         return jsonable_encoder(
             {"status": health.name, "setup": setup, "concurrency": activity}
         )
@@ -327,6 +327,7 @@ def create_app(
             prediction = await async_result
             # we're only doing this to catch validation errors
             response = PredictionResponse(**prediction.dict())
+            del response
         except ValidationError as e:
             _log_invalid_output(e)
             raise HTTPException(status_code=500, detail=str(e)) from e
