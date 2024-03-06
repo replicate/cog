@@ -137,6 +137,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         with self._handle_setup_error():
             # we need to load the predictor to know if setup is async
             self._predictor = load_predictor_from_ref(self._predictor_ref)
+            self._predictor.log = self._log
             # if users want to access the same event loop from setup and predict,
             # both have to be async. if setup isn't async, it doesn't matter if we
             # create the event loop here or after setup
@@ -252,9 +253,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     async for r in result:
                         send(PredictionOutput(payload=make_encodeable(r)))
                 elif inspect.isawaitable(result):
-                    result = await result
+                    output = await result
                     send(PredictionOutputType(multi=False))
-                    send(PredictionOutput(payload=make_encodeable(result)))
+                    send(PredictionOutput(payload=make_encodeable(output)))
 
     def _predict_sync(self, input: PredictionInput) -> None:
         with self._handle_predict_error(input.id):
@@ -278,6 +279,10 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if signum == signal.SIGUSR1 and self._cancelable:
             raise CancelationException()
 
+    def _log(self, message: str, source: str = "stderr") -> None:
+        id = self.prediction_id_context.get("LOG")
+        self._events.send((id, Log(message, source=source)))
+
     def _stream_write_hook(
         self, stream_name: str, original_stream: TextIO, data: str
     ) -> None:
@@ -285,8 +290,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             original_stream.write(data)
             original_stream.flush()
         # this won't work, this fn gets called from a thread, not the async task
-        id = self.prediction_id_context.get("LOG")
-        self._events.send((id, Log(data, source=stream_name)))
+        self._log(data, stream_name)
 
 
 def get_loop() -> asyncio.AbstractEventLoop:
