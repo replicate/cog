@@ -369,7 +369,7 @@ class PredictionRunner:
             result = await self._events.coro_recv_with_exit(self._terminating)
             if result is None:  # event loop closed or child died
                 break
-            print("event from pipe", result)
+            log.debug("event from pipe %s", result)
             id, event = result
             if id == "LOG" and self._state == WorkerState.STARTING:
                 id = "SETUP"
