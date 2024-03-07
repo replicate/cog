@@ -127,7 +127,7 @@ def create_app(
 
     try:
         predictor_ref = get_predictor_ref(config, mode)
-        predictor = load_slim_predictor_from_ref(predictor_ref)
+        predictor = load_slim_predictor_from_ref(predictor_ref, "predict")
         InputType = get_input_type(predictor)
         OutputType = get_output_type(predictor)
     except Exception:
@@ -165,7 +165,7 @@ def create_app(
     if "train" in config:
         try:
             trainer_ref = get_predictor_ref(config, "train")
-            trainer = load_slim_predictor_from_ref(trainer_ref)
+            trainer = load_slim_predictor_from_ref(trainer_ref, "train")
             TrainingInputType = get_training_input_type(trainer)
             TrainingOutputType = get_training_output_type(trainer)
 

@@ -16,6 +16,8 @@ def test_predict_takes_string_inputs_and_returns_strings_to_stdout():
     )
     # stdout should be clean without any log messages so it can be piped to other commands
     assert result.stdout == b"hello world\n"
+    assert "cannot use fast loader as current Python <3.9" in str(result.stderr)
+    assert "falling back to slow loader" in str(result.stderr)
 
 
 def test_predict_takes_int_inputs_and_returns_ints_to_stdout():
@@ -28,6 +30,7 @@ def test_predict_takes_int_inputs_and_returns_ints_to_stdout():
     )
     # stdout should be clean without any log messages so it can be piped to other commands
     assert result.stdout == b"4\n"
+    assert "falling back to slow loader" not in str(result.stderr)
 
 
 def test_predict_takes_file_inputs(tmpdir_factory):
@@ -43,6 +46,7 @@ def test_predict_takes_file_inputs(tmpdir_factory):
         capture_output=True,
     )
     assert result.stdout == b"what up\n"
+    assert "falling back to slow loader" not in str(result.stderr)
 
 
 def test_predict_writes_files_to_files(tmpdir_factory):
@@ -58,6 +62,7 @@ def test_predict_writes_files_to_files(tmpdir_factory):
     assert result.stdout == b""
     with open(out_dir / "output.bmp", "rb") as f:
         assert len(f.read()) == 195894
+    assert "falling back to slow loader" not in str(result.stderr)
 
 
 def test_predict_writes_files_to_files_with_custom_name(tmpdir_factory):
@@ -73,6 +78,7 @@ def test_predict_writes_files_to_files_with_custom_name(tmpdir_factory):
     assert result.stdout == b""
     with open(out_dir / "myoutput.bmp", "rb") as f:
         assert len(f.read()) == 195894
+    assert "falling back to slow loader" not in str(result.stderr)
 
 
 def test_predict_writes_multiple_files_to_files(tmpdir_factory):
@@ -95,6 +101,7 @@ def test_predict_writes_multiple_files_to_files(tmpdir_factory):
         assert f.read() == "bar"
     with open(out_dir / "output.2.txt") as f:
         assert f.read() == "baz"
+    assert "falling back to slow loader" not in str(result.stderr)
 
 
 def test_predict_writes_strings_to_files(tmpdir_factory):
@@ -109,6 +116,8 @@ def test_predict_writes_strings_to_files(tmpdir_factory):
     assert result.stdout == b""
     with open(out_dir / "out.txt") as f:
         assert f.read() == "hello world"
+    assert "cannot use fast loader as current Python <3.9" in str(result.stderr)
+    assert "falling back to slow loader" in str(result.stderr)
 
 
 def test_predict_runs_an_existing_image(docker_image, tmpdir_factory):
@@ -129,6 +138,8 @@ def test_predict_runs_an_existing_image(docker_image, tmpdir_factory):
         capture_output=True,
     )
     assert result.stdout == b"hello world\n"
+    assert "cannot use fast loader as current Python <3.9" in str(result.stderr)
+    assert "falling back to slow loader" in str(result.stderr)
 
 
 # https://github.com/replicate/cog/commit/28202b12ea40f71d791e840b97a51164e7be3b3c
@@ -164,6 +175,7 @@ def test_predict_in_subdirectory_with_imports(tmpdir_factory):
     )
     # stdout should be clean without any log messages so it can be piped to other commands
     assert result.stdout == b"hello world\n"
+    assert "falling back to slow loader" not in str(result.stderr)
 
 
 def test_predict_many_inputs(tmpdir_factory):
@@ -193,6 +205,7 @@ def test_predict_many_inputs(tmpdir_factory):
         capture_output=True,
     )
     assert result.stdout.decode() == "hello default 20 world jpg foo 6\n"
+    assert "falling back to slow loader" not in str(result.stderr)
 
 
 def test_predict_many_inputs_with_existing_image(docker_image, tmpdir_factory):
@@ -229,6 +242,7 @@ def test_predict_many_inputs_with_existing_image(docker_image, tmpdir_factory):
         capture_output=True,
     )
     assert result.stdout.decode() == "hello default 20 world jpg foo 6\n"
+    assert "falling back to slow loader" not in str(result.stderr)
 
 
 def test_predict_path_list_input(tmpdir_factory):

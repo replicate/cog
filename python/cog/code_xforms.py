@@ -168,7 +168,6 @@ def make_function_empty(source_code: Union[str, ast.AST], function_name: str) ->
                 # Replace the body of the function with `return None`
                 node.body = [ast.Return(value=ast.Constant(value=None))]
                 return node
-            return None  # Return None to indicate no changes to other FunctionDef nodes
 
     tree = source_code if isinstance(source_code, ast.AST) else ast.parse(source_code)
     transformer = FunctionBodyTransformer()
@@ -238,10 +237,14 @@ def strip_model_source_code(
             imports + "\n\n" + return_class_source + "\n\n" + class_source + "\n"
         )
     else:
+        # use class_name specified in cog.yaml as method_name
+        method_name = class_name
         function_source = extract_function_source(source_code, method_name)
         if not function_source:
             return None
         function_source = make_function_empty(function_source, method_name)
+        if not function_source:
+            return None
         return_type = extract_function_return_type(function_source, method_name)
         return_class_source = (
             extract_class_source(source_code, return_type) if return_type else ""

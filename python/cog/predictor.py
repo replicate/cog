@@ -195,24 +195,24 @@ def load_full_predictor_from_file(
 
 
 def load_slim_predictor_from_file(
-    module_path: str,
+    module_path: str, class_name: str, method_name: str
 ) -> Union[types.ModuleType, None]:
     with open(module_path, encoding="utf-8") as file:
         source_code = file.read()
     stripped_source = code_xforms.strip_model_source_code(
-        source_code, "Predictor", "predict"
+        source_code, class_name, method_name
     )
     module = code_xforms.load_module_from_string(uuid.uuid4().hex, stripped_source)
     return module
 
 
-def load_slim_predictor_from_ref(ref: str) -> BasePredictor:
+def load_slim_predictor_from_ref(ref: str, method_name: str) -> BasePredictor:
     module_path, class_name = ref.split(":", 1)
     module_name = os.path.basename(module_path).split(".py", 1)[0]
     module = None
     try:
         if sys.version_info >= (3, 9):
-            module = load_slim_predictor_from_file(module_path)
+            module = load_slim_predictor_from_file(module_path, class_name, method_name)
             if not module:
                 log.warn(f"[{module_name}] fast loader returned None")
         else:
