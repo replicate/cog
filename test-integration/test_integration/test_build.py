@@ -49,7 +49,7 @@ class Predictor(BasePredictor):
 
 
 def test_build_with_model(docker_image):
-    project_dir = Path(__file__).parent / "fixtures/file-project"
+    project_dir = Path(__file__).parent / "fixtures/path-project"
     subprocess.run(
         ["cog", "build", "-t", docker_image],
         cwd=project_dir,

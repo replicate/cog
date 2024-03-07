@@ -31,7 +31,7 @@ def test_predict_takes_int_inputs_and_returns_ints_to_stdout():
 
 
 def test_predict_takes_file_inputs(tmpdir_factory):
-    project_dir = Path(__file__).parent / "fixtures/file-input-project"
+    project_dir = Path(__file__).parent / "fixtures/path-input-project"
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
     shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
     with open(out_dir / "input.txt", "w") as fh:
@@ -46,7 +46,7 @@ def test_predict_takes_file_inputs(tmpdir_factory):
 
 
 def test_predict_writes_files_to_files(tmpdir_factory):
-    project_dir = Path(__file__).parent / "fixtures/file-output-project"
+    project_dir = Path(__file__).parent / "fixtures/path-output-project"
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
     shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
     result = subprocess.run(
@@ -61,7 +61,7 @@ def test_predict_writes_files_to_files(tmpdir_factory):
 
 
 def test_predict_writes_files_to_files_with_custom_name(tmpdir_factory):
-    project_dir = Path(__file__).parent / "fixtures/file-output-project"
+    project_dir = Path(__file__).parent / "fixtures/path-output-project"
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
     shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
     result = subprocess.run(
@@ -76,7 +76,7 @@ def test_predict_writes_files_to_files_with_custom_name(tmpdir_factory):
 
 
 def test_predict_writes_multiple_files_to_files(tmpdir_factory):
-    project_dir = Path(__file__).parent / "fixtures/file-list-output-project"
+    project_dir = Path(__file__).parent / "fixtures/path-list-output-project"
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
     shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
     result = subprocess.run(
