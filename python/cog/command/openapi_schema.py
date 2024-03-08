@@ -3,6 +3,7 @@ python -m cog.command.specification
 
 This prints a JSON object describing the inputs of the model.
 """
+
 import json
 
 from ..errors import CogError, ConfigDoesNotExist, PredictorNotSet
