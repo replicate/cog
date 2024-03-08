@@ -229,3 +229,24 @@ def test_predict_many_inputs_with_existing_image(docker_image, tmpdir_factory):
         capture_output=True,
     )
     assert result.stdout.decode() == "hello default 20 world jpg foo 6\n"
+
+
+def test_predict_path_list_input(tmpdir_factory):
+    project_dir = Path(__file__).parent / "fixtures/path-list-input-project"
+    out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
+    shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
+    with open(out_dir / "1.txt", "w") as fh:
+        fh.write("test1")
+    with open(out_dir / "2.txt", "w") as fh:
+        fh.write("test2")
+    cmd = ["cog", "predict", "-i", "paths=[\"@1.txt\",\"@2.txt\"]"]
+
+    result = subprocess.run(
+        cmd,
+        cwd=out_dir,
+        check=True,
+        capture_output=True,
+    )
+    stdout = result.stdout.decode()
+    assert "test1" in stdout
+    assert "test2" in stdout

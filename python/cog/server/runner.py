@@ -382,15 +382,21 @@ def _predict(
     input_dict = initial_prediction["input"]
 
     for k, v in input_dict.items():
-        if isinstance(v, types.URLPath):
-            try:
+        try:
+            # Check if v is an instance of URLPath
+            if isinstance(v, types.URLPath):
                 input_dict[k] = v.convert()
-            except requests.exceptions.RequestException as e:
-                tb = traceback.format_exc()
-                event_handler.append_logs(tb)
-                event_handler.failed(error=str(e))
-                log.warn("failed to download url path from input", exc_info=True)
-                return event_handler.response
+            # Check if v is a list of URLPath instances
+            elif isinstance(v, list) and all(
+                isinstance(item, types.URLPath) for item in v
+            ):
+                input_dict[k] = [item.convert() for item in v]
+        except requests.exceptions.RequestException as e:
+            tb = traceback.format_exc()
+            event_handler.append_logs(tb)
+            event_handler.failed(error=str(e))
+            log.warn("Failed to download url path from input", exc_info=True)
+            return event_handler.response
 
     for event in worker.predict(input_dict, poll=0.1):
         if should_cancel.is_set():
