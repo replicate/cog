@@ -279,9 +279,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if signum == signal.SIGUSR1 and self._cancelable:
             raise CancelationException()
 
-    def _log(self, message: str, source: str = "stderr") -> None:
+    def _log(self, *messages: str, source: str = "stderr") -> None:
         id = self.prediction_id_context.get("LOG")
-        self._events.send((id, Log(message, source=source)))
+        self._events.send((id, Log(" ".join(messages), source=source)))
 
     def _stream_write_hook(
         self, stream_name: str, original_stream: TextIO, data: str
