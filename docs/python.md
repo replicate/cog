@@ -51,6 +51,7 @@ Prepare the model so multiple predictions run efficiently.
 Use this _optional_ method to include any expensive one-off operations in here like loading trained models, instantiate data transformations, etc.
 
 Many models use this method to download their weights (e.g. using [`pget`](https://github.com/replicate/pget)). This has some advantages:
+
 - Smaller image sizes
 - Faster build times
 - Faster pushes and inference on [Replicate](https://replicate.com)
@@ -60,6 +61,7 @@ However, this may also significantly increase your `setup()` time.
 As an alternative, some choose to store their weights directly in the image. You can simply leave your weights in the directory alongside your `cog.yaml` and ensure they are not excluded in your `.dockerignore` file.
 
 While this will increase your image size and build time, it offers other advantages:
+
 - Faster `setup()` time
 - Ensures idempotency and reduces your model's reliance on external systems
 - Preserves reproducibility as your model will be self-contained in the image
