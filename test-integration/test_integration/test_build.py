@@ -208,16 +208,15 @@ def test_build_with_complex_output(tmpdir, docker_image):
     assert "Image built as cog-" in build_process.stderr.decode()
 
 
-def test_python_37_depricated(docker_image):
-    def test_build_invalid_schema(docker_image):
-        project_dir = Path(__file__).parent / "fixtures/python_37"
-        build_process = subprocess.run(
-            ["cog", "build", "-t", docker_image],
-            cwd=project_dir,
-            capture_output=True,
-        )
-        assert build_process.returncode > 0
-        assert (
-            "ERROR: Package 'cog' requires a different Python"
-            in build_process.stderr.decode()
-        )
+def test_python_37_deprecated(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/python_37"
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode > 0
+    assert (
+        "minimum supported Python version is 3.8. requested 3.7"
+        in build_process.stderr.decode()
+    )

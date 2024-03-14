@@ -480,3 +480,14 @@ func TestBlankBuild(t *testing.T) {
 	require.NotNil(t, config.Build)
 	require.Equal(t, false, config.Build.GPU)
 }
+
+func TestModelPythonVersionValidation(t *testing.T) {
+	err := ValidateModelPythonVersion("3.8")
+	require.NoError(t, err)
+	err = ValidateModelPythonVersion("3.8.1")
+	require.NoError(t, err)
+	err = ValidateModelPythonVersion("3.7")
+	require.Equal(t, "minimum supported Python version is 3.8. requested 3.7", err.Error())
+	err = ValidateModelPythonVersion("3.7.1")
+	require.Equal(t, "minimum supported Python version is 3.8. requested 3.7.1", err.Error())
+}
