@@ -48,7 +48,7 @@ ALLOWED_INPUT_TYPES: List[Type[Any]] = [str, int, float, bool, CogFile, CogPath]
 
 
 class BasePredictor(ABC):
-    def setup(self, weights: Optional[Union[CogFile, CogPath]] = None) -> None:
+    def setup(self, weights: Optional[Union[CogFile, CogPath, str]] = None) -> None:
         """
         An optional method to prepare the model so multiple predictions run efficiently.
         """
@@ -70,7 +70,7 @@ def run_setup(predictor: BasePredictor) -> None:
         predictor.setup()
         return
 
-    weights: Union[io.IOBase, Path, None]
+    weights: Union[io.IOBase, Path, str, None]
 
     weights_url = os.environ.get("COG_WEIGHTS")
     weights_path = "weights"
@@ -85,9 +85,12 @@ def run_setup(predictor: BasePredictor) -> None:
         elif weights_type == CogPath:
             # TODO: So this can be a url. evil!
             weights = cast(CogPath, CogPath.validate(weights_url))
+        # allow people to download weights themselves
+        elif weights_type == str:
+            weights = weights_url
         else:
             raise ValueError(
-                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
             )
     elif os.path.exists(weights_path):
         if weights_type == CogFile:
@@ -96,7 +99,7 @@ def run_setup(predictor: BasePredictor) -> None:
             weights = CogPath(weights_path)
         else:
             raise ValueError(
-                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
             )
     else:
         weights = None
