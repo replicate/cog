@@ -272,6 +272,22 @@ def test_openapi_specification_with_yield(client, static_schema):
     }
 
 
+@uses_predictor("async_yield")
+def test_openapi_specification_with_async_yield(client, static_schema):
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+    schema = resp.json()
+    assert schema == static_schema
+    assert schema["components"]["schemas"]["Output"] == {
+        "title": "Output",
+        "type": "array",
+        "items": {
+            "type": "string",
+        },
+        "x-cog-array-type": "iterator",
+    }
+
+
 @uses_predictor("yield_concatenate_iterator")
 def test_openapi_specification_with_yield_with_concatenate_iterator(
     client, static_schema
@@ -329,6 +345,15 @@ def test_openapi_specification_with_int_choices(client, static_schema):
     }
 
 
+@uses_predictor("async_yield")
+def test_yielding_strings_from_async_generator_predictors(client, match):
+    resp = client.post("/predictions")
+    assert resp.status_code == 200
+    assert resp.json() == match(
+        {"status": "succeeded", "output": ["foo", "bar", "baz"]}
+    )
+
+
 @uses_trainer("train.py:train")
 def test_train_openapi_specification(client):
     resp = client.get("/openapi.json")
@@ -368,6 +393,15 @@ def test_train_openapi_specification(client):
             "weights",
         ],
     }
+
+
+@uses_predictor("async_yield")
+def test_yielding_strings_from_async_generator_predictors(client, match):
+    resp = client.post("/predictions")
+    assert resp.status_code == 200
+    assert resp.json() == match(
+        {"status": "succeeded", "output": ["foo", "bar", "baz"]}
+    )
 
 
 @uses_predictor("yield_strings")
@@ -546,11 +580,12 @@ def test_prediction_cancel(client):
     )
     assert resp.status_code == 202
 
-    resp = client.post("/predictions/456/cancel")
-    assert resp.status_code == 404
-
     resp = client.post("/predictions/123/cancel")
     assert resp.status_code == 200
+
+    # if we do this cancel first, on slow machines it can be slower than the prediction
+    resp = client.post("/predictions/456/cancel")
+    assert resp.status_code == 404
 
 
 @uses_predictor_with_client_options(

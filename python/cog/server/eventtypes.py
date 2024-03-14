@@ -1,3 +1,4 @@
+import secrets
 from typing import Any, Dict
 
 from attrs import define, field, validators
@@ -8,6 +9,7 @@ from attrs import define, field, validators
 @define
 class PredictionInput:
     payload: Dict[str, Any]
+    id: str = field(factory=lambda: secrets.token_hex(4))
 
 
 @define
