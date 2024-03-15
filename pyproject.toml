@@ -10,11 +10,13 @@ authors = [{ name = "Replicate", email = "team@replicate.com" }]
 license.file = "LICENSE"
 urls."Source" = "https://github.com/replicate/cog"
 
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 dependencies = [
   # intentionally loose. perhaps these should be vendored to not collide with user code?
   "attrs>=20.1,<24",
   "fastapi>=0.75.2,<0.99.0",
+  # we may not need http2
+  "httpx[http2]>=0.21.0,<1",
   "pydantic>=1.9,<2",
   "PyYAML",
   "requests>=2,<3",
@@ -27,9 +29,9 @@ dependencies = [
 optional-dependencies = { "dev" = [
   "black",
   "build",
-  "httpx",
   'hypothesis<6.80.0; python_version < "3.8"',
   'hypothesis; python_version >= "3.8"',
+  "respx",
   'numpy<1.22.0; python_version < "3.8"',
   'numpy; python_version >= "3.8"',
   "pillow",
