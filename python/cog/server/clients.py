@@ -89,6 +89,7 @@ def httpx_file_client() -> httpx.AsyncClient:
         transport=transport,
         follow_redirects=True,
         timeout=timeout,
+        http2=True,
     )
 
 
