@@ -104,7 +104,7 @@ class ClientManager:
         self.webhook_client = httpx_webhook_client()
         self.retry_webhook_client = httpx_retry_client()
         self.file_client = httpx_file_client()
-        self.download_client = httpx.AsyncClient(follow_redirects=True)
+        self.download_client = httpx.AsyncClient(follow_redirects=True, http2=True)
 
     async def aclose(self) -> None:
         # not used but it's not actually critical to close them
