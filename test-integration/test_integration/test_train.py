@@ -17,3 +17,4 @@ def test_train_takes_input_and_produces_weights(tmpdir_factory):
     assert result.stdout == b""
     with open(out_dir / "weights.bin", "rb") as f:
         assert len(f.read()) == 42
+    assert "falling back to slow loader" not in str(result.stderr)
