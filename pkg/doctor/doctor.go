@@ -41,7 +41,18 @@ func CheckFiles() error {
 		for _, dir := range problemDirs {
 			fmt.Printf("\t\033[31m%s\033[0m\n", dir)
 		}
-		fmt.Printf("\nYou can exclude them by adding them to your .dockerignore file.\n\n")
+		fmt.Print("\nAutomatically add these to .dockerignore? [Y/n] ")
+		reader := bufio.NewReader(os.Stdin)
+		response, _ := reader.ReadString('\n')
+		response = strings.TrimSpace(response)
+		if strings.EqualFold(response, "y") || response == "" {
+			err := addDockerignoreEntries(problemDirs)
+			if err != nil {
+				return err
+			}
+			fmt.Println("Added entries to .dockerignore successfully!")
+		}
+		fmt.Print("\n\n")
 	}
 
 	if len(weightFiles) > 0 {
@@ -121,8 +132,12 @@ func walk(fw FileWalker, ignore []string) (weights []string, problemDirs []strin
 }
 
 func parseDockerignore() ([]string, error) {
+
 	file, err := os.Open(".dockerignore")
 	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
 		return nil, err
 	}
 	defer file.Close()
@@ -141,4 +156,20 @@ func parseDockerignore() ([]string, error) {
 	}
 
 	return lines, nil
+}
+
+func addDockerignoreEntries(entries []string) error {
+	file, err := os.OpenFile(".dockerignore", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if _, err := file.WriteString(entry + "\n"); err != nil {
+			return err
+		}
+	}
+
+	defer file.Close()
+	return nil
 }
