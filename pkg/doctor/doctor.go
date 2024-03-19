@@ -36,12 +36,20 @@ func CheckFiles() error {
 		return err
 	}
 
-	for _, dir := range problemDirs {
-		fmt.Printf("Directory '%s' should not be included in your image.\n", dir)
+	if len(problemDirs) > 0 {
+		fmt.Println("These directories can likely be excluded from your image:")
+		for _, dir := range problemDirs {
+			fmt.Printf("\t\033[31m%s\033[0m\n", dir)
+		}
+		fmt.Printf("\nYou can exclude them by adding them to your .dockerignore file.\n\n")
 	}
 
-	for _, file := range weightFiles {
-		fmt.Printf("FOUND WEIGHTS 🏋️: %s\n", file)
+	if len(weightFiles) > 0 {
+		fmt.Println("These files are large and better excluded from your image:")
+		for _, file := range weightFiles {
+			fmt.Printf("\t\033[32m%s\033[0m\n", file)
+		}
+		fmt.Printf("\nYou can host them in Replicate's File Cache.\n\n")
 	}
 
 	return nil

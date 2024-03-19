@@ -20,10 +20,13 @@ func newDoctorCommand() *cobra.Command {
 
 func doctorCommand(cmd *cobra.Command, args []string) error {
 
-	console.Info("[🩺] Checking for issues with your project.")
+	console.Info("🩺 Checking for issues with your project.\n")
 
 	// Check for weights
-	doctor.CheckFiles()
+	err := doctor.CheckFiles()
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
