@@ -245,6 +245,17 @@ def create_app(
             {"status": health.name, "setup": setup, "concurrency": activity}
         )
 
+    @app.get("/ready")
+    async def ready() -> Any:
+        activity = runner.activity_info()
+        if runner.is_busy():
+            return JSONResponse(
+                {"status": "ready", "activity": activity}, status_code=200
+            )
+        return JSONResponse(
+            {"status": "not ready", "activity": activity}, status_code=503
+        )
+
     @limited
     @app.post(
         "/predictions",
