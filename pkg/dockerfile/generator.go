@@ -67,8 +67,8 @@ func NewGenerator(config *config.Config, dir string) (*Generator, error) {
 	if err := os.MkdirAll(rootTmp, 0o755); err != nil {
 		return nil, err
 	}
-	// tmpDir ends up being something like dir/.cog/tmp/build20230731
-	now := time.Now().Format("20060102150405")
+	// tmpDir ends up being something like dir/.cog/tmp/build20240319021234.000000
+	now := time.Now().Format("20060102150405.000000")
 	tmpDir, err := os.MkdirTemp(rootTmp, "build"+now)
 	if err != nil {
 		return nil, err
