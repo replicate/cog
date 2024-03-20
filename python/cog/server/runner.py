@@ -373,7 +373,7 @@ class PredictionRunner:
             result = await self._events.recv()
             if result is None:  # event loop closed or child died
                 break
-            log.debug("event from pipe %s", result)
+            # log.debug("event from pipe %s", result)
             id, event = result
             if id == "LOG" and self._state == WorkerState.STARTING:
                 id = "SETUP"
