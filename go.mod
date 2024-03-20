@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/anaskhan96/soup v1.2.5
 	github.com/docker/cli v25.0.3+incompatible
-	github.com/docker/docker v25.0.3+incompatible
+	github.com/docker/docker v25.0.5+incompatible
 	github.com/getkin/kin-openapi v0.123.0
 	github.com/golangci/golangci-lint v1.56.2
 	github.com/hashicorp/go-version v1.6.0
