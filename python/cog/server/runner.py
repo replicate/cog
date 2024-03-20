@@ -18,6 +18,7 @@ from attrs import define
 
 from .. import schema, types
 from .clients import SKIP_START_EVENT, ClientManager
+from .connection import AsyncConnection
 from .eventtypes import (
     Cancel,
     Done,
@@ -33,7 +34,6 @@ from .exceptions import (
     FatalWorkerException,
     InvalidStateException,
 )
-from .helpers import AsyncPipe
 from .probes import ProbeHelper
 from .worker import Mux, _ChildWorker
 
@@ -110,8 +110,8 @@ class PredictionRunner:
         # A pipe with which to communicate with the child worker.
         events, child_events = _spawn.Pipe()
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
-        self._events: "AsyncPipe[tuple[str, PublicEventType]]" = AsyncPipe(
-            events, self._child.is_alive
+        self._events: "AsyncConnection[tuple[str, PublicEventType]]" = AsyncConnection(
+            events
         )
         # shutdown requested
         self._shutting_down = False
@@ -368,7 +368,7 @@ class PredictionRunner:
     async def _read_events(self) -> None:
         while self._child.is_alive() and not self._terminating.is_set():
             # in tests this can still be running when the task is destroyed
-            result = await self._events.coro_recv_with_exit(self._terminating)
+            result = await self._events.recv()
             if result is None:  # event loop closed or child died
                 break
             log.debug("event from pipe %s", result)
