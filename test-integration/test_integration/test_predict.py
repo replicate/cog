@@ -239,7 +239,7 @@ def test_predict_path_list_input(tmpdir_factory):
         fh.write("test1")
     with open(out_dir / "2.txt", "w") as fh:
         fh.write("test2")
-    cmd = ["cog", "predict", "-i", "paths=[\"@1.txt\",\"@2.txt\"]"]
+    cmd = ["cog", "predict", "-i", "paths=@1.txt", "-i", "paths=@2.txt"]
 
     result = subprocess.run(
         cmd,
