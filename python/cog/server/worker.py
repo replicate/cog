@@ -20,6 +20,7 @@ from ..predictor import (
     run_setup,
     run_setup_async,
 )
+from .connection import AsyncConnection
 from .eventtypes import (
     Cancel,
     Done,
@@ -35,7 +36,7 @@ from .exceptions import (
     CancelationException,
     FatalWorkerException,
 )
-from .helpers import AsyncPipe, StreamRedirector, WrappedStream, race
+from .helpers import StreamRedirector, WrappedStream, race
 
 _spawn = multiprocessing.get_context("spawn")
 
@@ -187,12 +188,12 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
 
     async def _loop_async(self) -> None:
-        events: "AsyncPipe[tuple[str, PublicEventType]]" = AsyncPipe(self._events)
-        with events.executor:
+        events: "AsyncConnection[tuple[str, PublicEventType]]" = AsyncConnection(self._events)
+        with events:
             tasks: "dict[str, asyncio.Task[None]]" = {}
             while True:
                 try:
-                    ev = await events.coro_recv()
+                    ev = await events.recv()
                 except asyncio.CancelledError:
                     return
                 if isinstance(ev, Shutdown):
