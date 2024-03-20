@@ -73,7 +73,7 @@ class Mux:
         while not self.terminating.is_set():
             try:
                 event = await asyncio.wait_for(self.outs[id].get(), timeout=poll)
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 if send_heartbeats:
                     yield Heartbeat()
                 continue
