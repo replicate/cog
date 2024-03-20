@@ -1,17 +1,18 @@
 import asyncio
 import io
-import multiprocessing as mp
 import os
 import socket
 import struct
+from multiprocessing import connection
+from multiprocessing.connection import Connection
 from typing import Any, Generic, TypeVar
 
 X = TypeVar("X")
-_ForkingPickler = mp.connection._ForkingPickler
+_ForkingPickler = connection._ForkingPickler
 
 
 class AsyncConnection(Generic[X]):
-    def __init__(self, conn: mp.connection.Connection) -> None:
+    def __init__(self, conn: Connection) -> None:
         self.wrapped_conn = conn
         self.started = False
 
@@ -77,8 +78,8 @@ class AsyncConnection(Generic[X]):
         self.wrapped_conn.close()
         self._writer.close()
 
-    def __enter__(self) -> "AsyncConnection":
+    def __enter__(self) -> "AsyncConnection[X]":
         return self
 
-    def __exit__(self, exc_type, exc_value, exc_tb) -> None:
+    def __exit__(self, exc_type: Any, exc_value: Any, exc_tb: Any) -> None:
         self.close()
