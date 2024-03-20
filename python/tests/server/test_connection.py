@@ -7,7 +7,8 @@ import pytest
 async def test_async_connection_rt():
     item = ("asdf", eventtypes.PredictionOutput({"x": 3}))
     c1, c2 = mp.Pipe()
-    ac = await AsyncConnection.from_mp(c1)
+    ac = AsyncConnection(c1)
+    await ac.async_init()
     ac.send(item)
     # we expect the binary format to be compatible
     assert c2.recv() == item

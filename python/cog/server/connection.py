@@ -4,7 +4,7 @@ import multiprocessing as mp
 import os
 import socket
 import struct
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 X = TypeVar("X")
 _ForkingPickler = mp.connection._ForkingPickler
@@ -16,7 +16,6 @@ class AsyncConnection(Generic[X]):
         self.started = False
 
     async def async_init(self) -> None:
-        print("async init")
         fd = self.wrapped_conn.fileno()
         # mp may have handled something already but let's dup so exit is clean
         dup_fd = os.dup(fd)
