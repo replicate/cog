@@ -36,7 +36,7 @@ from .exceptions import (
     CancelationException,
     FatalWorkerException,
 )
-from .helpers import StreamRedirector, WrappedStream, race
+from .helpers import StreamRedirector, WrappedStream
 
 _spawn = multiprocessing.get_context("spawn")
 
@@ -70,17 +70,13 @@ class Mux:
         else:
             poll = 0.1
             send_heartbeats = False
-        while 1:
+        while not self.terminating.is_set():
             try:
-                event = await race(
-                    self.outs[id].get(), self.terminating.wait(), timeout=poll
-                )
+                event = await asyncio.wait_for(self.outs[id].get(), timeout=poll)
             except TimeoutError:
                 if send_heartbeats:
                     yield Heartbeat()
                 continue
-            if event is True:  # wait() would return True
-                break
             yield event
             if isinstance(event, Done):
                 self.outs.pop(id)
@@ -188,7 +184,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
 
     async def _loop_async(self) -> None:
-        events: "AsyncConnection[tuple[str, PublicEventType]]" = AsyncConnection(self._events)
+        events: "AsyncConnection[tuple[str, PublicEventType]]" = AsyncConnection(
+            self._events
+        )
         with events:
             tasks: "dict[str, asyncio.Task[None]]" = {}
             while True:
