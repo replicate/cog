@@ -189,11 +189,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
     async def _loop_async(self) -> None:
         events: "AsyncConnection[tuple[str, PublicEventType]]" = AsyncConnection(self._events)
-        with events.executor:
+        with events:
             tasks: "dict[str, asyncio.Task[None]]" = {}
             while True:
                 try:
-                    ev = await events.coro_recv()
+                    ev = await events.recv()
                 except asyncio.CancelledError:
                     return
                 if isinstance(ev, Shutdown):

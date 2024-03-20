@@ -140,6 +140,7 @@ class PredictionRunner:
                 self._terminating = self._mux.terminating = asyncio.Event()
 
             self._child.start()
+            await self._events.async_init()
             self._start_event_reader()
 
             try:
@@ -333,7 +334,8 @@ class PredictionRunner:
         if self._child.is_alive():
             self._child.terminate()
             self._child.join()
-        self._events.shutdown()
+        self._events.close()
+
         if self._read_events_task:
             self._read_events_task.cancel()
 

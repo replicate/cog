@@ -1,6 +1,7 @@
 import asyncio
 import io
 import multiprocessing as mp
+import os
 import socket
 import struct
 from typing import Any, Generic, Optional, TypeVar
@@ -10,14 +11,16 @@ _ForkingPickler = mp.connection._ForkingPickler
 
 
 class AsyncConnection(Generic[X]):
-    def __init__(self, conn: mp.connection.Connection) -> "AsyncConnection":
+    def __init__(self, conn: mp.connection.Connection) -> None:
         self.wrapped_conn = conn
         self.started = False
 
     async def async_init(self) -> None:
-        # you might want to os.dup here but mp probably handles this already
+        print("async init")
         fd = self.wrapped_conn.fileno()
-        sock = socket.socket(fileno=fd)
+        # mp may have handled something already but let's dup so exit is clean
+        dup_fd = os.dup(fd)
+        sock = socket.socket(fileno=dup_fd)
         sock.setblocking(False)
         # make the pipe bigger probably
         self._reader, self._writer = await asyncio.open_connection(sock=sock)
@@ -40,14 +43,12 @@ class AsyncConnection(Generic[X]):
             remaining -= n
         return buf
 
-    async def _recv_bytes(self, maxsize: Optional[int] = None) -> io.BytesIO:
+    async def _recv_bytes(self) -> io.BytesIO:
         buf = await self._recv(4)
         (size,) = struct.unpack("!i", buf.getvalue())
         if size == -1:
             buf = await self._recv(8)
             (size,) = struct.unpack("!Q", buf.getvalue())
-        if maxsize is not None and size > maxsize:
-            return None
         return await self._recv(size)
 
     async def recv(self) -> X:
@@ -70,14 +71,15 @@ class AsyncConnection(Generic[X]):
             else:
                 self._writer.write(header + buf)
 
-    def send(self, obj: Any):
+    def send(self, obj: Any) -> None:
         self._send_bytes(_ForkingPickler.dumps(obj, protocol=5))
 
-    def close(self):
+    def close(self) -> None:
+        self.wrapped_conn.close()
         self._writer.close()
 
-    def __enter__(self):
+    def __enter__(self) -> "AsyncConnection":
         return self
 
-    def __exit__(self, exc_type, exc_value, exc_tb):
+    def __exit__(self, exc_type, exc_value, exc_tb) -> None:
         self.close()
