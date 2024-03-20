@@ -7,9 +7,10 @@ from urllib.parse import urlparse
 
 import httpx
 import structlog
+from fastapi.encoders import jsonable_encoder
 
 from .. import types
-from ..schema import Status, WebhookEvent
+from ..schema import PredictionResponse, Status, WebhookEvent
 from ..types import Path
 from .eventtypes import PredictionInput
 from .response_throttler import ResponseThrottler
@@ -135,10 +136,13 @@ class ClientManager:
     ) -> WebhookSenderType:
         throttler = ResponseThrottler(response_interval=_response_interval)
 
-        async def sender(response: Any, event: WebhookEvent) -> None:
+        async def sender(response: PredictionResponse, event: WebhookEvent) -> None:
             if url and event in webhook_events_filter:
                 if throttler.should_send_response(response):
-                    await self.send_webhook(url, response, event)
+                    # jsonable_encoder is quite slow in context, it would be ideal
+                    # to skip the heavy parts of this for well-known output types
+                    dict_response = jsonable_encoder(response.dict(exclude_unset=True))
+                    await self.send_webhook(url, dict_response, event)
                     throttler.update_last_sent_response_time()
 
         return sender
@@ -208,6 +212,9 @@ class ClientManager:
         Iterates through an object from make_encodeable and uploads any files.
         When a file is encountered, it will be passed to upload_file. Any paths will be opened and converted to files.
         """
+        # skip four isinstance checks for fast text models
+        if type(obj) == str:  # noqa: E721
+            return obj
         # # it would be kind of cleaner to make the default file_url
         # # instead of skipping entirely, we need to convert to datauri
         # if url is None:
