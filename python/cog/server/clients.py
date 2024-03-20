@@ -16,8 +16,6 @@ from .eventtypes import PredictionInput
 from .response_throttler import ResponseThrottler
 from .retry_transport import RetryTransport
 
-log = structlog.get_logger(__name__)
-
 
 def _get_version() -> str:
     try:
@@ -107,6 +105,7 @@ class ClientManager:
         self.retry_webhook_client = httpx_retry_client()
         self.file_client = httpx_file_client()
         self.download_client = httpx.AsyncClient(follow_redirects=True)
+        self.log = structlog.get_logger(__name__).bind()
 
     async def aclose(self) -> None:
         await self.webhook_client.aclose()
@@ -120,16 +119,16 @@ class ClientManager:
         self, url: str, response: Dict[str, Any], event: WebhookEvent
     ) -> None:
         if Status.is_terminal(response["status"]):
-            log.info("sending terminal webhook with status %s", response["status"])
+            self.log.info("sending terminal webhook with status %s", response["status"])
             # For terminal updates, retry persistently
             await self.retry_webhook_client.post(url, json=response)
         else:
-            log.info("sending webhook with status %s", response["status"])
+            self.log.info("sending webhook with status %s", response["status"])
             # For other requests, don't retry, and ignore any errors
             try:
                 await self.webhook_client.post(url, json=response)
             except httpx.RequestError:
-                log.warn("caught exception while sending webhook", exc_info=True)
+                self.log.warn("caught exception while sending webhook", exc_info=True)
 
     def make_webhook_sender(
         self, url: Optional[str], webhook_events_filter: Collection[WebhookEvent]
@@ -190,9 +189,9 @@ class ClientManager:
                 follow_redirects=False,
             )
             if resp1.status_code == 307 and resp1.headers["Location"]:
-                log.info("got file upload redirect from api")
+                self.log.info("got file upload redirect from api")
                 url = resp1.headers["Location"]
-        log.info("doing real upload to %s", url)
+        self.log.info("doing real upload to %s", url)
         resp = await self.file_client.put(
             url,
             content=chunk_file_reader(),
