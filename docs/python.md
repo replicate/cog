@@ -267,3 +267,29 @@ class Predictor(BasePredictor):
         upscaled_image.save(output_path)
         return Path(output_path)
 ```
+
+## `List`
+
+The List type is also supported in inputs. It can hold any supported type.
+
+Example for **List[Path]**:
+```py
+class Predictor(BasePredictor):
+   def predict(self, paths: list[Path]) -> str:
+       output_parts = []  # Use a list to collect file contents
+       for path in paths:
+           with open(path) as f:
+             output_parts.append(f.read())
+       return "".join(output_parts)
+```
+The corresponding cog command:
+```bash
+$ echo test1 > 1.txt
+$ echo test2 > 2.txt
+$ cog predict -i paths=@1.txt -i paths=@2.txt
+Running prediction...
+test1
+
+test2
+```
+- Note the repeated inputs with the same name "paths" which constitute the list
