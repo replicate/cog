@@ -140,6 +140,11 @@
       "$id": "#/properties/train",
       "type": "string",
       "description": "The pointer to the `Predictor` object in your code, which defines how predictions are run on your model."
+    },
+    "concurrency": {
+      "$id": "#/properties/concurrency",
+      "type": "number",
+      "description": "Allowed concurrency."
     }
   },
   "additionalProperties": false
