@@ -118,6 +118,8 @@ class PredictionRunner:
         # stop reading events
         self._terminating = asyncio.Event()
         self._mux = Mux(self._terminating)
+        # bind logger instead of the module-level logger proxy for performance
+        self.log = log.bind()
 
     def activity_info(self) -> dict[str, int]:
         return {"max": self._concurrency, "current": len(self._predictions_in_flight)}
@@ -188,7 +190,7 @@ class PredictionRunner:
             try:
                 raise exc
             except Exception:
-                log.error("caught exception while running setup", exc_info=True)
+                self.log.error("caught exception while running setup", exc_info=True)
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
 
@@ -220,7 +222,9 @@ class PredictionRunner:
             raise InvalidStateException(
                 "cannot accept new predictions because shutdown requested"
             )
-        log.info("accepted prediction %s in flight %s", id, self._predictions_in_flight)
+        self.log.info(
+            "accepted prediction %s in flight %s", id, self._predictions_in_flight
+        )
         self._predictions_in_flight.add(id)
         self._state = self.state_from_predictions_in_flight()
 
@@ -258,7 +262,7 @@ class PredictionRunner:
         # which calls iter(io.BytesIO) with data uris that are File
         # that breaks one of the tests, but happens Rarely in production,
         # so let's ignore it for now
-        event_handler = PredictionEventHandler(request, self.client_manager, upload_url)
+        event_handler = PredictionEventHandler(request, self.client_manager, upload_url, self.log)
         response = event_handler.response
 
         prediction_input = PredictionInput.from_request(request)
@@ -283,13 +287,15 @@ class PredictionRunner:
                 tb = traceback.format_exc()
                 await event_handler.append_logs(tb)
                 await event_handler.failed(error=str(e))
-                log.warn("failed to download url path from input", exc_info=True)
+                self.log.warn("failed to download url path from input", exc_info=True)
                 return event_handler.response
             except Exception as e:
                 tb = traceback.format_exc()
                 await event_handler.append_logs(tb)
                 await event_handler.failed(error=str(e))
-                log.error("caught exception while running prediction", exc_info=True)
+                self.log.error(
+                    "caught exception while running prediction", exc_info=True
+                )
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
                 raise  # we don't actually want to raise anymore but w/e
@@ -341,15 +347,17 @@ class PredictionRunner:
 
     def cancel(self, prediction_id: str) -> None:
         if prediction_id not in self._predictions_in_flight:
-            log.warn("can't cancel %s (%s)", prediction_id, self._predictions_in_flight)
+            self.log.warn(
+                "can't cancel %s (%s)", prediction_id, self._predictions_in_flight
+            )
             raise UnknownPredictionError()
         if os.getenv("DISABLE_CANCEL"):
-            log.warn("cancelling is disabled for this model")
+            self.log.warn("cancelling is disabled for this model")
             return
         maybe_pid = self._child.pid
         if self._child.is_alive() and maybe_pid is not None:
             os.kill(maybe_pid, signal.SIGUSR1)
-            log.info("sent cancel")
+            self.log.info("sent cancel")
             self._events.send(Cancel(prediction_id))
             # maybe this should probably check self._semaphore._value == self._concurrent
 
@@ -398,8 +406,10 @@ class PredictionEventHandler:
         request: schema.PredictionRequest,
         client_manager: ClientManager,
         upload_url: Optional[str],
+        logger: Optional[structlog.BoundLogger] = None,
     ) -> None:
-        log.info("starting prediction")
+        self.logger = logger or log.bind()
+        self.logger.info("starting prediction")
         # maybe this should be a deep copy to not share File state with child worker
         self.p = schema.PredictionResponse(**request.dict())
         self.p.status = schema.Status.PROCESSING
@@ -419,8 +429,7 @@ class PredictionEventHandler:
         # latency (this guarantees that the first output webhook won't be
         # throttled.)
         if not SKIP_START_EVENT:
-            # idk
-            # this is pretty wrong
+            # sending it in a coroutine is kind of wrong in some ways
             asyncio.create_task(self._send_webhook(schema.WebhookEvent.START))
 
     @property
@@ -447,7 +456,7 @@ class PredictionEventHandler:
         await self._send_webhook(schema.WebhookEvent.LOGS)
 
     async def succeeded(self) -> None:
-        log.info("prediction succeeded")
+        self.logger.info("prediction succeeded")
         self.p.status = schema.Status.SUCCEEDED
         self._set_completed_at()
         # These have been set already: this is to convince the typechecker of
@@ -460,14 +469,14 @@ class PredictionEventHandler:
         await self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     async def failed(self, error: str) -> None:
-        log.info("prediction failed", error=error)
+        self.logger.info("prediction failed", error=error)
         self.p.status = schema.Status.FAILED
         self.p.error = error
         self._set_completed_at()
         await self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     async def canceled(self) -> None:
-        log.info("prediction canceled")
+        self.logger.info("prediction canceled")
         self.p.status = schema.Status.CANCELED
         self._set_completed_at()
         await self._send_webhook(schema.WebhookEvent.COMPLETED)
@@ -529,5 +538,5 @@ class PredictionEventHandler:
             if event.error:
                 return self.failed(error=str(event.error_detail))
             return self.succeeded()
-        log.warn("received unexpected event from worker", data=event)
+        self.logger.warn("received unexpected event from worker", data=event)
         return self.noop()
