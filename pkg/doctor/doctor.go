@@ -32,7 +32,7 @@ var suffixesToIgnore = []string{
 
 type FileWalker func(root string, walkFn filepath.WalkFunc) error
 
-func CheckFiles() error {
+func CheckFiles(bucket string, folder string) error {
 
 	ignore, err := parseDockerignore()
 	if err != nil {
@@ -68,14 +68,14 @@ func CheckFiles() error {
 		for _, file := range weightFiles {
 			fmt.Printf("\t\033[32m%s\033[0m\n", file)
 		}
-		fmt.Printf("\nIf you have a cache key with Replicate, please enter it now. [skip] ")
+		fmt.Printf("\nWould you like to cache these? (Your current cache is `%s/%s`) [Y/n] ", bucket, folder)
 		reader := bufio.NewReader(os.Stdin)
 		response, _ := reader.ReadString('\n')
 		response = strings.TrimSpace(response)
-		if response != "" {
+		if strings.EqualFold(response, "y") || response == "" {
 			urls := []string{}
 			for _, file := range weightFiles {
-				url, err := uploadWeights(file, "replicate-weights-wqzt", response)
+				url, err := uploadWeights(file, bucket, folder)
 				if err != nil {
 					return err
 				}
@@ -373,28 +373,34 @@ func writePgetPy() error {
 	return nil
 }
 
-type BarebonesCog struct {
-	Run []string `yaml:"run,omitempty"`
-}
-
 func installPGet() error {
-	var config BarebonesCog
-
 	// Read the existing cog.yaml file
 	data, err := ioutil.ReadFile("cog.yaml")
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil {
 		return err
 	}
 
-	if err == nil {
-		// File exists, unmarshal its content
-		if err := yaml.Unmarshal(data, &config); err != nil {
-			return err
-		}
+	// Parse the YAML file as a generic structure
+	var config map[string]interface{}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return err
 	}
 
-	// Update or set the run block
-	config.Run = []string{"curl -o /usr/local/bin/pget -L \"https://github.com/replicate/pget/releases/latest/download/pget_$(uname -s)_$(uname -m)\"", "chmod +x /usr/local/bin/pget"}
+	// Check if the 'run' block exists, if not, create it
+	runBlock, ok := config["run"].([]interface{})
+	if !ok {
+		runBlock = []interface{}{} // Initialize an empty slice if 'run' doesn't exist
+	}
+
+	// Append the pget installation commands to the run block
+	pgetCommands := []string{
+		"curl -o /usr/local/bin/pget -L \"https://github.com/replicate/pget/releases/latest/download/pget_$(uname -s)_$(uname -m)\"",
+		"chmod +x /usr/local/bin/pget",
+	}
+	for _, cmd := range pgetCommands {
+		runBlock = append(runBlock, cmd)
+	}
+	config["run"] = runBlock // Update the 'run' block in the config
 
 	// Marshal the modified structure back to YAML
 	updatedData, err := yaml.Marshal(&config)
@@ -402,9 +408,11 @@ func installPGet() error {
 		return err
 	}
 
-	if err := os.WriteFile("cog.yaml", updatedData, 0o755); err != nil {
+	// Write the updated content back to cog.yaml
+	if err := ioutil.WriteFile("cog.yaml", updatedData, 0o755); err != nil {
 		return err
 	}
 
+	fmt.Println("Added pget installation to cog.")
 	return nil
 }

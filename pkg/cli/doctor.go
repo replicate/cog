@@ -7,6 +7,9 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
+var folder string
+var bucket string
+
 func newDoctorCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
@@ -15,6 +18,9 @@ func newDoctorCommand() *cobra.Command {
 		RunE:  doctorCommand,
 	}
 
+	addBucketFlag(cmd)
+	addFolderFlag(cmd)
+
 	return cmd
 }
 
@@ -22,8 +28,7 @@ func doctorCommand(cmd *cobra.Command, args []string) error {
 
 	console.Info("🩺 Checking for issues with your project.\n")
 
-	// Check for weights
-	err := doctor.CheckFiles()
+	err := doctor.CheckFiles(bucket, folder)
 	if err != nil {
 		return err
 	}
@@ -31,8 +36,10 @@ func doctorCommand(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-/*
-func addUseCudaBaseImageFlag(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&buildUseCudaBaseImage, "use-cuda-base-image", "auto", "Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects")
+func addBucketFlag(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&bucket, "bucket", "replicate-weights", "The target GCS bucket.")
 }
-*/
+
+func addFolderFlag(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&folder, "folder", "", "The target cache folder in your GCS bucket.")
+}
