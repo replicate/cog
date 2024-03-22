@@ -124,11 +124,11 @@ brew install cog
 You can run an install script which will download and install the latest release of Cog:
 ```
 # via curl
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/replicate/cog/main/install.sh)"
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/replicate/cog/main/tools/install.sh)"
 # or via wget:
-sh -c "$(wget -qO- https://raw.githubusercontent.com/replicate/cog/main/install.sh)"
+sh -c "$(wget -qO- https://raw.githubusercontent.com/replicate/cog/main/tools/install.sh)"
 # or via fetch:
-sh -c "$(fetch -o - https://raw.githubusercontent.com/replicate/cog/main/install.sh)"
+sh -c "$(fetch -o - https://raw.githubusercontent.com/replicate/cog/main/tools/install.sh)"
 ```
 
 You can also manually install the latest release of Cog
@@ -152,11 +152,11 @@ If you previously installed Cog from a GitHub Releases URL, you can upgrade to t
 Install script:
 ```
 # via curl
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/replicate/cog/main/install.sh)"
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/replicate/cog/main/tools/install.sh)"
 # or via wget:
-sh -c "$(wget -qO- https://raw.githubusercontent.com/replicate/cog/main/install.sh)"
+sh -c "$(wget -qO- https://raw.githubusercontent.com/replicate/cog/main/tools/install.sh)"
 # or via fetch:
-sh -c "$(fetch -o - https://raw.githubusercontent.com/replicate/cog/main/install.sh)"
+sh -c "$(fetch -o - https://raw.githubusercontent.com/replicate/cog/main/tools/install.sh)"
 ```
 
 ```console
