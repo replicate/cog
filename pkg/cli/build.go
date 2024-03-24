@@ -19,6 +19,7 @@ var buildProgressOutput string
 var buildSchemaFile string
 var buildUseCudaBaseImage string
 var buildDockerfileFile string
+var buildUseCogBaseImage bool
 
 func newBuildCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -34,6 +35,7 @@ func newBuildCommand() *cobra.Command {
 	addSchemaFlag(cmd)
 	addUseCudaBaseImageFlag(cmd)
 	addDockerfileFlag(cmd)
+	addUseCogBaseImageFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
 }
@@ -52,7 +54,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		imageName = config.DockerImageName(projectDir)
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, buildUseCogBaseImage); err != nil {
 		return err
 	}
 
@@ -93,6 +95,15 @@ func addDockerfileFlag(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&buildDockerfileFile, "dockerfile", "", "Path to a Dockerfile. If set, cog will use this Dockerfile instead of generating one from cog.yaml")
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
 		if f.Name == "dockerfile" {
+			f.Hidden = true
+		}
+	})
+}
+
+func addUseCogBaseImageFlag(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&buildUseCogBaseImage, "use-cog-base-image", false, "Use pre-built Cog base image for faster cold boots")
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		if f.Name == "use-cog-base-image" {
 			f.Hidden = true
 		}
 	})

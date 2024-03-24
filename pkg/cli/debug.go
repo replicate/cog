@@ -24,6 +24,7 @@ func newDebugCommand() *cobra.Command {
 	addSeparateWeightsFlag(cmd)
 	addUseCudaBaseImageFlag(cmd)
 	addDockerfileFlag(cmd)
+	addUseCogBaseImageFlag(cmd)
 	cmd.Flags().StringVarP(&imageName, "image-name", "", "", "The image name to use for the generated Dockerfile")
 
 	return cmd
@@ -46,13 +47,14 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 	}()
 
 	generator.SetUseCudaBaseImage(buildUseCudaBaseImage)
+	generator.SetUseCogBaseImage(buildUseCogBaseImage)
 
 	if buildSeparateWeights {
 		if imageName == "" {
 			imageName = config.DockerImageName(projectDir)
 		}
 
-		weightsDockerfile, RunnerDockerfile, dockerignore, err := generator.Generate(imageName)
+		weightsDockerfile, RunnerDockerfile, dockerignore, err := generator.GenerateModelBaseWithSeparateWeights(imageName)
 		if err != nil {
 			return err
 		}

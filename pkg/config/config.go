@@ -160,8 +160,16 @@ func (c *Config) CUDABaseImageTag() (string, error) {
 	return CUDABaseImageFor(c.Build.CUDA, c.Build.CuDNN)
 }
 
+func (c *Config) TorchVersion() (string, bool) {
+	return c.pythonPackageVersion("torch")
+}
+
+func (c *Config) TensorFlowVersion() (string, bool) {
+	return c.pythonPackageVersion("tensorflow")
+}
+
 func (c *Config) cudasFromTorch() (torchVersion string, torchCUDAs []string, err error) {
-	if version, ok := c.pythonPackageVersion("torch"); ok {
+	if version, ok := c.TorchVersion(); ok {
 		cudas, err := cudasFromTorch(version)
 		if err != nil {
 			return "", nil, err
@@ -172,7 +180,7 @@ func (c *Config) cudasFromTorch() (torchVersion string, torchCUDAs []string, err
 }
 
 func (c *Config) cudaFromTF() (tfVersion string, tfCUDA string, tfCuDNN string, err error) {
-	if version, ok := c.pythonPackageVersion("tensorflow"); ok {
+	if version, ok := c.TensorFlowVersion(); ok {
 		cuda, cudnn, err := cudaFromTF(version)
 		if err != nil {
 			return "", "", "", err
@@ -249,11 +257,15 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 }
 
 // PythonRequirementsForArch returns a requirements.txt file with all the GPU packages resolved for given OS and architecture.
-func (c *Config) PythonRequirementsForArch(goos string, goarch string) (string, error) {
+func (c *Config) PythonRequirementsForArch(goos string, goarch string, excludePackages []string) (string, error) {
 	packages := []string{}
 	findLinksSet := map[string]bool{}
 	extraIndexURLSet := map[string]bool{}
 	for _, pkg := range c.Build.pythonRequirementsContent {
+		if slices.ContainsString(excludePackages, pkg) {
+			continue
+		}
+
 		archPkg, findLinks, extraIndexURL, err := c.pythonPackageForArch(pkg, goos, goarch)
 		if err != nil {
 			return "", err
