@@ -10,7 +10,6 @@ from typing import Any, Callable, Optional, Tuple, Union, cast
 import requests
 import structlog
 from attrs import define
-from fastapi.encoders import jsonable_encoder
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
@@ -303,8 +302,9 @@ class PredictionEventHandler:
 
     def _send_webhook(self, event: schema.WebhookEvent) -> None:
         if self._webhook_sender is not None:
-            dict_response = jsonable_encoder(self.response.dict(exclude_unset=True))
-            self._webhook_sender(dict_response, event)
+            self._webhook_sender(self.response, event)
+            # dict_response = jsonable_encoder(self.response.dict(exclude_unset=True))
+            # self._webhook_sender(dict_response, event)
 
     def _upload_files(self, output: Any) -> Any:
         if self._file_uploader is None:

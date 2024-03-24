@@ -3,10 +3,11 @@ from typing import Any, Callable, Set
 
 import requests
 import structlog
+from fastapi.encoders import jsonable_encoder
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
-from ..schema import Status, WebhookEvent
+from ..schema import PredictionResponse, Status, WebhookEvent
 from .response_throttler import ResponseThrottler
 from .telemetry import current_trace_context
 from .useragent import get_user_agent
@@ -27,7 +28,7 @@ def webhook_caller_filtered(
 ) -> Callable[[Any, WebhookEvent], None]:
     upstream_caller = webhook_caller(webhook)
 
-    def caller(response: Any, event: WebhookEvent) -> None:
+    def caller(response: PredictionResponse, event: WebhookEvent) -> None:
         if event in webhook_events_filter:
             upstream_caller(response)
 
@@ -42,15 +43,16 @@ def webhook_caller(webhook: str) -> Callable[[Any], None]:
     default_session = requests_session()
     retry_session = requests_session_with_retries()
 
-    def caller(response: Any) -> None:
+    def caller(response: PredictionResponse) -> None:
         if throttler.should_send_response(response):
-            if Status.is_terminal(response["status"]):
+            dict_response = jsonable_encoder(response.dict(exclude_unset=True))
+            if Status.is_terminal(dict_response["status"]):
                 # For terminal updates, retry persistently
-                retry_session.post(webhook, json=response)
+                retry_session.post(webhook, json=dict_response)
             else:
                 # For other requests, don't retry, and ignore any errors
                 try:
-                    default_session.post(webhook, json=response)
+                    default_session.post(webhook, json=dict_response)
                 except requests.exceptions.RequestException:
                     log.warn("caught exception while sending webhook", exc_info=True)
             throttler.update_last_sent_response_time()
