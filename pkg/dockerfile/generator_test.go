@@ -79,18 +79,18 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	_, actual, _, err := gen.Generate("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
 ` + testPipInstallStage(gen.relativeTmpDir) + `
-FROM r8.im/replicate/cog-test-weights AS weights
 FROM python:3.8-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `COPY --from=deps --link /dep /usr/local/lib/python3.8/site-packages
+FROM r8.im/replicate/cog-test-weights AS weights
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -111,18 +111,18 @@ predict: predict.py:Predictor
 	require.NoError(t, conf.ValidateAndComplete(""))
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	_, actual, _, err := gen.Generate("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
 ` + testPipInstallStage(gen.relativeTmpDir) + `
-FROM r8.im/replicate/cog-test-weights AS weights
 FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + testInstallPython("3.8") + `RUN --mount=type=bind,from=deps,source=/dep,target=/dep cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages || true
+FROM r8.im/replicate/cog-test-weights AS weights
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -152,14 +152,13 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	_, actual, _, err := gen.Generate("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
 ` + testPipInstallStage(gen.relativeTmpDir) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r /tmp/requirements.txt
-FROM r8.im/replicate/cog-test-weights AS weights
 FROM python:3.8-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -168,6 +167,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 COPY --from=deps --link /dep /usr/local/lib/python3.8/site-packages
 RUN cowsay moo
+FROM r8.im/replicate/cog-test-weights AS weights
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -202,14 +202,13 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	_, actual, _, err := gen.Generate("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
 ` + testPipInstallStage(gen.relativeTmpDir) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r /tmp/requirements.txt
-FROM r8.im/replicate/cog-test-weights AS weights
 FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -219,6 +218,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 		testInstallPython("3.8") + `RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=bind,from=deps,source=/dep,target=/dep cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages || true
 RUN cowsay moo
+FROM r8.im/replicate/cog-test-weights AS weights
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -249,12 +249,11 @@ build:
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	_, actual, _, err := gen.Generate("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
 ` + testPipInstallStage(gen.relativeTmpDir) + `
-FROM r8.im/replicate/cog-test-weights AS weights
 FROM python:3.8-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -263,6 +262,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY --from=deps --link /dep /usr/local/lib/python3.8/site-packages
 RUN cowsay moo
+FROM r8.im/replicate/cog-test-weights AS weights
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -284,7 +284,7 @@ build:
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
-	_, actual, _, err := gen.Generate("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 	fmt.Println(actual)
 	require.Contains(t, actual, `pip install -t /dep -r /tmp/requirements.txt`)
@@ -345,7 +345,7 @@ predict: predict.py:Predictor
 		return nil
 	}
 
-	modelDockerfile, runnerDockerfile, dockerignore, err := gen.Generate("r8.im/replicate/cog-test")
+	modelDockerfile, runnerDockerfile, dockerignore, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -362,7 +362,6 @@ COPY root-large /src/root-large`
 ` + testPipInstallStage(gen.relativeTmpDir) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r /tmp/requirements.txt
-FROM r8.im/replicate/cog-test-weights AS weights
 FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -372,6 +371,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 		testInstallPython("3.8") + `RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=bind,from=deps,source=/dep,target=/dep cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages || true
 RUN cowsay moo
+FROM r8.im/replicate/cog-test-weights AS weights
 COPY --from=weights --link /src/checkpoints /src/checkpoints
 COPY --from=weights --link /src/models /src/models
 COPY --from=weights --link /src/root-large /src/root-large

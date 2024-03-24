@@ -26,7 +26,7 @@ const bundledSchemaPy = ".cog/schema.py"
 // Build a Cog model from a config
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
-func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string) error {
+func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string, useCogBaseImage bool) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 
 	// remove bundled schema files that may be left from previous builds
@@ -52,9 +52,10 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			}
 		}()
 		generator.SetUseCudaBaseImage(useCudaBaseImage)
+		generator.SetUseCogBaseImage(useCogBaseImage)
 
 		if separateWeights {
-			weightsDockerfile, runnerDockerfile, dockerignore, err := generator.Generate(imageName)
+			weightsDockerfile, runnerDockerfile, dockerignore, err := generator.GenerateModelBaseWithSeparateWeights(imageName)
 			if err != nil {
 				return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 			}
@@ -193,7 +194,7 @@ func BuildBase(cfg *config.Config, dir string, useCudaBaseImage string, progress
 
 	generator.SetUseCudaBaseImage(useCudaBaseImage)
 
-	dockerfileContents, err := generator.GenerateBase()
+	dockerfileContents, err := generator.GenerateModelBase()
 	if err != nil {
 		return "", fmt.Errorf("Failed to generate Dockerfile: %w", err)
 	}
