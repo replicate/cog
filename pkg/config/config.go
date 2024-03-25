@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v2"
@@ -20,6 +21,11 @@ import (
 // TODO(andreas): support dockerfiles
 // TODO(andreas): custom cpu/gpu installs
 // TODO(andreas): suggest valid torchvision versions (e.g. if the user wants to use 0.8.0, suggest 0.8.1)
+
+const (
+	MinimumMajorPythonVersion int = 3
+	MinimumMinorPythonVersion int = 8
+)
 
 type RunItem struct {
 	Command string `json:"command,omitempty" yaml:"command"`
@@ -193,6 +199,35 @@ func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 		}
 	}
 	return "", false
+}
+
+func splitPythonVersion(version string) (major int, minor int, err error) {
+	version = strings.TrimSpace(version)
+	parts := strings.SplitN(version, ".", 3)
+	majorStr, minorStr := parts[0], parts[1]
+	major, err = strconv.Atoi(majorStr)
+	if err != nil {
+		return 0, 0, err
+	}
+	minor, err = strconv.Atoi(minorStr)
+	if err != nil {
+		return 0, 0, err
+	}
+	return major, minor, nil
+}
+
+func ValidateModelPythonVersion(version string) error {
+	// we check for minimum supported here
+	major, minor, err := splitPythonVersion(version)
+	if err != nil {
+		return fmt.Errorf("invalid Python version format: %w", err)
+	}
+	if major < MinimumMajorPythonVersion || (major >= MinimumMajorPythonVersion &&
+		minor < MinimumMinorPythonVersion) {
+		return fmt.Errorf("minimum supported Python version is %d.%d. requested %s",
+			MinimumMajorPythonVersion, MinimumMinorPythonVersion, version)
+	}
+	return nil
 }
 
 func (c *Config) ValidateAndComplete(projectDir string) error {
