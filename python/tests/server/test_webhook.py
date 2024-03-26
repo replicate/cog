@@ -4,7 +4,6 @@ from cog.schema import WebhookEvent, PredictionResponse
 from cog.server.webhook import webhook_caller, webhook_caller_filtered
 from responses import registries
 
-processing = PredictionResponse(input={}, output=status=Status.PROCESSING)
 payload = {"status": "processing", "logs": "giraffe", "input": {}}
 processing = PredictionResponse(**payload)
 
@@ -44,19 +43,19 @@ def test_webhook_caller_terminal_retries():
         resps.append(
             responses.post(
                 "https://example.com/webhook/123",
-                json={"status": "succeeded", "animal": "giraffe"},
+                json=payload,
                 status=429,
             )
         )
     resps.append(
         responses.post(
             "https://example.com/webhook/123",
-            json={"status": "succeeded", "animal": "giraffe"},
+            json=payload,
             status=200,
         )
     )
 
-    c({"status": "succeeded", "animal": "giraffe"})
+    c(processing)
 
     assert all(r.call_count == 1 for r in resps)
 
