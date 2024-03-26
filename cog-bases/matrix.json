@@ -1,0 +1,4 @@
+{
+  "dockerfile": ["Dockerfile1", "Dockerfile2"],
+  "imagename": ["image1", "image2"]
+}
