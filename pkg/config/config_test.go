@@ -45,7 +45,7 @@ foo==1.0.0`), 0o644)
 	require.Equal(t, "11.0.3", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 
-	requirements, err := config.PythonRequirementsForArch("", "")
+	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
 	expected := `--find-links https://download.pytorch.org/whl/torch_stable.html
 torch==1.7.1+cu110
@@ -75,7 +75,7 @@ foo==1.0.0`), 0o644)
 	require.Equal(t, "11.6.2", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 
-	requirements, err := config.PythonRequirementsForArch("", "")
+	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
 	expected := `--extra-index-url https://download.pytorch.org/whl/cu116
 torch==1.12.1+cu116
@@ -110,7 +110,7 @@ flask>0.4
 	err = config.ValidateAndComplete(tmpDir)
 	require.NoError(t, err)
 
-	requirements, err := config.PythonRequirementsForArch("", "")
+	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
 	expected := `foo==1.0.0
 # a torch which already has a version
@@ -283,7 +283,7 @@ func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 	require.Equal(t, "11.8", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 
-	requirements, err := config.PythonRequirementsForArch("", "")
+	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
 	expected := `--find-links https://download.pytorch.org/whl/torch_stable.html
 torch==1.7.1+cu110
@@ -310,7 +310,7 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 	err := config.ValidateAndComplete("")
 	require.NoError(t, err)
 
-	requirements, err := config.PythonRequirementsForArch("", "")
+	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
 	expected := `torch==1.7.1
 torchvision==0.8.2
@@ -341,7 +341,7 @@ func TestPythonPackagesForArchTensorflowGPU(t *testing.T) {
 	// they were built in the same way and both provide GPU support via Nvidia CUDA.
 	// As of December 2022, tensorflow-gpu has been removed and has been replaced with
 	// this new, empty package that generates an error upon installation.
-	requirements, err := config.PythonRequirementsForArch("", "")
+	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
 	expected := `tensorflow==2.12.0
 foo==1.0.0`
@@ -422,9 +422,9 @@ build:
   run:
     - command: "echo 'Hello, World!'"
       mounts:
-        - type: bind
-          id: my-volume
-          target: /mnt/data
+	- type: bind
+	  id: my-volume
+	  target: /mnt/data
 `
 
 	err := yaml.Unmarshal([]byte(yamlString), &buildWrapper)
