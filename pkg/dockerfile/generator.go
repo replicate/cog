@@ -125,7 +125,7 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		return "", err
 	}
 
-	return strings.Join(filterEmpty([]string{
+	return joinStringsWithoutLineSpace([]string{
 		"#syntax=docker/dockerfile:1.4",
 		pipInstallStage,
 		"FROM " + baseImage,
@@ -135,7 +135,7 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		aptInstalls,
 		g.copyPipPackagesFromInstallStage(),
 		runCommands,
-	}), "\n"), nil
+	}), nil
 }
 
 func (g *Generator) GenerateModelBase() (string, error) {
@@ -157,10 +157,10 @@ func (g *Generator) GenerateDockerfileWithoutSeparateWeights() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.Join(filterEmpty([]string{
+	return joinStringsWithoutLineSpace([]string{
 		base,
 		`COPY . /src`,
-	}), "\n"), nil
+	}), nil
 }
 
 // GenerateModelBaseWithSeparateWeights creates the Dockerfile and .dockerignore file contents for model weights
@@ -192,7 +192,7 @@ func (g *Generator) GenerateModelBaseWithSeparateWeights(imageName string) (weig
 	)
 
 	dockerignoreContents = makeDockerignoreForWeights(g.modelDirs, g.modelFiles)
-	return weightsBase, strings.Join(filterEmpty(base), "\n"), dockerignoreContents, nil
+	return weightsBase, joinStringsWithoutLineSpace(base), dockerignoreContents, nil
 }
 
 func (g *Generator) generateForWeights() (string, []string, []string, error) {
@@ -465,6 +465,15 @@ func (g *Generator) writeTemp(filename string, contents []byte) ([]string, strin
 		return []string{}, "", fmt.Errorf("Failed to write %s: %w", filename, err)
 	}
 	return []string{fmt.Sprintf("COPY %s /tmp/%s", filepath.Join(g.relativeTmpDir, filename), filename)}, "/tmp/" + filename, nil
+}
+
+func joinStringsWithoutLineSpace(chunks []string) string {
+	lines := []string{}
+	for _, chunk := range chunks {
+		chunkLines := strings.Split(chunk, "\n")
+		lines = append(lines, chunkLines...)
+	}
+	return strings.Join(filterEmpty(lines), "\n")
 }
 
 func filterEmpty(list []string) []string {

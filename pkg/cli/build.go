@@ -36,6 +36,7 @@ func newBuildCommand() *cobra.Command {
 	addUseCudaBaseImageFlag(cmd)
 	addDockerfileFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
+	addTimestampFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
 }
@@ -107,4 +108,9 @@ func addUseCogBaseImageFlag(cmd *cobra.Command) {
 			f.Hidden = true
 		}
 	})
+}
+
+func addTimestampFlag(cmd *cobra.Command) {
+	cmd.Flags().Int64VarP(&config.BuildSourceEpochTimestamp, "timestamp", "t", -1, "Number of seconds sing Epoch to use for the build timestamp; this rewrites the timestamp of each layer. Useful for reproducibility. (`-1` to disable timestamp rewrites)")
+	_ = cmd.Flags().MarkHidden("timestamp")
 }

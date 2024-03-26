@@ -16,6 +16,10 @@ import (
 	"github.com/replicate/cog/pkg/util/slices"
 )
 
+var (
+	BuildSourceEpochTimestamp int64 = -1
+)
+
 // TODO(andreas): support conda packages
 // TODO(andreas): support dockerfiles
 // TODO(andreas): custom cpu/gpu installs
