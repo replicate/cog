@@ -2,11 +2,11 @@ package cli
 
 import (
 	"fmt"
-	"github.com/replicate/cog/pkg/config"
 	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/global"
@@ -110,8 +110,7 @@ func addBaseImageFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&baseImageCUDAVersion, "cuda", "", "CUDA version")
 	cmd.Flags().StringVar(&baseImagePythonVersion, "python", "", "Python version")
 	cmd.Flags().StringVar(&baseImageTorchVersion, "torch", "", "Torch version")
-	cmd.Flags().Int64VarP(&config.BuildSourceEpochTimestamp, "timestamp", "t", -1, "Set layer timestamps to this value (useful for reproducibility)")
-	_ = cmd.Flags().MarkHidden("timestamp")
+	addBuildTimestampFlag(cmd)
 }
 
 func baseImageGeneratorFromFlags() (*dockerfile.BaseImageGenerator, error) {

@@ -3,12 +3,13 @@ package docker
 import (
 	"bufio"
 	"fmt"
-	"github.com/Masterminds/semver"
 	"io"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+
+	"github.com/Masterminds/semver"
 
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
@@ -43,8 +44,9 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 		if !checkBuildKitVersion() {
 			os.Exit(1)
 		}
-		args = append(args, "--build-arg", fmt.Sprintf("SOURCE_DATE_EPOCH=%d", epoch))
-		args = append(args, "--output", "type=docker,rewrite-timestamp=true")
+		args = append(args,
+			"--build-arg", fmt.Sprintf("SOURCE_DATE_EPOCH=%d", epoch),
+			"--output", "type=docker,rewrite-timestamp=true")
 		console.Infof("Forcing timestamp rewriting to epoch %d", epoch)
 
 	}
