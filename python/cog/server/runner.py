@@ -90,9 +90,9 @@ class PredictionRunner:
     ) -> None:
         self._shutdown_event = shutdown_event  # __main__ waits for this event
         self._upload_url = upload_url
-        self._predictions: "dict[str, tuple[schema.PredictionResponse, PredictionTask]]" = (
-            {}
-        )
+        self._predictions: (
+            "dict[str, tuple[schema.PredictionResponse, PredictionTask]]"
+        ) = {}
         self._predictions_in_flight: "set[str]" = set()
         # it would be lovely to merge these but it's not fully clear how best to handle it
         # since idempotent requests can kinda come whenever?
@@ -262,7 +262,9 @@ class PredictionRunner:
         # which calls iter(io.BytesIO) with data uris that are File
         # that breaks one of the tests, but happens Rarely in production,
         # so let's ignore it for now
-        event_handler = PredictionEventHandler(request, self.client_manager, upload_url, self.log)
+        event_handler = PredictionEventHandler(
+            request, self.client_manager, upload_url, self.log
+        )
         response = event_handler.response
 
         prediction_input = PredictionInput.from_request(request)

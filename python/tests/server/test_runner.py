@@ -262,7 +262,7 @@ async def test_prediction_event_handler():
     assert isinstance(p.completed_at, datetime)
 
 
-@pytest.mark.xfail # ClientManager refactor
+@pytest.mark.xfail  # ClientManager refactor
 def test_prediction_event_handler_webhook_sender(match):
     s = mock.Mock()
     p = PredictionResponse(input={"hello": "there"})
@@ -370,7 +370,7 @@ def test_prediction_event_handler_webhook_sender_intermediate(match):
     s.assert_called_once_with(match({"status": "canceled"}), WebhookEvent.COMPLETED)
 
 
-@pytest.mark.xfail # ClientManager refactor
+@pytest.mark.xfail  # ClientManager refactor
 def test_prediction_event_handler_file_uploads():
     u = mock.Mock()
     p = PredictionResponse(input={"hello": "there"})

@@ -3,6 +3,7 @@ python -m cog.command.specification
 
 This prints a JSON object describing the inputs of the model.
 """
+
 import json
 
 from ..errors import CogError, ConfigDoesNotExist, PredictorNotSet
@@ -17,7 +18,10 @@ if __name__ == "__main__":
         with suppress_output():
             config = load_config()
             app = create_app(config, shutdown_event=None)
-            if app.state.setup_result and app.state.setup_result.status == Status.FAILED:
+            if (
+                app.state.setup_result
+                and app.state.setup_result.status == Status.FAILED
+            ):
                 raise CogError(app.state.setup_result.logs)
             schema = app.openapi()
     except (ConfigDoesNotExist, PredictorNotSet):
