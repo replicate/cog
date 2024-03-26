@@ -93,11 +93,9 @@ class Path(pathlib.PosixPath):
         # get filename
         parsed_url = urllib.parse.urlparse(value)
 
-
         # this is the best place to convert, kinda
         # as long as you're converting to
         # tempfile paths
-
 
         # this is also where you need to somehow note which tempfiles need to be filled
         # ...

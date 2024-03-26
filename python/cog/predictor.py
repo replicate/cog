@@ -83,13 +83,15 @@ async def run_setup_async(predictor: BasePredictor) -> None:
         return await maybe_coro
 
 
-def get_weights_argument(predictor: BasePredictor) -> Union[CogFile, CogPath, str, None]:
+def get_weights_argument(
+    predictor: BasePredictor,
+) -> Union[CogFile, CogPath, str, None]:
     # by the time we get here we assume predictor has a setup method
     weights_type = get_weights_type(predictor.setup)
     if weights_type is None:
         return None
     weights_url = os.environ.get("COG_WEIGHTS")
-    weights_path = "weights" # this is the source of a bug isn't it?
+    weights_path = "weights"  # this is the source of a bug isn't it?
 
     # TODO: Cog{File,Path}.validate(...) methods accept either "real"
     # paths/files or URLs to those things. In future we can probably tidy this
@@ -122,7 +124,7 @@ def get_weights_argument(predictor: BasePredictor) -> Union[CogFile, CogPath, st
 
 
 def get_weights_type(
-    setup_function: Callable[[Any], Optional[Awaitable[None]]]
+    setup_function: Callable[[Any], Optional[Awaitable[None]]],
 ) -> Optional[Any]:
     signature = inspect.signature(setup_function)
     if "weights" not in signature.parameters:

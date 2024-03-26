@@ -153,4 +153,3 @@ class StreamRedirector(threading.Thread):
                     if drain_tokens_seen >= drain_tokens_needed:
                         self.drain_event.set()
                         drain_tokens_seen = 0
-

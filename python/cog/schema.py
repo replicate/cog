@@ -52,9 +52,9 @@ class PredictionRequest(PredictionBaseModel):
     output_file_prefix: t.Optional[str]
 
     webhook: t.Optional[pydantic.AnyHttpUrl]
-    webhook_events_filter: t.Optional[
-        t.List[WebhookEvent]
-    ] = WebhookEvent.default_events()
+    webhook_events_filter: t.Optional[t.List[WebhookEvent]] = (
+        WebhookEvent.default_events()
+    )
 
     @classmethod
     def with_types(cls, input_type: t.Type[t.Any]) -> t.Any:

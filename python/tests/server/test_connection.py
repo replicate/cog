@@ -3,6 +3,7 @@ from cog.server import eventtypes
 import multiprocessing as mp
 import pytest
 
+
 @pytest.mark.asyncio
 async def test_async_connection_rt():
     item = ("asdf", eventtypes.PredictionOutput({"x": 3}))
@@ -14,4 +15,3 @@ async def test_async_connection_rt():
     assert c2.recv() == item
     c2.send(item)
     assert await ac.recv() == item
-
