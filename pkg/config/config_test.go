@@ -420,11 +420,11 @@ func TestBuildRunItemDictYAML(t *testing.T) {
 	yamlString := `
 build:
   run:
-    - command: "echo 'Hello, World!'"
-      mounts:
-	- type: bind
-	  id: my-volume
-	  target: /mnt/data
+  - command: "echo 'Hello, World!'"
+    mounts:
+    - type: bind
+      id: my-volume
+      target: /mnt/data
 `
 
 	err := yaml.Unmarshal([]byte(yamlString), &buildWrapper)
