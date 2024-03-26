@@ -468,6 +468,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
+FROM python:3.8 as deps
 FROM r8.im/cog-base:python3.8
 FROM r8.im/replicate/cog-test-weights AS weights
 WORKDIR /src
@@ -567,6 +568,5 @@ COPY . /src`
 
 	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
-	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118
-pandas==2.0.3`, string(requirements))
+	require.Equal(t, "pandas==2.0.3", string(requirements))
 }
