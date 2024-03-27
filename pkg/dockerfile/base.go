@@ -34,7 +34,22 @@ var (
 		"wget",
 		"zip",
 	}
-	baseImageConfigurations = []BaseImageConfiguration{
+)
+
+type BaseImageConfiguration struct {
+	CudaVersion   string `json:"cuda_version" yaml:"cuda_version"`
+	PythonVersion string `json:"python_version" yaml:"python_version"`
+	TorchVersion  string `json:"torch_version" yaml:"torch_version"`
+}
+
+type BaseImageGenerator struct {
+	cudaVersion   string
+	pythonVersion string
+	torchVersion  string
+}
+
+func BaseImageConfigurations() []BaseImageConfiguration {
+	return []BaseImageConfiguration{
 		{"", "3.10", ""},
 		{"", "3.10", "1.12.1"},
 		{"", "3.11", ""},
@@ -123,18 +138,6 @@ var (
 		{"12.1", "3.9", "2.1.0"},
 		{"12.1.1", "3.11", "2.1.1"},
 	}
-)
-
-type BaseImageConfiguration struct {
-	cudaVersion   string
-	pythonVersion string
-	torchVersion  string
-}
-
-type BaseImageGenerator struct {
-	cudaVersion   string
-	pythonVersion string
-	torchVersion  string
 }
 
 func NewBaseImageGenerator(cudaVersion string, pythonVersion string, torchVersion string) (*BaseImageGenerator, error) {
@@ -209,8 +212,8 @@ func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string
 }
 
 func BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion string) bool {
-	for _, conf := range baseImageConfigurations {
-		if conf.cudaVersion == cudaVersion && conf.pythonVersion == pythonVersion && conf.torchVersion == torchVersion {
+	for _, conf := range BaseImageConfigurations() {
+		if conf.CudaVersion == cudaVersion && conf.PythonVersion == pythonVersion && conf.TorchVersion == torchVersion {
 			return true
 		}
 	}

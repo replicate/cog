@@ -1,0 +1,155 @@
+name: Build Base Images
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
+
+jobs:
+  generate-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go Runtime
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+      - name: Install Python dependencies
+        run: |
+          python -m pip install '.[dev]'
+
+      - name: 'Build Base-Image command'
+        run: |
+          make base-image
+
+      - id: matrix
+        run: |
+          MATRIX_JSON=$(./base-image generate-matrix)
+          echo "matrix=$MATRIX_JSON" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: 'Check Matrix'
+        run: |
+          jq . <<< '${{ steps.matrix.outputs.matrix }}'
+
+  build:
+    name: Build Image
+    needs: generate-matrix
+    runs-on: ubuntu-latest-8-cores
+    strategy:
+      matrix:
+        include: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - uses: actions/checkout@v4
+        name: 'Checkout Repository'
+
+      - name: 'Set up Buildx'
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
+          driver-opts: |
+            image=moby/buildkit:v0.13.0
+
+      - name: Setup Go Runtime
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: 'Set Python Version'
+        run: |
+          if [ -z "${{ matrix.python_version }}" ]; then
+            echo "::error::Python Version is Required"
+            exit 1
+          fi
+          echo "PYTHON_VERSION=${{ matrix.python_version }}" >> $GITHUB_ENV
+        shell: bash
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python_version }}
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install '.[dev]'
+
+      - name: 'Build Base-Image command'
+        run: |
+          make base-image
+
+      - name: 'Set Cuda Version'
+        run: |
+          if [ ! -z "${{ matrix.cuda_version }}" ]; then
+            echo "CUDA_VERSION_ARG=--cuda ${{ matrix.cuda_version }}" >> $GITHUB_ENV
+          fi
+        shell: bash
+
+      - name: 'Set Torch Version'
+        run: |
+          if [ ! -z "${{ matrix.torch_version }}" ]; then
+            echo "TORCH_VERSION_ARG=--torch ${{ matrix.torch_version }}" >> $GITHUB_ENV
+          fi
+        shell: bash
+
+      - name: 'Generate Dockerfile cache key'
+        id: dockerfile_key
+        run: |
+          DOCKERFILE_CACHE_KEY=$(./base-image generate-cache-key \
+            --python ${{ matrix.pythonVersion }} \
+            ${{ env.CUDA_VERSION_ARG }} \
+            ${{ env.TORCH_VERSION_ARG }}
+          )
+          echo "dockerfile_cache_key=$DOCKERFILE_CACHE_KEY" >> $GITHUB_OUTPUT
+
+      - name: 'Cache Docker Layers'
+        uses: actions/cache@v2
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ steps.dockerfile_key.outputs.dockerfile_cache_key }}
+          restore-keys: |
+              ${{ runner.os }}-buildx-
+          shell: bash
+
+      - name: 'Build Base Images'
+        run: |
+          echo "Building Base Image for Python ${{ matrix.pythonVersion }} with CUDA ${{ matrix.cudaVersion }} and Torch ${{ matrix.torchVersion }}"
+          echo ""
+          ./base-image build \
+            --buildx-cache /tmp/.buildx-cache \
+            --timestamp 0 \
+            --python ${{ env.PYTHON_VERSION }} \
+            ${{ env.CUDA_VERSION_ARG }} \
+            ${{ env.TORCH_VERSION_ARG }} 
+
+
+      - id: auth
+        name: 'Authenticate to Google Cloud'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity: 'projects/1025538909507/locations/global/workloadIdentityPools/github/providers/github-actions'
+          service_account: 'builder@replicate-production.iam.gserviceaccount.com'
+          token_format: 'access_token'
+
+      - name: 'Login to US Artifact Registry'
+        uses: docker/login-action@v3
+        with:
+          registry: us-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.token }}
+
+      - name: 'Push Images'
+        run: |
+          echo "Pushing Base Image for Python ${{ matrix.pythonVersion }} with CUDA ${{ matrix.cudaVersion }} and Torch ${{ matrix.torchVersion }}"

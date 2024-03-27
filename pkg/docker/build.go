@@ -1,21 +1,16 @@
 package docker
 
 import (
-	"bufio"
 	"fmt"
-	"io"
+	"github.com/replicate/cog/pkg/config"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 
-	"github.com/Masterminds/semver"
-
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 )
-
-const minimumBuildKitVersionEpochRewrite = "0.13.0"
 
 func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, progressOutput string, epoch int64) error {
 	var args []string
@@ -41,9 +36,6 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 	// format. It's generally safe to override to --output type=docker,rewrite-timestamp=true as the use of `--load` is
 	// equivalent to `--output type=docker`
 	if epoch >= 0 {
-		if !checkBuildKitVersion() {
-			os.Exit(1)
-		}
 		args = append(args,
 			"--build-arg", fmt.Sprintf("SOURCE_DATE_EPOCH=%d", epoch),
 			"--output", "type=docker,rewrite-timestamp=true")
@@ -51,9 +43,15 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 
 	}
 
+	if config.BuildXCachePath != "" {
+		args = append(args, "--cache-from", "type=local,src="+config.BuildXCachePath)
+		args = append(args, "--cache-to", "type=local,dest="+config.BuildXCachePath)
+	} else {
+		args = append(args, "--cache-to", "type=inline")
+	}
+
 	args = append(args,
 		"--file", "-",
-		"--cache-to", "type=inline",
 		"--tag", imageName,
 		"--progress", progressOutput,
 		".",
@@ -67,57 +65,6 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
 	return cmd.Run()
-}
-
-func checkBuildKitVersion() bool {
-	cmd := exec.Command("docker", "buildx", "inspect", "--bootstrap")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		console.Warnf("Error checking buildx version: %v", err)
-		return false
-	}
-
-	reader := strings.NewReader(string(output))
-	compatible, version, err := findAndCompareBuildKitVersion(reader)
-	if err != nil {
-		console.Warnf("Error checking buildx buildKit version: %v", err)
-		return compatible
-	}
-	if !compatible {
-		console.Warnf("BuildKit version v%s is not compatible with timestamp rewriting. Please upgrade to v%s or later to enable timestamp rewriting.", version, minimumBuildKitVersionEpochRewrite)
-	}
-	return compatible
-}
-
-func findAndCompareBuildKitVersion(r io.Reader) (bool, string, error) {
-	compareSemver, err := semver.NewVersion(minimumBuildKitVersionEpochRewrite)
-	if err != nil {
-		return false, "", fmt.Errorf("invalid compare version: %w", err)
-	}
-
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "BuildKit version:") {
-			versionStr := strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
-			if strings.HasPrefix(versionStr, "v") {
-				versionStr = versionStr[1:]
-			}
-
-			version, err := semver.NewVersion(versionStr)
-			if err != nil {
-				return false, version.String(), fmt.Errorf("invalid version in output: %w", err)
-			}
-
-			return version.Equal(compareSemver) || version.GreaterThan(compareSemver), version.String(), nil
-		}
-	}
-
-	err = scanner.Err()
-	if err != nil {
-		return false, "", err
-	}
-	return false, "", fmt.Errorf("version line not found")
 }
 
 func BuildAddLabelsAndSchemaToImage(image string, labels map[string]string, bundledSchemaFile string, bundledSchemaPy string) error {
