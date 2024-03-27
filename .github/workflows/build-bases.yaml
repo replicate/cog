@@ -23,7 +23,7 @@ jobs:
 
       - id: getmatrix
         run: |
-          MATRIX_JSON=$(go run cmd/base--images/baseimage.go generate-matrix)
+          MATRIX_JSON=$(go run cmd/base-images/baseimage.go generate-matrix)
           echo "::set-output name=matrix::$MATRIX_JSON"
         shell: bash
 
@@ -99,9 +99,11 @@ jobs:
           echo ""
           go run cmd/base-image/baseimage.go build \
             --buildx-cache /tmp/.buildx-cache \
+            --timestamp 0 \
             --python ${{ env.PYTHON_VERSION }} \
             ${{ env.CUDA_VERSION_ARG }} \
-            ${{ env.TORCH_VERSION_ARG }}
+            ${{ env.TORCH_VERSION_ARG }} 
+
 
       - id: auth
         name: 'Authenticate to Google Cloud'
