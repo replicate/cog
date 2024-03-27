@@ -3,7 +3,7 @@ import pickle
 
 import pytest
 import responses
-from cog.types import URLFile, get_filename
+from cog.types import Secret, URLFile, get_filename
 
 
 @responses.activate
@@ -119,3 +119,11 @@ def test_urlfile_can_be_pickled_even_once_loaded():
 )
 def test_get_filename(url, filename):
     assert get_filename(url) == filename
+
+
+def test_secret_type():
+    secret_value = "sw0rdf1$h"  # noqa: S105
+    secret = Secret(secret_value)
+
+    assert secret.get_secret_value() == secret_value
+    assert str(secret) == "**********"
