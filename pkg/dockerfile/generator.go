@@ -267,8 +267,10 @@ func (g *Generator) installTini() string {
 	// N.B. If you remove/change this, consider removing/changing the `has_init`
 	// image label applied in image/build.go.
 	lines := []string{
-		`RUN --mount=type=cache,target=/var/cache/apt set -eux; \
-apt-get update -qq; \
+		`RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+--mount=type=cache,target=/var/lib/apt,sharing=locked \
+set -eux; \
+apt-get update -qq && \
 apt-get install -qqy --no-install-recommends curl; \
 rm -rf /var/lib/apt/lists/*; \
 TINI_VERSION=v0.19.0; \
