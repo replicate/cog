@@ -114,8 +114,3 @@ func addBuildTimestampFlag(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&config.BuildSourceEpochTimestamp, "timestamp", -1, "Number of seconds sing Epoch to use for the build timestamp; this rewrites the timestamp of each layer. Useful for reproducibility. (`-1` to disable timestamp rewrites)")
 	_ = cmd.Flags().MarkHidden("timestamp")
 }
-
-func addBuildXCacheFlag(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&config.BuildXCachePath, "buildx-cache", "", "Specify the cache source for Docker Buildx")
-	_ = cmd.Flags().MarkHidden("buildx-cache")
-}

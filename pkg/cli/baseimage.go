@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -44,36 +43,11 @@ func NewBaseImageRootCommand() (*cobra.Command, error) {
 	rootCmd.AddCommand(
 		newBaseImageDockerfileCommand(),
 		newBaseImageBuildCommand(),
-		newBaseImageGenerateCacheKey(),
 		newBaseImageGenerateMatrix(),
+		newBaseImageName(),
 	)
 
 	return &rootCmd, nil
-}
-
-func newBaseImageGenerateCacheKey() *cobra.Command {
-	var cmd = &cobra.Command{
-		Use:   "generate-cache-key",
-		Short: "Generate a cache key for the Cog base image with the given versions",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			generator, err := baseImageGeneratorFromFlags()
-			if err != nil {
-				return err
-			}
-			dockerFile, err := generator.GenerateDockerfile()
-			if err != nil {
-				return err
-			}
-			hasher := sha256.New()
-			hasher.Write([]byte(dockerFile))
-			cacheKey := fmt.Sprintf("%x", hasher.Sum(nil))
-			fmt.Println(cacheKey)
-			return nil
-		},
-		Args: cobra.MaximumNArgs(0),
-	}
-	addBaseImageFlags(cmd)
-	return cmd
 }
 
 func newBaseImageGenerateMatrix() *cobra.Command {
@@ -151,6 +125,23 @@ func newBaseImageBuildCommand() *cobra.Command {
 	addBaseImageFlags(cmd)
 
 	return cmd
+}
+
+func newBaseImageName() *cobra.Command {
+	var cmd = &cobra.Command{
+		Use:   "base-image-name",
+		Short: "Display Cog base image name",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Println(dockerfile.BaseImageName(baseImageCUDAVersion, baseImagePythonVersion, baseImageTorchVersion))
+			return nil
+		},
+		Args: cobra.MaximumNArgs(0),
+	}
+	addBaseImageFlags(cmd)
+	cmd.Flags().BoolVar(&buildUseCogBaseImage, "strip-registry", false, "Strip the registry from the base image name")
+	_ = cmd.MarkFlagFilename("strip-registry")
+	return cmd
+
 }
 
 func addBaseImageFlags(cmd *cobra.Command) {
