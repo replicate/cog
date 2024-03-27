@@ -1,0 +1,127 @@
+name: Build Base Images
+
+on:
+  workflow_dispatch:
+    branches:
+      - cog-base-images
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  setmatrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go Runtime
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.20
+        id: go
+
+      - id: getmatrix
+        run: |
+          MATRIX_JSON=$(go run cmd/base--images/baseimage.go generate-matrix)
+          echo "::set-output name=matrix::$MATRIX_JSON"
+        shell: bash
+
+  build:
+    name: Build Image
+    runs-on: ubuntu-latest-8-cores
+    strategy:
+      matrix: ${{fromJson(needs.getmatrix.outputs.matrix)}}
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - uses: actions/checkout@v4
+        name: 'Checkout Repository'
+
+      - name: 'Set up Buildx'
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
+          driver-opts: |
+            image=moby/buildkit:v0.13.0
+
+      - name: Setup Go Runtime
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.20
+        id: go
+
+      - name: 'Set Python Version'
+        run: |
+          if [ -z "${{ matrix.python_version }}" ]; then
+            echo "::error::Python Version is Required"
+            exit 1
+          fi
+          echo "PYTHON_VERSION=${{ matrix.python_version }}" >> $GITHUB_ENV
+          shell: bash
+
+      - name: 'Set Cuda Version'
+        run: |
+          if [ ! -z "${{ matrix.cuda_version }}" ]; then
+            echo "CUDA_VERSION_ARG=--cuda ${{ matrix.cuda_version }}" >> $GITHUB_ENV
+          fi
+        shell: bash
+
+      - name: 'Set Torch Version'
+        run: |
+          if [ ! -z "${{ matrix.torch_version }}" ]; then
+            echo "TORCH_VERSION_ARG=--torch ${{ matrix.torch_version }}" >> $GITHUB_ENV
+          fi
+        shell: bash
+
+      - name: 'Generate Dockerfile cache key'
+        id: dockerfile_key
+        run: |
+          DOCKERFILE_CACHE_KEY=$(go run cmd/base-image/baseimage.go generate-cache-key \
+            --python ${{ matrix.pythonVersion }} \
+            ${{ env.CUDA_VERSION_ARG }} \
+            ${{ env.TORCH_VERSION_ARG }})"
+          echo "::set-output name=dockerfile_cache_key::$DOCKERFILE_CACHE_KEY"
+
+      - name: 'Cache Docker Layers'
+        uses: actions/cache@v2
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ steps.dockerfile_key.outputs.dockerfile_cache_key }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+          shell: bash
+
+      - name: 'Build Base Images'
+        run: |
+          echo "Building Base Image for Python ${{ matrix.pythonVersion }} with CUDA ${{ matrix.cudaVersion }} and Torch ${{ matrix.torchVersion }}"
+          echo ""
+          go run cmd/base-image/baseimage.go build \
+            --buildx-cache /tmp/.buildx-cache \
+            --python ${{ env.PYTHON_VERSION }} \
+            ${{ env.CUDA_VERSION_ARG }} \
+            ${{ env.TORCH_VERSION_ARG }}
+
+      - id: auth
+        name: 'Authenticate to Google Cloud'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity: 'projects/1025538909507/locations/global/workloadIdentityPools/github/providers/github-actions'
+          service_account: 'builder@replicate-production.iam.gserviceaccount.com'
+          token_format: 'access_token'
+
+      - name: 'Login to US Artifact Registry'
+        uses: docker/login-action@v3
+        with:
+          registry: us-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.token }}
+
+      - name: 'Push Images'
+        run: |
+          echo "Pushing Base Image for Python ${{ matrix.pythonVersion }} with CUDA ${{ matrix.cudaVersion }} and Torch ${{ matrix.torchVersion }}"
