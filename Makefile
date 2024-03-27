@@ -35,6 +35,13 @@ cog: pkg/dockerfile/embed/cog.whl
 		-ldflags "-X github.com/replicate/cog/pkg/global.Version=$(COG_VERSION) -X github.com/replicate/cog/pkg/global.BuildTime=$(shell date +%Y-%m-%dT%H:%M:%S%z) -w" \
 		cmd/cog/cog.go
 
+.PHONY: base-image
+base-image: pkg/dockerfile/embed/cog.whl
+	$(eval COG_VERSION ?= $(shell git describe --tags --match 'v*' --abbrev=0)+dev)
+	CGO_ENABLED=0 $(GO) build -o $@ \
+		-ldflags "-X github.com/replicate/cog/pkg/global.Version=$(COG_VERSION) -X github.com/replicate/cog/pkg/global.BuildTime=$(shell date +%Y-%m-%dT%H:%M:%S%z) -w" \
+		cmd/base-image/baseimage.go
+
 .PHONY: install
 install: cog
 	$(INSTALL_PROGRAM) -d $(DESTDIR)$(BINDIR)

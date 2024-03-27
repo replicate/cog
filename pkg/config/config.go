@@ -19,6 +19,7 @@ import (
 
 var (
 	BuildSourceEpochTimestamp int64 = -1
+	BuildXCachePath           string
 )
 
 // TODO(andreas): support conda packages
