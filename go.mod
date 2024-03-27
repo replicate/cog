@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/anaskhan96/soup v1.2.5
 	github.com/docker/cli v25.0.3+incompatible
-	github.com/docker/docker v25.0.3+incompatible
+	github.com/docker/docker v26.0.0+incompatible
 	github.com/getkin/kin-openapi v0.123.0
 	github.com/golangci/golangci-lint v1.56.2
 	github.com/hashicorp/go-version v1.6.0
@@ -140,6 +140,7 @@ require (
 	github.com/mbilski/exhaustivestruct v1.2.0 // indirect
 	github.com/mgechev/revive v1.3.7 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
+	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/moricho/tparallel v0.3.1 // indirect
 	github.com/nakabonne/nestif v0.3.1 // indirect
