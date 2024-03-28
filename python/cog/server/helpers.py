@@ -1,9 +1,42 @@
+import fcntl
 import io
 import os
 import selectors
+import socket
 import threading
 import uuid
+from multiprocessing.connection import Connection
 from typing import Callable, Optional, Sequence, TextIO
+
+
+def _get_max_pipe_size() -> int:
+    try:
+        with open("/proc/sys/fs/pipe-max-size") as pipe_file:
+            return int(pipe_file.read())
+    except OSError:
+        return 1024 * 1024
+
+
+def _increase_pipe_size(fd: int) -> None:
+    # Constant for `F_SETPIPE_SZ`, as Python's `fcntl` module doesn't have this
+    # defined until Python 3.10.
+    F_SETPIPE_SZ = 1031
+    fcntl.fcntl(fd, F_SETPIPE_SZ, _get_max_pipe_size())
+
+
+def _increase_socket_size(fd: int) -> None:
+    sock = socket.fromfd(fd, socket.AF_UNIX, socket.SOCK_STREAM)
+    max_sz = _get_max_pipe_size()  # this is.. not true, but probably the same value
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, max_sz)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, max_sz)
+
+
+def increase_conn_size(conn: Connection) -> None:
+    if conn.writable and conn.readable:
+        # duplex "pipe" = socket
+        _increase_socket_size(conn.fileno())
+    else:
+        _increase_pipe_size(conn.fileno())
 
 
 class WrappedStream:
@@ -15,6 +48,7 @@ class WrappedStream:
 
     def wrap(self) -> None:
         r, w = os.pipe()
+        _increase_pipe_size(r)
 
         # Save a copy of the original stream file descriptor.
         original_fd = self._stream.fileno()
