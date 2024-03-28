@@ -2,10 +2,18 @@ name: Build Base Images
 
 on:
   workflow_dispatch:
+    branches:
+      - main
+      # TODO: Remove once merged to main
+      - cog-base-images
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  REGISTRY_NAMESPACE: replicate/cog
 
 jobs:
   generate-matrix:
@@ -43,15 +51,20 @@ jobs:
           jq . <<< '${{ steps.matrix.outputs.matrix }}'
 
   build:
-    name: Build Image
+    name: Build and Push Image
     needs: generate-matrix
     runs-on: ubuntu-latest-8-cores
     strategy:
+      # TODO: Right Size this, 5 seems like a sane placeholder
+      max-parallel: 5
       matrix:
         include: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
     permissions:
       contents: 'read'
-      id-token: 'write'
+      packages: 'write'
+
+    outputs:
+      image: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.title'] }}:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
 
     steps:
       - uses: actions/checkout@v4
@@ -62,7 +75,7 @@ jobs:
         with:
           platforms: linux/amd64,linux/arm64
           driver-opts: |
-            image=moby/buildkit:v0.13.0
+            image=moby/buildkit:v0.13.1
 
       - name: Setup Go Runtime
         uses: actions/setup-go@v5
@@ -109,91 +122,55 @@ jobs:
           ./base-image dockerfile \
             --python ${{ env.PYTHON_VERSION }} \
             ${{ env.CUDA_VERSION_ARG }} \
-            ${{ env.TORCH_VERSION_ARG }} >> Dockerfile
+            ${{ env.TORCH_VERSION_ARG }} > Dockerfile
 
-      - name: 'Get Image Name and Tag'
-        id: image_name
+      - name: 'DockerFile Short Hash'
         run: |
-          IMAGE_NAME=$(./base-image base-image-name \
-            --strip-registry \
-            --python ${{ env.PYTHON_VERSION }} \
-            ${{ env.CUDA_VERSION_ARG }} \
-            ${{ env.TORCH_VERSION_ARG }}
-          )
-          echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
-          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+          SHORT_HASH=$(echo ${{ hashFiles('Dockerfile') }} | cut -c1-8)
+          echo "Short Hash: $SHORT_HASH"
+          echo "SHORT_HASH=$SHORT_HASH" >> $GITHUB_ENV
 
-      - id: auth
-        name: 'Authenticate to Google Cloud'
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: 'projects/1025538909507/locations/global/workloadIdentityPools/github/providers/github-actions'
-          service_account: 'builder@replicate-production.iam.gserviceaccount.com'
-          token_format: 'access_token'
-
-      - name: 'Log into US Artifact Registry'
+      - name: 'Authenticate to GHCR'
         uses: docker/login-action@v3
         with:
-          registry: us-docker.pkg.dev
-          username: oauth2accesstoken
-          password: '${{ steps.auth.outputs.access_token }}'
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-#      - name: 'Reproducible Build: Cache var-cache-apt'
-#        id: cache-var-cache-apt
-#        uses: actions/cache@v3
-#        with:
-#          path: var-cache-apt
-#          key: var-cache-apt-${{ hashFiles('Dockerfile') }}
-#      - name: 'Reproducible Build: Cache var-lib-apt'
-#        id: cache-var-lib-apt
-#        uses: actions/cache@v3
-#        with:
-#          path: var-lib-apt
-#          key: var-lib-apt-${{ hashFiles('Dockerfile') }}
-#      - name: 'Reproducible Build: inject var-cache-apt'
-#        uses: reproducible-containers/buildkit-cache-dance@v2.1.4
-#        with:
-#          cache-source: var-cache-apt
-#          cache-target: /var/cache/apt
-#          skip-extraction: ${{ steps.cache-var-cache-apt.outputs.cache-hit }}
-#      - name: 'Reproducible Build: inject var-lib-apt'
-#        uses: reproducible-containers/buildkit-cache-dance@v2.1.4
-#        with:
-#          cache-source: var-lib-apt
-#          cache-target: /var/lib/apt
-#          skip-extraction: ${{ steps.cache-var-lib-apt.outputs.cache-hit }}
-#
-#      - name: 'Reproducible Build: Pip cache'
-#        id: root-pip-cache
-#        uses: actions/cache@v3
-#        with:
-#          path: root-pip-cache
-#          key: root-pip-cache-${{ hashFiles('Dockerfile') }}
-#      - name: 'Reproducible Build: Inject Pip Cache'
-#        uses: reproducible-containers/buildkit-cache-dance@v2.1.2
-#        with:
-#          cache-source: root-pip-cache
-#          cache-target: /root/.cache/pip
-#          skip-extraction: ${{ steps.root-pip-cache.outputs.cache-hit }}
+      - name: 'Reproducible Build: Cache var-cache-apt'
+        id: cache-var-cache-apt
+        uses: actions/cache@v3
+        with:
+          path: var-cache-apt-${{ env.RUNNER_ARCH }}
+          key: var-cache-apt-${{ env.RUNNER_ARCH }}-${{ env.SHORT_HASH }}
+      - name: 'Reproducible Build: inject var-cache-apt'
+        uses: reproducible-containers/buildkit-cache-dance@v2.1.4
+        with:
+          cache-source: var-cache-apt-${{ env.RUNNER_ARCH }}
+          cache-target: /var/cache/apt
+          skip-extraction: ${{ steps.cache-var-cache-apt.outputs.cache-hit == 'true' }}
 
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: ${{ env.IMAGE_NAME }}
+          images: |
+            ${{ env.REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/${{ matrix.image_name }}
+          tags: |
+            type=raw,value=${{ matrix.image_tag }},priority=800
+            type=raw,value=${{ env.SHORT_HASH }}
 
       - name: 'Build and Push Base Images'
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: false
           file: ./Dockerfile
-          outputs: type=registry,registry=us-docker.pkg.dev/replicate-production/replicate-us,rewrite-timestamp=true
-          tags: ${{ steps.image_name.outputs.image_name }}
-          #Eregistry: us-docker.pkg.dev/replicate-production/replicate-us
+          push: true
+          outputs: type=image,rewrite-timestamp=true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
-          provenance: mode=max
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.image_name }}-${{ matrix.image_tag }}
+          cache-to: type=gha,scope=${{ matrix.image_name }}-${{ matrix.image_tag }},mode=max
         env:
           SOURCE_DATE_EPOCH: 0

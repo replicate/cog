@@ -267,9 +267,7 @@ func (g *Generator) installTini() string {
 	// N.B. If you remove/change this, consider removing/changing the `has_init`
 	// image label applied in image/build.go.
 	lines := []string{
-		`RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
---mount=type=cache,target=/var/lib/apt,sharing=locked \
-set -eux; \
+		`RUN --mount=type=cache,target=/var/cache/apt,sharing=locked set -eux; \
 apt-get update -qq && \
 apt-get install -qqy --no-install-recommends curl; \
 rm -rf /var/lib/apt/lists/*; \
@@ -294,7 +292,7 @@ func (g *Generator) aptInstalls() (string, error) {
 		})
 	}
 
-	return "RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy " +
+	return "RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy " +
 		strings.Join(packages, " ") +
 		" && rm -rf /var/lib/apt/lists/*", nil
 }
@@ -312,7 +310,7 @@ func (g *Generator) installPythonCUDA() (string, error) {
 	py := g.Config.Build.PythonVersion
 
 	return `ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
-RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy --no-install-recommends \
 	make \
 	build-essential \
 	libssl-dev \
