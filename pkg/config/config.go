@@ -199,7 +199,8 @@ func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 	for _, pkg := range c.Build.pythonRequirementsContent {
 		pkgName, version, err := splitPinnedPythonRequirement(pkg)
 		if err != nil {
-			return "", false
+			// package is not in package==version format
+			continue
 		}
 		if pkgName == name {
 			return version, true
