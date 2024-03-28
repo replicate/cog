@@ -1,10 +1,14 @@
 package dockerfile
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/replicate/cog/pkg/config"
 )
+
+const BaseImageRegistry = "r8.im"
 
 var (
 	baseImageSystemPackages = []string{
@@ -48,7 +52,27 @@ type BaseImageGenerator struct {
 	torchVersion  string
 }
 
+func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
+	type Alias BaseImageConfiguration
+	type BaseImageConfigWithImageName struct {
+		Alias
+		ImageName string `json:"image_name,omitempty" yaml:"image_name,omitempty"`
+	}
+	imageName := BaseImageName(b.CudaVersion, b.PythonVersion, b.TorchVersion)
+	imageName = strings.TrimPrefix(imageName, BaseImageRegistry+"/")
+
+	alias := &BaseImageConfigWithImageName{
+		Alias:     Alias(b),
+		ImageName: imageName,
+	}
+	return json.Marshal(alias)
+}
+
 func BaseImageConfigurations() []BaseImageConfiguration {
+	return []BaseImageConfiguration{
+		{"12.1", "3.10", ""},
+		{"", "3.10", ""},
+	}
 	return []BaseImageConfiguration{
 		{"", "3.10", ""},
 		{"", "3.10", "1.12.1"},
@@ -208,7 +232,7 @@ func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string
 	if torchVersion != "" {
 		tag += "-torch" + torchVersion
 	}
-	return "r8.im/cog-base:" + tag
+	return BaseImageRegistry + "/cog-base:" + tag
 }
 
 func BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion string) bool {
