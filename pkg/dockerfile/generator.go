@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/slices"
 	"github.com/replicate/cog/pkg/util/version"
 	"github.com/replicate/cog/pkg/weights"
@@ -380,6 +381,7 @@ func (g *Generator) pipInstallStage() (string, error) {
 ` + installCog, nil
 	}
 
+	console.Debugf("Generatated requirements.txt:\n%s", g.pythonRequirementsContents)
 	copyLine, containerPath, err := g.writeTemp("requirements.txt", []byte(g.pythonRequirementsContents))
 	if err != nil {
 		return "", err
