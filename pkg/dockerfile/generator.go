@@ -381,7 +381,7 @@ func (g *Generator) pipInstallStage() (string, error) {
 ` + installCog, nil
 	}
 
-	console.Debugf("Generatated requirements.txt:\n%s", g.pythonRequirementsContents)
+	console.Debugf("Generated requirements.txt:\n%s", g.pythonRequirementsContents)
 	copyLine, containerPath, err := g.writeTemp("requirements.txt", []byte(g.pythonRequirementsContents))
 	if err != nil {
 		return "", err
