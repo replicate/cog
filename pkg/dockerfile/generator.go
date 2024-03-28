@@ -12,6 +12,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/util/slices"
+	"github.com/replicate/cog/pkg/util/version"
 	"github.com/replicate/cog/pkg/weights"
 )
 
@@ -233,6 +234,11 @@ func (g *Generator) baseImage() (string, error) {
 	if g.useCogBaseImage {
 		cudaVersion := g.Config.Build.CUDA
 		pythonVersion := g.Config.Build.PythonVersion
+		var err error
+		pythonVersion, err = stripPatchVersion(pythonVersion)
+		if err != nil {
+			return "", err
+		}
 		torchVersion, _ := g.Config.TorchVersion()
 		baseImage := BaseImageName(cudaVersion, pythonVersion, torchVersion)
 		return baseImage, nil
@@ -308,7 +314,6 @@ func (g *Generator) installPythonCUDA() (string, error) {
 	// TODO: check that python version is valid
 
 	py := g.Config.Build.PythonVersion
-
 	return `ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy --no-install-recommends \
 	make \
@@ -513,4 +518,13 @@ func (g *Generator) GenerateWeightsManifest() (*weights.Manifest, error) {
 	}
 
 	return m, nil
+}
+
+func stripPatchVersion(versionString string) (string, error) {
+	v, err := version.NewVersion(versionString)
+	if err != nil {
+		return "", fmt.Errorf("Invalid version: %s", versionString)
+	}
+
+	return fmt.Sprintf("%d.%d", v.Major, v.Minor), nil
 }
