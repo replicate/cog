@@ -3,9 +3,8 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-
 	"github.com/spf13/cobra"
+	"os"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
@@ -44,7 +43,6 @@ func NewBaseImageRootCommand() (*cobra.Command, error) {
 		newBaseImageDockerfileCommand(),
 		newBaseImageBuildCommand(),
 		newBaseImageGenerateMatrix(),
-		newBaseImageName(),
 	)
 
 	return &rootCmd, nil
@@ -125,23 +123,6 @@ func newBaseImageBuildCommand() *cobra.Command {
 	addBaseImageFlags(cmd)
 
 	return cmd
-}
-
-func newBaseImageName() *cobra.Command {
-	var cmd = &cobra.Command{
-		Use:   "base-image-name",
-		Short: "Display Cog base image name",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println(dockerfile.BaseImageName(baseImageCUDAVersion, baseImagePythonVersion, baseImageTorchVersion))
-			return nil
-		},
-		Args: cobra.MaximumNArgs(0),
-	}
-	addBaseImageFlags(cmd)
-	cmd.Flags().BoolVar(&buildUseCogBaseImage, "strip-registry", false, "Strip the registry from the base image name")
-	_ = cmd.MarkFlagFilename("strip-registry")
-	return cmd
-
 }
 
 func addBaseImageFlags(cmd *cobra.Command) {
