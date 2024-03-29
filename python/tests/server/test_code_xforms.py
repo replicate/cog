@@ -52,9 +52,9 @@ class Predictor(BasePredictor):
 
 
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
-def test_predict_output_file_model():
+def test_predict_output_path_model():
     with open(
-        f"{g_module_dir}/../../../test-integration/test_integration/fixtures/file-output-project/predict.py",
+        f"{g_module_dir}/../../../test-integration/test_integration/fixtures/path-output-project/predict.py",
         encoding="utf-8",
     ) as file:
         source_code = file.read()
