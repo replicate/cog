@@ -1,9 +1,10 @@
 import io
 import pickle
+import urllib.request
 
 import pytest
 import responses
-from cog.types import Secret, URLFile, get_filename
+from cog.types import Secret, URLFile, get_filename_from_url, get_filename_from_urlopen,
 
 
 @responses.activate
@@ -76,19 +77,6 @@ def test_urlfile_can_be_pickled_even_once_loaded():
             "https://example.com/ហ_ត_អ_វ_ប_នជ_ក_រស_គតរបស_ព_រ_យ_ស_ម_នអ_ណ_ចម_ល_Why_Was_The_Death_Of_Jesus_So_Powerful_.m4a",
             "ហ_ត_អ_វ_ប_នជ_ក_រស_គតរបស_ព_រ_យ_ស_ម_នអ_ណ_ចម_ល_Why_Was_The_Death_Of_Jesus_So_Powerful_.m4a",
         ),
-        # Data URIs
-        (
-            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg==",
-            "file.png",
-        ),
-        (
-            "data:text/plain,hello world",
-            "file.txt",
-        ),
-        (
-            "data:application/data;base64,aGVsbG8gd29ybGQ=",
-            "file",
-        ),
         # URL-encoded filenames
         (
             "https://example.com/thing+with+spaces.m4a",
@@ -118,7 +106,7 @@ def test_urlfile_can_be_pickled_even_once_loaded():
     ],
 )
 def test_get_filename(url, filename):
-    assert get_filename(url) == filename
+    assert get_filename_from_url(url) == filename
 
 
 def test_secret_type():
@@ -127,3 +115,19 @@ def test_secret_type():
 
     assert secret.get_secret_value() == secret_value
     assert str(secret) == "**********"
+
+
+@pytest.mark.parametrize(
+    "url,filename",
+    [
+        (
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg==",
+            "file.png",
+        ),
+        ("data:text/plain,hello world", "file.txt"),
+        ("data:application/data;base64,aGVsbG8gd29ybGQ=", "file"),
+    ],
+)
+def test_get_filename_from_urlopen(url, filename):
+    resp = urllib.request.urlopen(url)  # noqa: S310
+    assert get_filename_from_urlopen(resp) == filename

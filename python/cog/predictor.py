@@ -22,15 +22,12 @@ from typing import (
 )
 from unittest.mock import patch
 
-import structlog
-
-import cog.code_xforms as code_xforms
-
 try:
     from typing import get_args, get_origin
 except ImportError:  # Python < 3.8
     from typing_compat import get_args, get_origin  # type: ignore
 
+import structlog
 import yaml
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
@@ -38,18 +35,11 @@ from pydantic.fields import FieldInfo
 # Added in Python 3.9. Can be from typing if we drop support for <3.9
 from typing_extensions import Annotated
 
+from . import code_xforms
 from .errors import ConfigDoesNotExist, PredictorNotSet
-from .types import (
-    CogConfig,
-    Input,
-    URLPath,
-)
-from .types import (
-    File as CogFile,
-)
-from .types import (
-    Path as CogPath,
-)
+from .types import CogConfig, Input, URLTempFile
+from .types import File as CogFile
+from .types import Path as CogPath
 from .types import Secret as CogSecret
 
 log = structlog.get_logger("cog.server.predictor")
@@ -89,14 +79,20 @@ def run_setup(predictor: BasePredictor) -> None:
         return
 
     weights: Union[io.IOBase, Path, str, None]
-
     weights_url = os.environ.get("COG_WEIGHTS")
+    # this is the source of some bugs
+    # https://github.com/replicate/cog-sdxl/blob/main/predict.py#L184-L185
+    # https://github.com/replicate/cog-llama-template/blob/main/predict.py#L44-L46
     weights_path = "weights"
 
     # TODO: Cog{File,Path}.validate(...) methods accept either "real"
     # paths/files or URLs to those things. In future we can probably tidy this
     # up a little bit.
     # TODO: CogFile/CogPath should have subclasses for each of the subtypes
+
+    # this is a breaking change
+    # previously, CogPath wouldn't be converted in setup(); now it is
+    # essentially everyone needs to switch from Path to str (or a new URL type)
     if weights_url:
         if weights_type == CogFile:
             weights = cast(CogFile, CogFile.validate(weights_url))
@@ -266,12 +262,20 @@ class BaseInput(BaseModel):
         Cleanup any temporary files created by the input.
         """
         for _, value in self:
-            # Handle URLPath objects specially for cleanup.
+            # Handle URLTempFile objects specially for cleanup.
             # Also handle pathlib.Path objects, which cog.Path is a subclass of.
             # A pathlib.Path object shouldn't make its way here,
             # but both have an unlink() method, so we may as well be safe.
-            if isinstance(value, (URLPath, Path)):
-                value.unlink(missing_ok=True)
+            if isinstance(value, (URLTempFile, Path)):
+                try:
+                    value.unlink(missing_ok=True)
+                except FileNotFoundError:
+                    pass
+
+    # if we had a separate method to traverse the input and apply some function to each value
+    # we could have cleanup/get_tempfile/convert functions that operate on a single value
+    # and get recursively applied to any nested part of the input.
+    # unlike cleanup, convert is supposed to mutate though, so it's tricky
 
 
 def validate_input_type(type: Type[Any], name: str) -> None:

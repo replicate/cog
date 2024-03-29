@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, Union
 
 from attrs import define, field, validators
 
@@ -43,3 +43,6 @@ class Done:
 @define
 class Heartbeat:
     pass
+
+
+PublicEventType = Union[Done, Heartbeat, Log, PredictionOutput, PredictionOutputType]
