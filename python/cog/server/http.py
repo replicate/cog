@@ -35,8 +35,6 @@ from pydantic.error_wrappers import ErrorWrapper
 
 from .. import schema
 from ..errors import PredictorNotSet
-from ..files import upload_file
-from ..json import upload_files
 from ..logging import setup_logging
 from ..predictor import (
     get_input_type,
@@ -350,13 +348,10 @@ def create_app(
             request.input = {}
 
         try:
-            # For now, we only ask PredictionRunner to handle file uploads for
-            # async predictions. This is unfortunate but required to ensure
-            # backwards-compatible behaviour for synchronous predictions.
-            initial_response, async_result = runner.predict(
-                request,
-                upload=respond_async,
-            )
+            # Previously, we only asked PredictionRunner to handle file uploads for
+            # async predictions. However, PredictionRunner now handles data uris.
+            # If we ever want to do output_file_prefix, runner also sees that
+            initial_response, async_result = runner.predict(request)
         except RunnerBusyError:
             return JSONResponse(
                 {"detail": "Already running a prediction"}, status_code=409
@@ -365,21 +360,28 @@ def create_app(
         if respond_async:
             return JSONResponse(jsonable_encoder(initial_response), status_code=202)
 
+        # by now, output Path and File are already converted to str
+        # so when we validate the schema, those urls get cast back to Path and File
+        # in the previous implementation those would then get encoded as strings
+        # however the changes to Path and File break this and return the filename instead
         try:
             prediction = await async_result
+            # we're only doing this to catch validation errors
             response = PredictionResponse(**prediction.dict())
+            del response
         except ValidationError as e:
             _log_invalid_output(e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
-        response_object = response.dict()
-        response_object["output"] = upload_files(
-            response_object["output"],
-            upload_file=lambda fh: upload_file(fh, request.output_file_prefix),  # type: ignore
-        )
+        # dict_resp = response.dict()
+        # output = await runner.client_manager.upload_files(
+        #     dict_resp["output"], upload_url
+        # )
+        # dict_resp["output"] = output
+        # encoded_response = jsonable_encoder(dict_resp)
 
-        # FIXME: clean up output files
-        encoded_response = jsonable_encoder(response_object)
+        # return *prediction* and not *response* to preserve urls
+        encoded_response = jsonable_encoder(prediction.dict())
         return JSONResponse(content=encoded_response)
 
     @app.post("/predictions/{prediction_id}/cancel")

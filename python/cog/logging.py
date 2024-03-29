@@ -86,4 +86,5 @@ def setup_logging(*, log_level: int = logging.NOTSET) -> None:
 
     # Reconfigure log levels for some overly chatty libraries
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    # FIXME: no more urllib3(?)
     logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)

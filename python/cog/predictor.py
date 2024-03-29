@@ -22,15 +22,12 @@ from typing import (
 )
 from unittest.mock import patch
 
-import structlog
-
-import cog.code_xforms as code_xforms
-
 try:
     from typing import get_args, get_origin
 except ImportError:  # Python < 3.8
     from typing_compat import get_args, get_origin  # type: ignore
 
+import structlog
 import yaml
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
@@ -38,18 +35,11 @@ from pydantic.fields import FieldInfo
 # Added in Python 3.9. Can be from typing if we drop support for <3.9
 from typing_extensions import Annotated
 
+from . import code_xforms
 from .errors import ConfigDoesNotExist, PredictorNotSet
-from .types import (
-    CogConfig,
-    Input,
-    URLPath,
-)
-from .types import (
-    File as CogFile,
-)
-from .types import (
-    Path as CogPath,
-)
+from .types import CogConfig, Input, URLTempFile
+from .types import File as CogFile
+from .types import Path as CogPath
 from .types import Secret as CogSecret
 
 log = structlog.get_logger("cog.server.predictor")
@@ -97,27 +87,33 @@ async def run_setup_async(predictor: BasePredictor) -> None:
         return await maybe_coro
 
 
-def get_weights_argument(predictor: BasePredictor) -> Union[CogFile, CogPath, None]:
+def get_weights_argument(
+    predictor: BasePredictor,
+) -> Union[CogFile, CogPath, str, None]:
     # by the time we get here we assume predictor has a setup method
     weights_type = get_weights_type(predictor.setup)
     if weights_type is None:
         return None
     weights_url = os.environ.get("COG_WEIGHTS")
-    weights_path = "weights"
+    weights_path = "weights"  # this is the source of a bug isn't it?
 
     # TODO: Cog{File,Path}.validate(...) methods accept either "real"
     # paths/files or URLs to those things. In future we can probably tidy this
     # up a little bit.
     # TODO: CogFile/CogPath should have subclasses for each of the subtypes
+
+    # this is a breaking change
+    # previously, CogPath wouldn't be converted in setup(); now it is
+    # essentially everyone needs to switch from Path to str (or a new URL type)
     if weights_url:
         if weights_type == CogFile:
             return cast(CogFile, CogFile.validate(weights_url))
         if weights_type == CogPath:
             # TODO: So this can be a url. evil!
-            weights = cast(CogPath, CogPath.validate(weights_url))
+            return cast(CogPath, CogPath.validate(weights_url))
         # allow people to download weights themselves
         elif weights_type == str:  # noqa: E721
-            weights = weights_url
+            return weights_url
         else:
             raise ValueError(
                 f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
@@ -128,13 +124,13 @@ def get_weights_argument(predictor: BasePredictor) -> Union[CogFile, CogPath, No
         if weights_type == CogPath:
             return CogPath(weights_path)
         raise ValueError(
-            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File and Path are supported"
+            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
         )
     return None
 
 
 def get_weights_type(
-    setup_function: Callable[[Any], Optional[Awaitable[None]]]
+    setup_function: Callable[[Any], Optional[Awaitable[None]]],
 ) -> Optional[Any]:
     signature = inspect.signature(setup_function)
     if "weights" not in signature.parameters:
@@ -276,12 +272,19 @@ class BaseInput(BaseModel):
         Cleanup any temporary files created by the input.
         """
         for _, value in self:
-            # Handle URLPath objects specially for cleanup.
+            # Handle URLTempFile objects specially for cleanup.
             # Also handle pathlib.Path objects, which cog.Path is a subclass of.
             # A pathlib.Path object shouldn't make its way here,
             # but both have an unlink() method, so we may as well be safe.
-            if isinstance(value, (URLPath, Path)):
-                value.unlink(missing_ok=True)
+            if isinstance(value, (URLTempFile, Path)):
+                try:
+                    value.unlink(missing_ok=True)
+                except FileNotFoundError:
+                    pass
+
+    # if we had a separate method to traverse the input and apply some function to each value
+    # we could have cleanup/get_tempfile/convert functions that operate on a single value
+    # and do it that way. convert is supposed to mutate though, so it's tricky
 
 
 def validate_input_type(type: Type[Any], name: str) -> None:
