@@ -181,7 +181,7 @@ def get_predictor_ref(config: Dict[str, Any], mode: str = "predict") -> str:
 
 
 def load_full_predictor_from_file(
-    module_name: str, module_path: str
+    module_path: str, module_name: str
 ) -> types.ModuleType:
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None
@@ -206,6 +206,14 @@ def load_slim_predictor_from_file(
     return module
 
 
+def get_predictor(module: types.ModuleType, class_name: str) -> Any:
+    predictor = getattr(module, class_name)
+    # It could be a class or a function
+    if inspect.isclass(predictor):
+        return predictor()
+    return predictor
+
+
 def load_slim_predictor_from_ref(ref: str, method_name: str) -> BasePredictor:
     module_path, class_name = ref.split(":", 1)
     module_name = os.path.basename(module_path).split(".py", 1)[0]
@@ -222,22 +230,16 @@ def load_slim_predictor_from_ref(ref: str, method_name: str) -> BasePredictor:
     finally:
         if not module:
             log.debug(f"[{module_name}] falling back to slow loader")
-            module = load_full_predictor_from_file(module_name, module_path)
-    predictor = getattr(module, class_name)
-    # It could be a class or a function
-    if inspect.isclass(predictor):
-        return predictor()
+            module = load_full_predictor_from_file(module_path, module_name)
+    predictor = get_predictor(module, class_name)
     return predictor
 
 
 def load_predictor_from_ref(ref: str) -> BasePredictor:
     module_path, class_name = ref.split(":", 1)
     module_name = os.path.basename(module_path).split(".py", 1)[0]
-    module = load_full_predictor_from_file(module_name, module_path)
-    predictor = getattr(module, class_name)
-    # It could be a class or a function
-    if inspect.isclass(predictor):
-        return predictor()
+    module = load_full_predictor_from_file(module_path, module_name)
+    predictor = get_predictor(module, class_name)
     return predictor
 
 

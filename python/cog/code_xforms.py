@@ -1,8 +1,9 @@
 import ast
+import re
 import types
 from typing import Optional, Set, Union
 
-COG_IMPORT_MODULES = {"cog", "typing", "sys", "os", "functools"}
+COG_IMPORT_MODULES = {"cog", "typing", "sys", "os", "functools", "pydantic", "numpy"}
 
 
 def load_module_from_string(
@@ -24,13 +25,15 @@ def extract_class_source(source_code: str, class_name: str) -> str:
     Returns:
         The source code of the specified class if found; otherwise, an empty string.
     """
+    class_name_pattern = re.compile(r"\b[A-Z]\w*\b")
+    all_class_names = class_name_pattern.findall(class_name)
 
     class ClassExtractor(ast.NodeVisitor):
         def __init__(self) -> None:
             self.class_source = None
 
         def visit_ClassDef(self, node: ast.ClassDef) -> None:
-            if node.name == class_name:
+            if node.name in all_class_names:
                 self.class_source = ast.get_source_segment(source_code, node)
 
     tree = ast.parse(source_code)
