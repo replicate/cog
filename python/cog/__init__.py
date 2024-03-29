@@ -1,7 +1,14 @@
 from pydantic import BaseModel
 
 from .predictor import BasePredictor
-from .types import AsyncConcatenateIterator, ConcatenateIterator, File, Input, Path, Secret
+from .types import (
+    AsyncConcatenateIterator,
+    ConcatenateIterator,
+    File,
+    Input,
+    Path,
+    Secret,
+)
 
 try:
     from ._version import __version__

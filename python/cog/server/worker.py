@@ -270,19 +270,6 @@ class Worker:
         self._mux.terminating.set()
 
 
-class LockedConn:
-    def __init__(self, conn: Connection) -> None:
-        self.conn = conn
-        self._lock = _spawn.Lock()
-
-    def send(self, obj: Any) -> None:
-        with self._lock:
-            self.conn.send(obj)
-
-    def recv(self) -> Any:
-        return self.conn.recv()
-
-
 class _ChildWorker(_spawn.Process):  # type: ignore
     def __init__(
         self,
@@ -292,7 +279,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     ) -> None:
         self._predictor_ref = predictor_ref
         self._predictor: Optional[BasePredictor] = None
-        self._events = LockedConn(events)
+        self._events = events
         self._tee_output = tee_output
         self._cancelable = False
 

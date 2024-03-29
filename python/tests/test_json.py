@@ -3,8 +3,7 @@ import tempfile
 
 import cog
 import numpy as np
-from cog.files import upload_file
-from cog.json import make_encodeable, upload_files
+from cog.json import make_encodeable
 from pydantic import BaseModel
 
 
@@ -35,17 +34,6 @@ def test_make_encodeable_ignores_files():
     path = cog.Path(temp_path)
     model = Model(path=path)
     assert make_encodeable(model) == {"path": path}
-
-
-def test_upload_files():
-    temp_dir = tempfile.mkdtemp()
-    temp_path = os.path.join(temp_dir, "my_file.txt")
-    with open(temp_path, "w") as fh:
-        fh.write("file content")
-    obj = {"path": cog.Path(temp_path)}
-    assert upload_files(obj, upload_file) == {
-        "path": "data:text/plain;base64,ZmlsZSBjb250ZW50"
-    }
 
 
 def test_numpy():
