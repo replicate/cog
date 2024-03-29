@@ -2,6 +2,7 @@ import pytest
 import requests
 import responses
 from cog.schema import WebhookEvent
+
 from responses import registries
 
 pytest.skip(allow_module_level=True)

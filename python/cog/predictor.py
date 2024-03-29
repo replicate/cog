@@ -91,7 +91,7 @@ def get_weights_argument(
     if weights_type is None:
         return None
     weights_url = os.environ.get("COG_WEIGHTS")
-    weights_path = "weights"  # this is the source of a bug isn't it?
+    weights_path = "weights" # this is the source of a bug isn't it?
 
     # TODO: Cog{File,Path}.validate(...) methods accept either "real"
     # paths/files or URLs to those things. In future we can probably tidy this

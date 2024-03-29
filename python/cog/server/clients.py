@@ -109,6 +109,7 @@ class ClientManager:
         self.log = structlog.get_logger(__name__).bind()
 
     async def aclose(self) -> None:
+        # not used but it's not actually critical to close them
         await self.webhook_client.aclose()
         await self.retry_webhook_client.aclose()
         await self.file_client.aclose()
