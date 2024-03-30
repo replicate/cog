@@ -47,7 +47,7 @@ from ..predictor import (
     get_training_input_type,
     get_training_output_type,
     load_config,
-    load_predictor_from_ref,
+    load_slim_predictor_from_ref,
 )
 from .runner import (
     PredictionRunner,
@@ -127,16 +127,9 @@ def create_app(
 
     try:
         predictor_ref = get_predictor_ref(config, mode)
-        # use bundled schema if it exists
-        schema_module = None  # schema.create_schema_module() - breaks complex types, always use slow path for now
-        if schema_module is not None:
-            log.info("using bundled schema")
-            InputType = schema_module.Input
-            OutputType = schema_module.Output
-        else:
-            predictor = load_predictor_from_ref(predictor_ref)
-            InputType = get_input_type(predictor)
-            OutputType = get_output_type(predictor)
+        predictor = load_slim_predictor_from_ref(predictor_ref, "predict")
+        InputType = get_input_type(predictor)
+        OutputType = get_output_type(predictor)
     except Exception:
         msg = "Error while loading predictor:\n\n" + traceback.format_exc()
         add_setup_failed_routes(app, started_at, msg)
@@ -172,16 +165,9 @@ def create_app(
     if "train" in config:
         try:
             trainer_ref = get_predictor_ref(config, "train")
-            # use bundled schema if it exists
-            schema_module = None  # schema.create_schema_module() - breaks complex types, always use slow path for now
-            if schema_module is not None:
-                log.info("using bundled schema")
-                TrainingInputType = schema_module.TrainingInputType
-                TrainingOutputType = schema_module.TrainingOutputType
-            else:
-                trainer = load_predictor_from_ref(trainer_ref)
-                TrainingInputType = get_training_input_type(trainer)
-                TrainingOutputType = get_training_output_type(trainer)
+            trainer = load_slim_predictor_from_ref(trainer_ref, "train")
+            TrainingInputType = get_training_input_type(trainer)
+            TrainingOutputType = get_training_output_type(trainer)
 
             class TrainingRequest(
                 schema.TrainingRequest.with_types(input_type=TrainingInputType)

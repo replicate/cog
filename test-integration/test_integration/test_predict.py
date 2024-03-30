@@ -9,25 +9,28 @@ import pytest
 def test_predict_takes_string_inputs_and_returns_strings_to_stdout():
     project_dir = Path(__file__).parent / "fixtures/string-project"
     result = subprocess.run(
-        ["cog", "predict", "-i", "s=world"],
+        ["cog", "predict", "--debug", "-i", "s=world"],
         cwd=project_dir,
         check=True,
         capture_output=True,
     )
     # stdout should be clean without any log messages so it can be piped to other commands
     assert result.stdout == b"hello world\n"
+    assert "cannot use fast loader as current Python <3.9" in str(result.stderr)
+    assert "falling back to slow loader" in str(result.stderr)
 
 
 def test_predict_takes_int_inputs_and_returns_ints_to_stdout():
     project_dir = Path(__file__).parent / "fixtures/int-project"
     result = subprocess.run(
-        ["cog", "predict", "-i", "num=2"],
+        ["cog", "predict", "--debug", "-i", "num=2"],
         cwd=project_dir,
         check=True,
         capture_output=True,
     )
     # stdout should be clean without any log messages so it can be piped to other commands
     assert result.stdout == b"4\n"
+    assert "falling back to slow loader" not in str(result.stderr)
 
 
 def test_predict_takes_file_inputs(tmpdir_factory):
@@ -37,12 +40,13 @@ def test_predict_takes_file_inputs(tmpdir_factory):
     with open(out_dir / "input.txt", "w") as fh:
         fh.write("what up")
     result = subprocess.run(
-        ["cog", "predict", "-i", "path=@" + str(out_dir / "input.txt")],
+        ["cog", "predict", "--debug", "-i", "path=@" + str(out_dir / "input.txt")],
         cwd=out_dir,
         check=True,
         capture_output=True,
     )
     assert result.stdout == b"what up\n"
+    assert "falling back to slow loader" not in str(result.stderr)
 
 
 def test_predict_writes_files_to_files(tmpdir_factory):
@@ -50,7 +54,7 @@ def test_predict_writes_files_to_files(tmpdir_factory):
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
     shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
     result = subprocess.run(
-        ["cog", "predict"],
+        ["cog", "predict", "--debug"],
         cwd=out_dir,
         check=True,
         capture_output=True,
@@ -58,6 +62,7 @@ def test_predict_writes_files_to_files(tmpdir_factory):
     assert result.stdout == b""
     with open(out_dir / "output.bmp", "rb") as f:
         assert len(f.read()) == 195894
+    assert "falling back to slow loader" not in str(result.stderr)
 
 
 def test_predict_writes_files_to_files_with_custom_name(tmpdir_factory):
@@ -65,7 +70,7 @@ def test_predict_writes_files_to_files_with_custom_name(tmpdir_factory):
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
     shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
     result = subprocess.run(
-        ["cog", "predict", "-o", out_dir / "myoutput.bmp"],
+        ["cog", "predict", "--debug", "-o", out_dir / "myoutput.bmp"],
         cwd=out_dir,
         check=True,
         capture_output=True,
@@ -73,6 +78,7 @@ def test_predict_writes_files_to_files_with_custom_name(tmpdir_factory):
     assert result.stdout == b""
     with open(out_dir / "myoutput.bmp", "rb") as f:
         assert len(f.read()) == 195894
+    assert "falling back to slow loader" not in str(result.stderr)
 
 
 def test_predict_writes_multiple_files_to_files(tmpdir_factory):
@@ -83,6 +89,7 @@ def test_predict_writes_multiple_files_to_files(tmpdir_factory):
         [
             "cog",
             "predict",
+            "--debug"
         ],
         cwd=out_dir,
         check=True,
@@ -95,13 +102,14 @@ def test_predict_writes_multiple_files_to_files(tmpdir_factory):
         assert f.read() == "bar"
     with open(out_dir / "output.2.txt") as f:
         assert f.read() == "baz"
+    assert "falling back to slow loader" not in str(result.stderr)
 
 
 def test_predict_writes_strings_to_files(tmpdir_factory):
     project_dir = Path(__file__).parent / "fixtures/string-project"
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
     result = subprocess.run(
-        ["cog", "predict", "-i", "s=world", "-o", out_dir / "out.txt"],
+        ["cog", "predict", "--debug", "-i", "s=world", "-o", out_dir / "out.txt"],
         cwd=project_dir,
         check=True,
         capture_output=True,
@@ -109,13 +117,15 @@ def test_predict_writes_strings_to_files(tmpdir_factory):
     assert result.stdout == b""
     with open(out_dir / "out.txt") as f:
         assert f.read() == "hello world"
+    assert "cannot use fast loader as current Python <3.9" in str(result.stderr)
+    assert "falling back to slow loader" in str(result.stderr)
 
 
 def test_predict_runs_an_existing_image(docker_image, tmpdir_factory):
     project_dir = Path(__file__).parent / "fixtures/string-project"
 
     subprocess.run(
-        ["cog", "build", "-t", docker_image],
+        ["cog", "build", "--debug", "-t", docker_image],
         cwd=project_dir,
         check=True,
     )
@@ -123,12 +133,14 @@ def test_predict_runs_an_existing_image(docker_image, tmpdir_factory):
     # Run in another directory to ensure it doesn't use cog.yaml
     another_directory = tmpdir_factory.mktemp("project")
     result = subprocess.run(
-        ["cog", "predict", docker_image, "-i", "s=world"],
+        ["cog", "predict", "--debug", docker_image, "-i", "s=world"],
         cwd=another_directory,
         check=True,
         capture_output=True,
     )
     assert result.stdout == b"hello world\n"
+    assert "cannot use fast loader as current Python <3.9" in str(result.stderr)
+    assert "falling back to slow loader" in str(result.stderr)
 
 
 # https://github.com/replicate/cog/commit/28202b12ea40f71d791e840b97a51164e7be3b3c
@@ -157,13 +169,14 @@ def test_predict_with_remote_image(tmpdir_factory):
 def test_predict_in_subdirectory_with_imports(tmpdir_factory):
     project_dir = Path(__file__).parent / "fixtures/subdirectory-project"
     result = subprocess.run(
-        ["cog", "predict", "-i", "s=world"],
+        ["cog", "predict", "--debug", "-i", "s=world"],
         cwd=project_dir,
         check=True,
         capture_output=True,
     )
     # stdout should be clean without any log messages so it can be piped to other commands
     assert result.stdout == b"hello world\n"
+    assert "falling back to slow loader" not in str(result.stderr)
 
 
 def test_predict_many_inputs(tmpdir_factory):
@@ -181,7 +194,7 @@ def test_predict_many_inputs(tmpdir_factory):
         fh.write("world")
     with open(out_dir / "image.jpg", "w") as fh:
         fh.write("")
-    cmd = ["cog", "predict"]
+    cmd = ["cog", "--debug", "predict"]
 
     for k, v in inputs.items():
         cmd += ["-i", f"{k}={v}"]
@@ -193,13 +206,14 @@ def test_predict_many_inputs(tmpdir_factory):
         capture_output=True,
     )
     assert result.stdout.decode() == "hello default 20 world jpg foo 6\n"
+    assert "falling back to slow loader" not in str(result.stderr)
 
 
 def test_predict_many_inputs_with_existing_image(docker_image, tmpdir_factory):
     project_dir = Path(__file__).parent / "fixtures/many-inputs-project"
 
     subprocess.run(
-        ["cog", "build", "-t", docker_image],
+        ["cog", "build", "--debug", "-t", docker_image],
         cwd=project_dir,
         check=True,
     )
@@ -217,7 +231,7 @@ def test_predict_many_inputs_with_existing_image(docker_image, tmpdir_factory):
         fh.write("world")
     with open(out_dir / "image.jpg", "w") as fh:
         fh.write("")
-    cmd = ["cog", "predict", docker_image]
+    cmd = ["cog", "--debug", "predict", docker_image]
 
     for k, v in inputs.items():
         cmd += ["-i", f"{k}={v}"]
@@ -229,6 +243,7 @@ def test_predict_many_inputs_with_existing_image(docker_image, tmpdir_factory):
         capture_output=True,
     )
     assert result.stdout.decode() == "hello default 20 world jpg foo 6\n"
+    assert "falling back to slow loader" not in str(result.stderr)
 
 
 def test_predict_path_list_input(tmpdir_factory):
