@@ -1,12 +1,8 @@
 import pytest
 import requests
 import responses
-from responses import registries
-
 from cog.schema import WebhookEvent
-
-# from cog.server.webhook import webhook_caller, webhook_caller_filtered
-from cog.server.clients import ClientManager
+from responses import registries
 
 pytest.skip(allow_module_level=True)
 

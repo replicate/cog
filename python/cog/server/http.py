@@ -28,11 +28,10 @@ if TYPE_CHECKING:
 import attrs
 import structlog
 import uvicorn
-from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
+from fastapi import Body, FastAPI, Header, Path, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
 from pydantic.error_wrappers import ErrorWrapper
 
 from .. import schema

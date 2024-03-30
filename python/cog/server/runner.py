@@ -10,7 +10,7 @@ import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
-from typing import Any, AsyncIterator, Awaitable, Iterator, Optional, Union
+from typing import Any, AsyncIterator, Awaitable, Optional, Union
 
 import httpx
 import structlog

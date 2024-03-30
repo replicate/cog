@@ -6,8 +6,8 @@ from typing import Iterable, Mapping, Optional, Union
 import httpx
 
 
-# via https://github.com/replicate/replicate-python/blob/main/replicate/client.py
 # Adapted from https://github.com/encode/httpx/issues/108#issuecomment-1132753155
+# via https://github.com/replicate/replicate-python/blob/main/replicate/client.py
 class RetryTransport(httpx.AsyncBaseTransport):
     """A custom HTTP transport that automatically retries requests using an exponential backoff strategy
     for specific HTTP status codes and request methods.
@@ -105,49 +105,3 @@ class RetryTransport(httpx.AsyncBaseTransport):
 
     async def aclose(self) -> None:
         await self._wrapped_transport.aclose()  # type: ignore
-
-
-# def _build_httpx_client(
-#     client_type: Type[Union[httpx.Client, httpx.AsyncClient]],
-#     api_token: Optional[str] = None,
-#     base_url: Optional[str] = None,
-#     timeout: Optional[httpx.Timeout] = None,
-#     **kwargs,
-# ) -> Union[httpx.Client, httpx.AsyncClient]:
-#     headers = {
-#         "User-Agent": f"replicate-python/{__version__}",
-#     }
-
-#     if (
-#         api_token := api_token or os.environ.get("REPLICATE_API_TOKEN")
-#     ) and api_token != "":
-#         headers["Authorization"] = f"Token {api_token}"
-
-#     base_url = (
-#         base_url or os.environ.get("REPLICATE_BASE_URL") or "https://api.replicate.com"
-#     )
-#     if base_url == "":
-#         base_url = "https://api.replicate.com"
-
-#     timeout = timeout or httpx.Timeout(
-#         5.0, read=30.0, write=30.0, connect=5.0, pool=10.0
-#     )
-
-#     transport = kwargs.pop("transport", None) or (
-#         httpx.HTTPTransport()
-#         if client_type is httpx.Client
-#         else httpx.AsyncHTTPTransport()
-#     )
-
-#     return client_type(
-#         base_url=base_url,
-#         headers=headers,
-#         timeout=timeout,
-#         transport=RetryTransport(wrapped_transport=transport),  # type: ignore[arg-type]
-#         **kwargs,
-#     )
-
-
-# def _raise_for_status(resp: httpx.Response) -> None:
-#     if 400 <= resp.status_code < 600:
-#         raise ReplicateError(resp.json()["detail"])
