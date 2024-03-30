@@ -185,7 +185,10 @@ def create_app(
             response_model=TrainingResponse,
             response_model_exclude_unset=True,
         )
-        def train(request: TrainingRequest = Body(default=None), prefer: Union[str, None] = Header(default=None)) -> Any:  # type: ignore
+        def train(
+            request: TrainingRequest = Body(default=None),
+            prefer: Union[str, None] = Header(default=None),
+        ) -> Any:  # type: ignore
             return predict(request, prefer)
 
         @app.put(
