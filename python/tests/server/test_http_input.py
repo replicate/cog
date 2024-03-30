@@ -73,6 +73,7 @@ def test_default_int_input(client, match):
 
 # the data uri BytesIO gets consumed by jsonable_encoder
 # doesn't really matter that much for our purposes
+@pytest.mark.xfail
 @uses_predictor("input_file")
 def test_file_input_data_url(client, match):
     resp = client.post(

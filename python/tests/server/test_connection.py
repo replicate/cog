@@ -1,7 +1,8 @@
-from cog.server.connection import AsyncConnection
-from cog.server import eventtypes
 import multiprocessing as mp
+
 import pytest
+from cog.server import eventtypes
+from cog.server.connection import AsyncConnection
 
 
 @pytest.mark.asyncio

@@ -99,7 +99,7 @@ def get_weights_argument(
     # TODO: CogFile/CogPath should have subclasses for each of the subtypes
 
     # this is a breaking change
-    # previously, CogPath wouldn't be converted; now it is
+    # previously, CogPath wouldn't be converted in setup(); now it is
     # essentially everyone needs to switch from Path to str (or a new URL type)
     if weights_url:
         if weights_type == CogFile:
@@ -240,20 +240,8 @@ class BaseInput(BaseModel):
                     pass
 
     # if we had a separate method to traverse the input and apply some function to each value
-    # we could use something like these functions here
-
-    # def cleanup():
-    #     if isinstance(value, Path):
-    #         value.unlink()
-
-    # def get_tempfile():
-    #     if isinstance(value, URLTempFile):
-    #         return (value.url, value._path)
-
-    # # this one is very annoying because it's supposed to mutate
-    # def convert():
-    #     if isinstance(value, URLTempFile):
-    #         return value.convert()
+    # we could have cleanup/get_tempfile/convert functions that operate on a single value
+    # and do it that way. convert is supposed to mutate though, so it's tricky
 
 
 def validate_input_type(type: Type[Any], name: str) -> None:

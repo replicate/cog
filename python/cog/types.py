@@ -7,7 +7,7 @@ import tempfile
 import urllib.parse
 import urllib.request
 import urllib.response
-from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
+from typing import Any, AsyncIterator, Dict, Iterator, List, Optional, TypeVar, Union
 
 import httpx
 import requests
@@ -93,13 +93,10 @@ class Path(pathlib.PosixPath):
         # get filename
         parsed_url = urllib.parse.urlparse(value)
 
-        # this is the best place to convert, kinda
-        # as long as you're converting to
-        # tempfile paths
+        # this is kind of the the best place to convert, kinda
+        # as long as you're converting to tempfile paths
 
         # this is also where you need to somehow note which tempfiles need to be filled
-        # ...
-        #
         if parsed_url.scheme == "data":
             return DataURLTempFilePath(value)
         if not (parsed_url.scheme == "http" or parsed_url.scheme == "https"):
@@ -134,13 +131,13 @@ class URLTempFile(pathlib.PosixPath):
         if self._path is None:
             dest = tempfile.NamedTemporaryFile(suffix=self.filename, delete=False)
             self._path = Path(dest.name)
-            # i want to move the download elsewhere
+            # I'd want to move the download elsewhere
             async with client.stream("GET", self.url) as resp:
                 resp.raise_for_status()
                 # resp.raw.decode_content = True
                 async for chunk in resp.aiter_bytes():
                     dest.write(chunk)
-            # this is our weird Path! that's weird!
+        # this is our weird Path! that's weird!
         return self._path
 
     def __str__(self) -> str:
@@ -185,7 +182,7 @@ class DataURLTempFilePath(pathlib.PosixPath):
                     raise
 
 
-# we would prefer this to stay lazy
+# we would prefer URLFile to stay lazy
 # except... that doesn't really work with httpx?
 
 

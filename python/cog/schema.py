@@ -43,7 +43,6 @@ class PredictionRequest(PredictionBaseModel):
     # maybe it should be allowed to be optional without the factory initially
     # and be filled in later
     #
-    #
     # actually, this changes the public api so we should really do this differently
     id: str = pydantic.Field(default_factory=lambda: secrets.token_hex(4))
     created_at: t.Optional[datetime]

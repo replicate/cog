@@ -16,6 +16,8 @@ from .eventtypes import PredictionInput
 from .response_throttler import ResponseThrottler
 from .retry_transport import RetryTransport
 
+log = structlog.get_logger(__name__)
+
 
 def _get_version() -> str:
     try:
@@ -88,23 +90,22 @@ def httpx_file_client() -> httpx.AsyncClient:
         transport=transport,
         follow_redirects=True,
         timeout=timeout,
+        http2=True,
     )
 
 
-# I might still split this apart or inline parts of it
-# I'm somewhat sympathetic to separating webhooks and files
-# but they both have the same semantics of holding a client
-# for the lifetime of runner
+# there's a case for splitting this apart or inlining parts of it
+# I'm somewhat sympathetic to separating webhooks and files, but they both have
+# the same semantics of holding a client for the lifetime of runner
 # also, both are used by PredictionEventHandler
 
 
 class ClientManager:
     def __init__(self) -> None:
-        # self.file_url = upload_url
         self.webhook_client = httpx_webhook_client()
         self.retry_webhook_client = httpx_retry_client()
         self.file_client = httpx_file_client()
-        self.download_client = httpx.AsyncClient(follow_redirects=True)
+        self.download_client = httpx.AsyncClient(follow_redirects=True, http2=True)
         self.log = structlog.get_logger(__name__).bind()
 
     async def aclose(self) -> None:
@@ -150,7 +151,7 @@ class ClientManager:
 
     async def upload_file(self, fh: io.IOBase, url: Optional[str]) -> str:
         """put file to signed endpoint"""
-        print("upload_file")
+        log.debug("upload_file")
         fh.seek(0)
         # try to guess the filename of the given object
         name = getattr(fh, "name", "file")
@@ -175,13 +176,17 @@ class ClientManager:
                 if isinstance(chunk, str):
                     chunk = chunk.encode("utf-8")
                 if not chunk:
-                    print("finished reading file")
+                    log.info("finished reading file")
                     break
                 yield chunk
 
         url = url_with_trailing_slash + filename
-        if url and "internal" in url:
-            print("doing test upload to", url)
+        # this is a somewhat unfortunate hack, but it works
+        # and is critical for upload training/quantization outputs
+        # if we get multipart uploads working or a separate API route
+        # then we could drop this
+        if url and ".internal" in url:
+            log.info("doing test upload to", url)
             resp1 = await self.file_client.put(
                 url,
                 content=b"",
@@ -189,9 +194,9 @@ class ClientManager:
                 follow_redirects=False,
             )
             if resp1.status_code == 307 and resp1.headers["Location"]:
-                self.log.info("got file upload redirect from api")
+                log.info("got file upload redirect from api")
                 url = resp1.headers["Location"]
-        self.log.info("doing real upload to %s", url)
+        log.info("doing real upload to %s", url)
         resp = await self.file_client.put(
             url,
             content=chunk_file_reader(),
@@ -206,6 +211,7 @@ class ClientManager:
         return final_url
 
     # this previously lived in json.upload_files, but it's clearer here
+    # this is a great pattern that should be adopted for input files
     async def upload_files(self, obj: Any, url: Optional[str]) -> Any:
         """
         Iterates through an object from make_encodeable and uploads any files.
