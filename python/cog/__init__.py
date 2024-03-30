@@ -14,6 +14,7 @@ __all__ = [
     "BaseModel",
     "BasePredictor",
     "ConcatenateIterator",
+    "AsyncConcatenateIterator",
     "File",
     "Input",
     "Path",
