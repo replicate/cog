@@ -51,7 +51,7 @@ func FindWeights(fw FileWalker) ([]string, []string, error) {
 
 	// by sorting the files by levels, we can filter out directories that are prefixes of other directories
 	// e.g. /a/b/ is a prefix of /a/b/c/, so we can filter out /a/b/c/
-	sortFilesByLevels(files)
+	SortFilesByLevels(files)
 
 	dirs, rootFiles := getDirsAndRootfiles(files)
 	dirs = filterDirsContainingCode(dirs, codeFiles)
@@ -75,7 +75,7 @@ func isNonModelFiles(path string) bool {
 
 const sizeThreshold = 10 * 1024 * 1024 // 10MB
 
-func sortFilesByLevels(files []string) {
+func SortFilesByLevels(files []string) {
 	sort.Slice(files, func(i, j int) bool {
 		list1 := strings.Split(files[i], "/")
 		list2 := strings.Split(files[j], "/")
