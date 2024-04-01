@@ -10,7 +10,7 @@ import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
-from typing import Any, AsyncIterator, Awaitable, Optional, Union
+from typing import Any, AsyncIterator, Awaitable, Iterator, Optional, Union
 
 import httpx
 import structlog
@@ -90,7 +90,9 @@ class PredictionRunner:
     ) -> None:
         self._shutdown_event = shutdown_event  # __main__ waits for this event
         self._upload_url = upload_url
-        self._predictions: "dict[str, tuple[schema.PredictionResponse, PredictionTask]]" = {}
+        self._predictions: (
+            "dict[str, tuple[schema.PredictionResponse, PredictionTask]]"
+        ) = {}
         self._predictions_in_flight: "set[str]" = set()
         # it would be lovely to merge these but it's not fully clear how best to handle it
         # since idempotent requests can kinda come whenever?
