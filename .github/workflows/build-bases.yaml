@@ -87,7 +87,7 @@ jobs:
           echo "::set-output name=dockerfile_cache_key::$DOCKERFILE_CACHE_KEY"
 
       - name: 'Cache Docker Layers'
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-buildx-${{ steps.dockerfile_key.outputs.dockerfile_cache_key }}
