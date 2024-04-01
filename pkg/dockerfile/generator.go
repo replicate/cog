@@ -142,8 +142,6 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		return "", err
 	}
 
-	fmt.Printf(">>>>>> g.copyPipPackagesFromInstallStage(): %v\n", g.copyPipPackagesFromInstallStage()) // TODO(andreas): remove debug
-
 	return joinStringsWithoutLineSpace([]string{
 		"#syntax=docker/dockerfile:1.4",
 		pipInstallStage,
