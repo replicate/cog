@@ -376,8 +376,15 @@ func (g *Generator) pipInstallStage() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	pipStageImage := "python:" + g.Config.Build.PythonVersion
+	if g.useCogBaseImage {
+		pipStageImage, err = g.baseImage()
+		if err != nil {
+			return "", err
+		}
+	}
 	if strings.Trim(g.pythonRequirementsContents, "") == "" {
-		return `FROM python:` + g.Config.Build.PythonVersion + ` as deps
+		return `FROM ` + pipStageImage + ` as deps
 ` + installCog, nil
 	}
 
@@ -387,7 +394,7 @@ func (g *Generator) pipInstallStage() (string, error) {
 		return "", err
 	}
 	// Not slim, so that we can compile wheels
-	fromLine := `FROM python:` + g.Config.Build.PythonVersion + ` as deps`
+	fromLine := `FROM ` + pipStageImage + ` as deps`
 	// Sometimes, in order to run `pip install` successfully, some system packages need to be installed
 	// or some other change needs to happen
 	// this is a bodge to support that
@@ -415,7 +422,12 @@ func (g *Generator) copyPipPackagesFromInstallStage() string {
 		// this requires buildkit!
 		// we should check for buildkit and otherwise revert to symlinks or copying into /src
 		// we mount to avoid copying, which avoids having two copies in this layer
-		return "RUN --mount=type=bind,from=deps,source=/dep,target=/dep cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages || true"
+		return `
+RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
+    cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages; \
+    cp -rf /dep/bin/* $(pyenv prefix)/bin; \
+    pyenv rehash
+`
 	}
 
 	// if there are no requirements /dep has never been created

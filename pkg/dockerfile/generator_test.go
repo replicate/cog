@@ -14,8 +14,8 @@ import (
 )
 
 func testTini() string {
-	return `RUN --mount=type=cache,target=/var/cache/apt set -eux; \
-apt-get update -qq; \
+	return `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked set -eux; \
+apt-get update -qq && \
 apt-get install -qqy --no-install-recommends curl; \
 rm -rf /var/lib/apt/lists/*; \
 TINI_VERSION=v0.19.0; \
@@ -38,7 +38,7 @@ func testPipInstallStage(relativeTmpDir string) string {
 
 func testInstallPython(version string) string {
 	return fmt.Sprintf(`ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
-RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy --no-install-recommends \
 	make \
 	build-essential \
 	libssl-dev \
@@ -121,7 +121,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
-` + testTini() + testInstallPython("3.8") + `RUN --mount=type=bind,from=deps,source=/dep,target=/dep cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages || true
+` + testTini() + testInstallPython("3.8") + `RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
+    cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages; \
+    cp -rf /dep/bin/* $(pyenv prefix)/bin; \
+    pyenv rehash
 FROM r8.im/replicate/cog-test-weights AS weights
 WORKDIR /src
 EXPOSE 5000
@@ -164,7 +167,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
-` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
+` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 COPY --from=deps --link /dep /usr/local/lib/python3.8/site-packages
 RUN cowsay moo
 FROM r8.im/replicate/cog-test-weights AS weights
@@ -215,8 +218,11 @@ ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() +
-		testInstallPython("3.8") + `RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-RUN --mount=type=bind,from=deps,source=/dep,target=/dep cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages || true
+		testInstallPython("3.8") + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
+    cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages; \
+    cp -rf /dep/bin/* $(pyenv prefix)/bin; \
+    pyenv rehash
 RUN cowsay moo
 FROM r8.im/replicate/cog-test-weights AS weights
 WORKDIR /src
@@ -259,7 +265,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
-` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
+` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY --from=deps --link /dep /usr/local/lib/python3.8/site-packages
 RUN cowsay moo
 FROM r8.im/replicate/cog-test-weights AS weights
@@ -368,8 +374,11 @@ ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() +
-		testInstallPython("3.8") + `RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-RUN --mount=type=bind,from=deps,source=/dep,target=/dep cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages || true
+		testInstallPython("3.8") + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
+    cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages; \
+    cp -rf /dep/bin/* $(pyenv prefix)/bin; \
+    pyenv rehash
 RUN cowsay moo
 FROM r8.im/replicate/cog-test-weights AS weights
 COPY --from=weights --link /src/checkpoints /src/checkpoints
@@ -468,7 +477,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
-FROM python:3.8 as deps
+FROM r8.im/cog-base:python3.8 as deps
 FROM r8.im/cog-base:python3.8
 FROM r8.im/replicate/cog-test-weights AS weights
 WORKDIR /src
@@ -505,11 +514,11 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
-FROM python:3.8 as deps
+FROM r8.im/cog-base:python3.8-torch1.5.1 as deps
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r /tmp/requirements.txt
 FROM r8.im/cog-base:python3.8-torch1.5.1
-RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY --from=deps --link /dep /usr/local/lib/python3.8/site-packages
 RUN cowsay moo
 FROM r8.im/replicate/cog-test-weights AS weights
@@ -551,12 +560,15 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
-FROM python:3.8 as deps
+FROM r8.im/cog-base:cuda11.8-python3.8-torch2.0.1 as deps
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r /tmp/requirements.txt
 FROM r8.im/cog-base:cuda11.8-python3.8-torch2.0.1
-RUN --mount=type=cache,target=/var/cache/apt apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
-RUN --mount=type=bind,from=deps,source=/dep,target=/dep cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages || true
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
+    cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages; \
+    cp -rf /dep/bin/* $(pyenv prefix)/bin; \
+    pyenv rehash
 RUN cowsay moo
 FROM r8.im/replicate/cog-test-weights AS weights
 WORKDIR /src
