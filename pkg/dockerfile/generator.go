@@ -106,10 +106,6 @@ func (g *Generator) SetUseCogBaseImage(useCogBaseImage bool) {
 }
 
 func (g *Generator) generateInitialSteps() (string, error) {
-	pipInstallStage, err := g.pipInstallStage()
-	if err != nil {
-		return "", err
-	}
 	baseImage, err := g.baseImage()
 	if err != nil {
 		return "", err
@@ -126,6 +122,27 @@ func (g *Generator) generateInitialSteps() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	if g.useCogBaseImage {
+		pipInstalls, err := g.pipInstalls()
+		if err != nil {
+			return "", err
+		}
+		return joinStringsWithoutLineSpace([]string{
+			"#syntax=docker/dockerfile:1.4",
+			"FROM " + baseImage,
+			aptInstalls,
+			pipInstalls,
+			runCommands,
+		}), nil
+	}
+
+	pipInstallStage, err := g.pipInstallStage()
+	if err != nil {
+		return "", err
+	}
+
+	fmt.Printf(">>>>>> g.copyPipPackagesFromInstallStage(): %v\n", g.copyPipPackagesFromInstallStage()) // TODO(andreas): remove debug
 
 	return joinStringsWithoutLineSpace([]string{
 		"#syntax=docker/dockerfile:1.4",
@@ -252,10 +269,6 @@ func (g *Generator) baseImage() (string, error) {
 }
 
 func (g *Generator) preamble() string {
-	if g.useCogBaseImage {
-		return ""
-	}
-
 	return `ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
@@ -263,11 +276,6 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all`
 }
 
 func (g *Generator) installTini() string {
-	// tini is already installed in cog base image
-	if g.useCogBaseImage {
-		return ""
-	}
-
 	// Install tini as the image entrypoint to provide signal handling and process
 	// reaping appropriate for PID 1.
 	//
@@ -347,10 +355,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 }
 
 func (g *Generator) installCog() (string, error) {
-	if g.useCogBaseImage {
-		return "", nil
-	}
-
 	// Wheel name needs to be full format otherwise pip refuses to install it
 	cogFilename := "cog-0.0.1.dev-py3-none-any.whl"
 	lines, containerPath, err := g.writeTemp(cogFilename, cogWheelEmbed)
@@ -361,28 +365,44 @@ func (g *Generator) installCog() (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-func (g *Generator) pipInstallStage() (string, error) {
-	installCog, err := g.installCog()
-	if err != nil {
-		return "", err
-	}
+func (g *Generator) pipInstalls() (string, error) {
+	var err error
 	excludePackages := []string{}
-	if g.useCogBaseImage {
-		if torchVersion, ok := g.Config.TorchVersion(); ok {
-			excludePackages = []string{"torch==" + torchVersion}
-		}
+	if torchVersion, ok := g.Config.TorchVersion(); ok {
+		excludePackages = []string{"torch==" + torchVersion}
 	}
 	g.pythonRequirementsContents, err = g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH, excludePackages)
 	if err != nil {
 		return "", err
 	}
-	pipStageImage := "python:" + g.Config.Build.PythonVersion
-	if g.useCogBaseImage {
-		pipStageImage, err = g.baseImage()
-		if err != nil {
-			return "", err
-		}
+
+	if strings.Trim(g.pythonRequirementsContents, "") == "" {
+		return "", nil
 	}
+
+	console.Debugf("Generated requirements.txt:\n%s", g.pythonRequirementsContents)
+	copyLine, containerPath, err := g.writeTemp("requirements.txt", []byte(g.pythonRequirementsContents))
+	if err != nil {
+		return "", err
+	}
+
+	return strings.Join([]string{
+		copyLine[0],
+		"RUN pip install -r " + containerPath,
+	}, "\n"), nil
+}
+
+func (g *Generator) pipInstallStage() (string, error) {
+	installCog, err := g.installCog()
+	if err != nil {
+		return "", err
+	}
+	g.pythonRequirementsContents, err = g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH, []string{})
+	if err != nil {
+		return "", err
+	}
+
+	pipStageImage := "python:" + g.Config.Build.PythonVersion
 	if strings.Trim(g.pythonRequirementsContents, "") == "" {
 		return `FROM ` + pipStageImage + ` as deps
 ` + installCog, nil
@@ -393,6 +413,7 @@ func (g *Generator) pipInstallStage() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	// Not slim, so that we can compile wheels
 	fromLine := `FROM ` + pipStageImage + ` as deps`
 	// Sometimes, in order to run `pip install` successfully, some system packages need to be installed
@@ -418,7 +439,7 @@ func (g *Generator) copyPipPackagesFromInstallStage() string {
 	// return "COPY --from=deps --link /dep COPY --from=deps /src"
 	// ...except it's actually /root/.pyenv/versions/3.8.17/lib/python3.8/site-packages
 	py := g.Config.Build.PythonVersion
-	if g.Config.Build.GPU && g.useCudaBaseImage {
+	if g.Config.Build.GPU {
 		// this requires buildkit!
 		// we should check for buildkit and otherwise revert to symlinks or copying into /src
 		// we mount to avoid copying, which avoids having two copies in this layer
@@ -428,13 +449,6 @@ RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
     cp -rf /dep/bin/* $(pyenv prefix)/bin; \
     pyenv rehash
 `
-	}
-
-	// if there are no requirements /dep has never been created
-	// and if useCogBaseImage is true, then cog is not
-	// installed either
-	if strings.Trim(g.pythonRequirementsContents, "") == "" && g.useCogBaseImage {
-		return ""
 	}
 
 	return "COPY --from=deps --link /dep /usr/local/lib/python" + py + "/site-packages"

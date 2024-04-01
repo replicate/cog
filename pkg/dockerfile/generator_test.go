@@ -477,7 +477,6 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
-FROM r8.im/cog-base:python3.8 as deps
 FROM r8.im/cog-base:python3.8
 FROM r8.im/replicate/cog-test-weights AS weights
 WORKDIR /src
@@ -514,12 +513,10 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
-FROM r8.im/cog-base:python3.8-torch1.5.1 as deps
-COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
-RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r /tmp/requirements.txt
 FROM r8.im/cog-base:python3.8-torch1.5.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
-COPY --from=deps --link /dep /usr/local/lib/python3.8/site-packages
+COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt
 RUN cowsay moo
 FROM r8.im/replicate/cog-test-weights AS weights
 WORKDIR /src
@@ -560,15 +557,10 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
-FROM r8.im/cog-base:cuda11.8-python3.8-torch2.0.1 as deps
-COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
-RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r /tmp/requirements.txt
 FROM r8.im/cog-base:cuda11.8-python3.8-torch2.0.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
-RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
-    cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages; \
-    cp -rf /dep/bin/* $(pyenv prefix)/bin; \
-    pyenv rehash
+COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt
 RUN cowsay moo
 FROM r8.im/replicate/cog-test-weights AS weights
 WORKDIR /src
