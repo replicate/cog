@@ -369,6 +369,9 @@ func (g *Generator) pipInstalls() (string, error) {
 	if torchVersion, ok := g.Config.TorchVersion(); ok {
 		excludePackages = []string{"torch==" + torchVersion}
 	}
+	if torchvisionVersion, ok := g.Config.TorchvisionVersion(); ok {
+		excludePackages = append(excludePackages, "torchvision=="+torchvisionVersion)
+	}
 	g.pythonRequirementsContents, err = g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH, excludePackages)
 	if err != nil {
 		return "", err
