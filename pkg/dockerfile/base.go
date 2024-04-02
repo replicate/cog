@@ -76,6 +76,9 @@ func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
 }
 
 func BaseImageConfigurations() []BaseImageConfiguration {
+	// TODO(andreas): Support every combination for recent
+	// versions, and a subset of combinations for older but
+	// popular combinations.
 	return []BaseImageConfiguration{
 		{"", "3.10", ""},
 		{"", "3.10", "1.12.1"},
