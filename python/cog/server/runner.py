@@ -353,7 +353,7 @@ class PredictionRunner:
                 "can't cancel %s (%s)", prediction_id, self._predictions_in_flight
             )
             raise UnknownPredictionError()
-        if os.getenv("DISABLE_CANCEL"):
+        if os.getenv("COG_DISABLE_CANCEL"):
             self.log.warn("cancelling is disabled for this model")
             return
         maybe_pid = self._child.pid
