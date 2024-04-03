@@ -2,11 +2,12 @@ package docker
 
 import (
 	"fmt"
-	"github.com/replicate/cog/pkg/config"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+
+	"github.com/replicate/cog/pkg/config"
 
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
