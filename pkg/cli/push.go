@@ -29,6 +29,7 @@ func newPushCommand() *cobra.Command {
 	addUseCudaBaseImageFlag(cmd)
 	addDockerfileFlag(cmd)
 	addBuildProgressOutputFlag(cmd)
+	addUseCogBaseImageFlag(cmd)
 
 	return cmd
 }
