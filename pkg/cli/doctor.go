@@ -9,6 +9,7 @@ import (
 
 var folder string
 var bucket string
+var skipUpload bool
 
 func newDoctorCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -20,6 +21,7 @@ func newDoctorCommand() *cobra.Command {
 
 	addBucketFlag(cmd)
 	addFolderFlag(cmd)
+	addSkipUploadFlag(cmd)
 
 	return cmd
 }
@@ -28,7 +30,7 @@ func doctorCommand(cmd *cobra.Command, args []string) error {
 
 	console.Info("🩺 Checking for issues with your project.\n")
 
-	err := doctor.CheckFiles(bucket, folder)
+	err := doctor.CheckFiles(bucket, folder, skipUpload)
 	if err != nil {
 		return err
 	}
@@ -42,4 +44,8 @@ func addBucketFlag(cmd *cobra.Command) {
 
 func addFolderFlag(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&folder, "folder", "", "The target cache folder in your GCS bucket.")
+}
+
+func addSkipUploadFlag(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&skipUpload, "skip-upload", false, "Skip uploading files to GCS.")
 }

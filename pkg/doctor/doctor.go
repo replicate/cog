@@ -32,7 +32,7 @@ var suffixesToIgnore = []string{
 
 type FileWalker func(root string, walkFn filepath.WalkFunc) error
 
-func CheckFiles(bucket string, folder string) error {
+func CheckFiles(bucket string, folder string, skipUpload bool) error {
 
 	ignore, err := parseDockerignore()
 	if err != nil {
@@ -75,7 +75,7 @@ func CheckFiles(bucket string, folder string) error {
 		if strings.EqualFold(response, "y") || response == "" {
 			urls := []string{}
 			for _, file := range weightFiles {
-				url, err := uploadWeights(file, bucket, folder)
+				url, err := uploadWeights(file, bucket, folder, skipUpload)
 				if err != nil {
 					return err
 				}
@@ -221,7 +221,7 @@ func addDockerignoreEntries(entries []string) error {
 	return nil
 }
 
-func uploadWeights(localFilePath, bucketName, folderPrefix string) (string, error) {
+func uploadWeights(localFilePath, bucketName, folderPrefix string, skipUpload bool) (string, error) {
 	ctx := context.Background()
 	client, err := storage.NewClient(ctx)
 	if err != nil {
@@ -274,29 +274,31 @@ func uploadWeights(localFilePath, bucketName, folderPrefix string) (string, erro
 		totalChunks++ // Account for last partial chunk
 	}
 
-	chunk := make([]byte, chunkSize)
-	wc := object.NewWriter(ctx)
-	for i := 0; i < totalChunks; i++ {
-		n, err := file.Read(chunk)
-		if err != nil && err != io.EOF {
-			return "", err
-		}
+	if !skipUpload {
+		chunk := make([]byte, chunkSize)
+		wc := object.NewWriter(ctx)
+		for i := 0; i < totalChunks; i++ {
+			n, err := file.Read(chunk)
+			if err != nil && err != io.EOF {
+				return "", err
+			}
 
-		_, err = wc.Write(chunk[:n])
+			_, err = wc.Write(chunk[:n])
+			if err != nil {
+				return "", err
+			}
+
+			// Update progress bar after each chunk is uploaded
+			bar.IncrBy(n)
+		}
+		err = wc.Close()
 		if err != nil {
 			return "", err
 		}
-
-		// Update progress bar after each chunk is uploaded
-		bar.IncrBy(n)
-	}
-	err = wc.Close()
-	if err != nil {
-		return "", err
+		p.Wait() // Wait for the progress bar to finish
+		fmt.Println("Upload completed successfully.")
 	}
 
-	p.Wait() // Wait for the progress bar to finish
-	fmt.Println("Upload completed successfully.")
 	url := fmt.Sprintf("https://weights.replicate.delivery/wqzt/%s", objectName)
 	return url, nil
 }
