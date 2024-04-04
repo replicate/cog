@@ -2,19 +2,14 @@ package doctor
 
 import (
 	"bufio"
-	"context"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"cloud.google.com/go/storage"
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/vbauerster/mpb/v7"
-	"github.com/vbauerster/mpb/v7/decor"
 	"gopkg.in/yaml.v3"
 
 	w "github.com/replicate/cog/pkg/weights"
@@ -222,17 +217,6 @@ func addDockerignoreEntries(entries []string) error {
 }
 
 func uploadWeights(localFilePath, bucketName, folderPrefix string, skipUpload bool) (string, error) {
-	ctx := context.Background()
-	client, err := storage.NewClient(ctx)
-	if err != nil {
-		return "", nil
-	}
-	defer client.Close()
-
-	objectName := fmt.Sprintf("%s/%s", folderPrefix, filepath.Base(localFilePath))
-	bucket := client.Bucket(bucketName)
-	object := bucket.Object(objectName)
-
 	// FIXME: we should be using a mpu with the signed url below
 	/*
 		urlExpiration := time.Now().Add(60 * time.Minute)
@@ -245,58 +229,23 @@ func uploadWeights(localFilePath, bucketName, folderPrefix string, skipUpload bo
 		}
 	*/
 
-	file, err := os.Open(localFilePath)
+	currentDirName, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
-
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return "", err
-	}
-
-	p := mpb.New(mpb.WithWidth(60), mpb.WithRefreshRate(180*time.Millisecond))
-	bar := p.AddBar(fileInfo.Size(),
-		mpb.PrependDecorators(
-			decor.Name("Uploading: "),
-			decor.CountersKibiByte("% .2f / % .2f"),
-		),
-		mpb.AppendDecorators(
-			decor.Percentage(),
-			decor.EwmaSpeed(decor.UnitKiB, "% .2f", 60),
-		),
-	)
-
-	const chunkSize = 25 * 1024 * 1024 // 25MB chunk size
-	totalChunks := int(fileInfo.Size() / chunkSize)
-	if fileInfo.Size()%chunkSize != 0 {
-		totalChunks++ // Account for last partial chunk
-	}
+	currentDirName = filepath.Base(currentDirName)
+	objectName := fmt.Sprintf("%s/%s/%s", folderPrefix, currentDirName, localFilePath)
 
 	if !skipUpload {
-		chunk := make([]byte, chunkSize)
-		wc := object.NewWriter(ctx)
-		for i := 0; i < totalChunks; i++ {
-			n, err := file.Read(chunk)
-			if err != nil && err != io.EOF {
-				return "", err
-			}
+		destPath := fmt.Sprintf("gs://%s/%s", bucketName, objectName)
 
-			_, err = wc.Write(chunk[:n])
-			if err != nil {
-				return "", err
-			}
+		cmd := exec.Command("gsutil", "cp", localFilePath, destPath)
 
-			// Update progress bar after each chunk is uploaded
-			bar.IncrBy(n)
-		}
-		err = wc.Close()
+		// FIXME: blocking
+		err = cmd.Run()
 		if err != nil {
 			return "", err
 		}
-		p.Wait() // Wait for the progress bar to finish
-		fmt.Println("Upload completed successfully.")
 	}
 
 	url := fmt.Sprintf("https://weights.replicate.delivery/wqzt/%s", objectName)
