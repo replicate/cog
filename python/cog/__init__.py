@@ -2,7 +2,14 @@ from pydantic import BaseModel
 
 from .predictor import BasePredictor
 from .server.worker import emit_metric
-from .types import AsyncConcatenateIterator, ConcatenateIterator, File, Input, Path
+from .types import (
+    AsyncConcatenateIterator,
+    ConcatenateIterator,
+    File,
+    Input,
+    Path,
+    Secret,
+)
 
 try:
     from ._version import __version__
@@ -20,4 +27,5 @@ __all__ = [
     "Input",
     "Path",
     "emit_metric",
+    "Secret",
 ]

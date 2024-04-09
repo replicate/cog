@@ -4,7 +4,7 @@ import urllib.request
 
 import pytest
 import responses
-from cog.types import URLFile, get_filename_from_url, get_filename_from_urlopen
+from cog.types import Secret, URLFile, get_filename_from_url, get_filename_from_urlopen
 
 
 @responses.activate
@@ -123,3 +123,11 @@ def test_get_filename(url, filename):
 def test_get_filename_from_urlopen(url, filename):
     resp = urllib.request.urlopen(url)  # noqa: S310
     assert get_filename_from_urlopen(resp) == filename
+
+
+def test_secret_type():
+    secret_value = "sw0rdf1$h"  # noqa: S105
+    secret = Secret(secret_value)
+
+    assert secret.get_secret_value() == secret_value
+    assert str(secret) == "**********"

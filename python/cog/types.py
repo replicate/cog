@@ -11,7 +11,7 @@ from typing import Any, AsyncIterator, Dict, Iterator, List, Optional, TypeVar, 
 
 import httpx
 import requests
-from pydantic import Field
+from pydantic import Field, SecretStr
 
 FILENAME_ILLEGAL_CHARS = set("\u0000/")
 
@@ -42,6 +42,19 @@ def Input(
         regex=regex,
         choices=choices,
     )
+
+
+class Secret(SecretStr):
+    @classmethod
+    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+        """Defines what this type should be in openapi.json"""
+        field_schema.update(
+            {
+                "type": "string",
+                "format": "password",
+                "x-cog-secret": True,
+            }
+        )
 
 
 class File(io.IOBase):
