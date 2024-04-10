@@ -499,7 +499,6 @@ func TestBlankBuild(t *testing.T) {
 	require.Equal(t, false, config.Build.GPU)
 }
 
-
 func TestModelPythonVersionValidation(t *testing.T) {
 	err := ValidateModelPythonVersion("3.8")
 	require.NoError(t, err)
@@ -509,6 +508,7 @@ func TestModelPythonVersionValidation(t *testing.T) {
 	require.Equal(t, "minimum supported Python version is 3.8. requested 3.7", err.Error())
 	err = ValidateModelPythonVersion("3.7.1")
 	require.Equal(t, "minimum supported Python version is 3.8. requested 3.7.1", err.Error())
+}
 
 func TestSplitPinnedPythonRequirement(t *testing.T) {
 	testCases := []struct {
