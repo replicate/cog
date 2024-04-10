@@ -230,6 +230,9 @@ Each parameter of the `predict()` method must be annotated with a type. The meth
 
 ## `File()`
 
+> [!WARNING]  
+> `cog.File` is deprecated and will be removed in a future version of Cog. Use [`cog.Path`](#path) instead.
+
 The `cog.File` object is used to get files in and out of models. It represents a _file handle_.
 
 For models that return a `cog.File` object, the prediction output returned by Cog's built-in HTTP server will be a URL.
