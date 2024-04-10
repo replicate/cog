@@ -45,8 +45,11 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 	}
 
 	if config.BuildXCachePath != "" {
-		args = append(args, "--cache-from", "type=local,src="+config.BuildXCachePath)
-		args = append(args, "--cache-to", "type=local,dest="+config.BuildXCachePath)
+		args = append(
+			args,
+			"--cache-from", "type=local,src="+config.BuildXCachePath,
+			"--cache-to", "type=local,dest="+config.BuildXCachePath,
+		)
 	} else {
 		args = append(args, "--cache-to", "type=inline")
 	}
