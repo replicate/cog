@@ -176,7 +176,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	return nil
 }
 
-func BuildBase(cfg *config.Config, dir string, useCudaBaseImage string, progressOutput string) (string, error) {
+func BuildBase(cfg *config.Config, dir string, useCudaBaseImage string, useCogBaseImage bool, progressOutput string) (string, error) {
 	// TODO: better image management so we don't eat up disk space
 	// https://github.com/replicate/cog/issues/80
 	imageName := config.BaseDockerImageName(dir)
@@ -193,6 +193,7 @@ func BuildBase(cfg *config.Config, dir string, useCudaBaseImage string, progress
 	}()
 
 	generator.SetUseCudaBaseImage(useCudaBaseImage)
+	generator.SetUseCogBaseImage(useCogBaseImage)
 
 	dockerfileContents, err := generator.GenerateModelBase()
 	if err != nil {
