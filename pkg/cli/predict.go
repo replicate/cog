@@ -46,6 +46,7 @@ the prediction on that.`,
 	}
 
 	addUseCudaBaseImageFlag(cmd)
+	addUseCogBaseImageFlag(cmd)
 	addBuildProgressOutputFlag(cmd)
 	addDockerfileFlag(cmd)
 	addGpusFlag(cmd)
@@ -70,7 +71,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		if imageName, err = image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, buildProgressOutput); err != nil {
+		if imageName, err = image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, buildUseCogBaseImage, buildProgressOutput); err != nil {
 			return err
 		}
 

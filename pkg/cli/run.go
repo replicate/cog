@@ -52,7 +52,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	imageName, err := image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, buildProgressOutput)
+	imageName, err := image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, buildUseCogBaseImage, buildProgressOutput)
 	if err != nil {
 		return err
 	}
