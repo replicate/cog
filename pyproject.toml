@@ -12,22 +12,12 @@ urls."Source" = "https://github.com/replicate/cog"
 
 requires-python = ">=3.7"
 dependencies = [
-  # intentionally loose. perhaps these should be vendored to not collide with user code?
-  "attrs>=20.1,<24",
-  "fastapi>=0.75.2,<0.99.0",
-  "pydantic>=1.9,<2",
-  "PyYAML",
-  "requests>=2,<3",
-  "structlog>=20,<25",
   'typing-compat; python_version < "3.8"',
-  "typing_extensions>=4.4.0",
-  "uvicorn[standard]>=0.12,<1",
 ]
 
 optional-dependencies = { "dev" = [
   "black",
   "build",
-  "httpx",
   'hypothesis<6.80.0; python_version < "3.8"',
   'hypothesis; python_version >= "3.8"',
   'numpy<1.22.0; python_version < "3.8"',
@@ -41,6 +31,17 @@ optional-dependencies = { "dev" = [
   "pytest-cov",
   "responses",
   "ruff",
+
+  # vendoring's dependencies are listed below. vendoring is pinned to
+  # python 3.8 and you can't specify --no-deps or
+  # --ignore-requires-python in pyproject.toml, so unfortunately we
+  # have to install vendoring in the Makefile.
+  "click",
+  "jsonschema",
+  "packaging",
+  "requests",
+  "rich",
+  "toml",
 ] }
 
 dynamic = ["version"]
@@ -54,7 +55,7 @@ strictParameterNoneValue = false
 # legacy behavior, fixed in PEP688
 disableBytesTypePromotions = true
 include = ["python"]
-exclude = ["python/tests"]
+exclude = ["python/tests", "python/cog/_vendor", "python/build"]
 reportMissingParameterType = "error"
 reportUnknownLambdaType = "error"
 reportUnnecessaryIsInstance = "warning"
@@ -92,6 +93,7 @@ ignore = [
 extend-exclude = [
   "python/tests/server/fixtures/*",
   "test-integration/test_integration/fixtures/*",
+  "python/cog/_vendor/*",
 ]
 
 [tool.ruff.per-file-ignores]
@@ -111,3 +113,42 @@ extend-exclude = [
   "S607", # Starting a process with a partial executable path"
   "ANN",
 ]
+
+[tool.black]
+exclude = '(\.eggs|\.git|\.hg|\.mypy|_cache|\.nox|\.tox|\.venv|\.svn|_build|buck-out|build|dist|_vendor)'
+
+[tool.vendoring]
+destination = "python/cog/_vendor/"
+requirements = "python/cog/vendor.txt"
+namespace = "cog._vendor"
+
+protected-files = ["__init__.py", "README.rst", "vendor.txt"]
+patches-dir = "python/tools/vendoring/patches"
+
+[tool.vendoring.transformations]
+substitute = []
+drop = [
+  # we won't run any dependencies as scripts
+  "bin/",
+
+  # pydantic falls back to plain python
+  "pydantic/*.so",
+
+  # pyyaml falls back to plain python
+  "_yaml.*.so",
+
+  # sniffio ships with tests
+  "sniffio/_tests",
+
+  # h11 ships with tests
+  "h11/tests",
+
+  # pydantic hypothesis plugin, fall back to python
+  "pydantic/_hypothesis_plugin.*.so",
+]
+
+[tool.vendoring.typing-stubs]
+
+[tool.vendoring.license.directories]
+
+[tool.vendoring.license.fallback-urls]

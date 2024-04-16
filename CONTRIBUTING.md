@@ -207,6 +207,23 @@ To publish a prerelease version, append a [SemVer prerelease identifer](https://
     git tag -a v0.1.0-alpha -m "Prerelease v0.1.0"
     git push --tags
 
+## Vendoring Python packages
+
+We vendor the few Python libraries we depend on to avoid dependency hell. We use [vendoring](https://pypi.org/project/vendoring/), the same tool used by pip.
+
+The vendored packages are defined in `python/cog/_vendor/vendor.txt`. If you add/change anything in there, the default `make` rule will sync all vendored packages.
+
+If you run into issues you may need to manually add a patch. Patches are stored in `python/tools/vendoring/patches`.
+
+To create a new patch, copy the file you want to patch to `$FILENAME.new`, and edit that file as needed. For example:
+
+    cp python/cog/_vendor/curio/__main__.py python/cog/_vendor/curio/__main__.py.new
+
+Then `diff` the new and old version to a patch file in `python/tools/vendoring/patches/$PACKAGE.patch` and re-run vendoring. For example:
+
+    diff -u ./python/cog/_vendor/curio/__main__.py ./python/cog/_vendor/curio/__main__.py.new >> python/tools/vendoring/patches/curio.patch
+    make
+
 ## Troubleshooting
 
 ### `cog command not found`

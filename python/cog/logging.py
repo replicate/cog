@@ -1,8 +1,8 @@
 import logging
 import os
 
-import structlog
-from structlog.typing import EventDict
+from ._vendor import structlog
+from ._vendor.structlog.typing import EventDict
 
 
 def replace_level_with_severity(

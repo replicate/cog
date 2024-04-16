@@ -3,7 +3,7 @@ import time
 from typing import Any, Optional
 
 import pytest
-from attrs import define
+from cog._vendor.attrs import define
 from cog.server.eventtypes import (
     Done,
     Heartbeat,

@@ -7,14 +7,12 @@ from datetime import datetime, timezone
 from multiprocessing.pool import AsyncResult, ThreadPool
 from typing import Any, Callable, Optional, Tuple, Union, cast
 
-import requests
-import structlog
-from attrs import define
-from fastapi.encoders import jsonable_encoder
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry  # type: ignore
-
 from .. import schema, types
+from .._vendor import requests, structlog
+from .._vendor.attrs import define
+from .._vendor.fastapi.encoders import jsonable_encoder
+from .._vendor.requests.adapters import HTTPAdapter
+from .._vendor.urllib3.util.retry import Retry  # type: ignore
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
@@ -454,7 +452,7 @@ def _make_file_upload_http_client() -> requests.Session:
             backoff_factor=0.1,
             status_forcelist=[408, 429, 500, 502, 503, 504],
             allowed_methods=["PUT"],
-        ),
+        ),  # type: ignore
     )
     session.mount("http://", adapter)
     session.mount("https://", adapter)

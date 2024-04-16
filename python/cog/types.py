@@ -8,8 +8,8 @@ import urllib.parse
 import urllib.request
 from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
 
-import requests
-from pydantic import Field, SecretStr
+from ._vendor import requests
+from ._vendor.pydantic import Field, SecretStr
 
 FILENAME_ILLEGAL_CHARS = set("\u0000/")
 

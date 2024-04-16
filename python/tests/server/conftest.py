@@ -6,10 +6,10 @@ from typing import Any, Dict, Optional
 from unittest import mock
 
 import pytest
-from attrs import define
+from cog._vendor.attrs import define
 from cog.command import ast_openapi_schema
 from cog.server.http import create_app
-from fastapi.testclient import TestClient
+from cog._vendor.fastapi.testclient import TestClient
 
 
 @define

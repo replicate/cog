@@ -10,6 +10,8 @@ from tests.server.conftest import _fixture_path
 
 from .conftest import uses_predictor
 
+responses.mock.target = "cog._vendor.requests.adapters.HTTPAdapter.send"
+
 
 @uses_predictor("input_none")
 def test_no_input(client, match):

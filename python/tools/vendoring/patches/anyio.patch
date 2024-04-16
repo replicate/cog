@@ -1,0 +1,20 @@
+--- ./python/cog/_vendor/anyio/_core/_eventloop.py	2024-04-16 13:10:15
++++ ./python/cog/_vendor/anyio/_core/_eventloop.py.new	2024-04-16 13:11:09
+@@ -134,7 +134,7 @@
+ 
+ @contextmanager
+ def claim_worker_thread(backend: str) -> Generator[Any, None, None]:
+-    module = sys.modules["anyio._backends._" + backend]
++    module = sys.modules["cog._vendor.anyio._backends._" + backend]
+     threadlocals.current_async_module = module
+     try:
+         yield
+@@ -146,7 +146,7 @@
+     if asynclib_name is None:
+         asynclib_name = sniffio.current_async_library()
+ 
+-    modulename = "anyio._backends._" + asynclib_name
++    modulename = "cog._vendor.anyio._backends._" + asynclib_name
+     try:
+         return sys.modules[modulename]
+     except KeyError:

@@ -1,0 +1,13 @@
+--- ./python/cog/_vendor/uvicorn/importer.py	2024-04-15 21:38:17
++++ ./python/cog/_vendor/uvicorn/importer.py.new	2024-04-15 21:41:46
+@@ -18,6 +18,10 @@
+         raise ImportFromStringError(message.format(import_str=import_str))
+ 
+     try:
++        if module_str == "uvicorn":
++            module_str = "cog._vendor.uvicorn"
++        if module_str.startswith("uvicorn."):
++            module_str = "cog._vendor.uvicorn." + module_str.split("uvicorn.", 1)[1]
+         module = importlib.import_module(module_str)
+     except ImportError as exc:
+         if exc.name != module_str:

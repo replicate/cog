@@ -15,16 +15,21 @@ PYTHON ?= python
 PYTEST := $(PYTHON) -m pytest
 PYRIGHT := $(PYTHON) -m pyright
 RUFF := $(PYTHON) -m ruff
+PIP := $(PYTHON) -m pip
+VENDORING := $(PYTHON) -m vendoring
 
 default: all
 
 .PHONY: all
 all: cog
 
-pkg/dockerfile/embed/cog.whl: python/* python/cog/* python/cog/server/* python/cog/command/*
+python/cog/_vendor: python/cog/vendor.txt
+	$(VENDORING) sync
+
+pkg/dockerfile/embed/cog.whl: python/* python/cog/* python/cog/server/* python/cog/command/* python/cog/_vendor
 	@echo "Building Python library"
 	rm -rf dist
-	$(PYTHON) -m pip install build && $(PYTHON) -m build --wheel
+	$(PIP) install build && $(PYTHON) -m build --wheel
 	mkdir -p pkg/dockerfile/embed
 	cp dist/*.whl $@
 
@@ -68,7 +73,7 @@ test-integration: cog
 	cd test-integration/ && $(MAKE) PATH="$(PWD):$(PATH)" test
 
 .PHONY: test-python
-test-python:
+test-python: python/cog/_vendor
 	$(PYTEST) -n auto -vv --cov=python/cog  --cov-report term-missing  python/tests $(if $(FILTER),-k "$(FILTER)",)
 
 .PHONY: test
@@ -99,7 +104,7 @@ lint-go:
 	$(GO) run github.com/golangci/golangci-lint/cmd/golangci-lint run ./...
 
 .PHONY: lint-python
-lint-python:
+lint-python: python/cog/_vendor
 	$(RUFF) python/cog
 	$(RUFF) format --check python
 	@$(PYTHON) -c 'import sys; sys.exit("Warning: python >=3.10 is needed (not installed) to pass linting (pyright)") if sys.version_info < (3, 10) else None'
@@ -114,12 +119,12 @@ mod-tidy:
 
 .PHONY: install-python # install dev dependencies
 install-python:
-	$(PYTHON) -m pip install '.[dev]'
-
+	$(PIP) install '.[dev]'
+	$(PIP) install --no-deps --ignore-requires-python vendoring==1.2.0
 
 .PHONY: run-docs-server
 run-docs-server:
-	pip install mkdocs-material
+	$(PIP) install mkdocs-material
 	sed 's/docs\///g' README.md > ./docs/README.md
 	cp CONTRIBUTING.md ./docs/
 	mkdocs serve

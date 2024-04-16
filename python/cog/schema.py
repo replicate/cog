@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from types import ModuleType
 
-import pydantic
+from ._vendor import pydantic
 
 BUNDLED_SCHEMA_PATH = ".cog/schema.py"
 

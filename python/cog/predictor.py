@@ -21,22 +21,21 @@ from typing import (
 )
 from unittest.mock import patch
 
-import structlog
-
 import cog.code_xforms as code_xforms
+
+from ._vendor import structlog
+from ._vendor.typing_extensions import Annotated
 
 try:
     from typing import get_args, get_origin
 except ImportError:  # Python < 3.8
     from typing_compat import get_args, get_origin  # type: ignore
 
-import yaml
-from pydantic import BaseModel, Field, create_model
-from pydantic.fields import FieldInfo
+from ._vendor import yaml
+from ._vendor.pydantic import BaseModel, Field, create_model
+from ._vendor.pydantic.fields import FieldInfo
 
 # Added in Python 3.9. Can be from typing if we drop support for <3.9
-from typing_extensions import Annotated
-
 from .errors import ConfigDoesNotExist, PredictorNotSet
 from .types import (
     File as CogFile,
@@ -158,7 +157,7 @@ def load_config() -> Dict[str, Any]:
     config_path = os.path.abspath("cog.yaml")
     try:
         with open(config_path) as fh:
-            config = yaml.safe_load(fh)
+            config: Dict[str, Any] = yaml.safe_load(fh)  # type: ignore
     except FileNotFoundError as e:
         raise ConfigDoesNotExist(
             f"Could not find {config_path}",

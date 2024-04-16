@@ -6,6 +6,8 @@ from responses.matchers import multipart_matcher
 
 from .conftest import uses_predictor, uses_predictor_with_client_options
 
+responses.mock.target = "cog._vendor.requests.adapters.HTTPAdapter.send"
+
 
 @uses_predictor("output_wrong_type")
 def test_return_wrong_type(client):

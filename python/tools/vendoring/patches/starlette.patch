@@ -1,0 +1,29 @@
+--- ./python/cog/_vendor/starlette/testclient.py	2023-04-17 13:38:36
++++ ./python/cog/_vendor/starlette/testclient.py	2023-04-17 13:45:59
+@@ -12,7 +12,7 @@
+ from urllib.parse import unquote, urljoin
+ 
+ import anyio
+-import anyio.from_thread
++import anyio.from_thread as from_thread
+ import httpx
+ from anyio.streams.stapled import StapledObjectStream
+ 
+@@ -410,7 +410,7 @@
+         if self.portal is not None:
+             yield self.portal
+         else:
+-            with anyio.from_thread.start_blocking_portal(
++            with from_thread.start_blocking_portal(
+                 **self.async_backend
+             ) as portal:
+                 yield portal
+@@ -728,7 +728,7 @@
+     def __enter__(self) -> "TestClient":
+         with contextlib.ExitStack() as stack:
+             self.portal = portal = stack.enter_context(
+-                anyio.from_thread.start_blocking_portal(**self.async_backend)
++                from_thread.start_blocking_portal(**self.async_backend)
+             )
+ 
+             @stack.callback

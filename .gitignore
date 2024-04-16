@@ -15,3 +15,4 @@ pkg/dockerfile/embed/cog.whl
 .DS_Store
 docs/README.md
 docs/CONTRIBUTING.md
+python/cog/_vendor/

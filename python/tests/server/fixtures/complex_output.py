@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from cog import BaseModel
 
 
 class Output(BaseModel):

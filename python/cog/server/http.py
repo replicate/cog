@@ -25,17 +25,14 @@ from typing import (
 if TYPE_CHECKING:
     from typing import ParamSpec
 
-import attrs
-import structlog
-import uvicorn
-from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
-from fastapi.encoders import jsonable_encoder
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from pydantic import ValidationError
-from pydantic.error_wrappers import ErrorWrapper
-
 from .. import schema
+from .._vendor import attrs, structlog, uvicorn
+from .._vendor.fastapi import Body, FastAPI, Header, HTTPException, Path, Response
+from .._vendor.fastapi.encoders import jsonable_encoder
+from .._vendor.fastapi.exceptions import RequestValidationError
+from .._vendor.fastapi.responses import JSONResponse
+from .._vendor.pydantic import ValidationError
+from .._vendor.pydantic.error_wrappers import ErrorWrapper
 from ..errors import PredictorNotSet
 from ..files import upload_file
 from ..json import upload_files
@@ -296,7 +293,7 @@ def create_app(
                             "prediction ID must match the ID supplied in the URL"
                         ),
                         ("body", "id"),
-                    )
+                    )  # type: ignore
                 ]
             )
 
@@ -310,7 +307,7 @@ def create_app(
         return _predict(request=request, respond_async=respond_async)
 
     def _predict(
-        *, request: PredictionRequest, respond_async: bool = False
+        *, request: Optional[PredictionRequest], respond_async: bool = False
     ) -> Response:
         # [compat] If no body is supplied, assume that this model can be run
         # with empty input. This will throw a ValidationError if that's not

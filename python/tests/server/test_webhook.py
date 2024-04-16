@@ -1,4 +1,4 @@
-import requests
+from cog._vendor import requests
 import responses
 from cog.schema import WebhookEvent
 from cog.server.webhook import webhook_caller, webhook_caller_filtered

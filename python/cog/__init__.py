@@ -1,5 +1,4 @@
-from pydantic import BaseModel
-
+from ._vendor.pydantic import BaseModel
 from .predictor import BasePredictor
 from .types import ConcatenateIterator, File, Input, Path, Secret
 
