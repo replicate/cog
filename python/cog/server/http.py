@@ -318,7 +318,7 @@ def create_app(
         return _predict(request=request, respond_async=respond_async)
 
     def _predict(
-        *, request: PredictionRequest, respond_async: bool = False
+        *, request: Optional[PredictionRequest], respond_async: bool = False
     ) -> Response:
         # [compat] If no body is supplied, assume that this model can be run
         # with empty input. This will throw a ValidationError if that's not
