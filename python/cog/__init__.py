@@ -1,4 +1,8 @@
-from pydantic import BaseModel
+try:
+    from pydantic.v1 import BaseModel  # type: ignore
+except ImportError:
+    from pydantic import BaseModel  # pylint: disable=W0404
+
 
 from .predictor import BasePredictor
 from .types import ConcatenateIterator, File, Input, Path, Secret

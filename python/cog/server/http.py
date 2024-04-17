@@ -32,8 +32,16 @@ from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
-from pydantic.error_wrappers import ErrorWrapper
+
+try:
+    from pydantic.v1 import ValidationError  # type: ignore
+except ImportError:
+    from pydantic import ValidationError  # pylint: disable=W0404
+
+try:
+    from pydantic.v1.error_wrappers import ErrorWrapper  # type: ignore
+except ImportError:
+    from pydantic.error_wrappers import ErrorWrapper  # pylint: disable=W0404
 
 from .. import schema
 from ..errors import PredictorNotSet

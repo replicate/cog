@@ -9,7 +9,12 @@ import urllib.request
 from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
 
 import requests
-from pydantic import Field, SecretStr
+
+try:
+    from pydantic.v1 import Field, SecretStr  # type: ignore
+except ImportError:
+    from pydantic import Field, SecretStr  # pylint: disable=W0404
+
 
 FILENAME_ILLEGAL_CHARS = set("\u0000/")
 

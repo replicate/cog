@@ -4,7 +4,11 @@ from enum import Enum
 from types import GeneratorType
 from typing import Any, Callable
 
-from pydantic import BaseModel
+try:
+    from pydantic.v1 import BaseModel  # type: ignore
+except ImportError:
+    from pydantic import BaseModel  # pylint: disable=W0404
+
 
 from .types import Path
 
