@@ -43,6 +43,8 @@ def Input(
 
 
 class File(io.IOBase):
+    """Deprecated: use Path instead."""
+
     validate_always = True
 
     @classmethod
