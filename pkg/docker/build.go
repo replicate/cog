@@ -17,12 +17,12 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 	var args []string
 
 	args = append(args,
-		"buildx", "build",
+		"buildx", "build", "--load",
 	)
 
 	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
 		// Fixes "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested"
-		args = append(args, "--platform", "linux/amd64", "--load")
+		args = append(args, "--platform", "linux/amd64")
 	}
 
 	for _, secret := range secrets {
