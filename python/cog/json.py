@@ -3,7 +3,7 @@ from enum import Enum
 from types import GeneratorType
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic.v1 import BaseModel
 
 
 def make_encodeable(obj: Any) -> Any:

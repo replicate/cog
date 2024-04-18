@@ -1,7 +1,7 @@
 from typing import Iterator, List
 
 from cog import BasePredictor
-from pydantic import BaseModel
+from pydantic.v1 import BaseModel
 
 
 class Output(BaseModel):

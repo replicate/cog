@@ -11,7 +11,7 @@ from typing import Any, AsyncIterator, Dict, Iterator, List, Optional, TypeVar, 
 
 import httpx
 import requests
-from pydantic import Field
+from pydantic.v1 import Field
 
 FILENAME_ILLEGAL_CHARS = set("\u0000/")
 

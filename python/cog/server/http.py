@@ -32,7 +32,7 @@ from fastapi import Body, FastAPI, Header, Path, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic.error_wrappers import ErrorWrapper
+from pydantic.v1.error_wrappers import ErrorWrapper
 
 from .. import schema
 from ..logging import setup_logging

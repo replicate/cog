@@ -26,8 +26,8 @@ except ImportError:  # Python < 3.8
     from typing_compat import get_args, get_origin  # type: ignore
 
 import yaml
-from pydantic import BaseModel, Field, create_model
-from pydantic.fields import FieldInfo
+from pydantic.v1 import BaseModel, Field, create_model
+from pydantic.v1.fields import FieldInfo
 
 # Added in Python 3.9. Can be from typing if we drop support for <3.9
 from typing_extensions import Annotated

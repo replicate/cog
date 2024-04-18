@@ -3,7 +3,7 @@ import typing as t
 from datetime import datetime
 from enum import Enum
 
-import pydantic
+import pydantic.v1 as pydantic
 
 
 class Status(str, Enum):
