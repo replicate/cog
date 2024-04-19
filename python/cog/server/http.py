@@ -38,11 +38,6 @@ try:
 except ImportError:
     from pydantic import ValidationError  # pylint: disable=W0404
 
-try:
-    from pydantic.v1.error_wrappers import ErrorWrapper  # type: ignore
-except ImportError:
-    from pydantic.error_wrappers import ErrorWrapper  # pylint: disable=W0404
-
 from .. import schema
 from ..errors import PredictorNotSet
 from ..files import upload_file
@@ -299,12 +294,8 @@ def create_app(
         if request.id is not None and request.id != prediction_id:
             raise RequestValidationError(
                 [
-                    ErrorWrapper(
-                        ValueError(
-                            "prediction ID must match the ID supplied in the URL"
-                        ),
-                        ("body", "id"),
-                    )
+                    ValueError("prediction ID must match the ID supplied in the URL"),
+                    ("body", "id"),
                 ]
             )
 
