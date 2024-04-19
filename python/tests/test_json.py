@@ -5,7 +5,11 @@ import cog
 import numpy as np
 from cog.files import upload_file
 from cog.json import make_encodeable, upload_files
-from pydantic import BaseModel
+
+try:
+    from pydantic.v1 import BaseModel  # type: ignore
+except ImportError:
+    from pydantic import BaseModel  # pylint: disable=W0404
 
 
 def test_make_encodeable_recursively_encodes_tuples():

@@ -1,6 +1,10 @@
 from cog import BasePredictor
-from pydantic import BaseModel
 
+try:
+    from pydantic.v1 import BaseModel  # type: ignore
+except ImportError:
+    from pydantic import BaseModel  # pylint: disable=W0404
+    
 
 # Calling this `MyOutput` to test if cog renames it to `Output` in the schema
 class MyOutput(BaseModel):

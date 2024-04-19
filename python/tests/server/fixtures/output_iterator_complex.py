@@ -1,7 +1,11 @@
 from typing import Iterator, List
 
 from cog import BasePredictor
-from pydantic import BaseModel
+
+try:
+    from pydantic.v1 import BaseModel  # type: ignore
+except ImportError:
+    from pydantic import BaseModel  # pylint: disable=W0404
 
 
 class Output(BaseModel):
