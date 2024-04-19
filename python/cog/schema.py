@@ -7,7 +7,16 @@ from datetime import datetime
 from enum import Enum
 from types import ModuleType
 
-import pydantic
+try:
+    from pydantic.v1 import AnyHttpUrl, BaseModel, Extra, create_model  # type: ignore
+except ImportError:
+    from pydantic import (  # pylint: disable=W0404
+        AnyHttpUrl,
+        BaseModel,
+        Extra,
+        create_model,
+    )
+
 
 BUNDLED_SCHEMA_PATH = ".cog/schema.py"
 
@@ -38,7 +47,7 @@ class WebhookEvent(str, Enum):
         return [cls.START, cls.OUTPUT, cls.LOGS, cls.COMPLETED]
 
 
-class PredictionBaseModel(pydantic.BaseModel, extra=pydantic.Extra.allow):
+class PredictionBaseModel(BaseModel, extra=Extra.allow):
     input: t.Dict[str, t.Any]
 
 
@@ -49,7 +58,7 @@ class PredictionRequest(PredictionBaseModel):
     # TODO: deprecate this
     output_file_prefix: t.Optional[str]
 
-    webhook: t.Optional[pydantic.AnyHttpUrl]
+    webhook: t.Optional[AnyHttpUrl]
     webhook_events_filter: t.Optional[t.List[WebhookEvent]] = (
         WebhookEvent.default_events()
     )
@@ -59,7 +68,7 @@ class PredictionRequest(PredictionBaseModel):
         # [compat] Input is implicitly optional -- previous versions of the
         # Cog HTTP API allowed input to be omitted (e.g. for models that don't
         # have any inputs). We should consider changing this in future.
-        return pydantic.create_model(
+        return create_model(
             cls.__name__, __base__=cls, input=(t.Optional[input_type], None)
         )
 
@@ -85,7 +94,7 @@ class PredictionResponse(PredictionBaseModel):
         # [compat] Input is implicitly optional -- previous versions of the
         # Cog HTTP API allowed input to be omitted (e.g. for models that don't
         # have any inputs). We should consider changing this in future.
-        return pydantic.create_model(
+        return create_model(
             cls.__name__,
             __base__=cls,
             input=(t.Optional[input_type], None),
