@@ -411,7 +411,6 @@ class Server(uvicorn.Server):
 
     def stop(self) -> None:
         log.info("stopping server")
-        self.should_exit = True
 
         self._thread.join(timeout=5)
         if not self._thread.is_alive():
