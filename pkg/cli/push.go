@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -10,6 +11,7 @@ import (
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/image"
+	"github.com/replicate/cog/pkg/nix"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -30,6 +32,7 @@ func newPushCommand() *cobra.Command {
 	addDockerfileFlag(cmd)
 	addBuildProgressOutputFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
+	addNixFlag(cmd)
 
 	return cmd
 }
@@ -54,6 +57,9 @@ func push(cmd *cobra.Command, args []string) error {
 		if err := docker.ManifestInspect(imageName); err != nil && strings.Contains(err.Error(), `"code":"NAME_UNKNOWN"`) {
 			return fmt.Errorf("Unable to find Replicate existing model for %s. Go to replicate.com and create a new model before pushing.", imageName)
 		}
+	}
+	if buildNix {
+		return nix.NixPush(os.Getenv("REPLICATE_API_TOKEN"), imageName)
 	}
 
 	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, buildUseCogBaseImage); err != nil {
