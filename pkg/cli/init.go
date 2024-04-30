@@ -68,7 +68,7 @@ func initCommand(args []string) error {
 		console.Infof("✅ Created %s", filePath)
 	}
 
-	console.Infof("\nDone! For next steps, check out the docs at https://cog.run/docs/getting-started")
+	console.Infof("\nDone! For next steps, check out the docs at https://cog.run/getting-started")
 
 	return nil
 }
