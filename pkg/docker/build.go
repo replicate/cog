@@ -71,7 +71,7 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 	return cmd.Run()
 }
 
-func BuildAddLabelsAndSchemaToImage(image string, labels map[string]string, bundledSchemaFile string, bundledSchemaPy string) error {
+func BuildAddLabelsAndSchemaToImage(dir, image string, labels map[string]string, bundledSchemaFile string, bundledSchemaPy string) error {
 	var args []string
 
 	args = append(args,
@@ -95,6 +95,7 @@ func BuildAddLabelsAndSchemaToImage(image string, labels map[string]string, bund
 	// We're not using context, but Docker requires we pass a context
 	args = append(args, ".")
 	cmd := exec.Command("docker", args...)
+	cmd.Dir = dir
 
 	dockerfile := "FROM " + image + "\n"
 	dockerfile += "COPY " + bundledSchemaFile + " .cog\n"
