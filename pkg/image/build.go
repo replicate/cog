@@ -170,7 +170,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}
 	}
 
-	if err := docker.BuildAddLabelsAndSchemaToImage(imageName, labels, bundledSchemaFile, bundledSchemaPy); err != nil {
+	if err := docker.BuildAddLabelsAndSchemaToImage(dir, imageName, labels, bundledSchemaFile, bundledSchemaPy); err != nil {
 		return fmt.Errorf("Failed to add labels to image: %w", err)
 	}
 	return nil
