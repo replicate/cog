@@ -1,16 +1,17 @@
 import asyncio
 import contextlib
 import inspect
+import logging
 import multiprocessing
+import os
 import signal
 import sys
 import traceback
 import types
 from collections import defaultdict
-from contextvars import ContextVar
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
-from typing import Any, AsyncIterator, Callable, Iterator, Optional, TextIO
+from typing import Any, AsyncIterator, Callable, Dict, Iterator, Optional, TextIO, Union
 
 from ..json import make_encodeable
 from ..predictor import (
@@ -22,23 +23,24 @@ from ..predictor import (
 )
 from .connection import AsyncConnection
 from .eventtypes import (
-    Cancel,
     Done,
     Heartbeat,
     Log,
     PredictionInput,
     PredictionOutput,
     PredictionOutputType,
-    PublicEventType,
     Shutdown,
 )
 from .exceptions import (
     CancelationException,
     FatalWorkerException,
+    InvalidStateException,
 )
 from .helpers import StreamRedirector, WrappedStream
 
 _spawn = multiprocessing.get_context("spawn")
+
+_PublicEventType = Union[Done, Heartbeat, Log, PredictionOutput, PredictionOutputType]
 
 
 @unique
@@ -53,18 +55,18 @@ class WorkerState(Enum):
 
 class Mux:
     def __init__(self, terminating: asyncio.Event) -> None:
-        self.outs: "defaultdict[str, asyncio.Queue[PublicEventType]]" = defaultdict(
+        self.outs: "defaultdict[str, asyncio.Queue[_PublicEventType]]" = defaultdict(
             asyncio.Queue
         )
         self.terminating = terminating
         self.fatal: "Optional[FatalWorkerException]" = None
 
-    async def write(self, id: str, item: PublicEventType) -> None:
+    async def write(self, id: str, item: _PublicEventType) -> None:
         await self.outs[id].put(item)
 
     async def read(
         self, id: str, poll: Optional[float] = None
-    ) -> AsyncIterator[PublicEventType]:
+    ) -> AsyncIterator[_PublicEventType]:
         if poll:
             send_heartbeats = True
         else:
@@ -97,8 +99,8 @@ class Worker:
         # A pipe with which to communicate with the child worker.
         events, child_events = _spawn.Pipe()
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
-        self._events: "AsyncPipe[tuple[str, _PublicEventType]]" = AsyncPipe(
-            events, self._child.is_alive
+        self._events: "AsyncConnection[tuple[str, _PublicEventType]]" = AsyncConnection(
+            events
         )
         # shutdown requested
         self._shutting_down = False
@@ -205,9 +207,9 @@ class Worker:
         if self._child.is_alive():
             self._child.terminate()
             self._child.join()
-        self._events.shutdown()
         if self._read_events_task:
             self._read_events_task.cancel()
+        self._events.close()
 
     # FIXME: this will need to use a combination
     # of signals and Cancel events on the pipe
@@ -244,7 +246,7 @@ class Worker:
     async def _read_events(self) -> None:
         while self._child.is_alive() and not self._terminating.is_set():
             # this can still be running when the task is destroyed
-            result = await self._events.coro_recv_with_exit(self._terminating)
+            result = await self._events.recv() # this might be kind of risky
             if result is None:  # event loop closed or child died
                 break
             id, event = result
@@ -356,21 +358,22 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
 
     async def _loop_async(self) -> None:
-        events: "AsyncPipe[tuple[str, _PublicEventType]]" = AsyncPipe(self._events)
-        with events.executor:
-            while True:
-                try:
-                    ev = await events.coro_recv()
-                except asyncio.CancelledError:
-                    return
-                if isinstance(ev, Shutdown):
-                    return
-                if isinstance(ev, PredictionInput):
-                    # keep track of these so they can be cancelled
-                    await self._predict_async(ev)
-                # handle Cancel
-                else:
-                    print(f"Got unexpected event: {ev}", file=sys.stderr)
+        events: "AsyncConnection[tuple[str, _PublicEventType]]" = AsyncConnection(
+            self._events
+        )
+        while True:
+            try:
+                ev = await events.recv()
+            except asyncio.CancelledError:
+                return
+            if isinstance(ev, Shutdown):
+                return
+            if isinstance(ev, PredictionInput):
+                # keep track of these so they can be cancelled
+                await self._predict_async(ev)
+            # handle Cancel
+            else:
+                print(f"Got unexpected event: {ev}", file=sys.stderr)
 
     def _loop(self) -> None:
         if is_async(get_predict(self._predictor)):

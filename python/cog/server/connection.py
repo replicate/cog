@@ -10,6 +10,7 @@ from typing import Any, Generic, TypeVar
 X = TypeVar("X")
 _ForkingPickler = connection._ForkingPickler
 
+# based on https://github.com/python/cpython/blob/main/Lib/multiprocessing/connection.py#L364
 
 class AsyncConnection(Generic[X]):
     def __init__(self, conn: Connection) -> None:
@@ -22,7 +23,10 @@ class AsyncConnection(Generic[X]):
         dup_fd = os.dup(fd)
         sock = socket.socket(fileno=dup_fd)
         sock.setblocking(False)
-        # make the pipe bigger probably
+        # TODO: use /proc/sys/net/core/rmem_max, but special-case language models
+        sz = 65536
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, sz)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, sz)
         self._reader, self._writer = await asyncio.open_connection(sock=sock)
         self.started = True
 
@@ -73,6 +77,8 @@ class AsyncConnection(Generic[X]):
 
     def send(self, obj: Any) -> None:
         self._send_bytes(_ForkingPickler.dumps(obj, protocol=5))
+
+    # we could implement async def drain() but it's not really necessary for our purposes
 
     def close(self) -> None:
         self.wrapped_conn.close()
