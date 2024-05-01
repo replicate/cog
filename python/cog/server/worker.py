@@ -1,17 +1,16 @@
 import asyncio
 import contextlib
 import inspect
-import logging
 import multiprocessing
-import os
 import signal
 import sys
 import traceback
 import types
 from collections import defaultdict
+from contextvars import ContextVar
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
-from typing import Any, AsyncIterator, Callable, Dict, Iterator, Optional, TextIO, Union
+from typing import Any, AsyncIterator, Callable, Iterator, Optional, TextIO
 
 from ..json import make_encodeable
 from ..predictor import (
@@ -21,25 +20,25 @@ from ..predictor import (
     run_setup,
     run_setup_async,
 )
+from .connection import AsyncConnection
 from .eventtypes import (
+    Cancel,
     Done,
     Heartbeat,
     Log,
     PredictionInput,
     PredictionOutput,
     PredictionOutputType,
+    PublicEventType,
     Shutdown,
 )
 from .exceptions import (
     CancelationException,
     FatalWorkerException,
-    InvalidStateException,
 )
-from .helpers import AsyncPipe, StreamRedirector, WrappedStream, race
+from .helpers import StreamRedirector, WrappedStream
 
 _spawn = multiprocessing.get_context("spawn")
-
-_PublicEventType = Union[Done, Heartbeat, Log, PredictionOutput, PredictionOutputType]
 
 
 @unique
@@ -54,34 +53,30 @@ class WorkerState(Enum):
 
 class Mux:
     def __init__(self, terminating: asyncio.Event) -> None:
-        self.outs: "defaultdict[str, asyncio.Queue[_PublicEventType]]" = defaultdict(
+        self.outs: "defaultdict[str, asyncio.Queue[PublicEventType]]" = defaultdict(
             asyncio.Queue
         )
         self.terminating = terminating
         self.fatal: "Optional[FatalWorkerException]" = None
 
-    async def write(self, id: str, item: _PublicEventType) -> None:
+    async def write(self, id: str, item: PublicEventType) -> None:
         await self.outs[id].put(item)
 
     async def read(
         self, id: str, poll: Optional[float] = None
-    ) -> AsyncIterator[_PublicEventType]:
+    ) -> AsyncIterator[PublicEventType]:
         if poll:
             send_heartbeats = True
         else:
             poll = 0.1
             send_heartbeats = False
-        while 1:
+        while not self.terminating.is_set():
             try:
-                event = await race(
-                    self.outs[id].get(), self.terminating.wait(), timeout=poll
-                )
-            except TimeoutError:
+                event = await asyncio.wait_for(self.outs[id].get(), timeout=poll)
+            except asyncio.TimeoutError:
                 if send_heartbeats:
                     yield Heartbeat()
                 continue
-            if event is True:  # wait() would return True
-                break
             yield event
             if isinstance(event, Done):
                 self.outs.pop(id)
