@@ -246,8 +246,9 @@ class Worker:
     async def _read_events(self) -> None:
         while self._child.is_alive() and not self._terminating.is_set():
             # this can still be running when the task is destroyed
-            result = await self._events.recv() # this might be kind of risky
-            if result is None:  # event loop closed or child died
+            result = await self._events.recv()  # this might be kind of risky
+            # event loop closed or child died
+            if result is None:  # type: ignore
                 break
             id, event = result
             if id == "LOG" and self._state == WorkerState.STARTING:

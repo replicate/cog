@@ -8,9 +8,10 @@ from multiprocessing.connection import Connection
 from typing import Any, Generic, TypeVar
 
 X = TypeVar("X")
-_ForkingPickler = connection._ForkingPickler
+_ForkingPickler = connection._ForkingPickler  # type: ignore
 
 # based on https://github.com/python/cpython/blob/main/Lib/multiprocessing/connection.py#L364
+
 
 class AsyncConnection(Generic[X]):
     def __init__(self, conn: Connection) -> None:

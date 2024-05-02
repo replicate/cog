@@ -108,7 +108,7 @@ class PredictionRunner:
             if self._response is None:
                 raise RunnerBusyError()
             assert self._result is not None
-            if request.id is not None and request.id == self._response.id:
+            if request.id is not None and request.id == self._response.id:  # type: ignore
                 result = cast(PredictionTask, self._result)
                 return (self._response, result)
             raise RunnerBusyError()
