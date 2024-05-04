@@ -6,6 +6,7 @@ import os
 import signal
 import sys
 import threading
+import time
 import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
@@ -116,6 +117,8 @@ class PredictionRunner:
 
         # A pipe with which to communicate with the child worker.
         events, child_events = _spawn.Pipe()
+        self._time_shares_per_prediction: "dict[str, float]" = {}
+        self._last_updated_time_shares = 0.0
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
         self._events: "AsyncConnection[tuple[str, PublicEventType]]" = AsyncConnection(
             events
@@ -128,6 +131,15 @@ class PredictionRunner:
         # </worker code>
         # bind logger instead of the module-level logger proxy for performance
         self.log = log.bind()
+
+    def update_time_shares(self) -> None:
+        now = time.time()
+        if self._time_shares_per_prediction:
+            elapsed = now - self._last_updated_time_shares
+            incurred_cost = elapsed / len(self._time_shares_per_prediction)
+            for prediction_id in self._time_shares_per_prediction:
+                self._time_shares_per_prediction[prediction_id] += incurred_cost
+        self._last_updated_time_shares = now
 
     def activity_info(self) -> "dict[str, int]":
         return {"max": self._concurrency, "current": len(self._predictions_in_flight)}
@@ -289,9 +301,16 @@ class PredictionRunner:
                         real_path = await v.convert(self.client_manager.download_client)
                         prediction_input.payload[k] = real_path
                 async with self._semaphore:
+                    self.update_time_shares()
+                    self._time_shares_per_prediction[request.id] = 0.0
                     self._events.send(prediction_input)
                     event_stream = self._mux.read(prediction_input.id, poll=poll)
                     result = await event_handler.handle_event_stream(event_stream)
+                    self.update_time_shares()
+                    if not result.metrics:
+                        result.metrics = {}
+                    time_share = self._time_shares_per_prediction.pop(request.id)
+                    result.metrics["time_share"] = time_share
                     return result
             except httpx.HTTPError as e:
                 tb = traceback.format_exc()
