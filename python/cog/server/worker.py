@@ -21,6 +21,7 @@ from ..predictor import (
     run_setup,
     run_setup_async,
 )
+from .connection import AsyncConnection
 from .eventtypes import (
     Done,
     Heartbeat,
@@ -35,7 +36,7 @@ from .exceptions import (
     FatalWorkerException,
     InvalidStateException,
 )
-from .helpers import AsyncPipe, StreamRedirector, WrappedStream, race
+from .helpers import StreamRedirector, WrappedStream
 
 _spawn = multiprocessing.get_context("spawn")
 
@@ -71,17 +72,13 @@ class Mux:
         else:
             poll = 0.1
             send_heartbeats = False
-        while 1:
+        while not self.terminating.is_set():
             try:
-                event = await race(
-                    self.outs[id].get(), self.terminating.wait(), timeout=poll
-                )
-            except TimeoutError:
+                event = await asyncio.wait_for(self.outs[id].get(), timeout=poll)
+            except asyncio.TimeoutError:
                 if send_heartbeats:
                     yield Heartbeat()
                 continue
-            if event is True:  # wait() would return True
-                break
             yield event
             if isinstance(event, Done):
                 self.outs.pop(id)
@@ -102,8 +99,8 @@ class Worker:
         # A pipe with which to communicate with the child worker.
         events, child_events = _spawn.Pipe()
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
-        self._events: "AsyncPipe[tuple[str, _PublicEventType]]" = AsyncPipe(
-            events, self._child.is_alive
+        self._events: "AsyncConnection[tuple[str, _PublicEventType]]" = AsyncConnection(
+            events
         )
         # shutdown requested
         self._shutting_down = False
@@ -210,9 +207,9 @@ class Worker:
         if self._child.is_alive():
             self._child.terminate()
             self._child.join()
-        self._events.shutdown()
         if self._read_events_task:
             self._read_events_task.cancel()
+        self._events.close()
 
     # FIXME: this will need to use a combination
     # of signals and Cancel events on the pipe
@@ -249,8 +246,9 @@ class Worker:
     async def _read_events(self) -> None:
         while self._child.is_alive() and not self._terminating.is_set():
             # this can still be running when the task is destroyed
-            result = await self._events.coro_recv_with_exit(self._terminating)
-            if result is None:  # event loop closed or child died
+            result = await self._events.recv()  # this might be kind of risky
+            # event loop closed or child died
+            if result is None:  # type: ignore
                 break
             id, event = result
             if id == "LOG" and self._state == WorkerState.STARTING:
@@ -361,21 +359,22 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
 
     async def _loop_async(self) -> None:
-        events: "AsyncPipe[tuple[str, _PublicEventType]]" = AsyncPipe(self._events)
-        with events.executor:
-            while True:
-                try:
-                    ev = await events.coro_recv()
-                except asyncio.CancelledError:
-                    return
-                if isinstance(ev, Shutdown):
-                    return
-                if isinstance(ev, PredictionInput):
-                    # keep track of these so they can be cancelled
-                    await self._predict_async(ev)
-                # handle Cancel
-                else:
-                    print(f"Got unexpected event: {ev}", file=sys.stderr)
+        events: "AsyncConnection[tuple[str, _PublicEventType]]" = AsyncConnection(
+            self._events
+        )
+        while True:
+            try:
+                ev = await events.recv()
+            except asyncio.CancelledError:
+                return
+            if isinstance(ev, Shutdown):
+                return
+            if isinstance(ev, PredictionInput):
+                # keep track of these so they can be cancelled
+                await self._predict_async(ev)
+            # handle Cancel
+            else:
+                print(f"Got unexpected event: {ev}", file=sys.stderr)
 
     def _loop(self) -> None:
         if is_async(get_predict(self._predictor)):
