@@ -287,11 +287,11 @@ class AsyncConcatenateIterator(AsyncIterator[Item]):
         field_schema.update(_concatenate_iterator_schema)
 
     @classmethod
-    def __get_validators__(cls) -> AsyncIterator[Any]:
+    def __get_validators__(cls) -> Iterator[Any]:
         yield cls.validate
 
     @classmethod
-    def validate(cls, value: Iterator[Any]) -> AsyncIterator[Any]:
+    def validate(cls, value: AsyncIterator[Any]) -> AsyncIterator[Any]:
         return value
 
 
