@@ -71,9 +71,15 @@ class AsyncConnection(Generic[X]):
         else:
             header = struct.pack("!i", n)
             if n > 16384:
+                # >The payload is large so Nagle's algorithm won't be triggered
+                # >and we'd better avoid the cost of concatenation.
                 self._writer.write(header)
                 self._writer.write(buf)
             else:
+                # >Issue #20540: concatenate before sending, to avoid delays due
+                # >to Nagle's algorithm on a TCP socket.
+                # >Also note we want to avoid sending a 0-length buffer separately,
+                # >to avoid "broken pipe" errors if the other end closed the pipe.
                 self._writer.write(header + buf)
 
     def send(self, obj: Any) -> None:
