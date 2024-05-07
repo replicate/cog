@@ -7,7 +7,7 @@ import tempfile
 import urllib.parse
 import urllib.request
 import urllib.response
-from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
+from typing import Any, AsyncIterator, Dict, Iterator, List, Optional, TypeVar, Union
 
 import httpx
 import requests
@@ -255,6 +255,12 @@ class URLFile(io.IOBase):
 
 
 Item = TypeVar("Item")
+_concatenate_iterator_schema = {
+    "type": "array",
+    "items": {"type": "string"},
+    "x-cog-array-type": "iterator",
+    "x-cog-array-display": "concatenate",
+}
 
 
 class ConcatenateIterator(Iterator[Item]):
@@ -262,14 +268,7 @@ class ConcatenateIterator(Iterator[Item]):
     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
         """Defines what this type should be in openapi.json"""
         field_schema.pop("allOf", None)
-        field_schema.update(
-            {
-                "type": "array",
-                "items": {"type": "string"},
-                "x-cog-array-type": "iterator",
-                "x-cog-array-display": "concatenate",
-            }
-        )
+        field_schema.update(_concatenate_iterator_schema)
 
     @classmethod
     def __get_validators__(cls) -> Iterator[Any]:
@@ -277,6 +276,22 @@ class ConcatenateIterator(Iterator[Item]):
 
     @classmethod
     def validate(cls, value: Iterator[Any]) -> Iterator[Any]:
+        return value
+
+
+class AsyncConcatenateIterator(AsyncIterator[Item]):
+    @classmethod
+    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+        """Defines what this type should be in openapi.json"""
+        field_schema.pop("allOf", None)
+        field_schema.update(_concatenate_iterator_schema)
+
+    @classmethod
+    def __get_validators__(cls) -> Iterator[Any]:
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, value: AsyncIterator[Any]) -> AsyncIterator[Any]:
         return value
 
 
