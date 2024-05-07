@@ -9,7 +9,6 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Optional, Tuple, Uni
 import httpx
 import structlog
 from attrs import define
-from fastapi.encoders import jsonable_encoder
 
 from .. import schema, types
 from .clients import SKIP_START_EVENT, ClientManager
@@ -273,8 +272,7 @@ class PredictionEventHandler:
         self.p.completed_at = datetime.now(tz=timezone.utc)
 
     async def _send_webhook(self, event: schema.WebhookEvent) -> None:
-        dict_response = jsonable_encoder(self.response.dict(exclude_unset=True))
-        await self._webhook_sender(dict_response, event)
+        await self._webhook_sender(self.response, event)
 
     async def _upload_files(self, output: Any) -> Any:
         try:
