@@ -9,7 +9,6 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Optional, Tuple, Uni
 import httpx
 import structlog
 from attrs import define
-from fastapi.encoders import jsonable_encoder
 
 from .. import schema, types
 from .clients import SKIP_START_EVENT, ClientManager
@@ -72,6 +71,9 @@ class PredictionRunner:
 
         self.client_manager = ClientManager()
 
+        # bind logger instead of the module-level logger proxy for performance
+        self.log = log.bind()
+
     def make_error_handler(self, activity: str) -> Callable[[RunnerTask], None]:
         def handle_error(task: RunnerTask) -> None:
             exc = task.exception()
@@ -83,7 +85,7 @@ class PredictionRunner:
             try:
                 raise exc
             except Exception:
-                log.error(f"caught exception while running {activity}", exc_info=True)
+                self.log.error(f"caught exception while running {activity}", exc_info=True)
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
 
@@ -120,7 +122,7 @@ class PredictionRunner:
         # if upload url was not set, we can respect output_file_prefix
         # but maybe we should just throw an error
         upload_url = request.output_file_prefix or self._upload_url
-        event_handler = PredictionEventHandler(request, self.client_manager, upload_url)
+        event_handler = PredictionEventHandler(request, self.client_manager, upload_url, self.log)
         self._response = event_handler.response
 
         prediction_input = PredictionInput.from_request(request)
@@ -142,13 +144,13 @@ class PredictionRunner:
                 tb = traceback.format_exc()
                 await event_handler.append_logs(tb)
                 await event_handler.failed(error=str(e))
-                log.warn("failed to download url path from input", exc_info=True)
+                self.log.warn("failed to download url path from input", exc_info=True)
                 return event_handler.response
             except Exception as e:
                 tb = traceback.format_exc()
                 await event_handler.append_logs(tb)
                 await event_handler.failed(error=str(e))
-                log.error("caught exception while running prediction", exc_info=True)
+                self.log.error("caught exception while running prediction", exc_info=True)
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
                 raise  # we don't actually want to raise anymore but w/e
@@ -194,8 +196,10 @@ class PredictionEventHandler:
         request: schema.PredictionRequest,
         client_manager: ClientManager,
         upload_url: Optional[str],
+        logger: Optional[structlog.BoundLogger] = None,
     ) -> None:
-        log.info("starting prediction")
+        self.logger = logger or log.bind()
+        self.logger.info("starting prediction")
         # maybe this should be a deep copy to not share File state with child worker
         self.p = schema.PredictionResponse(**request.dict())
         self.p.status = schema.Status.PROCESSING
@@ -243,7 +247,7 @@ class PredictionEventHandler:
         await self._send_webhook(schema.WebhookEvent.LOGS)
 
     async def succeeded(self) -> None:
-        log.info("prediction succeeded")
+        self.logger.info("prediction succeeded")
         self.p.status = schema.Status.SUCCEEDED
         self._set_completed_at()
         # These have been set already: this is to convince the typechecker of
@@ -256,14 +260,14 @@ class PredictionEventHandler:
         await self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     async def failed(self, error: str) -> None:
-        log.info("prediction failed", error=error)
+        self.logger.info("prediction failed", error=error)
         self.p.status = schema.Status.FAILED
         self.p.error = error
         self._set_completed_at()
         await self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     async def canceled(self) -> None:
-        log.info("prediction canceled")
+        self.logger.info("prediction canceled")
         self.p.status = schema.Status.CANCELED
         self._set_completed_at()
         await self._send_webhook(schema.WebhookEvent.COMPLETED)
@@ -272,8 +276,7 @@ class PredictionEventHandler:
         self.p.completed_at = datetime.now(tz=timezone.utc)
 
     async def _send_webhook(self, event: schema.WebhookEvent) -> None:
-        dict_response = jsonable_encoder(self.response.dict(exclude_unset=True))
-        await self._webhook_sender(dict_response, event)
+        await self._webhook_sender(self.response, event)
 
     async def _upload_files(self, output: Any) -> Any:
         try:

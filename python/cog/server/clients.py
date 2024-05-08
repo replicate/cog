@@ -7,9 +7,10 @@ from urllib.parse import urlparse
 
 import httpx
 import structlog
+from fastapi.encoders import jsonable_encoder
 
 from .. import types
-from ..schema import Status, WebhookEvent
+from ..schema import PredictionResponse, Status, WebhookEvent
 from ..types import Path
 from .eventtypes import PredictionInput
 from .response_throttler import ResponseThrottler
@@ -110,6 +111,7 @@ class ClientManager:
         self.retry_webhook_client = httpx_retry_client()
         self.file_client = httpx_file_client()
         self.download_client = httpx.AsyncClient(follow_redirects=True, http2=True)
+        self.log = structlog.get_logger(__name__).bind()
 
     async def aclose(self) -> None:
         # not used but it's not actually critical to close them
@@ -124,26 +126,29 @@ class ClientManager:
         self, url: str, response: Dict[str, Any], event: WebhookEvent
     ) -> None:
         if Status.is_terminal(response["status"]):
-            log.info("sending terminal webhook with status %s", response["status"])
+            self.log.info("sending terminal webhook with status %s", response["status"])
             # For terminal updates, retry persistently
             await self.retry_webhook_client.post(url, json=response)
         else:
-            log.info("sending webhook with status %s", response["status"])
+            self.log.info("sending webhook with status %s", response["status"])
             # For other requests, don't retry, and ignore any errors
             try:
                 await self.webhook_client.post(url, json=response)
             except httpx.RequestError:
-                log.warn("caught exception while sending webhook", exc_info=True)
+                self.log.warn("caught exception while sending webhook", exc_info=True)
 
     def make_webhook_sender(
         self, url: Optional[str], webhook_events_filter: Collection[WebhookEvent]
     ) -> WebhookSenderType:
         throttler = ResponseThrottler(response_interval=_response_interval)
 
-        async def sender(response: Any, event: WebhookEvent) -> None:
+        async def sender(response: PredictionResponse, event: WebhookEvent) -> None:
             if url and event in webhook_events_filter:
                 if throttler.should_send_response(response):
-                    await self.send_webhook(url, response, event)
+                    # jsonable_encoder is quite slow in context, it would be ideal
+                    # to skip the heavy parts of this for well-known output types
+                    dict_response = jsonable_encoder(response.dict(exclude_unset=True))
+                    await self.send_webhook(url, dict_response, event)
                     throttler.update_last_sent_response_time()
 
         return sender
@@ -218,6 +223,9 @@ class ClientManager:
         Iterates through an object from make_encodeable and uploads any files.
         When a file is encountered, it will be passed to upload_file. Any paths will be opened and converted to files.
         """
+        # skip four isinstance checks for fast text models
+        if type(obj) == str:  # noqa: E721
+            return obj
         # # it would be kind of cleaner to make the default file_url
         # # instead of skipping entirely, we need to convert to datauri
         # if url is None:
