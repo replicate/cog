@@ -122,7 +122,7 @@ class PredictionRunner:
         # bind logger instead of the module-level logger proxy for performance
         self.log = log.bind()
 
-    def activity_info(self) -> dict[str, int]:
+    def activity_info(self) -> "dict[str, int]":
         return {"max": self._concurrency, "current": len(self._predictions_in_flight)}
 
     def setup(self) -> SetupTask:
