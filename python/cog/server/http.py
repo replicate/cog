@@ -263,7 +263,7 @@ def create_app(
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
 
-        return await _predict(request=request, respond_async=respond_async)
+        return await shared_predict(request=request, respond_async=respond_async)
 
     @limited
     @app.put(
@@ -280,16 +280,8 @@ def create_app(
         Run a single prediction on the model (idempotent creation).
         """
         if request.id is not None and request.id != prediction_id:
-            raise RequestValidationError(
-                [
-                    ErrorWrapper(
-                        ValueError(
-                            "prediction ID must match the ID supplied in the URL"
-                        ),
-                        ("body", "id"),
-                    )
-                ]
-            )
+            err = ValueError("prediction ID must match the ID supplied in the URL")
+            raise RequestValidationError([ErrorWrapper(err, ("body", "id"))])
 
         # We've already checked that the IDs match, now ensure that an ID is
         # set on the prediction object
@@ -298,9 +290,9 @@ def create_app(
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
 
-        return await _predict(request=request, respond_async=respond_async)
+        return await shared_predict(request=request, respond_async=respond_async)
 
-    async def _predict(
+    async def shared_predict(
         *, request: Optional[PredictionRequest], respond_async: bool = False
     ) -> Response:
         # [compat] If no body is supplied, assume that this model can be run
