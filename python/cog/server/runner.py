@@ -10,7 +10,7 @@ import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
-from typing import Any, AsyncIterator, Awaitable, Optional, Union
+from typing import Any, AsyncIterator, Awaitable, Iterator, Optional, Union
 
 import httpx
 import structlog
@@ -380,9 +380,6 @@ class PredictionRunner:
         while self._child.is_alive() and not self._terminating.is_set():
             # in tests this can still be running when the task is destroyed
             result = await self._events.recv()
-            if result is None:  # event loop closed or child died
-                break
-            # log.debug("event from pipe %s", result)
             id, event = result
             if id == "LOG" and self._state == WorkerState.STARTING:
                 id = "SETUP"
