@@ -17,12 +17,12 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 	var args []string
 
 	args = append(args,
-		"buildx", "build", "--load",
+		"buildx", "build",
 	)
 
 	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
 		// Fixes "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested"
-		args = append(args, "--platform", "linux/amd64")
+		args = append(args, "--platform", "linux/amd64", "--load")
 	}
 
 	for _, secret := range secrets {
@@ -71,16 +71,16 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 	return cmd.Run()
 }
 
-func BuildAddLabelsAndSchemaToImage(dir, image string, labels map[string]string, bundledSchemaFile string, bundledSchemaPy string) error {
+func BuildAddLabelsAndSchemaToImage(image string, labels map[string]string, bundledSchemaFile string, bundledSchemaPy string) error {
 	var args []string
 
 	args = append(args,
-		"buildx", "build", "--load",
+		"buildx", "build",
 	)
 
 	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
 		// Fixes "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested"
-		args = append(args, "--platform", "linux/amd64")
+		args = append(args, "--platform", "linux/amd64", "--load")
 	}
 
 	args = append(args,
@@ -95,7 +95,6 @@ func BuildAddLabelsAndSchemaToImage(dir, image string, labels map[string]string,
 	// We're not using context, but Docker requires we pass a context
 	args = append(args, ".")
 	cmd := exec.Command("docker", args...)
-	cmd.Dir = dir
 
 	dockerfile := "FROM " + image + "\n"
 	dockerfile += "COPY " + bundledSchemaFile + " .cog\n"
