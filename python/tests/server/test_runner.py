@@ -3,7 +3,6 @@ import os
 import threading
 from datetime import datetime
 from unittest import mock
-
 import pytest
 import pytest_asyncio
 from cog.schema import PredictionRequest, PredictionResponse, Status, WebhookEvent
@@ -21,6 +20,11 @@ from cog.server.runner import (
     RunnerBusyError,
     UnknownPredictionError,
 )
+
+
+# TODO
+# - setup logs
+# - file inputs being converted
 
 
 def _fixture_path(name):

@@ -179,7 +179,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             if isinstance(ev, PredictionInput):
                 self._predict_sync(ev)
             elif isinstance(ev, Cancel):
-                pass  # we should have gotten a signal
+                # in sync mode, Cancel events are ignored
+                # only signals are respected
+                pass
             else:
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
 
@@ -200,6 +202,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     # keep track of these so they can be cancelled
                     tasks[ev.id] = asyncio.create_task(self._predict_async(ev))
                 elif isinstance(ev, Cancel):
+                    # in async mode, cancel signals are ignored
+                    # only Cancel events are ignored
                     if ev.id in tasks:
                         tasks[ev.id].cancel()
                     else:
@@ -273,6 +277,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     def _signal_handler(self, signum: int, frame: Optional[types.FrameType]) -> None:
         if self._predictor and is_async(get_predict(self._predictor)):
             # we could try also canceling the async task around here
+            # but for now in async mode signals are ignored
             return
         # this logic might need to be refined
         if signum == signal.SIGUSR1 and self._cancelable:

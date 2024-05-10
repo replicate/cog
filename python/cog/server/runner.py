@@ -78,6 +78,12 @@ SetupTask: "typing.TypeAlias" = "asyncio.Task[SetupResult]"
 RunnerTask: "typing.TypeAlias" = Union[PredictionTask, SetupTask]
 
 
+# TODO: we might prefer to move this back to worker
+# runner would still need to do PredictionEventHandler
+# if it's not inline, we would need to make sure {enter,exit}_predict is handled correctly
+# this is a major outstanding piece of work for merging into main
+
+
 class PredictionRunner:
     def __init__(
         self,
@@ -101,7 +107,9 @@ class PredictionRunner:
 
         self.client_manager = ClientManager()
 
-        # worker code
+        # TODO: perhaps this could go back into worker, if we could get the interface right
+        # (unclear how to do the tests)
+        # <worker code>
         self._state = WorkerState.NEW
         self._semaphore = asyncio.Semaphore(concurrency)
         self._concurrency = concurrency
@@ -117,6 +125,7 @@ class PredictionRunner:
         # stop reading events
         self._terminating = asyncio.Event()
         self._mux = Mux(self._terminating)
+        # </worker code>
         # bind logger instead of the module-level logger proxy for performance
         self.log = log.bind()
 
@@ -357,6 +366,8 @@ class PredictionRunner:
             return
         maybe_pid = self._child.pid
         if self._child.is_alive() and maybe_pid is not None:
+            # since we don't know if the predictor is sync or async, we both send
+            # the signal (honored only if sync) and the event (honored only if async)
             os.kill(maybe_pid, signal.SIGUSR1)
             self.log.info("sent cancel")
             self._events.send(Cancel(prediction_id))

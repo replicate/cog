@@ -247,6 +247,7 @@ def create_app(
             {"status": health.name, "setup": setup, "concurrency": activity}
         )
 
+    # this is a readiness probe, it only returns 200 when work can be accepted
     @app.get("/ready")
     async def ready() -> Any:
         activity = runner.activity_info()
@@ -338,6 +339,9 @@ def create_app(
         # # so when we validate the schema, those urls get cast back to Path and File
         # # in the previous implementation those would then get encoded as strings
         # # however the changes to Path and File break this and return the filename instead
+        #
+        # # moreover, validating outputs can be a bottleneck with enough volume
+        # # since it's not strictly needed, we can comment it out
         # try:
         #     prediction = await async_result
         #     # we're only doing this to catch validation errors
