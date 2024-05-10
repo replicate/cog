@@ -11,7 +11,7 @@ GO ?= go
 GOOS := $(shell $(GO) env GOOS)
 GOARCH := $(shell $(GO) env GOARCH)
 
-PYTHON ?= python3
+PYTHON ?= python
 PYTEST := $(PYTHON) -m pytest
 PYRIGHT := $(PYTHON) -m pyright
 RUFF := $(PYTHON) -m ruff
