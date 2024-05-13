@@ -5,7 +5,7 @@ import cog
 import numpy as np
 from cog.files import upload_file
 from cog.json import make_encodeable, upload_files
-from pydantic import BaseModel
+from pydantic import ConfigDict, BaseModel
 
 
 def test_make_encodeable_recursively_encodes_tuples():
@@ -53,9 +53,7 @@ def test_numpy():
         ndarray: np.ndarray
         npfloat: np.float64
         npinteger: np.integer
-
-        class Config:
-            arbitrary_types_allowed = True
+        model_config = ConfigDict(arbitrary_types_allowed=True)
 
     model = Model(
         ndarray=np.array([[1, 2], [3, 4]]),

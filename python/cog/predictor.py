@@ -31,7 +31,7 @@ except ImportError:  # Python < 3.8
     from typing_compat import get_args, get_origin  # type: ignore
 
 import yaml
-from pydantic import BaseModel, Field, create_model
+from pydantic import ConfigDict, BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
 # Added in Python 3.9. Can be from typing if we drop support for <3.9
@@ -253,10 +253,7 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
 # Base class for inputs, constructed dynamically in get_input_type().
 # (This can't be a docstring or it gets passed through to the schema.)
 class BaseInput(BaseModel):
-    class Config:
-        # When using `choices`, the type is converted into an enum to validate
-        # But, after validation, we want to pass the actual value to predict(), not the enum object
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
     def cleanup(self) -> None:
         """
