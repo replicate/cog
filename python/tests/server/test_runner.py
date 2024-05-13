@@ -1,6 +1,7 @@
 import asyncio
 import os
 import threading
+import time
 from datetime import datetime
 from unittest import mock
 import pytest
@@ -71,6 +72,36 @@ async def test_prediction_runner(runner):
     assert response.logs == ""
     assert isinstance(response.started_at, datetime)
     assert isinstance(response.completed_at, datetime)
+
+
+@pytest.mark.asyncio
+async def test_prediction_runner_async():
+    runner = PredictionRunner(
+        predictor_ref=_fixture_path("async_sleep"), shutdown_event=None, concurrency=2
+    )
+    await runner.setup()
+    _, result1 = runner.predict(PredictionRequest(input={"sleep": 0.2}))
+    _, result2 = runner.predict(PredictionRequest(input={"sleep": 0.2}))
+
+    st = time.time()
+    response1 = await result1
+    response2 = await result2
+    assert time.time() - st < 0.4  # should take 0.2 + overhead
+    for response in (response1, response2):
+        assert response.output == "done in 0.2 seconds"
+        assert response.status == "succeeded"
+        assert response.error is None
+        assert response.logs == ""
+        assert isinstance(response.started_at, datetime)
+        assert isinstance(response.completed_at, datetime)
+
+    # check max
+
+    runner.predict(PredictionRequest(input={"sleep": 0.1}))
+    runner.predict(PredictionRequest(input={"sleep": 0.1}))
+
+    with pytest.raises(RunnerBusyError):
+        runner.predict(PredictionRequest(input={"sleep": 0.1}))
 
 
 @pytest.mark.asyncio
