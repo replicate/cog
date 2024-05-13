@@ -44,8 +44,6 @@ def Input(
 
 class Secret(SecretStr):
     @classmethod
-    # TODO[pydantic]: We couldn't refactor `__modify_schema__`, please create the `__get_pydantic_json_schema__` manually.
-    # Check https://docs.pydantic.dev/latest/migration/#defining-custom-types for more information.
     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
         """Defines what this type should be in openapi.json"""
         field_schema.update(
@@ -63,8 +61,6 @@ class File(io.IOBase):
     validate_always = True
 
     @classmethod
-    # TODO[pydantic]: We couldn't refactor `__get_validators__`, please create the `__get_pydantic_core_schema__` manually.
-    # Check https://docs.pydantic.dev/latest/migration/#defining-custom-types for more information.
     def __get_validators__(cls) -> Iterator[Any]:
         yield cls.validate
 
@@ -85,8 +81,6 @@ class File(io.IOBase):
             )
 
     @classmethod
-    # TODO[pydantic]: We couldn't refactor `__modify_schema__`, please create the `__get_pydantic_json_schema__` manually.
-    # Check https://docs.pydantic.dev/latest/migration/#defining-custom-types for more information.
     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
         """Defines what this type should be in openapi.json"""
         # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
@@ -97,8 +91,6 @@ class Path(pathlib.PosixPath):
     validate_always = True
 
     @classmethod
-    # TODO[pydantic]: We couldn't refactor `__get_validators__`, please create the `__get_pydantic_core_schema__` manually.
-    # Check https://docs.pydantic.dev/latest/migration/#defining-custom-types for more information.
     def __get_validators__(cls) -> Iterator[Any]:
         yield cls.validate
 
@@ -114,8 +106,6 @@ class Path(pathlib.PosixPath):
         )
 
     @classmethod
-    # TODO[pydantic]: We couldn't refactor `__modify_schema__`, please create the `__get_pydantic_json_schema__` manually.
-    # Check https://docs.pydantic.dev/latest/migration/#defining-custom-types for more information.
     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
         """Defines what this type should be in openapi.json"""
         # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
@@ -261,8 +251,6 @@ Item = TypeVar("Item")
 
 class ConcatenateIterator(Iterator[Item]):
     @classmethod
-    # TODO[pydantic]: We couldn't refactor `__modify_schema__`, please create the `__get_pydantic_json_schema__` manually.
-    # Check https://docs.pydantic.dev/latest/migration/#defining-custom-types for more information.
     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
         """Defines what this type should be in openapi.json"""
         field_schema.pop("allOf", None)
@@ -276,8 +264,6 @@ class ConcatenateIterator(Iterator[Item]):
         )
 
     @classmethod
-    # TODO[pydantic]: We couldn't refactor `__get_validators__`, please create the `__get_pydantic_core_schema__` manually.
-    # Check https://docs.pydantic.dev/latest/migration/#defining-custom-types for more information.
     def __get_validators__(cls) -> Iterator[Any]:
         yield cls.validate
 
