@@ -23,8 +23,6 @@ from unittest.mock import patch
 
 import structlog
 
-import cog.code_xforms as code_xforms
-
 try:
     from typing import get_args, get_origin
 except ImportError:  # Python < 3.8
@@ -37,14 +35,11 @@ from pydantic.fields import FieldInfo
 # Added in Python 3.9. Can be from typing if we drop support for <3.9
 from typing_extensions import Annotated
 
+import cog.code_xforms as code_xforms
+
 from .errors import ConfigDoesNotExist, PredictorNotSet
-from .types import (
-    File as CogFile,
-)
-from .types import (
-    Input,
-    URLPath,
-)
+from .types import PYDANTIC_V2, Input, URLPath
+from .types import File as CogFile
 from .types import Path as CogPath
 from .types import Secret as CogSecret
 
@@ -253,7 +248,14 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
 # Base class for inputs, constructed dynamically in get_input_type().
 # (This can't be a docstring or it gets passed through to the schema.)
 class BaseInput(BaseModel):
-    model_config = ConfigDict(use_enum_values=True)
+    if PYDANTIC_V2:
+        model_config = ConfigDict(use_enum_values=True)
+    else:
+
+        class Config:
+            # When using `choices`, the type is converted into an enum to validate
+            # But, after validation, we want to pass the actual value to predict(), not the enum object
+            use_enum_values = True
 
     def cleanup(self) -> None:
         """

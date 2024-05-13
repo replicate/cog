@@ -15,7 +15,6 @@ FILENAME_ILLEGAL_CHARS = set("\u0000/")
 FILENAME_MAX_LENGTH = 200
 
 
-
 class URLFile(io.IOBase):
     """
     URLFile is a proxy object for a :class:`urllib3.response.HTTPResponse`
