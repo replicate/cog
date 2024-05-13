@@ -1,20 +1,16 @@
 import io
-import mimetypes
-import os
 import pathlib
 import shutil
 import tempfile
 import urllib.parse
 import urllib.request
-from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
+from typing import Any, Callable, Iterator, List, Optional, Type, TypeVar, Union
 
-import requests
 from pydantic import Field, GetJsonSchemaHandler, SecretStr
 from pydantic.json_schema import JsonSchemaValue
-from pydantic_core import core_schema as cs
-from pydantic_core.core_schema import no_info_plain_validator_function
+from pydantic_core.core_schema import CoreSchema, no_info_plain_validator_function
 
-from .types_shared import URLFile, URLPath, get_filename
+from .types_shared import URLFile, get_filename
 
 
 def Input(
@@ -43,7 +39,7 @@ def Input(
 class Secret(SecretStr):
     @classmethod
     def __get_pydantic_json_schema__(
-        cls, core_schema: cs.CoreSchema, handler: GetJsonSchemaHandler
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
     ) -> JsonSchemaValue:
         json_schema = handler.resolve_ref_schema(handler(core_schema))
         json_schema["x-cog-secret"] = True
@@ -80,7 +76,7 @@ class File(io.IOBase):
 
     @classmethod
     def __get_pydantic_json_schema__(
-        cls, core_schema: cs.CoreSchema, handler: GetJsonSchemaHandler
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
     ) -> JsonSchemaValue:
         """Defines what this type should be in openapi.json"""
         json_schema = handler.resolve_ref_schema(handler(core_schema))
@@ -111,7 +107,7 @@ class Path(pathlib.PosixPath):
 
     @classmethod
     def __get_pydantic_json_schema__(
-        cls, core_schema: cs.CoreSchema, handler: GetJsonSchemaHandler
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
     ) -> JsonSchemaValue:
         """Defines what this type should be in openapi.json"""
         json_schema = handler.resolve_ref_schema(handler(core_schema))
@@ -119,13 +115,56 @@ class Path(pathlib.PosixPath):
         return json_schema
 
 
+class URLPath(pathlib.PosixPath):
+    """
+    URLPath is a nasty hack to ensure that we can defer the downloading of a
+    URL passed as a path until later in prediction dispatch.
+
+    It subclasses pathlib.PosixPath only so that it can pass isinstance(_,
+    pathlib.Path) checks.
+    """
+
+    _path: Optional[Path]
+
+    def __init__(self, *, source: str, filename: str, fileobj: io.IOBase) -> None:
+        self.source = source
+        self.filename = filename
+        self.fileobj = fileobj
+
+        self._path = None
+
+    def convert(self) -> Path:
+        if self._path is None:
+            dest = tempfile.NamedTemporaryFile(suffix=self.filename, delete=False)
+            shutil.copyfileobj(self.fileobj, dest)
+            self._path = Path(dest.name)
+        return self._path
+
+    def unlink(self, missing_ok: bool = False) -> None:
+        if self._path:
+            # TODO: use unlink(missing_ok=...) when we drop Python 3.7 support.
+            try:
+                self._path.unlink()
+            except FileNotFoundError:
+                if not missing_ok:
+                    raise
+
+    def __str__(self) -> str:
+        # FastAPI's jsonable_encoder will encode subclasses of pathlib.Path by
+        # calling str() on them
+        return self.source
+
+
 Item = TypeVar("Item")
 
 
 class ConcatenateIterator(Iterator[Item]):
     @classmethod
-    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+    def __get_pydantic_json_schema__(
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
         """Defines what this type should be in openapi.json"""
+        json_schema = handler.resolve_ref_schema(handler(core_schema))
         json_schema.pop("allOf", None)
         json_schema.update(
             {
