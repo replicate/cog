@@ -111,12 +111,11 @@ class Path(pathlib.PosixPath):
         )
 
     @classmethod
-    # TODO[pydantic]: We couldn't refactor `__modify_schema__`, please create the `__get_pydantic_json_schema__` manually.
-    # Check https://docs.pydantic.dev/latest/migration/#defining-custom-types for more information.
-    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+    def __get_pydantic_json_schema__(
+        cls, core_schema: cs.CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
         """Defines what this type should be in openapi.json"""
-        # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
-        field_schema.update(type="string", format="uri")
+        json_schema = handler.resolve_ref_schema(handler(core_schema))
 
 
 Item = TypeVar("Item")
@@ -124,12 +123,10 @@ Item = TypeVar("Item")
 
 class ConcatenateIterator(Iterator[Item]):
     @classmethod
-    # TODO[pydantic]: We couldn't refactor `__modify_schema__`, please create the `__get_pydantic_json_schema__` manually.
-    # Check https://docs.pydantic.dev/latest/migration/#defining-custom-types for more information.
     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
         """Defines what this type should be in openapi.json"""
-        field_schema.pop("allOf", None)
-        field_schema.update(
+        json_schema.pop("allOf", None)
+        json_schema.update(
             {
                 "type": "array",
                 "items": {"type": "string"},
@@ -137,10 +134,9 @@ class ConcatenateIterator(Iterator[Item]):
                 "x-cog-array-display": "concatenate",
             }
         )
+        return json_schema
 
     @classmethod
-    # TODO[pydantic]: We couldn't refactor `__get_validators__`, please create the `__get_pydantic_core_schema__` manually.
-    # Check https://docs.pydantic.dev/latest/migration/#defining-custom-types for more information.
     def __get_validators__(cls) -> Iterator[Any]:
         yield cls.validate
 
