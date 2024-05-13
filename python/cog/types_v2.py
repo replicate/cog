@@ -9,13 +9,11 @@ import urllib.request
 from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
 
 import requests
-from pydantic import (
-    Field,
-    GetJsonSchemaHandler,
-    SecretStr,
-)
+from pydantic import Field, GetJsonSchemaHandler, SecretStr
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import core_schema as cs
+from pydantic_core.core_schema import no_info_plain_validator_function
+
 from .types_shared import URLFile, URLPath, get_filename
 
 
@@ -55,13 +53,14 @@ class Secret(SecretStr):
 class File(io.IOBase):
     """Deprecated: use Path instead."""
 
-    validate_always = True
+    # removed in pydantic 2 with no replacement?
+    # validate_always = True
 
     @classmethod
-    # TODO[pydantic]: We couldn't refactor `__get_validators__`, please create the `__get_pydantic_core_schema__` manually.
-    # Check https://docs.pydantic.dev/latest/migration/#defining-custom-types for more information.
-    def __get_validators__(cls) -> Iterator[Any]:
-        yield cls.validate
+    def __get_pydantic_core_schema__(
+        cls, source: Type[Any], handler: Callable[[Any], CoreSchema]
+    ) -> CoreSchema:
+        return no_info_plain_validator_function(cls.validate)
 
     @classmethod
     def validate(cls, value: Any) -> io.IOBase:
@@ -91,13 +90,13 @@ class File(io.IOBase):
 
 
 class Path(pathlib.PosixPath):
-    validate_always = True
+    # validate_always = True
 
     @classmethod
-    # TODO[pydantic]: We couldn't refactor `__get_validators__`, please create the `__get_pydantic_core_schema__` manually.
-    # Check https://docs.pydantic.dev/latest/migration/#defining-custom-types for more information.
-    def __get_validators__(cls) -> Iterator[Any]:
-        yield cls.validate
+    def __get_pydantic_core_schema__(
+        cls, source: Type[Any], handler: Callable[[Any], CoreSchema]
+    ) -> CoreSchema:
+        return no_info_plain_validator_function(cls.validate)
 
     @classmethod
     def validate(cls, value: Any) -> pathlib.Path:
@@ -116,6 +115,8 @@ class Path(pathlib.PosixPath):
     ) -> JsonSchemaValue:
         """Defines what this type should be in openapi.json"""
         json_schema = handler.resolve_ref_schema(handler(core_schema))
+        json_schema.update(type="string", format="uri")
+        return json_schema
 
 
 Item = TypeVar("Item")
@@ -136,10 +137,10 @@ class ConcatenateIterator(Iterator[Item]):
         )
         return json_schema
 
-    @classmethod
-    def __get_validators__(cls) -> Iterator[Any]:
-        yield cls.validate
-
-    @classmethod
-    def validate(cls, value: Iterator[Any]) -> Iterator[Any]:
-        return value
+    # this seems to be a no-op
+    # @classmethod
+    # def __get_validators__(cls) -> Iterator[Any]:
+    #     yield cls.validate
+    # @classmethod
+    # def validate(cls, value: Iterator[Any]) -> Iterator[Any]:
+    #     return value
