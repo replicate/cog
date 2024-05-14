@@ -65,8 +65,20 @@ build:
   system_packages:
     - "git"
   python_packages:
-    - "git+https://github.com/m-bain/whisperX.git"
+    - "git+https://github.com/huggingface/transformers"
 ```
+
+You can also pin Python package installations to a specific git commit:
+
+```yaml
+build:
+  system_packages:
+    - "git"
+  python_packages:
+    - "git+https://github.com/huggingface/transformers@2d1602a"
+```
+
+Note that you can use a shortened prefix of the 40-character git commit SHA, but you must use at least six characters, like `2d1602a` above.
 
 ### `python_requirements`
 
