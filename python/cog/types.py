@@ -323,14 +323,17 @@ class ConcatenateIterator(Iterator[Item]):
             }
         )
 
-    # this seems to be a no-op
-    # @classmethod
-    # def __get_validators__(cls) -> Iterator[Any]:
-    #     yield cls.validate
+    if PYDANTIC_V2:
+        pass
+    else:
 
-    # @classmethod
-    # def validate(cls, value: Iterator[Any]) -> Iterator[Any]:
-    #     return value
+        @classmethod
+        def __get_validators__(cls) -> Iterator[Any]:
+            yield cls.validate
+
+        @classmethod
+        def validate(cls, value: Iterator[Any]) -> Iterator[Any]:
+            return value
 
 
 def _len_bytes(s: str, encoding: str = "utf-8") -> int:
