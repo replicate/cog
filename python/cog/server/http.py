@@ -292,7 +292,7 @@ def create_app(
         if request.id is not None and request.id != prediction_id:
             msg = "prediction ID must match the ID supplied in the URL"
             err = {"loc": ("body", "id"), "msg": msg}
-            if PYDANTIC_V2:
+            if not PYDANTIC_V2:
                 err = pydantic.error_wrappers.ErrorWrapper(
                     ValueError(msg), ("body", "id")
                 )

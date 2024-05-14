@@ -314,9 +314,9 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
         # Fields aren't ordered, so use this pattern to ensure defined order
         # https://github.com/go-openapi/spec/pull/116
         if PYDANTIC_V2:
-            extra = default.json_schema_extra
+            extra: dict = default.json_schema_extra
         else:
-            extra = default.extra
+            extra: dict = default.extra
         extra["x-order"] = order
         order += 1
 
@@ -437,7 +437,6 @@ For example:
 
         return Output
     else:
-
         if PYDANTIC_V2:
 
             class Output(pydantic.RootModel[OutputType]):

@@ -38,21 +38,21 @@ class WebhookEvent(str, Enum):
         return [cls.START, cls.OUTPUT, cls.LOGS, cls.COMPLETED]
 
 
-class PredictionBaseModel(pydantic.BaseModel, extra=pydantic.Extra.allow):
+class PredictionBaseModel(pydantic.BaseModel, extra="allow"):
     input: t.Dict[str, t.Any]
 
 
 class PredictionRequest(PredictionBaseModel):
-    id: t.Optional[str]
-    created_at: t.Optional[datetime]
+    id: t.Optional[str] = None
+    created_at: t.Optional[datetime] = None
 
     # TODO: deprecate this
-    output_file_prefix: t.Optional[str]
+    output_file_prefix: t.Optional[str] = None
 
-    webhook: t.Optional[pydantic.AnyHttpUrl]
-    webhook_events_filter: t.Optional[t.List[WebhookEvent]] = (
-        WebhookEvent.default_events()
-    )
+    webhook: t.Optional[pydantic.AnyHttpUrl] = None
+    webhook_events_filter: t.Optional[
+        t.List[WebhookEvent]
+    ] = WebhookEvent.default_events()
 
     @classmethod
     def with_types(cls, input_type: t.Type[t.Any]) -> t.Any:
@@ -65,20 +65,21 @@ class PredictionRequest(PredictionBaseModel):
 
 
 class PredictionResponse(PredictionBaseModel):
-    output: t.Any
+    output: t.Any = None
 
-    id: t.Optional[str]
-    version: t.Optional[str]
+    id: t.Optional[str] = None
+    version: t.Optional[str] = None
 
-    created_at: t.Optional[datetime]
-    started_at: t.Optional[datetime]
-    completed_at: t.Optional[datetime]
+    created_at: t.Optional[datetime] = None
+    started_at: t.Optional[datetime] = None
+    completed_at: t.Optional[datetime] = None
 
     logs: str = ""
-    error: t.Optional[str]
-    status: t.Optional[Status]
+    error: t.Optional[str] = None
+    status: t.Optional[Status] = None
 
-    metrics: t.Optional[t.Dict[str, t.Any]]
+    # not sure how to set a factory here
+    metrics: t.Optional[t.Dict[str, t.Any]] = None
 
     @classmethod
     def with_types(cls, input_type: t.Type[t.Any], output_type: t.Type[t.Any]) -> t.Any:
