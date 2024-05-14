@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from typing import ParamSpec
 
 import attrs
+import pydantic
 import structlog
 import uvicorn
 from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
@@ -33,7 +34,6 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from pydantic.error_wrappers import ErrorWrapper
 
 from .. import schema
 from ..errors import PredictorNotSet
@@ -49,6 +49,7 @@ from ..predictor import (
     load_config,
     load_slim_predictor_from_ref,
 )
+from ..types import PYDANTIC_V2
 from .runner import (
     PredictionRunner,
     RunnerBusyError,
@@ -289,16 +290,14 @@ def create_app(
         Run a single prediction on the model (idempotent creation).
         """
         if request.id is not None and request.id != prediction_id:
-            raise RequestValidationError(
-                [
-                    ErrorWrapper(
-                        ValueError(
-                            "prediction ID must match the ID supplied in the URL"
-                        ),
-                        ("body", "id"),
-                    )
-                ]
-            )
+            msg = "prediction ID must match the ID supplied in the URL"
+            err = {"loc": ("body", "id"), "msg": msg}
+            if PYDANTIC_V2:
+                err = pydantic.error_wrappers.ErrorWrapper(
+                    ValueError(msg), ("body", "id")
+                )
+
+            raise RequestValidationError([err])
 
         # We've already checked that the IDs match, now ensure that an ID is
         # set on the prediction object
@@ -315,7 +314,7 @@ def create_app(
         # [compat] If no body is supplied, assume that this model can be run
         # with empty input. This will throw a ValidationError if that's not
         # possible.
-        if request is None: # type: ignore
+        if request is None:  # type: ignore
             request = PredictionRequest(input={})
         # [compat] If body is supplied but input is None, set it to an empty
         # dictionary so that later code can be simpler.

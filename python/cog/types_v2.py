@@ -8,7 +8,10 @@ from typing import Any, Callable, Iterator, List, Optional, Type, TypeVar, Union
 
 from pydantic import Field, GetJsonSchemaHandler, SecretStr  # type: ignore
 from pydantic.json_schema import JsonSchemaValue  # type: ignore
-from pydantic_core.core_schema import CoreSchema, no_info_plain_validator_function  # type: ignore
+from pydantic_core.core_schema import (  # type: ignore
+    CoreSchema,
+    no_info_plain_validator_function,
+)
 
 from .types_shared import URLFile, get_filename
 

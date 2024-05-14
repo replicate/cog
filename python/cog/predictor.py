@@ -28,6 +28,7 @@ try:
 except ImportError:  # Python < 3.8
     from typing_compat import get_args, get_origin  # type: ignore
 
+import pydantic
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, create_model
 from pydantic.fields import FieldInfo
@@ -312,14 +313,18 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
 
         # Fields aren't ordered, so use this pattern to ensure defined order
         # https://github.com/go-openapi/spec/pull/116
-        default.extra["x-order"] = order
+        if PYDANTIC_V2:
+            extra = default.json_schema_extra
+        else:
+            extra = default.extra
+        extra["x-order"] = order
         order += 1
 
         # Choices!
-        if default.extra.get("choices"):
-            choices = default.extra["choices"]
+        if extra.get("choices"):
+            choices = extra["choices"]
             # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
-            del default.extra["choices"]
+            del extra["choices"]
             if InputType == str:
 
                 class StringEnum(str, enum.Enum):
@@ -433,8 +438,15 @@ For example:
         return Output
     else:
 
-        class Output(BaseModel):
-            __root__: OutputType  # type: ignore
+        if PYDANTIC_V2:
+
+            class Output(pydantic.RootModel[OutputType]):
+                pass
+
+        else:
+
+            class Output(BaseModel):
+                __root__: OutputType  # type: ignore
 
         return Output
 
@@ -513,8 +525,15 @@ For example:
 
         return TrainingOutput
 
-    class TrainingOutput(BaseModel):
-        __root__: TrainingOutputType  # type: ignore
+    if PYDANTIC_V2:
+
+        class TrainingOutput(pydantic.RootModel[TrainingOutputType]):
+            pass
+
+    else:
+
+        class TrainingOutput(BaseModel):
+            __root__: TrainingOutputType  # type: ignore
 
     return TrainingOutput
 
