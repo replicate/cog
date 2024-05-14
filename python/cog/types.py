@@ -6,7 +6,7 @@ import shutil
 import tempfile
 import urllib.parse
 import urllib.request
-from typing import Any, Callable, Dict, Iterator, List, Optional, Type, TypeVar, Union
+from typing import Any, Callable, Iterator, Optional, Type, TypeVar, Union, TYPE_CHECKING
 
 import pydantic
 import requests
@@ -16,11 +16,10 @@ if pydantic.__version__.startswith("1."):
     PYDANTIC_V2 = False
 else:
     PYDANTIC_V2 = True
-    from pydantic.json_schema import JsonSchemaValue  # type: ignore
-    from pydantic_core.core_schema import (  # type: ignore
-        CoreSchema,
-        no_info_plain_validator_function,
-    )
+    if TYPE_CHECKING:
+        from pydantic.json_schema import JsonSchemaValue  # type: ignore
+        from pydantic_core.core_schema import CoreSchema  # type: ignore
+    from pydantic_core.core_schema import no_info_plain_validator_function
 
 FILENAME_ILLEGAL_CHARS = set("\u0000/")
 
@@ -38,7 +37,7 @@ def Input(
     min_length: int = None,
     max_length: int = None,
     regex: str = None,
-    choices: List[Union[str, int]] = None,
+    choices: "list[Union[str, int]]" = None,
 ) -> Any:
     """Input is similar to pydantic.Field, but doesn't require a default value to be the first argument."""
     return Field(
@@ -58,8 +57,8 @@ class Secret(SecretStr):
 
         @classmethod
         def __get_pydantic_json_schema__(
-            cls, core_schema: CoreSchema, handler: pydantic.GetJsonSchemaHandler
-        ) -> JsonSchemaValue:
+            cls, core_schema: "CoreSchema", handler: "pydantic.GetJsonSchemaHandler"
+        ) -> "JsonSchemaValue":
             json_schema = handler.resolve_ref_schema(handler(core_schema))
             json_schema["x-cog-secret"] = True
             return json_schema
@@ -67,7 +66,7 @@ class Secret(SecretStr):
     else:
 
         @classmethod
-        def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+        def __modify_schema__(cls, field_schema: "dict[str, Any]") -> None:
             """Defines what this type should be in openapi.json"""
             field_schema.update(
                 {
@@ -101,14 +100,14 @@ class File(io.IOBase):
 
         @classmethod
         def __get_pydantic_core_schema__(
-            cls, source: Type[Any], handler: Callable[[Any], CoreSchema]
-        ) -> CoreSchema:
+            cls, source: Type[Any], handler: Callable[[Any], "CoreSchema"]
+        ) -> "CoreSchema":
             return no_info_plain_validator_function(cls.validate)
 
         @classmethod
         def __get_pydantic_json_schema__(
-            cls, core_schema: CoreSchema, handler: pydantic.GetJsonSchemaHandler
-        ) -> JsonSchemaValue:
+            cls, core_schema: "CoreSchema", handler: "pydantic.GetJsonSchemaHandler"
+        ) -> "JsonSchemaValue":
             """Defines what this type should be in openapi.json"""
             json_schema = handler.resolve_ref_schema(handler(core_schema))
             json_schema.update(type="string", format="uri")
@@ -122,7 +121,7 @@ class File(io.IOBase):
             yield cls.validate
 
         @classmethod
-        def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+        def __modify_schema__(cls, field_schema: "dict[str, Any]") -> None:
             """Defines what this type should be in openapi.json"""
             # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
             field_schema.update(type="string", format="uri")
@@ -146,14 +145,14 @@ class Path(pathlib.PosixPath):
 
         @classmethod
         def __get_pydantic_core_schema__(
-            cls, source: Type[Any], handler: Callable[[Any], CoreSchema]
-        ) -> CoreSchema:
+            cls, source: Type[Any], handler: Callable[[Any], "CoreSchema"]
+        ) -> "CoreSchema":
             return no_info_plain_validator_function(cls.validate)
 
         @classmethod
         def __get_pydantic_json_schema__(
-            cls, core_schema: CoreSchema, handler: pydantic.GetJsonSchemaHandler
-        ) -> JsonSchemaValue:
+            cls, core_schema: "CoreSchema", handler: "pydantic.GetJsonSchemaHandler"
+        ) -> "JsonSchemaValue":
             """Defines what this type should be in openapi.json"""
             json_schema = handler.resolve_ref_schema(handler(core_schema))
             json_schema.update(type="string", format="uri")

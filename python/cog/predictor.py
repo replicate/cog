@@ -30,7 +30,7 @@ except ImportError:  # Python < 3.8
 
 import pydantic
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, create_model
+from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
 # Added in Python 3.9. Can be from typing if we drop support for <3.9
@@ -250,7 +250,7 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
 # (This can't be a docstring or it gets passed through to the schema.)
 class BaseInput(BaseModel):
     if PYDANTIC_V2:
-        model_config = ConfigDict(use_enum_values=True)
+        model_config = pydantic.ConfigDict(use_enum_values=True) # type: ignore
     else:
 
         class Config:
@@ -315,9 +315,9 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
         # Fields aren't ordered, so use this pattern to ensure defined order
         # https://github.com/go-openapi/spec/pull/116
         if PYDANTIC_V2:
-            extra = default.json_schema_extra = {}
+            extra = default.json_schema_extra = {} # type: ignore
         else:
-            extra: dict = default.extra
+            extra = default.extra
         extra["x-order"] = order
         order += 1
 
@@ -440,7 +440,7 @@ For example:
     else:
         if PYDANTIC_V2:
 
-            class Output(pydantic.RootModel[OutputType]):
+            class Output(pydantic.RootModel[OutputType]): # type: ignore
                 pass
 
         else:
@@ -527,7 +527,7 @@ For example:
 
     if PYDANTIC_V2:
 
-        class TrainingOutput(pydantic.RootModel[TrainingOutputType]):
+        class TrainingOutput(pydantic.RootModel[TrainingOutputType]): # type: ignore
             pass
 
     else:
