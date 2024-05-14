@@ -26,12 +26,10 @@ if TYPE_CHECKING:
     from typing import ParamSpec
 
 import attrs
-import pydantic
 import structlog
 import uvicorn
 from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
 from fastapi.encoders import jsonable_encoder
-from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -49,7 +47,6 @@ from ..predictor import (
     load_config,
     load_slim_predictor_from_ref,
 )
-from ..types import PYDANTIC_V2
 from .runner import (
     PredictionRunner,
     RunnerBusyError,
@@ -290,14 +287,12 @@ def create_app(
         Run a single prediction on the model (idempotent creation).
         """
         if request.id is not None and request.id != prediction_id:
-            msg = "prediction ID must match the ID supplied in the URL"
-            err = {"loc": ("body", "id"), "msg": msg}
-            if not PYDANTIC_V2:
-                err = pydantic.error_wrappers.ErrorWrapper(
-                    ValueError(msg), ("body", "id")
-                )
-
-            raise RequestValidationError([err])
+            body = {
+                "loc": ("body", "id"),
+                "msg": "prediction ID must match the ID supplied in the URL",
+                "type": "value_error",
+            }
+            raise HTTPException(422, [body])
 
         # We've already checked that the IDs match, now ensure that an ID is
         # set on the prediction object

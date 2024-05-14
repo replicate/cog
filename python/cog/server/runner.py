@@ -189,7 +189,7 @@ def create_event_handler(
 
     webhook_sender = None
     if webhook is not None:
-        webhook_sender = webhook_caller_filtered(webhook, set(events_filter))
+        webhook_sender = webhook_caller_filtered(str(webhook), set(events_filter))
 
     file_uploader = None
     if upload_url is not None:
