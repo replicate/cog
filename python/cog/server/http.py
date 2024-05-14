@@ -315,7 +315,7 @@ def create_app(
         # [compat] If no body is supplied, assume that this model can be run
         # with empty input. This will throw a ValidationError if that's not
         # possible.
-        if request is None:
+        if request is None: # type: ignore
             request = PredictionRequest(input={})
         # [compat] If body is supplied but input is None, set it to an empty
         # dictionary so that later code can be simpler.
