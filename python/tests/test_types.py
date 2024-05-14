@@ -3,8 +3,7 @@ import pickle
 
 import pytest
 import responses
-from cog.types import Secret, URLFile
-from cog.types_shared import get_filename
+from cog.types import Secret, URLFile, get_filename
 
 
 @responses.activate

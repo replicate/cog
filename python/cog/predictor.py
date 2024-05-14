@@ -306,15 +306,16 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
         if parameter.default is inspect.Signature.empty:
             default = Input()
         else:
-            default = parameter.default
             # If user hasn't used `Input`, then wrap it in that
-            if not isinstance(default, FieldInfo):
-                default = Input(default=default)
+            if not isinstance(parameter.default, FieldInfo):
+                default = Input(default=parameter.default)
+            else:
+                default = parameter.default
 
         # Fields aren't ordered, so use this pattern to ensure defined order
         # https://github.com/go-openapi/spec/pull/116
         if PYDANTIC_V2:
-            extra: dict = default.json_schema_extra
+            extra = default.json_schema_extra = {}
         else:
             extra: dict = default.extra
         extra["x-order"] = order
