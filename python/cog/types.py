@@ -40,10 +40,15 @@ def Input(
     choices: "list[Union[str, int]]" = None,
 ) -> Any:
     """Input is similar to pydantic.Field, but doesn't require a default value to be the first argument."""
-    if PYDANTIC_V2:
-        kw = {"pattern": regex}
-    else:
-        kw = {"regex": regex}
+    kw = {}
+    if regex:
+        kw["pattern" if PYDANTIC_V2 else "regex"] = regex
+    if choices:
+        if PYDANTIC_V2:
+            kw["json_schema_extra"] = {"choices": choices}
+        else:
+            kw["choices"] = choices
+
     return Field(
         default,
         description=description,
@@ -51,7 +56,6 @@ def Input(
         le=le,
         min_length=min_length,
         max_length=max_length,
-        choices=choices,
         **kw,
     )
 
@@ -100,7 +104,6 @@ if PYDANTIC_V2:
 else:
 
     class _ValidatorMixin:
-
         validate_always = True
 
         @classmethod

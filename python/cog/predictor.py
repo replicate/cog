@@ -250,7 +250,7 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
 # (This can't be a docstring or it gets passed through to the schema.)
 class BaseInput(BaseModel):
     if PYDANTIC_V2:
-        model_config = pydantic.ConfigDict(use_enum_values=True) # type: ignore
+        model_config = pydantic.ConfigDict(use_enum_values=True)  # type: ignore
     else:
 
         class Config:
@@ -315,17 +315,22 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
         # Fields aren't ordered, so use this pattern to ensure defined order
         # https://github.com/go-openapi/spec/pull/116
         if PYDANTIC_V2:
-            extra = default.json_schema_extra = {} # type: ignore
+            # https://github.com/pydantic/pydantic/blob/2.7/pydantic/json_schema.py#L1436-L1446
+            # json_schema_extra can be a callable, but we don't set that and users shouldn't set that
+            if not default.json_schema_extra:
+                default.json_schema_extra = {}
+            assert isinstance(default.json_schema_extra, dict)
+            extra = default.json_schema_extra
         else:
-            extra = default.extra
+            extra = default.extra  # type: ignore
         extra["x-order"] = order
         order += 1
 
         # Choices!
         if extra.get("choices"):
-            choices = extra["choices"]
             # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
-            del extra["choices"]
+            choices = extra.pop("choices")
+            assert isinstance(choices, list), "choices must be a list"
             if InputType == str:
 
                 class StringEnum(str, enum.Enum):
@@ -440,7 +445,7 @@ For example:
     else:
         if PYDANTIC_V2:
 
-            class Output(pydantic.RootModel[OutputType]): # type: ignore
+            class Output(pydantic.RootModel[OutputType]):  # type: ignore
                 pass
 
         else:
@@ -527,7 +532,7 @@ For example:
 
     if PYDANTIC_V2:
 
-        class TrainingOutput(pydantic.RootModel[TrainingOutputType]): # type: ignore
+        class TrainingOutput(pydantic.RootModel[TrainingOutputType]):  # type: ignore
             pass
 
     else:
