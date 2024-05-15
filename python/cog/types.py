@@ -6,7 +6,8 @@ import shutil
 import tempfile
 import urllib.parse
 import urllib.request
-from typing import Any, Callable, Iterator, Optional, Type, TypeVar, Union, TYPE_CHECKING
+from abc import abstractmethod
+from typing import TYPE_CHECKING, Any, Dict, Iterator, Optional, Type, TypeVar, Union
 
 import pydantic
 import requests
@@ -19,7 +20,6 @@ else:
     if TYPE_CHECKING:
         from pydantic.json_schema import JsonSchemaValue  # type: ignore
         from pydantic_core.core_schema import CoreSchema  # type: ignore
-    from pydantic_core.core_schema import no_info_plain_validator_function
 
 FILENAME_ILLEGAL_CHARS = set("\u0000/")
 
@@ -40,6 +40,10 @@ def Input(
     choices: "list[Union[str, int]]" = None,
 ) -> Any:
     """Input is similar to pydantic.Field, but doesn't require a default value to be the first argument."""
+    if PYDANTIC_V2:
+        kw = {"pattern": regex}
+    else:
+        kw = {"regex": regex}
     return Field(
         default,
         description=description,
@@ -47,20 +51,20 @@ def Input(
         le=le,
         min_length=min_length,
         max_length=max_length,
-        regex=regex,
         choices=choices,
+        **kw,
     )
 
 
-class Secret(SecretStr):
+class _SchemaMixin:
     if PYDANTIC_V2:
 
         @classmethod
         def __get_pydantic_json_schema__(
             cls, core_schema: "CoreSchema", handler: "pydantic.GetJsonSchemaHandler"
-        ) -> "JsonSchemaValue":
+        ) -> "JsonSchemaValue":  # type: ignore
             json_schema = handler.resolve_ref_schema(handler(core_schema))
-            json_schema["x-cog-secret"] = True
+            cls._modify_schema(json_schema)
             return json_schema
 
     else:
@@ -68,16 +72,63 @@ class Secret(SecretStr):
         @classmethod
         def __modify_schema__(cls, field_schema: "dict[str, Any]") -> None:
             """Defines what this type should be in openapi.json"""
-            field_schema.update(
-                {
-                    "type": "string",
-                    "format": "password",
-                    "x-cog-secret": True,
-                }
-            )
+            cls._modify_schema(field_schema)
+
+    @classmethod
+    @abstractmethod
+    def _modify_schema(cls, field_schema: "dict[str, Any]") -> None:
+        raise NotImplementedError
 
 
-class File(io.IOBase):
+if PYDANTIC_V2:
+    from pydantic_core.core_schema import no_info_plain_validator_function
+
+    class _ValidatorMixin:
+        @classmethod
+        def __get_pydantic_core_schema__(
+            cls, source: Type[Any], handler: Any
+        ) -> "CoreSchema":
+            return no_info_plain_validator_function(cls.validate)
+
+        @classmethod
+        @abstractmethod
+        def validate(cls, value: Any) -> Any:
+            raise NotImplementedError
+
+    # _ValidatorMixin = _ValidatorMixinV2
+
+else:
+
+    class _ValidatorMixin:
+
+        validate_always = True
+
+        @classmethod
+        def __get_validators__(cls) -> Iterator[Any]:
+            yield cls.validate
+
+        @classmethod
+        @abstractmethod
+        def validate(cls, value: Any) -> Any:
+            raise NotImplementedError
+
+    # _ValidatorMixin = _ValidatorMixinV1
+
+
+class Secret(SecretStr, _SchemaMixin):
+    @classmethod
+    def _modify_schema(cls, field_schema: "dict[str, Any]") -> None:
+        """Defines what this type should be in openapi.json"""
+        field_schema.update(
+            {
+                "type": "string",
+                "format": "password",
+                "x-cog-secret": True,
+            }
+        )
+
+
+class File(io.IOBase, _SchemaMixin, _ValidatorMixin):
     """Deprecated: use Path instead."""
 
     @classmethod
@@ -96,40 +147,14 @@ class File(io.IOBase):
                 f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
             )
 
-    if PYDANTIC_V2:
-
-        @classmethod
-        def __get_pydantic_core_schema__(
-            cls, source: Type[Any], handler: Callable[[Any], "CoreSchema"]
-        ) -> "CoreSchema":
-            return no_info_plain_validator_function(cls.validate)
-
-        @classmethod
-        def __get_pydantic_json_schema__(
-            cls, core_schema: "CoreSchema", handler: "pydantic.GetJsonSchemaHandler"
-        ) -> "JsonSchemaValue":
-            """Defines what this type should be in openapi.json"""
-            json_schema = handler.resolve_ref_schema(handler(core_schema))
-            json_schema.update(type="string", format="uri")
-            return json_schema
-
-    else:
-        validate_always = True
-
-        @classmethod
-        def __get_validators__(cls) -> Iterator[Any]:
-            yield cls.validate
-
-        @classmethod
-        def __modify_schema__(cls, field_schema: "dict[str, Any]") -> None:
-            """Defines what this type should be in openapi.json"""
-            # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
-            field_schema.update(type="string", format="uri")
+    @classmethod
+    def _modify_schema(cls, field_schema: "dict[str, Any]") -> None:
+        """Defines what this type should be in openapi.json"""
+        # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
+        field_schema.update(type="string", format="uri")
 
 
-class Path(pathlib.PosixPath):
-    validate_always = True
-
+class Path(pathlib.PosixPath, _SchemaMixin, _ValidatorMixin):
     @classmethod
     def validate(cls, value: Any) -> pathlib.Path:
         if isinstance(value, pathlib.Path):
@@ -141,34 +166,11 @@ class Path(pathlib.PosixPath):
             fileobj=File.validate(value),
         )
 
-    if PYDANTIC_V2:
-
-        @classmethod
-        def __get_pydantic_core_schema__(
-            cls, source: Type[Any], handler: Callable[[Any], "CoreSchema"]
-        ) -> "CoreSchema":
-            return no_info_plain_validator_function(cls.validate)
-
-        @classmethod
-        def __get_pydantic_json_schema__(
-            cls, core_schema: "CoreSchema", handler: "pydantic.GetJsonSchemaHandler"
-        ) -> "JsonSchemaValue":
-            """Defines what this type should be in openapi.json"""
-            json_schema = handler.resolve_ref_schema(handler(core_schema))
-            json_schema.update(type="string", format="uri")
-            return json_schema
-
-    else:
-
-        @classmethod
-        def __get_validators__(cls) -> Iterator[Any]:
-            yield cls.validate
-
-        @classmethod
-        def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
-            """Defines what this type should be in openapi.json"""
-            # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
-            field_schema.update(type="string", format="uri")
+    @classmethod
+    def _modify_schema(cls, field_schema: Dict[str, Any]) -> None:
+        """Defines what this type should be in openapi.json"""
+        # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
+        field_schema.update(type="string", format="uri")
 
 
 class URLPath(pathlib.PosixPath):
@@ -308,9 +310,9 @@ def get_filename(url: str) -> str:
 Item = TypeVar("Item")
 
 
-class ConcatenateIterator(Iterator[Item]):
+class ConcatenateIterator(Iterator[Item], _SchemaMixin, _ValidatorMixin):
     @classmethod
-    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+    def _modify_schema(cls, field_schema: Dict[str, Any]) -> None:
         """Defines what this type should be in openapi.json"""
         field_schema.pop("allOf", None)
         field_schema.update(
@@ -322,17 +324,9 @@ class ConcatenateIterator(Iterator[Item]):
             }
         )
 
-    if PYDANTIC_V2:
-        pass
-    else:
-
-        @classmethod
-        def __get_validators__(cls) -> Iterator[Any]:
-            yield cls.validate
-
-        @classmethod
-        def validate(cls, value: Iterator[Any]) -> Iterator[Any]:
-            return value
+    @classmethod
+    def validate(cls, value: Iterator[Any]) -> Iterator[Any]:
+        return value
 
 
 def _len_bytes(s: str, encoding: str = "utf-8") -> int:
