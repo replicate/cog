@@ -78,8 +78,7 @@ class PredictionResponse(PredictionBaseModel):
     error: t.Optional[str] = None
     status: t.Optional[Status] = None
 
-    # not sure how to set a factory here
-    metrics: t.Optional[t.Dict[str, t.Any]] = None
+    metrics: t.Dict[str, t.Any] = pydantic.Field(default_factory=dict)
 
     @classmethod
     def with_types(cls, input_type: t.Type[t.Any], output_type: t.Type[t.Any]) -> t.Any:
