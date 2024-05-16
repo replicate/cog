@@ -7,7 +7,17 @@ import tempfile
 import urllib.parse
 import urllib.request
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, Iterator, Optional, Type, TypeVar, Union
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    Dict,
+    Iterator,
+    Optional,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import pydantic
 import requests
@@ -157,6 +167,34 @@ class File(io.IOBase, _SchemaMixin, _ValidatorMixin):
         field_schema.update(type="string", format="uri")
 
 
+if PYDANTIC_V2:
+
+    class _File(io.IOBase):
+        """Deprecated: use Path instead."""
+
+        @classmethod
+        def validate(cls, value: Any) -> io.IOBase:
+            if isinstance(value, io.IOBase):
+                return value
+
+            parsed_url = urllib.parse.urlparse(value)
+            if parsed_url.scheme == "data":
+                res = urllib.request.urlopen(value)  # noqa: S310
+                return io.BytesIO(res.read())
+            elif parsed_url.scheme == "http" or parsed_url.scheme == "https":
+                return URLFile(value)
+            else:
+                raise ValueError(
+                    f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
+                )
+
+    File = Annotated[
+        _File,
+        pydantic.AfterValidator(_File.validate),
+        pydantic.WithJsonSchema({"type": "string", "format": "uri"}),
+    ]
+
+
 class Path(pathlib.PosixPath, _SchemaMixin, _ValidatorMixin):
     @classmethod
     def validate(cls, value: Any) -> pathlib.Path:
@@ -169,11 +207,26 @@ class Path(pathlib.PosixPath, _SchemaMixin, _ValidatorMixin):
             fileobj=File.validate(value),
         )
 
-    @classmethod
-    def _modify_schema(cls, field_schema: Dict[str, Any]) -> None:
-        """Defines what this type should be in openapi.json"""
-        # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
-        field_schema.update(type="string", format="uri")
+
+if PYDANTIC_V2:
+
+    class _Path(pathlib.PosixPath):
+        @classmethod
+        def validate(cls, value: Any) -> pathlib.Path:
+            if isinstance(value, pathlib.Path):
+                return value
+
+            return URLPath(
+                source=value,
+                filename=get_filename(value),
+                fileobj=File.validate(value),
+            )
+
+    Path = Annotated[
+        _Path,
+        pydantic.AfterValidator(_Path.validate),  # maybe this one is a before
+        pydantic.WithJsonSchema({"type": "string", "format": "uri"}),
+    ]
 
 
 class URLPath(pathlib.PosixPath):
