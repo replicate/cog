@@ -317,10 +317,10 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
         if PYDANTIC_V2:
             # https://github.com/pydantic/pydantic/blob/2.7/pydantic/json_schema.py#L1436-L1446
             # json_schema_extra can be a callable, but we don't set that and users shouldn't set that
-            if not default.json_schema_extra:
-                default.json_schema_extra = {}
-            assert isinstance(default.json_schema_extra, dict)
-            extra = default.json_schema_extra
+            if not default.json_schema_extra:  # type: ignore
+                default.json_schema_extra = {}  # type: ignore
+            assert isinstance(default.json_schema_extra, dict)  # type: ignore
+            extra = default.json_schema_extra  # type: ignore
         else:
             extra = default.extra  # type: ignore
         extra["x-order"] = order
