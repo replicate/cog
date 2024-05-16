@@ -7,11 +7,11 @@ from responses.matchers import multipart_matcher
 
 from .conftest import uses_predictor, uses_predictor_with_client_options
 
-
-@uses_predictor("output_wrong_type")
-def test_return_wrong_type(client):
-    resp = client.post("/predictions")
-    assert resp.status_code == 500
+# it's not the worst idea to validate outputs but it's slow and not required
+# @uses_predictor("output_wrong_type")
+# def test_return_wrong_type(client):
+#     resp = client.post("/predictions")
+#     assert resp.status_code == 500
 
 
 @uses_predictor("output_file")

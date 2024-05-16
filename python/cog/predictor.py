@@ -60,6 +60,13 @@ class BasePredictor(ABC):
         """
         pass
 
+    def log(self, *messages: str) -> None:
+        """
+        Write a log message that will be tagged with the current prediction
+        even during concurrent predictions. At runtime this method is overriden.
+        """
+        print(*messages)
+
 
 def run_setup(predictor: BasePredictor) -> None:
     weights = get_weights_argument(predictor)

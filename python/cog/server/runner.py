@@ -1,10 +1,16 @@
 import asyncio
+import contextlib
+import logging
 import multiprocessing
+import os
+import signal
+import sys
 import threading
 import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Awaitable, Callable, Optional, Tuple, Union, cast
+from enum import Enum, auto, unique
+from typing import Any, AsyncIterator, Awaitable, Iterator, Optional, Union
 
 import httpx
 import structlog
@@ -12,7 +18,9 @@ from attrs import define
 
 from .. import schema, types
 from .clients import SKIP_START_EVENT, ClientManager
+from .connection import AsyncConnection
 from .eventtypes import (
+    Cancel,
     Done,
     Heartbeat,
     Log,
@@ -20,9 +28,14 @@ from .eventtypes import (
     PredictionOutput,
     PredictionOutputType,
     PublicEventType,
+    Shutdown,
+)
+from .exceptions import (
+    FatalWorkerException,
+    InvalidStateException,
 )
 from .probes import ProbeHelper
-from .worker import Worker
+from .worker import Mux, _ChildWorker
 
 log = structlog.get_logger("cog.server.runner")
 _spawn = multiprocessing.get_context("spawn")
@@ -40,6 +53,16 @@ class UnknownPredictionError(Exception):
     pass
 
 
+@unique
+class WorkerState(Enum):
+    NEW = auto()
+    STARTING = auto()
+    IDLE = auto()
+    PROCESSING = auto()
+    BUSY = auto()
+    DEFUNCT = auto()
+
+
 @define
 class SetupResult:
     started_at: datetime
@@ -47,10 +70,18 @@ class SetupResult:
     logs: str
     status: schema.Status
 
+    # TODO: maybe collect events into a result here
+
 
 PredictionTask: "typing.TypeAlias" = "asyncio.Task[schema.PredictionResponse]"
 SetupTask: "typing.TypeAlias" = "asyncio.Task[SetupResult]"
 RunnerTask: "typing.TypeAlias" = Union[PredictionTask, SetupTask]
+
+
+# TODO: we might prefer to move this back to worker
+# runner would still need to do PredictionEventHandler
+# if it's not inline, we would need to make sure {enter,exit}_predict is handled correctly
+# this is a major outstanding piece of work for merging into main
 
 
 class PredictionRunner:
@@ -60,21 +91,103 @@ class PredictionRunner:
         predictor_ref: str,
         shutdown_event: Optional[threading.Event],
         upload_url: Optional[str] = None,
+        concurrency: int = 1,
+        tee_output: bool = True,
     ) -> None:
-        self._response: Optional[schema.PredictionResponse] = None
-        self._result: Optional[RunnerTask] = None
+        self._shutdown_event = shutdown_event  # __main__ waits for this event
 
-        self._worker = Worker(predictor_ref=predictor_ref)
-
-        self._shutdown_event = shutdown_event
         self._upload_url = upload_url
+        self._predictions: "dict[str, tuple[schema.PredictionResponse, PredictionTask]]" = {}
+        self._predictions_in_flight: "set[str]" = set()
+        # it would be lovely to merge these but it's not fully clear how best to handle it
+        # since idempotent requests can kinda come whenever?
+        # p: dict[str, PredictionTask]
+        # p: dict[str, PredictionEventHandler]
+        # p: dict[str, schema.PredictionResponse]
 
         self.client_manager = ClientManager()
 
+        # TODO: perhaps this could go back into worker, if we could get the interface right
+        # (unclear how to do the tests)
+        # <worker code>
+        self._state = WorkerState.NEW
+        self._semaphore = asyncio.Semaphore(concurrency)
+        self._concurrency = concurrency
+
+        # A pipe with which to communicate with the child worker.
+        events, child_events = _spawn.Pipe()
+        self._child = _ChildWorker(predictor_ref, child_events, tee_output)
+        self._events: "AsyncConnection[tuple[str, PublicEventType]]" = AsyncConnection(
+            events
+        )
+        # shutdown requested
+        self._shutting_down = False
+        # stop reading events
+        self._terminating = asyncio.Event()
+        self._mux = Mux(self._terminating)
+        # </worker code>
         # bind logger instead of the module-level logger proxy for performance
         self.log = log.bind()
 
-    def make_error_handler(self, activity: str) -> Callable[[RunnerTask], None]:
+    def activity_info(self) -> "dict[str, int]":
+        return {"max": self._concurrency, "current": len(self._predictions_in_flight)}
+
+    def setup(self) -> SetupTask:
+        if self._state != WorkerState.NEW:
+            raise RunnerBusyError
+        self._state = WorkerState.STARTING
+
+        # app is allowed to respond to requests and poll the state of this task
+        # while it is running
+        async def inner() -> SetupResult:
+            logs = []
+            status = None
+            started_at = datetime.now(tz=timezone.utc)
+
+            # in 3.10 Event started doing get_running_loop
+            # previously it stored the loop when created, which causes an error in tests
+            if sys.version_info < (3, 10):
+                self._terminating = self._mux.terminating = asyncio.Event()
+
+            self._child.start()
+            await self._events.async_init()
+            self._start_event_reader()
+
+            try:
+                async for event in self._mux.read("SETUP", poll=0.1):
+                    if isinstance(event, Log):
+                        logs.append(event.message)
+                    elif isinstance(event, Done):
+                        if event.error:
+                            raise FatalWorkerException(
+                                "Predictor errored during setup: " + event.error_detail
+                            )
+                            status = schema.Status.FAILED
+                        else:
+                            status = schema.Status.SUCCEEDED
+                        self._state = WorkerState.IDLE
+            except Exception:
+                logs.append(traceback.format_exc())
+                status = schema.Status.FAILED
+
+            if status is None:
+                logs.append("Error: did not receive 'done' event from setup!")
+                status = schema.Status.FAILED
+
+            completed_at = datetime.now(tz=timezone.utc)
+
+            # Only if setup succeeded, mark the container as "ready".
+            if status == schema.Status.SUCCEEDED:
+                probes = ProbeHelper()
+                probes.ready()
+
+            return SetupResult(
+                started_at=started_at,
+                completed_at=completed_at,
+                logs="".join(logs),
+                status=status,
+            )
+
         def handle_error(task: RunnerTask) -> None:
             exc = task.exception()
             if not exc:
@@ -85,34 +198,64 @@ class PredictionRunner:
             try:
                 raise exc
             except Exception:
-                self.log.error(f"caught exception while running {activity}", exc_info=True)
+                self.log.error("caught exception while running setup", exc_info=True)
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
 
-        return handle_error
+        result = asyncio.create_task(inner())
+        result.add_done_callback(handle_error)
+        return result
 
-    def setup(self) -> SetupTask:
+    def state_from_predictions_in_flight(self) -> WorkerState:
+        valid_states = {WorkerState.IDLE, WorkerState.PROCESSING, WorkerState.BUSY}
+        if self._state not in valid_states:
+            raise InvalidStateException(
+                f"Invalid operation: state is {self._state} (must be IDLE, PROCESSING, or BUSY)"
+            )
+        if len(self._predictions_in_flight) == self._concurrency:
+            return WorkerState.BUSY
+        if len(self._predictions_in_flight) == 0:
+            return WorkerState.IDLE
+        return WorkerState.PROCESSING
+
+    def is_busy(self) -> bool:
+        return self._state not in {WorkerState.PROCESSING, WorkerState.IDLE}
+
+    def enter_predict(self, id: str) -> None:
         if self.is_busy():
-            raise RunnerBusyError()
-        self._result = asyncio.create_task(setup(worker=self._worker))
-        self._result.add_done_callback(self.make_error_handler("setup"))
-        return self._result
+            raise InvalidStateException(
+                f"Invalid operation: state is {self._state} (must be processing or idle)"
+            )
+        if self._shutting_down:
+            raise InvalidStateException(
+                "cannot accept new predictions because shutdown requested"
+            )
+        self.log.info(
+            "accepted prediction %s in flight %s", id, self._predictions_in_flight
+        )
+        self._predictions_in_flight.add(id)
+        self._state = self.state_from_predictions_in_flight()
+
+    def exit_predict(self, id: str) -> None:
+        self._predictions_in_flight.remove(id)
+        self._state = self.state_from_predictions_in_flight()
+
+    @contextlib.contextmanager
+    def prediction_ctx(self, id: str) -> Iterator[None]:
+        self.enter_predict(id)
+        try:
+            yield
+        finally:
+            self.exit_predict(id)
 
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
     # no longer have to support Python 3.8
     def predict(
-        self, request: schema.PredictionRequest, upload: bool = True
-    ) -> Tuple[schema.PredictionResponse, PredictionTask]:
-        # It's the caller's responsibility to not call us if we're busy.
+        self, request: schema.PredictionRequest, poll: Optional[float] = None
+    ) -> "tuple[schema.PredictionResponse, PredictionTask]":
         if self.is_busy():
-            # If self._result is set, but self._response is not, we're still
-            # doing setup.
-            if self._response is None:
-                raise RunnerBusyError()
-            assert self._result is not None
-            if request.id is not None and request.id == self._response.id:  # type: ignore
-                result = cast(PredictionTask, self._result)
-                return (self._response, result)
+            if request.id in self._predictions:
+                return self._predictions[request.id]
             raise RunnerBusyError()
 
         # Set up logger context for main thread. The same thing happens inside
@@ -122,10 +265,18 @@ class PredictionRunner:
         # if upload url was not set, we can respect output_file_prefix
         # but maybe we should just throw an error
         upload_url = request.output_file_prefix or self._upload_url
-        event_handler = PredictionEventHandler(request, self.client_manager, upload_url, self.log)
-        self._response = event_handler.response
+        # this is supposed to send START, but we're trapped in a sync function
+        # this sends START in a task, which calls jsonable_encoder on the input,
+        # which calls iter(io.BytesIO) with data uris that are File
+        # that breaks one of the tests, but happens Rarely in production,
+        # so let's ignore it for now
+        event_handler = PredictionEventHandler(
+            request, self.client_manager, upload_url, self.log
+        )
+        response = event_handler.response
 
         prediction_input = PredictionInput.from_request(request)
+        self.enter_predict(request.id)
 
         async def async_predict_handling_errors() -> schema.PredictionResponse:
             try:
@@ -137,9 +288,11 @@ class PredictionRunner:
                     if isinstance(v, types.URLTempFile):
                         real_path = await v.convert(self.client_manager.download_client)
                         prediction_input.payload[k] = real_path
-                event_stream = self._worker.predict(prediction_input.payload, poll=0.1)
-                result = await event_handler.handle_event_stream(event_stream)
-                return result
+                async with self._semaphore:
+                    self._events.send(prediction_input)
+                    event_stream = self._mux.read(prediction_input.id, poll=poll)
+                    result = await event_handler.handle_event_stream(event_stream)
+                    return result
             except httpx.HTTPError as e:
                 tb = traceback.format_exc()
                 await event_handler.append_logs(tb)
@@ -150,44 +303,110 @@ class PredictionRunner:
                 tb = traceback.format_exc()
                 await event_handler.append_logs(tb)
                 await event_handler.failed(error=str(e))
-                self.log.error("caught exception while running prediction", exc_info=True)
+                self.log.error(
+                    "caught exception while running prediction", exc_info=True
+                )
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
                 raise  # we don't actually want to raise anymore but w/e
             finally:
+                # mark the prediction as done and update state
+                # ... actually, we might want to mark that part earlier
+                # even if we're still uploading files we can accept new work
+                self.exit_predict(prediction_input.id)
                 # FIXME: use isinstance(BaseInput)
                 if hasattr(request.input, "cleanup"):
                     request.input.cleanup()  # type: ignore
+                # this might also, potentially, be too early
+                # since this is just before this coroutine exits
+                self._predictions.pop(request.id)
 
         # this is still a little silly
-        self._result = asyncio.create_task(async_predict_handling_errors())
-        self._result.add_done_callback(self.make_error_handler("prediction"))
+        result = asyncio.create_task(async_predict_handling_errors())
+        # result.add_done_callback(self.make_error_handler("prediction"))
         # even after inlining we might still need a callback to surface remaining exceptions/results
-        return (self._response, self._result)
+        self._predictions[request.id] = (response, result)
 
-    def is_busy(self) -> bool:
-        if self._result is None:
-            return False
-
-        if not self._result.done():
-            return True
-
-        self._response = None
-        self._result = None
-        return False
+        return (response, result)
 
     def shutdown(self) -> None:
-        if self._result:
-            self._result.cancel()
-        self._worker.terminate()
-
-    def cancel(self, prediction_id: Optional[str] = None) -> None:
-        if not self.is_busy():
+        if self._state == WorkerState.DEFUNCT:
             return
-        assert self._response is not None
-        if prediction_id is not None and prediction_id != self._response.id:
+        # shutdown requested, but keep reading events
+        self._shutting_down = True
+
+        if self._child.is_alive():
+            self._events.send(Shutdown())
+
+    def terminate(self) -> None:
+        for _, task in self._predictions.values():
+            task.cancel()
+        if self._state == WorkerState.DEFUNCT:
+            return
+
+        self._terminating.set()
+        self._state = WorkerState.DEFUNCT
+
+        if self._child.is_alive():
+            self._child.terminate()
+            self._child.join()
+        self._events.close()
+
+        if self._read_events_task:
+            self._read_events_task.cancel()
+
+    def cancel(self, prediction_id: str) -> None:
+        if prediction_id not in self._predictions_in_flight:
+            self.log.warn(
+                "can't cancel %s (%s)", prediction_id, self._predictions_in_flight
+            )
             raise UnknownPredictionError()
-        self._worker.cancel()
+        if os.getenv("COG_DISABLE_CANCEL"):
+            self.log.warn("cancelling is disabled for this model")
+            return
+        maybe_pid = self._child.pid
+        if self._child.is_alive() and maybe_pid is not None:
+            # since we don't know if the predictor is sync or async, we both send
+            # the signal (honored only if sync) and the event (honored only if async)
+            os.kill(maybe_pid, signal.SIGUSR1)
+            self.log.info("sent cancel")
+            self._events.send(Cancel(prediction_id))
+            # maybe this should probably check self._semaphore._value == self._concurrent
+
+    _read_events_task: "Optional[asyncio.Task[None]]" = None
+
+    def _start_event_reader(self) -> None:
+        def handle_error(task: "asyncio.Task[None]") -> None:
+            if task.cancelled():
+                return
+            exc = task.exception()
+            if exc:
+                logging.error("caught exception", exc_info=exc)
+
+        if not self._read_events_task:
+            self._read_events_task = asyncio.create_task(self._read_events())
+            self._read_events_task.add_done_callback(handle_error)
+
+    async def _read_events(self) -> None:
+        while self._child.is_alive() and not self._terminating.is_set():
+            # in tests this can still be running when the task is destroyed
+            result = await self._events.recv()
+            id, event = result
+            if id == "LOG" and self._state == WorkerState.STARTING:
+                id = "SETUP"
+            if id == "LOG" and len(self._predictions_in_flight) == 1:
+                id = list(self._predictions_in_flight)[0]
+            await self._mux.write(id, event)
+        # If we dropped off the end off the end of the loop, check if it's
+        # because the child process died.
+        if not self._child.is_alive() and not self._terminating.is_set():
+            exitcode = self._child.exitcode
+            self._mux.fatal = FatalWorkerException(
+                f"Prediction failed for an unknown reason. It might have run out of memory? (exitcode {exitcode})"
+            )
+        # this is the same event as self._terminating
+        # we need to set it so mux.reads wake up and throw an error if needed
+        self._mux.terminating.set()
 
 
 class PredictionEventHandler:
@@ -219,8 +438,7 @@ class PredictionEventHandler:
         # latency (this guarantees that the first output webhook won't be
         # throttled.)
         if not SKIP_START_EVENT:
-            # idk
-            # this is pretty wrong
+            # sending it in a coroutine is kind of wrong in some ways
             asyncio.create_task(self._send_webhook(schema.WebhookEvent.START))
 
     @property
@@ -309,6 +527,7 @@ class PredictionEventHandler:
             return self.noop()
         if isinstance(event, Log):
             return self.append_logs(event.message)
+
         if isinstance(event, PredictionOutputType):
             if self._output_type is not None:
                 return self.failed(error="Predictor returned unexpected output")
@@ -328,41 +547,5 @@ class PredictionEventHandler:
             if event.error:
                 return self.failed(error=str(event.error_detail))
             return self.succeeded()
-        log.warn("received unexpected event from worker", data=event)
+        self.logger.warn("received unexpected event from worker", data=event)
         return self.noop()
-
-
-async def setup(*, worker: Worker) -> SetupResult:
-    logs = []
-    status = None
-    started_at = datetime.now(tz=timezone.utc)
-
-    try:
-        async for event in worker.setup():
-            if isinstance(event, Log):
-                logs.append(event.message)
-            elif isinstance(event, Done):
-                status = (
-                    schema.Status.FAILED if event.error else schema.Status.SUCCEEDED
-                )
-    except Exception:
-        logs.append(traceback.format_exc())
-        status = schema.Status.FAILED
-
-    if status is None:
-        logs.append("Error: did not receive 'done' event from setup!")
-        status = schema.Status.FAILED
-
-    completed_at = datetime.now(tz=timezone.utc)
-
-    # Only if setup succeeded, mark the container as "ready".
-    if status == schema.Status.SUCCEEDED:
-        probes = ProbeHelper()
-        probes.ready()
-
-    return SetupResult(
-        started_at=started_at,
-        completed_at=completed_at,
-        logs="".join(logs),
-        status=status,
-    )

@@ -56,16 +56,21 @@ type Build struct {
 	pythonRequirementsContent []string
 }
 
+type Concurrency struct {
+	Max int `json:"max,omitempty" yaml:"max"`
+}
+
 type Example struct {
 	Input  map[string]string `json:"input" yaml:"input"`
 	Output string            `json:"output" yaml:"output"`
 }
 
 type Config struct {
-	Build   *Build `json:"build" yaml:"build"`
-	Image   string `json:"image,omitempty" yaml:"image"`
-	Predict string `json:"predict,omitempty" yaml:"predict"`
-	Train   string `json:"train,omitempty" yaml:"train"`
+	Build       *Build       `json:"build" yaml:"build"`
+	Image       string       `json:"image,omitempty" yaml:"image"`
+	Predict     string       `json:"predict,omitempty" yaml:"predict"`
+	Train       string       `json:"train,omitempty" yaml:"train"`
+	Concurrency *Concurrency `json:"concurrency,omitempty" yaml:"concurrency"`
 }
 
 func DefaultConfig() *Config {
