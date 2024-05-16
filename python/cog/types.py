@@ -87,7 +87,7 @@ class _SchemaMixin:
 if PYDANTIC_V2:
     from pydantic_core.core_schema import no_info_plain_validator_function
 
-    class _ValidatorMixin:
+    class _ValidatorMixin:  # type: ignore
         @classmethod
         def __get_pydantic_core_schema__(
             cls, source: Type[Any], handler: Any
@@ -103,7 +103,7 @@ if PYDANTIC_V2:
 
 else:
 
-    class _ValidatorMixin:
+    class _ValidatorMixin:  # type: ignore
         validate_always = True
 
         @classmethod

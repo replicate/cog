@@ -336,9 +336,7 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
                 class StringEnum(str, enum.Enum):
                     pass
 
-                InputType = StringEnum(  # type: ignore
-                    name, {value: value for value in choices}
-                )
+                InputType = StringEnum(name, {value: value for value in choices})  # type: ignore
             elif InputType == int:
                 InputType = enum.IntEnum(name, {str(value): value for value in choices})  # type: ignore
             else:
