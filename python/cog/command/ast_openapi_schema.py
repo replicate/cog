@@ -147,6 +147,24 @@ BASE_SCHEMA = """
         "summary": "Healthcheck"
       }
     },
+    "/ready": {
+      "get": {
+        "summary": "Ready",
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Ready Ready Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/predictions": {
       "post": {
         "description": "Run a single prediction on the model",

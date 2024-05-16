@@ -154,11 +154,6 @@
           "$id": "#/properties/concurrency/properties/max",
           "type": "integer",
           "description": "The maximum number of concurrent predictions."
-        },
-        "default_target": {
-          "$id": "#/properties/concurrency/properties/default_target",
-          "type": "integer",
-          "description": "The default target for number of concurrent predictions. This setting can be used by an autoscaler to determine when to scale a deployment of a model up or down."
         }
       }
     }
