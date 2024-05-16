@@ -59,6 +59,12 @@ def put_file_to_signed_endpoint(
     )
     resp.raise_for_status()
 
+    # Try to extract the final asset URL from the `Location` header
+    # otherwise fallback to the URL of the final request.
+    final_url = resp.url
+    if url := resp.headers.get("location"):
+        final_url = url
+
     # strip any signing gubbins from the URL
     final_url = urlparse(resp.url)._replace(query="").geturl()
 
