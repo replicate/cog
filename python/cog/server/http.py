@@ -26,11 +26,10 @@ if TYPE_CHECKING:
 import attrs
 import structlog
 import uvicorn
-from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
+from fastapi import Body, FastAPI, Header, Path, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
 from pydantic.error_wrappers import ErrorWrapper
 
 from .. import schema
@@ -133,10 +132,13 @@ def create_app(
         add_setup_failed_routes(app, started_at, msg)
         return app
 
+    concurrency = config.get("concurrency", {}).get("max", "1")
+
     runner = PredictionRunner(
         predictor_ref=predictor_ref,
         shutdown_event=shutdown_event,
         upload_url=upload_url,
+        concurrency=int(concurrency),
     )
 
     class PredictionRequest(schema.PredictionRequest.with_types(input_type=InputType)):
@@ -261,7 +263,22 @@ def create_app(
         else:
             health = app.state.health
         setup = attrs.asdict(app.state.setup_result) if app.state.setup_result else {}
-        return jsonable_encoder({"status": health.name, "setup": setup})
+        activity = runner.activity_info()
+        return jsonable_encoder(
+            {"status": health.name, "setup": setup, "concurrency": activity}
+        )
+
+    # this is a readiness probe, it only returns 200 when work can be accepted
+    @app.get("/ready")
+    async def ready() -> Any:
+        activity = runner.activity_info()
+        if runner.is_busy():
+            return JSONResponse(
+                {"status": "ready", "activity": activity}, status_code=200
+            )
+        return JSONResponse(
+            {"status": "not ready", "activity": activity}, status_code=503
+        )
 
     @limited
     @app.post(
@@ -348,27 +365,23 @@ def create_app(
         if respond_async:
             return JSONResponse(jsonable_encoder(initial_response), status_code=202)
 
-        # by now, output Path and File are already converted to str
-        # so when we validate the schema, those urls get cast back to Path and File
-        # in the previous implementation those would then get encoded as strings
-        # however the changes to Path and File break this and return the filename instead
-        try:
-            prediction = await async_result
-            # we're only doing this to catch validation errors
-            response = PredictionResponse(**prediction.dict())
-            del response
-        except ValidationError as e:
-            _log_invalid_output(e)
-            raise HTTPException(status_code=500, detail=str(e)) from e
+        # # by now, output Path and File are already converted to str
+        # # so when we validate the schema, those urls get cast back to Path and File
+        # # in the previous implementation those would then get encoded as strings
+        # # however the changes to Path and File break this and return the filename instead
+        #
+        # # moreover, validating outputs can be a bottleneck with enough volume
+        # # since it's not strictly needed, we can comment it out
+        # try:
+        #     prediction = await async_result
+        #     # we're only doing this to catch validation errors
+        #     response = PredictionResponse(**prediction.dict())
+        #     del response
+        # except ValidationError as e:
+        #     _log_invalid_output(e)
+        #     raise HTTPException(status_code=500, detail=str(e)) from e
 
-        # dict_resp = response.dict()
-        # output = await runner.client_manager.upload_files(
-        #     dict_resp["output"], upload_url
-        # )
-        # dict_resp["output"] = output
-        # encoded_response = jsonable_encoder(dict_resp)
-
-        # return *prediction* and not *response* to preserve urls
+        prediction = await async_result
         encoded_response = jsonable_encoder(prediction.dict())
         return JSONResponse(content=encoded_response)
 
@@ -377,8 +390,7 @@ def create_app(
         """
         Cancel a running prediction
         """
-        if not runner.is_busy():
-            return JSONResponse({}, status_code=404)
+        # no need to check whether or not we're busy
         try:
             runner.cancel(prediction_id)
         except UnknownPredictionError:

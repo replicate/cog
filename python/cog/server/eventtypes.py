@@ -21,6 +21,11 @@ class PredictionInput:
 
 
 @define
+class Cancel:
+    id: str
+
+
+@define
 class Shutdown:
     pass
 
