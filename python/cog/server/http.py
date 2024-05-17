@@ -131,7 +131,7 @@ def create_app(
         add_setup_failed_routes(app, started_at, msg)
         return app
 
-    concurrency = os.getenv("COG_CONCURRENCY_OVERRIDE", config.get("concurrency", "1"))
+    concurrency = config.get("concurrency", {}).get("max", "1")
 
     runner = PredictionRunner(
         predictor_ref=predictor_ref,

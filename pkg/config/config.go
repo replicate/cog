@@ -44,17 +44,22 @@ type Build struct {
 	pythonRequirementsContent []string
 }
 
+type Concurrency struct {
+	Max           int `json:"max,omitempty" yaml:"max"`
+	DefaultTarget int `json:"default_target,omitempty" yaml:"default_target"`
+}
+
 type Example struct {
 	Input  map[string]string `json:"input" yaml:"input"`
 	Output string            `json:"output" yaml:"output"`
 }
 
 type Config struct {
-	Build       *Build `json:"build" yaml:"build"`
-	Image       string `json:"image,omitempty" yaml:"image"`
-	Predict     string `json:"predict,omitempty" yaml:"predict"`
-	Train       string `json:"train,omitempty" yaml:"train"`
-	Concurrency int    `json:"concurrency,omitempty" yaml:"concurrency"`
+	Build       *Build       `json:"build" yaml:"build"`
+	Image       string       `json:"image,omitempty" yaml:"image"`
+	Predict     string       `json:"predict,omitempty" yaml:"predict"`
+	Train       string       `json:"train,omitempty" yaml:"train"`
+	Concurrency *Concurrency `json:"concurrency,omitempty" yaml:"concurrency"`
 }
 
 func DefaultConfig() *Config {
