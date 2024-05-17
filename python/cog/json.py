@@ -2,7 +2,7 @@ import io
 from datetime import datetime
 from enum import Enum
 from types import GeneratorType
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from pydantic import BaseModel
 
@@ -41,19 +41,26 @@ def make_encodeable(obj: Any) -> Any:
     return obj
 
 
-def upload_files(obj: Any, upload_file: Callable[[io.IOBase], str]) -> Any:
+def upload_files(
+    obj: Any,
+    upload_file: Callable[[io.IOBase, Optional[str]], str],
+    prediction_id: Optional[str],
+) -> Any:
     """
     Iterates through an object from make_encodeable and uploads any files.
 
     When a file is encountered, it will be passed to upload_file. Any paths will be opened and converted to files.
     """
     if isinstance(obj, dict):
-        return {key: upload_files(value, upload_file) for key, value in obj.items()}
+        return {
+            key: upload_files(value, upload_file, prediction_id)
+            for key, value in obj.items()
+        }
     if isinstance(obj, list):
-        return [upload_files(value, upload_file) for value in obj]
+        return [upload_files(value, upload_file, prediction_id) for value in obj]
     if isinstance(obj, Path):
         with obj.open("rb") as f:
-            return upload_file(f)
+            return upload_file(f, prediction_id)
     if isinstance(obj, io.IOBase):
-        return upload_file(obj)
+        return upload_file(obj, prediction_id)
     return obj

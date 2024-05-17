@@ -202,14 +202,18 @@ def create_event_handler(
     return event_handler
 
 
-def generate_file_uploader(upload_url: str) -> Callable[[Any], Any]:
+def generate_file_uploader(upload_url: str) -> Callable[[Any, Optional[str]], Any]:
     client = _make_file_upload_http_client()
 
-    def file_uploader(output: Any) -> Any:
-        def upload_file(fh: io.IOBase) -> str:
-            return upload_file_via_signed_endpoint(fh, upload_url, client=client)
+    def file_uploader(output: Any, prediction_id: Optional[str]) -> Any:
+        def upload_file(fh: io.IOBase, prediction_id: Optional[str]) -> str:
+            return upload_file_via_signed_endpoint(
+                fh, upload_url, client=client, prediction_id=prediction_id
+            )
 
-        return upload_files(output, upload_file=upload_file)
+        return upload_files(
+            output, upload_file=upload_file, prediction_id=prediction_id
+        )
 
     return file_uploader
 
@@ -219,7 +223,7 @@ class PredictionEventHandler:
         self,
         p: schema.PredictionResponse,
         webhook_sender: Optional[Callable[[Any, schema.WebhookEvent], None]] = None,
-        file_uploader: Optional[Callable[[Any], Any]] = None,
+        file_uploader: Optional[Callable[[Any, Optional[str]], Any]] = None,
     ) -> None:
         log.info("starting prediction")
         self.p = p
@@ -300,7 +304,7 @@ class PredictionEventHandler:
 
         try:
             # TODO: clean up output files
-            return self._file_uploader(output)
+            return self._file_uploader(output, self.p.id)
         except Exception as error:
             # If something goes wrong uploading a file, it's irrecoverable.
             # The re-raised exception will be caught and cause the prediction

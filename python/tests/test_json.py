@@ -43,9 +43,9 @@ def test_upload_files():
     with open(temp_path, "w") as fh:
         fh.write("file content")
     obj = {"path": cog.Path(temp_path)}
-    assert upload_files(obj, upload_file) == {
-        "path": "data:text/plain;base64,ZmlsZSBjb250ZW50"
-    }
+    assert upload_files(
+        obj, lambda fh, _: upload_file(fh, None), "fakepredictionid"
+    ) == {"path": "data:text/plain;base64,ZmlsZSBjb250ZW50"}
 
 
 def test_numpy():

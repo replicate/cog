@@ -346,7 +346,8 @@ def create_app(
         response_object = response.dict()
         response_object["output"] = upload_files(
             response_object["output"],
-            upload_file=lambda fh: upload_file(fh, request.output_file_prefix),  # type: ignore
+            upload_file=lambda fh, _: upload_file(fh, request.output_file_prefix),  # type: ignore
+            prediction_id=request.id,
         )
 
         # FIXME: clean up output files

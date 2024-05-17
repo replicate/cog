@@ -3,6 +3,7 @@ import io
 import json
 import mimetypes
 import os
+from typing import Optional
 from urllib.parse import urlparse
 
 import requests
@@ -40,7 +41,7 @@ def guess_filename(obj: io.IOBase) -> str:
 
 
 def upload_file_via_signed_endpoint(
-    fh: io.IOBase, endpoint: str, client: requests.Session
+    fh: io.IOBase, endpoint: str, client: requests.Session, prediction_id: Optional[str]
 ) -> str:
     fh.seek(0)
 
@@ -56,7 +57,7 @@ def upload_file_via_signed_endpoint(
     length = requests.models.utils.super_len(fh)
     request_body = json.dumps(
         {
-            "prediction_id": "TODO",
+            "prediction_id": prediction_id,
             "file_name": filename,
             "file_size": length,
             "content_type": content_type,

@@ -351,7 +351,7 @@ def test_prediction_event_handler_webhook_sender_intermediate(match):
 
 def test_prediction_event_handler_file_uploads():
     u = mock.Mock()
-    p = PredictionResponse(input={"hello": "there"})
+    p = PredictionResponse(input={"hello": "there"}, id="fakeid")
     h = PredictionEventHandler(p, file_uploader=u)
 
     # in reality this would be a Path object, but in this test we just care it
@@ -360,7 +360,7 @@ def test_prediction_event_handler_file_uploads():
     u.return_value = "http://example.com/output-image.png"
     h.set_output("Path(to/my/file)")
 
-    u.assert_called_once_with("Path(to/my/file)")
+    u.assert_called_once_with("Path(to/my/file)", "fakeid")
     assert p.output == "http://example.com/output-image.png"
 
     # cheat and reset output behind event handler's back
@@ -376,5 +376,11 @@ def test_prediction_event_handler_file_uploads():
     u.return_value = "http://example.com/world.jpg"
     h.append_output("world.jpg")
 
-    u.assert_has_calls([mock.call([]), mock.call("hello.jpg"), mock.call("world.jpg")])
+    u.assert_has_calls(
+        [
+            mock.call([], "fakeid"),
+            mock.call("hello.jpg", "fakeid"),
+            mock.call("world.jpg", "fakeid"),
+        ]
+    )
     assert p.output == ["http://example.com/hello.jpg", "http://example.com/world.jpg"]
