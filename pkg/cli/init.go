@@ -22,6 +22,9 @@ var cogYamlContent []byte
 //go:embed init-templates/predict.py
 var predictPyContent []byte
 
+//go:embed init-templates/.github/workflows/push.yaml
+var actionsWorkflowContent []byte
+
 func newInitCommand() *cobra.Command {
 	var cmd = &cobra.Command{
 		Use:        "init",
@@ -45,9 +48,10 @@ func initCommand(args []string) error {
 	}
 
 	fileContentMap := map[string][]byte{
-		"cog.yaml":      cogYamlContent,
-		"predict.py":    predictPyContent,
-		".dockerignore": dockerignoreContent,
+		"cog.yaml":                    cogYamlContent,
+		"predict.py":                  predictPyContent,
+		".dockerignore":               dockerignoreContent,
+		".github/workflows/push.yaml": actionsWorkflowContent,
 	}
 
 	for filename, content := range fileContentMap {
@@ -59,6 +63,12 @@ func initCommand(args []string) error {
 
 		if fileExists {
 			return fmt.Errorf("Found an existing %s.\nExiting without overwriting (to be on the safe side!)", filename)
+		}
+
+		dirPath := path.Dir(filePath)
+		err = os.MkdirAll(dirPath, os.ModePerm)
+		if err != nil {
+			return fmt.Errorf("Error creating directory %s: %w", dirPath, err)
 		}
 
 		err = os.WriteFile(filePath, content, 0o644)
