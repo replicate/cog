@@ -39,6 +39,12 @@ class Log:
 
 
 @define
+class PredictionMetric:
+    name: str
+    value: "float | int"
+
+
+@define
 class PredictionOutput:
     payload: Any
 

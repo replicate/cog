@@ -9,6 +9,7 @@ from .types import (
     Path,
     Secret,
 )
+from .server.worker import emit_metric
 
 try:
     from ._version import __version__
@@ -26,4 +27,5 @@ __all__ = [
     "Input",
     "Path",
     "Secret",
+    "emit_metric",
 ]
