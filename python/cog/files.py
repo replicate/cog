@@ -1,5 +1,6 @@
 import base64
 import io
+import json
 import mimetypes
 import os
 from urllib.parse import urlparse
@@ -38,7 +39,7 @@ def guess_filename(obj: io.IOBase) -> str:
     return os.path.basename(name)
 
 
-def put_file_to_signed_endpoint(
+def upload_file_via_signed_endpoint(
     fh: io.IOBase, endpoint: str, client: requests.Session
 ) -> str:
     fh.seek(0)
@@ -51,18 +52,58 @@ def put_file_to_signed_endpoint(
     connect_timeout = 10
     read_timeout = 15
 
-    resp = client.put(
-        ensure_trailing_slash(endpoint) + filename,
-        fh,  # type: ignore
-        headers={"Content-type": content_type},
+    # try POST using new upload API
+    length = requests.models.utils.super_len(fh)
+    request_body = json.dumps(
+        {
+            "prediction_id": "TODO",
+            "file_name": filename,
+            "file_size": length,
+            "content_type": content_type,
+            # "tags": {},
+        }
+    )
+    resp = client.post(
+        endpoint,
+        request_body,
         timeout=(connect_timeout, read_timeout),
     )
+    if resp.status_code == 404:
+        # on 404 Not Found, fall back to original PUT behaviour
+        resp = client.put(
+            ensure_trailing_slash(endpoint) + filename,
+            fh,  # type: ignore
+            headers={"Content-type": content_type},
+            timeout=(connect_timeout, read_timeout),
+        )
+        resp.raise_for_status()
+
+        # strip any signing gubbins from the URL
+        final_url = urlparse(resp.url)._replace(query="").geturl()
+
+        return final_url
+
     resp.raise_for_status()
 
-    # strip any signing gubbins from the URL
-    final_url = urlparse(resp.url)._replace(query="").geturl()
+    result = resp.json()
+    if result.type == "multipart":
+        raise NotImplementedError()
+    if result.type == "simple":
+        resp = client.put(
+            result.url,
+            fh,  # type: ignore
+            headers={"Content-type": content_type},
+            timeout=(connect_timeout, read_timeout),
+        )
+        resp.raise_for_status()
 
-    return final_url
+        # strip any signing gubbins from the URL
+        final_url = urlparse(resp.url)._replace(query="").geturl()
+
+        return final_url
+
+    # if we got here, we don't recognize the upload type
+    raise NotImplementedError()
 
 
 def ensure_trailing_slash(url: str) -> str:

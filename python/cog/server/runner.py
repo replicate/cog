@@ -15,7 +15,7 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
 from .. import schema, types
-from ..files import put_file_to_signed_endpoint
+from ..files import upload_file_via_signed_endpoint
 from ..json import upload_files
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
 from .probes import ProbeHelper
@@ -207,7 +207,7 @@ def generate_file_uploader(upload_url: str) -> Callable[[Any], Any]:
 
     def file_uploader(output: Any) -> Any:
         def upload_file(fh: io.IOBase) -> str:
-            return put_file_to_signed_endpoint(fh, upload_url, client=client)
+            return upload_file_via_signed_endpoint(fh, upload_url, client=client)
 
         return upload_files(output, upload_file=upload_file)
 
