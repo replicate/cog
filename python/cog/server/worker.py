@@ -27,6 +27,7 @@ from .eventtypes import (
     Heartbeat,
     Log,
     PredictionInput,
+    PredictionMetric,
     PredictionOutput,
     PredictionOutputType,
     PublicEventType,
@@ -85,6 +86,17 @@ class Mux:
             raise self.fatal
 
 
+# janky mutable container for a single eventual ChildWorker
+worker_reference: "dict[None, _ChildWorker]" = {}
+
+def emit_metric(metric_name: str, metric_value: "float | int") -> None:
+    worker = worker_reference.get(None, None)
+    if worker is None:
+        raise Exception("Attempted to emit metric but worker is not running")
+    worker._emit_metric(metric_name, metric_value)
+
+
+
 class _ChildWorker(_spawn.Process):  # type: ignore
     def __init__(
         self,
@@ -109,6 +121,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         # We use SIGUSR1 to signal an interrupt for cancelation.
         signal.signal(signal.SIGUSR1, self._signal_handler)
 
+        worker_reference[None] = self
         self.prediction_id_context: ContextVar[str] = ContextVar("prediction_context")
 
         # <could be moved into StreamRedirector>
@@ -238,6 +251,12 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             self._cancelable = False
         self._stream_redirector.drain()
         self._events.send((id, done))
+
+    def _emit_metric(self, name: str, value: "int | float") -> None:
+        prediction_id = self.prediction_id_context.get(None)
+        if prediction_id is None:
+            raise Exception("Tried to emit a metric outside a prediction context")
+        self._events.send((prediction_id, PredictionMetric(name, value)))
 
     def _mk_send(self, id: str) -> Callable[[PublicEventType], None]:
         def send(event: PublicEventType) -> None:

@@ -25,6 +25,7 @@ from .eventtypes import (
     Heartbeat,
     Log,
     PredictionInput,
+    PredictionMetric,
     PredictionOutput,
     PredictionOutputType,
     PublicEventType,
@@ -421,6 +422,7 @@ class PredictionEventHandler:
         self.logger.info("starting prediction")
         # maybe this should be a deep copy to not share File state with child worker
         self.p = schema.PredictionResponse(**request.dict())
+        self.p.metrics = {}
         self.p.status = schema.Status.PROCESSING
         self.p.output = None
         self.p.logs = ""
@@ -472,9 +474,9 @@ class PredictionEventHandler:
         # that...
         assert self.p.completed_at is not None
         assert self.p.started_at is not None
-        self.p.metrics = {
-            "predict_time": (self.p.completed_at - self.p.started_at).total_seconds()
-        }
+        self.p.metrics["predict_time"] = (
+            self.p.completed_at - self.p.started_at
+        ).total_seconds()
         await self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     async def failed(self, error: str) -> None:
@@ -534,6 +536,9 @@ class PredictionEventHandler:
             self._output_type = event
             if self._output_type.multi:
                 return self.set_output([])
+            return self.noop()
+        if isinstance(event, PredictionMetric):
+            self.p.metrics[event.name] = event.value
             return self.noop()
         if isinstance(event, PredictionOutput):
             if self._output_type is None:
