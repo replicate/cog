@@ -307,12 +307,8 @@ class PredictionRunner:
                     event_stream = self._mux.read(prediction_input.id, poll=poll)
                     result = await event_handler.handle_event_stream(event_stream)
                     self.update_time_shares()
-                    if not result.metrics:
-                        result.metrics = {}
-                    predict_time_share = self._time_shares_per_prediction.pop(
-                        request.id
-                    )
-                    result.metrics["predict_time_share"] = predict_time_share
+                    time_share = self._time_shares_per_prediction.pop(request.id)
+                    result.metrics["predict_time_share"] = time_share
                     return result
             except httpx.HTTPError as e:
                 tb = traceback.format_exc()
