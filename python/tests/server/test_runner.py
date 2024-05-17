@@ -76,32 +76,27 @@ async def test_prediction_runner(runner):
 
 @pytest.mark.asyncio
 async def test_prediction_runner_async():
+    "verify that predictions are not run back to back"
     runner = PredictionRunner(
-        predictor_ref=_fixture_path("async_sleep"), shutdown_event=None, concurrency=2
+        predictor_ref=_fixture_path("async_sleep"), shutdown_event=None, concurrency=10
     )
     await runner.setup()
-    _, result1 = runner.predict(PredictionRequest(input={"sleep": 0.2}))
-    _, result2 = runner.predict(PredictionRequest(input={"sleep": 0.2}))
-
+    results = []
     st = time.time()
-    response1 = await result1
-    response2 = await result2
-    assert time.time() - st < 0.4  # should take 0.2 + overhead
-    for response in (response1, response2):
-        assert response.output == "done in 0.2 seconds"
+    for i in range(10):
+        _, result = runner.predict(PredictionRequest(input={"sleep": 0.1}))
+        results.append(result)
+    with pytest.raises(RunnerBusyError):
+        runner.predict(PredictionRequest(input={"sleep": 0.1}))
+    responses = await asyncio.gather(*results)
+    assert time.time() - st < 0.5
+    for response in responses:
+        assert response.output == "done in 0.1 seconds"
         assert response.status == "succeeded"
         assert response.error is None
         assert response.logs == ""
         assert isinstance(response.started_at, datetime)
         assert isinstance(response.completed_at, datetime)
-
-    # check max
-
-    runner.predict(PredictionRequest(input={"sleep": 0.1}))
-    runner.predict(PredictionRequest(input={"sleep": 0.1}))
-
-    with pytest.raises(RunnerBusyError):
-        runner.predict(PredictionRequest(input={"sleep": 0.1}))
 
 
 @pytest.mark.asyncio
