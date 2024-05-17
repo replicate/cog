@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 
 from .predictor import BasePredictor
+from .server.worker import emit_metric
 from .types import AsyncConcatenateIterator, ConcatenateIterator, File, Input, Path
 
 try:
@@ -18,4 +19,5 @@ __all__ = [
     "File",
     "Input",
     "Path",
+    "emit_metric",
 ]
