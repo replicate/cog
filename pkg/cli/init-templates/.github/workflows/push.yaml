@@ -24,7 +24,7 @@ jobs:
     steps:
       # This action cleans up disk space to make more room for your
       # model code, weights, etc.
-      - name: Free disk pace
+      - name: Free disk space
         uses: jlumbroso/free-disk-space@v1.3.1
         with:
           tool-cache: false
