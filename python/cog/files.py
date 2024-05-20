@@ -51,13 +51,16 @@ def put_file_to_signed_endpoint(
     connect_timeout = 10
     read_timeout = 15
 
+    headers = {
+        "Content-Type": content_type,
+    }
+    if prediction_id is not None:
+        headers["X-Prediction-ID"] = prediction_id
+
     resp = client.put(
         ensure_trailing_slash(endpoint) + filename,
         fh,  # type: ignore
-        headers={
-            "Content-Type": content_type,
-            "X-Prediction-ID": prediction_id,
-        },
+        headers=headers,
         timeout=(connect_timeout, read_timeout),
     )
     resp.raise_for_status()
@@ -65,13 +68,11 @@ def put_file_to_signed_endpoint(
     # Try to extract the final asset URL from the `Location` header
     # otherwise fallback to the URL of the final request.
     final_url = resp.url
-    if url := resp.headers.get("location"):
-        final_url = url
+    if "location" in resp.headers:
+        final_url = resp.headers.get("location")
 
     # strip any signing gubbins from the URL
-    final_url = urlparse(resp.url)._replace(query="").geturl()
-
-    return final_url
+    return str(urlparse(final_url)._replace(query="").geturl())
 
 
 def ensure_trailing_slash(url: str) -> str:
