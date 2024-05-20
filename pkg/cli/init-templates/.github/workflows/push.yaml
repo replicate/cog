@@ -6,8 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       model_name:
-        description: 'Enter the model name, like "alice/bunny-detector"'
-        required: true
+        description: 'Enter the model name, like "alice/bunny-detector". If unset, this will default to the value of `image` in cog.yaml.'
   # # Uncomment these lines to trigger the workflow on every push to the main branch
   # push:
   #   branches:
@@ -42,9 +41,14 @@ jobs:
           # the action will authenticate with Replicate automatically so you
           # can push your model
           token: ${{ secrets.REPLICATE_API_TOKEN }}
-        
-      # If you run the action manually using workflow dispatch, you'll enter
-      # the model name manually. If the workflow is run automatically (say on
-      # a push to main), the model name will be derived from Repsoitory Variables.
+
+      # If you trigger the workflow manually, you can specify the model name.
+      # If you leave it blank (or if the workflow is triggered by a push), the 
+      # model name will be derived from the `image` value in cog.yaml.
       - name: Push to Replicate
-        run: cog push r8.im/${{ inputs.model_name || vars.DEFAULT_MODEL_NAME }}
+        run: |
+          if [ -n "${{ inputs.model_name }}" ]; then
+            cog push r8.im/${{ inputs.model_name }}
+          else
+            cog push
+          fi
