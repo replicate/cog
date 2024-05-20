@@ -156,7 +156,11 @@ image: "r8.im/your-username/your-model"
 
 r8.im is Replicate's registry, but this can be any Docker registry.
 
-If you don't provide this, a name will be generated from the directory name.
+If you don't set this, then a name will be generated from the directory name.
+
+If you set this, then you can run `cog push` without specifying the model name. 
+
+If you specify an image name argument when pushing (like `cog push your-username/custom-model-name`), the argument will be used and the value of `image` in cog.yaml will be ignored.
 
 ## `predict`
 
