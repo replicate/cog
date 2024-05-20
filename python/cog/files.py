@@ -2,6 +2,7 @@ import base64
 import io
 import mimetypes
 import os
+from typing import Optional
 from urllib.parse import urlparse
 
 import requests
@@ -39,7 +40,7 @@ def guess_filename(obj: io.IOBase) -> str:
 
 
 def put_file_to_signed_endpoint(
-    fh: io.IOBase, endpoint: str, client: requests.Session, prediction_id: str | None
+    fh: io.IOBase, endpoint: str, client: requests.Session, prediction_id: Optional[str]
 ) -> str:
     fh.seek(0)
 
