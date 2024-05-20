@@ -193,7 +193,7 @@ def create_event_handler(
 
     file_uploader = None
     if upload_url is not None:
-        file_uploader = generate_file_uploader(upload_url)
+        file_uploader = generate_file_uploader(upload_url, prediction_id=prediction.id)
 
     event_handler = PredictionEventHandler(
         response, webhook_sender=webhook_sender, file_uploader=file_uploader
@@ -202,12 +202,16 @@ def create_event_handler(
     return event_handler
 
 
-def generate_file_uploader(upload_url: str) -> Callable[[Any], Any]:
+def generate_file_uploader(
+    upload_url: str, prediction_id: Optional[str]
+) -> Callable[[Any], Any]:
     client = _make_file_upload_http_client()
 
     def file_uploader(output: Any) -> Any:
         def upload_file(fh: io.IOBase) -> str:
-            return put_file_to_signed_endpoint(fh, upload_url, client=client)
+            return put_file_to_signed_endpoint(
+                fh, endpoint=upload_url, prediction_id=prediction_id, client=client
+            )
 
         return upload_files(output, upload_file=upload_file)
 
