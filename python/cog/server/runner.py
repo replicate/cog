@@ -518,7 +518,9 @@ class PredictionEventHandler:
     async def _upload_files(self, output: Any) -> Any:
         try:
             # TODO: clean up output files
-            return await self._client_manager.upload_files(output, self._upload_url)
+            return await self._client_manager.upload_files(
+                output, self._upload_url, self.p.id
+            )
         except Exception as error:
             # If something goes wrong uploading a file, it's irrecoverable.
             # The re-raised exception will be caught and cause the prediction

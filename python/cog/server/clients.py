@@ -150,7 +150,9 @@ class ClientManager:
 
     # files
 
-    async def upload_file(self, fh: io.IOBase, url: Optional[str]) -> str:
+    async def upload_file(
+        self, fh: io.IOBase, url: Optional[str], pred_id: Optional[str]
+    ) -> str:
         """put file to signed endpoint"""
         log.debug("upload_file")
         fh.seek(0)
@@ -167,6 +169,10 @@ class ClientManager:
         if url is None:
             return file_to_data_uri(fh, content_type)
         assert url
+
+        headers = {"Content-Type": content_type}
+        if pred_id:
+            headers["X-Prediction-ID"] = pred_id
 
         # ensure trailing slash
         url_with_trailing_slash = url if url.endswith("/") else url + "/"
@@ -189,31 +195,31 @@ class ClientManager:
         if url and ".internal" in url:
             log.info("doing test upload to", url)
             resp1 = await self.file_client.put(
-                url,
-                content=b"",
-                headers={"Content-Type": content_type},
-                follow_redirects=False,
+                url, content=b"", headers=headers, follow_redirects=False
             )
             if resp1.status_code == 307 and resp1.headers["Location"]:
                 log.info("got file upload redirect from api")
                 url = resp1.headers["Location"]
         log.info("doing real upload to %s", url)
         resp = await self.file_client.put(
-            url,
-            content=chunk_file_reader(),
-            headers={"Content-Type": content_type},
+            url, content=chunk_file_reader(), headers=headers
         )
         # TODO: if file size is >1MB, show upload throughput
-        resp.raise_for_status()
 
+        # Try to extract the final asset URL from the `Location` header
+        # otherwise fallback to the URL of the final request.
+        final_url = resp.headers.get("location", resp.url)
         # strip any signing gubbins from the URL
-        final_url = urlparse(str(resp.url))._replace(query="").geturl()
+        return str(urlparse(str(final_url))._replace(query="").geturl())
+
 
         return final_url
 
     # this previously lived in json.upload_files, but it's clearer here
     # this is a great pattern that should be adopted for input files
-    async def upload_files(self, obj: Any, url: Optional[str]) -> Any:
+    async def upload_files(
+        self, obj: Any, url: Optional[str], pred_id: Optional[str]
+    ) -> Any:
         """
         Iterates through an object from make_encodeable and uploads any files.
         When a file is encountered, it will be passed to upload_file. Any paths will be opened and converted to files.
@@ -228,15 +234,16 @@ class ClientManager:
         # TODO: upload concurrently
         if isinstance(obj, dict):
             return {
-                key: await self.upload_files(value, url) for key, value in obj.items()
+                key: await self.upload_files(value, url, pred_id)
+                for key, value in obj.items()
             }
         if isinstance(obj, list):
-            return [await self.upload_files(value, url) for value in obj]
+            return [await self.upload_files(value, url, pred_id) for value in obj]
         if isinstance(obj, Path):
             with obj.open("rb") as f:
-                return await self.upload_file(f, url)
+                return await self.upload_file(f, url, pred_id)
         if isinstance(obj, io.IOBase):
-            return await self.upload_file(obj, url)
+            return await self.upload_file(obj, url, pred_id)
         return obj
 
     # inputs
