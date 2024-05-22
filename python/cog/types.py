@@ -7,11 +7,29 @@ import tempfile
 import urllib.parse
 import urllib.request
 import urllib.response
-from typing import Any, AsyncIterator, Dict, Iterator, List, Optional, TypeVar, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncIterator,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    TypeVar,
+    Union,
+)
 
 import httpx
+import pydantic
 import requests
-from pydantic import Field, SecretStr
+
+if pydantic.__version__.startswith("1."):
+    PYDANTIC_V2 = False
+else:
+    PYDANTIC_V2 = True
+    if TYPE_CHECKING:
+        pass  # type: ignore
+
 
 FILENAME_ILLEGAL_CHARS = set("\u0000/")
 
@@ -32,7 +50,7 @@ def Input(
     choices: List[Union[str, int]] = None,
 ) -> Any:
     """Input is similar to pydantic.Field, but doesn't require a default value to be the first argument."""
-    return Field(
+    return pydantic.Field(
         default,
         description=description,
         ge=ge,
@@ -44,7 +62,7 @@ def Input(
     )
 
 
-class Secret(SecretStr):
+class Secret(pydantic.SecretStr):
     @classmethod
     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
         """Defines what this type should be in openapi.json"""
