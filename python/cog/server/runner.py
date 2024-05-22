@@ -153,7 +153,8 @@ class PredictionRunner:
         # </worker code>
         # bind logger instead of the module-level logger proxy for performance
         self.log = log.bind()
-        self.time_share_tracker = TimeShareTracker() if concurrency > 1 else None
+        use_tracker = concurrency > 1 and not os.getenv("COG_DISABLE_TIME_SHARE_METRIC")
+        self.time_share_tracker = TimeShareTracker() if use_tracker else None
 
     def activity_info(self) -> "dict[str, int]":
         return {"max": self._concurrency, "current": len(self._predictions_in_flight)}
