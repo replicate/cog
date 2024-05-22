@@ -22,6 +22,7 @@ from typing import (
 import httpx
 import pydantic
 import requests
+from typing_extensions import Annotated
 
 if pydantic.__version__.startswith("1."):
     PYDANTIC_V2 = False
@@ -62,85 +63,115 @@ def Input(
     )
 
 
-class Secret(pydantic.SecretStr):
-    @classmethod
-    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
-        """Defines what this type should be in openapi.json"""
-        field_schema.update(
-            {
-                "type": "string",
-                "format": "password",
-                "x-cog-secret": True,
-            }
+_secret_schema = {"type": "string", "format": "password", "x-cog-secret": True}
+
+if PYDANTIC_V2:
+    Secret = Annotated[
+        pydantic.SecretStr,
+        pydantic.WithJsonSchema(_secret_schema),
+    ]
+
+else:
+
+    class Secret(pydantic.SecretStr):
+        @classmethod
+        def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+            """Defines what this type should be in openapi.json"""
+            field_schema.update(_secret_schema)
+
+
+def validate_file_value(value: Any) -> io.IOBase:
+    if isinstance(value, io.IOBase):
+        return value
+
+    parsed_url = urllib.parse.urlparse(value)
+    if parsed_url.scheme == "data":
+        res = urllib.request.urlopen(value)  # noqa: S310
+        return io.BytesIO(res.read())
+    elif parsed_url.scheme == "http" or parsed_url.scheme == "https":
+        return URLFile(value)
+    else:
+        raise ValueError(
+            f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
         )
 
 
-class File(io.IOBase):
-    validate_always = True
+if PYDANTIC_V2:
+    File = Annotated[
+        io.IOBase,
+        pydantic.PlainValidator(validate_file_value),
+        pydantic.WithJsonSchema({"type": "string", "format": "uri"}),
+    ]
 
-    @classmethod
-    def __get_validators__(cls) -> Iterator[Any]:
-        yield cls.validate
+else:
 
-    @classmethod
-    def validate(cls, value: Any) -> io.IOBase:
-        if isinstance(value, io.IOBase):
-            return value
+    class File(io.IOBase):
+        validate_always = True
 
-        parsed_url = urllib.parse.urlparse(value)
-        if parsed_url.scheme == "data":
-            res = urllib.request.urlopen(value)  # noqa: S310
-            return io.BytesIO(res.read())
-        elif parsed_url.scheme == "http" or parsed_url.scheme == "https":
-            return URLFile(value)
-        else:
-            raise ValueError(
-                f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
-            )
+        @classmethod
+        def __get_validators__(cls) -> Iterator[Any]:
+            yield cls.validate
 
-    @classmethod
-    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
-        """Defines what this type should be in openapi.json"""
-        # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
-        field_schema.update(type="string", format="uri")
+        @classmethod
+        def validate(cls, value: Any) -> io.IOBase:
+            return validate_file_value(value)
+
+        @classmethod
+        def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+            """Defines what this type should be in openapi.json"""
+            # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
+            field_schema.update(type="string", format="uri")
 
 
-class Path(pathlib.PosixPath):
-    validate_always = True
+def validate_path_value(value: Any) -> pathlib.Path:
+    if isinstance(value, pathlib.Path):
+        return value
+    if isinstance(value, io.IOBase):
+        # this shouldn't happen in this path
+        # Path is pretty much expected to be a string and not a file
+        raise ValueError
 
-    @classmethod
-    def __get_validators__(cls) -> Iterator[Any]:
-        yield cls.validate
+    # get filename
+    parsed_url = urllib.parse.urlparse(value)
 
-    @classmethod
-    def validate(cls, value: Any) -> pathlib.Path:
-        if isinstance(value, pathlib.Path):
-            return value
-        if isinstance(value, io.IOBase):
-            # this shouldn't happen in this path
-            # Path is pretty much expected to be a string and not a file
-            raise ValueError
+    # this is kind of the the best place to convert, kinda
+    # as long as you're converting to tempfile paths
 
-        # get filename
-        parsed_url = urllib.parse.urlparse(value)
+    # this is also where you need to somehow note which tempfiles need to be filled
+    if parsed_url.scheme == "data":
+        return DataURLTempFilePath(value)
+    if not (parsed_url.scheme == "http" or parsed_url.scheme == "https"):
+        raise ValueError(
+            f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
+        )
+    return URLTempFile(value)
 
-        # this is kind of the the best place to convert, kinda
-        # as long as you're converting to tempfile paths
 
-        # this is also where you need to somehow note which tempfiles need to be filled
-        if parsed_url.scheme == "data":
-            return DataURLTempFilePath(value)
-        if not (parsed_url.scheme == "http" or parsed_url.scheme == "https"):
-            raise ValueError(
-                f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
-            )
-        return URLTempFile(value)
+if PYDANTIC_V2:
+    Path = Annotated[
+        pathlib.PosixPath,
+        pydantic.PlainValidator(validate_path_value),
+        pydantic.WithJsonSchema({"type": "string", "format": "uri"}),
+    ]
 
-    @classmethod
-    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
-        """Defines what this type should be in openapi.json"""
-        # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
-        field_schema.update(type="string", format="uri")
+else:
+
+    class Path(pathlib.PosixPath):
+        validate_always = True
+
+        @classmethod
+        def __get_validators__(cls) -> Iterator[Any]:
+            yield cls.validate
+
+        @classmethod
+        def validate(cls, value: Any) -> pathlib.Path:
+            return validate_path_value(value)
+
+        @classmethod
+        def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+            """Defines what this type should be in openapi.json"""
+            # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
+            field_schema.update(type="string", format="uri")
 
 
 class URLTempFile(pathlib.PosixPath):
@@ -293,37 +324,52 @@ _concatenate_iterator_schema = {
     "x-cog-array-display": "concatenate",
 }
 
+if PYDANTIC_V2:
+    ConcatenateIterator = Annotated[
+        Iterator[Item],
+        pydantic.WithJsonSchema(_concatenate_iterator_schema),
+    ]
 
-class ConcatenateIterator(Iterator[Item]):
-    @classmethod
-    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
-        """Defines what this type should be in openapi.json"""
-        field_schema.pop("allOf", None)
-        field_schema.update(_concatenate_iterator_schema)
+else:
 
-    @classmethod
-    def __get_validators__(cls) -> Iterator[Any]:
-        yield cls.validate
+    class ConcatenateIterator(Iterator[Item]):
+        @classmethod
+        def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+            """Defines what this type should be in openapi.json"""
+            field_schema.pop("allOf", None)
+            field_schema.update(_concatenate_iterator_schema)
 
-    @classmethod
-    def validate(cls, value: Iterator[Any]) -> Iterator[Any]:
-        return value
+        @classmethod
+        def __get_validators__(cls) -> Iterator[Any]:
+            yield cls.validate
+
+        @classmethod
+        def validate(cls, value: Iterator[Any]) -> Iterator[Any]:
+            return value
 
 
-class AsyncConcatenateIterator(AsyncIterator[Item]):
-    @classmethod
-    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
-        """Defines what this type should be in openapi.json"""
-        field_schema.pop("allOf", None)
-        field_schema.update(_concatenate_iterator_schema)
+if PYDANTIC_V2:
+    AsyncConcatenateIterator = Annotated[
+        AsyncIterator[Item],
+        pydantic.WithJsonSchema(_concatenate_iterator_schema),
+    ]
 
-    @classmethod
-    def __get_validators__(cls) -> Iterator[Any]:
-        yield cls.validate
+else:
 
-    @classmethod
-    def validate(cls, value: AsyncIterator[Any]) -> AsyncIterator[Any]:
-        return value
+    class AsyncConcatenateIterator(AsyncIterator[Item]):
+        @classmethod
+        def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+            """Defines what this type should be in openapi.json"""
+            field_schema.pop("allOf", None)
+            field_schema.update(_concatenate_iterator_schema)
+
+        @classmethod
+        def __get_validators__(cls) -> Iterator[Any]:
+            yield cls.validate
+
+        @classmethod
+        def validate(cls, value: AsyncIterator[Any]) -> AsyncIterator[Any]:
+            return value
 
 
 def _len_bytes(s: str, encoding: str = "utf-8") -> int:
