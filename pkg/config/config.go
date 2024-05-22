@@ -45,8 +45,7 @@ type Build struct {
 }
 
 type Concurrency struct {
-	Max           int `json:"max,omitempty" yaml:"max"`
-	DefaultTarget int `json:"default_target,omitempty" yaml:"default_target"`
+	Max int `json:"max,omitempty" yaml:"max"`
 }
 
 type Example struct {
