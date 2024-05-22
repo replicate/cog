@@ -27,6 +27,7 @@ except ImportError:  # Python < 3.8
 
 from unittest.mock import patch
 
+import pydantic
 import structlog
 import yaml
 from pydantic import BaseModel, Field, create_model
@@ -38,6 +39,7 @@ from typing_extensions import Annotated
 from .code_xforms import load_module_from_string, strip_model_source_code
 from .errors import ConfigDoesNotExist, PredictorNotSet
 from .types import (
+    PYDANTIC_V2,
     CogConfig,
     Input,
     URLPath,
@@ -240,16 +242,21 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
 # Base class for inputs, constructed dynamically in get_input_type().
 # (This can't be a docstring or it gets passed through to the schema.)
 class BaseInput(BaseModel):
-    class Config:
-        # When using `choices`, the type is converted into an enum to validate
-        # But, after validation, we want to pass the actual value to predict(), not the enum object
-        use_enum_values = True
+    if PYDANTIC_V2:
+        model_config = pydantic.ConfigDict(use_enum_values=True, extra="allow")  # type: ignore
+    else:
+
+        class Config:
+            # When using `choices`, the type is converted into an enum to validate
+            # But, after validation, we want to pass the actual value to predict(), not the enum object
+            use_enum_values = True
 
     def cleanup(self) -> None:
         """
         Cleanup any temporary files created by the input.
         """
-        for _, value in self:
+
+        for _, value in self.__dict__.items():
             # Handle URLPath objects specially for cleanup.
             # Also handle pathlib.Path objects, which cog.Path is a subclass of.
             # A pathlib.Path object shouldn't make its way here,
@@ -296,10 +303,10 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
         if parameter.default is inspect.Signature.empty:
             default = Input()
         else:
-            default = parameter.default
-            # If user hasn't used `Input`, then wrap it in that
-            if not isinstance(default, FieldInfo):
-                default = Input(default=default)
+            if not isinstance(parameter.default, FieldInfo):
+                default = Input(default=parameter.default)
+            else:
+                default = parameter.default
 
         # Fields aren't ordered, so use this pattern to ensure defined order
         # https://github.com/go-openapi/spec/pull/116
@@ -423,9 +430,14 @@ For example:
 
         return Output
     else:
+        if PYDANTIC_V2:
 
-        class Output(BaseModel):
-            __root__: OutputType  # type: ignore
+            class Output(pydantic.RootModel[OutputType]):  # type: ignore
+                pass
+        else:
+
+            class Output(BaseModel):
+                __root__: OutputType  # type: ignore
 
         return Output
 
@@ -505,11 +517,19 @@ For example:
 
         return TrainingOutput
     else:
+        if PYDANTIC_V2:
 
-        class TrainingOutput(BaseModel):
-            __root__: TrainingOutputType  # type: ignore
+            class TrainingOutput(pydantic.RootModel[TrainingOutputType]):  # type: ignore
+                pass
 
-        return TrainingOutput
+            return TrainingOutput
+
+        else:
+
+            class TrainingOutput(BaseModel):
+                __root__: TrainingOutputType  # type: ignore
+
+            return TrainingOutput
 
 
 def human_readable_type_name(t: Type[Union[Any, None]]) -> str:
