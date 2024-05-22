@@ -86,7 +86,7 @@ class PredictionResponse(PredictionBaseModel):
     error: t.Optional[str]
     status: t.Optional[Status]
 
-    metrics: t.Optional[t.Dict[str, t.Any]]
+    metrics: t.Dict[str, t.Any] = pydantic.Field(default_factory=dict)
 
     @classmethod
     def with_types(cls, input_type: t.Type[t.Any], output_type: t.Type[t.Any]) -> t.Any:
