@@ -6,6 +6,7 @@ import os
 import signal
 import sys
 import threading
+import time
 import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
@@ -85,6 +86,29 @@ RunnerTask: "typing.TypeAlias" = Union[PredictionTask, SetupTask]
 # this is a major outstanding piece of work for merging into main
 
 
+class TimeShareTracker:
+    def __init__(self) -> None:
+        self._time_shares_per_prediction: "dict[str, float]" = {}
+        self._last_updated_time_shares = 0.0
+
+    def update_time_shares(self) -> None:
+        now = time.time()
+        if self._time_shares_per_prediction:
+            elapsed = now - self._last_updated_time_shares
+            incurred_cost = elapsed / len(self._time_shares_per_prediction)
+            for prediction_id in self._time_shares_per_prediction:
+                self._time_shares_per_prediction[prediction_id] += incurred_cost
+        self._last_updated_time_shares = now
+
+    def start_tracking(self, id: str) -> None:
+        self.update_time_shares()
+        self._time_shares_per_prediction[id] = 0.0
+
+    def end_tracking(self, id: str) -> float:
+        self.update_time_shares()
+        return self._time_shares_per_prediction.pop(id)
+
+
 class PredictionRunner:
     def __init__(
         self,
@@ -129,6 +153,8 @@ class PredictionRunner:
         # </worker code>
         # bind logger instead of the module-level logger proxy for performance
         self.log = log.bind()
+        use_tracker = concurrency > 1 and not os.getenv("COG_DISABLE_TIME_SHARE_METRIC")
+        self.time_share_tracker = TimeShareTracker() if use_tracker else None
 
     def activity_info(self) -> "dict[str, int]":
         return {"max": self._concurrency, "current": len(self._predictions_in_flight)}
@@ -272,7 +298,7 @@ class PredictionRunner:
         # that breaks one of the tests, but happens Rarely in production,
         # so let's ignore it for now
         event_handler = PredictionEventHandler(
-            request, self.client_manager, upload_url, self.log
+            request, self.client_manager, upload_url, self.log, self.time_share_tracker
         )
         response = event_handler.response
 
@@ -290,6 +316,8 @@ class PredictionRunner:
                         real_path = await v.convert(self.client_manager.download_client)
                         prediction_input.payload[k] = real_path
                 async with self._semaphore:
+                    if self.time_share_tracker:
+                        self.time_share_tracker.start_tracking(request.id)
                     self._events.send(prediction_input)
                     event_stream = self._mux.read(prediction_input.id, poll=poll)
                     result = await event_handler.handle_event_stream(event_stream)
@@ -417,6 +445,7 @@ class PredictionEventHandler:
         client_manager: ClientManager,
         upload_url: Optional[str],
         logger: Optional[structlog.BoundLogger] = None,
+        time_share_tracker: Optional[TimeShareTracker] = None,
     ) -> None:
         self.logger = logger or log.bind()
         self.logger.info("starting prediction")
@@ -435,6 +464,7 @@ class PredictionEventHandler:
         )
         self._upload_url = upload_url
         self._output_type = None
+        self.time_share_tracker = time_share_tracker
 
         # HACK: don't send an initial webhook if we're trying to optimize for
         # latency (this guarantees that the first output webhook won't be
@@ -477,6 +507,10 @@ class PredictionEventHandler:
         self.p.metrics["predict_time"] = (
             self.p.completed_at - self.p.started_at
         ).total_seconds()
+        # there shouldn't be a PredictionResponse without an id, but make the types good
+        if self.time_share_tracker and self.p.id:
+            time_share = self.time_share_tracker.end_tracking(self.p.id)
+            self.p.metrics["predict_time_share"] = time_share
         await self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     async def failed(self, error: str) -> None:
