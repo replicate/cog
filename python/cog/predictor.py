@@ -294,16 +294,24 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
             else:
                 default = parameter.default
 
-        # Fields aren't ordered, so use this pattern to ensure defined order
-        # https://github.com/go-openapi/spec/pull/116
-        default.extra["x-order"] = order
+        if PYDANTIC_V2:
+            # https://github.com/pydantic/pydantic/blob/2.7/pydantic/json_schema.py#L1436-L1446
+            # json_schema_extra can be a callable, but we don't set that and users shouldn't set that
+            if not default.json_schema_extra:  # type: ignore
+                default.json_schema_extra = {}  # type: ignore
+            assert isinstance(default.json_schema_extra, dict)  # type: ignore
+            extra = default.json_schema_extra  # type: ignore
+        else:
+            extra = default.extra  # type: ignore
+        extra["x-order"] = order
         order += 1
 
         # Choices!
-        if default.extra.get("choices"):
-            choices = default.extra["choices"]
-            # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
-            del default.extra["choices"]
+        # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
+        choices = extra.pop("choices", None)
+        if choices:
+            assert isinstance(choices, list), "choices must be a list"
+
             if InputType == str:
 
                 class StringEnum(str, enum.Enum):
