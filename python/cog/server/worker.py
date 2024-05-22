@@ -89,12 +89,12 @@ class Mux:
 # janky mutable container for a single eventual ChildWorker
 worker_reference: "dict[None, _ChildWorker]" = {}
 
+
 def emit_metric(metric_name: str, metric_value: "float | int") -> None:
     worker = worker_reference.get(None, None)
     if worker is None:
         raise Exception("Attempted to emit metric but worker is not running")
     worker._emit_metric(metric_name, metric_value)
-
 
 
 class _ChildWorker(_spawn.Process):  # type: ignore

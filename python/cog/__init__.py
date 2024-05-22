@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 
 from .predictor import BasePredictor
+from .server.worker import emit_metric
 from .types import (
     AsyncConcatenateIterator,
     ConcatenateIterator,
@@ -9,7 +10,6 @@ from .types import (
     Path,
     Secret,
 )
-from .server.worker import emit_metric
 
 try:
     from ._version import __version__
