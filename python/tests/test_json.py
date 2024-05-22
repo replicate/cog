@@ -2,11 +2,12 @@ import os
 import tempfile
 
 import numpy as np
-from pydantic import BaseModel
+import pydantic
 
 import cog
 from cog.files import upload_file
 from cog.json import make_encodeable, upload_files
+from cog.types import PYDANTIC_V2
 
 
 def test_make_encodeable_recursively_encodes_tuples():
@@ -15,9 +16,12 @@ def test_make_encodeable_recursively_encodes_tuples():
 
 
 def test_make_encodeable_encodes_pydantic_models():
-    class Model(BaseModel):
+    class Model(pydantic.BaseModel):
         text: str
         number: int
+
+        if PYDANTIC_V2:
+            model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
 
     assert make_encodeable(Model(text="hello", number=5)) == {
         "text": "hello",
@@ -26,7 +30,7 @@ def test_make_encodeable_encodes_pydantic_models():
 
 
 def test_make_encodeable_ignores_files():
-    class Model(BaseModel):
+    class Model(pydantic.BaseModel):
         path: cog.Path
 
     temp_dir = tempfile.mkdtemp()
@@ -50,13 +54,11 @@ def test_upload_files():
 
 
 def test_numpy():
-    class Model(BaseModel):
+    class Model(pydantic.BaseModel):
         ndarray: np.ndarray
         npfloat: np.float64
         npinteger: np.integer
-
-        class Config:
-            arbitrary_types_allowed = True
+        model_config = ConfigDict(arbitrary_types_allowed=True)
 
     model = Model(
         ndarray=np.array([[1, 2], [3, 4]]),
