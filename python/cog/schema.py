@@ -66,7 +66,7 @@ class PredictionRequest(PredictionBaseModel):
 
 
 class PredictionResponse(PredictionBaseModel):
-    output: t.Any
+    output: t.Optional[t.Any] = None
 
     id: t.Optional[str] = None
     version: t.Optional[str] = None
