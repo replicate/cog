@@ -30,9 +30,8 @@ import structlog
 import uvicorn
 from fastapi import Body, FastAPI, Header, Path, Response
 from fastapi.encoders import jsonable_encoder
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
-from pydantic.error_wrappers import ErrorWrapper
 
 from .. import schema
 from ..logging import setup_logging
@@ -297,8 +296,12 @@ def create_app(
         Run a single prediction on the model (idempotent creation).
         """
         if request.id is not None and request.id != prediction_id:
-            err = ValueError("prediction ID must match the ID supplied in the URL")
-            raise RequestValidationError([ErrorWrapper(err, ("body", "id"))])
+            body = {
+                "loc": ("body", "id"),
+                "msg": "prediction ID must match the ID supplied in the URL",
+                "type": "value_error",
+            }
+            raise HTTPException(422, [body])
 
         # We've already checked that the IDs match, now ensure that an ID is
         # set on the prediction object
