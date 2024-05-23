@@ -22,6 +22,10 @@ def test_make_encodeable_encodes_pydantic_models():
 
         if PYDANTIC_V2:
             model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+        else:
+
+            class Config:
+                arbitrary_types_allowed = True
 
     assert make_encodeable(Model(text="hello", number=5)) == {
         "text": "hello",
