@@ -17,6 +17,7 @@ from typing import (
     Awaitable,
     Callable,
     Dict,
+    List,
     Optional,
     TypeVar,
     Union,
@@ -44,6 +45,7 @@ from ..predictor import (
     load_config,
     load_predictor_from_ref,
 )
+from ..types import PYDANTIC_V2
 from .runner import (
     PredictionRunner,
     RunnerBusyError,
@@ -105,6 +107,59 @@ def create_app(
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
     )
+
+    # Pydantic 2 changes how optional fields are represented in OpenAPI schema.
+    # See: https://github.com/tiangolo/fastapi/pull/9873#issuecomment-1997105091
+    if PYDANTIC_V2:
+        from fastapi.openapi.utils import get_openapi
+
+        def handle_anyof_nullable(
+            openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
+        ) -> None:
+            if isinstance(openapi_schema, dict):
+                for key, value in list(
+                    openapi_schema.items()
+                ):  # Iterate over a copy to avoid modification errors
+                    if key == "anyOf" and isinstance(value, list):
+                        non_null_types = [
+                            item for item in value if item.get("type") != "null"
+                        ]
+                        if len(value) > len(non_null_types):  # Found 'null' in anyOf
+                            if len(non_null_types) == 1:
+                                openapi_schema.update(
+                                    non_null_types[0]
+                                )  # Replace with non-null type
+                                del openapi_schema[key]  # Remove anyOf
+                                # openapi_schema["nullable"] = True
+                            else:
+                                log.warning(
+                                    f"Complex anyOf with multiple non-null types at key '{key}'. Review manually."
+                                )
+                    else:
+                        handle_anyof_nullable(value)
+            elif isinstance(openapi_schema, list):  # pyright: ignore
+                for item in openapi_schema:
+                    handle_anyof_nullable(item)
+
+        def downgrade_openapi_schema_to_3_0(
+            openapi_schema: Dict[str, Any],
+        ) -> None:
+            handle_anyof_nullable(openapi_schema)
+
+        def custom_openapi() -> Dict[str, Any]:
+            if not app.openapi_schema:
+                openapi_schema = get_openapi(
+                    title="Cog",
+                    openapi_version="3.0.2",
+                    version="0.1.0",
+                    routes=app.routes,
+                )
+                downgrade_openapi_schema_to_3_0(openapi_schema)
+                app.openapi_schema = openapi_schema
+
+            return app.openapi_schema
+
+        app.openapi = custom_openapi
 
     app.state.health = Health.STARTING
     app.state.setup_task = None
