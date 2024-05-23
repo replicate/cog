@@ -11,11 +11,11 @@ import threading
 import traceback
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Union
 
 import structlog
 import uvicorn
-from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
+from fastapi import Body, FastAPI, Header, Path, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
@@ -35,7 +35,7 @@ from ..predictor import (
     load_config,
     load_slim_predictor_from_ref,
 )
-from ..types import CogConfig
+from ..types import PYDANTIC_V2, CogConfig
 from .probes import ProbeHelper
 from .runner import (
     PredictionRunner,
@@ -116,6 +116,77 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
     )
+
+    # Pydantic 2 changes how optional fields are represented in OpenAPI schema.
+    # See: https://github.com/tiangolo/fastapi/pull/9873#issuecomment-1997105091
+    if PYDANTIC_V2:
+        from fastapi.openapi.utils import get_openapi
+
+        def handle_anyof_nullable(
+            openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
+        ) -> None:
+            if isinstance(openapi_schema, dict):
+                for key, value in list(
+                    openapi_schema.items()
+                ):  # Iterate over a copy to avoid modification errors
+                    if key == "anyOf" and isinstance(value, list):
+                        non_null_types = [
+                            item for item in value if item.get("type") != "null"
+                        ]
+                        if len(value) > len(non_null_types):  # Found 'null' in anyOf
+                            if len(non_null_types) == 1:
+                                openapi_schema.update(
+                                    non_null_types[0]
+                                )  # Replace with non-null type
+                                del openapi_schema[key]  # Remove anyOf
+                                # openapi_schema["nullable"] = True
+                            else:
+                                log.warning(
+                                    f"Complex anyOf with multiple non-null types at key '{key}'. Review manually."
+                                )
+                    else:
+                        handle_anyof_nullable(value)
+            elif isinstance(openapi_schema, list):  # pyright: ignore
+                for item in openapi_schema:
+                    handle_anyof_nullable(item)
+
+        def set_default_enumeration_description(
+            openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
+        ) -> None:
+            if isinstance(openapi_schema, dict):
+                for key, value in list(
+                    openapi_schema.items()
+                ):  # Iterate over a copy to avoid modification errors
+                    if isinstance(value, dict) and value.get("enum"):
+                        value["description"] = value.get(
+                            "description", "An enumeration."
+                        )
+                    else:
+                        set_default_enumeration_description(value)
+            elif isinstance(openapi_schema, list):  # pyright: ignore
+                for item in openapi_schema:
+                    set_default_enumeration_description(item)
+
+        def downgrade_openapi_schema_to_3_0(
+            openapi_schema: Dict[str, Any],
+        ) -> None:
+            handle_anyof_nullable(openapi_schema)
+            set_default_enumeration_description(openapi_schema)
+
+        def custom_openapi() -> Dict[str, Any]:
+            if not app.openapi_schema:
+                openapi_schema = get_openapi(
+                    title="Cog",
+                    openapi_version="3.0.2",
+                    version="0.1.0",
+                    routes=app.routes,
+                )
+                downgrade_openapi_schema_to_3_0(openapi_schema)
+                app.openapi_schema = openapi_schema
+
+            return app.openapi_schema
+
+        app.openapi = custom_openapi
 
     app.state.health = Health.STARTING
     app.state.setup_result = None

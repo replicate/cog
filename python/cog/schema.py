@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional, Type
 
 import pydantic
 
+from .types import PYDANTIC_V2
+
 BUNDLED_SCHEMA_PATH = ".cog/schema.py"
 
 
@@ -38,8 +40,19 @@ class WebhookEvent(str, Enum):
         return [cls.START, cls.OUTPUT, cls.LOGS, cls.COMPLETED]
 
 
-class PredictionBaseModel(pydantic.BaseModel, extra="allow"):
+class PredictionBaseModel(pydantic.BaseModel):
     input: Dict[str, Any]
+
+    if PYDANTIC_V2:
+        model_config = pydantic.ConfigDict(use_enum_values=True, extra="allow")  # type: ignore
+    else:
+
+        class Config:
+            # When using `choices`, the type is converted into an enum to validate
+            # But, after validation, we want to pass the actual value to predict(), not the enum object
+            use_enum_values = True
+
+            extra = "allow"
 
 
 class PredictionRequest(PredictionBaseModel):

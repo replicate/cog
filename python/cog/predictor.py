@@ -251,6 +251,8 @@ class BaseInput(BaseModel):
             # But, after validation, we want to pass the actual value to predict(), not the enum object
             use_enum_values = True
 
+            extra = "allow"
+
     def cleanup(self) -> None:
         """
         Cleanup any temporary files created by the input.
@@ -321,17 +323,17 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
         order += 1
 
         # Choices!
-        if default.extra.get("choices"):
-            choices = default.extra["choices"]
+        if extra.get("choices"):
+            choices = extra["choices"]
             # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
-            del default.extra["choices"]
-            if InputType == str:  # noqa: E721
+            del extra["choices"]
+            if InputType == str and isinstance(choices, list):  # noqa: E721
 
                 class StringEnum(str, enum.Enum):
                     pass
 
                 InputType = StringEnum(  # pylint: disable=invalid-name
-                    name, {value: value for value in choices}
+                    name, [(value, value) for value in choices or []]
                 )
             elif InputType == int:  # noqa: E721
                 InputType = enum.IntEnum(name, {str(value): value for value in choices})  # type: ignore # pylint: disable=invalid-name
