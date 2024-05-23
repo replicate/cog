@@ -141,10 +141,28 @@ def create_app(
                 for item in openapi_schema:
                     handle_anyof_nullable(item)
 
+        def set_default_enumeration_description(
+            openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
+        ) -> None:
+            if isinstance(openapi_schema, dict):
+                for key, value in list(
+                    openapi_schema.items()
+                ):  # Iterate over a copy to avoid modification errors
+                    if isinstance(value, dict) and value.get("enum"):
+                        value["description"] = value.get(
+                            "description", "An enumeration."
+                        )
+                    else:
+                        set_default_enumeration_description(value)
+            elif isinstance(openapi_schema, list):  # pyright: ignore
+                for item in openapi_schema:
+                    set_default_enumeration_description(item)
+
         def downgrade_openapi_schema_to_3_0(
             openapi_schema: Dict[str, Any],
         ) -> None:
             handle_anyof_nullable(openapi_schema)
+            set_default_enumeration_description(openapi_schema)
 
         def custom_openapi() -> Dict[str, Any]:
             if not app.openapi_schema:
