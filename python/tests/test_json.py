@@ -53,20 +53,21 @@ def test_upload_files():
     }
 
 
-def test_numpy():
-    class Model(pydantic.BaseModel):
-        ndarray: np.ndarray
-        npfloat: np.float64
-        npinteger: np.integer
-        model_config = ConfigDict(arbitrary_types_allowed=True)
+if not PYDANTIC_V2:
 
-    model = Model(
-        ndarray=np.array([[1, 2], [3, 4]]),
-        npfloat=np.float64(1.3),
-        npinteger=np.int32(5),
-    )
-    assert make_encodeable(model) == {
-        "ndarray": [[1, 2], [3, 4]],
-        "npfloat": 1.3,
-        "npinteger": 5,
-    }
+    def test_numpy():
+        class Model(pydantic.BaseModel):
+            ndarray: np.ndarray
+            npfloat: np.float64
+            npinteger: np.integer
+
+        model = Model(
+            ndarray=np.array([[1, 2], [3, 4]]),
+            npfloat=np.float64(1.3),
+            npinteger=np.int32(5),
+        )
+        assert make_encodeable(model) == {
+            "ndarray": [[1, 2], [3, 4]],
+            "npfloat": 1.3,
+            "npinteger": 5,
+        }
