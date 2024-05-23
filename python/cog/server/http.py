@@ -148,6 +148,17 @@ def create_app(
             except KeyError:
                 pass
 
+            for _key, value in (
+                openapi_schema.get("components", {}).get("schemas", {}).items()
+            ):
+                if (
+                    value.get("allOf")
+                    and len(value.get("allOf")) == 1
+                    and value["allOf"][0].get("$ref")
+                ):
+                    value["$ref"] = value["allOf"][0]["$ref"]
+                    del value["allOf"]
+
             try:
                 path = openapi_schema["paths"]["/predictions"]["post"]
                 body = path["requestBody"]
