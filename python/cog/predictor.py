@@ -108,20 +108,38 @@ def get_weights_argument(
     # up a little bit.
     # TODO: CogFile/CogPath should have subclasses for each of the subtypes
 
-    # this is a breaking change
-    # previously, CogPath wouldn't be converted in setup(); now it is
-    # essentially everyone needs to switch from Path to str (or a new URL type)
-    if weights_url:
-        if weights_type == CogFile:
-            return cast(CogFile, CogFile.validate(weights_url))
-        if weights_type == CogPath:
-            # TODO: So this can be a url. evil!
-            return cast(CogPath, CogPath.validate(weights_url))
-        if weights_type == str:
-            return weights_url
-        raise ValueError(
-            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
-        )
+    if PYDANTIC_V2:
+        from pydantic import TypeAdapter
+
+        if weights_url:
+            for t in [CogFile, CogPath]:
+                try:
+                    return TypeAdapter(t).validate_python(weights_url)
+                except Exception:  # pylint: disable=broad-except # noqa: S110
+                    pass
+
+            if weights_type == str:
+                return weights_url
+
+            raise ValueError(
+                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
+            )
+    else:
+        # this is a breaking change
+        # previously, CogPath wouldn't be converted in setup(); now it is
+        # essentially everyone needs to switch from Path to str (or a new URL type)
+        if weights_url:
+            if weights_type == CogFile:
+                return cast(CogFile, CogFile.validate(weights_url))
+            if weights_type == CogPath:
+                # TODO: So this can be a url. evil!
+                return cast(CogPath, CogPath.validate(weights_url))
+            if weights_type == str:
+                return weights_url
+            raise ValueError(
+                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
+            )
+
     if os.path.exists(weights_path):
         if weights_type == CogFile:
             return cast(CogFile, open(weights_path, "rb"))
