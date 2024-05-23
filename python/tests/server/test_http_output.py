@@ -136,3 +136,12 @@ def test_iterator_of_list_of_complex_output(client, match):
         }
     )
     assert resp.status_code == 200
+
+
+if not PYDANTIC_V2:
+
+    @uses_predictor("output_numpy")
+    def test_json_output_numpy(client, match):
+        resp = client.post("/predictions")
+        assert resp.status_code == 200
+        assert resp.json() == match({"output": 1.0, "status": "succeeded"})
