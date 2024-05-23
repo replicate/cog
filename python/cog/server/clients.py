@@ -11,7 +11,7 @@ from fastapi.encoders import jsonable_encoder
 
 from .. import types
 from ..schema import PredictionResponse, Status, WebhookEvent
-from ..types import Path
+from ..types import PYDANTIC_V2, File, Path
 from .eventtypes import PredictionInput
 from .response_throttler import ResponseThrottler
 from .retry_transport import RetryTransport
@@ -232,11 +232,30 @@ class ClientManager:
             }
         if isinstance(obj, list):
             return [await self.upload_files(value, url) for value in obj]
-        if isinstance(obj, Path):
-            with obj.open("rb") as f:
-                return await self.upload_file(f, url)
-        if isinstance(obj, io.IOBase):
-            return await self.upload_file(obj, url)
+
+        if PYDANTIC_V2:
+            from pydantic import TypeAdapter
+
+            try:
+                if TypeAdapter(Path).validate_python(obj):
+                    with obj.open("rb") as f:
+                        return await self.upload_file(f, url)
+            except Exception:  # pylint: disable=broad-except # noqa: S110
+                pass
+
+            try:
+                if TypeAdapter(File).validate_python(obj):
+                    return await self.upload_file(obj, url)
+            except Exception:  # pylint: disable=broad-except # noqa: S110
+                pass
+        else:
+            if isinstance(obj, Path):
+                with obj.open("rb") as f:
+                    return await self.upload_file(f, url)
+
+            if isinstance(obj, io.IOBase):
+                return await self.upload_file(obj, url)
+
         return obj
 
     # inputs
