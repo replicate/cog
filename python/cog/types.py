@@ -13,6 +13,7 @@ from typing import (
     Any,
     AsyncIterator,
     Dict,
+    Iterable,
     Iterator,
     List,
     Optional,
@@ -324,7 +325,7 @@ class URLFile(io.IOBase):
         from typing import Any
 
         from pydantic import GetCoreSchemaHandler, TypeAdapter
-        from pydantic_core import CoreSchema, core_schema
+        from pydantic_core import CoreSchema
 
         @classmethod
         def __get_pydantic_core_schema__(
@@ -334,6 +335,7 @@ class URLFile(io.IOBase):
             Custom schema for URLFile to handle it as a string URL during serialization,
             and to reconstruct the URLFile object from a string URL during validation.
             """
+            from pydantic_core import core_schema  # noqa
 
             # Define a schema for validating and parsing a string URL into a URLFile object
             def from_url(value: str) -> "URLFile":
@@ -367,7 +369,7 @@ class URLFile(io.IOBase):
 Item = TypeVar("Item")
 
 
-def _is_iterator(value):
+def _is_iterator(value: Any) -> Iterable[Item]:
     if not isinstance(value, Iterable):
         raise ValueError("Provided value is not an iterator")
     return value

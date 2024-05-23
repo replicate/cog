@@ -101,6 +101,14 @@ extend-exclude = [
 "python/cog/server/http.py" = [
   "S104", # Possible binding to all interfaces
 ]
+"python/tests/server/test_worker.py" = [
+  "E402", # Module level import not at top of file
+  "F821", # Undefined name `Worker`
+]
+"python/tests/server/test_webhook.py" = [
+  "E402", # Module level import not at top of file
+  "F821", # Undefined name `webhook_caller`
+]
 "python/tests/*" = [
   "S101", # Use of assert
   "S104", # Possible binding to all interfaces
