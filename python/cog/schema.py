@@ -47,6 +47,17 @@ class PredictionBaseModel(pydantic.BaseModel):
             use_enum_values = True
 
 
+if PYDANTIC_V2:
+    from pydantic.networks import UrlConstraints
+    from pydantic_core import Url
+    from typing_extensions import Annotated
+
+    WebSocketUrl = Annotated[
+        Url, UrlConstraints(allowed_schemes=["http", "https"], max_length=65536)
+    ]
+else:
+    WebSocketUrl = pydantic.AnyUrl
+
 
 class PredictionRequest(PredictionBaseModel):
     # there's a problem here where the idempotent endpoint is supposed to
@@ -62,8 +73,11 @@ class PredictionRequest(PredictionBaseModel):
     # TODO: deprecate this
     output_file_prefix: Optional[str] = None
 
-    webhook: Optional[pydantic.AnyHttpUrl] = None
-    webhook_events_filter: Optional[List[WebhookEvent]] = WebhookEvent.default_events()
+    webhook: Optional[WebSocketUrl] = None
+    webhook_events_filter: Optional[List[WebhookEvent]] = pydantic.Field(
+        default=WebhookEvent.default_events(),
+        json_schema_extra={"title": None},  # FIXME: Update tests to expect title?
+    )
 
     @classmethod
     def with_types(cls, input_type: Type[Any]) -> Any:
