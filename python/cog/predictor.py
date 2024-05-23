@@ -100,18 +100,34 @@ def run_setup(predictor: BasePredictor) -> None:
     # up a little bit.
     # TODO: CogFile/CogPath should have subclasses for each of the subtypes
     if weights_url:
-        if weights_type == CogFile:
-            weights = cast(CogFile, CogFile.validate(weights_url))
-        elif weights_type == CogPath:
-            # TODO: So this can be a url. evil!
-            weights = cast(CogPath, CogPath.validate(weights_url))
-        # allow people to download weights themselves
-        elif weights_type == str:  # noqa: E721
-            weights = weights_url
+        if PYDANTIC_V2:
+            from pydantic import TypeAdapter
+
+            for t in [CogFile, CogPath]:
+                try:
+                    weights = TypeAdapter(t).validate_python(weights_url)
+                    break
+                except Exception:  # pylint: disable=broad-except # noqa: S110
+                    pass
+            else:
+                if weights_type is str:
+                    weights = weights_url
+                else:
+                    raise ValueError(
+                        f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
+                    )
         else:
-            raise ValueError(
-                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
-            )
+            if weights_type is CogFile:
+                weights = cast(CogFile, CogFile.validate(weights_url))
+            elif weights_type is CogPath:
+                # TODO: So this can be a url. evil!
+                weights = cast(CogPath, CogPath.validate(weights_url))
+            elif weights_type is str:
+                weights = weights_url
+            else:
+                raise ValueError(
+                    f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
+                )
     elif os.path.exists(weights_path):
         if weights_type == CogFile:
             with open(weights_path, "rb") as f:
@@ -125,7 +141,7 @@ def run_setup(predictor: BasePredictor) -> None:
     else:
         weights = None
 
-    predictor.setup(weights=weights)
+    predictor.setup(weights=weights)  # type: ignore
 
 
 def get_weights_type(setup_function: Callable[[Any], None]) -> Optional[Any]:
