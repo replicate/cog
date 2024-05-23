@@ -413,7 +413,10 @@ For example:
     if get_origin(OutputType) in {Iterator, AsyncIterator}:
         # Annotated allows us to attach Field annotations to the list, which we use to mark that this is an iterator
         # https://pydantic-docs.helpmanual.io/usage/schema/#typingannotated-fields
-        field = Field(**{"x-cog-array-type": "iterator"})  # type: ignore
+        if PYDANTIC_V2:
+            field = Field(json_schema_extra={"x-cog-array-type": "iterator"})
+        else:
+            field = Field(**{"x-cog-array-type": "iterator"})  # type: ignore
         OutputType: Type[BaseModel] = Annotated[List[get_args(OutputType)[0]], field]  # type: ignore
 
     name = OutputType.__name__ if hasattr(OutputType, "__name__") else ""
