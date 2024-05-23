@@ -243,15 +243,13 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
 # (This can't be a docstring or it gets passed through to the schema.)
 class BaseInput(BaseModel):
     if PYDANTIC_V2:
-        model_config = pydantic.ConfigDict(use_enum_values=True, extra="allow")  # type: ignore
+        model_config = pydantic.ConfigDict(use_enum_values=True)  # type: ignore
     else:
 
         class Config:
             # When using `choices`, the type is converted into an enum to validate
             # But, after validation, we want to pass the actual value to predict(), not the enum object
             use_enum_values = True
-
-            extra = "allow"
 
     def cleanup(self) -> None:
         """

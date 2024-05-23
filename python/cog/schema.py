@@ -44,7 +44,7 @@ class PredictionBaseModel(pydantic.BaseModel):
     input: Dict[str, Any]
 
     if PYDANTIC_V2:
-        model_config = pydantic.ConfigDict(use_enum_values=True, extra="allow")  # type: ignore
+        model_config = pydantic.ConfigDict(use_enum_values=True)  # type: ignore
     else:
 
         class Config:
@@ -52,7 +52,6 @@ class PredictionBaseModel(pydantic.BaseModel):
             # But, after validation, we want to pass the actual value to predict(), not the enum object
             use_enum_values = True
 
-            extra = "allow"
 
 
 class PredictionRequest(PredictionBaseModel):
