@@ -320,6 +320,49 @@ class URLFile(io.IOBase):
         else:
             return f"<{type(self).__name__} at 0x{id(self):x} wrapping {target!r}>"
 
+    if PYDANTIC_V2:
+        from typing import Any
+
+        from pydantic import GetCoreSchemaHandler, TypeAdapter
+        from pydantic_core import CoreSchema, core_schema
+
+        @classmethod
+        def __get_pydantic_core_schema__(
+            cls, source_type: Any, handler: GetCoreSchemaHandler
+        ) -> CoreSchema:
+            """
+            Custom schema for URLFile to handle it as a string URL during serialization,
+            and to reconstruct the URLFile object from a string URL during validation.
+            """
+
+            # Define a schema for validating and parsing a string URL into a URLFile object
+            def from_url(value: str) -> "URLFile":
+                return cls(url=value)
+
+            url_schema = core_schema.chain_schema(
+                [
+                    core_schema.str_schema(),  # Ensure the input is a string
+                    core_schema.no_info_plain_validator_function(
+                        from_url
+                    ),  # Convert string to URLFile
+                ]
+            )
+
+            # Define how URLFile instances should be serialized
+            def to_url(instance: "URLFile") -> str:
+                return instance.__url__
+
+            serialization_schema = core_schema.plain_serializer_function_ser_schema(
+                to_url
+            )
+
+            # Combine the validation and serialization schemas
+            return core_schema.json_or_python_schema(
+                json_schema=url_schema,
+                python_schema=url_schema,
+                serialization=serialization_schema,
+            )
+
 
 Item = TypeVar("Item")
 _concatenate_iterator_schema = {
