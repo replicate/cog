@@ -57,6 +57,10 @@ def test_bad_int_input(client):
             }
         ]
     }
+    detail = resp.json()["detail"][0]
+    assert detail["loc"] == ["body", "input", "num"]
+    assert "valid integer" in detail["msg"]
+
     assert resp.status_code == 422
 
 
