@@ -76,6 +76,9 @@ reportUnneesssaryContains = "warning"
 reportMissingTypeArgument = "error"
 reportUnusedExpression = "warning"
 
+[tool.pyright.defineConstant]
+PYDANTIC_V2 = true
+
 [tool.setuptools]
 include-package-data = false
 
