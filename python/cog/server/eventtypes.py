@@ -4,6 +4,7 @@ from typing import Any, Dict, Union
 from attrs import define, field, validators
 
 from .. import schema
+from ..types import PYDANTIC_V2
 
 
 # From worker parent process
@@ -16,7 +17,10 @@ class PredictionInput:
     @classmethod
     def from_request(cls, request: schema.PredictionRequest) -> "PredictionInput":
         assert request.id, "PredictionRequest must have an id"
-        payload = request.dict()["input"]
+        if PYDANTIC_V2:
+            payload = request.model_dump()["input"]
+        else:
+            payload = request.dict()["input"]
         return cls(payload=payload, id=request.id)
 
 

@@ -459,7 +459,11 @@ def create_app(
         #     raise HTTPException(status_code=500, detail=str(e)) from e
 
         prediction = await async_result
-        encoded_response = jsonable_encoder(prediction.dict())
+
+        if PYDANTIC_V2:
+            encoded_response = jsonable_encoder(prediction.model_dump())
+        else:
+            encoded_response = jsonable_encoder(prediction.dict())
         return JSONResponse(content=encoded_response)
 
     @app.post("/predictions/{prediction_id}/cancel")

@@ -142,7 +142,15 @@ class ClientManager:
                 if throttler.should_send_response(response):
                     # jsonable_encoder is quite slow in context, it would be ideal
                     # to skip the heavy parts of this for well-known output types
-                    dict_response = jsonable_encoder(response.dict(exclude_unset=True))
+                    if PYDANTIC_V2:
+                        dict_response = jsonable_encoder(
+                            response.model_dump(exclude_unset=True)
+                        )
+                    else:
+                        dict_response = jsonable_encoder(
+                            response.dict(exclude_unset=True)
+                        )
+
                     await self.send_webhook(url, dict_response, event)
                     throttler.update_last_sent_response_time()
 
