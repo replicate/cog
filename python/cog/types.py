@@ -7,6 +7,7 @@ import tempfile
 import urllib.parse
 import urllib.request
 import urllib.response
+import warnings
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -51,16 +52,20 @@ def Input(
     choices: List[Union[str, int]] = None,
 ) -> Any:
     """Input is similar to pydantic.Field, but doesn't require a default value to be the first argument."""
-    return pydantic.Field(
-        default,
-        description=description,
-        ge=ge,
-        le=le,
-        min_length=min_length,
-        max_length=max_length,
-        regex=regex,
-        choices=choices,
-    )
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+        return pydantic.Field(
+            default,
+            description=description,
+            ge=ge,
+            le=le,
+            min_length=min_length,
+            max_length=max_length,
+            regex=regex,
+            choices=choices,
+        )
 
 
 _secret_schema = {"type": "string", "format": "password", "x-cog-secret": True}

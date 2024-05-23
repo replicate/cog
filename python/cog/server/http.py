@@ -9,6 +9,7 @@ import sys
 import textwrap
 import threading
 import traceback
+import warnings
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
 from typing import (
@@ -25,6 +26,7 @@ from typing import (
 
 if TYPE_CHECKING:
     from typing import ParamSpec
+
 
 import attrs
 import structlog
@@ -291,22 +293,30 @@ def create_app(
         def cancel_training(training_id: str = Path(..., title="Training ID")) -> Any:
             return cancel(training_id)
 
-    @app.on_event("startup")
-    def startup() -> None:
-        # check for early setup failures
-        if (
-            app.state.setup_result
-            and app.state.setup_result.status == schema.Status.FAILED
-        ):
-            if not args.await_explicit_shutdown:  # signal shutdown if interactive run
-                if shutdown_event is not None:
-                    shutdown_event.set()
-        else:
-            app.state.setup_task = runner.setup()
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            category=DeprecationWarning,
+        )
 
-    @app.on_event("shutdown")
-    def shutdown() -> None:
-        runner.shutdown()
+        @app.on_event("startup")
+        def startup() -> None:
+            # check for early setup failures
+            if (
+                app.state.setup_result
+                and app.state.setup_result.status == schema.Status.FAILED
+            ):
+                if (
+                    not args.await_explicit_shutdown
+                ):  # signal shutdown if interactive run
+                    if shutdown_event is not None:
+                        shutdown_event.set()
+            else:
+                app.state.setup_task = runner.setup()
+
+        @app.on_event("shutdown")
+        def shutdown() -> None:
+            runner.shutdown()
 
     @app.get("/")
     async def root() -> Any:
