@@ -365,6 +365,14 @@ class URLFile(io.IOBase):
 
 
 Item = TypeVar("Item")
+
+
+def _is_iterator(value):
+    if not isinstance(value, Iterable):
+        raise ValueError("Provided value is not an iterator")
+    return value
+
+
 _concatenate_iterator_schema = {
     "type": "array",
     "items": {"type": "string"},
@@ -375,7 +383,7 @@ _concatenate_iterator_schema = {
 if PYDANTIC_V2:
     ConcatenateIterator = Annotated[
         Iterator[Item],
-        pydantic.PlainValidator(list),
+        pydantic.PlainValidator(_is_iterator),
         pydantic.WithJsonSchema(_concatenate_iterator_schema),
     ]
 
@@ -400,7 +408,7 @@ else:
 if PYDANTIC_V2:
     AsyncConcatenateIterator = Annotated[
         AsyncIterator[Item],
-        pydantic.PlainValidator(list),
+        pydantic.PlainValidator(_is_iterator),
         pydantic.WithJsonSchema(_concatenate_iterator_schema),
     ]
 
