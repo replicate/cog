@@ -2,10 +2,10 @@ import importlib.util
 import os
 import os.path
 import sys
-import typing as t
 from datetime import datetime
 from enum import Enum
 from types import ModuleType
+from typing import Any, Dict, List, Optional, Type
 
 import pydantic
 
@@ -20,7 +20,7 @@ class Status(str, Enum):
     FAILED = "failed"
 
     @staticmethod
-    def is_terminal(status: t.Optional["Status"]) -> bool:
+    def is_terminal(status: Optional["Status"]) -> bool:
         return status in {Status.SUCCEEDED, Status.CANCELED, Status.FAILED}
 
 
@@ -31,7 +31,7 @@ class WebhookEvent(str, Enum):
     COMPLETED = "completed"
 
     @classmethod
-    def default_events(cls) -> t.List["WebhookEvent"]:
+    def default_events(cls) -> List["WebhookEvent"]:
         # if this is a set, it gets serialized to an array with an unstable ordering
         # so even though it's logically a set, have it as a list for deterministic schemas
         # note: this change removes "uniqueItems":true
@@ -39,62 +39,60 @@ class WebhookEvent(str, Enum):
 
 
 class PredictionBaseModel(pydantic.BaseModel, extra="allow"):
-    input: t.Dict[str, t.Any]
+    input: Dict[str, Any]
 
 
 class PredictionRequest(PredictionBaseModel):
-    id: t.Optional[str] = None
-    created_at: t.Optional[datetime] = None
+    id: Optional[str] = None
+    created_at: Optional[datetime] = None
 
     # TODO: deprecate this
-    output_file_prefix: t.Optional[str] = None
+    output_file_prefix: Optional[str] = None
 
-    webhook: t.Optional[pydantic.AnyHttpUrl] = None
-    webhook_events_filter: t.Optional[t.List[WebhookEvent]] = (
-        WebhookEvent.default_events()
-    )
+    webhook: Optional[pydantic.AnyHttpUrl] = None
+    webhook_events_filter: Optional[List[WebhookEvent]] = WebhookEvent.default_events()
 
     @classmethod
-    def with_types(cls, input_type: t.Type[t.Any]) -> t.Any:
+    def with_types(cls, input_type: Type[Any]) -> Any:
         # [compat] Input is implicitly optional -- previous versions of the
         # Cog HTTP API allowed input to be omitted (e.g. for models that don't
         # have any inputs). We should consider changing this in future.
         return pydantic.create_model(
-            cls.__name__, __base__=cls, input=(t.Optional[input_type], None)
+            cls.__name__, __base__=cls, input=(Optional[input_type], None)
         )
 
 
 class PredictionResponse(PredictionBaseModel):
-    output: t.Any = None
+    output: Any = None
 
-    id: t.Optional[str] = None
-    version: t.Optional[str] = None
+    id: Optional[str] = None
+    version: Optional[str] = None
 
-    created_at: t.Optional[datetime] = None
-    started_at: t.Optional[datetime] = None
-    completed_at: t.Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
 
     logs: str = ""
-    error: t.Optional[str] = None
-    status: t.Optional[Status] = None
+    error: Optional[str] = None
+    status: Optional[Status] = None
 
-    metrics: t.Optional[t.Dict[str, t.Any]]
+    metrics: Optional[Dict[str, Any]] = None
 
     # This is used to track a fatal exception that occurs during a prediction.
     # "Fatal" means that we require the worker to be shut down to recover:
     # regular exceptions raised during predict are handled and do not use this
     # field.
-    _fatal_exception: t.Optional[BaseException] = pydantic.PrivateAttr(default=None)
+    _fatal_exception: Optional[BaseException] = pydantic.PrivateAttr(default=None)
 
     @classmethod
-    def with_types(cls, input_type: t.Type[t.Any], output_type: t.Type[t.Any]) -> t.Any:
+    def with_types(cls, input_type: Type[Any], output_type: Type[Any]) -> Any:
         # [compat] Input is implicitly optional -- previous versions of the
         # Cog HTTP API allowed input to be omitted (e.g. for models that don't
         # have any inputs). We should consider changing this in future.
         return pydantic.create_model(
             cls.__name__,
             __base__=cls,
-            input=(t.Optional[input_type], None),
+            input=(Optional[input_type], None),
             output=(output_type, None),
         )
 
@@ -107,7 +105,7 @@ class TrainingResponse(PredictionResponse):
     pass
 
 
-def create_schema_module() -> t.Optional[ModuleType]:
+def create_schema_module() -> Optional[ModuleType]:
     if not os.path.exists(BUNDLED_SCHEMA_PATH):
         return None
     name = "cog.bundled_schema"
