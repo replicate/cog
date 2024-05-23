@@ -39,5 +39,8 @@
   "python.testing.pytestEnabled": true,
   "ruff.lint.args": [
     "--config=pyproject.toml"
-  ]
+  ],
+  "files.exclude": {
+    "**/.venv": true
+  }
 }
