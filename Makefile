@@ -100,7 +100,7 @@ lint-go:
 
 .PHONY: lint-python
 lint-python:
-	$(RUFF) python/cog
+	$(RUFF) check python/cog
 	$(RUFF) format --check python
 	@$(PYTHON) -c 'import sys; sys.exit("Warning: python >=3.10 is needed (not installed) to pass linting (pyright)") if sys.version_info < (3, 10) else None'
 	$(PYRIGHT)
