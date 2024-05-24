@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 
@@ -127,6 +129,7 @@ func cudasFromTorch(ver string) ([]string, error) {
 			cudas = append(cudas, *compat.CUDA)
 		}
 	}
+	slices.Sort(cudas)
 	return cudas, nil
 }
 

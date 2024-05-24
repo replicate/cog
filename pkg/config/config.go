@@ -15,6 +15,7 @@ import (
 
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/slices"
+	"github.com/replicate/cog/pkg/util/version"
 )
 
 var (
@@ -431,9 +432,11 @@ Compatible CuDNN versions are: %s`, c.Build.CUDA, c.Build.CuDNN, strings.Join(co
 			}
 			console.Debugf("Setting CUDA to version %s from Tensorflow version", tfCUDA)
 			c.Build.CUDA = tfCUDA
-		} else if tfCUDA != c.Build.CUDA {
-			// TODO: can we suggest a CUDA version known to be compatible?
+		} else if tfCUDA == "" || version.EqualMinor(tfCUDA, c.Build.CUDA) {
 			console.Warnf("Cog doesn't know if CUDA %s is compatible with Tensorflow %s. This might cause CUDA problems.", c.Build.CUDA, tfVersion)
+			if tfCUDA != "" {
+				console.Warnf("Try %s instead?", tfCUDA)
+			}
 		}
 		if c.Build.CuDNN == "" && tfCuDNN != "" {
 			console.Debugf("Setting CuDNN to version %s from Tensorflow version", tfCuDNN)
@@ -461,9 +464,12 @@ Compatible cuDNN version is: %s`,
 				return err
 			}
 			console.Debugf("Setting CUDA to version %s from Torch version", c.Build.CUDA)
-		} else if !slices.ContainsString(torchCUDAs, c.Build.CUDA) {
+		} else if len(slices.FilterString(torchCUDAs, func(torchCUDA string) bool { return version.EqualMinor(torchCUDA, c.Build.CUDA) })) == 0 {
 			// TODO: can we suggest a CUDA version known to be compatible?
 			console.Warnf("Cog doesn't know if CUDA %s is compatible with PyTorch %s. This might cause CUDA problems.", c.Build.CUDA, torchVersion)
+			if len(torchCUDAs) > 0 {
+				console.Warnf("Try %s instead?", torchCUDAs[len(torchCUDAs)-1])
+			}
 		}
 
 		if c.Build.CuDNN == "" {
