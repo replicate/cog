@@ -1,8 +1,8 @@
-import requests
 import io
-import responses
-from cog.files import put_file_to_signed_endpoint
 from unittest.mock import Mock
+
+import requests
+from cog.files import put_file_to_signed_endpoint
 
 
 def test_put_file_to_signed_endpoint():
