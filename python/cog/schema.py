@@ -52,11 +52,11 @@ if PYDANTIC_V2:
     from pydantic_core import Url
     from typing_extensions import Annotated
 
-    WebSocketUrl = Annotated[
+    WebhookUrl = Annotated[
         Url, UrlConstraints(allowed_schemes=["http", "https"], max_length=65536)
     ]
 else:
-    WebSocketUrl = pydantic.AnyUrl
+    WebhookUrl = pydantic.AnyUrl
 
 
 class PredictionRequest(PredictionBaseModel):
@@ -73,7 +73,7 @@ class PredictionRequest(PredictionBaseModel):
     # TODO: deprecate this
     output_file_prefix: Optional[str] = None
 
-    webhook: Optional[WebSocketUrl] = None
+    webhook: Optional[WebhookUrl] = None
     webhook_events_filter: Optional[List[WebhookEvent]] = pydantic.Field(
         default=WebhookEvent.default_events(),
         json_schema_extra={"title": None},  # FIXME: Update tests to expect title?
