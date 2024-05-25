@@ -143,8 +143,16 @@
     },
     "concurrency": {
       "$id": "#/properties/concurrency",
-      "type": "number",
-      "description": "Allowed concurrency."
+      "type": "object",
+      "description": "This stanza configures concurrency limits",
+      "properties": {
+        "max": {
+          "$id": "#/properties/concurrency/properties/max",
+          "type": "number",
+          "description": "Maximum allowed concurrency. Setting this value enables concurrent predictions."
+        }
+      },
+      "additionalProperties": true
     }
   },
   "additionalProperties": false
