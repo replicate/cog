@@ -8,6 +8,7 @@ from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
 from ..schema import Status, WebhookEvent
 from .response_throttler import ResponseThrottler
+from .telemetry import requests_session as otel_requests_session
 
 log = structlog.get_logger(__name__)
 
@@ -74,7 +75,7 @@ def webhook_caller(webhook: str) -> Callable[[Any], None]:
 
 
 def requests_session() -> requests.Session:
-    session = requests.Session()
+    session = otel_requests_session()
     session.headers["user-agent"] = (
         _user_agent + " " + str(session.headers["user-agent"])
     )

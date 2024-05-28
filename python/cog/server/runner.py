@@ -19,6 +19,7 @@ from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
 from .probes import ProbeHelper
+from .telemetry import requests_session
 from .webhook import SKIP_START_EVENT, webhook_caller_filtered
 from .worker import Worker
 
@@ -451,7 +452,7 @@ def _predict(
 
 
 def _make_file_upload_http_client() -> requests.Session:
-    session = requests.Session()
+    session = requests_session()
     adapter = HTTPAdapter(
         max_retries=Retry(
             total=3,

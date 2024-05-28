@@ -15,6 +15,9 @@ dependencies = [
   # intentionally loose. perhaps these should be vendored to not collide with user code?
   "attrs>=20.1,<24",
   "fastapi>=0.75.2,<0.99.0",
+  "opentelemetry-api",
+  "opentelemetry-sdk",
+  "opentelemetry-instrumentation-requests",
   "pydantic>=1.9,<2",
   "PyYAML",
   "requests>=2,<3",
