@@ -440,7 +440,7 @@ func (g *Generator) copyPipPackagesFromInstallStage() string {
 	// return "COPY --from=deps --link /dep COPY --from=deps /src"
 	// ...except it's actually /root/.pyenv/versions/3.8.17/lib/python3.8/site-packages
 	py := g.Config.Build.PythonVersion
-	if g.Config.Build.GPU {
+	if g.Config.Build.GPU && (g.useCudaBaseImage || g.useCogBaseImage) {
 		// this requires buildkit!
 		// we should check for buildkit and otherwise revert to symlinks or copying into /src
 		// we mount to avoid copying, which avoids having two copies in this layer
