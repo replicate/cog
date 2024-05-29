@@ -19,6 +19,8 @@ from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
 from .probes import ProbeHelper
+from .telemetry import current_trace_context
+from .useragent import get_user_agent
 from .webhook import SKIP_START_EVENT, webhook_caller_filtered
 from .worker import Worker
 
@@ -98,7 +100,9 @@ class PredictionRunner:
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
     # no longer have to support Python 3.8
     def predict(
-        self, prediction: schema.PredictionRequest, upload: bool = True
+        self,
+        prediction: schema.PredictionRequest,
+        upload: bool = True,
     ) -> Tuple[schema.PredictionResponse, PredictionTask]:
         # It's the caller's responsibility to not call us if we're busy.
         if self.is_busy():
@@ -119,9 +123,12 @@ class PredictionRunner:
 
         self._should_cancel.clear()
         upload_url = self._upload_url if upload else None
-        event_handler = create_event_handler(prediction, upload_url=upload_url)
+        event_handler = create_event_handler(
+            prediction,
+            upload_url=upload_url,
+        )
 
-        def cleanup(_: schema.PredictionResponse = None) -> None:
+        def cleanup(_: Optional[schema.PredictionResponse] = None) -> None:
             input = cast(Any, prediction.input)
             if hasattr(input, "cleanup"):
                 input.cleanup()
@@ -178,7 +185,8 @@ class PredictionRunner:
 
 
 def create_event_handler(
-    prediction: schema.PredictionRequest, upload_url: Optional[str] = None
+    prediction: schema.PredictionRequest,
+    upload_url: Optional[str] = None,
 ) -> "PredictionEventHandler":
     response = schema.PredictionResponse(**prediction.dict())
 
@@ -452,6 +460,14 @@ def _predict(
 
 def _make_file_upload_http_client() -> requests.Session:
     session = requests.Session()
+    session.headers["user-agent"] = (
+        get_user_agent() + " " + str(session.headers["user-agent"])
+    )
+
+    ctx = current_trace_context() or {}
+    for key, value in ctx.items():
+        session.headers[key] = str(value)
+
     adapter = HTTPAdapter(
         max_retries=Retry(
             total=3,
