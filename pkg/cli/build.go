@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -53,6 +55,11 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 	}
 	if imageName == "" {
 		imageName = config.DockerImageName(projectDir)
+	}
+
+	err = checkMutuallyExclusiveFlags(cmd, "use-cog-base-image", "use-cuda-base-image", "dockerfile")
+	if err != nil {
+		return err
 	}
 
 	err = config.ValidateModelPythonVersion(cfg.Build.PythonVersion)
@@ -107,15 +114,28 @@ func addDockerfileFlag(cmd *cobra.Command) {
 }
 
 func addUseCogBaseImageFlag(cmd *cobra.Command) {
-	cmd.Flags().BoolVar(&buildUseCogBaseImage, "use-cog-base-image", false, "Use pre-built Cog base image for faster cold boots")
-	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		if f.Name == "use-cog-base-image" {
-			f.Hidden = true
-		}
-	})
+	cmd.Flags().BoolVar(&buildUseCogBaseImage, "use-cog-base-image", true, "Use pre-built Cog base image for faster cold boots")
 }
 
 func addBuildTimestampFlag(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&config.BuildSourceEpochTimestamp, "timestamp", -1, "Number of seconds sing Epoch to use for the build timestamp; this rewrites the timestamp of each layer. Useful for reproducibility. (`-1` to disable timestamp rewrites)")
 	_ = cmd.Flags().MarkHidden("timestamp")
+}
+
+func checkMutuallyExclusiveFlags(cmd *cobra.Command, flags ...string) error {
+	var flagsSet []string
+	for _, flag := range flags {
+		if cmd.Flag(flag).Changed {
+			flagsSet = append(flagsSet, "--"+flag)
+		}
+	}
+	if len(flagsSet) > 1 {
+		flagNames := strings.Join(flagsSet, ", ")
+		lastComma := strings.LastIndex(flagNames, ",")
+		if lastComma != -1 {
+			flagNames = flagNames[:lastComma] + " and" + flagNames[lastComma+1:]
+		}
+		return fmt.Errorf("the flags %s are mutually exclusive, you can only set one of them", flagNames)
+	}
+	return nil
 }
