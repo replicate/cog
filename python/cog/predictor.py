@@ -203,7 +203,7 @@ def load_full_predictor_from_file(
 
 def load_slim_predictor_from_file(
     module_path: str, class_name: str, method_name: str
-) -> Union[types.ModuleType, None]:
+) -> Optional[types.ModuleType]:
     with open(module_path, encoding="utf-8") as file:
         source_code = file.read()
     stripped_source = code_xforms.strip_model_source_code(

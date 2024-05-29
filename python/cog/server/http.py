@@ -185,7 +185,7 @@ def create_app(
             )
             def train(
                 request: TrainingRequest = Body(default=None),
-                prefer: Union[str, None] = Header(default=None),
+                prefer: Optional[str] = Header(default=None),
             ) -> Any:  # type: ignore
                 return predict(request, prefer)
 
@@ -197,7 +197,7 @@ def create_app(
             def train_idempotent(
                 training_id: str = Path(..., title="Training ID"),
                 request: TrainingRequest = Body(..., title="Training Request"),
-                prefer: Union[str, None] = Header(default=None),
+                prefer: Optional[str] = Header(default=None),
             ) -> Any:
                 return predict_idempotent(training_id, request, prefer)
 
@@ -259,7 +259,7 @@ def create_app(
     )
     async def predict(
         request: PredictionRequest = Body(default=None),
-        prefer: Union[str, None] = Header(default=None),
+        prefer: Optional[str] = Header(default=None),
     ) -> Any:  # type: ignore
         """
         Run a single prediction on the model
@@ -283,7 +283,7 @@ def create_app(
     async def predict_idempotent(
         prediction_id: str = Path(..., title="Prediction ID"),
         request: PredictionRequest = Body(..., title="Prediction Request"),
-        prefer: Union[str, None] = Header(default=None),
+        prefer: Optional[str] = Header(default=None),
     ) -> Any:
         """
         Run a single prediction on the model (idempotent creation).
