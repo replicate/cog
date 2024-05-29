@@ -57,7 +57,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		imageName = config.DockerImageName(projectDir)
 	}
 
-	err = checkMutuallyExclusiveFlags(cmd, "use-cog-base-image", "use-cuda-base-image", "dockerfile")
+	err = checkMutuallyExclusiveFlags(cmd)
 	if err != nil {
 		return err
 	}
@@ -122,7 +122,8 @@ func addBuildTimestampFlag(cmd *cobra.Command) {
 	_ = cmd.Flags().MarkHidden("timestamp")
 }
 
-func checkMutuallyExclusiveFlags(cmd *cobra.Command, flags ...string) error {
+func checkMutuallyExclusiveFlags(cmd *cobra.Command) error {
+	flags := []string{"use-cog-base-image", "use-cuda-base-image", "dockerfile"}
 	var flagsSet []string
 	for _, flag := range flags {
 		if cmd.Flag(flag).Changed {
@@ -130,12 +131,7 @@ func checkMutuallyExclusiveFlags(cmd *cobra.Command, flags ...string) error {
 		}
 	}
 	if len(flagsSet) > 1 {
-		flagNames := strings.Join(flagsSet, ", ")
-		lastComma := strings.LastIndex(flagNames, ",")
-		if lastComma != -1 {
-			flagNames = flagNames[:lastComma] + " and" + flagNames[lastComma+1:]
-		}
-		return fmt.Errorf("the flags %s are mutually exclusive, you can only set one of them", flagNames)
+		return fmt.Errorf("the flags %s are mutually exclusive, you can only set one of them", strings.Join(flagsSet, " and "))
 	}
 	return nil
 }
