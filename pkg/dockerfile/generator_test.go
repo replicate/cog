@@ -496,6 +496,7 @@ build:
   system_packages:
     - ffmpeg
     - cowsay
+  python_version: "3.12"
   python_packages:
     - torch==2.3.0
     - pandas==1.2.0.12
