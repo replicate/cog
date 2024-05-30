@@ -40,6 +40,24 @@ var (
 	}
 )
 
+type CUDAVersion struct {
+	Version string `json:"versions"`
+}
+
+type PyTorchVersion struct {
+	Version string `json:"version"`
+}
+
+type PythonVersion struct {
+	Version string           `json:"version"`
+	PyTorch []PyTorchVersion `json:"pytorch"`
+	CUDA    []CUDAVersion    `json:"cuda"`
+}
+
+type AvailableBaseImageConfigurations struct {
+	PythonVersions []PythonVersion
+}
+
 type BaseImageConfiguration struct {
 	CudaVersion   string `json:"cuda_version" yaml:"cuda_version"`
 	PythonVersion string `json:"python_version" yaml:"python_version"`
@@ -59,6 +77,7 @@ func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
 		ImageName string `json:"image_name,omitempty" yaml:"image_name,omitempty"`
 		Tag       string `json:"image_tag,omitempty" yaml:"image_tag,omitempty"`
 	}
+
 	rawName := BaseImageName(b.CudaVersion, b.PythonVersion, b.TorchVersion)
 	rawName = strings.TrimPrefix(rawName, BaseImageRegistry+"/")
 	split := strings.Split(rawName, ":")
@@ -75,97 +94,98 @@ func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(alias)
 }
 
-func BaseImageConfigurations() []BaseImageConfiguration {
-	// TODO(andreas): Support every combination for recent
-	// versions, and a subset of combinations for older but
-	// popular combinations.
-	return []BaseImageConfiguration{
-		{"", "3.10", ""},
-		{"", "3.10", "1.12.1"},
-		{"", "3.11", ""},
-		{"", "3.8", ""},
-		{"", "3.9", ""},
-		{"11.0.3", "3.8", "1.7.1"},
-		{"11.1", "3.8", "1.8.0"},
-		{"11.1.1", "3.8", "1.8.0"},
-		{"11.1.1", "3.8", "1.9.0"},
-		{"11.2", "3.10", ""},
-		{"11.2", "3.8", ""},
-		{"11.2", "3.9", ""},
-		{"11.3", "3.10", "1.12.0"},
-		{"11.3", "3.8", ""},
-		{"11.3", "3.8", "1.11.0"},
-		{"11.3", "3.8", "1.12.1"},
-		{"11.3.1", "3.8", "1.11.0"},
-		{"11.3.1", "3.9", "1.11.0"},
-		{"11.4", "3.8", "1.9.1"},
-		{"11.4", "3.10", "1.13.0"},
-		{"11.6", "3.10", ""},
-		{"11.6", "3.10", "1.13.0"},
-		{"11.6", "3.10", "1.13.1"},
-		{"11.6", "3.10", "2.0.0"},
-		{"11.6", "3.8", ""},
-		{"11.6", "3.8", "2.0.0"},
-		{"11.6", "3.9", ""},
-		{"11.6", "3.9", "1.13.0"},
-		{"11.6", "3.9", "2.0.0"},
-		{"11.6.2", "3.10", ""},
-		{"11.6.2", "3.10", "1.12.1"},
-		{"11.6.2", "3.10", "2.0.1"},
-		{"11.6.2", "3.11", "2.0.0"},
-		{"11.6.2", "3.8", "1.12.1"},
-		{"11.6.2", "3.9", "2.0.1"},
-		{"11.7", "3.10", ""},
-		{"11.7", "3.10", "1.13.0"},
-		{"11.7", "3.10", "1.13.1"},
-		{"11.7", "3.10", "2.0.0"},
-		{"11.7", "3.10", "2.0.1"},
-		{"11.7", "3.8", ""},
-		{"11.7", "3.8", "1.13.1"},
-		{"11.7", "3.8", "2.0.0"},
-		{"11.7", "3.8", "2.0.1"},
-		{"11.7", "3.9", ""},
-		{"11.7", "3.9", "2.0.1"},
-		{"11.7.1", "3.10", ""},
-		{"11.7.1", "3.10", "1.13.0"},
-		{"11.7.1", "3.8", "1.13.0"},
-		{"11.7.1", "3.9", "1.13.0"},
-		{"11.7.1", "3.9", "1.13.1"},
-		{"11.8", "3.10", ""},
-		{"11.8", "3.10", "2.0.0"},
-		{"11.8", "3.10", "2.0.1"},
-		{"11.8", "3.10", "2.1.0"},
-		{"11.8", "3.10", "2.2.0"},
-		{"11.8", "3.11", ""},
-		{"11.8", "3.11", "2.0.1"},
-		{"11.8", "3.11", "2.1.0"},
-		{"11.8", "3.11", "2.1.1"},
-		{"11.8", "3.11", "2.2.0"},
-		{"11.8", "3.7", ""},
-		{"11.8", "3.8", ""},
-		{"11.8", "3.8", "2.0.1"},
-		{"11.8", "3.9", ""},
-		{"11.8", "3.9", "2.0.0"},
-		{"11.8", "3.9", "2.0.1"},
-		{"11.8", "3.9", "2.2.0"},
-		{"11.8.0", "3.10", "2.0.0"},
-		{"11.8.0", "3.10", "2.0.1"},
-		{"11.8.0", "3.11", "2.0.1"},
-		{"11.8.0", "3.8", "2.0.0"},
-		{"11.8.0", "3.8", "2.0.1"},
-		{"11.8.0", "3.9", "1.13.1"},
-		{"11.8.0", "3.9", "2.0.1"},
-		{"12.1", "3.10", ""},
-		{"12.1", "3.10", "2.1.0"},
-		{"12.1", "3.10", "2.1.1"},
-		{"12.1", "3.10", "2.1.2"},
-		{"12.1", "3.11", ""},
-		{"12.1", "3.11", "2.1.0"},
-		{"12.1", "3.11", "2.1.1"},
-		{"12.1", "3.11", "2.1.2"},
-		{"12.1", "3.9", ""},
-		{"12.1", "3.9", "2.1.0"},
-		{"12.1.1", "3.11", "2.1.1"},
+func BaseImageConfigurations() []AvailableBaseImageConfigurations {
+	return []AvailableBaseImageConfigurations{
+		{
+			PythonVersions: []PythonVersion{
+				{
+					Version: "3.10",
+					PyTorch: []PyTorchVersion{
+						{Version: "1.12.1"},
+					},
+					CUDA: []CUDAVersion{
+						{Version: "11.2"},
+						{Version: "11.3"},
+						{Version: "11.6"},
+						{Version: "11.6.2"},
+						{Version: "11.7"},
+						{Version: "11.7.1"},
+						{Version: "11.8"},
+						{Version: "11.8.0"},
+						{Version: "12.1"},
+					},
+				},
+				{
+					Version: "3.11",
+					PyTorch: []PyTorchVersion{
+						{Version: "2.0.0"},
+						{Version: "2.0.1"},
+						{Version: "2.1.0"},
+						{Version: "2.1.1"},
+						{Version: "2.2.0"},
+					},
+					CUDA: []CUDAVersion{
+						{Version: "11.6.2"},
+						{Version: "11.8"},
+					},
+				},
+				{
+					Version: "3.8",
+					PyTorch: []PyTorchVersion{
+						{Version: "1.7.1"},
+						{Version: "1.8.0"},
+						{Version: "1.9.0"},
+						{Version: "1.11.0"},
+						{Version: "1.12.1"},
+						{Version: "2.0.0"},
+						{Version: "2.0.1"},
+						{Version: "1.13.0"},
+						{Version: "1.13.1"},
+					},
+					CUDA: []CUDAVersion{
+						{Version: "11.0.3"},
+						{Version: "11.1"},
+						{Version: "11.1.1"},
+						{Version: "11.2"},
+						{Version: "11.3"},
+						{Version: "11.3.1"},
+						{Version: "11.4"},
+						{Version: "11.6"},
+						{Version: "11.6.2"},
+						{Version: "11.7"},
+						{Version: "11.7.1"},
+						{Version: "11.8"},
+						{Version: "11.8.0"},
+					},
+				},
+				{
+					Version: "3.9",
+					PyTorch: []PyTorchVersion{
+						{Version: "1.11.0"},
+						{Version: "1.13.0"},
+						{Version: "2.0.0"},
+						{Version: "2.0.1"},
+					},
+					CUDA: []CUDAVersion{
+						{Version: "11.2"},
+						{Version: "11.3"},
+						{Version: "11.3.1"},
+						{Version: "11.6"},
+						{Version: "11.6.2"},
+						{Version: "11.7"},
+						{Version: "11.7.1"},
+						{Version: "11.8"},
+						{Version: "11.8.0"},
+					},
+				},
+				{
+					Version: "3.7",
+					CUDA: []CUDAVersion{
+						{Version: "11.8"},
+					},
+				},
+			},
+		},
 	}
 }
 
@@ -179,7 +199,7 @@ func NewBaseImageGenerator(cudaVersion string, pythonVersion string, torchVersio
 		}
 		return s
 	}
-	return nil, fmt.Errorf("Unsupported base image configuration: CUDA: %s / Python: %s / Torch: %s", printNone(cudaVersion), printNone(pythonVersion), printNone(torchVersion))
+	return nil, fmt.Errorf("unsupported base image configuration: CUDA: %s / Python: %s / Torch: %s", printNone(cudaVersion), printNone(pythonVersion), printNone(torchVersion))
 }
 
 func (g *BaseImageGenerator) GenerateDockerfile() (string, error) {
@@ -242,8 +262,31 @@ func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string
 
 func BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion string) bool {
 	for _, conf := range BaseImageConfigurations() {
-		if conf.CudaVersion == cudaVersion && conf.PythonVersion == pythonVersion && conf.TorchVersion == torchVersion {
-			return true
+		for _, pyVer := range conf.PythonVersions {
+			if pyVer.Version == pythonVersion {
+				// If torchVersion is empty, it means we are checking for Python and CUDA only
+				if torchVersion == "" {
+					for _, cudaVer := range pyVer.CUDA {
+						if cudaVer.Version == cudaVersion {
+							return true
+						}
+					}
+				} else {
+					for _, torchVer := range pyVer.PyTorch {
+						if torchVer.Version == torchVersion {
+							// If CUDA version is empty, it means we are checking for Python and PyTorch only
+							if cudaVersion == "" {
+								return true
+							}
+							for _, cudaVer := range pyVer.CUDA {
+								if cudaVer.Version == cudaVersion {
+									return true
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 	return false
