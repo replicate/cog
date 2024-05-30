@@ -256,7 +256,7 @@ func (g *Generator) baseImage() (string, error) {
 			return "", err
 		}
 		torchVersion, _ := g.Config.TorchVersion()
-		// validate that we base image configuration exists
+		// validate that the base image configuration exists
 		imageGenerator, err := NewBaseImageGenerator(cudaVersion, pythonVersion, torchVersion)
 		if err != nil {
 			return "", err
