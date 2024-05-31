@@ -5,6 +5,7 @@ nav:
   - README: README.md
   - Getting Started: getting-started.md
   - Using your own model: getting-started-own-model.md
+  - Command-line interface (CLI): cli.md
   - YAML spec: yaml.md
   - Prediction API: python.md
   - Training API: training.md
