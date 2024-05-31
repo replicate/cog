@@ -55,7 +55,7 @@ type PythonVersion struct {
 }
 
 type AvailableBaseImageConfigurations struct {
-	PythonVersions []PythonVersion
+	PythonVersions []PythonVersion `json:"python_versions"`
 }
 
 type BaseImageConfiguration struct {
@@ -68,6 +68,26 @@ type BaseImageGenerator struct {
 	cudaVersion   string
 	pythonVersion string
 	torchVersion  string
+}
+
+func ToBaseImageConfigurations(configurations []AvailableBaseImageConfigurations) []BaseImageConfiguration {
+	var baseImageConfigs []BaseImageConfiguration
+
+	for _, conf := range configurations {
+		for _, pythonVersion := range conf.PythonVersions {
+			for _, torchVersion := range pythonVersion.PyTorch {
+				for _, cudaVersion := range pythonVersion.CUDA {
+					baseImageConfigs = append(baseImageConfigs, BaseImageConfiguration{
+						CudaVersion:   cudaVersion.Version,
+						PythonVersion: pythonVersion.Version,
+						TorchVersion:  torchVersion.Version,
+					})
+				}
+			}
+		}
+	}
+
+	return baseImageConfigs
 }
 
 func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
