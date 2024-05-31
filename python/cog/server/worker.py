@@ -54,11 +54,11 @@ class WorkerState(Enum):
 
 class Mux:
     def __init__(self, terminating: asyncio.Event) -> None:
-        self.outs: "defaultdict[str, asyncio.Queue[PublicEventType]]" = defaultdict(
+        self.outs: defaultdict[str, asyncio.Queue[PublicEventType]] = defaultdict(
             asyncio.Queue
         )
         self.terminating = terminating
-        self.fatal: "Optional[FatalWorkerException]" = None
+        self.fatal: Optional[FatalWorkerException] = None
 
     async def write(self, id: str, item: PublicEventType) -> None:
         await self.outs[id].put(item)
@@ -199,11 +199,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
 
     async def _loop_async(self) -> None:
-        events: "AsyncConnection[tuple[str, PublicEventType]]" = AsyncConnection(
+        events: AsyncConnection[tuple[str, PublicEventType]] = AsyncConnection(
             self._events
         )
         with events:
-            tasks: "dict[str, asyncio.Task[None]]" = {}
+            tasks: dict[str, asyncio.Task[None]] = {}
             while True:
                 try:
                     ev = await events.recv()

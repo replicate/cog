@@ -88,7 +88,7 @@ RunnerTask: "typing.TypeAlias" = Union[PredictionTask, SetupTask]
 
 class TimeShareTracker:
     def __init__(self) -> None:
-        self._time_shares_per_prediction: "dict[str, float]" = {}
+        self._time_shares_per_prediction: dict[str, float] = {}
         self._last_updated_time_shares = 0.0
 
     def update_time_shares(self) -> None:
@@ -122,8 +122,8 @@ class PredictionRunner:
         self._shutdown_event = shutdown_event  # __main__ waits for this event
 
         self._upload_url = upload_url
-        self._predictions: "dict[str, tuple[schema.PredictionResponse, PredictionTask]]" = {}
-        self._predictions_in_flight: "set[str]" = set()
+        self._predictions: dict[str, tuple[schema.PredictionResponse, PredictionTask]] = {}
+        self._predictions_in_flight: set[str] = set()
         # it would be lovely to merge these but it's not fully clear how best to handle it
         # since idempotent requests can kinda come whenever?
         # p: dict[str, PredictionTask]
@@ -142,7 +142,7 @@ class PredictionRunner:
         # A pipe with which to communicate with the child worker.
         events, child_events = _spawn.Pipe()
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
-        self._events: "AsyncConnection[tuple[str, PublicEventType]]" = AsyncConnection(
+        self._events: AsyncConnection[tuple[str, PublicEventType]] = AsyncConnection(
             events
         )
         # shutdown requested

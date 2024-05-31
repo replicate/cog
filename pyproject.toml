@@ -70,7 +70,7 @@ reportUnusedExpression = "warning"
 package-dir = { "" = "python" }
 
 [tool.ruff]
-select = [
+lint.select = [
   "E",   # pycodestyle error
   "F",   # Pyflakes
   "I",   # isort
@@ -80,7 +80,7 @@ select = [
   "B",   # flake8-bugbear
   "ANN", # flake8-annotations
 ]
-ignore = [
+lint.ignore = [
   "E501",   # Line too long
   "S101",   # Use of `assert` detected"
   "S113",   # Probable use of requests call without timeout
@@ -97,7 +97,7 @@ extend-exclude = [
   "test-integration/test_integration/fixtures/*",
 ]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "python/cog/server/http.py" = [
   "S104", # Possible binding to all interfaces
 ]
