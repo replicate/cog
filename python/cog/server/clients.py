@@ -187,7 +187,7 @@ class ClientManager:
         # if we get multipart uploads working or a separate API route
         # then we could drop this
         if url and ".internal" in url:
-            log.info("doing test upload to", url)
+            log.info("doing test upload to %s", url)
             resp1 = await self.file_client.put(
                 url,
                 content=b"",
