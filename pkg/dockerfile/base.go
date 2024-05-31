@@ -99,6 +99,20 @@ func BaseImageConfigurations() []AvailableBaseImageConfigurations {
 		{
 			PythonVersions: []PythonVersion{
 				{
+					Version: "3.11",
+					PyTorch: []PyTorchVersion{
+						{Version: "2.0.0"},
+						{Version: "2.0.1"},
+						{Version: "2.1.0"},
+						{Version: "2.1.1"},
+						{Version: "2.2.0"},
+					},
+					CUDA: []CUDAVersion{
+						{Version: "11.6.2"},
+						{Version: "11.8"},
+					},
+				},
+				{
 					Version: "3.10",
 					PyTorch: []PyTorchVersion{
 						{Version: "1.12.1"},
@@ -116,17 +130,23 @@ func BaseImageConfigurations() []AvailableBaseImageConfigurations {
 					},
 				},
 				{
-					Version: "3.11",
+					Version: "3.9",
 					PyTorch: []PyTorchVersion{
+						{Version: "1.11.0"},
+						{Version: "1.13.0"},
 						{Version: "2.0.0"},
 						{Version: "2.0.1"},
-						{Version: "2.1.0"},
-						{Version: "2.1.1"},
-						{Version: "2.2.0"},
 					},
 					CUDA: []CUDAVersion{
+						{Version: "11.2"},
+						{Version: "11.3"},
+						{Version: "11.3.1"},
+						{Version: "11.6"},
 						{Version: "11.6.2"},
+						{Version: "11.7"},
+						{Version: "11.7.1"},
 						{Version: "11.8"},
+						{Version: "11.8.0"},
 					},
 				},
 				{
@@ -150,26 +170,6 @@ func BaseImageConfigurations() []AvailableBaseImageConfigurations {
 						{Version: "11.3"},
 						{Version: "11.3.1"},
 						{Version: "11.4"},
-						{Version: "11.6"},
-						{Version: "11.6.2"},
-						{Version: "11.7"},
-						{Version: "11.7.1"},
-						{Version: "11.8"},
-						{Version: "11.8.0"},
-					},
-				},
-				{
-					Version: "3.9",
-					PyTorch: []PyTorchVersion{
-						{Version: "1.11.0"},
-						{Version: "1.13.0"},
-						{Version: "2.0.0"},
-						{Version: "2.0.1"},
-					},
-					CUDA: []CUDAVersion{
-						{Version: "11.2"},
-						{Version: "11.3"},
-						{Version: "11.3.1"},
 						{Version: "11.6"},
 						{Version: "11.6.2"},
 						{Version: "11.7"},
