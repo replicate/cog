@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -74,7 +75,7 @@ func run(cmd *cobra.Command, args []string) error {
 		Workdir: "/src",
 	}
 
-	if util.IsAppleSiliconMac(os.GOOS, os.GOARCH) {
+	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
 		runOptions.Platform = "linux/amd64"
 	}
 
