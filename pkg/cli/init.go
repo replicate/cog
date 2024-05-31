@@ -29,7 +29,14 @@ func newInitCommand() *cobra.Command {
 	var cmd = &cobra.Command{
 		Use:        "init",
 		SuggestFor: []string{"new", "start"},
-		Short:      "Configure your project for use with Cog",
+		Short:      "Scaffold a new Cog model",
+		Long: `This command sets up a new Cog project in the current directory, with files to get you started:
+
+- cog.yaml, for definining Python and system-level dependencies
+- predict.py, for defining the Prediction API for your model
+- .dockerignore, to keep large unneeded files out of your published model
+- .github/workflows/push.yaml, a GitHub Actions workflow to package and push your model`,
+		Example: `mkdir my-model && cd my-model && cog init`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return initCommand(args)
 		},

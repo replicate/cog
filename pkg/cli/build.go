@@ -25,6 +25,11 @@ func newBuildCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "build",
 		Short: "Build an image from cog.yaml",
+		Long: `This command builds a Docker image from your project's cog.yaml.
+
+This bakes your model's code, the trained weights, and the Docker environment 
+into a Docker image which can serve predictions with an HTTP server, and can be 
+deployed to anywhere that Docker runs to serve real-time predictions.`,
 		Args:  cobra.NoArgs,
 		RunE:  buildCommand,
 	}

@@ -25,6 +25,18 @@ func newRunCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run <command> [arg...]",
 		Short: "Run a command inside a Docker environment",
+		Long: `Run a command inside a Docker environment.
+
+The command will be run with the current directory mounted as a volume.
+
+Use commands like "cog run bash" or "cog run python" to access your 
+model's runtime environment, so you can interact with it in a Python 
+shell, install system dependencies, etc.`,
+		Example: `# Run Python in your container using the Python version you set in cog.yaml
+cog run python
+
+# Access an interactive shell inside your container
+cog run bash`,
 		RunE:  run,
 		Args:  cobra.MinimumNArgs(1),
 	}
