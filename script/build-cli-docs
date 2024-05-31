@@ -1,0 +1,40 @@
+#!/bin/sh
+
+# This script generates CLI reference docs for Cog using cobra/docs, 
+# then cleans up the files and compiles them into docs/cli.md
+
+rm -rf docs/tmp
+mkdir -p docs/tmp
+
+# Generate docs using Cobra (ignoring the output)
+go run github.com/replicate/cog/cmd/cog > /dev/null 2>&1
+
+for file in docs/tmp/*.md; do
+    # Remove unwanted Cobra docs stuff from the end of each file
+    sed -i '' '/### SEE ALSO/,$d' "$file"
+
+    # Wrap "cog somecommand" in backticks
+    sed -i '' 's/^## cog.*$/&`/' "$file"
+    sed -i '' 's/^## cog/## `cog/' "$file"
+done
+
+# Create or clear the file
+echo "# Cog CLI reference\n\n" > docs/cli.md  
+echo "<!-- Do not manually edit this file! It is auto-generated from Go source code. -->\n\n" >> docs/cli.md
+echo "This document defines the command-line interface for Cog.\n\n" >> docs/cli.md
+
+# Set the order of the commands
+orderedFileNames=("cog_init" "cog_build" "cog_run" "cog_predict" "cog_login" "cog_push")
+
+# Create or clear the file
+for cmd in "${orderedFileNames[@]}"; do
+    file="docs/tmp/${cmd}.md"
+    if [ -f "$file" ]; then
+        cat "$file" >> docs/cli.md
+        # Add a newline for separation between command docs
+        echo "" >> docs/cli.md  
+    fi
+done
+
+# Clean up
+rm -rf docs/tmp
