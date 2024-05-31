@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/image"
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -71,6 +73,10 @@ func run(cmd *cobra.Command, args []string) error {
 		Image:   imageName,
 		Volumes: []docker.Volume{{Source: projectDir, Destination: "/src"}},
 		Workdir: "/src",
+	}
+
+	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
+		runOptions.Platform = "linux/amd64"
 	}
 
 	for _, portString := range runPorts {
