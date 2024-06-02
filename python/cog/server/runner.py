@@ -294,7 +294,7 @@ class PredictionRunner:
 
         # if upload url was not set, we can respect output_file_prefix
         # but maybe we should just throw an error
-        upload_url = request.output_file_prefix or self._upload_url
+        upload_url = str(request.output_file_prefix or self._upload_url)
         # this is supposed to send START, but we're trapped in a sync function
         # this sends START in a task, which calls jsonable_encoder on the input,
         # which calls iter(io.BytesIO) with data uris that are File
@@ -465,7 +465,7 @@ class PredictionEventHandler:
 
         self._client_manager = client_manager
         self._webhook_sender = client_manager.make_webhook_sender(
-            request.webhook,
+            str(request.webhook),
             request.webhook_events_filter or schema.WebhookEvent.default_events(),
         )
         self._upload_url = upload_url

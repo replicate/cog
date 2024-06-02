@@ -52,6 +52,7 @@ if PYDANTIC_V2:
     from pydantic_core import Url
     from typing_extensions import Annotated
 
+    # perhaps we should have `class _Url(Url, str)`
     WebhookUrl = Annotated[
         Url, UrlConstraints(allowed_schemes=["http", "https"], max_length=65536)
     ]
