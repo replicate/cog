@@ -206,13 +206,26 @@ class ClientManager:
                 log.info("got file upload redirect from api")
                 url = resp1.headers["Location"]
         log.info("doing real upload to %s", url)
-        resp = await self.file_client.put(
-            url,
-            content=chunk_file_reader(),
-            headers={"Content-Type": content_type},
-        )
-        # TODO: if file size is >1MB, show upload throughput
-        resp.raise_for_status()
+        try:
+            resp = await self.file_client.put(
+                url,
+                content=chunk_file_reader(),
+                headers={"Content-Type": content_type},
+            )
+            # TODO: if file size is >1MB, show upload throughput
+            resp.raise_for_status()
+        except httpx.StreamConsumed:
+            log.warn(
+                "got StreamConsumed error while attempting to do streaming upload, likely because of multiple redirects. retrying without streaming (will be slower)"
+            )
+            fh.seek(0)
+            resp = await self.file_client.put(
+                url,
+                content=fh.read(),
+                headers={"Content-Type": content_type},
+            )
+            # TODO: if file size is >1MB, show upload throughput
+            resp.raise_for_status()
 
         # strip any signing gubbins from the URL
         final_url = urlparse(str(resp.url))._replace(query="").geturl()
