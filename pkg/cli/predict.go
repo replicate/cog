@@ -145,6 +145,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			predictor = predict.NewPredictor(docker.RunOptions{
 				Image:   imageName,
 				Volumes: volumes,
+				Env:     envFlags,
 			})
 
 			if err := predictor.Start(os.Stderr); err != nil {
