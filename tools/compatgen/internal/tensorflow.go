@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"github.com/replicate/cog/pkg/util/version"
 	"strconv"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 
 func FetchTensorFlowCompatibilityMatrix() ([]config.TFCompatibility, error) {
 	url := "https://www.tensorflow.org/install/source"
+	min_cuda_version := "10.1"
 	resp, err := soup.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to download %s: %w", url, err)
@@ -33,6 +35,10 @@ func FetchTensorFlowCompatibilityMatrix() ([]config.TFCompatibility, error) {
 		cuDNN := cells[4].Text()
 		cuda := cells[5].Text()
 
+		if !version.Greater(cuda, min_cuda_version) {
+			continue
+		}
+
 		compat := config.TFCompatibility{
 			TF:           packageVersion,
 			TFCPUPackage: "tensorflow==" + packageVersion,
@@ -45,7 +51,7 @@ func FetchTensorFlowCompatibilityMatrix() ([]config.TFCompatibility, error) {
 	}
 
 	// sanity check
-	if len(compats) < 21 {
+	if len(compats) < 12 {
 		return nil, fmt.Errorf("Tensorflow compatibility matrix only had %d rows, has the html changed?", len(compats))
 	}
 
