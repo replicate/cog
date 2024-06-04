@@ -483,10 +483,6 @@ Compatible cuDNN version is: %s`,
 				return fmt.Errorf("Cog doesn't know what CUDA version is compatible with torch==%s. You might need to upgrade Cog: https://github.com/replicate/cog#upgrade\n\nIf that doesn't work, you need to set the 'cuda' option in cog.yaml to set what version to use. You might be able to find this out from https://pytorch.org/", torchVersion)
 			}
 			c.Build.CUDA = latestCUDAFrom(torchCUDAs)
-			c.Build.CUDA, err = resolveMinorToPatch(c.Build.CUDA)
-			if err != nil {
-				return err
-			}
 			console.Debugf("Setting CUDA to version %s from Torch version", c.Build.CUDA)
 		} else if !slices.ContainsString(torchCUDAs, c.Build.CUDA) {
 			// TODO: can we suggest a CUDA version known to be compatible?
@@ -511,6 +507,13 @@ Compatible cuDNN version is: %s`,
 				return err
 			}
 			console.Debugf("Setting CuDNN to version %s", c.Build.CUDA)
+		}
+	}
+
+	if c.Build.CUDA != "" {
+		c.Build.CUDA, err = resolveMinorToPatch(c.Build.CUDA)
+		if err != nil {
+			return err
 		}
 	}
 

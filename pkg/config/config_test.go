@@ -6,6 +6,7 @@ import (
 	"path"
 	"testing"
 
+	"github.com/hashicorp/go-version"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
@@ -107,6 +108,24 @@ func TestValidateCudaVersion(t *testing.T) {
 				require.NoError(t, err)
 			}
 		})
+	}
+}
+
+func assertMinorVersion(t *testing.T, expected, actual string) {
+	expectedVersion, err := version.NewVersion(expected)
+	if err != nil {
+		t.Errorf("Error parsing version: %v", err)
+		return
+	}
+	actualVersion, err := version.NewVersion(actual)
+	if err != nil {
+		t.Errorf("Error parsing version: %v", err)
+		return
+	}
+
+	// Compare only the major and minor parts
+	if expectedVersion.Segments()[0] != actualVersion.Segments()[0] || expectedVersion.Segments()[1] != actualVersion.Segments()[1] {
+		t.Errorf("Expected %s but got %s", expected, actual)
 	}
 }
 
@@ -237,7 +256,7 @@ func TestValidateAndCompleteCUDAForAllTF(t *testing.T) {
 
 		err := config.ValidateAndComplete("")
 		require.NoError(t, err)
-		require.Equal(t, compat.CUDA, config.Build.CUDA)
+		assertMinorVersion(t, compat.CUDA, config.Build.CUDA)
 		require.Equal(t, compat.CuDNN, config.Build.CuDNN)
 	}
 }
@@ -319,7 +338,7 @@ func TestUnsupportedTorch(t *testing.T) {
 	}
 	err = config.ValidateAndComplete("")
 	require.NoError(t, err)
-	require.Equal(t, "11.8", config.Build.CUDA)
+	assertMinorVersion(t, "11.8", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 }
 
@@ -356,7 +375,7 @@ func TestUnsupportedTensorflow(t *testing.T) {
 	}
 	err = config.ValidateAndComplete("")
 	require.NoError(t, err)
-	require.Equal(t, "11.8", config.Build.CUDA)
+	assertMinorVersion(t, "11.8", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 }
 
@@ -376,7 +395,7 @@ func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 	}
 	err := config.ValidateAndComplete("")
 	require.NoError(t, err)
-	require.Equal(t, "11.8", config.Build.CUDA)
+	assertMinorVersion(t, "11.8", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
@@ -429,7 +448,7 @@ func TestPythonPackagesForArchTensorflowGPU(t *testing.T) {
 	}
 	err := config.ValidateAndComplete("")
 	require.NoError(t, err)
-	require.Equal(t, "11.8", config.Build.CUDA)
+	assertMinorVersion(t, "11.8", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 
 	// tensorflow and tensorflow-gpu have been the same package since TensorFlow 2.1, released in September 2019.
