@@ -2,9 +2,10 @@ package internal
 
 import (
 	"fmt"
-	"github.com/replicate/cog/pkg/util/version"
 	"strconv"
 	"strings"
+
+	"github.com/replicate/cog/pkg/util/version"
 
 	"github.com/anaskhan96/soup"
 
