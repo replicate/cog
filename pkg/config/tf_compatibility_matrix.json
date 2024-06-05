@@ -151,5 +151,17 @@
       "3.8",
       "3.9"
     ]
+  },
+  {
+    "TF": "2.4.0",
+    "TFCPUPackage": "tensorflow==2.4.0",
+    "TFGPUPackage": "tensorflow==2.4.0",
+    "CUDA": "11.0",
+    "CuDNN": "8.0",
+    "Pythons": [
+      "3.6",
+      "3.7",
+      "3.8"
+    ]
   }
 ]

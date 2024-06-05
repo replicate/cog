@@ -35,7 +35,7 @@ func FetchTensorFlowCompatibilityMatrix(min_cuda_version string) ([]config.TFCom
 		cuDNN := cells[4].Text()
 		cuda := cells[5].Text()
 
-		if !version.Greater(cuda, min_cuda_version) {
+		if !version.Greater(cuda, min_cuda_version) && !version.Equal(cuda, min_cuda_version) {
 			continue
 		}
 
