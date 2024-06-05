@@ -12,8 +12,10 @@ import (
 	"github.com/replicate/cog/pkg/config"
 )
 
-func FetchTensorFlowCompatibilityMatrix(min_cuda_version string) ([]config.TFCompatibility, error) {
+func FetchTensorFlowCompatibilityMatrix() ([]config.TFCompatibility, error) {
 	url := "https://www.tensorflow.org/install/source"
+	minCudaVersion := strconv.Itoa(config.MinimumMajorCudaVersion)
+
 	resp, err := soup.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to download %s: %w", url, err)
@@ -35,7 +37,7 @@ func FetchTensorFlowCompatibilityMatrix(min_cuda_version string) ([]config.TFCom
 		cuDNN := cells[4].Text()
 		cuda := cells[5].Text()
 
-		if !version.Greater(cuda, min_cuda_version) && !version.Equal(cuda, min_cuda_version) {
+		if !version.Greater(cuda, minCudaVersion) && !version.Equal(cuda, minCudaVersion) {
 			continue
 		}
 

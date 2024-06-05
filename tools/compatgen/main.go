@@ -12,12 +12,11 @@ import (
 
 func main() {
 	var output string
-	var minCudaVersion string
 
 	var rootCmd = &cobra.Command{
 		Use:   "compatgen {cuda|torch|tensorflow}",
 		Short: "Generate compatibility matrix for Cog base images",
-		Args:  cobra.MinimumNArgs(1),
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			target := args[0]
 
@@ -31,10 +30,7 @@ func main() {
 					console.Fatalf("Failed to fetch CUDA base image tags: %s", err)
 				}
 			case "tensorflow":
-				if minCudaVersion == "" {
-					console.Fatalf("TensorFlow target requires a --min-cuda-version flag")
-				}
-				v, err = internal.FetchTensorFlowCompatibilityMatrix(minCudaVersion)
+				v, err = internal.FetchTensorFlowCompatibilityMatrix()
 				if err != nil {
 					console.Fatalf("Failed to fetch TensorFlow compatibility matrix: %s", err)
 				}
@@ -64,7 +60,6 @@ func main() {
 	}
 
 	rootCmd.Flags().StringVarP(&output, "output", "o", "", "Output flag (optional)")
-	rootCmd.Flags().StringVar(&minCudaVersion, "min-cuda-version", "", "Minimum CUDA version (required for TensorFlow)")
 	if err := rootCmd.Execute(); err != nil {
 		console.Fatalf(err.Error())
 	}
