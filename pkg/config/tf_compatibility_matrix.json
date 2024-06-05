@@ -151,56 +151,5 @@
       "3.8",
       "3.9"
     ]
-  },
-  {
-    "TF": "2.4.0",
-    "TFCPUPackage": "tensorflow==2.4.0",
-    "TFGPUPackage": "tensorflow==2.4.0",
-    "CUDA": "11.0",
-    "CuDNN": "8.0",
-    "Pythons": [
-      "3.6",
-      "3.7",
-      "3.8"
-    ]
-  },
-  {
-    "TF": "2.3.0",
-    "TFCPUPackage": "tensorflow==2.3.0",
-    "TFGPUPackage": "tensorflow==2.3.0",
-    "CUDA": "10.1",
-    "CuDNN": "7.6",
-    "Pythons": [
-      "3.5",
-      "3.6",
-      "3.7",
-      "3.8"
-    ]
-  },
-  {
-    "TF": "2.2.0",
-    "TFCPUPackage": "tensorflow==2.2.0",
-    "TFGPUPackage": "tensorflow==2.2.0",
-    "CUDA": "10.1",
-    "CuDNN": "7.6",
-    "Pythons": [
-      "3.5",
-      "3.6",
-      "3.7",
-      "3.8"
-    ]
-  },
-  {
-    "TF": "2.1.0",
-    "TFCPUPackage": "tensorflow==2.1.0",
-    "TFGPUPackage": "tensorflow==2.1.0",
-    "CUDA": "10.1",
-    "CuDNN": "7.6",
-    "Pythons": [
-      "2.7",
-      "3.5",
-      "3.6",
-      "3.7"
-    ]
   }
 ]
