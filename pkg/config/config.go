@@ -30,6 +30,7 @@ var (
 const (
 	MinimumMajorPythonVersion int = 3
 	MinimumMinorPythonVersion int = 8
+	MinimumMajorCudaVersion   int = 11
 )
 
 type RunItem struct {
