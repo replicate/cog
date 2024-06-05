@@ -85,7 +85,7 @@ func (i *CUDABaseImage) ImageTag() string {
 var cudaBaseImagesData []byte
 var CUDABaseImages []CUDABaseImage
 
-//go:generate go run ../../tools/compatgen/main.go tensorflow -o tf_compatibility_matrix.json
+//go:generate go run ../../tools/compatgen/main.go tensorflow --min-cuda-version 11 -o tf_compatibility_matrix.json
 //go:embed tf_compatibility_matrix.json
 var tfCompatibilityMatrixData []byte
 var TFCompatibilityMatrix []TFCompatibility
