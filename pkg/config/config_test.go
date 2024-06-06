@@ -10,6 +10,101 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+func TestValidateModelPythonVersion(t *testing.T) {
+	testCases := []struct {
+		name        string
+		input       string
+		expectedErr bool
+	}{
+		{
+			name:        "ValidVersion",
+			input:       "3.12",
+			expectedErr: false,
+		},
+		{
+			name:        "InvalidFormat",
+			input:       "3-12",
+			expectedErr: true,
+		},
+		{
+			name:        "InvalidMissingMinor",
+			input:       "3",
+			expectedErr: true,
+		},
+		{
+			name:        "LessThanMinimum",
+			input:       "3.7",
+			expectedErr: true,
+		},
+		{
+			name:        "EqualToMinimum",
+			input:       "3.8",
+			expectedErr: false,
+		},
+		{
+			name:        "GreaterThanMinimum",
+			input:       "3.11",
+			expectedErr: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateModelPythonVersion(tc.input)
+			if tc.expectedErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateCudaVersion(t *testing.T) {
+	testCases := []struct {
+		name        string
+		input       string
+		expectedErr bool
+	}{
+		{
+			name:        "ValidVersion",
+			input:       "11.2",
+			expectedErr: false,
+		},
+		{
+			name:        "InvalidFormat",
+			input:       "11-2",
+			expectedErr: true,
+		},
+		{
+			name:        "InvalidMissingMinor",
+			input:       "11",
+			expectedErr: true,
+		},
+		{
+			name:        "LessThanMinimum",
+			input:       "9.1",
+			expectedErr: true,
+		},
+		{
+			name:        "GreaterThanMinimum",
+			input:       "11.0",
+			expectedErr: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateCudaVersion(tc.input)
+			if tc.expectedErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestPythonPackagesAndRequirementsCantBeUsedTogether(t *testing.T) {
 	config := &Config{
 		Build: &Build{

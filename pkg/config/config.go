@@ -223,6 +223,9 @@ func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 func splitPythonVersion(version string) (major int, minor int, err error) {
 	version = strings.TrimSpace(version)
 	parts := strings.SplitN(version, ".", 3)
+	if len(parts) < 2 {
+		return 0, 0, fmt.Errorf("missing minor version in %s", version)
+	}
 	majorStr, minorStr := parts[0], parts[1]
 	major, err = strconv.Atoi(majorStr)
 	if err != nil {
@@ -405,7 +408,30 @@ func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage s
 	return pkgWithVersion, findLinksList, extraIndexURLs, nil
 }
 
+func ValidateCudaVersion(cudaVersion string) error {
+	parts := strings.Split(cudaVersion, ".")
+	if len(parts) < 2 {
+		return fmt.Errorf("CUDA version %q must include both major and minor versions", cudaVersion)
+	}
+
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return fmt.Errorf("Invalid major version in CUDA version %q", cudaVersion)
+	}
+
+	if major < MinimumMajorCudaVersion {
+		return fmt.Errorf("Minimum supported CUDA version is %d. requested %q", MinimumMajorCudaVersion, cudaVersion)
+	}
+	return nil
+}
+
 func (c *Config) validateAndCompleteCUDA() error {
+	if c.Build.CUDA != "" {
+		if err := ValidateCudaVersion(c.Build.CUDA); err != nil {
+			return err
+		}
+	}
+
 	if c.Build.CUDA != "" && c.Build.CuDNN != "" {
 		compatibleCuDNNs := compatibleCuDNNsForCUDA(c.Build.CUDA)
 		if !sliceContains(compatibleCuDNNs, c.Build.CuDNN) {

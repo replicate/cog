@@ -25,13 +25,13 @@ This stanza describes how to build the Docker image your model runs in. It conta
 
 ### `cuda`
 
-Cog automatically picks the correct version of CUDA to install, but this lets you override it for whatever reason.
+Cog automatically picks the correct version of CUDA to install, but this lets you override it for whatever reason by specifying the minor (`11.8`) or patch (`11.8.0`) version of CUDA to use.
 
 For example:
 
 ```yaml
 build:
-  cuda: "11.1"
+  cuda: "11.8"
 ```
 
 ### `gpu`

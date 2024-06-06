@@ -221,12 +221,24 @@ func versionGreater(a string, b string) (bool, error) {
 }
 
 func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
+	var images []CUDABaseImage
 	for _, image := range CUDABaseImages {
 		if version.Matches(cuda, image.CUDA) && image.CuDNN == cuDNN {
-			return image.ImageTag(), nil
+			images = append(images, image)
 		}
 	}
-	return "", fmt.Errorf("No matching base image for CUDA %s and CuDNN %s", cuda, cuDNN)
+	if len(images) == 0 {
+		return "", fmt.Errorf("No matching base image for CUDA %s and CuDNN %s", cuda, cuDNN)
+	}
+
+	sort.Slice(images, func(i, j int) bool {
+		if images[i].CUDA != images[j].CUDA {
+			return version.MustVersion(images[i].CUDA).Greater(version.MustVersion(images[j].CUDA))
+		}
+		return images[i].Ubuntu > images[j].Ubuntu
+	})
+
+	return images[0].ImageTag(), nil
 }
 
 func tfGPUPackage(ver string, cuda string) (name string, cpuVersion string, err error) {
