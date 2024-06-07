@@ -33,13 +33,14 @@ func newPredictCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "predict [image]",
 		Short: "Run a prediction",
-		Long: `Run a prediction.
+		Long: `This command runs a prediction.
 
 If 'image' is passed, it will run the prediction on that Docker image.
 It must be an image that has been built by Cog.
 
 Otherwise, it will build the model in the current directory and run
 the prediction on that.`,
+		Example: "cog predict -i mask_image=@my_mask.png -i meaning_of_life=42",
 		RunE:       cmdPredict,
 		Args:       cobra.MaximumNArgs(1),
 		SuggestFor: []string{"infer"},

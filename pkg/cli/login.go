@@ -27,7 +27,18 @@ func newLoginCommand() *cobra.Command {
 	var cmd = &cobra.Command{
 		Use:        "login",
 		SuggestFor: []string{"auth", "authenticate", "authorize"},
-		Short:      "Log in to Replicate Docker registry",
+		Short:      "Log in to the Replicate Docker registry",
+		Long: `Log in to the Replicate Docker registry.
+
+This will allow you to push and pull Docker images from the Replicate registry.`,
+		Example: `# log in interactively via web browser
+cog login
+
+# pipe token from environment variable
+echo $REPLICATE_API_TOKEN | cog login --token-stdin
+
+# log in to a custom registry
+cog login --registry=my-custom-docker-registry.com`,
 		RunE:       login,
 		Args:       cobra.MaximumNArgs(0),
 	}
