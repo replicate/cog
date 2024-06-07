@@ -25,10 +25,11 @@ func addGpusFlag(cmd *cobra.Command) {
 
 func newRunCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "run <command> [arg...]",
-		Short: "Run a command inside a Docker environment",
-		RunE:  run,
-		Args:  cobra.MinimumNArgs(1),
+		Use:     "run <command> [arg...]",
+		Short:   "Run a command inside a Docker environment",
+		RunE:    run,
+		PreRunE: checkMutuallyExclusiveFlags,
+		Args:    cobra.MinimumNArgs(1),
 	}
 	addBuildProgressOutputFlag(cmd)
 	addDockerfileFlag(cmd)
@@ -53,7 +54,6 @@ func run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-
 	imageName, err := image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, buildUseCogBaseImage, buildProgressOutput)
 	if err != nil {
 		return err
