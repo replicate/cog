@@ -6,6 +6,7 @@ Tip: Run [`cog init`](getting-started-own-model.md#initialization) to generate a
 
 ## Contents
 
+- [Contents](#contents)
 - [`BasePredictor`](#basepredictor)
   - [`Predictor.setup()`](#predictorsetup)
   - [`Predictor.predict(**kwargs)`](#predictorpredictkwargs)
@@ -14,9 +15,12 @@ Tip: Run [`cog init`](getting-started-own-model.md#initialization) to generate a
 - [Output](#output)
   - [Returning an object](#returning-an-object)
   - [Returning a list](#returning-a-list)
+  - [Optional properties](#optional-properties)
 - [Input and output types](#input-and-output-types)
 - [`File()`](#file)
 - [`Path()`](#path)
+- [`Secret`](#secret)
+- [`List`](#list)
 
 ## `BasePredictor`
 
@@ -227,6 +231,7 @@ Each parameter of the `predict()` method must be annotated with a type. The meth
 - `bool`: a boolean
 - [`cog.File`](#file): a file-like object representing a file
 - [`cog.Path`](#path): a path to a file on disk
+- [`cog.Secret`](#secret): a string containing sensitive information
 
 ## `File()`
 
@@ -272,6 +277,42 @@ class Predictor(BasePredictor):
         upscaled_image.save(output_path)
         return Path(output_path)
 ```
+
+## `Secret`
+
+The `cog.Secret` type is used to signify that an input holds sensitive information,
+like a password or API token.
+
+`cog.Secret` is a subclass of Pydantic's [`SecretStr`](https://docs.pydantic.dev/latest/api/types/#pydantic.types.SecretStr).
+Its default string representation redacts its contents to prevent accidental disclure.
+You can access its contents with the `get_secret_value()` method.
+
+```python
+from cog import BasePredictor, Secret
+
+
+class Predictor(BasePredictor):
+    def predict(self, api_token: Secret) -> None:
+        # Prints '**********'
+        print(api_token)        
+
+        # Use get_secret_value method to see the secret's content.
+        print(api_token.get_secret_value())
+```
+
+A predictor's `Secret` inputs are represented in OpenAPI with the following schema:
+
+```json
+{
+  "type": "string",
+  "format": "password",
+  "x-cog-secret": true,
+}
+```
+
+Models uploaded to Replicate treat secret inputs differently throughout its system.
+When you create a prediction on Replicate,
+any value passed to a `Secret` input is redacted after being sent to the model.
 
 ## `List`
 
