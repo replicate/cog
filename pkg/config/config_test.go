@@ -22,6 +22,16 @@ func TestValidateModelPythonVersion(t *testing.T) {
 			expectedErr: false,
 		},
 		{
+			name:        "MinimumVersion",
+			input:       "3.8",
+			expectedErr: false,
+		},
+		{
+			name:        "FullyQualifiedVersion",
+			input:       "3.12.1",
+			expectedErr: false,
+		},
+		{
 			name:        "InvalidFormat",
 			input:       "3-12",
 			expectedErr: true,
@@ -35,16 +45,6 @@ func TestValidateModelPythonVersion(t *testing.T) {
 			name:        "LessThanMinimum",
 			input:       "3.7",
 			expectedErr: true,
-		},
-		{
-			name:        "EqualToMinimum",
-			input:       "3.8",
-			expectedErr: false,
-		},
-		{
-			name:        "GreaterThanMinimum",
-			input:       "3.11",
-			expectedErr: false,
 		},
 	}
 
@@ -68,7 +68,17 @@ func TestValidateCudaVersion(t *testing.T) {
 	}{
 		{
 			name:        "ValidVersion",
-			input:       "11.2",
+			input:       "12.4",
+			expectedErr: false,
+		},
+		{
+			name:        "MinimumVersion",
+			input:       "11.0",
+			expectedErr: false,
+		},
+		{
+			name:        "FullyQualifiedVersion",
+			input:       "12.4.1",
 			expectedErr: false,
 		},
 		{
@@ -85,11 +95,6 @@ func TestValidateCudaVersion(t *testing.T) {
 			name:        "LessThanMinimum",
 			input:       "9.1",
 			expectedErr: true,
-		},
-		{
-			name:        "GreaterThanMinimum",
-			input:       "11.0",
-			expectedErr: false,
 		},
 	}
 
