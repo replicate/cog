@@ -542,7 +542,7 @@ build:
     - ffmpeg
     - cowsay
   python_packages:
-    - torch==2.0.1
+    - torch==2.3.0
     - pandas==2.0.3
   run:
     - "cowsay moo"
@@ -558,7 +558,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
-FROM r8.im/cog-base:cuda11.8-python3.12-torch2.0.1
+FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.0
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt

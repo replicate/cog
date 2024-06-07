@@ -80,11 +80,15 @@ func BaseImageConfigurations() []BaseImageConfiguration {
 	// versions, and a subset of combinations for older but
 	// popular combinations.
 	return []BaseImageConfiguration{
+		{"", "3.12", ""},
+		{"", "3.12", "2.3.0"},
+		{"", "3.11", ""},
+		{"", "3.11", "2.3.0"},
 		{"", "3.10", ""},
 		{"", "3.10", "1.12.1"},
-		{"", "3.11", ""},
 		{"", "3.8", ""},
 		{"", "3.9", ""},
+		{"11.8", "3.12", "2.3.0"},
 		{"11.0.3", "3.8", "1.7.1"},
 		{"11.1", "3.8", "1.8.0"},
 		{"11.1.1", "3.8", "1.8.0"},
