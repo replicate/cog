@@ -25,10 +25,11 @@ var buildUseCogBaseImage bool
 
 func newBuildCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "build",
-		Short: "Build an image from cog.yaml",
-		Args:  cobra.NoArgs,
-		RunE:  buildCommand,
+		Use:     "build",
+		Short:   "Build an image from cog.yaml",
+		Args:    cobra.NoArgs,
+		RunE:    buildCommand,
+		PreRunE: checkMutuallyExclusiveFlags,
 	}
 	addBuildProgressOutputFlag(cmd)
 	addSecretsFlag(cmd)
@@ -55,11 +56,6 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 	}
 	if imageName == "" {
 		imageName = config.DockerImageName(projectDir)
-	}
-
-	err = checkMutuallyExclusiveFlags(cmd)
-	if err != nil {
-		return err
 	}
 
 	err = config.ValidateModelPythonVersion(cfg.Build.PythonVersion)
@@ -122,7 +118,7 @@ func addBuildTimestampFlag(cmd *cobra.Command) {
 	_ = cmd.Flags().MarkHidden("timestamp")
 }
 
-func checkMutuallyExclusiveFlags(cmd *cobra.Command) error {
+func checkMutuallyExclusiveFlags(cmd *cobra.Command, args []string) error {
 	flags := []string{"use-cog-base-image", "use-cuda-base-image", "dockerfile"}
 	var flagsSet []string
 	for _, flag := range flags {
