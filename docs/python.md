@@ -314,6 +314,10 @@ Models uploaded to Replicate treat secret inputs differently throughout its syst
 When you create a prediction on Replicate,
 any value passed to a `Secret` input is redacted after being sent to the model.
 
+> [!WARNING]  
+> Passing secret values to untrusted models can result in 
+> unintended disclosure, exfiltration, or misuse of sensitive data.
+
 ## `List`
 
 The List type is also supported in inputs. It can hold any supported type.
