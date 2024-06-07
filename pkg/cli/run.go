@@ -54,12 +54,6 @@ func run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-
-	//err = checkMutuallyExclusiveFlags(cmd)
-	if err != nil {
-		return err
-	}
-
 	imageName, err := image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, buildUseCogBaseImage, buildProgressOutput)
 	if err != nil {
 		return err
