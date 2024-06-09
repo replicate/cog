@@ -30,14 +30,15 @@ type Volume struct {
 }
 
 type RunOptions struct {
-	Args     []string
-	Env      []string
-	GPUs     string
-	Image    string
-	Ports    []Port
-	Volumes  []Volume
-	Workdir  string
-	Platform string
+	Args       []string
+	Env        []string
+	GPUs       string
+	Image      string
+	Ports      []Port
+	Volumes    []Volume
+	Workdir    string
+	Platform   string
+	Mounts     []string
 }
 
 // used for generating arguments, with a few options not exposed by public API
@@ -88,6 +89,9 @@ func generateDockerArgs(options internalRunOptions) []string {
 	if options.Platform != "" {
 		dockerArgs = append(dockerArgs, "--platform", options.Platform)
 	}
+	for _, mount := range options.Mounts {
+		dockerArgs = append(dockerArgs, "--mount", mount)		
+    }
 	dockerArgs = append(dockerArgs, options.Image)
 	dockerArgs = append(dockerArgs, options.Args...)
 	return dockerArgs
