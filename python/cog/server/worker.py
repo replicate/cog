@@ -246,7 +246,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             tb = traceback.format_exc()
             self._log(tb)
             done.error = True
-            done.error_detail = str(e)
+            done.error_detail = str(e) if str(e) else repr(e)
         finally:
             self.prediction_id_context.reset(token)
             self._cancelable = False
