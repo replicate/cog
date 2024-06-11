@@ -44,6 +44,7 @@ func newRunCommand() *cobra.Command {
 	cmd.Flags().StringArrayVarP(&runPorts, "publish", "p", []string{}, "Publish a container's port to the host, e.g. -p 8000")
 	cmd.Flags().StringArrayVarP(&envFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
 	cmd.Flags().StringArrayVarP(&mountFlags, "mount", "", []string{}, "Mount volumes, Consists of multiple key-value pairs, separated by commas and each consisting of a <key>=<value> tuple. E.g. --mount type=bind,source=/host,target=/container,readonly,propagation=shared")
+	cmd.Flags().StringVarP(&imageNameFlag, "name", "n", "", "Image to run container on")
 
 	flags.SetInterspersed(false)
 
@@ -51,11 +52,12 @@ func newRunCommand() *cobra.Command {
 }
 
 func run(cmd *cobra.Command, args []string) error {
+	imageName = imageNameFlag
 	cfg, projectDir, err := config.GetConfig(projectDirFlag)
 	if err != nil {
 		return err
 	}
-	imageName, err := image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, buildUseCogBaseImage, buildProgressOutput)
+	imageName, err := image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, buildUseCogBaseImage, buildProgressOutput, imageName)
 	if err != nil {
 		return err
 	}

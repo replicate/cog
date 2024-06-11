@@ -28,6 +28,7 @@ var (
 	inputFlags     []string
 	outPath        string
 	mountFlags     []string
+	imageNameFlag  string
 )
 
 func newPredictCommand() *cobra.Command {
@@ -56,12 +57,13 @@ the prediction on that.`,
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
 	cmd.Flags().StringArrayVarP(&envFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
 	cmd.Flags().StringArrayVarP(&mountFlags, "mount", "", []string{}, "Mount volumes, Consists of multiple key-value pairs, separated by commas and each consisting of a <key>=<value> tuple. E.g. --mount type=bind,source=/host,target=/container,readonly,propagation=shared")
+	cmd.Flags().StringVarP(&imageNameFlag, "name", "n", "", "Image to run prediction on")
 
 	return cmd
 }
 
 func cmdPredict(cmd *cobra.Command, args []string) error {
-	imageName := ""
+	imageName := imageNameFlag
 	volumes := []docker.Volume{}
 	gpus := gpusFlag
 
@@ -73,7 +75,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		if imageName, err = image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, buildUseCogBaseImage, buildProgressOutput); err != nil {
+		if imageName, err = image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, buildUseCogBaseImage, buildProgressOutput, imageName); err != nil {
 			return err
 		}
 
