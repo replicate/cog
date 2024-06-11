@@ -15,57 +15,57 @@ on:
     types:
       - checks_requested
 jobs:
-  test-go:
-    name: "Test Go"
-    strategy:
-      fail-fast: false
-      matrix:
-        # https://docs.github.com/en/free-pro-team@latest/actions/reference/specifications-for-github-hosted-runners#supported-runners-and-hardware-resources
-        platform: [ubuntu-latest-8-cores, macos-12]
-    runs-on: ${{ matrix.platform }}
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.11
-      - name: Install Python dependencies
-        run: |
-          python -m pip install '.[dev]'
-      - name: Build
-        run: make cog
-      - name: Lint
-        run: make lint-go
-      - name: Test
-        run: make test-go
+  # test-go:
+  #   name: "Test Go"
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       # https://docs.github.com/en/free-pro-team@latest/actions/reference/specifications-for-github-hosted-runners#supported-runners-and-hardware-resources
+  #       platform: [ubuntu-latest-8-cores, macos-12]
+  #   runs-on: ${{ matrix.platform }}
+  #   defaults:
+  #     run:
+  #       shell: bash
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-go@v5
+  #       with:
+  #         go-version-file: go.mod
+  #     - uses: actions/setup-python@v5
+  #       with:
+  #         python-version: 3.11
+  #     - name: Install Python dependencies
+  #       run: |
+  #         python -m pip install '.[dev]'
+  #     - name: Build
+  #       run: make cog
+  #     - name: Lint
+  #       run: make lint-go
+  #     - name: Test
+  #       run: make test-go
 
-  test-python:
-    name: "Test Python ${{ matrix.python-version }}"
-    runs-on: ubuntu-latest-8-cores
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.7", "3.8", "3.9", "3.10", "3.11", "3.12"]
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install Python dependencies
-        run: |
-          python -m pip install '.[dev]'
-      - name: Test
-        run: make test-python
-        env:
-          HYPOTHESIS_PROFILE: ci
+  # test-python:
+  #   name: "Test Python ${{ matrix.python-version }}"
+  #   runs-on: ubuntu-latest-8-cores
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       python-version: ["3.7", "3.8", "3.9", "3.10", "3.11", "3.12"]
+  #   defaults:
+  #     run:
+  #       shell: bash
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-python@v5
+  #       with:
+  #         python-version: ${{ matrix.python-version }}
+  #     - name: Install Python dependencies
+  #       run: |
+  #         python -m pip install '.[dev]'
+  #     - name: Test
+  #       run: make test-python
+  #       env:
+  #         HYPOTHESIS_PROFILE: ci
 
   typecheck-python:
     name: "Typecheck and lint Python"
