@@ -243,7 +243,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         except asyncio.CancelledError:
             done.canceled = True
         except Exception as e:
-            traceback.print_exc()
+            tb = traceback.format_exc()
+            self._log(tb)
             done.error = True
             done.error_detail = str(e)
         finally:
@@ -313,7 +314,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             original_stream.write(data)
             original_stream.flush()
         # this won't work, this fn gets called from a thread, not the async task
-        self._log(data, stream_name)
+        self._log(data, source=stream_name)
 
 
 def get_loop() -> asyncio.AbstractEventLoop:
