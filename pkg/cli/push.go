@@ -51,11 +51,8 @@ func push(cmd *cobra.Command, args []string) error {
 
 	replicatePrefix := fmt.Sprintf("%s/", global.ReplicateRegistryHost)
 	if strings.HasPrefix(imageName, replicatePrefix) {
-		err := ManifestInspect(imageName)
-		if err != nil {
-			if strings.Contains(err.Error(), `"code":"NAME_UNKNOWN"`) {
-				return err
-			}
+		if err := ManifestInspect(imageName); err != nil && strings.Contains(err.Error(), `"code":"NAME_UNKNOWN"`) {
+			return fmt.Errorf("Unable to find Replicate existing model for %s. Go to replicate.com and create a new model before pushing.", imageName)
 		}
 	}
 
