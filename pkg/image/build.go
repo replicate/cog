@@ -33,6 +33,9 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	_ = os.Remove(bundledSchemaFile)
 	_ = os.Remove(bundledSchemaPy)
 
+	var isUsingCogBaseImage bool = false
+	var cogBaseImageName string
+
 	if dockerfileFile != "" {
 		dockerfileContents, err := os.ReadFile(dockerfileFile)
 		if err != nil {
@@ -53,6 +56,14 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}()
 		generator.SetUseCudaBaseImage(useCudaBaseImage)
 		generator.SetUseCogBaseImage(useCogBaseImage)
+
+		if generator.IsUsingCogBaseImage() {
+			isUsingCogBaseImage = true
+			cogBaseImageName, err = generator.BaseImage()
+			if err != nil {
+				return fmt.Errorf("Failed to get cog base image name: %s", err)
+			}
+		}
 
 		if separateWeights {
 			weightsDockerfile, runnerDockerfile, dockerignore, err := generator.GenerateModelBaseWithSeparateWeights(imageName)
@@ -154,6 +165,26 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		// Mark the image as having an appropriate init entrypoint. We can use this
 		// to decide how/if to shim the image.
 		global.LabelNamespace + "has_init": "true",
+	}
+
+	if isUsingCogBaseImage {
+		labels[global.LabelNamespace+"using_cog_base_image"] = "true"
+		labels[global.LabelNamespace + "cog-base-image-name"] = cogBaseImageName
+		// get the last layer of the cog base image so that when we look at the built cog image,
+		// we know where the base image ends
+		cogBaseImage, err := docker.ImageInspect(cogBaseImageName)
+		if err != nil {
+			return fmt.Errorf("Failed to inspect cog base image while trying to fetch last layer: %w", err)
+		}
+
+		if cogBaseImage.RootFS.Layers == nil || len(cogBaseImage.RootFS.Layers) == 0 {
+			return fmt.Errorf("Cog base image has no layers or RootFS is nil: %s", cogBaseImageName)
+		}
+
+		lastLayer := cogBaseImage.RootFS.Layers[len(cogBaseImage.RootFS.Layers)-1]
+		console.Debugf("Last layer of the cog base image: %s", lastLayer) // prints the sha
+
+		labels[global.LabelNamespace + "cog-base-image-last-layer"] = lastLayer
 	}
 
 	if isGitRepo(dir) {

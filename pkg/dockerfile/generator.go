@@ -107,8 +107,11 @@ func (g *Generator) SetUseCogBaseImage(useCogBaseImage bool) {
 	g.useCogBaseImage = useCogBaseImage
 }
 
+func (g *Generator) IsUsingCogBaseImage() (bool) {
+	return g.useCogBaseImage
+}
 func (g *Generator) generateInitialSteps() (string, error) {
-	baseImage, err := g.baseImage()
+	baseImage, err := g.BaseImage()
 	if err != nil {
 		return "", err
 	}
@@ -248,7 +251,7 @@ func (g *Generator) Cleanup() error {
 	return nil
 }
 
-func (g *Generator) baseImage() (string, error) {
+func (g *Generator) BaseImage() (string, error) {
 	if g.useCogBaseImage {
 		cudaVersion := g.Config.Build.CUDA
 		pythonVersion := g.Config.Build.PythonVersion
