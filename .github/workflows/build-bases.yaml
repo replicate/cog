@@ -161,7 +161,7 @@ jobs:
             type=raw,value=${{ env.SHORT_HASH }}
 
       - name: 'Build and Push Base Images'
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
