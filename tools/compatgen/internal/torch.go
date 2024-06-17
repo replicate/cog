@@ -302,6 +302,6 @@ func parsePreviousTorchVersionsCode(code string, compats []config.TorchCompatibi
 // torchvision==0.8.0 should actually be 0.8.1, this is a bug on the website
 func fixTorchCompatibility(compat *config.TorchCompatibility) {
 	if strings.HasPrefix(compat.Torchvision, "0.8.0") {
-		compat.Torchvision = strings.Replace(compat.Torchvision, "0.8.0", "0.8.1", -1)
+		compat.Torchvision = strings.ReplaceAll(compat.Torchvision, "0.8.0", "0.8.1")
 	}
 }
