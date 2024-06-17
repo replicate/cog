@@ -362,6 +362,16 @@
         "code",
         "ideas"
       ]
+    },
+    {
+      "login": "Theodotus1243",
+      "name": "Bohdan Mykhailenko",
+      "avatar_url": "https://avatars.githubusercontent.com/u/32220358?v=4",
+      "profile": "https://github.com/Theodotus1243",
+      "contributions": [
+        "doc",
+        "bug"
+      ]
     }
   ],
   "contributorsPerLine": 7,
