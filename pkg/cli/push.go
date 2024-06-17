@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -10,6 +11,7 @@ import (
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/image"
+	"github.com/replicate/cog/pkg/nix"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -30,6 +32,7 @@ func newPushCommand() *cobra.Command {
 	addDockerfileFlag(cmd)
 	addBuildProgressOutputFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
+	addNixFlag(cmd)
 
 	return cmd
 }
@@ -47,6 +50,10 @@ func push(cmd *cobra.Command, args []string) error {
 
 	if imageName == "" {
 		return fmt.Errorf("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push r8.im/your-username/hotdog-detector'")
+	}
+
+	if buildNix {
+		return nix.NixPush(os.Getenv("REPLICATE_API_TOKEN"), imageName)
 	}
 
 	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, buildUseCogBaseImage); err != nil {
