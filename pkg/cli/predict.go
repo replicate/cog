@@ -145,6 +145,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			predictor = predict.NewPredictor(docker.RunOptions{
 				Image:   imageName,
 				Volumes: volumes,
+				Env:     envFlags,
 			})
 
 			if err := predictor.Start(os.Stderr); err != nil {
@@ -189,11 +190,12 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 	outputSchema := responseSchema.Properties["output"].Value
 
 	// Multiple outputs!
-	if outputSchema.Type == "array" && outputSchema.Items.Value != nil && outputSchema.Items.Value.Type == "string" && outputSchema.Items.Value.Format == "uri" {
+	if outputSchema.Type.Is("array") && outputSchema.Items.Value != nil && outputSchema.Items.Value.Type.Is("string") && outputSchema.Items.Value.Format == "uri" {
 		return handleMultipleFileOutput(prediction, outputSchema)
 	}
 
-	if outputSchema.Type == "string" && outputSchema.Format == "uri" {
+	switch {
+	case outputSchema.Type.Is("string") && outputSchema.Format == "uri":
 		dataurlObj, err := dataurl.DecodeString((*prediction.Output).(string))
 		if err != nil {
 			return fmt.Errorf("Failed to decode dataurl: %w", err)
@@ -206,11 +208,11 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 				outputPath += extension
 			}
 		}
-	} else if outputSchema.Type == "string" {
+	case outputSchema.Type.Is("string"):
 		// Handle strings separately because if we encode it to JSON it will be surrounded by quotes.
 		s := (*prediction.Output).(string)
 		out = []byte(s)
-	} else {
+	default:
 		// Treat everything else as JSON -- ints, floats, bools will all convert correctly.
 		rawJSON, err := json.Marshal(prediction.Output)
 		if err != nil {
@@ -226,7 +228,6 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 		// f := colorjson.NewFormatter()
 		// f.Indent = 2
 		// s, _ := f.Marshal(obj)
-
 	}
 
 	// Write to stdout

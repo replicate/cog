@@ -12,7 +12,7 @@ func DockerImageName(projectDir string) string {
 	projectName := strings.ToLower(path.Base(projectDir))
 
 	// Convert whitespace to dashes
-	projectName = strings.Replace(projectName, " ", "-", -1)
+	projectName = strings.ReplaceAll(projectName, " ", "-")
 
 	// Remove anything non-alphanumeric
 	reg := regexp.MustCompile(`[^a-z0-9\-]+`)

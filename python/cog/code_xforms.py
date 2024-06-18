@@ -7,8 +7,8 @@ COG_IMPORT_MODULES = {"cog", "typing", "sys", "os", "functools", "pydantic", "nu
 
 
 def load_module_from_string(
-    name: str, source: Union[str, None]
-) -> Union[types.ModuleType, None]:
+    name: str, source: Optional[str]
+) -> Optional[types.ModuleType]:
     if not source or not name:
         return None
     module = types.ModuleType(name)
