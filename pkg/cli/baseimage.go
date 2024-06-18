@@ -73,8 +73,7 @@ func newBaseImageGenerateMatrix() *cobra.Command {
 		Use:   "generate-matrix",
 		Short: "Generate a flatten matrix of Cog base image versions (json)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			versions := dockerfile.BaseImageConfigurations()
-			matrix := dockerfile.ToBaseImageConfigurations(versions)
+			matrix := dockerfile.BaseImageConfigurations()
 			output, err := json.Marshal(matrix)
 			if err != nil {
 				return err

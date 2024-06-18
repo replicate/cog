@@ -3,12 +3,17 @@ package dockerfile
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/util/version"
 )
 
 const BaseImageRegistry = "r8.im"
+const MinimumCUDAVersion = "11.6"
+const MinimumPythonVersion = "3.8"
+const MinimumTorchVersion = "1.13.1"
 
 var (
 	baseImageSystemPackages = []string{
@@ -59,7 +64,7 @@ type AvailableBaseImageConfigurations struct {
 }
 
 type BaseImageConfiguration struct {
-	CudaVersion   string `json:"cuda_version" yaml:"cuda_version"`
+	CUDAVersion   string `json:"cuda_version" yaml:"cuda_version"`
 	PythonVersion string `json:"python_version" yaml:"python_version"`
 	TorchVersion  string `json:"torch_version" yaml:"torch_version"`
 }
@@ -70,26 +75,6 @@ type BaseImageGenerator struct {
 	torchVersion  string
 }
 
-func ToBaseImageConfigurations(configurations []AvailableBaseImageConfigurations) []BaseImageConfiguration {
-	var baseImageConfigs []BaseImageConfiguration
-
-	for _, conf := range configurations {
-		for _, pythonVersion := range conf.PythonVersions {
-			for _, torchVersion := range pythonVersion.PyTorch {
-				for _, cudaVersion := range pythonVersion.CUDA {
-					baseImageConfigs = append(baseImageConfigs, BaseImageConfiguration{
-						CudaVersion:   cudaVersion.Version,
-						PythonVersion: pythonVersion.Version,
-						TorchVersion:  torchVersion.Version,
-					})
-				}
-			}
-		}
-	}
-
-	return baseImageConfigs
-}
-
 func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
 	type Alias BaseImageConfiguration
 	type BaseImageConfigWithImageName struct {
@@ -98,7 +83,7 @@ func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
 		Tag       string `json:"image_tag,omitempty" yaml:"image_tag,omitempty"`
 	}
 
-	rawName := BaseImageName(b.CudaVersion, b.PythonVersion, b.TorchVersion)
+	rawName := BaseImageName(b.CUDAVersion, b.PythonVersion, b.TorchVersion)
 	rawName = strings.TrimPrefix(rawName, BaseImageRegistry+"/")
 	split := strings.Split(rawName, ":")
 	if len(split) != 2 {
@@ -114,99 +99,39 @@ func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(alias)
 }
 
-func BaseImageConfigurations() []AvailableBaseImageConfigurations {
-	return []AvailableBaseImageConfigurations{
-		{
-			PythonVersions: []PythonVersion{
-				{
-					Version: "3.11",
-					PyTorch: []PyTorchVersion{
-						{Version: "2.0.0"},
-						{Version: "2.0.1"},
-						{Version: "2.1.0"},
-						{Version: "2.1.1"},
-						{Version: "2.2.0"},
-					},
-					CUDA: []CUDAVersion{
-						{Version: "11.6.2"},
-						{Version: "11.8"},
-					},
-				},
-				{
-					Version: "3.10",
-					PyTorch: []PyTorchVersion{
-						{Version: "1.12.1"},
-					},
-					CUDA: []CUDAVersion{
-						{Version: "11.2"},
-						{Version: "11.3"},
-						{Version: "11.6"},
-						{Version: "11.6.2"},
-						{Version: "11.7"},
-						{Version: "11.7.1"},
-						{Version: "11.8"},
-						{Version: "11.8.0"},
-						{Version: "12.1"},
-					},
-				},
-				{
-					Version: "3.9",
-					PyTorch: []PyTorchVersion{
-						{Version: "1.11.0"},
-						{Version: "1.13.0"},
-						{Version: "2.0.0"},
-						{Version: "2.0.1"},
-					},
-					CUDA: []CUDAVersion{
-						{Version: "11.2"},
-						{Version: "11.3"},
-						{Version: "11.3.1"},
-						{Version: "11.6"},
-						{Version: "11.6.2"},
-						{Version: "11.7"},
-						{Version: "11.7.1"},
-						{Version: "11.8"},
-						{Version: "11.8.0"},
-					},
-				},
-				{
-					Version: "3.8",
-					PyTorch: []PyTorchVersion{
-						{Version: "1.7.1"},
-						{Version: "1.8.0"},
-						{Version: "1.9.0"},
-						{Version: "1.11.0"},
-						{Version: "1.12.1"},
-						{Version: "2.0.0"},
-						{Version: "2.0.1"},
-						{Version: "1.13.0"},
-						{Version: "1.13.1"},
-					},
-					CUDA: []CUDAVersion{
-						{Version: "11.0.3"},
-						{Version: "11.1"},
-						{Version: "11.1.1"},
-						{Version: "11.2"},
-						{Version: "11.3"},
-						{Version: "11.3.1"},
-						{Version: "11.4"},
-						{Version: "11.6"},
-						{Version: "11.6.2"},
-						{Version: "11.7"},
-						{Version: "11.7.1"},
-						{Version: "11.8"},
-						{Version: "11.8.0"},
-					},
-				},
-				{
-					Version: "3.7",
-					CUDA: []CUDAVersion{
-						{Version: "11.8"},
-					},
-				},
-			},
-		},
+// BaseImageConfigurations returns a list of CUDA/Python/Torch versions
+// with patch versions stripped out. Each version is greater or equal to
+// MinimumCUDAVersion/MinimumPythonVersion/MinimumTorchVersion.
+func BaseImageConfigurations() []BaseImageConfiguration {
+	compatMatrixSortedByTorchDesc := make([]config.TorchCompatibility, len(config.TorchCompatibilityMatrix))
+	copy(compatMatrixSortedByTorchDesc, config.TorchCompatibilityMatrix)
+	sort.Slice(compatMatrixSortedByTorchDesc, func(i, j int) bool {
+		return version.Greater(compatMatrixSortedByTorchDesc[j].Torch, compatMatrixSortedByTorchDesc[i].Torch)
+	})
+
+	configsSet := make(map[BaseImageConfiguration]bool)
+	configs := []BaseImageConfiguration{}
+
+	for _, compat := range compatMatrixSortedByTorchDesc {
+		for _, python := range compat.Pythons {
+			cuda := *compat.CUDA
+			torch := version.StripPatch(compat.Torch)
+			conf := BaseImageConfiguration{
+				CUDAVersion:   cuda,
+				PythonVersion: python,
+				TorchVersion:  torch,
+			}
+
+			if version.GreaterOrEqual(*compat.CUDA, MinimumCUDAVersion) &&
+				version.GreaterOrEqual(python, MinimumPythonVersion) &&
+				version.GreaterOrEqual(compat.Torch, MinimumTorchVersion) &&
+				!configsSet[conf] {
+				configs = append(configs, conf)
+				configsSet[conf] = true
+			}
+		}
 	}
+	return configs
 }
 
 func NewBaseImageGenerator(cudaVersion string, pythonVersion string, torchVersion string) (*BaseImageGenerator, error) {
@@ -282,31 +207,8 @@ func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string
 
 func BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion string) bool {
 	for _, conf := range BaseImageConfigurations() {
-		for _, pyVer := range conf.PythonVersions {
-			if pyVer.Version == pythonVersion {
-				// If torchVersion is empty, it means we are checking for Python and CUDA only
-				if torchVersion == "" {
-					for _, cudaVer := range pyVer.CUDA {
-						if cudaVer.Version == cudaVersion {
-							return true
-						}
-					}
-				} else {
-					for _, torchVer := range pyVer.PyTorch {
-						if torchVer.Version == torchVersion {
-							// If CUDA version is empty, it means we are checking for Python and PyTorch only
-							if cudaVersion == "" {
-								return true
-							}
-							for _, cudaVer := range pyVer.CUDA {
-								if cudaVer.Version == cudaVersion {
-									return true
-								}
-							}
-						}
-					}
-				}
-			}
+		if conf.CUDAVersion == cudaVersion && conf.PythonVersion == pythonVersion && conf.TorchVersion == torchVersion {
+			return true
 		}
 	}
 	return false

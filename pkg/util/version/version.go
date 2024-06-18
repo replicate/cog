@@ -67,7 +67,11 @@ func (v *Version) Greater(other *Version) bool {
 }
 
 func (v *Version) Equal(other *Version) bool {
-	return v.Major == other.Major && v.Minor == other.Minor && v.Patch == other.Patch
+	return v.Major == other.Major && v.Minor == other.Minor && v.Patch == other.Patch && v.Metadata == other.Metadata
+}
+
+func (v *Version) GreaterOrEqual(other *Version) bool {
+	return v.Greater(other) || v.Equal(other)
 }
 
 func (v *Version) EqualMinor(other *Version) bool {
@@ -86,6 +90,10 @@ func Greater(v1 string, v2 string) bool {
 	return MustVersion(v1).Greater(MustVersion(v2))
 }
 
+func GreaterOrEqual(v1 string, v2 string) bool {
+	return MustVersion(v1).GreaterOrEqual(MustVersion(v2))
+}
+
 func (v *Version) Matches(other *Version) bool {
 	switch {
 	case v.Major != other.Major:
@@ -101,4 +109,9 @@ func (v *Version) Matches(other *Version) bool {
 
 func Matches(v1 string, v2 string) bool {
 	return MustVersion(v1).Matches(MustVersion(v2))
+}
+
+func StripPatch(v string) string {
+	ver := MustVersion(v)
+	return fmt.Sprintf("%d.%d", ver.Major, ver.Minor)
 }
