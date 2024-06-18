@@ -1,4 +1,4 @@
-# Environment Variables
+# Environment variables
 
 This guide lists the environment variables that change how Cog functions.
 
