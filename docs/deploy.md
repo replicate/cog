@@ -27,6 +27,7 @@ Port 5000 is now serving the API:
 To run a prediction on the model, call the `/predictions` endpoint, passing input in the format expected by your model:
 
     curl http://localhost:5000/predictions -X POST \
+        --header "Content-Type:application/json" \
         --data '{"input": {"image": "https://.../input.jpg"}}'
 
 To view the API documentation in browser for the model that is running, open [http://localhost:5000/docs](http://localhost:5000/docs).
