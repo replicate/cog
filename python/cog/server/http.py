@@ -546,7 +546,7 @@ if __name__ == "__main__":
 
     server_config = uvicorn.Config(
         app,
-        host="0.0.0.0",
+        host="::",
         port=port,
         log_config=None,
         # This is the default, but to be explicit: only run a single worker
