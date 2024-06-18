@@ -44,34 +44,15 @@ func NewBaseImageRootCommand() (*cobra.Command, error) {
 		newBaseImageDockerfileCommand(),
 		newBaseImageBuildCommand(),
 		newBaseImageGenerateMatrix(),
-		newVersionsMatrix(),
 	)
 
 	return &rootCmd, nil
 }
 
-func newVersionsMatrix() *cobra.Command {
-	var cmd = &cobra.Command{
-		Use:   "generate-versions",
-		Short: "Generate a nested matrix of python, cuda, pytorch versions (json)",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			versions := dockerfile.BaseImageConfigurations()
-			output, err := json.Marshal(versions)
-			if err != nil {
-				return err
-			}
-			fmt.Println(string(output))
-			return nil
-		},
-		Args: cobra.MaximumNArgs(0),
-	}
-	return cmd
-}
-
 func newBaseImageGenerateMatrix() *cobra.Command {
 	var cmd = &cobra.Command{
 		Use:   "generate-matrix",
-		Short: "Generate a flatten matrix of Cog base image versions (json)",
+		Short: "Generate a matrix of Cog base image versions (JSON)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			matrix := dockerfile.BaseImageConfigurations()
 			output, err := json.Marshal(matrix)
