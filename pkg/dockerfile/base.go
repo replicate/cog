@@ -112,8 +112,21 @@ func BaseImageConfigurations() []BaseImageConfiguration {
 	configsSet := make(map[BaseImageConfiguration]bool)
 	configs := []BaseImageConfiguration{}
 
+	// Assuming that the Torch versions cover all Python and CUDA versions to avoid
+	// having to hard-code a list of Python versions here.
+	pythonVersionsSet := make(map[string]bool)
+	cudaVersionsSet := make(map[string]bool)
+
+	// Torch configs
 	for _, compat := range compatMatrixSortedByTorchDesc {
 		for _, python := range compat.Pythons {
+
+			// Only support fast cold boots for Torch with CUDA.
+			// Torch without CUDA is a rarely used edge case.
+			if compat.CUDA == nil {
+				continue
+			}
+
 			cuda := *compat.CUDA
 			torch := version.StripPatch(compat.Torch)
 			conf := BaseImageConfiguration{
@@ -122,15 +135,35 @@ func BaseImageConfigurations() []BaseImageConfiguration {
 				TorchVersion:  torch,
 			}
 
-			if version.GreaterOrEqual(*compat.CUDA, MinimumCUDAVersion) &&
+			if (version.GreaterOrEqual(cuda, MinimumCUDAVersion)) &&
 				version.GreaterOrEqual(python, MinimumPythonVersion) &&
 				version.GreaterOrEqual(compat.Torch, MinimumTorchVersion) &&
 				!configsSet[conf] {
 				configs = append(configs, conf)
 				configsSet[conf] = true
+				pythonVersionsSet[python] = true
+				cudaVersionsSet[cuda] = true
 			}
 		}
 	}
+
+	// Python and CUDA-only configs
+	for python := range pythonVersionsSet {
+		for cuda := range cudaVersionsSet {
+			configs = append(configs, BaseImageConfiguration{
+				CUDAVersion:   cuda,
+				PythonVersion: python,
+			})
+		}
+	}
+
+	// Python-only configs
+	for python := range pythonVersionsSet {
+		configs = append(configs, BaseImageConfiguration{
+			PythonVersion: python,
+		})
+	}
+
 	return configs
 }
 
