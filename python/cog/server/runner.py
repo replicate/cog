@@ -511,6 +511,7 @@ class PredictionEventHandler:
         if self.time_share_tracker and self.p.id:
             time_share = self.time_share_tracker.end_tracking(self.p.id)
             self.p.metrics["predict_time_share"] = time_share
+            self.p.metrics["batch_size"] = self.p.metrics["predict_time"] / time_share
         await self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     async def failed(self, error: str) -> None:
