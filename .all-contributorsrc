@@ -372,6 +372,16 @@
         "doc",
         "bug"
       ]
+    },
+    {
+      "login": "one1zero1one",
+      "name": "Daniel Radu",
+      "avatar_url": "https://avatars.githubusercontent.com/u/724604?v=4",
+      "profile": "https://github.com/one1zero1one",
+      "contributions": [
+        "doc",
+        "bug"
+      ]
     }
   ],
   "contributorsPerLine": 7,
