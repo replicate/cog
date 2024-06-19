@@ -4,14 +4,17 @@ on:
   push:
     branches:
       - main
+      - async
     tags:
       - "**"
   pull_request:
     branches:
       - main
+      - async
   merge_group:
     branches:
       - main
+      - async
     types:
       - checks_requested
 jobs:

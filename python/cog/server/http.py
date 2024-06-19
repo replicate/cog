@@ -27,17 +27,14 @@ if TYPE_CHECKING:
 import attrs
 import structlog
 import uvicorn
-from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
+from fastapi import Body, FastAPI, Header, Path, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
 from pydantic.error_wrappers import ErrorWrapper
 
 from .. import schema
 from ..errors import PredictorNotSet
-from ..files import upload_file
-from ..json import upload_files
 from ..logging import setup_logging
 from ..predictor import (
     get_input_type,
@@ -135,10 +132,13 @@ def create_app(
         add_setup_failed_routes(app, started_at, msg)
         return app
 
+    concurrency = config.get("concurrency", {}).get("max", "1")
+
     runner = PredictionRunner(
         predictor_ref=predictor_ref,
         shutdown_event=shutdown_event,
         upload_url=upload_url,
+        concurrency=int(concurrency),
     )
 
     class PredictionRequest(schema.PredictionRequest.with_types(input_type=InputType)):
@@ -257,13 +257,28 @@ def create_app(
 
     @app.get("/health-check")
     async def healthcheck() -> Any:
-        _check_setup_result()
+        await _check_setup_task()
         if app.state.health == Health.READY:
             health = Health.BUSY if runner.is_busy() else Health.READY
         else:
             health = app.state.health
         setup = attrs.asdict(app.state.setup_result) if app.state.setup_result else {}
-        return jsonable_encoder({"status": health.name, "setup": setup})
+        activity = runner.activity_info()
+        return jsonable_encoder(
+            {"status": health.name, "setup": setup, "concurrency": activity}
+        )
+
+    # this is a readiness probe, it only returns 200 when work can be accepted
+    @app.get("/ready")
+    async def ready() -> Any:
+        activity = runner.activity_info()
+        if runner.is_busy():
+            return JSONResponse(
+                {"status": "ready", "activity": activity}, status_code=200
+            )
+        return JSONResponse(
+            {"status": "not ready", "activity": activity}, status_code=503
+        )
 
     @limited
     @app.post(
@@ -289,10 +304,7 @@ def create_app(
         respond_async = prefer == "respond-async"
 
         with trace_context(make_trace_context(traceparent, tracestate)):
-            return _predict(
-                request=request,
-                respond_async=respond_async,
-            )
+            return await shared_predict(request=request, respond_async=respond_async)
 
     @limited
     @app.put(
@@ -311,16 +323,8 @@ def create_app(
         Run a single prediction on the model (idempotent creation).
         """
         if request.id is not None and request.id != prediction_id:
-            raise RequestValidationError(
-                [
-                    ErrorWrapper(
-                        ValueError(
-                            "prediction ID must match the ID supplied in the URL"
-                        ),
-                        ("body", "id"),
-                    )
-                ]
-            )
+            err = ValueError("prediction ID must match the ID supplied in the URL")
+            raise RequestValidationError([ErrorWrapper(err, ("body", "id"))])
 
         # We've already checked that the IDs match, now ensure that an ID is
         # set on the prediction object
@@ -330,15 +334,13 @@ def create_app(
         respond_async = prefer == "respond-async"
 
         with trace_context(make_trace_context(traceparent, tracestate)):
-            return _predict(
+            return shared_predict(
                 request=request,
                 respond_async=respond_async,
             )
 
-    def _predict(
-        *,
-        request: Optional[PredictionRequest],
-        respond_async: bool = False,
+    async def shared_predict(
+        *, request: Optional[PredictionRequest], respond_async: bool = False
     ) -> Response:
         # [compat] If no body is supplied, assume that this model can be run
         # with empty input. This will throw a ValidationError if that's not
@@ -351,13 +353,10 @@ def create_app(
             request.input = {}
 
         try:
-            # For now, we only ask PredictionRunner to handle file uploads for
-            # async predictions. This is unfortunate but required to ensure
-            # backwards-compatible behaviour for synchronous predictions.
-            initial_response, async_result = runner.predict(
-                request,
-                upload=respond_async,
-            )
+            # Previously, we only asked PredictionRunner to handle file uploads for
+            # async predictions. However, PredictionRunner now handles data uris.
+            # If we ever want to do output_file_prefix, runner also sees that
+            initial_response, async_result = runner.predict(request)
         except RunnerBusyError:
             return JSONResponse(
                 {"detail": "Already running a prediction"}, status_code=409
@@ -366,20 +365,24 @@ def create_app(
         if respond_async:
             return JSONResponse(jsonable_encoder(initial_response), status_code=202)
 
-        try:
-            response = PredictionResponse(**async_result.get().dict())
-        except ValidationError as e:
-            _log_invalid_output(e)
-            raise HTTPException(status_code=500, detail=str(e)) from e
+        # # by now, output Path and File are already converted to str
+        # # so when we validate the schema, those urls get cast back to Path and File
+        # # in the previous implementation those would then get encoded as strings
+        # # however the changes to Path and File break this and return the filename instead
+        #
+        # # moreover, validating outputs can be a bottleneck with enough volume
+        # # since it's not strictly needed, we can comment it out
+        # try:
+        #     prediction = await async_result
+        #     # we're only doing this to catch validation errors
+        #     response = PredictionResponse(**prediction.dict())
+        #     del response
+        # except ValidationError as e:
+        #     _log_invalid_output(e)
+        #     raise HTTPException(status_code=500, detail=str(e)) from e
 
-        response_object = response.dict()
-        response_object["output"] = upload_files(
-            response_object["output"],
-            upload_file=lambda fh: upload_file(fh, request.output_file_prefix),  # type: ignore
-        )
-
-        # FIXME: clean up output files
-        encoded_response = jsonable_encoder(response_object)
+        prediction = await async_result
+        encoded_response = jsonable_encoder(prediction.dict())
         return JSONResponse(content=encoded_response)
 
     @app.post("/predictions/{prediction_id}/cancel")
@@ -387,8 +390,7 @@ def create_app(
         """
         Cancel a running prediction
         """
-        if not runner.is_busy():
-            return JSONResponse({}, status_code=404)
+        # no need to check whether or not we're busy
         try:
             runner.cancel(prediction_id)
         except UnknownPredictionError:
@@ -396,14 +398,15 @@ def create_app(
         else:
             return JSONResponse({}, status_code=200)
 
-    def _check_setup_result() -> Any:
+    async def _check_setup_task() -> Any:
         if app.state.setup_task is None:
             return
 
-        if not app.state.setup_task.ready():
+        if not app.state.setup_task.done():
             return
 
-        result = app.state.setup_task.get()
+        # this can raise CancelledError
+        result = app.state.setup_task.result()
 
         if result.status == schema.Status.SUCCEEDED:
             app.state.health = Health.READY
@@ -442,7 +445,6 @@ class Server(uvicorn.Server):
 
     def stop(self) -> None:
         log.info("stopping server")
-        self.should_exit = True
 
         self._thread.join(timeout=5)
         if not self._thread.is_alive():

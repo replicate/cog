@@ -6,7 +6,7 @@ def test_run(tmpdir_factory):
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
 build:
-  python_version: "3.8"
+  python_version: "3.9"
         """
         f.write(cog_yaml)
 
@@ -24,7 +24,7 @@ def test_run_with_secret(tmpdir_factory):
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
 build:
-  python_version: "3.8"
+  python_version: "3.9"
   run:
     - echo hello world
     - command: >-
