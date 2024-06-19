@@ -176,10 +176,13 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	return nil
 }
 
-func BuildBase(cfg *config.Config, dir string, useCudaBaseImage string, useCogBaseImage bool, progressOutput string) (string, error) {
+func BuildBase(cfg *config.Config, dir string, useCudaBaseImage string, useCogBaseImage bool, progressOutput string, image string) (string, error) {
 	// TODO: better image management so we don't eat up disk space
 	// https://github.com/replicate/cog/issues/80
-	imageName := config.BaseDockerImageName(dir)
+	imageName := image
+	if image == "" {
+		imageName = config.BaseDockerImageName(dir)
+	}
 
 	console.Info("Building Docker image from environment in cog.yaml...")
 	generator, err := dockerfile.NewGenerator(cfg, dir)

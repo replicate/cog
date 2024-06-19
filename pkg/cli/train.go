@@ -37,12 +37,14 @@ It will build the model in the current directory and train it.`,
 
 	cmd.Flags().StringArrayVarP(&trainInputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringArrayVarP(&envFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
+	cmd.Flags().StringArrayVarP(&mountFlags, "mount", "", []string{}, "Mount volumes, Consists of multiple key-value pairs, separated by commas and each consisting of a <key>=<value> tuple. E.g. --mount type=bind,source=/host,target=/container,readonly,propagation=shared")
+	cmd.Flags().StringVarP(&imageNameFlag, "name", "n", "", "Image to run train on")
 
 	return cmd
 }
 
 func cmdTrain(cmd *cobra.Command, args []string) error {
-	imageName := ""
+	imageName := imageNameFlag
 	volumes := []docker.Volume{}
 	gpus := ""
 	weightsPath := "weights"
@@ -54,7 +56,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if imageName, err = image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, buildUseCogBaseImage, buildProgressOutput); err != nil {
+	if imageName, err = image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, buildUseCogBaseImage, buildProgressOutput, imageName); err != nil {
 		return err
 	}
 
@@ -77,6 +79,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		Volumes: volumes,
 		Env:     envFlags,
 		Args:    []string{"python", "-m", "cog.server.http", "--x-mode", "train"},
+		Mounts:   mountFlags,
 	})
 
 	go func() {
