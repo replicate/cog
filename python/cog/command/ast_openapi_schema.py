@@ -353,17 +353,24 @@ def to_serializable(val: "AstVal") -> "JSONObject":
 
 def get_value(node: ast.AST) -> "AstVal":
     """Return the value of constant or list of constants"""
-    if isinstance(node, ast.Constant):
-        return node.value
-    # for python3.7, were deprecated for Constant
-    if isinstance(node, (ast.Str, ast.Bytes)):
-        return node.s
-    if isinstance(node, ast.Num):
-        return node.n
+    # Deprecated since version 3.8:
+    # Old classes ast.Num, ast.Str, ast.Bytes, ast.NameConstant and ast.Ellipsis
+    # are still available, but they will be removed in Python 3.14.
+    if sys.version_info <= (3, 7):  # noqa
+        if isinstance(node, (ast.Str, ast.Bytes)):
+            return node.s
+        if isinstance(node, ast.Num):
+            return node.n
+    else:
+        if isinstance(node, ast.Constant):
+            return node.value
+
     if isinstance(node, (ast.List, ast.Tuple)):
         return [get_value(e) for e in node.elts]
+
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
         return -typing.cast(typing.Union[int, float, complex], get_value(node.operand))
+
     raise ValueError("Unexpected node type", type(node))
 
 
@@ -538,7 +545,20 @@ def extract_info(code: str) -> "JSONDict":
                     msg = "unknown argument for Input"
                     raise ValueError(msg)
                 kws[kw.arg] = to_serializable(get_value(kw.value))
-        elif isinstance(default, (ast.Constant, ast.List, ast.Tuple, ast.Str, ast.Num)):
+        elif isinstance(
+            default,
+            # Deprecated since version 3.8:
+            # Old classes ast.Num, ast.Str, ast.Bytes, ast.NameConstant and ast.Ellipsis
+            # are still available, but they will be removed in Python 3.14.
+            ast.Constant
+            if sys.version_info > (3, 7)
+            else (
+                ast.List,
+                ast.Tuple,
+                ast.Str,
+                ast.Num,
+            ),
+        ):
             kws = {"default": to_serializable(get_value(default))}  # could be None
         elif default == ...:  # no default
             kws = {}

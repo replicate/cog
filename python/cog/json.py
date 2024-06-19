@@ -5,6 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from cog.types import PYDANTIC_V2
+
 
 def make_encodeable(obj: Any) -> Any:
     """
@@ -15,7 +17,10 @@ def make_encodeable(obj: Any) -> Any:
     Somewhat based on FastAPI's jsonable_encoder().
     """
     if isinstance(obj, BaseModel):
-        return make_encodeable(obj.dict(exclude_unset=True))
+        if PYDANTIC_V2:
+            return make_encodeable(obj.model_dump())
+        else:
+            return make_encodeable(obj.dict(exclude_unset=True))
     if isinstance(obj, dict):
         return {key: make_encodeable(value) for key, value in obj.items()}
     if isinstance(obj, (list, set, frozenset, GeneratorType, tuple)):

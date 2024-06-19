@@ -4,8 +4,8 @@ Untitled*.ipynb
 __pycache__
 .cog
 .hypothesis/
-build
-dist
+build/
+dist/
 *.egg-info
 pkg/dockerfile/embed/cog.whl
 # Used by a vim plugin (projectionist)
@@ -15,3 +15,5 @@ pkg/dockerfile/embed/cog.whl
 .DS_Store
 docs/README.md
 docs/CONTRIBUTING.md
+.ruff_cache/
+.pytest_cache/

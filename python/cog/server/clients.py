@@ -11,7 +11,7 @@ from fastapi.encoders import jsonable_encoder
 
 from .. import types
 from ..schema import PredictionResponse, Status, WebhookEvent
-from ..types import Path
+from ..types import PYDANTIC_V2, File, Path
 from .eventtypes import PredictionInput
 from .response_throttler import ResponseThrottler
 from .retry_transport import RetryTransport
@@ -142,7 +142,15 @@ class ClientManager:
                 if throttler.should_send_response(response):
                     # jsonable_encoder is quite slow in context, it would be ideal
                     # to skip the heavy parts of this for well-known output types
-                    dict_response = jsonable_encoder(response.dict(exclude_unset=True))
+                    if PYDANTIC_V2:
+                        dict_response = jsonable_encoder(
+                            response.model_dump(exclude_unset=True)
+                        )
+                    else:
+                        dict_response = jsonable_encoder(
+                            response.dict(exclude_unset=True)
+                        )
+
                     await self.send_webhook(url, dict_response, event)
                     throttler.update_last_sent_response_time()
 
@@ -198,13 +206,26 @@ class ClientManager:
                 log.info("got file upload redirect from api")
                 url = resp1.headers["Location"]
         log.info("doing real upload to %s", url)
-        resp = await self.file_client.put(
-            url,
-            content=chunk_file_reader(),
-            headers={"Content-Type": content_type},
-        )
-        # TODO: if file size is >1MB, show upload throughput
-        resp.raise_for_status()
+        try:
+            resp = await self.file_client.put(
+                url,
+                content=chunk_file_reader(),
+                headers={"Content-Type": content_type},
+            )
+            # TODO: if file size is >1MB, show upload throughput
+            resp.raise_for_status()
+        except httpx.StreamConsumed:
+            log.warn(
+                "got StreamConsumed error while attempting to do streaming upload, likely because of multiple redirects. retrying without streaming (will be slower)"
+            )
+            fh.seek(0)
+            resp = await self.file_client.put(
+                url,
+                content=fh.read(),
+                headers={"Content-Type": content_type},
+            )
+            # TODO: if file size is >1MB, show upload throughput
+            resp.raise_for_status()
 
         # strip any signing gubbins from the URL
         final_url = urlparse(str(resp.url))._replace(query="").geturl()
@@ -232,11 +253,30 @@ class ClientManager:
             }
         if isinstance(obj, list):
             return [await self.upload_files(value, url) for value in obj]
-        if isinstance(obj, Path):
-            with obj.open("rb") as f:
-                return await self.upload_file(f, url)
-        if isinstance(obj, io.IOBase):
-            return await self.upload_file(obj, url)
+
+        if PYDANTIC_V2:
+            from pydantic import TypeAdapter
+
+            try:
+                if TypeAdapter(Path).validate_python(obj):
+                    with obj.open("rb") as f:
+                        return await self.upload_file(f, url)
+            except Exception:  # pylint: disable=broad-except # noqa: S110
+                pass
+
+            try:
+                if TypeAdapter(File).validate_python(obj):
+                    return await self.upload_file(obj, url)
+            except Exception:  # pylint: disable=broad-except # noqa: S110
+                pass
+        else:
+            if isinstance(obj, Path):
+                with obj.open("rb") as f:
+                    return await self.upload_file(f, url)
+
+            if isinstance(obj, io.IOBase):
+                return await self.upload_file(obj, url)
+
         return obj
 
     # inputs

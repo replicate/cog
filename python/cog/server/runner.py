@@ -18,6 +18,7 @@ import structlog
 from attrs import define
 
 from .. import schema, types
+from ..types import PYDANTIC_V2
 from .clients import SKIP_START_EVENT, ClientManager
 from .connection import AsyncConnection
 from .eventtypes import (
@@ -122,7 +123,9 @@ class PredictionRunner:
         self._shutdown_event = shutdown_event  # __main__ waits for this event
 
         self._upload_url = upload_url
-        self._predictions: dict[str, tuple[schema.PredictionResponse, PredictionTask]] = {}
+        self._predictions: dict[
+            str, tuple[schema.PredictionResponse, PredictionTask]
+        ] = {}
         self._predictions_in_flight: set[str] = set()
         # it would be lovely to merge these but it's not fully clear how best to handle it
         # since idempotent requests can kinda come whenever?
@@ -291,7 +294,7 @@ class PredictionRunner:
 
         # if upload url was not set, we can respect output_file_prefix
         # but maybe we should just throw an error
-        upload_url = request.output_file_prefix or self._upload_url
+        upload_url = str(request.output_file_prefix or self._upload_url)
         # this is supposed to send START, but we're trapped in a sync function
         # this sends START in a task, which calls jsonable_encoder on the input,
         # which calls iter(io.BytesIO) with data uris that are File
@@ -450,7 +453,10 @@ class PredictionEventHandler:
         self.logger = logger or log.bind()
         self.logger.info("starting prediction")
         # maybe this should be a deep copy to not share File state with child worker
-        self.p = schema.PredictionResponse(**request.dict())
+        if PYDANTIC_V2:
+            self.p = schema.PredictionResponse(**request.model_dump())
+        else:
+            self.p = schema.PredictionResponse(**request.dict())
         self.p.metrics = {}
         self.p.status = schema.Status.PROCESSING
         self.p.output = None
@@ -459,7 +465,7 @@ class PredictionEventHandler:
 
         self._client_manager = client_manager
         self._webhook_sender = client_manager.make_webhook_sender(
-            request.webhook,
+            str(request.webhook),
             request.webhook_events_filter or schema.WebhookEvent.default_events(),
         )
         self._upload_url = upload_url

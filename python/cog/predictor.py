@@ -25,6 +25,7 @@ try:
 except ImportError:  # Python < 3.8
     from typing_compat import get_args, get_origin  # type: ignore
 
+import pydantic
 import yaml
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
@@ -33,10 +34,10 @@ from pydantic.fields import FieldInfo
 from typing_extensions import Annotated
 
 from .errors import ConfigDoesNotExist, PredictorNotSet
+from .types import PYDANTIC_V2, Input
 from .types import (
     File as CogFile,
 )
-from .types import Input
 from .types import (
     Path as CogPath,
 )
@@ -107,20 +108,38 @@ def get_weights_argument(
     # up a little bit.
     # TODO: CogFile/CogPath should have subclasses for each of the subtypes
 
-    # this is a breaking change
-    # previously, CogPath wouldn't be converted in setup(); now it is
-    # essentially everyone needs to switch from Path to str (or a new URL type)
-    if weights_url:
-        if weights_type == CogFile:
-            return cast(CogFile, CogFile.validate(weights_url))
-        if weights_type == CogPath:
-            # TODO: So this can be a url. evil!
-            return cast(CogPath, CogPath.validate(weights_url))
-        if weights_type == str:
-            return weights_url
-        raise ValueError(
-            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
-        )
+    if PYDANTIC_V2:
+        from pydantic import TypeAdapter
+
+        if weights_url:
+            for t in [CogFile, CogPath]:
+                try:
+                    return TypeAdapter(t).validate_python(weights_url)
+                except Exception:  # pylint: disable=broad-except # noqa: S110
+                    pass
+
+            if weights_type == str:
+                return weights_url
+
+            raise ValueError(
+                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
+            )
+    else:
+        # this is a breaking change
+        # previously, CogPath wouldn't be converted in setup(); now it is
+        # essentially everyone needs to switch from Path to str (or a new URL type)
+        if weights_url:
+            if weights_type == CogFile:
+                return cast(CogFile, CogFile.validate(weights_url))
+            if weights_type == CogPath:
+                # TODO: So this can be a url. evil!
+                return cast(CogPath, CogPath.validate(weights_url))
+            if weights_type == str:
+                return weights_url
+            raise ValueError(
+                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
+            )
+
     if os.path.exists(weights_path):
         if weights_type == CogFile:
             return cast(CogFile, open(weights_path, "rb"))
@@ -223,10 +242,14 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
 # Base class for inputs, constructed dynamically in get_input_type().
 # (This can't be a docstring or it gets passed through to the schema.)
 class BaseInput(BaseModel):
-    class Config:
-        # When using `choices`, the type is converted into an enum to validate
-        # But, after validation, we want to pass the actual value to predict(), not the enum object
-        use_enum_values = True
+    if PYDANTIC_V2:
+        model_config = pydantic.ConfigDict(use_enum_values=True)  # type: ignore
+    else:
+
+        class Config:
+            # When using `choices`, the type is converted into an enum to validate
+            # But, after validation, we want to pass the actual value to predict(), not the enum object
+            use_enum_values = True
 
     def cleanup(self) -> None:
         """
@@ -284,21 +307,29 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
         if parameter.default is inspect.Signature.empty:
             default = Input()
         else:
-            default = parameter.default
-            # If user hasn't used `Input`, then wrap it in that
-            if not isinstance(default, FieldInfo):
-                default = Input(default=default)
+            if not isinstance(parameter.default, FieldInfo):
+                default = Input(default=parameter.default)
+            else:
+                default = parameter.default
 
-        # Fields aren't ordered, so use this pattern to ensure defined order
-        # https://github.com/go-openapi/spec/pull/116
-        default.extra["x-order"] = order
+        if PYDANTIC_V2:
+            # https://github.com/pydantic/pydantic/blob/2.7/pydantic/json_schema.py#L1436-L1446
+            # json_schema_extra can be a callable, but we don't set that and users shouldn't set that
+            if not default.json_schema_extra:  # type: ignore
+                default.json_schema_extra = {}  # type: ignore
+            assert isinstance(default.json_schema_extra, dict)  # type: ignore
+            extra = default.json_schema_extra  # type: ignore
+        else:
+            extra = default.extra  # type: ignore
+        extra["x-order"] = order
         order += 1
 
         # Choices!
-        if default.extra.get("choices"):
-            choices = default.extra["choices"]
-            # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
-            del default.extra["choices"]
+        # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
+        choices = extra.pop("choices", None)
+        if choices:
+            assert isinstance(choices, list), "choices must be a list"
+
             if InputType == str:
 
                 class StringEnum(str, enum.Enum):
@@ -382,7 +413,10 @@ For example:
     if get_origin(OutputType) in {Iterator, AsyncIterator}:
         # Annotated allows us to attach Field annotations to the list, which we use to mark that this is an iterator
         # https://pydantic-docs.helpmanual.io/usage/schema/#typingannotated-fields
-        field = Field(**{"x-cog-array-type": "iterator"})  # type: ignore
+        if PYDANTIC_V2:
+            field = Field(json_schema_extra={"x-cog-array-type": "iterator"})
+        else:
+            field = Field(**{"x-cog-array-type": "iterator"})  # type: ignore
         OutputType: Type[BaseModel] = Annotated[List[get_args(OutputType)[0]], field]  # type: ignore
 
     name = OutputType.__name__ if hasattr(OutputType, "__name__") else ""
@@ -411,9 +445,14 @@ For example:
 
         return Output
     else:
+        if PYDANTIC_V2:
 
-        class Output(BaseModel):
-            __root__: OutputType  # type: ignore
+            class Output(pydantic.RootModel[OutputType]):  # type: ignore
+                pass
+        else:
+
+            class Output(BaseModel):
+                __root__: OutputType  # type: ignore
 
         return Output
 
@@ -492,8 +531,15 @@ For example:
 
         return TrainingOutput
 
-    class TrainingOutput(BaseModel):
-        __root__: TrainingOutputType  # type: ignore
+    if PYDANTIC_V2:
+
+        class TrainingOutput(pydantic.RootModel[TrainingOutputType]):  # type: ignore
+            pass
+
+    else:
+
+        class TrainingOutput(BaseModel):
+            __root__: TrainingOutputType  # type: ignore
 
     return TrainingOutput
 

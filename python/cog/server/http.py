@@ -9,6 +9,7 @@ import sys
 import textwrap
 import threading
 import traceback
+import warnings
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
 from typing import (
@@ -17,6 +18,7 @@ from typing import (
     Awaitable,
     Callable,
     Dict,
+    List,
     Optional,
     TypeVar,
     Union,
@@ -25,14 +27,14 @@ from typing import (
 if TYPE_CHECKING:
     from typing import ParamSpec
 
+
 import attrs
 import structlog
 import uvicorn
 from fastapi import Body, FastAPI, Header, Path, Response
 from fastapi.encoders import jsonable_encoder
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
-from pydantic.error_wrappers import ErrorWrapper
 
 from .. import schema
 from ..logging import setup_logging
@@ -45,6 +47,7 @@ from ..predictor import (
     load_config,
     load_predictor_from_ref,
 )
+from ..types import PYDANTIC_V2
 from .runner import (
     PredictionRunner,
     RunnerBusyError,
@@ -106,6 +109,98 @@ def create_app(
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
     )
+
+    # Pydantic 2 changes how optional fields are represented in OpenAPI schema.
+    # See: https://github.com/tiangolo/fastapi/pull/9873#issuecomment-1997105091
+    if PYDANTIC_V2:
+        from fastapi.openapi.utils import get_openapi
+
+        def remove_nullable_anyof(
+            openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
+        ) -> None:
+            if isinstance(openapi_schema, dict):
+                for key, value in list(openapi_schema.items()):
+                    if key == "anyOf" and isinstance(value, list):
+                        non_null_types = [
+                            item for item in value if item.get("type") != "null"
+                        ]
+                        if len(value) > len(non_null_types) == 1:
+                            openapi_schema.update(non_null_types[0])
+                            del openapi_schema[key]
+
+                            # FIXME: Update tests to expect nullable
+                            # openapi_schema["nullable"] = True
+
+                    else:
+                        remove_nullable_anyof(value)
+            elif isinstance(openapi_schema, list):  # pyright: ignore
+                for item in openapi_schema:
+                    remove_nullable_anyof(item)
+
+        def flatten_selected_allof_refs(
+            openapi_schema: Dict[str, Any],
+        ) -> None:
+            try:
+                response = openapi_schema["components"]["schemas"]["PredictionResponse"]
+                response["properties"]["output"] = {
+                    "$ref": "#/components/schemas/Output"
+                }
+            except KeyError:
+                pass
+
+            for _key, value in (
+                openapi_schema.get("components", {}).get("schemas", {}).items()
+            ):
+                if (
+                    value.get("allOf")
+                    and len(value.get("allOf")) == 1
+                    and value["allOf"][0].get("$ref")
+                ):
+                    value["$ref"] = value["allOf"][0]["$ref"]
+                    del value["allOf"]
+
+            try:
+                path = openapi_schema["paths"]["/predictions"]["post"]
+                body = path["requestBody"]
+                body["content"]["application/json"]["schema"] = {
+                    "$ref": "#/components/schemas/PredictionRequest"
+                }
+            except KeyError:
+                pass
+
+        def set_default_enumeration_description(
+            openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
+        ) -> None:
+            if isinstance(openapi_schema, dict):
+                for _key, value in list(openapi_schema.items()):
+                    if isinstance(value, dict) and value.get("enum"):
+                        value["description"] = value.get(
+                            "description", "An enumeration."
+                        )
+                    else:
+                        set_default_enumeration_description(value)
+            elif isinstance(openapi_schema, list):  # pyright: ignore
+                for item in openapi_schema:
+                    set_default_enumeration_description(item)
+
+        def custom_openapi() -> Dict[str, Any]:
+            if not app.openapi_schema:
+                openapi_schema = get_openapi(
+                    title="Cog",
+                    openapi_version="3.0.2",
+                    version="0.1.0",
+                    routes=app.routes,
+                )
+
+                remove_nullable_anyof(openapi_schema)
+                flatten_selected_allof_refs(openapi_schema)
+                set_default_enumeration_description(openapi_schema)
+
+                app.openapi_schema = openapi_schema
+
+            return app.openapi_schema
+
+        app.openapi = custom_openapi
 
     app.state.health = Health.STARTING
     app.state.setup_task = None
@@ -209,22 +304,30 @@ def create_app(
         def cancel_training(training_id: str = Path(..., title="Training ID")) -> Any:
             return cancel(training_id)
 
-    @app.on_event("startup")
-    def startup() -> None:
-        # check for early setup failures
-        if (
-            app.state.setup_result
-            and app.state.setup_result.status == schema.Status.FAILED
-        ):
-            if not args.await_explicit_shutdown:  # signal shutdown if interactive run
-                if shutdown_event is not None:
-                    shutdown_event.set()
-        else:
-            app.state.setup_task = runner.setup()
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            category=DeprecationWarning,
+        )
 
-    @app.on_event("shutdown")
-    def shutdown() -> None:
-        runner.shutdown()
+        @app.on_event("startup")
+        def startup() -> None:
+            # check for early setup failures
+            if (
+                app.state.setup_result
+                and app.state.setup_result.status == schema.Status.FAILED
+            ):
+                if (
+                    not args.await_explicit_shutdown
+                ):  # signal shutdown if interactive run
+                    if shutdown_event is not None:
+                        shutdown_event.set()
+            else:
+                app.state.setup_task = runner.setup()
+
+        @app.on_event("shutdown")
+        def shutdown() -> None:
+            runner.shutdown()
 
     @app.get("/")
     async def root() -> Any:
@@ -297,8 +400,12 @@ def create_app(
         Run a single prediction on the model (idempotent creation).
         """
         if request.id is not None and request.id != prediction_id:
-            err = ValueError("prediction ID must match the ID supplied in the URL")
-            raise RequestValidationError([ErrorWrapper(err, ("body", "id"))])
+            body = {
+                "loc": ("body", "id"),
+                "msg": "prediction ID must match the ID supplied in the URL",
+                "type": "value_error",
+            }
+            raise HTTPException(422, [body])
 
         # We've already checked that the IDs match, now ensure that an ID is
         # set on the prediction object
@@ -352,7 +459,11 @@ def create_app(
         #     raise HTTPException(status_code=500, detail=str(e)) from e
 
         prediction = await async_result
-        encoded_response = jsonable_encoder(prediction.dict())
+
+        if PYDANTIC_V2:
+            encoded_response = jsonable_encoder(prediction.model_dump())
+        else:
+            encoded_response = jsonable_encoder(prediction.dict())
         return JSONResponse(content=encoded_response)
 
     @app.post("/predictions/{prediction_id}/cancel")

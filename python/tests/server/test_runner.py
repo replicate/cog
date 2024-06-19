@@ -83,7 +83,7 @@ async def test_prediction_runner_async():
     await runner.setup()
     results = []
     st = time.time()
-    for i in range(10):
+    for _i in range(10):
         _, result = runner.predict(PredictionRequest(input={"sleep": 0.1}))
         results.append(result)
     with pytest.raises(RunnerBusyError):
