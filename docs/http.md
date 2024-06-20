@@ -224,12 +224,11 @@ before new ones (with new IDs) are created.
 
 ### `POST /predictions/<prediction_id>/cancel`
 
-While an asynchronous prediction is running, clients can cancel it by making a
-request to `POST /predictions/<prediction_id>/cancel`. The prediction `id` must
-have been supplied when creating the prediction. Predictions created without a
-supplied `id` field will not be cancelable.
+A client can cancel an asynchronous prediction by making a 
+`POST /predictions/<prediction_id>/cancel` request
+using the prediction `id` provided when the prediction was created.
 
-For example, if a prediction is created with
+For example, if a prediction is created with:
 
 ```http
 POST /predictions HTTP/1.1
@@ -242,12 +241,12 @@ Prefer: respond-async
 }
 ```
 
-it can be canceled with
+It can be canceled with:
 
 ```http
 POST /predictions/abcd1234/cancel HTTP/1.1
 ```
 
-Use of the cancelation API to cancel predictions started "synchronously" (i.e.
-without the `Prefer: respond-async` header) is currently not supported. This may
-change in a future release of Cog.
+Predictions cannot be canceled if they're 
+created without a provided `id`
+or synchronously, without the `Prefer: respond-async` header.
