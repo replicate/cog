@@ -46,7 +46,9 @@ from .types import (
 from .types import (
     File as CogFile,
 )
-from .types import Path as CogPath
+from .types import (
+    Path as CogPath,
+)
 from .types import Secret as CogSecret
 
 log = structlog.get_logger("cog.server.predictor")

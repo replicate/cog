@@ -7,10 +7,10 @@ import tempfile
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
-from typing_extensions import NotRequired, TypedDict
 
 import requests
 from pydantic import Field, SecretStr
+from typing_extensions import NotRequired, TypedDict
 
 FILENAME_ILLEGAL_CHARS = set("\u0000/")
 
