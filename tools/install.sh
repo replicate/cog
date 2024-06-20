@@ -138,9 +138,9 @@ print_success() {
 
 main() {
 
-  # Check if OS X
+  # Check if macOS
   if [ "$(uname -s)" = "Darwin" ]; then
-    echo "On OS X, it is recommended to install cog using Homebrew instead:"
+    echo "On macOS, it is recommended to install cog using Homebrew instead:"
     echo \`brew install cog\`
     echo "Do you want to continue with this installation anyway?"
     
