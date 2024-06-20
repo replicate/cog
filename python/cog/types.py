@@ -21,13 +21,13 @@ FILENAME_MAX_LENGTH = 200
 
 
 class CogConfig(TypedDict):
-    build: "BuildConfig"
+    build: "CogBuildConfig"
     image: NotRequired[str]
     predict: NotRequired[str]
     train: NotRequired[str]
 
 
-class BuildConfig(TypedDict, total=False):
+class CogBuildConfig(TypedDict, total=False):
     cuda: Optional[str]
     gpu: Optional[bool]
     python_packages: Optional[List[str]]
