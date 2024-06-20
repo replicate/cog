@@ -20,6 +20,13 @@ FILENAME_ILLEGAL_CHARS = set("\u0000/")
 FILENAME_MAX_LENGTH = 200
 
 
+class CogConfig(TypedDict):
+    build: "BuildConfig"
+    image: NotRequired[str]
+    predict: NotRequired[str]
+    train: NotRequired[str]
+
+
 class BuildConfig(TypedDict, total=False):
     cuda: Optional[str]
     gpu: Optional[bool]
@@ -28,13 +35,6 @@ class BuildConfig(TypedDict, total=False):
     python_requirements: Optional[str]
     python_version: Optional[str]
     run: Optional[Union[List[str], List[Dict[str, Any]]]]
-
-
-class CogConfig(TypedDict):
-    build: BuildConfig
-    image: NotRequired[str]
-    predict: NotRequired[str]
-    train: NotRequired[str]
 
 
 def Input(
