@@ -124,7 +124,7 @@ brew install cog
 You can also download and install the latest release using our 
 [install script](https://cog.run/install):
 
-```console
+```sh
 # fish shell
 sh (curl -fsSL https://cog.run/install.sh | psub)
 
