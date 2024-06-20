@@ -250,3 +250,6 @@ POST /predictions/abcd1234/cancel HTTP/1.1
 Predictions cannot be canceled if they're 
 created without a provided `id`
 or synchronously, without the `Prefer: respond-async` header.
+
+When a prediction is canceled,
+Cog raises `CancelationException` in the model's `predict` function.
