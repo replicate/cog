@@ -4,6 +4,7 @@ When a Cog Docker image is run, it serves an HTTP API for making predictions. Fo
 
 ## Contents
 
+- [Contents](#contents)
 - [Running the server](#running-the-server)
 - [Stopping the server](#stopping-the-server)
 - [API](#api)
@@ -11,9 +12,9 @@ When a Cog Docker image is run, it serves an HTTP API for making predictions. Fo
   - [`POST /predictions` (synchronous)](#post-predictions-synchronous)
   - [`POST /predictions` (asynchronous)](#post-predictions-asynchronous)
     - [Webhooks](#webhooks)
-  - [`PUT /predictions/` (synchronous)](#put-predictions-synchronous)
-  - [`PUT /predictions/` (asynchronous)](#put-predictions-asynchronous)
-  - [`POST /predictions/{prediction_id}/cancel`](#post-predictionscancel)
+  - [`PUT /predictions/<prediction_id>` (synchronous)](#put-predictionsprediction_id-synchronous)
+  - [`PUT /predictions/<prediction_id>` (asynchronous)](#put-predictionsprediction_id-asynchronous)
+  - [`POST /predictions/<prediction_id>/cancel`](#post-predictionsprediction_idcancel)
 
 ## Running the server
 
