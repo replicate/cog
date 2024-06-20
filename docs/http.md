@@ -224,7 +224,7 @@ before new ones (with new IDs) are created.
 
 ### `POST /predictions/<prediction_id>/cancel`
 
-A client can cancel an asynchronous prediction by making a 
+A client can cancel an asynchronous prediction by making a
 `POST /predictions/<prediction_id>/cancel` request
 using the prediction `id` provided when the prediction was created.
 
@@ -247,7 +247,7 @@ It can be canceled with:
 POST /predictions/abcd1234/cancel HTTP/1.1
 ```
 
-Predictions cannot be canceled if they're 
+Predictions cannot be canceled if they're
 created without a provided `id`
 or synchronously, without the `Prefer: respond-async` header.
 
@@ -256,4 +256,21 @@ then the server responds with status `404 Not Found`.
 Otherwise, the server responds with `200 OK`.
 
 When a prediction is canceled,
-Cog raises `CancelationException` in the model's `predict` function.
+Cog raises `cog.server.exceptions.CancelationException`
+in the model's `predict` function.
+This exception may be caught by the model to perform necessary cleanup.
+The cleanup should be brief, ideally completing within a few seconds.
+After cleanup, the exception must be re-raised using a bare raise statement.
+Failure to re-raise the exception may result in the termination of the container.
+
+```python
+from cog import Path
+from cog.server.exceptions import CancelationException
+
+def predict(image: Path) -> Path:
+    try:
+        return process(image)
+    except CancelationException as e:
+        cleanup() 
+        raise e
+```
