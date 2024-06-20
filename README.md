@@ -121,14 +121,15 @@ If you're using macOS, you can install Cog using Homebrew:
 brew install cog
 ```
 
-You can run an install script which will download and install the latest release of Cog:
+You can also download and install the latest release using our [install script](https://cog.run/installer):
+
 ```
 # via curl
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/replicate/cog/main/tools/install.sh)"
+curl -fsSL https://cog.run/installer | sh
 # or via wget:
-sh -c "$(wget -qO- https://raw.githubusercontent.com/replicate/cog/main/tools/install.sh)"
+wget -qO- https://cog.run/installer | sh
 # or via fetch:
-sh -c "$(fetch -o - https://raw.githubusercontent.com/replicate/cog/main/tools/install.sh)"
+fetch -o - https://cog.run/installer | sh
 ```
 
 You can also manually install the latest release of Cog
