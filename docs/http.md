@@ -251,5 +251,9 @@ Predictions cannot be canceled if they're
 created without a provided `id`
 or synchronously, without the `Prefer: respond-async` header.
 
+If no prediction exists with the provided `id`,
+then the server responds with status `404 Not Found`.
+Otherwise, the server responds with `200 OK`.
+
 When a prediction is canceled,
 Cog raises `CancelationException` in the model's `predict` function.
