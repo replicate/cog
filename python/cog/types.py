@@ -20,14 +20,14 @@ FILENAME_ILLEGAL_CHARS = set("\u0000/")
 FILENAME_MAX_LENGTH = 200
 
 
-class BuildConfig(TypedDict):
-    cuda: NotRequired[str]
-    gpu: NotRequired[bool]
-    python_packages: NotRequired[List[str]]
-    system_packages: NotRequired[List[str]]
-    python_requirements: NotRequired[str]
-    python_version: NotRequired[str]
-    run: NotRequired[Union[List[str], List[dict]]]
+class BuildConfig(TypedDict, total=False):
+    cuda: Optional[str]
+    gpu: Optional[bool]
+    python_packages: Optional[List[str]]
+    system_packages: Optional[List[str]]
+    python_requirements: Optional[str]
+    python_version: Optional[str]
+    run: Optional[Union[List[str], List[Dict[str, Any]]]]
 
 
 class CogConfig(TypedDict):
