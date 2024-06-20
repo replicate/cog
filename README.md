@@ -124,13 +124,16 @@ brew install cog
 You can also download and install the latest release using our 
 [install script](https://cog.run/install):
 
-```
-# via curl
-curl -fsSL https://cog.run/install | sh
-# or via wget:
-wget -qO- https://cog.run/install | sh
-# or via fetch:
-fetch -o - https://cog.run/install | sh
+```console
+# fish shell
+sh (curl -fsSL https://cog.run/install.sh | psub)
+
+# bash, zsh, and other shells
+sh <(curl -fsSL https://cog.run/install.sh)
+
+# download with wget and run in a separate command
+wget -qO- https://cog.run/install.sh
+sh ./install.sh
 ```
 
 You can manually install the latest release of Cog directly from GitHub 
