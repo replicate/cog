@@ -139,7 +139,7 @@ jobs:
 
       - name: 'Reproducible Build: Cache var-cache-apt'
         id: cache-var-cache-apt
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: var-cache-apt-${{ env.RUNNER_ARCH }}
           key: var-cache-apt-${{ env.RUNNER_ARCH }}-${{ env.SHORT_HASH }}
