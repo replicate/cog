@@ -153,10 +153,13 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._events = events
         self._tee_output = tee_output
         self._cancelable = False
+        self._events_lock = None
 
         super().__init__()
 
     def run(self) -> None:
+        self._events_lock = multiprocessing.Lock()
+
         # If we're running at a shell, SIGINT will be sent to every process in
         # the process group. We ignore it in the child process and require that
         # shutdown is coordinated by the parent process.
@@ -200,7 +203,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             raise
         finally:
             self._stream_redirector.drain()
-            self._events.send(done)
+            with self._events_lock:
+                self._events.send(done)
 
     def _loop(self) -> None:
         while True:
@@ -221,13 +225,14 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             result = predict(**payload)
 
             if result:
-                if isinstance(result, types.GeneratorType):
-                    self._events.send(PredictionOutputType(multi=True))
-                    for r in result:
-                        self._events.send(PredictionOutput(payload=make_encodeable(r)))
-                else:
-                    self._events.send(PredictionOutputType(multi=False))
-                    self._events.send(PredictionOutput(payload=make_encodeable(result)))
+                with self._events_lock:
+                    if isinstance(result, types.GeneratorType):
+                        self._events.send(PredictionOutputType(multi=True))
+                        for r in result:
+                            self._events.send(PredictionOutput(payload=make_encodeable(r)))
+                    else:
+                        self._events.send(PredictionOutputType(multi=False))
+                        self._events.send(PredictionOutput(payload=make_encodeable(result)))
         except CancelationException:
             done.canceled = True
         except Exception as e:
@@ -237,7 +242,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         finally:
             self._cancelable = False
         self._stream_redirector.drain()
-        self._events.send(done)
+        with self._events_lock:
+            self._events.send(done)
 
     def _signal_handler(self, signum: int, frame: Optional[types.FrameType]) -> None:
         if signum == signal.SIGUSR1 and self._cancelable:
@@ -249,4 +255,5 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if self._tee_output:
             original_stream.write(data)
             original_stream.flush()
-        self._events.send(Log(data, source=stream_name))
+        with self._events_lock:
+            self._events.send(Log(data, source=stream_name))
