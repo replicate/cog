@@ -187,20 +187,6 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		if err != nil {
 			return fmt.Errorf("Failed to inspect cog base image manifest: %w", err)
 		}
-		console.Infof("Cog base image details:")
-		console.Infof("ID: %s", cogBaseImage.ID)
-		console.Infof("Parent: %s", cogBaseImage.Parent)
-		console.Infof("Comment: %s", cogBaseImage.Comment)
-		console.Infof("Created: %s", cogBaseImage.Created)
-		console.Infof("Container: %s", cogBaseImage.Container)
-		console.Infof("ContainerConfig: %v", cogBaseImage.ContainerConfig)
-		console.Infof("DockerVersion: %s", cogBaseImage.DockerVersion)
-		console.Infof("Author: %s", cogBaseImage.Author)
-		console.Infof("Config: %v", cogBaseImage.Config)
-		console.Infof("Architecture: %s", cogBaseImage.Architecture)
-		console.Infof("GraphDriver: %v", cogBaseImage.GraphDriver)
-		console.Infof("RootFS: %v", cogBaseImage.RootFS)
-		console.Infof("Metadata: %v", cogBaseImage.Metadata)
 		
 		if cogBaseImage.RootFS.Layers == nil || len(cogBaseImage.RootFS.Layers) == 0 {
 			return fmt.Errorf("Cog base image has no layers or RootFS is nil: %s", cogBaseImageName)
