@@ -139,12 +139,12 @@ jobs:
 
       - name: 'Reproducible Build: Cache var-cache-apt'
         id: cache-var-cache-apt
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: var-cache-apt-${{ env.RUNNER_ARCH }}
           key: var-cache-apt-${{ env.RUNNER_ARCH }}-${{ env.SHORT_HASH }}
       - name: 'Reproducible Build: inject var-cache-apt'
-        uses: reproducible-containers/buildkit-cache-dance@v2.1.4
+        uses: reproducible-containers/buildkit-cache-dance@v3.1.1
         with:
           cache-source: var-cache-apt-${{ env.RUNNER_ARCH }}
           cache-target: /var/cache/apt
@@ -161,7 +161,7 @@ jobs:
             type=raw,value=${{ env.SHORT_HASH }}
 
       - name: 'Build and Push Base Images'
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile

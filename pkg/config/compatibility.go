@@ -111,7 +111,7 @@ func init() {
 	filteredTorchCompatibilityMatrix := []TorchCompatibility{}
 	for _, compat := range torchCompatibilityMatrix {
 		for _, cudaBaseImage := range CUDABaseImages {
-			if compat.CUDA != nil && version.Matches(*compat.CUDA, cudaBaseImage.CUDA) {
+			if compat.CUDA == nil || version.Matches(*compat.CUDA, cudaBaseImage.CUDA) {
 				filteredTorchCompatibilityMatrix = append(filteredTorchCompatibilityMatrix, compat)
 				break
 			}

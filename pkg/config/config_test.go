@@ -275,8 +275,13 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 
 		err := config.ValidateAndComplete("")
 		require.NoError(t, err)
-		require.NotEqual(t, "", config.Build.CUDA)
-		require.NotEqual(t, "", config.Build.CuDNN)
+		if compat.CUDA == nil {
+			require.Equal(t, "", config.Build.CUDA)
+			require.Equal(t, "", config.Build.CuDNN)
+		} else {
+			require.NotEqual(t, "", config.Build.CUDA)
+			require.NotEqual(t, "", config.Build.CuDNN)
+		}
 	}
 }
 
@@ -427,8 +432,9 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
-	expected := `torch==1.7.1
-torchvision==0.8.2
+	expected := `--find-links https://download.pytorch.org/whl/torch_stable.html
+torch==1.7.1+cpu
+torchvision==0.8.2+cpu
 torchaudio==0.7.2
 foo==1.0.0`
 	require.Equal(t, expected, requirements)

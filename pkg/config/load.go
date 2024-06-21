@@ -90,12 +90,12 @@ func findConfigPathInDirectory(dir string) (configPath string, err error) {
 func findProjectRootDir(startDir string) (string, error) {
 	dir := startDir
 	for i := 0; i < maxSearchDepth; i++ {
-		_, err := findConfigPathInDirectory(dir)
-		if err != nil && !errors.IsConfigNotFound(err) {
+		switch _, err := findConfigPathInDirectory(dir); {
+		case err != nil && !errors.IsConfigNotFound(err):
 			return "", err
-		} else if err == nil {
+		case err == nil:
 			return dir, nil
-		} else if dir == "." || dir == "/" {
+		case dir == "." || dir == "/":
 			return "", errors.ConfigNotFound(fmt.Sprintf("%s not found in %s (or in any parent directories)", global.ConfigFilename, startDir))
 		}
 

@@ -16,7 +16,6 @@ from typing import (
     Any,
     Awaitable,
     Callable,
-    Dict,
     Optional,
     TypeVar,
 )
@@ -48,6 +47,7 @@ from ..predictor import (
     load_config,
     load_slim_predictor_from_ref,
 )
+from ..types import CogConfig
 from .runner import (
     PredictionRunner,
     RunnerBusyError,
@@ -100,7 +100,7 @@ def add_setup_failed_routes(app: MyFastAPI, started_at: datetime, msg: str) -> N
 
 
 def create_app(
-    config: Dict[str, Any],
+    config: CogConfig,
     shutdown_event: Optional[threading.Event],
     threads: int = 1,
     upload_url: Optional[str] = None,
