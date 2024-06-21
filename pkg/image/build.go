@@ -33,7 +33,6 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	_ = os.Remove(bundledSchemaFile)
 	_ = os.Remove(bundledSchemaPy)
 
-	var isUsingCogBaseImage bool = false
 	var cogBaseImageName string
 
 	if dockerfileFile != "" {
@@ -58,7 +57,6 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		generator.SetUseCogBaseImage(useCogBaseImage)
 
 		if generator.IsUsingCogBaseImage() {
-			isUsingCogBaseImage = true
 			cogBaseImageName, err = generator.BaseImage()
 			if err != nil {
 				return fmt.Errorf("Failed to get cog base image name: %s", err)
@@ -167,16 +165,15 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		global.LabelNamespace + "has_init": "true",
 	}
 
-	if isUsingCogBaseImage {
-		labels[global.LabelNamespace+"using_cog_base_image"] = "true"
-		labels[global.LabelNamespace+"cog-base-image-name"] = cogBaseImageName
+	if cogBaseImageName != "" {
+		labels[global.LabelNamespace + "cog-base-image-name"] = cogBaseImageName
 
 		// get the last layer of the cog base image so that when we look at the built cog image,
 		// we know where the base image ends
 		// pull the base image, as we'll need to pull it anyway to build the cog image
-		// Q: are we ok with the cog base image being pulled to the user's machine? can fix this later by implementing
-		// a manifest inspect which doesn't require a pull
 
+		// TODO: implement a manifest inspect which doesn't require a pull
+		// once we do that, we can switch from using layer diff ids to  layer shas
 		err := docker.Pull(cogBaseImageName)
 		if err != nil {
 			return fmt.Errorf("Failed to pull cog base image: %w", err)
@@ -187,6 +184,24 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			return fmt.Errorf("Failed to inspect cog base image while trying to fetch last layer: %w", err)
 		}
 
+		if err != nil {
+			return fmt.Errorf("Failed to inspect cog base image manifest: %w", err)
+		}
+		console.Infof("Cog base image details:")
+		console.Infof("ID: %s", cogBaseImage.ID)
+		console.Infof("Parent: %s", cogBaseImage.Parent)
+		console.Infof("Comment: %s", cogBaseImage.Comment)
+		console.Infof("Created: %s", cogBaseImage.Created)
+		console.Infof("Container: %s", cogBaseImage.Container)
+		console.Infof("ContainerConfig: %v", cogBaseImage.ContainerConfig)
+		console.Infof("DockerVersion: %s", cogBaseImage.DockerVersion)
+		console.Infof("Author: %s", cogBaseImage.Author)
+		console.Infof("Config: %v", cogBaseImage.Config)
+		console.Infof("Architecture: %s", cogBaseImage.Architecture)
+		console.Infof("GraphDriver: %v", cogBaseImage.GraphDriver)
+		console.Infof("RootFS: %v", cogBaseImage.RootFS)
+		console.Infof("Metadata: %v", cogBaseImage.Metadata)
+		
 		if cogBaseImage.RootFS.Layers == nil || len(cogBaseImage.RootFS.Layers) == 0 {
 			return fmt.Errorf("Cog base image has no layers or RootFS is nil: %s", cogBaseImageName)
 		}
@@ -195,8 +210,8 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		lastLayer := cogBaseImage.RootFS.Layers[lastLayerIndex]
 		console.Debugf("Last layer of the cog base image: %s", lastLayer) // prints the sha
 
-		labels[global.LabelNamespace+"cog-base-image-last-layer-diff-id"] = lastLayer
-		labels[global.LabelNamespace+"cog-base-image-last-layer-idx"] = fmt.Sprintf("%d", lastLayerIndex)
+		labels[global.LabelNamespace + "cog-base-image-last-layer-sha"] = lastLayer
+		labels[global.LabelNamespace + "cog-base-image-last-layer-idx"] = fmt.Sprintf("%d", lastLayerIndex)
 	}
 
 	if isGitRepo(dir) {
