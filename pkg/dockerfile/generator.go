@@ -110,6 +110,7 @@ func (g *Generator) SetUseCogBaseImage(useCogBaseImage bool) {
 func (g *Generator) IsUsingCogBaseImage() (bool) {
 	return g.useCogBaseImage
 }
+
 func (g *Generator) generateInitialSteps() (string, error) {
 	baseImage, err := g.BaseImage()
 	if err != nil {
