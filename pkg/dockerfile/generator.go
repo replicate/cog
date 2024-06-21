@@ -107,7 +107,7 @@ func (g *Generator) SetUseCogBaseImage(useCogBaseImage bool) {
 	g.useCogBaseImage = useCogBaseImage
 }
 
-func (g *Generator) IsUsingCogBaseImage() (bool) {
+func (g *Generator) IsUsingCogBaseImage() bool {
 	return g.useCogBaseImage
 }
 

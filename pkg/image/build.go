@@ -168,13 +168,13 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	}
 
 	if isUsingCogBaseImage {
-		labels[global.LabelNamespace + "using_cog_base_image"] = "true"
-		labels[global.LabelNamespace + "cog-base-image-name"] = cogBaseImageName
+		labels[global.LabelNamespace+"using_cog_base_image"] = "true"
+		labels[global.LabelNamespace+"cog-base-image-name"] = cogBaseImageName
 
 		// get the last layer of the cog base image so that when we look at the built cog image,
 		// we know where the base image ends
 		// pull the base image, as we'll need to pull it anyway to build the cog image
-		// Q: are we ok with the cog base image being pulled to the user's machine? can fix this later by implementing 
+		// Q: are we ok with the cog base image being pulled to the user's machine? can fix this later by implementing
 		// a manifest inspect which doesn't require a pull
 
 		err := docker.Pull(cogBaseImageName)
@@ -195,8 +195,8 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		lastLayer := cogBaseImage.RootFS.Layers[lastLayerIndex]
 		console.Debugf("Last layer of the cog base image: %s", lastLayer) // prints the sha
 
-		labels[global.LabelNamespace + "cog-base-image-last-layer-diff-id"] = lastLayer
-		labels[global.LabelNamespace + "cog-base-image-last-layer-idx"] = fmt.Sprintf("%d", lastLayerIndex)
+		labels[global.LabelNamespace+"cog-base-image-last-layer-diff-id"] = lastLayer
+		labels[global.LabelNamespace+"cog-base-image-last-layer-idx"] = fmt.Sprintf("%d", lastLayerIndex)
 	}
 
 	if isGitRepo(dir) {
