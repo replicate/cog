@@ -531,6 +531,75 @@ def test_asynchronous_prediction_endpoint(client, match):
         time.sleep(0.1)
         n += 1
 
+
+# End-to-end test for passing tracing headers on to downstream services.
+@responses.activate
+@uses_predictor_with_client_options(
+    "output_file", upload_url="https://example.com/upload"
+)
+def test_asynchronous_prediction_endpoint_with_trace_context(client, match):
+    webhook = responses.post(
+        "https://example.com/webhook",
+        match=[
+            matchers.json_params_matcher(
+                {
+                    "id": "12345abcde",
+                    "status": "succeeded",
+                    "output": "https://example.com/upload/file",
+                },
+                strict_match=False,
+            ),
+            matchers.header_matcher(
+                {
+                    "traceparent": "traceparent-123",
+                    "tracestate": "tracestate-123",
+                },
+                strict_match=False,
+            ),
+        ],
+        status=200,
+    )
+    uploader = responses.put(
+        "https://example.com/upload/file",
+        match=[
+            matchers.header_matcher(
+                {
+                    "traceparent": "traceparent-123",
+                    "tracestate": "tracestate-123",
+                },
+                strict_match=False,
+            ),
+        ],
+        status=200,
+    )
+
+    resp = client.post(
+        "/predictions",
+        json={
+            "id": "12345abcde",
+            "input": {},
+            "webhook": "https://example.com/webhook",
+            "webhook_events_filter": ["completed"],
+        },
+        headers={
+            "Prefer": "respond-async",
+            "traceparent": "traceparent-123",
+            "tracestate": "tracestate-123",
+        },
+    )
+    assert resp.status_code == 202
+
+    assert resp.json() == match(
+        {"status": "processing", "output": None, "started_at": mock.ANY}
+    )
+    assert resp.json()["started_at"] is not None
+
+    n = 0
+    while webhook.call_count < 1 and n < 10:
+        time.sleep(0.1)
+        n += 1
+
+    assert uploader.call_count == 1
     assert webhook.call_count == 1
 
 

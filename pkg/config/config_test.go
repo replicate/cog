@@ -6,9 +6,128 @@ import (
 	"path"
 	"testing"
 
+	"github.com/hashicorp/go-version"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
+
+func TestValidateModelPythonVersion(t *testing.T) {
+	testCases := []struct {
+		name        string
+		input       string
+		expectedErr bool
+	}{
+		{
+			name:        "ValidVersion",
+			input:       "3.12",
+			expectedErr: false,
+		},
+		{
+			name:        "MinimumVersion",
+			input:       "3.8",
+			expectedErr: false,
+		},
+		{
+			name:        "FullyQualifiedVersion",
+			input:       "3.12.1",
+			expectedErr: false,
+		},
+		{
+			name:        "InvalidFormat",
+			input:       "3-12",
+			expectedErr: true,
+		},
+		{
+			name:        "InvalidMissingMinor",
+			input:       "3",
+			expectedErr: true,
+		},
+		{
+			name:        "LessThanMinimum",
+			input:       "3.7",
+			expectedErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateModelPythonVersion(tc.input)
+			if tc.expectedErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateCudaVersion(t *testing.T) {
+	testCases := []struct {
+		name        string
+		input       string
+		expectedErr bool
+	}{
+		{
+			name:        "ValidVersion",
+			input:       "12.4",
+			expectedErr: false,
+		},
+		{
+			name:        "MinimumVersion",
+			input:       "11.0",
+			expectedErr: false,
+		},
+		{
+			name:        "FullyQualifiedVersion",
+			input:       "12.4.1",
+			expectedErr: false,
+		},
+		{
+			name:        "InvalidFormat",
+			input:       "11-2",
+			expectedErr: true,
+		},
+		{
+			name:        "InvalidMissingMinor",
+			input:       "11",
+			expectedErr: true,
+		},
+		{
+			name:        "LessThanMinimum",
+			input:       "9.1",
+			expectedErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateCudaVersion(tc.input)
+			if tc.expectedErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func assertMinorVersion(t *testing.T, expected, actual string) {
+	expectedVersion, err := version.NewVersion(expected)
+	if err != nil {
+		t.Errorf("Error parsing version: %v", err)
+		return
+	}
+	actualVersion, err := version.NewVersion(actual)
+	if err != nil {
+		t.Errorf("Error parsing version: %v", err)
+		return
+	}
+
+	// Compare only the major and minor parts
+	if expectedVersion.Segments()[0] != actualVersion.Segments()[0] || expectedVersion.Segments()[1] != actualVersion.Segments()[1] {
+		t.Errorf("Expected %s but got %s", expected, actual)
+	}
+}
 
 func TestPythonPackagesAndRequirementsCantBeUsedTogether(t *testing.T) {
 	config := &Config{
@@ -137,7 +256,7 @@ func TestValidateAndCompleteCUDAForAllTF(t *testing.T) {
 
 		err := config.ValidateAndComplete("")
 		require.NoError(t, err)
-		require.Equal(t, compat.CUDA, config.Build.CUDA)
+		assertMinorVersion(t, compat.CUDA, config.Build.CUDA)
 		require.Equal(t, compat.CuDNN, config.Build.CuDNN)
 	}
 }
@@ -156,8 +275,13 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 
 		err := config.ValidateAndComplete("")
 		require.NoError(t, err)
-		require.NotEqual(t, "", config.Build.CUDA)
-		require.NotEqual(t, "", config.Build.CuDNN)
+		if compat.CUDA == nil {
+			require.Equal(t, "", config.Build.CUDA)
+			require.Equal(t, "", config.Build.CuDNN)
+		} else {
+			require.NotEqual(t, "", config.Build.CUDA)
+			require.NotEqual(t, "", config.Build.CuDNN)
+		}
 	}
 }
 
@@ -219,7 +343,7 @@ func TestUnsupportedTorch(t *testing.T) {
 	}
 	err = config.ValidateAndComplete("")
 	require.NoError(t, err)
-	require.Equal(t, "11.8", config.Build.CUDA)
+	assertMinorVersion(t, "11.8", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 }
 
@@ -256,7 +380,7 @@ func TestUnsupportedTensorflow(t *testing.T) {
 	}
 	err = config.ValidateAndComplete("")
 	require.NoError(t, err)
-	require.Equal(t, "11.8", config.Build.CUDA)
+	assertMinorVersion(t, "11.8", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 }
 
@@ -276,7 +400,7 @@ func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 	}
 	err := config.ValidateAndComplete("")
 	require.NoError(t, err)
-	require.Equal(t, "11.8", config.Build.CUDA)
+	assertMinorVersion(t, "11.8", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
@@ -308,8 +432,9 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
-	expected := `torch==1.7.1
-torchvision==0.8.2
+	expected := `--find-links https://download.pytorch.org/whl/torch_stable.html
+torch==1.7.1+cpu
+torchvision==0.8.2+cpu
 torchaudio==0.7.2
 foo==1.0.0`
 	require.Equal(t, expected, requirements)
@@ -329,7 +454,7 @@ func TestPythonPackagesForArchTensorflowGPU(t *testing.T) {
 	}
 	err := config.ValidateAndComplete("")
 	require.NoError(t, err)
-	require.Equal(t, "11.8", config.Build.CUDA)
+	assertMinorVersion(t, "11.8", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 
 	// tensorflow and tensorflow-gpu have been the same package since TensorFlow 2.1, released in September 2019.

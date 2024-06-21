@@ -16,10 +16,8 @@ from typing import (
     Any,
     Awaitable,
     Callable,
-    Dict,
     Optional,
     TypeVar,
-    Union,
 )
 
 if TYPE_CHECKING:
@@ -49,6 +47,7 @@ from ..predictor import (
     load_config,
     load_slim_predictor_from_ref,
 )
+from ..types import CogConfig
 from .runner import (
     PredictionRunner,
     RunnerBusyError,
@@ -56,6 +55,7 @@ from .runner import (
     SetupTask,
     UnknownPredictionError,
 )
+from .telemetry import make_trace_context, trace_context
 
 log = structlog.get_logger("cog.server.http")
 
@@ -100,7 +100,7 @@ def add_setup_failed_routes(app: MyFastAPI, started_at: datetime, msg: str) -> N
 
 
 def create_app(
-    config: Dict[str, Any],
+    config: CogConfig,
     shutdown_event: Optional[threading.Event],
     threads: int = 1,
     upload_url: Optional[str] = None,
@@ -185,9 +185,16 @@ def create_app(
             )
             def train(
                 request: TrainingRequest = Body(default=None),
-                prefer: Union[str, None] = Header(default=None),
+                prefer: Optional[str] = Header(default=None),
+                traceparent: Optional[str] = Header(
+                    default=None, include_in_schema=False
+                ),
+                tracestate: Optional[str] = Header(
+                    default=None, include_in_schema=False
+                ),
             ) -> Any:  # type: ignore
-                return predict(request, prefer)
+                with trace_context(make_trace_context(traceparent, tracestate)):
+                    return predict(request, prefer)
 
             @app.put(
                 "/trainings/{training_id}",
@@ -197,9 +204,16 @@ def create_app(
             def train_idempotent(
                 training_id: str = Path(..., title="Training ID"),
                 request: TrainingRequest = Body(..., title="Training Request"),
-                prefer: Union[str, None] = Header(default=None),
+                prefer: Optional[str] = Header(default=None),
+                traceparent: Optional[str] = Header(
+                    default=None, include_in_schema=False
+                ),
+                tracestate: Optional[str] = Header(
+                    default=None, include_in_schema=False
+                ),
             ) -> Any:
-                return predict_idempotent(training_id, request, prefer)
+                with trace_context(make_trace_context(traceparent, tracestate)):
+                    return predict_idempotent(training_id, request, prefer)
 
             @app.post("/trainings/{training_id}/cancel")
             def cancel_training(
@@ -259,7 +273,9 @@ def create_app(
     )
     async def predict(
         request: PredictionRequest = Body(default=None),
-        prefer: Union[str, None] = Header(default=None),
+        prefer: Optional[str] = Header(default=None),
+        traceparent: Optional[str] = Header(default=None, include_in_schema=False),
+        tracestate: Optional[str] = Header(default=None, include_in_schema=False),
     ) -> Any:  # type: ignore
         """
         Run a single prediction on the model
@@ -272,7 +288,11 @@ def create_app(
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
 
-        return _predict(request=request, respond_async=respond_async)
+        with trace_context(make_trace_context(traceparent, tracestate)):
+            return _predict(
+                request=request,
+                respond_async=respond_async,
+            )
 
     @limited
     @app.put(
@@ -283,7 +303,9 @@ def create_app(
     async def predict_idempotent(
         prediction_id: str = Path(..., title="Prediction ID"),
         request: PredictionRequest = Body(..., title="Prediction Request"),
-        prefer: Union[str, None] = Header(default=None),
+        prefer: Optional[str] = Header(default=None),
+        traceparent: Optional[str] = Header(default=None, include_in_schema=False),
+        tracestate: Optional[str] = Header(default=None, include_in_schema=False),
     ) -> Any:
         """
         Run a single prediction on the model (idempotent creation).
@@ -307,10 +329,16 @@ def create_app(
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
 
-        return _predict(request=request, respond_async=respond_async)
+        with trace_context(make_trace_context(traceparent, tracestate)):
+            return _predict(
+                request=request,
+                respond_async=respond_async,
+            )
 
     def _predict(
-        *, request: PredictionRequest, respond_async: bool = False
+        *,
+        request: Optional[PredictionRequest],
+        respond_async: bool = False,
     ) -> Response:
         # [compat] If no body is supplied, assume that this model can be run
         # with empty input. This will throw a ValidationError if that's not
@@ -327,7 +355,8 @@ def create_app(
             # async predictions. This is unfortunate but required to ensure
             # backwards-compatible behaviour for synchronous predictions.
             initial_response, async_result = runner.predict(
-                request, upload=respond_async
+                request,
+                upload=respond_async,
             )
         except RunnerBusyError:
             return JSONResponse(

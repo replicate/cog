@@ -10,6 +10,7 @@ from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
 
 import requests
 from pydantic import Field, SecretStr
+from typing_extensions import NotRequired, TypedDict
 
 FILENAME_ILLEGAL_CHARS = set("\u0000/")
 
@@ -17,6 +18,23 @@ FILENAME_ILLEGAL_CHARS = set("\u0000/")
 # filename so that there's room for prefixes added by
 # tempfile.NamedTemporaryFile, etc.
 FILENAME_MAX_LENGTH = 200
+
+
+class CogConfig(TypedDict):
+    build: "CogBuildConfig"
+    image: NotRequired[str]
+    predict: NotRequired[str]
+    train: NotRequired[str]
+
+
+class CogBuildConfig(TypedDict, total=False):
+    cuda: Optional[str]
+    gpu: Optional[bool]
+    python_packages: Optional[List[str]]
+    system_packages: Optional[List[str]]
+    python_requirements: Optional[str]
+    python_version: Optional[str]
+    run: Optional[Union[List[str], List[Dict[str, Any]]]]
 
 
 def Input(

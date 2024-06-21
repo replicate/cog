@@ -70,48 +70,24 @@ linters-settings:
   gocritic:
     enabled-checks:
       - appendCombine
-      - argOrder
-      - assignOp
-      - badCond
       - boolExprSimplify
       - builtinShadow
-      - captLocal
-      - caseOrder
-      - codegenComment
       - commentedOutCode
       - commentedOutImport
-      - defaultCaseOrder
-      - deprecatedComment
       - docStub
-      - dupArg
-      - dupBranchBody
-      - dupCase
-      - dupSubExpr
-      - elseif
       - emptyFallthrough
       - equalFold
-      - flagDeref
-      - flagName
       - hexLiteral
       - indexAlloc
       - initClause
       - methodExprCall
       - nilValReturn
       - octalLiteral
-      - offBy1
       - rangeExprCopy
-      - regexpMust
-      - sloppyLen
       - stringXbytes
-      - switchTrue
       - typeAssertChain
-      - typeSwitchVar
       - typeUnparen
-      - underef
-      - unlambda
       - unnecessaryBlock
-      - unslice
-      - valSwap
       - weakCond
       # Unused
       # - yodaStyleExpr

@@ -32,7 +32,7 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep /tmp/cog-0.0.
 }
 
 func testPipInstallStage(relativeTmpDir string) string {
-	return `FROM python:3.8 as deps
+	return `FROM python:3.12 as deps
 ` + testInstallCog(relativeTmpDir)
 }
 
@@ -84,12 +84,12 @@ predict: predict.py:Predictor
 
 	expected := `#syntax=docker/dockerfile:1.4
 ` + testPipInstallStage(gen.relativeTmpDir) + `
-FROM python:3.8-slim
+FROM python:3.12-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
-` + testTini() + `COPY --from=deps --link /dep /usr/local/lib/python3.8/site-packages
+` + testTini() + `COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
 FROM r8.im/replicate/cog-test-weights AS weights
 WORKDIR /src
 EXPOSE 5000
@@ -121,7 +121,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
-` + testTini() + testInstallPython("3.8") + `RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
+` + testTini() + testInstallPython("3.12") + `RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
     cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages; \
     cp -rf /dep/bin/* $(pyenv prefix)/bin; \
     pyenv rehash
@@ -144,7 +144,7 @@ build:
     - ffmpeg
     - cowsay
   python_packages:
-    - torch==1.5.1
+    - torch==2.3.0
     - pandas==1.2.0.12
   run:
     - "cowsay moo"
@@ -162,13 +162,13 @@ predict: predict.py:Predictor
 ` + testPipInstallStage(gen.relativeTmpDir) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r /tmp/requirements.txt
-FROM python:3.8-slim
+FROM python:3.12-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-COPY --from=deps --link /dep /usr/local/lib/python3.8/site-packages
+COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
 RUN cowsay moo
 FROM r8.im/replicate/cog-test-weights AS weights
 WORKDIR /src
@@ -180,7 +180,8 @@ COPY . /src`
 	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
 
-	require.Equal(t, `torch==1.5.1
+	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.3.0
 pandas==1.2.0.12`, string(requirements))
 }
 
@@ -218,7 +219,7 @@ ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() +
-		testInstallPython("3.8") + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
+		testInstallPython("3.12") + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
     cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages; \
     cp -rf /dep/bin/* $(pyenv prefix)/bin; \
@@ -260,13 +261,13 @@ build:
 
 	expected := `#syntax=docker/dockerfile:1.4
 ` + testPipInstallStage(gen.relativeTmpDir) + `
-FROM python:3.8-slim
+FROM python:3.12-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
-COPY --from=deps --link /dep /usr/local/lib/python3.8/site-packages
+COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
 RUN cowsay moo
 FROM r8.im/replicate/cog-test-weights AS weights
 WORKDIR /src
@@ -374,7 +375,7 @@ ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() +
-		testInstallPython("3.8") + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
+		testInstallPython("3.12") + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
     cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages; \
     cp -rf /dep/bin/* $(pyenv prefix)/bin; \
@@ -445,12 +446,12 @@ predict: predict.py:Predictor
 
 	expected := `#syntax=docker/dockerfile:1.4
 ` + testPipInstallStage(gen.relativeTmpDir) + `
-FROM python:3.8-slim
+FROM python:3.12-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
-` + testTini() + `COPY --from=deps --link /dep /usr/local/lib/python3.8/site-packages
+` + testTini() + `COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -477,7 +478,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
-FROM r8.im/cog-base:python3.8
+FROM r8.im/cog-base:python3.12
 FROM r8.im/replicate/cog-test-weights AS weights
 WORKDIR /src
 EXPOSE 5000
@@ -487,7 +488,7 @@ COPY . /src`
 	require.Equal(t, expected, actual)
 }
 
-func TestGenerateFullCPUWithCogBaseImage(t *testing.T) {
+func TestGeneratePythonCPUWithCogBaseImage(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	conf, err := config.FromYAML([]byte(`
@@ -496,8 +497,8 @@ build:
   system_packages:
     - ffmpeg
     - cowsay
+  python_version: "3.12"
   python_packages:
-    - torch==1.5.1
     - pandas==1.2.0.12
   run:
     - "cowsay moo"
@@ -513,7 +514,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
-FROM r8.im/cog-base:python3.8-torch1.5.1
+FROM r8.im/cog-base:python3.12
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
@@ -541,7 +542,7 @@ build:
     - ffmpeg
     - cowsay
   python_packages:
-    - torch==2.0.1
+    - torch==2.3
     - pandas==2.0.3
   run:
     - "cowsay moo"
@@ -557,7 +558,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
-FROM r8.im/cog-base:cuda11.8-python3.8-torch2.0.1
+FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt

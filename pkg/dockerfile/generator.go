@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/util/console"
@@ -72,8 +73,9 @@ func NewGenerator(config *config.Config, dir string) (*Generator, error) {
 	if err := os.MkdirAll(rootTmp, 0o755); err != nil {
 		return nil, err
 	}
-	// tmpDir ends up being something like dir/.cog/tmp/build123456789
-	tmpDir, err := os.MkdirTemp(rootTmp, "build")
+	// tmpDir ends up being something like dir/.cog/tmp/build20240620123456.000000
+	now := time.Now().Format("20060102150405.000000")
+	tmpDir, err := os.MkdirTemp(rootTmp, "build"+now)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +258,12 @@ func (g *Generator) baseImage() (string, error) {
 			return "", err
 		}
 		torchVersion, _ := g.Config.TorchVersion()
-		baseImage := BaseImageName(cudaVersion, pythonVersion, torchVersion)
+		// validate that the base image configuration exists
+		imageGenerator, err := NewBaseImageGenerator(cudaVersion, pythonVersion, torchVersion)
+		if err != nil {
+			return "", err
+		}
+		baseImage := BaseImageName(imageGenerator.cudaVersion, imageGenerator.pythonVersion, imageGenerator.torchVersion)
 		return baseImage, nil
 	}
 
