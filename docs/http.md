@@ -4,6 +4,7 @@ When a Cog Docker image is run, it serves an HTTP API for making predictions. Fo
 
 ## Contents
 
+- [Contents](#contents)
 - [Running the server](#running-the-server)
 - [Stopping the server](#stopping-the-server)
 - [API](#api)
@@ -11,9 +12,9 @@ When a Cog Docker image is run, it serves an HTTP API for making predictions. Fo
   - [`POST /predictions` (synchronous)](#post-predictions-synchronous)
   - [`POST /predictions` (asynchronous)](#post-predictions-asynchronous)
     - [Webhooks](#webhooks)
-  - [`PUT /predictions/` (synchronous)](#put-predictions-synchronous)
-  - [`PUT /predictions/` (asynchronous)](#put-predictions-asynchronous)
-  - [`POST /predictions/{prediction_id}/cancel`](#post-predictionscancel)
+  - [`PUT /predictions/<prediction_id>` (synchronous)](#put-predictionsprediction_id-synchronous)
+  - [`PUT /predictions/<prediction_id>` (asynchronous)](#put-predictionsprediction_id-asynchronous)
+  - [`POST /predictions/<prediction_id>/cancel`](#post-predictionsprediction_idcancel)
 
 ## Running the server
 
@@ -223,12 +224,11 @@ before new ones (with new IDs) are created.
 
 ### `POST /predictions/<prediction_id>/cancel`
 
-While an asynchronous prediction is running, clients can cancel it by making a
-request to `POST /predictions/<prediction_id>/cancel`. The prediction `id` must
-have been supplied when creating the prediction. Predictions created without a
-supplied `id` field will not be cancelable.
+A client can cancel an asynchronous prediction by making a
+`POST /predictions/<prediction_id>/cancel` request
+using the prediction `id` provided when the prediction was created.
 
-For example, if a prediction is created with
+For example, if a prediction is created with:
 
 ```http
 POST /predictions HTTP/1.1
@@ -241,12 +241,36 @@ Prefer: respond-async
 }
 ```
 
-it can be canceled with
+It can be canceled with:
 
 ```http
 POST /predictions/abcd1234/cancel HTTP/1.1
 ```
 
-Use of the cancelation API to cancel predictions started "synchronously" (i.e.
-without the `Prefer: respond-async` header) is currently not supported. This may
-change in a future release of Cog.
+Predictions cannot be canceled if they're
+created without a provided `id`
+or synchronously, without the `Prefer: respond-async` header.
+
+If no prediction exists with the provided `id`,
+then the server responds with status `404 Not Found`.
+Otherwise, the server responds with `200 OK`.
+
+When a prediction is canceled,
+Cog raises `cog.server.exceptions.CancelationException`
+in the model's `predict` function.
+This exception may be caught by the model to perform necessary cleanup.
+The cleanup should be brief, ideally completing within a few seconds.
+After cleanup, the exception must be re-raised using a bare raise statement.
+Failure to re-raise the exception may result in the termination of the container.
+
+```python
+from cog import Path
+from cog.server.exceptions import CancelationException
+
+def predict(image: Path) -> Path:
+    try:
+        return process(image)
+    except CancelationException as e:
+        cleanup() 
+        raise e
+```
