@@ -484,6 +484,13 @@ def _cpu_count() -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Cog HTTP server")
     parser.add_argument(
+        "--host",
+        dest="host",
+        type=str,
+        default="0.0.0.0",
+        help="Host to bind to",
+    )
+    parser.add_argument(
         "--threads",
         dest="threads",
         type=int,
@@ -539,6 +546,8 @@ if __name__ == "__main__":
         mode=args.mode,
     )
 
+    host: str = args.host
+
     port = int(os.getenv("PORT", 5000))
     if is_port_in_use(port):
         log.error(f"Port {port} is already in use")
@@ -546,7 +555,7 @@ if __name__ == "__main__":
 
     server_config = uvicorn.Config(
         app,
-        host="::",
+        host=host,
         port=port,
         log_config=None,
         # This is the default, but to be explicit: only run a single worker
