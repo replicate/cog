@@ -93,7 +93,7 @@ jobs:
       - test-go
       - test-python
     name: "Test integration"
-    runs-on: ubuntu-latest-8-cores
+    runs-on: ubuntu-latest-16-cores
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
