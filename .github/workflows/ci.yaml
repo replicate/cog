@@ -90,6 +90,9 @@ jobs:
 
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-integration:
+    needs:
+      - test-go
+      - test-python
     name: "Test integration"
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 10
