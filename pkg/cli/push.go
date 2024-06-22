@@ -65,7 +65,6 @@ func push(cmd *cobra.Command, args []string) error {
 	exitStatus := docker.Push(imageName)
 	if exitStatus == nil {
 		console.Infof("Image '%s' pushed", imageName)
-		// replicatePrefix := fmt.Sprintf("%s/", global.ReplicateRegistryHost)
 		if strings.HasPrefix(imageName, replicatePrefix) {
 			replicatePage := fmt.Sprintf("https://%s", strings.Replace(imageName, global.ReplicateRegistryHost, global.ReplicateWebsiteHost, 1))
 			console.Infof("\nRun your model on Replicate:\n    %s", replicatePage)
