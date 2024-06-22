@@ -166,7 +166,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	}
 
 	if cogBaseImageName != "" {
-		labels[global.LabelNamespace + "cog-base-image-name"] = cogBaseImageName
+		labels[global.LabelNamespace+"cog-base-image-name"] = cogBaseImageName
 
 		// get the last layer of the cog base image so that when we look at the built cog image,
 		// we know where the base image ends
@@ -184,10 +184,6 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			return fmt.Errorf("Failed to inspect cog base image while trying to fetch last layer: %w", err)
 		}
 
-		if err != nil {
-			return fmt.Errorf("Failed to inspect cog base image manifest: %w", err)
-		}
-		
 		if cogBaseImage.RootFS.Layers == nil || len(cogBaseImage.RootFS.Layers) == 0 {
 			return fmt.Errorf("Cog base image has no layers or RootFS is nil: %s", cogBaseImageName)
 		}
@@ -196,8 +192,8 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		lastLayer := cogBaseImage.RootFS.Layers[lastLayerIndex]
 		console.Debugf("Last layer of the cog base image: %s", lastLayer) // prints the sha
 
-		labels[global.LabelNamespace + "cog-base-image-last-layer-sha"] = lastLayer
-		labels[global.LabelNamespace + "cog-base-image-last-layer-idx"] = fmt.Sprintf("%d", lastLayerIndex)
+		labels[global.LabelNamespace+"cog-base-image-last-layer-sha"] = lastLayer
+		labels[global.LabelNamespace+"cog-base-image-last-layer-idx"] = fmt.Sprintf("%d", lastLayerIndex)
 	}
 
 	if isGitRepo(dir) {
