@@ -49,6 +49,13 @@ func push(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push r8.im/your-username/hotdog-detector'")
 	}
 
+	replicatePrefix := fmt.Sprintf("%s/", global.ReplicateRegistryHost)
+	if strings.HasPrefix(imageName, replicatePrefix) {
+		if err := docker.ManifestInspect(imageName); err != nil && strings.Contains(err.Error(), `"code":"NAME_UNKNOWN"`) {
+			return fmt.Errorf("Unable to find Replicate existing model for %s. Go to replicate.com and create a new model before pushing.", imageName)
+		}
+	}
+
 	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, buildUseCogBaseImage); err != nil {
 		return err
 	}
@@ -58,7 +65,6 @@ func push(cmd *cobra.Command, args []string) error {
 	exitStatus := docker.Push(imageName)
 	if exitStatus == nil {
 		console.Infof("Image '%s' pushed", imageName)
-		replicatePrefix := fmt.Sprintf("%s/", global.ReplicateRegistryHost)
 		if strings.HasPrefix(imageName, replicatePrefix) {
 			replicatePage := fmt.Sprintf("https://%s", strings.Replace(imageName, global.ReplicateRegistryHost, global.ReplicateWebsiteHost, 1))
 			console.Infof("\nRun your model on Replicate:\n    %s", replicatePage)
