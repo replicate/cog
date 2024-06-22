@@ -45,6 +45,9 @@ jobs:
         run: make test-go
 
   test-python:
+    needs:
+      - typecheck-python
+      - test-go
     name: "Test Python ${{ matrix.python-version }}"
     runs-on: ubuntu-latest-8-cores
     strategy:
