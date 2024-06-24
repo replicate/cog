@@ -266,15 +266,11 @@ class BaseInput(BaseModel):
         """
         for _, value in self:
             # Handle URLPath objects specially for cleanup.
-            if isinstance(value, URLPath):
-                value.unlink()
-            # Note this is pathlib.Path, which cog.Path is a subclass of. A pathlib.Path object shouldn't make its way here,
-            # but both have an unlink() method, so may as well be safe.
-            elif isinstance(value, Path):
-                try:
-                    value.unlink()
-                except FileNotFoundError:
-                    pass
+            # Also handle pathlib.Path objects, which cog.Path is a subclass of.
+            # A pathlib.Path object shouldn't make its way here,
+            # but both have an unlink() method, so we may as well be safe.
+            if isinstance(value, (URLPath, Path)):
+                value.unlink(missing_ok=True)
 
 
 def validate_input_type(type: Type[Any], name: str) -> None:
