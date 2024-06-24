@@ -51,13 +51,9 @@ call the `/predictions` endpoint,
 passing input in the format expected by your model:
 
 ```console
-curl http://localhost:5000/predictions -X POST \
+curl http://localhost:5001/predictions -X POST \
     --header "Content-Type: application/json" \
     --data '{"input": {"image": "https://.../input.jpg"}}'
-```
-
-To view the API documentation in browser for the model that is running, 
-open [http://localhost:5000/docs](http://localhost:5000/docs).
 
 For more details about the HTTP API, 
 see the [HTTP API reference documentation](http.md).
