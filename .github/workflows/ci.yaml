@@ -45,12 +45,14 @@ jobs:
         run: make test-go
 
   test-python:
+    needs:
+      - lint-python
     name: "Test Python ${{ matrix.python-version }}"
     runs-on: ubuntu-latest-8-cores
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.7", "3.8", "3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
     defaults:
       run:
         shell: bash
@@ -67,8 +69,8 @@ jobs:
         env:
           HYPOTHESIS_PROFILE: ci
 
-  typecheck-python:
-    name: "Typecheck and lint Python"
+  lint-python:
+    name: "Lint Python"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -81,14 +83,17 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install '.[dev]'
-      - name: Run typechecking
+      - name: Lint
         run: |
           make lint-python
 
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-integration:
+    needs:
+      - test-go
+      - test-python
     name: "Test integration"
-    runs-on: ubuntu-latest-8-cores
+    runs-on: ubuntu-latest-16-cores
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
