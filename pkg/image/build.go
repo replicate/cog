@@ -33,6 +33,8 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	_ = os.Remove(bundledSchemaFile)
 	_ = os.Remove(bundledSchemaPy)
 
+	var cogBaseImageName string
+
 	if dockerfileFile != "" {
 		dockerfileContents, err := os.ReadFile(dockerfileFile)
 		if err != nil {
@@ -53,6 +55,13 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}()
 		generator.SetUseCudaBaseImage(useCudaBaseImage)
 		generator.SetUseCogBaseImage(useCogBaseImage)
+
+		if generator.IsUsingCogBaseImage() {
+			cogBaseImageName, err = generator.BaseImage()
+			if err != nil {
+				return fmt.Errorf("Failed to get cog base image name: %s", err)
+			}
+		}
 
 		if separateWeights {
 			weightsDockerfile, runnerDockerfile, dockerignore, err := generator.GenerateModelBaseWithSeparateWeights(imageName)
@@ -154,6 +163,37 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		// Mark the image as having an appropriate init entrypoint. We can use this
 		// to decide how/if to shim the image.
 		global.LabelNamespace + "has_init": "true",
+	}
+
+	if cogBaseImageName != "" {
+		labels[global.LabelNamespace+"cog-base-image-name"] = cogBaseImageName
+
+		// get the last layer of the cog base image so that when we look at the built cog image,
+		// we know where the base image ends
+		// pull the base image, as we'll need to pull it anyway to build the cog image
+
+		// TODO: implement a manifest inspect which doesn't require a pull
+		// once we do that, we can switch from using layer diff ids to  layer shas
+		err := docker.Pull(cogBaseImageName)
+		if err != nil {
+			return fmt.Errorf("Failed to pull cog base image: %w", err)
+		}
+
+		cogBaseImage, err := docker.ImageInspect(cogBaseImageName)
+		if err != nil {
+			return fmt.Errorf("Failed to inspect cog base image while trying to fetch last layer: %w", err)
+		}
+
+		if cogBaseImage.RootFS.Layers == nil || len(cogBaseImage.RootFS.Layers) == 0 {
+			return fmt.Errorf("Cog base image has no layers or RootFS is nil: %s", cogBaseImageName)
+		}
+
+		lastLayerIndex := len(cogBaseImage.RootFS.Layers) - 1
+		lastLayer := cogBaseImage.RootFS.Layers[lastLayerIndex]
+		console.Debugf("Last layer of the cog base image: %s", lastLayer) // prints the sha
+
+		labels[global.LabelNamespace+"cog-base-image-last-layer-sha"] = lastLayer
+		labels[global.LabelNamespace+"cog-base-image-last-layer-idx"] = fmt.Sprintf("%d", lastLayerIndex)
 	}
 
 	if isGitRepo(dir) {
