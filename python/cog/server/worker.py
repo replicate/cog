@@ -229,10 +229,14 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     if isinstance(result, types.GeneratorType):
                         self._events.send(PredictionOutputType(multi=True))
                         for r in result:
-                            self._events.send(PredictionOutput(payload=make_encodeable(r)))
+                            self._events.send(
+                                PredictionOutput(payload=make_encodeable(r))
+                            )
                     else:
                         self._events.send(PredictionOutputType(multi=False))
-                        self._events.send(PredictionOutput(payload=make_encodeable(result)))
+                        self._events.send(
+                            PredictionOutput(payload=make_encodeable(result))
+                        )
         except CancelationException:
             done.canceled = True
         except Exception as e:
