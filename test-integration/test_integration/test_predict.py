@@ -43,7 +43,7 @@ def test_predict_takes_file_inputs(tmpdir_factory):
     project_dir = Path(__file__).parent / "fixtures/path-input-project"
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
     shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
-    with open(out_dir / "input.txt", "w") as fh:
+    with open(out_dir / "input.txt", "w", encoding="utf-8") as fh:
         fh.write("what up")
     result = subprocess.run(
         ["cog", "predict", "--debug", "-i", "path=@" + str(out_dir / "input.txt")],
@@ -106,11 +106,11 @@ def test_predict_writes_multiple_files_to_files(tmpdir_factory):
         timeout=DEFAULT_TIMEOUT,
     )
     assert result.stdout == b""
-    with open(out_dir / "output.0.txt") as f:
+    with open(out_dir / "output.0.txt", encoding="utf-8") as f:
         assert f.read() == "foo"
-    with open(out_dir / "output.1.txt") as f:
+    with open(out_dir / "output.1.txt", encoding="utf-8") as f:
         assert f.read() == "bar"
-    with open(out_dir / "output.2.txt") as f:
+    with open(out_dir / "output.2.txt", encoding="utf-8") as f:
         assert f.read() == "baz"
     assert "falling back to slow loader" not in result.stderr
 
@@ -127,7 +127,7 @@ def test_predict_writes_strings_to_files(tmpdir_factory):
         timeout=DEFAULT_TIMEOUT,
     )
     assert result.stdout == ""
-    with open(out_dir / "out.txt") as f:
+    with open(out_dir / "out.txt", encoding="utf-8") as f:
         assert f.read() == "hello world"
     assert "cannot use fast loader as current Python <3.9" in result.stderr
     assert "falling back to slow loader" in result.stderr
@@ -206,9 +206,9 @@ def test_predict_many_inputs(tmpdir_factory):
         "choices": "foo",
         "int_choices": 3,
     }
-    with open(out_dir / "path.txt", "w") as fh:
+    with open(out_dir / "path.txt", "w", encoding="utf-8") as fh:
         fh.write("world")
-    with open(out_dir / "image.jpg", "w") as fh:
+    with open(out_dir / "image.jpg", "w", encoding="utf-8") as fh:
         fh.write("")
     cmd = ["cog", "--debug", "predict"]
 
@@ -245,9 +245,9 @@ def test_predict_many_inputs_with_existing_image(docker_image, tmpdir_factory):
         "choices": "foo",
         "int_choices": 3,
     }
-    with open(out_dir / "path.txt", "w") as fh:
+    with open(out_dir / "path.txt", "w", encoding="utf-8") as fh:
         fh.write("world")
-    with open(out_dir / "image.jpg", "w") as fh:
+    with open(out_dir / "image.jpg", "w", encoding="utf-8") as fh:
         fh.write("")
     cmd = ["cog", "--debug", "predict", docker_image]
 
@@ -269,9 +269,9 @@ def test_predict_path_list_input(tmpdir_factory):
     project_dir = Path(__file__).parent / "fixtures/path-list-input-project"
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
     shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
-    with open(out_dir / "1.txt", "w") as fh:
+    with open(out_dir / "1.txt", "w", encoding="utf-8") as fh:
         fh.write("test1")
-    with open(out_dir / "2.txt", "w") as fh:
+    with open(out_dir / "2.txt", "w", encoding="utf-8") as fh:
         fh.write("test2")
     cmd = ["cog", "predict", "-i", "paths=@1.txt", "-i", "paths=@2.txt"]
 
