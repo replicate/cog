@@ -36,7 +36,8 @@ jobs:
           python-version: 3.11
       - name: Install Python dependencies
         run: |
-          python -m pip install '.[dev]'
+          python -m pip install --no-cache uv
+          python -m uv pip install '.'
       - name: Build
         run: make cog
       - name: Lint
@@ -63,7 +64,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install Python dependencies
         run: |
-          python -m pip install '.[dev]'
+          python -m pip install --no-cache uv
+          python -m uv pip install '.[dev]'
       - name: Test
         run: make test-python
         env:
@@ -82,7 +84,8 @@ jobs:
           python-version: "3.11"
       - name: Install Python dependencies
         run: |
-          python -m pip install '.[dev]'
+          python -m pip install --no-cache uv
+          python -m uv pip install '.[dev]'
       - name: Lint
         run: |
           make lint-python
@@ -105,7 +108,8 @@ jobs:
           python-version: 3.11
       - name: Install Python dependencies
         run: |
-          python -m pip install '.[dev]'
+          python -m pip install --no-cache uv
+          python -m uv pip install '.[dev]'
       - name: Test
         run: make test-integration
 
