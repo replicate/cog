@@ -56,8 +56,16 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 
 	args = append(args,
 		"--file", "-",
-		"--sbom=true",
-		"--provenance=true",
+	)
+
+	if isDockerContainerBuilderAvailable() {
+		args = append(args,
+			"--sbom=true",
+			"--provenance=true",
+		)
+	}
+
+	args = append(args,
 		"--tag", imageName,
 		"--progress", progressOutput,
 		".",
@@ -109,4 +117,20 @@ func BuildAddLabelsAndSchemaToImage(image string, labels map[string]string, bund
 		return err
 	}
 	return nil
+}
+
+func isDockerContainerBuilderAvailable() bool {
+	cmd := exec.Command("docker", "buildx", "inspect")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return false
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Driver:") && strings.Contains(line, "docker-container") {
+			return true
+		}
+	}
+	return false
 }
