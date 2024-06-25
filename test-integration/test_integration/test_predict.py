@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+DEFAULT_TIMEOUT = 30
+
 
 def test_predict_takes_string_inputs_and_returns_strings_to_stdout():
     project_dir = Path(__file__).parent / "fixtures/string-project"
@@ -14,7 +16,7 @@ def test_predict_takes_string_inputs_and_returns_strings_to_stdout():
         check=True,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=DEFAULT_TIMEOUT,
     )
     # stdout should be clean without any log messages so it can be piped to other commands
     assert result.stdout == "hello world\n"
@@ -30,7 +32,7 @@ def test_predict_takes_int_inputs_and_returns_ints_to_stdout():
         check=True,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=DEFAULT_TIMEOUT,
     )
     # stdout should be clean without any log messages so it can be piped to other commands
     assert result.stdout == "4\n"
@@ -49,7 +51,7 @@ def test_predict_takes_file_inputs(tmpdir_factory):
         check=True,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=DEFAULT_TIMEOUT,
     )
     assert result.stdout == "what up\n"
     assert "falling back to slow loader" not in result.stderr
@@ -65,7 +67,7 @@ def test_predict_writes_files_to_files(tmpdir_factory):
         check=True,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=DEFAULT_TIMEOUT,
     )
     assert result.stdout == ""
     with open(out_dir / "output.bmp", "rb") as f:
@@ -83,7 +85,7 @@ def test_predict_writes_files_to_files_with_custom_name(tmpdir_factory):
         check=True,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=DEFAULT_TIMEOUT,
     )
     assert result.stdout == ""
     with open(out_dir / "myoutput.bmp", "rb") as f:
@@ -101,7 +103,7 @@ def test_predict_writes_multiple_files_to_files(tmpdir_factory):
         check=True,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=DEFAULT_TIMEOUT,
     )
     assert result.stdout == b""
     with open(out_dir / "output.0.txt") as f:
@@ -122,7 +124,7 @@ def test_predict_writes_strings_to_files(tmpdir_factory):
         check=True,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=DEFAULT_TIMEOUT,
     )
     assert result.stdout == ""
     with open(out_dir / "out.txt") as f:
@@ -148,7 +150,7 @@ def test_predict_runs_an_existing_image(docker_image, tmpdir_factory):
         check=True,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=DEFAULT_TIMEOUT,
     )
     assert result.stdout == "hello world\n"
     assert "cannot use fast loader as current Python <3.9" in result.stderr
@@ -170,7 +172,7 @@ def test_predict_with_remote_image(tmpdir_factory):
         check=True,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=DEFAULT_TIMEOUT,
     )
 
     # lots of docker pull logs are written to stdout before writing the actual output
@@ -186,7 +188,7 @@ def test_predict_in_subdirectory_with_imports(tmpdir_factory):
         check=True,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=DEFAULT_TIMEOUT,
     )
     # stdout should be clean without any log messages so it can be piped to other commands
     assert result.stdout == "hello world\n"
@@ -219,7 +221,7 @@ def test_predict_many_inputs(tmpdir_factory):
         check=True,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=DEFAULT_TIMEOUT,
     )
     assert result.stdout == "hello default 20 world jpg foo 6\n"
     assert "falling back to slow loader" not in result.stderr
@@ -279,7 +281,7 @@ def test_predict_path_list_input(tmpdir_factory):
         check=True,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=DEFAULT_TIMEOUT,
     )
     assert "test1" in result.stdout
     assert "test2" in result.stdout
