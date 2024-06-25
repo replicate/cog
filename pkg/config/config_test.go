@@ -495,6 +495,33 @@ torch==2.3.1+cu121`
 	require.Equal(t, expected, requirements)
 }
 
+func TestPythonPackagesBothTorchAndTensorflow(t *testing.T) {
+	config := &Config{
+		Build: &Build{
+			GPU:           true,
+			PythonVersion: "3.11.1",
+			PythonPackages: []string{
+				"tensorflow==2.12.0",
+				"torch==2.0.1",
+				"torchvision==0.15.2",
+			},
+			CUDA: "11.8",
+		},
+	}
+	err := config.ValidateAndComplete("")
+	require.NoError(t, err)
+	require.Equal(t, "11.8", config.Build.CUDA)
+	require.Equal(t, "8", config.Build.CuDNN)
+
+	requirements, err := config.PythonRequirementsForArch("", "")
+	require.NoError(t, err)
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu118
+tensorflow==2.12.0
+torch==2.0.1+cu118
+torchvision==0.15.2`
+	require.Equal(t, expected, requirements)
+}
+
 func TestCUDABaseImageTag(t *testing.T) {
 	config := &Config{
 		Build: &Build{
