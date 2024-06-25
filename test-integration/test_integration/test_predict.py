@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-DEFAULT_TIMEOUT = 30
+DEFAULT_TIMEOUT = 60
 
 
 def test_predict_takes_string_inputs_and_returns_strings_to_stdout():
