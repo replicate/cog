@@ -16,10 +16,8 @@ from typing import (
     Any,
     Awaitable,
     Callable,
-    Dict,
     Optional,
     TypeVar,
-    Union,
 )
 
 if TYPE_CHECKING:
@@ -36,6 +34,7 @@ from pydantic import ValidationError
 from pydantic.error_wrappers import ErrorWrapper
 
 from .. import schema
+from ..errors import PredictorNotSet
 from ..files import upload_file
 from ..json import upload_files
 from ..logging import setup_logging
@@ -43,9 +42,12 @@ from ..predictor import (
     get_input_type,
     get_output_type,
     get_predictor_ref,
+    get_training_input_type,
+    get_training_output_type,
     load_config,
-    load_predictor_from_ref,
+    load_slim_predictor_from_ref,
 )
+from ..types import CogConfig
 from .runner import (
     PredictionRunner,
     RunnerBusyError,
@@ -53,6 +55,7 @@ from .runner import (
     SetupTask,
     UnknownPredictionError,
 )
+from .telemetry import make_trace_context, trace_context
 
 log = structlog.get_logger("cog.server.http")
 
@@ -79,12 +82,30 @@ class MyFastAPI(FastAPI):
     state: MyState  # type: ignore
 
 
+def add_setup_failed_routes(app: MyFastAPI, started_at: datetime, msg: str) -> None:
+    print(msg)
+    result = SetupResult(
+        started_at=started_at,
+        completed_at=datetime.now(tz=timezone.utc),
+        logs=msg,
+        status=schema.Status.FAILED,
+    )
+    app.state.setup_result = result
+    app.state.health = Health.SETUP_FAILED
+
+    @app.get("/health-check")
+    async def healthcheck_startup_failed() -> Any:
+        setup = attrs.asdict(app.state.setup_result)
+        return jsonable_encoder({"status": app.state.health.name, "setup": setup})
+
+
 def create_app(
-    config: Dict[str, Any],
+    config: CogConfig,
     shutdown_event: Optional[threading.Event],
     threads: int = 1,
     upload_url: Optional[str] = None,
     mode: str = "predict",
+    is_build: bool = False,
 ) -> MyFastAPI:
     app = MyFastAPI(
         title="Cog",  # TODO: mention model name?
@@ -96,35 +117,22 @@ def create_app(
     app.state.setup_result = None
     started_at = datetime.now(tz=timezone.utc)
 
-    predictor_ref = get_predictor_ref(config, mode)
+    # shutdown is needed no matter what happens
+    @app.post("/shutdown")
+    async def start_shutdown() -> Any:
+        log.info("shutdown requested via http")
+        if shutdown_event is not None:
+            shutdown_event.set()
+        return JSONResponse({}, status_code=200)
 
     try:
-        # TODO: avoid loading predictor code in this process
-        predictor = load_predictor_from_ref(predictor_ref)
+        predictor_ref = get_predictor_ref(config, mode)
+        predictor = load_slim_predictor_from_ref(predictor_ref, "predict")
         InputType = get_input_type(predictor)
         OutputType = get_output_type(predictor)
     except Exception:
-        app.state.health = Health.SETUP_FAILED
-        result = SetupResult(
-            started_at=started_at,
-            completed_at=datetime.now(tz=timezone.utc),
-            logs="Error while loading predictor:\n\n" + traceback.format_exc(),
-            status=schema.Status.FAILED,
-        )
-        app.state.setup_result = result
-
-        @app.get("/health-check")
-        async def healthcheck_startup_failed() -> Any:
-            setup = attrs.asdict(app.state.setup_result)
-            return jsonable_encoder({"status": app.state.health.name, "setup": setup})
-
-        @app.post("/shutdown")
-        async def start_shutdown_startup_failed() -> Any:
-            log.info("shutdown requested via http")
-            if shutdown_event is not None:
-                shutdown_event.set()
-            return JSONResponse({}, status_code=200)
-
+        msg = "Error while loading predictor:\n\n" + traceback.format_exc()
+        add_setup_failed_routes(app, started_at, msg)
         return app
 
     runner = PredictionRunner(
@@ -154,9 +162,86 @@ def create_app(
 
         return wrapped
 
+    if "train" in config:
+        try:
+            trainer_ref = get_predictor_ref(config, "train")
+            trainer = load_slim_predictor_from_ref(trainer_ref, "train")
+            TrainingInputType = get_training_input_type(trainer)
+            TrainingOutputType = get_training_output_type(trainer)
+
+            class TrainingRequest(
+                schema.TrainingRequest.with_types(input_type=TrainingInputType)
+            ):
+                pass
+
+            TrainingResponse = schema.TrainingResponse.with_types(
+                input_type=TrainingInputType, output_type=TrainingOutputType
+            )
+
+            @app.post(
+                "/trainings",
+                response_model=TrainingResponse,
+                response_model_exclude_unset=True,
+            )
+            def train(
+                request: TrainingRequest = Body(default=None),
+                prefer: Optional[str] = Header(default=None),
+                traceparent: Optional[str] = Header(
+                    default=None, include_in_schema=False
+                ),
+                tracestate: Optional[str] = Header(
+                    default=None, include_in_schema=False
+                ),
+            ) -> Any:  # type: ignore
+                with trace_context(make_trace_context(traceparent, tracestate)):
+                    return predict(request, prefer)
+
+            @app.put(
+                "/trainings/{training_id}",
+                response_model=PredictionResponse,
+                response_model_exclude_unset=True,
+            )
+            def train_idempotent(
+                training_id: str = Path(..., title="Training ID"),
+                request: TrainingRequest = Body(..., title="Training Request"),
+                prefer: Optional[str] = Header(default=None),
+                traceparent: Optional[str] = Header(
+                    default=None, include_in_schema=False
+                ),
+                tracestate: Optional[str] = Header(
+                    default=None, include_in_schema=False
+                ),
+            ) -> Any:
+                with trace_context(make_trace_context(traceparent, tracestate)):
+                    return predict_idempotent(training_id, request, prefer)
+
+            @app.post("/trainings/{training_id}/cancel")
+            def cancel_training(
+                training_id: str = Path(..., title="Training ID"),
+            ) -> Any:
+                return cancel(training_id)
+
+        except Exception as e:
+            if isinstance(e, (PredictorNotSet, FileNotFoundError)) and not is_build:
+                pass  # ignore missing train.py for backward compatibility with existing "bad" models in use
+            else:
+                app.state.health = Health.SETUP_FAILED
+                msg = "Error while loading trainer:\n\n" + traceback.format_exc()
+                add_setup_failed_routes(app, started_at, msg)
+                return app
+
     @app.on_event("startup")
     def startup() -> None:
-        app.state.setup_task = runner.setup()
+        # check for early setup failures
+        if (
+            app.state.setup_result
+            and app.state.setup_result.status == schema.Status.FAILED
+        ):
+            if not args.await_explicit_shutdown:  # signal shutdown if interactive run
+                if shutdown_event is not None:
+                    shutdown_event.set()
+        else:
+            app.state.setup_task = runner.setup()
 
     @app.on_event("shutdown")
     def shutdown() -> None:
@@ -172,7 +257,7 @@ def create_app(
 
     @app.get("/health-check")
     async def healthcheck() -> Any:
-        await _check_setup_task()
+        _check_setup_result()
         if app.state.health == Health.READY:
             health = Health.BUSY if runner.is_busy() else Health.READY
         else:
@@ -188,7 +273,9 @@ def create_app(
     )
     async def predict(
         request: PredictionRequest = Body(default=None),
-        prefer: Union[str, None] = Header(default=None),
+        prefer: Optional[str] = Header(default=None),
+        traceparent: Optional[str] = Header(default=None, include_in_schema=False),
+        tracestate: Optional[str] = Header(default=None, include_in_schema=False),
     ) -> Any:  # type: ignore
         """
         Run a single prediction on the model
@@ -201,7 +288,11 @@ def create_app(
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
 
-        return await _predict(request=request, respond_async=respond_async)
+        with trace_context(make_trace_context(traceparent, tracestate)):
+            return _predict(
+                request=request,
+                respond_async=respond_async,
+            )
 
     @limited
     @app.put(
@@ -212,7 +303,9 @@ def create_app(
     async def predict_idempotent(
         prediction_id: str = Path(..., title="Prediction ID"),
         request: PredictionRequest = Body(..., title="Prediction Request"),
-        prefer: Union[str, None] = Header(default=None),
+        prefer: Optional[str] = Header(default=None),
+        traceparent: Optional[str] = Header(default=None, include_in_schema=False),
+        tracestate: Optional[str] = Header(default=None, include_in_schema=False),
     ) -> Any:
         """
         Run a single prediction on the model (idempotent creation).
@@ -236,10 +329,16 @@ def create_app(
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
 
-        return await _predict(request=request, respond_async=respond_async)
+        with trace_context(make_trace_context(traceparent, tracestate)):
+            return _predict(
+                request=request,
+                respond_async=respond_async,
+            )
 
-    async def _predict(
-        *, request: Optional[PredictionRequest], respond_async: bool = False
+    def _predict(
+        *,
+        request: Optional[PredictionRequest],
+        respond_async: bool = False,
     ) -> Response:
         # [compat] If no body is supplied, assume that this model can be run
         # with empty input. This will throw a ValidationError if that's not
@@ -256,7 +355,8 @@ def create_app(
             # async predictions. This is unfortunate but required to ensure
             # backwards-compatible behaviour for synchronous predictions.
             initial_response, async_result = runner.predict(
-                request, upload=respond_async
+                request,
+                upload=respond_async,
             )
         except RunnerBusyError:
             return JSONResponse(
@@ -267,8 +367,7 @@ def create_app(
             return JSONResponse(jsonable_encoder(initial_response), status_code=202)
 
         try:
-            prediction = await async_result
-            response = PredictionResponse(**prediction.dict())
+            response = PredictionResponse(**async_result.get().dict())
         except ValidationError as e:
             _log_invalid_output(e)
             raise HTTPException(status_code=500, detail=str(e)) from e
@@ -297,22 +396,14 @@ def create_app(
         else:
             return JSONResponse({}, status_code=200)
 
-    @app.post("/shutdown")
-    async def start_shutdown() -> Any:
-        log.info("shutdown requested via http")
-        if shutdown_event is not None:
-            shutdown_event.set()
-        return JSONResponse({}, status_code=200)
-
-    async def _check_setup_task() -> Any:
+    def _check_setup_result() -> Any:
         if app.state.setup_task is None:
             return
 
-        if not app.state.setup_task.done():
+        if not app.state.setup_task.ready():
             return
 
-        # this can raise CancelledError
-        result = app.state.setup_task.result()
+        result = app.state.setup_task.get()
 
         if result.status == schema.Status.SUCCEEDED:
             app.state.health = Health.READY
@@ -393,6 +484,13 @@ def _cpu_count() -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Cog HTTP server")
     parser.add_argument(
+        "--host",
+        dest="host",
+        type=str,
+        default="0.0.0.0",
+        help="Host to bind to",
+    )
+    parser.add_argument(
         "--threads",
         dest="threads",
         type=int,
@@ -448,6 +546,8 @@ if __name__ == "__main__":
         mode=args.mode,
     )
 
+    host: str = args.host
+
     port = int(os.getenv("PORT", 5000))
     if is_port_in_use(port):
         log.error(f"Port {port} is already in use")
@@ -455,7 +555,7 @@ if __name__ == "__main__":
 
     server_config = uvicorn.Config(
         app,
-        host="0.0.0.0",
+        host=host,
         port=port,
         log_config=None,
         # This is the default, but to be explicit: only run a single worker
@@ -476,3 +576,8 @@ if __name__ == "__main__":
         pass
 
     s.stop()
+
+    # return error exit code when setup failed and cog is running in interactive mode (not k8s)
+    if app.state.setup_result and not args.await_explicit_shutdown:
+        if app.state.setup_result.status == schema.Status.FAILED:
+            exit(-1)

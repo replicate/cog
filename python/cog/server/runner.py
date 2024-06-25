@@ -1,9 +1,10 @@
-import asyncio
 import io
+import sys
 import threading
 import traceback
 import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
+from multiprocessing.pool import AsyncResult, ThreadPool
 from typing import Any, Callable, Optional, Tuple, Union, cast
 
 import requests
@@ -18,6 +19,8 @@ from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
 from .probes import ProbeHelper
+from .telemetry import current_trace_context
+from .useragent import get_user_agent
 from .webhook import SKIP_START_EVENT, webhook_caller_filtered
 from .worker import Worker
 
@@ -44,8 +47,11 @@ class SetupResult:
     status: schema.Status
 
 
-PredictionTask: "typing.TypeAlias" = "asyncio.Task[schema.PredictionResponse]"
-SetupTask: "typing.TypeAlias" = "asyncio.Task[SetupResult]"
+PredictionTask: "typing.TypeAlias" = "AsyncResult[schema.PredictionResponse]"
+SetupTask: "typing.TypeAlias" = "AsyncResult[SetupResult]"
+if sys.version_info < (3, 9):
+    PredictionTask = AsyncResult
+    SetupTask = AsyncResult
 RunnerTask: "typing.TypeAlias" = Union[PredictionTask, SetupTask]
 
 
@@ -57,43 +63,46 @@ class PredictionRunner:
         shutdown_event: Optional[threading.Event],
         upload_url: Optional[str] = None,
     ) -> None:
+        self._thread = None
+        self._threadpool = ThreadPool(processes=1)
+
         self._response: Optional[schema.PredictionResponse] = None
         self._result: Optional[RunnerTask] = None
 
         self._worker = Worker(predictor_ref=predictor_ref)
-        self._should_cancel = asyncio.Event()
+        self._should_cancel = threading.Event()
 
         self._shutdown_event = shutdown_event
         self._upload_url = upload_url
 
-    def make_error_handler(self, activity: str) -> Callable[[RunnerTask], None]:
-        def handle_error(task: RunnerTask) -> None:
-            exc = task.exception()
-            if not exc:
-                return
+    def setup(self) -> SetupTask:
+        if self.is_busy():
+            raise RunnerBusyError()
+
+        def handle_error(error: BaseException) -> None:
             # Re-raise the exception in order to more easily capture exc_info,
             # and then trigger shutdown, as we have no easy way to resume
             # worker state if an exception was thrown.
             try:
-                raise exc
+                raise error
             except Exception:
-                log.error(f"caught exception while running {activity}", exc_info=True)
+                log.error("caught exception while running setup", exc_info=True)
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
 
-        return handle_error
-
-    def setup(self) -> SetupTask:
-        if self.is_busy():
-            raise RunnerBusyError()
-        self._result = asyncio.create_task(setup(worker=self._worker))
-        self._result.add_done_callback(self.make_error_handler("setup"))
+        self._result = self._threadpool.apply_async(
+            func=setup,
+            kwds={"worker": self._worker},
+            error_callback=handle_error,
+        )
         return self._result
 
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
     # no longer have to support Python 3.8
     def predict(
-        self, prediction: schema.PredictionRequest, upload: bool = True
+        self,
+        prediction: schema.PredictionRequest,
+        upload: bool = True,
     ) -> Tuple[schema.PredictionResponse, PredictionTask]:
         # It's the caller's responsibility to not call us if we're busy.
         if self.is_busy():
@@ -114,23 +123,39 @@ class PredictionRunner:
 
         self._should_cancel.clear()
         upload_url = self._upload_url if upload else None
-        event_handler = create_event_handler(prediction, upload_url=upload_url)
+        event_handler = create_event_handler(
+            prediction,
+            upload_url=upload_url,
+        )
 
-        def handle_cleanup(_: PredictionTask) -> None:
+        def cleanup(_: Optional[schema.PredictionResponse] = None) -> None:
             input = cast(Any, prediction.input)
             if hasattr(input, "cleanup"):
                 input.cleanup()
 
+        def handle_error(error: BaseException) -> None:
+            # Re-raise the exception in order to more easily capture exc_info,
+            # and then trigger shutdown, as we have no easy way to resume
+            # worker state if an exception was thrown.
+            try:
+                raise error
+            except Exception:
+                log.error("caught exception while running prediction", exc_info=True)
+                if self._shutdown_event is not None:
+                    self._shutdown_event.set()
+
         self._response = event_handler.response
-        coro = predict(
-            worker=self._worker,
-            request=prediction,
-            event_handler=event_handler,
-            should_cancel=self._should_cancel,
+        self._result = self._threadpool.apply_async(
+            func=predict,
+            kwds={
+                "worker": self._worker,
+                "request": prediction,
+                "event_handler": event_handler,
+                "should_cancel": self._should_cancel,
+            },
+            callback=cleanup,
+            error_callback=handle_error,
         )
-        self._result = asyncio.create_task(coro)
-        self._result.add_done_callback(handle_cleanup)
-        self._result.add_done_callback(self.make_error_handler("prediction"))
 
         return (self._response, self._result)
 
@@ -138,7 +163,7 @@ class PredictionRunner:
         if self._result is None:
             return False
 
-        if not self._result.done():
+        if not self._result.ready():
             return True
 
         self._response = None
@@ -146,9 +171,9 @@ class PredictionRunner:
         return False
 
     def shutdown(self) -> None:
-        if self._result:
-            self._result.cancel()
         self._worker.terminate()
+        self._threadpool.terminate()
+        self._threadpool.join()
 
     def cancel(self, prediction_id: Optional[str] = None) -> None:
         if not self.is_busy():
@@ -160,7 +185,8 @@ class PredictionRunner:
 
 
 def create_event_handler(
-    prediction: schema.PredictionRequest, upload_url: Optional[str] = None
+    prediction: schema.PredictionRequest,
+    upload_url: Optional[str] = None,
 ) -> "PredictionEventHandler":
     response = schema.PredictionResponse(**prediction.dict())
 
@@ -175,7 +201,7 @@ def create_event_handler(
 
     file_uploader = None
     if upload_url is not None:
-        file_uploader = generate_file_uploader(upload_url)
+        file_uploader = generate_file_uploader(upload_url, prediction_id=prediction.id)
 
     event_handler = PredictionEventHandler(
         response, webhook_sender=webhook_sender, file_uploader=file_uploader
@@ -184,12 +210,16 @@ def create_event_handler(
     return event_handler
 
 
-def generate_file_uploader(upload_url: str) -> Callable[[Any], Any]:
+def generate_file_uploader(
+    upload_url: str, prediction_id: Optional[str]
+) -> Callable[[Any], Any]:
     client = _make_file_upload_http_client()
 
     def file_uploader(output: Any) -> Any:
         def upload_file(fh: io.IOBase) -> str:
-            return put_file_to_signed_endpoint(fh, upload_url, client=client)
+            return put_file_to_signed_endpoint(
+                fh, endpoint=upload_url, prediction_id=prediction_id, client=client
+            )
 
         return upload_files(output, upload_file=upload_file)
 
@@ -290,15 +320,13 @@ class PredictionEventHandler:
             raise FileUploadError("Got error trying to upload output files") from error
 
 
-async def setup(*, worker: Worker) -> SetupResult:
+def setup(*, worker: Worker) -> SetupResult:
     logs = []
     status = None
     started_at = datetime.now(tz=timezone.utc)
 
     try:
-        # will be async
         for event in worker.setup():
-            await asyncio.sleep(0)
             if isinstance(event, Log):
                 logs.append(event.message)
             elif isinstance(event, Done):
@@ -328,19 +356,19 @@ async def setup(*, worker: Worker) -> SetupResult:
     )
 
 
-async def predict(
+def predict(
     *,
     worker: Worker,
     request: schema.PredictionRequest,
     event_handler: PredictionEventHandler,
-    should_cancel: asyncio.Event,
+    should_cancel: threading.Event,
 ) -> schema.PredictionResponse:
     # Set up logger context within prediction thread.
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(prediction_id=request.id)
 
     try:
-        return await _predict(
+        return _predict(
             worker=worker,
             request=request,
             event_handler=event_handler,
@@ -353,12 +381,12 @@ async def predict(
         raise
 
 
-async def _predict(
+def _predict(
     *,
     worker: Worker,
     request: schema.PredictionRequest,
     event_handler: PredictionEventHandler,
-    should_cancel: asyncio.Event,
+    should_cancel: threading.Event,
 ) -> schema.PredictionResponse:
     initial_prediction = request.dict()
 
@@ -366,18 +394,23 @@ async def _predict(
     input_dict = initial_prediction["input"]
 
     for k, v in input_dict.items():
-        if isinstance(v, types.URLPath):
-            try:
+        try:
+            # Check if v is an instance of URLPath
+            if isinstance(v, types.URLPath):
                 input_dict[k] = v.convert()
-            except requests.exceptions.RequestException as e:
-                tb = traceback.format_exc()
-                event_handler.append_logs(tb)
-                event_handler.failed(error=str(e))
-                log.warn("failed to download url path from input", exc_info=True)
-                return event_handler.response
-    # will be async
+            # Check if v is a list of URLPath instances
+            elif isinstance(v, list) and all(
+                isinstance(item, types.URLPath) for item in v
+            ):
+                input_dict[k] = [item.convert() for item in v]
+        except requests.exceptions.RequestException as e:
+            tb = traceback.format_exc()
+            event_handler.append_logs(tb)
+            event_handler.failed(error=str(e))
+            log.warn("Failed to download url path from input", exc_info=True)
+            return event_handler.response
+
     for event in worker.predict(input_dict, poll=0.1):
-        await asyncio.sleep(0)
         if should_cancel.is_set():
             worker.cancel()
             should_cancel.clear()
@@ -427,6 +460,14 @@ async def _predict(
 
 def _make_file_upload_http_client() -> requests.Session:
     session = requests.Session()
+    session.headers["user-agent"] = (
+        get_user_agent() + " " + str(session.headers["user-agent"])
+    )
+
+    ctx = current_trace_context() or {}
+    for key, value in ctx.items():
+        session.headers[key] = str(value)
+
     adapter = HTTPAdapter(
         max_retries=Retry(
             total=3,

@@ -59,14 +59,15 @@ func fetchTorchPackages(name string) ([]torchPackage, error) {
 		name, version, variant, pythonVersion := groups[2], groups[3], groups[4], groups[5]
 
 		var cuda *string
-		if variant == "cpu" {
+		switch {
+		case variant == "cpu":
 			cuda = nil
-		} else if strings.HasPrefix(variant, "cu") {
+		case strings.HasPrefix(variant, "cu"):
 			// cu92 -> 9.2
 			c := strings.TrimPrefix(variant, "cu")
 			c = c[:len(c)-1] + "." + c[len(c)-1:]
 			cuda = &c
-		} else {
+		default:
 			// rocm etc
 			continue
 		}
@@ -208,7 +209,7 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 	torchaudio := libVersions["torchaudio"]
 
 	// TODO: this could be determined from https://download.pytorch.org/whl/torch/
-	pythons := []string{"3.6", "3.7", "3.8", "3.9", "3.10", "3.11"}
+	pythons := []string{"3.7", "3.8", "3.9", "3.10", "3.11"}
 
 	return &config.TorchCompatibility{
 		Torch:         torch,
@@ -263,15 +264,16 @@ func parsePreviousTorchVersionsCode(code string, compats []config.TorchCompatibi
 		if strings.HasPrefix(line, "#") {
 			skipSection = false
 			rawArch := strings.ToLower(line[2:])
-			if strings.HasPrefix(rawArch, "cuda") {
+			switch {
+			case strings.HasPrefix(rawArch, "cuda"):
 				_, c := split2(rawArch, " ")
 				cuda = &c
-			} else if rawArch == "cpu only" {
+			case rawArch == "cpu only":
 				cuda = nil
-			} else if strings.HasPrefix(rawArch, "rocm") {
+			case strings.HasPrefix(rawArch, "rocm"):
 				cuda = nil
 				skipSection = true
-			} else {
+			default:
 				// Ignore additional heading lines (notes, etc)
 				continue
 			}
@@ -300,6 +302,6 @@ func parsePreviousTorchVersionsCode(code string, compats []config.TorchCompatibi
 // torchvision==0.8.0 should actually be 0.8.1, this is a bug on the website
 func fixTorchCompatibility(compat *config.TorchCompatibility) {
 	if strings.HasPrefix(compat.Torchvision, "0.8.0") {
-		compat.Torchvision = strings.Replace(compat.Torchvision, "0.8.0", "0.8.1", -1)
+		compat.Torchvision = strings.ReplaceAll(compat.Torchvision, "0.8.0", "0.8.1")
 	}
 }

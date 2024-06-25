@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 
@@ -111,7 +113,7 @@ func init() {
 	filteredTorchCompatibilityMatrix := []TorchCompatibility{}
 	for _, compat := range torchCompatibilityMatrix {
 		for _, cudaBaseImage := range CUDABaseImages {
-			if compat.CUDA != nil && version.Matches(*compat.CUDA, cudaBaseImage.CUDA) {
+			if compat.CUDA == nil || version.Matches(*compat.CUDA, cudaBaseImage.CUDA) {
 				filteredTorchCompatibilityMatrix = append(filteredTorchCompatibilityMatrix, compat)
 				break
 			}
@@ -127,6 +129,7 @@ func cudasFromTorch(ver string) ([]string, error) {
 			cudas = append(cudas, *compat.CUDA)
 		}
 	}
+	slices.Sort(cudas)
 	return cudas, nil
 }
 
@@ -221,18 +224,31 @@ func versionGreater(a string, b string) (bool, error) {
 }
 
 func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
+	var images []CUDABaseImage
 	for _, image := range CUDABaseImages {
 		if version.Matches(cuda, image.CUDA) && image.CuDNN == cuDNN {
-			return image.ImageTag(), nil
+			images = append(images, image)
 		}
 	}
-	return "", fmt.Errorf("No matching base image for CUDA %s and CuDNN %s", cuda, cuDNN)
+	if len(images) == 0 {
+		return "", fmt.Errorf("No matching base image for CUDA %s and CuDNN %s", cuda, cuDNN)
+	}
+
+	sort.Slice(images, func(i, j int) bool {
+		if images[i].CUDA != images[j].CUDA {
+			return version.MustVersion(images[i].CUDA).Greater(version.MustVersion(images[j].CUDA))
+		}
+		return images[i].Ubuntu > images[j].Ubuntu
+	})
+
+	return images[0].ImageTag(), nil
 }
 
 func tfGPUPackage(ver string, cuda string) (name string, cpuVersion string, err error) {
 	for _, compat := range TFCompatibilityMatrix {
 		if compat.TF == ver && version.Equal(compat.CUDA, cuda) {
-			return splitPinnedPythonRequirement(compat.TFGPUPackage)
+			name, cpuVersion, _, _, err = splitPinnedPythonRequirement(compat.TFGPUPackage)
+			return name, cpuVersion, err
 		}
 	}
 	// We've already warned user if they're doing something stupid in validateAndCompleteCUDA(), so fail silently

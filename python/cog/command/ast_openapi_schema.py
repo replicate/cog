@@ -372,7 +372,7 @@ def get_call_name(call: ast.Call) -> str:
 def parse_args(tree: ast.AST) -> "list[tuple[ast.arg, ast.expr | types.EllipsisType]]":
     """Parse argument, default pairs from a file with a predict function"""
     predict = find(tree, "predict")
-    assert isinstance(predict, (ast.FunctionDef, ast.AsyncFunctionDef))
+    assert isinstance(predict, ast.FunctionDef)
     args = predict.args.args  # [-len(defaults) :]
     # use Ellipsis instead of None here to distinguish a default of None
     defaults = [...] * (len(args) - len(predict.args.defaults)) + predict.args.defaults
@@ -449,7 +449,7 @@ def parse_return_annotation(
     tree: ast.AST, fn: str = "predict"
 ) -> "tuple[JSONDict, JSONDict]":
     predict = find(tree, fn)
-    if not isinstance(predict, (ast.FunctionDef, ast.AsyncFunctionDef)):
+    if not isinstance(predict, ast.FunctionDef):
         raise ValueError("Could not find predict function")
     annotation = predict.returns
     if not annotation:
@@ -493,7 +493,7 @@ For example:
         format = {"format": "uri"} if name in ("Path", "File") else {}
         return {}, {"title": "Output", "type": OPENAPI_TYPES.get(name, name), **format}
     # it must be a custom object
-    schema: "JSONDict" = {name: parse_class(find(tree, name))}
+    schema: JSONDict = {name: parse_class(find(tree, name))}
     return schema, {
         "title": "Output",
         "$ref": f"#/components/schemas/{name}",
@@ -506,10 +506,10 @@ KEPT_ATTRS = ("description", "default", "ge", "le", "max_length", "min_length", 
 def extract_info(code: str) -> "JSONDict":
     """Parse the schemas from a file with a predict function"""
     tree = ast.parse(code)
-    properties: "JSONDict" = {}
-    inputs: "JSONDict" = {"title": "Input", "type": "object", "properties": properties}
-    required: "list[str]" = []
-    schemas: "JSONDict" = {}
+    properties: JSONDict = {}
+    inputs: JSONDict = {"title": "Input", "type": "object", "properties": properties}
+    required: list[str] = []
+    schemas: JSONDict = {}
     for arg, default in parse_args(tree):
         if arg.arg == "self":
             continue
@@ -526,7 +526,7 @@ def extract_info(code: str) -> "JSONDict":
             kws = {}
         else:
             raise ValueError("Unexpected default value", default)
-        input: "JSONDict" = {"x-order": len(properties)}
+        input: JSONDict = {"x-order": len(properties)}
         # need to handle other types?
         arg_type = OPENAPI_TYPES.get(get_annotation(arg.annotation), "string")
         if get_annotation(arg.annotation) in ("Path", "File"):
@@ -553,15 +553,15 @@ def extract_info(code: str) -> "JSONDict":
         inputs["required"] = list(required)
     # List[Path], list[Path], str, Iterator[str], MyOutput, Output
     return_schema, output = parse_return_annotation(tree, "predict")
-    schema: "JSONDict" = json.loads(BASE_SCHEMA)
-    components: "JSONDict" = {
+    schema: JSONDict = json.loads(BASE_SCHEMA)
+    components: JSONDict = {
         "Input": inputs,
         "Output": output,
         **schemas,
         **return_schema,
     }
     # trust me, typechecker, I know BASE_SCHEMA
-    x: "JSONDict" = schema["components"]["schemas"]  # type: ignore
+    x: JSONDict = schema["components"]["schemas"]  # type: ignore
     x.update(components)
     return schema
 

@@ -1,3 +1,3 @@
 .PHONY: test
 test:
-	pytest -n auto -vv --reruns 5
+	pytest -n auto -vv --reruns 3

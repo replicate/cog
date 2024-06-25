@@ -211,7 +211,6 @@ cog push
 # Building r8.im/replicate/resnet...
 # Pushing r8.im/replicate/resnet...
 # Pushed!
-
 ```
 
 The Docker image is now accessible to anyone or any system that has access to this Docker registry.

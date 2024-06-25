@@ -33,17 +33,36 @@ def uses_predictor(name):
     )
 
 
+def uses_trainer(name):
+    # HACK: `name` can either be in the form "<name>.py:train" or just "<name>".
+    if ":" not in name:
+        name = f"{name}.py:train"
+    options = {"additional_config": {"train": _fixture_path(name)}}
+
+    return pytest.mark.parametrize(
+        "client", [AppConfig(predictor_fixture=name, options=options)], indirect=True
+    )
+
+
 def uses_predictor_with_client_options(name, **options):
     return pytest.mark.parametrize(
         "client", [AppConfig(predictor_fixture=name, options=options)], indirect=True
     )
 
 
-def make_client(fixture_name: str, upload_url: Optional[str] = None):
+def make_client(
+    fixture_name: str,
+    upload_url: Optional[str] = None,
+    additional_config: Optional[dict] = None,
+):
     """
     Creates a fastapi test client for an app that uses the requested Predictor.
     """
+
     config = {"predict": _fixture_path(fixture_name)}
+    if additional_config:
+        config.update(additional_config)
+
     app = create_app(
         config=config,
         shutdown_event=threading.Event(),

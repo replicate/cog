@@ -6,6 +6,7 @@ Tip: Run [`cog init`](getting-started-own-model.md#initialization) to generate a
 
 ## Contents
 
+- [Contents](#contents)
 - [`BasePredictor`](#basepredictor)
   - [`Predictor.setup()`](#predictorsetup)
   - [`Predictor.predict(**kwargs)`](#predictorpredictkwargs)
@@ -14,9 +15,12 @@ Tip: Run [`cog init`](getting-started-own-model.md#initialization) to generate a
 - [Output](#output)
   - [Returning an object](#returning-an-object)
   - [Returning a list](#returning-a-list)
+  - [Optional properties](#optional-properties)
 - [Input and output types](#input-and-output-types)
 - [`File()`](#file)
 - [`Path()`](#path)
+- [`Secret`](#secret)
+- [`List`](#list)
 
 ## `BasePredictor`
 
@@ -50,7 +54,23 @@ Prepare the model so multiple predictions run efficiently.
 
 Use this _optional_ method to include any expensive one-off operations in here like loading trained models, instantiate data transformations, etc.
 
-It's best not to download model weights or any other files in this function. You should bake these into the image when you build it. This means your model doesn't depend on any other system being available and accessible. It also means the Docker image ID becomes an immutable identifier for the precise model you're running, instead of the combination of the image ID and whatever files it might have downloaded.
+Many models use this method to download their weights (e.g. using [`pget`](https://github.com/replicate/pget)). This has some advantages:
+
+- Smaller image sizes
+- Faster build times
+- Faster pushes and inference on [Replicate](https://replicate.com)
+
+However, this may also significantly increase your `setup()` time.
+
+As an alternative, some choose to store their weights directly in the image. You can simply leave your weights in the directory alongside your `cog.yaml` and ensure they are not excluded in your `.dockerignore` file.
+
+While this will increase your image size and build time, it offers other advantages:
+
+- Faster `setup()` time
+- Ensures idempotency and reduces your model's reliance on external systems
+- Preserves reproducibility as your model will be self-contained in the image
+
+> When using this method, you should use the `--separate-weights` flag on `cog build` to store weights in a [separate layer](https://github.com/replicate/cog/blob/12ac02091d93beebebed037f38a0c99cd8749806/docs/getting-started.md?plain=1#L219).
 
 ### `Predictor.predict(**kwargs)`
 
@@ -168,7 +188,7 @@ The `predict()` method can return a list of any of the supported output types. H
 from cog import BasePredictor, Path
 
 class Predictor(BasePredictor):
-    def predict(self) -> List[Path]:
+    def predict(self) -> list[Path]:
         predictions = ["foo", "bar", "baz"]
         output = []
         for i, prediction in enumerate(predictions):
@@ -211,8 +231,12 @@ Each parameter of the `predict()` method must be annotated with a type. The meth
 - `bool`: a boolean
 - [`cog.File`](#file): a file-like object representing a file
 - [`cog.Path`](#path): a path to a file on disk
+- [`cog.Secret`](#secret): a string containing sensitive information
 
 ## `File()`
+
+> [!WARNING]  
+> `cog.File` is deprecated and will be removed in a future version of Cog. Use [`cog.Path`](#path) instead.
 
 The `cog.File` object is used to get files in and out of models. It represents a _file handle_.
 
@@ -250,6 +274,72 @@ class Predictor(BasePredictor):
         # To output `cog.Path` objects the file needs to exist, so create a temporary file first.
         # This file will automatically be deleted by Cog after it has been returned.
         output_path = Path(tempfile.mkdtemp()) / "upscaled.png"
-        upscaled_image.save(output)
+        upscaled_image.save(output_path)
         return Path(output_path)
 ```
+
+## `Secret`
+
+The `cog.Secret` type is used to signify that an input holds sensitive information,
+like a password or API token.
+
+`cog.Secret` is a subclass of Pydantic's [`SecretStr`](https://docs.pydantic.dev/latest/api/types/#pydantic.types.SecretStr).
+Its default string representation redacts its contents to prevent accidental disclure.
+You can access its contents with the `get_secret_value()` method.
+
+```python
+from cog import BasePredictor, Secret
+
+
+class Predictor(BasePredictor):
+    def predict(self, api_token: Secret) -> None:
+        # Prints '**********'
+        print(api_token)        
+
+        # Use get_secret_value method to see the secret's content.
+        print(api_token.get_secret_value())
+```
+
+A predictor's `Secret` inputs are represented in OpenAPI with the following schema:
+
+```json
+{
+  "type": "string",
+  "format": "password",
+  "x-cog-secret": true,
+}
+```
+
+Models uploaded to Replicate treat secret inputs differently throughout its system.
+When you create a prediction on Replicate,
+any value passed to a `Secret` input is redacted after being sent to the model.
+
+> [!WARNING]  
+> Passing secret values to untrusted models can result in 
+> unintended disclosure, exfiltration, or misuse of sensitive data.
+
+## `List`
+
+The List type is also supported in inputs. It can hold any supported type.
+
+Example for **List[Path]**:
+```py
+class Predictor(BasePredictor):
+   def predict(self, paths: list[Path]) -> str:
+       output_parts = []  # Use a list to collect file contents
+       for path in paths:
+           with open(path) as f:
+             output_parts.append(f.read())
+       return "".join(output_parts)
+```
+The corresponding cog command:
+```bash
+$ echo test1 > 1.txt
+$ echo test2 > 2.txt
+$ cog predict -i paths=@1.txt -i paths=@2.txt
+Running prediction...
+test1
+
+test2
+```
+- Note the repeated inputs with the same name "paths" which constitute the list

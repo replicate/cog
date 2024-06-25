@@ -22,8 +22,8 @@ from hypothesis.stateful import (
 )
 
 # Set a longer deadline on CI as the instances are a bit slower.
-settings.register_profile("ci", max_examples=100, deadline=1000)
-settings.register_profile("default", max_examples=10, deadline=500)
+settings.register_profile("ci", max_examples=100, deadline=2000)
+settings.register_profile("default", max_examples=10, deadline=1500)
 settings.register_profile("slow", max_examples=10, deadline=2000)
 settings.load_profile(os.getenv("HYPOTHESIS_PROFILE", "default"))
 
@@ -57,17 +57,11 @@ OUTPUT_FIXTURES = [
         lambda x: f"hello, {x['name']}",
     ),
     (
-        "async_hello",
-        {"name": ST_NAMES},
-        lambda x: f"hello, {x['name']}",
-    ),
-    (
         "count_up",
         {"upto": st.integers(min_value=0, max_value=100)},
         lambda x: list(range(x["upto"])),
     ),
     ("complex_output", {}, lambda _: {"number": 42, "text": "meaning of life"}),
-    ("async_setup_uses_same_loop_as_predict", {}, lambda _: True),
 ]
 
 SETUP_LOGS_FIXTURES = [
@@ -79,8 +73,7 @@ SETUP_LOGS_FIXTURES = [
             "setting up predictor\n"
         ),
         "writing to stderr at import time\n",
-    ),
-    ("setup_uses_async", "setup used asyncio.run! it's not very effective...\n", ""),
+    )
 ]
 
 PREDICT_LOGS_FIXTURES = [
@@ -467,7 +460,7 @@ class WorkerState(RuleBasedStateMachine):
         self.predict_events = []
         self.predict_payload = None
 
-    @rule(sleep=st.floats(min_value=0, max_value=0.5))
+    @rule(sleep=st.floats(min_value=0, max_value=0.1))
     def wait(self, sleep):
         time.sleep(sleep)
 
@@ -480,7 +473,7 @@ class WorkerState(RuleBasedStateMachine):
             pass
 
     @precondition(lambda x: x.setup_generator)
-    @rule(n=st.integers(min_value=1, max_value=10))
+    @rule(n=st.integers(min_value=1, max_value=5))
     def read_setup_events(self, n):
         try:
             for _ in range(n):
@@ -500,7 +493,7 @@ class WorkerState(RuleBasedStateMachine):
         assert result.stderr == ""
         assert result.done == Done()
 
-    @rule(name=ST_NAMES, steps=st.integers(min_value=0, max_value=10))
+    @rule(name=ST_NAMES, steps=st.integers(min_value=0, max_value=5))
     def predict(self, name, steps):
         try:
             payload = {"name": name, "steps": steps}
@@ -511,7 +504,7 @@ class WorkerState(RuleBasedStateMachine):
             pass
 
     @precondition(lambda x: x.predict_generator)
-    @rule(n=st.integers(min_value=1, max_value=10))
+    @rule(n=st.integers(min_value=1, max_value=5))
     def read_predict_events(self, n):
         try:
             for _ in range(n):

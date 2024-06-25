@@ -1,3 +1,5 @@
 build:
-  python_version: "3.8"
+  gpu: false
+  python_version: "3.7"
+
 predict: "predict.py:Predictor"

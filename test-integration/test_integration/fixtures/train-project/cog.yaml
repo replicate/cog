@@ -1,0 +1,4 @@
+build:
+  python_version: "3.9"
+predict: "predict.py:Predictor"
+train: "train.py:train"

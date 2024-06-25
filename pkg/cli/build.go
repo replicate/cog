@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -19,13 +21,15 @@ var buildProgressOutput string
 var buildSchemaFile string
 var buildUseCudaBaseImage string
 var buildDockerfileFile string
+var buildUseCogBaseImage bool
 
 func newBuildCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "build",
-		Short: "Build an image from cog.yaml",
-		Args:  cobra.NoArgs,
-		RunE:  buildCommand,
+		Use:     "build",
+		Short:   "Build an image from cog.yaml",
+		Args:    cobra.NoArgs,
+		RunE:    buildCommand,
+		PreRunE: checkMutuallyExclusiveFlags,
 	}
 	addBuildProgressOutputFlag(cmd)
 	addSecretsFlag(cmd)
@@ -34,6 +38,8 @@ func newBuildCommand() *cobra.Command {
 	addSchemaFlag(cmd)
 	addUseCudaBaseImageFlag(cmd)
 	addDockerfileFlag(cmd)
+	addUseCogBaseImageFlag(cmd)
+	addBuildTimestampFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
 }
@@ -52,7 +58,12 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		imageName = config.DockerImageName(projectDir)
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile); err != nil {
+	err = config.ValidateModelPythonVersion(cfg.Build.PythonVersion)
+	if err != nil {
+		return err
+	}
+
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, buildUseCogBaseImage); err != nil {
 		return err
 	}
 
@@ -96,4 +107,27 @@ func addDockerfileFlag(cmd *cobra.Command) {
 			f.Hidden = true
 		}
 	})
+}
+
+func addUseCogBaseImageFlag(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&buildUseCogBaseImage, "use-cog-base-image", false, "Use pre-built Cog base image for faster cold boots")
+}
+
+func addBuildTimestampFlag(cmd *cobra.Command) {
+	cmd.Flags().Int64Var(&config.BuildSourceEpochTimestamp, "timestamp", -1, "Number of seconds sing Epoch to use for the build timestamp; this rewrites the timestamp of each layer. Useful for reproducibility. (`-1` to disable timestamp rewrites)")
+	_ = cmd.Flags().MarkHidden("timestamp")
+}
+
+func checkMutuallyExclusiveFlags(cmd *cobra.Command, args []string) error {
+	flags := []string{"use-cog-base-image", "use-cuda-base-image", "dockerfile"}
+	var flagsSet []string
+	for _, flag := range flags {
+		if cmd.Flag(flag).Changed {
+			flagsSet = append(flagsSet, "--"+flag)
+		}
+	}
+	if len(flagsSet) > 1 {
+		return fmt.Errorf("The flags %s are mutually exclusive: you can only set one of them.", strings.Join(flagsSet, " and "))
+	}
+	return nil
 }

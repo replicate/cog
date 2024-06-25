@@ -7,7 +7,12 @@ import responses
 from PIL import Image
 from responses import matchers
 
-from .conftest import make_client, uses_predictor, uses_predictor_with_client_options
+from .conftest import (
+    make_client,
+    uses_predictor,
+    uses_predictor_with_client_options,
+    uses_trainer,
+)
 
 
 def test_setup_healthcheck():
@@ -267,22 +272,6 @@ def test_openapi_specification_with_yield(client, static_schema):
     }
 
 
-@uses_predictor("async_yield")
-def test_openapi_specification_with_async_yield(client, static_schema):
-    resp = client.get("/openapi.json")
-    assert resp.status_code == 200
-    schema = resp.json()
-    assert schema == static_schema
-    assert schema["components"]["schemas"]["Output"] == {
-        "title": "Output",
-        "type": "array",
-        "items": {
-            "type": "string",
-        },
-        "x-cog-array-type": "iterator",
-    }
-
-
 @uses_predictor("yield_concatenate_iterator")
 def test_openapi_specification_with_yield_with_concatenate_iterator(
     client, static_schema
@@ -340,13 +329,45 @@ def test_openapi_specification_with_int_choices(client, static_schema):
     }
 
 
-@uses_predictor("async_yield")
-def test_yielding_strings_from_async_generator_predictors(client, match):
-    resp = client.post("/predictions")
+@uses_trainer("train.py:train")
+def test_train_openapi_specification(client):
+    resp = client.get("/openapi.json")
     assert resp.status_code == 200
-    assert resp.json() == match(
-        {"status": "succeeded", "output": ["foo", "bar", "baz"]}
-    )
+
+    schema = resp.json()
+    assert schema["openapi"] == "3.0.2"
+    assert schema["info"] == {"title": "Cog", "version": "0.1.0"}
+
+    assert schema["components"]["schemas"]["TrainingInput"] == {
+        "title": "TrainingInput",
+        "type": "object",
+        "properties": {
+            "n": {
+                "type": "integer",
+                "x-order": 0,
+                "title": "N",
+                "description": "Dimension of weights to generate",
+            },
+        },
+        "required": [
+            "n",
+        ],
+    }
+
+    assert schema["components"]["schemas"]["TrainingOutput"] == {
+        "title": "TrainingOutput",
+        "type": "object",
+        "properties": {
+            "weights": {
+                "type": "string",
+                "format": "uri",
+                "title": "Weights",
+            },
+        },
+        "required": [
+            "weights",
+        ],
+    }
 
 
 @uses_predictor("yield_strings")
@@ -510,6 +531,75 @@ def test_asynchronous_prediction_endpoint(client, match):
         time.sleep(0.1)
         n += 1
 
+
+# End-to-end test for passing tracing headers on to downstream services.
+@responses.activate
+@uses_predictor_with_client_options(
+    "output_file", upload_url="https://example.com/upload"
+)
+def test_asynchronous_prediction_endpoint_with_trace_context(client, match):
+    webhook = responses.post(
+        "https://example.com/webhook",
+        match=[
+            matchers.json_params_matcher(
+                {
+                    "id": "12345abcde",
+                    "status": "succeeded",
+                    "output": "https://example.com/upload/file",
+                },
+                strict_match=False,
+            ),
+            matchers.header_matcher(
+                {
+                    "traceparent": "traceparent-123",
+                    "tracestate": "tracestate-123",
+                },
+                strict_match=False,
+            ),
+        ],
+        status=200,
+    )
+    uploader = responses.put(
+        "https://example.com/upload/file",
+        match=[
+            matchers.header_matcher(
+                {
+                    "traceparent": "traceparent-123",
+                    "tracestate": "tracestate-123",
+                },
+                strict_match=False,
+            ),
+        ],
+        status=200,
+    )
+
+    resp = client.post(
+        "/predictions",
+        json={
+            "id": "12345abcde",
+            "input": {},
+            "webhook": "https://example.com/webhook",
+            "webhook_events_filter": ["completed"],
+        },
+        headers={
+            "Prefer": "respond-async",
+            "traceparent": "traceparent-123",
+            "tracestate": "tracestate-123",
+        },
+    )
+    assert resp.status_code == 202
+
+    assert resp.json() == match(
+        {"status": "processing", "output": None, "started_at": mock.ANY}
+    )
+    assert resp.json()["started_at"] is not None
+
+    n = 0
+    while webhook.call_count < 1 and n < 10:
+        time.sleep(0.1)
+        n += 1
+
+    assert uploader.call_count == 1
     assert webhook.call_count == 1
 
 
