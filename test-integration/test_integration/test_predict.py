@@ -95,17 +95,20 @@ def test_predict_writes_files_to_files_with_custom_name(tmpdir_factory):
 
 def test_predict_writes_multiple_files_to_files(tmpdir_factory):
     project_dir = Path(__file__).parent / "fixtures/path-list-output-project"
+
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
     shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
+
     result = subprocess.run(
-        ["cog", "predict", "--debug"],
+        ["cog", "predict"],
         cwd=out_dir,
         check=True,
         capture_output=True,
         text=True,
         timeout=DEFAULT_TIMEOUT,
     )
-    assert result.stdout == b""
+
+    assert result.stdout == ""
     with open(out_dir / "output.0.txt", encoding="utf-8") as f:
         assert f.read() == "foo"
     with open(out_dir / "output.1.txt", encoding="utf-8") as f:
