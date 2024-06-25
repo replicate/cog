@@ -161,7 +161,7 @@ foo==1.0.0`), 0o644)
 	}
 	err = config.ValidateAndComplete(tmpDir)
 	require.NoError(t, err)
-	require.Equal(t, "11.0.3", config.Build.CUDA)
+	require.Equal(t, "11.0", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
@@ -191,7 +191,7 @@ foo==1.0.0`), 0o644)
 	}
 	err = config.ValidateAndComplete(tmpDir)
 	require.NoError(t, err)
-	require.Equal(t, "11.6.2", config.Build.CUDA)
+	require.Equal(t, "11.6", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
@@ -291,9 +291,9 @@ func TestValidateAndCompleteCUDAForSelectedTorch(t *testing.T) {
 		cuda  string
 		cuDNN string
 	}{
-		{"2.0.1", "11.8.0", "8"},
-		{"1.8.0", "11.1.1", "8"},
-		{"1.7.0", "11.0.3", "8"},
+		{"2.0.1", "11.8", "8"},
+		{"1.8.0", "11.1", "8"},
+		{"1.7.0", "11.0", "8"},
 	} {
 		config := &Config{
 			Build: &Build{
