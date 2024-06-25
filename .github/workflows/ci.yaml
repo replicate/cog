@@ -33,10 +33,11 @@ jobs:
           go-version-file: go.mod
       - uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: 3.12
       - name: Install Python dependencies
         run: |
-          python -m pip install '.[dev]'
+          python -m pip install --no-cache uv
+          python -m uv pip install '.'
       - name: Build
         run: make cog
       - name: Lint
@@ -63,7 +64,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install Python dependencies
         run: |
-          python -m pip install '.[dev]'
+          python -m pip install --no-cache uv
+          python -m uv pip install '.[dev]'
       - name: Test
         run: make test-python
         env:
@@ -79,10 +81,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: 3.12
       - name: Install Python dependencies
         run: |
-          python -m pip install '.[dev]'
+          python -m pip install --no-cache uv
+          python -m uv pip install '.[dev]'
       - name: Lint
         run: |
           make lint-python
@@ -102,10 +105,11 @@ jobs:
           go-version-file: go.mod
       - uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: 3.12
       - name: Install Python dependencies
         run: |
-          python -m pip install '.[dev]'
+          python -m pip install --no-cache uv
+          python -m uv pip install '.[dev]'
       - name: Test
         run: make test-integration
 
