@@ -201,6 +201,30 @@ def test_no_exceptions_from_recoverable_failures(data, name, payloads):
         w.terminate()
 
 
+@given(data=st.data())
+@settings(deadline=10000)  # 10 seconds
+def test_stream_redirector_race_condition(data):
+    """
+    StreamRedirector and _ChildWorker are using the same _events pipe to send data.
+    When there are multiple threads trying to write to the same pipe, it can cause data corruption by race condition.
+    The data corruption will cause pipe receiver to raise an exception due to unpickling error.
+    """
+    w = Worker(
+        predictor_ref=_fixture_path("stream_redirector_race_condition"),
+        tee_output=False,
+    )
+
+    try:
+        result = _process(w.setup())
+        assert not result.done.error
+
+        payload = data.draw(st.fixed_dictionaries({}))
+        _process(w.predict(payload))
+
+    finally:
+        w.terminate()
+
+
 @pytest.mark.parametrize("name,payloads,output_generator", OUTPUT_FIXTURES)
 @given(data=st.data())
 def test_output(data, name, payloads, output_generator):
