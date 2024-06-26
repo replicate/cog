@@ -153,13 +153,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._events = events
         self._tee_output = tee_output
         self._cancelable = False
-        self._events_lock = None
+        self._events_lock = _spawn.Lock()
 
         super().__init__()
 
     def run(self) -> None:
-        self._events_lock = multiprocessing.Lock()
-
         # If we're running at a shell, SIGINT will be sent to every process in
         # the process group. We ignore it in the child process and require that
         # shutdown is coordinated by the parent process.
