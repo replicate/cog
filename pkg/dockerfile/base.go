@@ -230,9 +230,29 @@ func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string
 
 func BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion string) bool {
 	for _, conf := range BaseImageConfigurations() {
-		if conf.CUDAVersion == cudaVersion && conf.PythonVersion == pythonVersion && conf.TorchVersion == torchVersion {
-			return true
+		// Check CUDA version compatibility
+		if !isVersionCompatible(conf.CUDAVersion, cudaVersion) {
+			continue
 		}
+
+		// Check Python version compatibility
+		if !isVersionCompatible(conf.PythonVersion, pythonVersion) {
+			continue
+		}
+
+		// Check Torch version compatibility
+		if !isVersionCompatible(conf.TorchVersion, torchVersion) {
+			continue
+		}
+
+		return true
 	}
 	return false
+}
+
+func isVersionCompatible(confVersion, requestedVersion string) bool {
+	if confVersion == "" || requestedVersion == "" {
+		return confVersion == requestedVersion
+	}
+	return version.Matches(confVersion, requestedVersion)
 }
