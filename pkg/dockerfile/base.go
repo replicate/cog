@@ -218,13 +218,22 @@ func (g *BaseImageGenerator) runStatements() []config.RunItem {
 }
 
 func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string) string {
-	tag := "python" + pythonVersion
+	components := []string{}
 	if cudaVersion != "" {
-		tag = "cuda" + cudaVersion + "-" + tag
+		components = append(components, "cuda"+version.StripPatch(cudaVersion))
+	}
+	if pythonVersion != "" {
+		components = append(components, "python"+version.StripPatch(pythonVersion))
 	}
 	if torchVersion != "" {
-		tag += "-torch" + torchVersion
+		components = append(components, "torch"+version.StripPatch(torchVersion))
 	}
+
+	tag := strings.Join(components, "-")
+	if tag == "" {
+		tag = "latest"
+	}
+
 	return BaseImageRegistry + "/cog-base:" + tag
 }
 
