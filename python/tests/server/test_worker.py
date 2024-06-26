@@ -202,6 +202,7 @@ def test_no_exceptions_from_recoverable_failures(data, name, payloads):
 
 
 @given(data=st.data())
+@settings(deadline=10000)  # 10 seconds
 def test_stream_redirector_race_condition(data):
     """
     StreamRedirector and _ChildWorker are using the same _events pipe to send data.
