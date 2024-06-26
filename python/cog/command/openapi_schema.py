@@ -45,8 +45,8 @@ if __name__ == "__main__":
             ):
                 raise CogError(app.state.setup_result.logs)
             schema = remove_title_next_to_ref(app.openapi())
-    except (ConfigDoesNotExist, PredictorNotSet):
-        # If there is no cog.yaml or 'predict' has not been set, then there is no type signature.
-        # Not an error, there just isn't anything.
-        pass
+    except ConfigDoesNotExist:
+        raise ConfigDoesNotExist("no cog.yaml found or present") from None
+    except PredictorNotSet:
+        raise PredictorNotSet("no predict method found in Predictor") from None
     print(json.dumps(schema, indent=2))
