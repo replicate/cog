@@ -391,6 +391,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "gschian0",
+      "name": "Gennaro Schiano",
+      "avatar_url": "https://avatars.githubusercontent.com/u/54407820?v=4",
+      "profile": "http://www.wavefunction.dev",
+      "contributions": [
+        "doc"
+      ]
     }
   ],
   "contributorsPerLine": 7,
