@@ -308,6 +308,22 @@ def test_openapi_specification_with_list(client, static_schema):
     }
 
 
+@uses_predictor("openapi_output_list_custom_output_type")
+def test_openapi_specification_with_list_of_objects(client, static_schema):
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+
+    schema = resp.json()
+    assert schema == static_schema
+    assert resp.json()["components"]["schemas"]["Output"] == {
+        "title": "Output",
+        "type": "array",
+        "items": {
+            "type": "string",
+        },
+    }
+
+
 @uses_predictor("openapi_input_int_choices")
 def test_openapi_specification_with_int_choices(client, static_schema):
     resp = client.get("/openapi.json")
