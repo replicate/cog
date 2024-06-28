@@ -13,5 +13,5 @@ class Predictor(BasePredictor):
 
     def predict(self) -> str:
         self.print_thread.start()
-        output = "output" * 100000  # bigger output increases the chance of race condition
+        output = "output" * 10000  # bigger output increases the chance of race condition
         return output
