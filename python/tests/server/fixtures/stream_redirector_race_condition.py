@@ -1,5 +1,6 @@
-from cog import BasePredictor
 import threading
+
+from cog import BasePredictor
 
 
 def keep_printing():
