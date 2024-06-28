@@ -139,5 +139,4 @@ func baseImageGeneratorFromFlags() (*dockerfile.BaseImageGenerator, error) {
 		baseImagePythonVersion,
 		baseImageTorchVersion,
 	)
-
 }
