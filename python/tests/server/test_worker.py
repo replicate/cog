@@ -221,6 +221,8 @@ def test_stream_redirector_race_condition(data):
         payload = data.draw(st.fixed_dictionaries({}))
         _process(w.predict(payload))
 
+    except FatalWorkerException as exc:
+        print(exc)
     finally:
         w.terminate()
 
