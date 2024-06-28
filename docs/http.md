@@ -26,7 +26,7 @@ with `202 Accepted` status and a prediction object in status `processing`.
 > started asynchronously is using [webhooks](#webhooks). 
 > Polling for prediction status is not currently supported.
 
-The server also provides a way to create predictions idempotently,
+You can also use certain server endpoints to create predictions idempotently,
 such that if a client calls this endpoint more than once with the same ID 
 (for example, due to a network interruption) 
 while the prediction is still running, 
@@ -55,7 +55,7 @@ Choose the endpoint that best fits your needs:
 
 ## Webhooks
 
-The client can provide a `webhook` parameter in the request body 
+You can provide a `webhook` parameter in the client request body
 when creating a prediction.
 
 ```http
