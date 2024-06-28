@@ -18,6 +18,7 @@ from typing import (
     Type,
     Union,
     cast,
+    get_type_hints,
 )
 from unittest.mock import patch
 
@@ -290,13 +291,18 @@ def validate_input_type(type: Type[Any], name: str) -> None:
             )
 
 
-def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any]:
+def get_input_create_model_kwargs(
+    signature: inspect.Signature, input_types: Dict[str, Any]
+) -> Dict[str, Any]:
     create_model_kwargs = {}
 
     order = 0
 
     for name, parameter in signature.parameters.items():
-        InputType = parameter.annotation
+        if name not in input_types:
+            raise TypeError(f"No input type provided for parameter `{name}`.")
+
+        InputType = input_types[name]
 
         validate_input_type(InputType, name)
 
@@ -362,13 +368,17 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
     predict = get_predict(predictor)
     signature = inspect.signature(predict)
 
+    input_types = get_type_hints(predict)
+    if "return" in input_types:
+        del input_types["return"]
+
     return create_model(
         "Input",
         __config__=None,
         __base__=BaseInput,
         __module__=__name__,
         __validators__=None,
-        **get_input_create_model_kwargs(signature),
+        **get_input_create_model_kwargs(signature, input_types),
     )  # type: ignore
 
 
@@ -378,9 +388,11 @@ def get_output_type(predictor: BasePredictor) -> Type[BaseModel]:
     """
 
     predict = get_predict(predictor)
-    signature = inspect.signature(predict)
-    OutputType: Type[BaseModel]
-    if signature.return_annotation is inspect.Signature.empty:
+
+    input_types = get_type_hints(predict)
+
+    OutputType = input_types.pop("return", None)
+    if OutputType is None:
         raise TypeError(
             """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
 
@@ -395,8 +407,6 @@ For example:
         ...
 """
         )
-    else:
-        OutputType = signature.return_annotation
 
     # The type that goes in the response is a list of the yielded type
     if get_origin(OutputType) is Iterator:
@@ -460,13 +470,17 @@ def get_training_input_type(predictor: BasePredictor) -> Type[BaseInput]:
     train = get_train(predictor)
     signature = inspect.signature(train)
 
+    input_types = get_type_hints(train)
+    if "return" in input_types:
+        del input_types["return"]
+
     return create_model(
         "TrainingInput",
         __config__=None,
         __base__=BaseInput,
         __module__=__name__,
         __validators__=None,
-        **get_input_create_model_kwargs(signature),
+        **get_input_create_model_kwargs(signature, input_types),
     )  # type: ignore
 
 
@@ -476,9 +490,10 @@ def get_training_output_type(predictor: BasePredictor) -> Type[BaseModel]:
     """
 
     train = get_train(predictor)
-    signature = inspect.signature(train)
 
-    if signature.return_annotation is inspect.Signature.empty:
+    input_types = get_type_hints(train)
+    TrainingOutputType = input_types.pop("return", None)
+    if TrainingOutputType is None:
         raise TypeError(
             """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
 
@@ -493,8 +508,6 @@ For example:
         ...
 """
         )
-    else:
-        TrainingOutputType = signature.return_annotation
 
     name = (
         TrainingOutputType.__name__ if hasattr(TrainingOutputType, "__name__") else ""
