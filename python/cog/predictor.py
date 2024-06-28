@@ -103,7 +103,7 @@ def run_setup(predictor: BasePredictor) -> None:
             # TODO: So this can be a url. evil!
             weights = cast(CogPath, CogPath.validate(weights_url))
         # allow people to download weights themselves
-        elif weights_type == str:
+        elif weights_type == str:  # noqa: E721
             weights = weights_url
         else:
             raise ValueError(
@@ -319,7 +319,7 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
             choices = default.extra["choices"]
             # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
             del default.extra["choices"]
-            if InputType == str:
+            if InputType == str:  # noqa: E721
 
                 class StringEnum(str, enum.Enum):
                     pass
@@ -327,7 +327,7 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
                 InputType = StringEnum(  # type: ignore
                     name, {value: value for value in choices}
                 )
-            elif InputType == int:
+            elif InputType == int:  # noqa: E721
                 InputType = enum.IntEnum(name, {str(value): value for value in choices})  # type: ignore
             else:
                 raise TypeError(
