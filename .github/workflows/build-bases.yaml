@@ -144,7 +144,7 @@ jobs:
           path: var-cache-apt-${{ env.RUNNER_ARCH }}
           key: var-cache-apt-${{ env.RUNNER_ARCH }}-${{ env.SHORT_HASH }}
       - name: 'Reproducible Build: inject var-cache-apt'
-        uses: reproducible-containers/buildkit-cache-dance@v3.1.1
+        uses: reproducible-containers/buildkit-cache-dance@v3.1.2
         with:
           cache-source: var-cache-apt-${{ env.RUNNER_ARCH }}
           cache-target: /var/cache/apt
