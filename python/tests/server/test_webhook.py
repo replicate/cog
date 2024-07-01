@@ -1,8 +1,11 @@
 import requests
 import responses
-from cog.schema import WebhookEvent
+from cog.schema import WebhookEvent, PredictionResponse
 from cog.server.webhook import webhook_caller, webhook_caller_filtered
 from responses import registries
+
+payload = {"status": "processing", "logs": "giraffe", "input": {}}
+processing = PredictionResponse(**payload)
 
 
 @responses.activate
@@ -11,11 +14,11 @@ def test_webhook_caller_basic():
 
     responses.post(
         "https://example.com/webhook/123",
-        json={"status": "processing", "animal": "giraffe"},
+        json=payload,
         status=200,
     )
 
-    c({"status": "processing", "animal": "giraffe"})
+    c(processing)
 
 
 @responses.activate
@@ -24,11 +27,11 @@ def test_webhook_caller_non_terminal_does_not_retry():
 
     responses.post(
         "https://example.com/webhook/123",
-        json={"status": "processing", "animal": "giraffe"},
+        json=payload,
         status=429,
     )
 
-    c({"status": "processing", "animal": "giraffe"})
+    c(processing)
 
 
 @responses.activate(registry=registries.OrderedRegistry)
@@ -40,19 +43,19 @@ def test_webhook_caller_terminal_retries():
         resps.append(
             responses.post(
                 "https://example.com/webhook/123",
-                json={"status": "succeeded", "animal": "giraffe"},
+                json=payload,
                 status=429,
             )
         )
     resps.append(
         responses.post(
             "https://example.com/webhook/123",
-            json={"status": "succeeded", "animal": "giraffe"},
+            json=payload,
             status=200,
         )
     )
 
-    c({"status": "succeeded", "animal": "giraffe"})
+    c(processing)
 
     assert all(r.call_count == 1 for r in resps)
 
@@ -63,11 +66,11 @@ def test_webhook_includes_user_agent():
 
     responses.post(
         "https://example.com/webhook/123",
-        json={"status": "processing", "animal": "giraffe"},
+        json=payload,
         status=200,
     )
 
-    c({"status": "processing", "animal": "giraffe"})
+    c(processing)
 
     assert len(responses.calls) == 1
     user_agent = responses.calls[0].request.headers["user-agent"]
@@ -81,11 +84,11 @@ def test_webhook_caller_filtered_basic():
 
     responses.post(
         "https://example.com/webhook/123",
-        json={"status": "processing", "animal": "giraffe"},
+        json=payload,
         status=200,
     )
 
-    c({"status": "processing", "animal": "giraffe"}, WebhookEvent.LOGS)
+    c(processing, WebhookEvent.LOGS)
 
 
 @responses.activate
@@ -93,7 +96,7 @@ def test_webhook_caller_filtered_omits_filtered_events():
     events = {WebhookEvent.COMPLETED}
     c = webhook_caller_filtered("https://example.com/webhook/123", events)
 
-    c({"status": "processing", "animal": "giraffe"}, WebhookEvent.LOGS)
+    c(processing, WebhookEvent.LOGS)
 
 
 @responses.activate
@@ -110,4 +113,4 @@ def test_webhook_caller_connection_errors():
 
     c = webhook_caller("https://example.com/webhook/123")
     # this should not raise an error
-    c({"status": "processing", "animal": "giraffe"})
+    c(processing)

@@ -259,8 +259,8 @@ def test_prediction_event_handler_webhook_sender(match):
     h.succeeded()
 
     s.assert_called_once_with(
-        match(
-            {
+        PredictionResponse(
+            **{
                 "input": {"hello": "there"},
                 "output": ["elephant", "duck"],
                 "logs": "running a prediction\nstill running\n",
