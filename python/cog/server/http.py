@@ -271,7 +271,7 @@ def create_app(
         response_model=PredictionResponse,
         response_model_exclude_unset=True,
     )
-    async def predict(
+    def predict(
         request: PredictionRequest = Body(default=None),
         prefer: Optional[str] = Header(default=None),
         traceparent: Optional[str] = Header(default=None, include_in_schema=False),
@@ -300,7 +300,7 @@ def create_app(
         response_model=PredictionResponse,
         response_model_exclude_unset=True,
     )
-    async def predict_idempotent(
+    def predict_idempotent(
         prediction_id: str = Path(..., title="Prediction ID"),
         request: PredictionRequest = Body(..., title="Prediction Request"),
         prefer: Optional[str] = Header(default=None),
