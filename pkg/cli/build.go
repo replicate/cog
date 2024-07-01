@@ -110,7 +110,7 @@ func addDockerfileFlag(cmd *cobra.Command) {
 }
 
 func addUseCogBaseImageFlag(cmd *cobra.Command) {
-	cmd.Flags().BoolVar(&buildUseCogBaseImage, "use-cog-base-image", false, "Use pre-built Cog base image for faster cold boots")
+	cmd.Flags().BoolVar(&buildUseCogBaseImage, "use-cog-base-image", true, "Use pre-built Cog base image for faster cold boots")
 }
 
 func addBuildTimestampFlag(cmd *cobra.Command) {
