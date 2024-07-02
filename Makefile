@@ -93,7 +93,7 @@ lint-go:
 
 .PHONY: lint-python
 lint-python:
-	$(RUFF) python/cog
+	$(RUFF) check python/cog
 	$(PYRIGHT)
 
 .PHONY: lint
