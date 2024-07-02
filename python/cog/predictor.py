@@ -119,7 +119,7 @@ def get_weights_argument(
             # TODO: So this can be a url. evil!
             return cast(CogPath, CogPath.validate(weights_url))
         # allow people to download weights themselves
-        elif weights_type == str:  # noqa: E721
+        if weights_type is str:
             return weights_url
         else:
             raise ValueError(
@@ -345,7 +345,7 @@ def get_input_create_model_kwargs(
             choices = default.extra["choices"]
             # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
             del default.extra["choices"]
-            if InputType == str:  # noqa: E721
+            if InputType is str:
 
                 class StringEnum(str, enum.Enum):
                     pass
@@ -353,7 +353,7 @@ def get_input_create_model_kwargs(
                 InputType = StringEnum(  # type: ignore
                     name, {value: value for value in choices}
                 )
-            elif InputType == int:  # noqa: E721
+            elif InputType is int:
                 InputType = enum.IntEnum(name, {str(value): value for value in choices})  # type: ignore
             else:
                 raise TypeError(
