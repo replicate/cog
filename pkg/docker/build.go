@@ -7,11 +7,13 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/replicate/cog/pkg/config"
+
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, progressOutput string) error {
+func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, progressOutput string, epoch int64) error {
 	var args []string
 
 	args = append(args,
@@ -31,9 +33,29 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 		args = append(args, "--no-cache")
 	}
 
+	// Base Images are special, we force timestamp rewriting to epoch. This requires some consideration on the output
+	// format. It's generally safe to override to --output type=docker,rewrite-timestamp=true as the use of `--load` is
+	// equivalent to `--output type=docker`
+	if epoch >= 0 {
+		args = append(args,
+			"--build-arg", fmt.Sprintf("SOURCE_DATE_EPOCH=%d", epoch),
+			"--output", "type=docker,rewrite-timestamp=true")
+		console.Infof("Forcing timestamp rewriting to epoch %d", epoch)
+
+	}
+
+	if config.BuildXCachePath != "" {
+		args = append(
+			args,
+			"--cache-from", "type=local,src="+config.BuildXCachePath,
+			"--cache-to", "type=local,dest="+config.BuildXCachePath,
+		)
+	} else {
+		args = append(args, "--cache-to", "type=inline")
+	}
+
 	args = append(args,
 		"--file", "-",
-		"--cache-to", "type=inline",
 		"--tag", imageName,
 		"--progress", progressOutput,
 		".",
@@ -49,7 +71,7 @@ func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, pr
 	return cmd.Run()
 }
 
-func BuildAddLabelsToImage(image string, labels map[string]string) error {
+func BuildAddLabelsAndSchemaToImage(image string, labels map[string]string, bundledSchemaFile string, bundledSchemaPy string) error {
 	var args []string
 
 	args = append(args,
@@ -74,7 +96,8 @@ func BuildAddLabelsToImage(image string, labels map[string]string) error {
 	args = append(args, ".")
 	cmd := exec.Command("docker", args...)
 
-	dockerfile := "FROM " + image
+	dockerfile := "FROM " + image + "\n"
+	dockerfile += "COPY " + bundledSchemaFile + " .cog\n"
 	cmd.Stdin = strings.NewReader(dockerfile)
 
 	console.Debug("$ " + strings.Join(cmd.Args, " "))

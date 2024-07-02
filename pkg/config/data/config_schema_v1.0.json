@@ -144,15 +144,23 @@
     "concurrency": {
       "$id": "#/properties/concurrency",
       "type": "object",
-      "description": "This stanza configures concurrency limits",
+      "description": "The concurrency settings for the model.",
+      "required": [
+        "max"
+      ],
+      "additionalProperties": false,
       "properties": {
         "max": {
           "$id": "#/properties/concurrency/properties/max",
-          "type": "number",
-          "description": "Maximum allowed concurrency. Setting this value enables concurrent predictions."
+          "type": "integer",
+          "description": "The maximum number of concurrent predictions."
+        },
+        "default_target": {
+          "$id": "#/properties/concurrency/properties/default_target",
+          "type": "integer",
+          "description": "The default target for number of concurrent predictions. This setting can be used by an autoscaler to determine when to scale a deployment of a model up or down."
         }
-      },
-      "additionalProperties": true
+      }
     }
   },
   "additionalProperties": false

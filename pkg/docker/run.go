@@ -30,13 +30,14 @@ type Volume struct {
 }
 
 type RunOptions struct {
-	Args    []string
-	Env     []string
-	GPUs    string
-	Image   string
-	Ports   []Port
-	Volumes []Volume
-	Workdir string
+	Args     []string
+	Env      []string
+	GPUs     string
+	Image    string
+	Ports    []Port
+	Volumes  []Volume
+	Workdir  string
+	Platform string
 }
 
 // used for generating arguments, with a few options not exposed by public API
@@ -54,7 +55,9 @@ func generateDockerArgs(options internalRunOptions) []string {
 	dockerArgs := []string{
 		"run",
 		"--rm",
-		"--shm-size", "8G", // https://github.com/pytorch/pytorch/issues/2244
+		"--shm-size", "6G",
+		// https://github.com/pytorch/pytorch/issues/2244
+		// https://github.com/replicate/cog/issues/1293
 		// TODO: relative to pwd and cog.yaml
 	}
 
@@ -83,6 +86,9 @@ func generateDockerArgs(options internalRunOptions) []string {
 	}
 	if options.Workdir != "" {
 		dockerArgs = append(dockerArgs, "--workdir", options.Workdir)
+	}
+	if options.Platform != "" {
+		dockerArgs = append(dockerArgs, "--platform", options.Platform)
 	}
 	dockerArgs = append(dockerArgs, options.Image)
 	dockerArgs = append(dockerArgs, options.Args...)
