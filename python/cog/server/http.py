@@ -64,6 +64,7 @@ class Health(Enum):
     READY = auto()
     BUSY = auto()
     SETUP_FAILED = auto()
+    SHUTTING_DOWN = auto()
 
 
 class MyState:
@@ -258,7 +259,9 @@ def create_app(
     @app.get("/health-check")
     async def healthcheck() -> Any:
         await _check_setup_task()
-        if app.state.health == Health.READY:
+        if shutdown_event is not None and shutdown_event.is_set():
+            health = Health.SHUTTING_DOWN
+        elif app.state.health == Health.READY:
             health = Health.BUSY if runner.is_busy() else Health.READY
         else:
             health = app.state.health
@@ -295,6 +298,8 @@ def create_app(
         """
         Run a single prediction on the model
         """
+        if shutdown_event is not None and shutdown_event.is_set():
+            return JSONResponse({"detail": "Model shutting down"}, status_code=409)
         if runner.is_busy():
             return JSONResponse(
                 {"detail": "Already running a prediction"}, status_code=409
@@ -322,6 +327,8 @@ def create_app(
         """
         Run a single prediction on the model (idempotent creation).
         """
+        if shutdown_event is not None and shutdown_event.is_set():
+            return JSONResponse({"detail": "Model shutting down"}, status_code=409)
         if request.id is not None and request.id != prediction_id:
             err = ValueError("prediction ID must match the ID supplied in the URL")
             raise RequestValidationError([ErrorWrapper(err, ("body", "id"))])
