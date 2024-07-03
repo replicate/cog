@@ -4,6 +4,7 @@ import inspect
 import multiprocessing
 import signal
 import sys
+import threading
 import traceback
 import types
 from collections import defaultdict
@@ -116,6 +117,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         super().__init__()
 
     def run(self) -> None:
+        self._sync_events_lock = threading.Lock()
         # If we're running at a shell, SIGINT will be sent to every process in
         # the process group. We ignore it in the child process and require that
         # shutdown is coordinated by the parent process.
@@ -269,7 +271,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if self._events_async:
             self._events_async.send(obj)
         else:
-            self._events.send(obj)
+            with self._sync_events_lock:
+                self._events.send(obj)
 
     def _mk_send(self, id: str) -> Callable[[PublicEventType], None]:
         def send(event: PublicEventType) -> None:
