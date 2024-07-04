@@ -10,7 +10,6 @@ from cog.server.clients import ClientManager
 # async def test_put_file_to_signed_endpoint():
 #     mock_fh = io.BytesIO()
 #     mock_client = Mock()
-
 #     mock_response = Mock(spec=requests.Response)
 #     mock_response.status_code = 201
 #     mock_response.text = ""
