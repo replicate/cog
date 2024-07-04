@@ -122,7 +122,9 @@ class PredictionRunner:
         self._shutdown_event = shutdown_event  # __main__ waits for this event
 
         self._upload_url = upload_url
-        self._predictions: dict[str, tuple[schema.PredictionResponse, PredictionTask]] = {}
+        self._predictions: dict[
+            str, tuple[schema.PredictionResponse, PredictionTask]
+        ] = {}
         self._predictions_in_flight: set[str] = set()
         # it would be lovely to merge these but it's not fully clear how best to handle it
         # since idempotent requests can kinda come whenever?
@@ -536,7 +538,9 @@ class PredictionEventHandler:
     async def _upload_files(self, output: Any) -> Any:
         try:
             # TODO: clean up output files
-            return await self._client_manager.upload_files(output, self._upload_url)
+            return await self._client_manager.upload_files(
+                output, url=self._upload_url, prediction_id=self.p.id
+            )
         except Exception as error:
             # If something goes wrong uploading a file, it's irrecoverable.
             # The re-raised exception will be caught and cause the prediction
