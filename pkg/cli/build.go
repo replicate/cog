@@ -64,6 +64,12 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, buildUseCogBaseImage); err != nil {
+		if buildUseCogBaseImage && cmd.Flags().Changed("use-cog-base-image") {
+			console.Infof("Build failed with Cog base image enabled by default. " +
+				"If you want to build without using pre-built base images, " +
+				"try `cog build --use-cog-base-image=false`.")
+		}
+
 		return err
 	}
 
