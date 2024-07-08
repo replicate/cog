@@ -184,6 +184,10 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 		return err
 	}
 
+	if prediction.Output == nil {
+		return fmt.Errorf("Prediction output is None, return a valid output")
+	}
+
 	// Generate output depending on type in schema
 	var out []byte
 	responseSchema := schema.Paths.Value("/predictions").Post.Responses.Value("200").Value.Content["application/json"].Schema.Value
