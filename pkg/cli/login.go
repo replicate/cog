@@ -106,7 +106,7 @@ func readTokenInteractively(registryHost string) (string, error) {
 	maybeOpenBrowser(url)
 
 	console.Info("")
-	console.Info("Once you've signed in, copy the authentication token from that web page, paste it here, then hit enter (input will be hidden):")
+	console.Info("Once you've signed in, copy the authentication token from that web page, paste it here, then hit enter:")
 
 	fmt.Print("API Key: ")
 	// Read the token securely, masking the input
@@ -114,10 +114,11 @@ func readTokenInteractively(registryHost string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("Failed to read token: %w", err)
 	}
+
 	// Print a newline after the hidden input
 	fmt.Println()
-	return string(tokenBytes), nil
 
+	return string(tokenBytes), nil
 }
 
 func getDisplayTokenURL(registryHost string) (string, error) {
