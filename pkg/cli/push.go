@@ -59,6 +59,7 @@ func push(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if buildNix {
+		// TODO: use docker login properly
 		return nix.NixPush(os.Getenv("REPLICATE_API_TOKEN"), imageName)
 	}
 

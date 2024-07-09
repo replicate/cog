@@ -46,11 +46,14 @@ func callNix(command string, target string, extraFlags []string) ([]byte, error)
 //([]map[string]interface{}, error) {
 
 func lock() ([]byte, error) {
-	return callNix("run", "lock", []string{})
+	return callNix("run", "", []string{"lock"})
 }
 
 func build() ([]map[string]interface{}, error) {
 	output, err := callNix("build", "", []string{"--json", "--no-link"})
+	if output != nil {
+		fmt.Println("Build output:", output)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -91,12 +94,19 @@ func load() (string, error) {
 
 func NixPush(token string, url string) error {
 	if _, err := lock(); err != nil {
+		fmt.Println("lock err", err)
 		return err
 	}
+	fmt.Println("Invoking: git add lock.json")
+	exec.Command("git", "add", "lock.json").Run()
 	result, err := build()
-	cmd := result[0]["outputs"].(map[string]interface{})["out"].(string)
 	if err != nil {
+		fmt.Println("build error", err)
 		return err
 	}
-	return exec.Command(cmd, "push", "-t", token, url).Run()
+	cmd := result[0]["outputs"].(map[string]interface{})["out"].(string)
+	cmdExec := exec.Command(cmd, "push", "-t", token, url)
+	cmdExec.Stderr = os.Stderr
+	cmdExec.Stdout = os.Stdout
+	return cmdExec.Run()
 }
