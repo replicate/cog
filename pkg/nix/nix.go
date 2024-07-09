@@ -35,11 +35,22 @@ func getTag(cmd string) (string, error) {
 // If captureOutput is true, the command's output is captured and printed.
 // Otherwise, the command's output is directed to os.Stdout and os.Stderr.
 // Returns an error if the command execution fails.
-func callNix(command string, target string, extraFlags []string) ([]map[string]interface{}, error) {
+func callNix(command string, target string, extraFlags []string) ([]byte, error) {
 	invocation := []string{"nix", command, ".#" + target}
 	invocation = append(invocation, extraFlags...)
+	fmt.Println("Invoking:", invocation)
 	cmd := exec.Command(invocation[0], invocation[1:]...)
-	output, err := cmd.Output()
+	return cmd.Output()
+}
+
+//([]map[string]interface{}, error) {
+
+func lock() ([]byte, error) {
+	return callNix("run", "lock", []string{})
+}
+
+func build() ([]map[string]interface{}, error) {
+	output, err := callNix("build", "", []string{"--json", "--no-link"})
 	if err != nil {
 		return nil, err
 	}
@@ -49,10 +60,6 @@ func callNix(command string, target string, extraFlags []string) ([]map[string]i
 		return nil, err
 	}
 	return result, nil
-}
-
-func build() ([]map[string]interface{}, error) {
-	return callNix("build", "", []string{"--json", "--no-link"})
 }
 
 // build the image streaming binary and call it to load into docker
@@ -83,6 +90,9 @@ func load() (string, error) {
 }
 
 func NixPush(token string, url string) error {
+	if _, err := lock(); err != nil {
+		return err
+	}
 	result, err := build()
 	cmd := result[0]["outputs"].(map[string]interface{})["out"].(string)
 	if err != nil {
