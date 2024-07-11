@@ -11,6 +11,8 @@ from typing import (
 )
 
 
+debug = lambda *args, f=open("/tmp/debug", "a"): print(*args, file=f, flush=True)
+
 class WrappedStream:
     def __init__(self, name: str, stream: TextIO) -> None:
         self.name = name
@@ -94,10 +96,14 @@ class StreamRedirector(threading.Thread):
     def drain(self) -> None:
         self.drain_event.clear()
         for stream in self._streams:
+            debug(repr(stream), stream.name)
             stream.write(self.drain_token + "\n")
+            debug(repr(stream), "flush")
             stream.flush()
+        debug("wait drain")
         if not self.drain_event.wait(timeout=1):
             raise RuntimeError("output streams failed to drain")
+        debug("drain done")
 
     def shutdown(self) -> None:
         for stream in self._streams:
@@ -129,6 +135,7 @@ class StreamRedirector(threading.Thread):
                         # single line
                         buffers[stream.name].write(line)
                         continue
+                    debug("redirector saw", line)
 
                     full_line = buffers[stream.name].getvalue() + line.strip()
 
@@ -151,5 +158,6 @@ class StreamRedirector(threading.Thread):
                         self._write_hook(stream.name, stream.original, full_line + "\n")
 
                     if drain_tokens_seen >= drain_tokens_needed:
+                        debug("drain event set")
                         self.drain_event.set()
                         drain_tokens_seen = 0

@@ -17,7 +17,7 @@ class AsyncConnection(Generic[X]):
     def __init__(self, conn: Connection) -> None:
         self.wrapped_conn = conn
         self.started = False
-        print("init")
+        print("conn __init__")
 
     async def async_init(self) -> None:
         if self.started:

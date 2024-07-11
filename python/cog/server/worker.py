@@ -38,7 +38,7 @@ from .exceptions import (
     CancelationException,
     FatalWorkerException,
 )
-from .helpers import StreamRedirector, WrappedStream
+from .helpers import StreamRedirector, WrappedStream, debug
 
 _spawn = multiprocessing.get_context("spawn")
 
@@ -52,8 +52,6 @@ class WorkerState(Enum):
     BUSY = auto()
     DEFUNCT = auto()
 
-
-debug = lambda *args, f=open("/tmp/debug", "w"): print(*args, file=f, flush=True)
 
 
 class Mux:
@@ -173,7 +171,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         debug("async_init done")
 
     def _setup(self) -> None:
-        debug("_setup")
+        debug("_setup start")
         with self._handle_setup_error():
             # we need to load the predictor to know if setup is async
             debug("'about to load")
@@ -198,12 +196,13 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 debug("inspect")
                 if inspect.iscoroutinefunction(self._predictor.setup):
                     # we should probably handle Shutdown during this process?
-                    debug("creating AsyncConn")
-                    self.loop.run_until_complete(self._async_init())
+                    # debug("creating AsyncConn")
+                    # self.loop.run_until_complete(self._async_init())
                     self.loop.run_until_complete(run_setup_async(self._predictor))
                 else:
                     debug("sync setup")
                     run_setup(self._predictor)
+        debug("_setup done")
 
     @contextlib.contextmanager
     def _handle_setup_error(self) -> Iterator[None]:
@@ -225,8 +224,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             done.error_detail = str(e)
             raise
         finally:
+            debug("calling drain")
             self._stream_redirector.drain()
+            debug("sending setup done")
             self.send(("SETUP", done))
+            debug("sent setup done")
 
     def _loop_sync(self) -> None:
         while True:
