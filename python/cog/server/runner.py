@@ -404,6 +404,15 @@ class PredictionRunner:
             self._events.send(Cancel(prediction_id))
             # maybe this should probably check self._semaphore._value == self._concurrent
 
+            # HACK: sometimes, Done events may be dropped due to a race condition with logging
+            # (or possibly because asyncio cancellation is less strict than signal handlers)
+            # while we're fixing that, here's a bodge so that we always promptly respond
+            # to cancellation requests so that director doesn't kill us.
+            #
+            # if the real Done event comes through, it shouldn't cause any problems
+            # it will just stay in an ignored queue in the mux
+            asyncio.create_task(self._mux.write(prediction_id, Done(canceled=True)))
+
     _read_events_task: "Optional[asyncio.Task[None]]" = None
 
     def _start_event_reader(self) -> None:
