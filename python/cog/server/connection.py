@@ -17,8 +17,11 @@ class AsyncConnection(Generic[X]):
     def __init__(self, conn: Connection) -> None:
         self.wrapped_conn = conn
         self.started = False
+        print("init")
 
     async def async_init(self) -> None:
+        if self.started:
+            return
         fd = self.wrapped_conn.fileno()
         # mp may have handled something already but let's dup so exit is clean
         dup_fd = os.dup(fd)

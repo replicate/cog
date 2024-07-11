@@ -53,6 +53,9 @@ class WorkerState(Enum):
     DEFUNCT = auto()
 
 
+debug = lambda *args, f=open("/tmp/debug", "w"): print(*args, file=f, flush=True)
+
+
 class Mux:
     def __init__(self, terminating: asyncio.Event) -> None:
         self.outs: defaultdict[str, asyncio.Queue[PublicEventType]] = defaultdict(
@@ -99,6 +102,7 @@ def emit_metric(metric_name: str, metric_value: "float | int") -> None:
 
 
 class _ChildWorker(_spawn.Process):  # type: ignore
+
     def __init__(
         self,
         predictor_ref: str,
@@ -111,12 +115,14 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._events_async: Optional[AsyncConnection[tuple[str, PublicEventType]]] = (
             None
         )
+        self._process_logs_task: Optional[asyncio.Task[None]] = None
         self._tee_output = tee_output
         self._cancelable = False
 
         super().__init__()
 
     def run(self) -> None:
+        debug("run")
         self._sync_events_lock = threading.Lock()
         # If we're running at a shell, SIGINT will be sent to every process in
         # the process group. We ignore it in the child process and require that
@@ -143,17 +149,36 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._stream_redirector.start()
         # </could be moved into StreamRedirector>
 
+        debug("setup")
         self._setup()
+        debug("loop")
         self._loop()
+        debug("loop done")
         self._stream_redirector.shutdown()
         if self._events_async:
             self._events_async.close()
+        if self._process_logs_task:
+            # it's a little weird, you're supposed to await the task but we can't, the loop isn't running
+            self._process_logs_task.cancel()
         self._events.close()
 
+    async def _async_init(self):
+        debug("async_init start")
+        if self._events_async:
+            debug("async_init finished")
+            return
+        self._events_async = AsyncConnection(self._events)
+        self._events_async.async_init()
+        self._process_logs_task = asyncio.create_task(self.process_log_queue())
+        debug("async_init done")
+
     def _setup(self) -> None:
+        debug("_setup")
         with self._handle_setup_error():
             # we need to load the predictor to know if setup is async
+            debug("'about to load")
             self._predictor = load_predictor_from_ref(self._predictor_ref)
+            debug("loaded ref")
             self._predictor.log = self._log
             # if users want to access the same event loop from setup and predict,
             # both have to be async. if setup isn't async, it doesn't matter if we
@@ -162,22 +187,32 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             # otherwise, if setup is sync and the user does new_event_loop to use a ClientSession,
             # then tries to use the same session from async predict, they would get an error.
             # that's significant if connections are open and would need to be discarded
+            debug("async predictor")
             if is_async_predictor(self._predictor):
+                debug("getting loop")
                 self.loop = get_loop()
-                self._events_async = AsyncConnection(self._events)
+                debug("got loop")
+            debug("getattr")
             # Could be a function or a class
             if hasattr(self._predictor, "setup"):
+                debug("inspect")
                 if inspect.iscoroutinefunction(self._predictor.setup):
                     # we should probably handle Shutdown during this process?
+                    debug("creating AsyncConn")
+                    self.loop.run_until_complete(self._async_init())
                     self.loop.run_until_complete(run_setup_async(self._predictor))
                 else:
+                    debug("sync setup")
                     run_setup(self._predictor)
 
     @contextlib.contextmanager
     def _handle_setup_error(self) -> Iterator[None]:
         done = Done()
+        debug("done")
         try:
+            debug("yield")
             yield
+            debug("yield done")
         except Exception as e:
             traceback.print_exc()
             done.error = True
@@ -209,7 +244,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
 
     async def _loop_async(self) -> None:
-        assert self._events_async
+        await self._async_init()
         tasks: dict[str, asyncio.Task[None]] = {}
         while True:
             try:
@@ -233,7 +268,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
 
     def _loop(self) -> None:
+        debug("in loop")
         if is_async(get_predict(self._predictor)):
+            debug("async loop")
             self.loop.run_until_complete(self._loop_async())
         else:
             self._loop_sync()
@@ -329,8 +366,23 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if self._tee_output:
             original_stream.write(data)
             original_stream.flush()
-        # this won't work, this fn gets called from a thread, not the async task
-        self._log(data, source=stream_name)
+        # this won't record prediction_id, because
+        # this fn gets called from a thread, not the async task
+        if self._events_async:
+            self._log_queue.append((data, stream_name))
+        else:
+            self._log(data, source=stream_name)
+
+    async def process_log_queue(self):
+        while True:
+            try:
+                data, source = self._log_queue.popleft()
+                # because we are in the main thread event loop,
+                # we can safely call _log/send/AsyncConnection.send
+                self._log(data, source=source)
+            except IndexError:
+                if not self._log_queue:
+                    await asyncio.sleep(0.001)
 
 
 def get_loop() -> asyncio.AbstractEventLoop:
