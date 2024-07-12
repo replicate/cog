@@ -141,6 +141,19 @@ class Worker:
             )
 
 
+class LockedConn:
+    def __init__(self, conn: Connection) -> None:
+        self.conn = conn
+        self._lock = _spawn.Lock()
+
+    def send(self, obj: Any) -> None:
+        with self._lock:
+            self.conn.send(obj)
+
+    def recv(self) -> Any:
+        return self.conn.recv()
+
+
 class _ChildWorker(_spawn.Process):  # type: ignore
     def __init__(
         self,
@@ -150,10 +163,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     ) -> None:
         self._predictor_ref = predictor_ref
         self._predictor: Optional[BasePredictor] = None
-        self._events = events
+        self._events = LockedConn(events)
         self._tee_output = tee_output
         self._cancelable = False
-        self._events_lock = _spawn.Lock()
 
         super().__init__()
 
@@ -201,8 +213,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             raise
         finally:
             self._stream_redirector.drain()
-            with self._events_lock:
-                self._events.send(done)
+            self._events.send(done)
 
     def _loop(self) -> None:
         while True:
@@ -223,18 +234,13 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             result = predict(**payload)
 
             if result:
-                with self._events_lock:
-                    if isinstance(result, types.GeneratorType):
-                        self._events.send(PredictionOutputType(multi=True))
-                        for r in result:
-                            self._events.send(
-                                PredictionOutput(payload=make_encodeable(r))
-                            )
-                    else:
-                        self._events.send(PredictionOutputType(multi=False))
-                        self._events.send(
-                            PredictionOutput(payload=make_encodeable(result))
-                        )
+                if isinstance(result, types.GeneratorType):
+                    self._events.send(PredictionOutputType(multi=True))
+                    for r in result:
+                        self._events.send(PredictionOutput(payload=make_encodeable(r)))
+                else:
+                    self._events.send(PredictionOutputType(multi=False))
+                    self._events.send(PredictionOutput(payload=make_encodeable(result)))
         except CancelationException:
             done.canceled = True
         except Exception as e:
@@ -244,8 +250,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         finally:
             self._cancelable = False
         self._stream_redirector.drain()
-        with self._events_lock:
-            self._events.send(done)
+        self._events.send(done)
 
     def _signal_handler(self, signum: int, frame: Optional[types.FrameType]) -> None:
         if signum == signal.SIGUSR1 and self._cancelable:
@@ -257,5 +262,4 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if self._tee_output:
             original_stream.write(data)
             original_stream.flush()
-        with self._events_lock:
-            self._events.send(Log(data, source=stream_name))
+        self._events.send(Log(data, source=stream_name))
