@@ -18,14 +18,17 @@ class AsyncConnection(Generic[X]):
         self.wrapped_conn = conn
         self.started = False
         print("conn __init__")
+        # perhaps the lock should be here
+        # self.sync_lock = threading.Lock()
 
     async def async_init(self) -> None:
         if self.started:
             return
         fd = self.wrapped_conn.fileno()
-        # mp may have handled something already but let's dup so exit is clean
-        dup_fd = os.dup(fd)
-        sock = socket.socket(fileno=dup_fd)
+        # # mp may have handled something already but let's dup so exit is clean
+        # dup_fd = os.dup(fd)
+        # sock = socket.socket(fileno=dup_fd)
+        sock = socket.socket(fileno=fd)
         sock.setblocking(False)
         # TODO: use /proc/sys/net/core/rmem_max, but special-case language models
         sz = 65536
@@ -87,6 +90,11 @@ class AsyncConnection(Generic[X]):
 
     def send(self, obj: Any) -> None:
         self._send_bytes(_ForkingPickler.dumps(obj, protocol=5))
+
+    # # perhaps we could do it like this
+    # def send_sync(self, obj: Any) -> None:
+    #     with self.sync_lock:
+    #         self.wrapped_conn.send(obj)
 
     # we could implement async def drain() but it's not really necessary for our purposes
 
