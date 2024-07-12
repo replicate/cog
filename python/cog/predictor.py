@@ -116,7 +116,7 @@ def get_weights_argument(
         if weights_type == CogPath:
             # TODO: So this can be a url. evil!
             return cast(CogPath, CogPath.validate(weights_url))
-        if weights_type == str:
+        if weights_type is str:
             return weights_url
         raise ValueError(
             f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
@@ -299,7 +299,7 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
             choices = default.extra["choices"]
             # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
             del default.extra["choices"]
-            if InputType == str:
+            if InputType is str:
 
                 class StringEnum(str, enum.Enum):
                     pass
@@ -307,7 +307,7 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
                 InputType = StringEnum(  # type: ignore
                     name, {value: value for value in choices}
                 )
-            elif InputType == int:
+            elif InputType is int:
                 InputType = enum.IntEnum(name, {str(value): value for value in choices})  # type: ignore
             else:
                 raise TypeError(
