@@ -411,7 +411,7 @@ class PredictionRunner:
             #
             # if the real Done event comes through, it shouldn't cause any problems
             # it will just stay in an ignored queue in the mux
-            asyncio.create_task(self._mux.write(prediction_id, Done(canceled=True)))
+            self._mux.write(prediction_id, Done(canceled=True))
 
     _read_events_task: "Optional[asyncio.Task[None]]" = None
 
@@ -436,7 +436,7 @@ class PredictionRunner:
                 id = "SETUP"
             if id == "LOG" and len(self._predictions_in_flight) == 1:
                 id = list(self._predictions_in_flight)[0]
-            await self._mux.write(id, event)
+            self._mux.write(id, event)
         # If we dropped off the end off the end of the loop, check if it's
         # because the child process died.
         if not self._child.is_alive() and not self._terminating.is_set():
