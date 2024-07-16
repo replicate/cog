@@ -2,7 +2,17 @@ import base64
 import io
 import mimetypes
 import os
-from typing import Any, AsyncIterator, Awaitable, Callable, Collection, Dict, Optional
+from typing import (
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Collection,
+    Dict,
+    Mapping,
+    Optional,
+    cast,
+)
 from urllib.parse import urlparse
 
 import httpx
@@ -62,7 +72,7 @@ def webhook_headers() -> "dict[str, str]":
 
 async def on_request_trace_context_hook(request: httpx.Request) -> None:
     ctx = current_trace_context() or {}
-    request.headers.update(ctx)
+    request.headers.update(cast(Mapping[str, str], ctx))
 
 
 def httpx_webhook_client() -> httpx.AsyncClient:
