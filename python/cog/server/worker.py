@@ -53,7 +53,6 @@ class WorkerState(Enum):
     DEFUNCT = auto()
 
 
-
 class Mux:
     def __init__(self, terminating: asyncio.Event) -> None:
         self.outs: defaultdict[str, asyncio.Queue[PublicEventType]] = defaultdict(
@@ -150,13 +149,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         debug("setup")
         self._setup()
         debug("loop")
-        self._loop()
+        self._loop()  # shuts down stream redirector the correct way
         debug("loop done")
-        if self._events_async:
-            self.loop.run_until_complete(self._stream_redirector.shutdown_async())
-            self._events_async.close()
-        else:
-            self._stream_redirector.shutdown()
         self._events.close()
 
     async def _async_init(self) -> None:
@@ -223,7 +217,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             done.error_detail = str(e)
             raise
         finally:
-            debug("calling drain")
+            debug("setup done, calling drain")
             self._stream_redirector.drain()
             debug("sending setup done")
             self.send(("SETUP", done))
@@ -243,6 +237,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 pass
             else:
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
+        self._stream_redirector.shutdown()
 
     async def _loop_async(self) -> None:
         await self._async_init()
@@ -252,10 +247,10 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             try:
                 ev = await self._events_async.recv()
             except asyncio.CancelledError:
-                return
+                break
             if isinstance(ev, Shutdown):
                 self._log("got shutdown event [async]")
-                return
+                break # should this be return?
             if isinstance(ev, PredictionInput):
                 # keep track of these so they can be cancelled
                 tasks[ev.id] = asyncio.create_task(self._predict_async(ev))
@@ -268,6 +263,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     print(f"Got unexpected cancellation: {ev}", file=sys.stderr)
             else:
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
+        debug("shutdown_async")
+        await self._stream_redirector.shutdown_async()
+        self._events_async.close()
 
     def _loop(self) -> None:
         debug("in loop")
@@ -371,6 +369,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         # this won't record prediction_id, because
         # this fn gets called from a thread, not the async task
         self._log(data, source=stream_name)
+
 
 def get_loop() -> asyncio.AbstractEventLoop:
     try:

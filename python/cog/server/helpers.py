@@ -200,8 +200,16 @@ class StreamRedirector(threading.Thread):
 
         We must not call write_hook twice for the same data during the switch.
         """
-        debug("swithc async")
+        debug("switch async, drain")
+        # Drain the streams to ensure all buffered data is processed
+        self.drain()
+
+        # Shut down the thread
+        # we do this before starting a coroutine that will also read from the same fd
+        # so that shutdown can find the terminate tokens correctly
+        self.shutdown()
         self.stream_tasks = []
+        self.is_async = True
 
         for stream in self._streams:
             # Open each stream as a StreamReader
@@ -212,13 +220,6 @@ class StreamRedirector(threading.Thread):
             task = asyncio.create_task(self.process_stream(stream, reader))
             self.stream_tasks.append(task)
 
-        # Drain the streams to ensure all buffered data is processed
-        self.drain()
-
-        # Shut down the thread
-        self.shutdown()
-        self.is_async = True
-
     async def process_stream(
         self, stream: WrappedStream, reader: asyncio.StreamReader
     ) -> None:
@@ -227,20 +228,17 @@ class StreamRedirector(threading.Thread):
         drain_tokens_seen = 0
         should_exit = False
 
-        while not should_exit:
-            line = await reader.readline()
-            debug("process stream got line")
+        async for line in reader:
 
             if not line:
                 break
 
-            line = line.decode().strip()
+            line = line.decode()
+            debug("redirector saw", line)
 
             if not line.endswith("\n"):
                 buffer.write(line)
                 continue
-
-            debug("redirector saw", line)
 
             full_line = buffer.getvalue() + line.strip()
 
@@ -263,3 +261,5 @@ class StreamRedirector(threading.Thread):
                 debug("drain event set")
                 self.drain_event.set()
                 drain_tokens_seen = 0
+            if should_exit:
+                break
