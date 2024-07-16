@@ -158,9 +158,12 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if self._events_async:
             debug("async_init finished")
             return
+        # if AsyncConnection is created before switch_to_async, a race condition can cause drain to fail
+        # and write, seemingly, to block
+        # maybe because we're trying to call StreamWriter.write when no event loop is running?
+        await self._stream_redirector.switch_to_async()
         self._events_async = AsyncConnection(self._events)
         await self._events_async.async_init()
-        await self._stream_redirector.switch_to_async()
         debug("async_init done")
 
     def _setup(self) -> None:
@@ -189,12 +192,15 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 debug("inspect")
                 if inspect.iscoroutinefunction(self._predictor.setup):
                     # we should probably handle Shutdown during this process?
-                    # debug("creating AsyncConn")
+                    # possibly we prefer to not stop-start the event loop
+                    # between these calls
                     self.loop.run_until_complete(self._async_init())
                     self.loop.run_until_complete(run_setup_async(self._predictor))
+                    debug("run_setup_async done")
                 else:
                     debug("sync setup")
                     run_setup(self._predictor)
+            debug("_setup done inside ctx mgr")
         debug("_setup done")
 
     @contextlib.contextmanager
@@ -217,8 +223,15 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             done.error_detail = str(e)
             raise
         finally:
+            # we can arrive here if there was an error setting up stream_redirector
+            # for example, because drain failed
+            # in this case this drain could block or fail
             debug("setup done, calling drain")
-            self._stream_redirector.drain()
+            try:
+                self._stream_redirector.drain()
+            except Exception as e:
+                debug("exc", str(e))
+                raise
             debug("sending setup done")
             self.send(("SETUP", done))
             debug("sent setup done")
@@ -240,6 +253,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._stream_redirector.shutdown()
 
     async def _loop_async(self) -> None:
+        debug("loop async")
         await self._async_init()
         assert self._events_async
         tasks: dict[str, asyncio.Task[None]] = {}
@@ -306,10 +320,14 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
     def send(self, obj: Any) -> None:
         if self._events_async:
+            debug("sending on async")
             self._events_async.send(obj)
+            debug("sent on async")
         else:
+            debug("send lock")
             with self._sync_events_lock:
                 self._events.send(obj)
+                debug("finished sync send")
 
     def _mk_send(self, id: str) -> Callable[[PublicEventType], None]:
         def send(event: PublicEventType) -> None:

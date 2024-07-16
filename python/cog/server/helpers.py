@@ -114,6 +114,7 @@ class StreamRedirector(threading.Thread):
             stream.flush()
         debug("wait drain")
         if not self.drain_event.wait(timeout=1):
+            debug("drain timed out")
             raise RuntimeError("output streams failed to drain")
         debug("drain done")
 
@@ -154,12 +155,12 @@ class StreamRedirector(threading.Thread):
                 stream = key.data
 
                 for line in stream.wrapped:
+                    debug("redirector saw", line)
                     if not line.endswith("\n"):
                         # TODO: limit how much we're prepared to buffer on a
                         # single line
                         buffers[stream.name].write(line)
                         continue
-                    debug("redirector saw", line)
 
                     full_line = buffers[stream.name].getvalue() + line.strip()
 
@@ -179,7 +180,9 @@ class StreamRedirector(threading.Thread):
                     # thing in the line was a drain token (or a terminate
                     # token).
                     if full_line:
+                        debug("write hook")
                         self._write_hook(stream.name, stream.original, full_line + "\n")
+                        debug("write hook done")
 
                     if drain_tokens_seen >= drain_tokens_needed:
                         debug("drain event set")
@@ -202,7 +205,12 @@ class StreamRedirector(threading.Thread):
         """
         debug("switch async, drain")
         # Drain the streams to ensure all buffered data is processed
-        self.drain()
+        try:
+            self.drain()
+        except RuntimeError:
+            debug("drain failed")
+            raise
+        debug("drain done, shutdown")
 
         # Shut down the thread
         # we do this before starting a coroutine that will also read from the same fd
@@ -210,6 +218,7 @@ class StreamRedirector(threading.Thread):
         self.shutdown()
         self.stream_tasks = []
         self.is_async = True
+        debug("set is async")
 
         for stream in self._streams:
             # Open each stream as a StreamReader
@@ -219,6 +228,9 @@ class StreamRedirector(threading.Thread):
             # Create a task for each stream to process the results
             task = asyncio.create_task(self.process_stream(stream, reader))
             self.stream_tasks.append(task)
+
+        # give the tasks a chance to start
+        await asyncio.sleep(0)
 
     async def process_stream(
         self, stream: WrappedStream, reader: asyncio.StreamReader
