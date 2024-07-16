@@ -152,22 +152,21 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         debug("loop")
         self._loop()
         debug("loop done")
-        self._stream_redirector.shutdown()
         if self._events_async:
+            self.loop.run_until_complete(self._stream_redirector.shutdown_async())
             self._events_async.close()
-        if self._process_logs_task:
-            # it's a little weird, you're supposed to await the task but we can't, the loop isn't running
-            self._process_logs_task.cancel()
+        else:
+            self._stream_redirector.shutdown()
         self._events.close()
 
-    async def _async_init(self):
+    async def _async_init(self) -> None:
         debug("async_init start")
         if self._events_async:
             debug("async_init finished")
             return
         self._events_async = AsyncConnection(self._events)
-        self._events_async.async_init()
-        self._process_logs_task = asyncio.create_task(self.process_log_queue())
+        await self._events_async.async_init()
+        await self._stream_redirector.switch_to_async()
         debug("async_init done")
 
     def _setup(self) -> None:
@@ -197,7 +196,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 if inspect.iscoroutinefunction(self._predictor.setup):
                     # we should probably handle Shutdown during this process?
                     # debug("creating AsyncConn")
-                    # self.loop.run_until_complete(self._async_init())
+                    self.loop.run_until_complete(self._async_init())
                     self.loop.run_until_complete(run_setup_async(self._predictor))
                 else:
                     debug("sync setup")
@@ -247,6 +246,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
     async def _loop_async(self) -> None:
         await self._async_init()
+        assert self._events_async
         tasks: dict[str, asyncio.Task[None]] = {}
         while True:
             try:
@@ -370,22 +370,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             original_stream.flush()
         # this won't record prediction_id, because
         # this fn gets called from a thread, not the async task
-        if self._events_async:
-            self._log_queue.append((data, stream_name))
-        else:
-            self._log(data, source=stream_name)
-
-    async def process_log_queue(self):
-        while True:
-            try:
-                data, source = self._log_queue.popleft()
-                # because we are in the main thread event loop,
-                # we can safely call _log/send/AsyncConnection.send
-                self._log(data, source=source)
-            except IndexError:
-                if not self._log_queue:
-                    await asyncio.sleep(0.001)
-
+        self._log(data, source=stream_name)
 
 def get_loop() -> asyncio.AbstractEventLoop:
     try:

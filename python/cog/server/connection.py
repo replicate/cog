@@ -3,6 +3,7 @@ import io
 import os
 import socket
 import struct
+import threading
 from multiprocessing import connection
 from multiprocessing.connection import Connection
 from typing import Any, Generic, TypeVar
@@ -26,10 +27,11 @@ class AsyncConnection(Generic[X]):
             return
         fd = self.wrapped_conn.fileno()
         # # mp may have handled something already but let's dup so exit is clean
-        # dup_fd = os.dup(fd)
-        # sock = socket.socket(fileno=dup_fd)
-        sock = socket.socket(fileno=fd)
-        sock.setblocking(False)
+        dup_fd = os.dup(fd)
+        sock = socket.socket(fileno=dup_fd)
+        # sock = socket.socket(fileno=fd)
+        # we don't want to see EAGAIN, we'd rather wait
+        # sock.setblocking(False)
         # TODO: use /proc/sys/net/core/rmem_max, but special-case language models
         sz = 65536
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, sz)

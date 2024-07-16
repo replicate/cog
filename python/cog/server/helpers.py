@@ -1,17 +1,23 @@
+import asyncio
 import io
 import os
 import selectors
 import threading
 import uuid
-from typing import (
-    Callable,
-    Optional,
-    Sequence,
-    TextIO,
-)
+from typing import Callable, Optional, Sequence, TextIO
 
 
-debug = lambda *args, f=open("/tmp/debug", "a"): print(*args, file=f, flush=True)
+def debug(*args: str, f: io.IOBase = open("/tmp/debug", "a")) -> None:  # noqa
+    print(*args, file=f, flush=True)
+
+
+async def async_fdopen(fd: int) -> asyncio.StreamReader:
+    loop = asyncio.get_running_loop()
+    reader = asyncio.StreamReader()
+    protocol = asyncio.StreamReaderProtocol(reader)
+    loop.create_task(loop.connect_read_pipe(lambda: protocol, os.fdopen(fd, "rb")))
+    return reader
+
 
 class WrappedStream:
     def __init__(self, name: str, stream: TextIO) -> None:
@@ -81,6 +87,7 @@ class StreamRedirector(threading.Thread):
         self.drain_token = uuid.uuid4().hex
         self.drain_event = threading.Event()
         self.terminate_token = uuid.uuid4().hex
+        self.is_async = False
 
         if len(self._streams) == 0:
             raise ValueError("provide at least one wrapped stream to redirect")
@@ -94,6 +101,11 @@ class StreamRedirector(threading.Thread):
         super().__init__(daemon=True)
 
     def drain(self) -> None:
+        if self.is_async:
+            debug("ignoring drain")
+            # if we're async, we assume that logs will be processed promptly,
+            # and we don't want to block the event loop
+            return
         self.drain_event.clear()
         for stream in self._streams:
             debug(repr(stream), stream.name)
@@ -106,11 +118,21 @@ class StreamRedirector(threading.Thread):
         debug("drain done")
 
     def shutdown(self) -> None:
+        if not self.is_alive():
+            debug("skipping shutdown because not alive")
+            return
         for stream in self._streams:
             stream.write(self.terminate_token + "\n")
             stream.flush()
             break  # only need to write one terminate token
+        debug("joining")
         self.join()
+
+    async def shutdown_async(self) -> None:
+        for stream in self._streams:
+            stream.write(self.terminate_token + "\n")
+            stream.flush()
+        await asyncio.gather(*self.stream_tasks)
 
     def run(self) -> None:
         selector = selectors.DefaultSelector()
@@ -126,7 +148,9 @@ class StreamRedirector(threading.Thread):
             drain_tokens_needed += 1
 
         while not should_exit:
+            debug("selector.select")
             for key, _ in selector.select():
+                debug("selector key")
                 stream = key.data
 
                 for line in stream.wrapped:
@@ -161,3 +185,81 @@ class StreamRedirector(threading.Thread):
                         debug("drain event set")
                         self.drain_event.set()
                         drain_tokens_seen = 0
+
+    async def switch_to_async(self) -> None:
+        """
+        This function is called when the main thread switches to being async.
+        It ensures that the behavior stays the same, but write_hook is only called
+        from the main thread.
+
+        1. Open each stream as a StreamReader.
+        2. Create a task for each stream that will process the results.
+        3. write_hook is called for each complete log line.
+        4. Drain and terminate tokens are handled correctly.
+        5. Once the async tasks are started, shut down the thread.
+
+        We must not call write_hook twice for the same data during the switch.
+        """
+        debug("swithc async")
+        self.stream_tasks = []
+
+        for stream in self._streams:
+            # Open each stream as a StreamReader
+            fd = stream.wrapped.fileno()
+            reader = await async_fdopen(fd)
+
+            # Create a task for each stream to process the results
+            task = asyncio.create_task(self.process_stream(stream, reader))
+            self.stream_tasks.append(task)
+
+        # Drain the streams to ensure all buffered data is processed
+        self.drain()
+
+        # Shut down the thread
+        self.shutdown()
+        self.is_async = True
+
+    async def process_stream(
+        self, stream: WrappedStream, reader: asyncio.StreamReader
+    ) -> None:
+        debug("process_stream", stream.name)
+        buffer = io.StringIO()
+        drain_tokens_seen = 0
+        should_exit = False
+
+        while not should_exit:
+            line = await reader.readline()
+            debug("process stream got line")
+
+            if not line:
+                break
+
+            line = line.decode().strip()
+
+            if not line.endswith("\n"):
+                buffer.write(line)
+                continue
+
+            debug("redirector saw", line)
+
+            full_line = buffer.getvalue() + line.strip()
+
+            # Reset buffer
+            buffer = io.StringIO()
+
+            if full_line.endswith(self.terminate_token):
+                full_line = full_line[: -len(self.terminate_token)]
+                should_exit = True
+
+            if full_line.endswith(self.drain_token):
+                drain_tokens_seen += 1
+                full_line = full_line[: -len(self.drain_token)]
+
+            if full_line:
+                # Call write_hook from the main thread
+                self._write_hook(stream.name, stream.original, full_line + "\n")
+
+            if drain_tokens_seen >= len(self._streams):
+                debug("drain event set")
+                self.drain_event.set()
+                drain_tokens_seen = 0
