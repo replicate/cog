@@ -121,6 +121,22 @@ def httpx_file_client() -> httpx.AsyncClient:
     )
 
 
+class ChunkFileReader:
+    def __init__(self, fh: io.IOBase) -> None:
+        self.fh = fh
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        self.fh.seek(0)
+        while True:
+            chunk = self.fh.read(1024 * 1024)
+            if isinstance(chunk, str):
+                chunk = chunk.encode("utf-8")
+            if not chunk:
+                log.info("finished reading file")
+                break
+            yield chunk
+
+
 # there's a case for splitting this apart or inlining parts of it
 # I'm somewhat sympathetic to separating webhooks and files, but they both have
 # the same semantics of holding a client for the lifetime of runner
@@ -199,18 +215,6 @@ class ClientManager:
         # ensure trailing slash
         url_with_trailing_slash = url if url.endswith("/") else url + "/"
 
-        class ChunkFileReader:
-            async def __aiter__(self) -> AsyncIterator[bytes]:
-                fh.seek(0)
-                while 1:
-                    chunk = fh.read(1024 * 1024)
-                    if isinstance(chunk, str):
-                        chunk = chunk.encode("utf-8")
-                    if not chunk:
-                        log.info("finished reading file")
-                        break
-                    yield chunk
-
         url = url_with_trailing_slash + filename
 
         headers = {"Content-Type": content_type}
@@ -236,7 +240,7 @@ class ClientManager:
         log.info("doing real upload to %s", url)
         resp = await self.file_client.put(
             url,
-            content=ChunkFileReader(),
+            content=ChunkFileReader(fh),
             headers=headers,
         )
         # TODO: if file size is >1MB, show upload throughput
