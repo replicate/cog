@@ -188,6 +188,13 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 	// Ignore @, to make it behave the same as -i
 	outputPath = strings.TrimPrefix(outputPath, "@")
 
+	// If outputPath != "", then we now know the output path for sure
+	if outputPath != "" {
+		if err := checkOutputWritable(outputPath); err != nil {
+			return fmt.Errorf("Output path is not writable: %w", err)
+		}
+	}
+
 	// Generate output depending on type in schema
 	responseSchema := schema.Paths.Value("/predictions").Post.Responses.Value("200").Value.Content["application/json"].Schema.Value
 	outputSchema := responseSchema.Properties["output"].Value
@@ -198,6 +205,7 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 		if err != nil {
 			return err
 		}
+
 		outputs, ok := (*prediction.Output).([]interface{})
 		if !ok {
 			return fmt.Errorf("Failed to decode output")
@@ -209,11 +217,6 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 			}
 		}
 		return nil
-	}
-
-	// If outputPath != "", then we now know the output path for sure
-	if outputPath != "" && checkOutputWritable(outputPath) != nil {
-		return err
 	}
 
 	prediction, err := predictor.Predict(inputs)
