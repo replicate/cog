@@ -45,6 +45,7 @@ https://github.com/replicate/cog`,
 		newPredictCommand(),
 		newPushCommand(),
 		newRunCommand(),
+		newServeCommand(),
 		newTrainCommand(),
 	)
 
