@@ -259,25 +259,25 @@ def test_prediction_event_handler_webhook_sender(match):
     h.succeeded()
 
     s.assert_called_once_with(
-        PredictionResponse(
-            **{
-                "input": {"hello": "there"},
-                "output": ["elephant", "duck"],
-                "logs": "running a prediction\nstill running\n",
-                "status": "succeeded",
-                "metrics": {"predict_time": mock.ANY},
-            }
-        ),
+        mock.ANY,
         WebhookEvent.COMPLETED,
     )
+    actual = s.call_args[0][0]
+    assert actual.input == {"hello": "there"}
+    assert actual.output == ["elephant", "duck"]
+    assert actual.logs == "running a prediction\nstill running\n"
+    assert actual.status == "succeeded"
+    assert "predict_time" in actual.metrics
 
 
-def test_prediction_event_handler_webhook_sender_intermediate(match):
+def test_prediction_event_handler_webhook_sender_intermediate():
     s = mock.Mock()
     p = PredictionResponse(input={"hello": "there"})
     h = PredictionEventHandler(p, webhook_sender=s)
 
-    s.assert_called_once_with(match({"status": "processing"}), WebhookEvent.START)
+    s.assert_called_once_with(mock.ANY, WebhookEvent.START)
+    actual = s.call_args[0][0]
+    assert actual.status == "processing"
 
     s.reset_mock()
     h.set_output("giraffes")
@@ -288,65 +288,53 @@ def test_prediction_event_handler_webhook_sender_intermediate(match):
     s.reset_mock()
     h.set_output([])
     h.append_output("elephant")
+    assert s.call_count == 1
+    actual = s.call_args_list[0][0][0]
+    assert actual.output == ["elephant"]
+    assert s.call_args_list[0][0][1] == WebhookEvent.OUTPUT
+
+    s.reset_mock()
     h.append_output("duck")
-    s.assert_has_calls(
-        [
-            mock.call(
-                match(
-                    {
-                        "output": ["elephant"],
-                    }
-                ),
-                WebhookEvent.OUTPUT,
-            ),
-            mock.call(
-                match(
-                    {
-                        "output": ["elephant", "duck"],
-                    }
-                ),
-                WebhookEvent.OUTPUT,
-            ),
-        ]
-    )
+    assert s.call_count == 1
+    actual = s.call_args_list[0][0][0]
+    assert actual.output == ["elephant", "duck"]
+    assert s.call_args_list[0][0][1] == WebhookEvent.OUTPUT
 
     s.reset_mock()
     h.append_logs("running a prediction\n")
+    assert s.call_count == 1
+    actual = s.call_args_list[0][0][0]
+    assert actual.logs == "running a prediction\n"
+    assert s.call_args_list[0][0][1] == WebhookEvent.LOGS
+
+    s.reset_mock()
     h.append_logs("still running\n")
-    s.assert_has_calls(
-        [
-            mock.call(
-                match(
-                    {
-                        "logs": "running a prediction\n",
-                    }
-                ),
-                WebhookEvent.LOGS,
-            ),
-            mock.call(
-                match(
-                    {
-                        "logs": "running a prediction\nstill running\n",
-                    }
-                ),
-                WebhookEvent.LOGS,
-            ),
-        ]
-    )
+    assert s.call_count == 1
+    actual = s.call_args_list[0][0][0]
+    assert actual.logs == "running a prediction\nstill running\n"
+    assert s.call_args_list[0][0][1] == WebhookEvent.LOGS
 
     s.reset_mock()
     h.succeeded()
-    s.assert_called_once_with(match({"status": "succeeded"}), WebhookEvent.COMPLETED)
+    s.assert_called_once()
+    actual = s.call_args[0][0]
+    assert actual.status == "succeeded"
+    assert s.call_args[0][1] == WebhookEvent.COMPLETED
 
     s.reset_mock()
     h.failed("oops")
-    s.assert_called_once_with(
-        match({"status": "failed", "error": "oops"}), WebhookEvent.COMPLETED
-    )
+    s.assert_called_once()
+    actual = s.call_args[0][0]
+    assert actual.status == "failed"
+    assert actual.error == "oops"
+    assert s.call_args[0][1] == WebhookEvent.COMPLETED
 
     s.reset_mock()
     h.canceled()
-    s.assert_called_once_with(match({"status": "canceled"}), WebhookEvent.COMPLETED)
+    s.assert_called_once()
+    actual = s.call_args[0][0]
+    assert actual.status == "canceled"
+    assert s.call_args[0][1] == WebhookEvent.COMPLETED
 
 
 def test_prediction_event_handler_file_uploads():
