@@ -201,10 +201,22 @@ func (g *Generator) GenerateModelBaseWithSeparateWeights(imageName string) (weig
 	if err != nil {
 		return "", "", "", err
 	}
-	base := append([]string{initialSteps}, fmt.Sprintf("FROM %s AS %s", imageName+"-weights", "weights"))
+
+	// Inject weights base image into initial steps so we can COPY from it
+	base := []string{}
+	initialStepsLines := strings.Split(initialSteps, "\n")
+	for i, line := range initialStepsLines {
+		if strings.HasPrefix(line, "FROM ") {
+			base = append(base, fmt.Sprintf("FROM %s AS %s", imageName+"-weights", "weights"))
+			base = append(base, initialStepsLines[i:]...)
+			break
+		} else {
+			base = append(base, line)
+		}
+	}
 
 	for _, p := range append(g.modelDirs, g.modelFiles...) {
-		base = append(base, "", fmt.Sprintf("COPY --from=%s --link %[2]s %[2]s", "weights", path.Join("/src", p)))
+		base = append(base, "COPY --from=weights --link "+path.Join("/src", p)+" "+path.Join("/src", p))
 	}
 
 	base = append(base,
