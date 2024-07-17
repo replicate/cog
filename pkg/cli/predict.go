@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/vincent-petithory/dataurl"
+	"golang.org/x/sys/unix"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
@@ -270,23 +272,25 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 	return writeOutput(outputPath, out)
 }
 
-// Try to open the file, prevents getting errors after long prediction/training
 func checkOutputWritable(outputPath string) error {
 	outputPath, err := homedir.Expand(outputPath)
 	if err != nil {
 		return err
 	}
 
-	// Try to open the file
-	outFile, err := os.OpenFile(outputPath, os.O_WRONLY|os.O_CREATE, 0o755)
-	if err != nil {
-		return err
+	// Check if the file exists
+	_, err = os.Stat(outputPath)
+	if err == nil {
+		// File exists, check if it's writable
+		return unix.Access(outputPath, unix.W_OK)
+	} else if os.IsNotExist(err) {
+		// File doesn't exist, check if the directory is writable
+		dir := filepath.Dir(outputPath)
+		return unix.Access(dir, unix.W_OK)
 	}
 
-	if err := outFile.Close(); err != nil {
-		return err
-	}
-	return nil
+	// Some other error occurred
+	return err
 }
 
 func writeOutput(outputPath string, output []byte) error {
