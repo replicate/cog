@@ -298,3 +298,13 @@ def test_predict_works_with_deferred_annotations():
         cwd=project_dir,
         timeout=DEFAULT_TIMEOUT,
     )
+
+
+def test_predict_none_output():
+    project_dir = Path(__file__).parent / "fixtures/none-output-project"
+
+    subprocess.check_call(
+        ["cog", "predict"],
+        cwd=project_dir,
+        timeout=DEFAULT_TIMEOUT,
+    )
