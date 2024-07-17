@@ -46,7 +46,7 @@ def webhook_caller(webhook: str) -> Callable[[Any], None]:
     def caller(response: PredictionResponse) -> None:
         if throttler.should_send_response(response):
             dict_response = jsonable_encoder(response.dict(exclude_unset=True))
-            if Status.is_terminal(dict_response["status"]):
+            if Status.is_terminal(response.status):
                 # For terminal updates, retry persistently
                 retry_session.post(webhook, json=dict_response)
             else:
