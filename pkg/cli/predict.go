@@ -336,16 +336,19 @@ func writeDataURLOutput(outputString string, outputPath string, addExtension boo
 	if err != nil {
 		return fmt.Errorf("Failed to decode dataurl: %w", err)
 	}
-	out := dataurlObj.Data
+	output := dataurlObj.Data
+
 	if addExtension {
 		extension := mime.ExtensionByType(dataurlObj.ContentType())
 		if extension != "" {
 			outputPath += extension
 		}
 	}
-	if err := writeOutput(outputPath, out); err != nil {
+
+	if err := writeOutput(outputPath, output); err != nil {
 		return err
 	}
+
 	return nil
 }
 
