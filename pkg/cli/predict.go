@@ -210,7 +210,16 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 		}
 	case outputSchema.Type.Is("string"):
 		// Handle strings separately because if we encode it to JSON it will be surrounded by quotes.
-		s := (*prediction.Output).(string)
+		if prediction.Output == nil {
+			console.Warnf("No output generated")
+			return nil
+		}
+
+		s, ok := (*prediction.Output).(string)
+		if !ok {
+			return fmt.Errorf("Failed to convert prediction output to string")
+		}
+
 		out = []byte(s)
 	default:
 		// Treat everything else as JSON -- ints, floats, bools will all convert correctly.
