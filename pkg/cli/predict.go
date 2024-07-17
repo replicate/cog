@@ -221,7 +221,7 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 
 	prediction, err := predictor.Predict(inputs)
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to predict: %w", err)
 	}
 
 	if isURI(outputSchema) {
