@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
@@ -106,11 +107,18 @@ func readTokenInteractively(registryHost string) (string, error) {
 
 	console.Info("")
 	console.Info("Once you've signed in, copy the authentication token from that web page, paste it here, then hit enter:")
-	token, err := bufio.NewReader(os.Stdin).ReadString('\n')
+
+	fmt.Print("API Key: ")
+	// Read the token securely, masking the input
+	tokenBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("Failed to read token: %w", err)
 	}
-	return token, nil
+
+	// Print a newline after the hidden input
+	fmt.Println()
+
+	return string(tokenBytes), nil
 }
 
 func getDisplayTokenURL(registryHost string) (string, error) {

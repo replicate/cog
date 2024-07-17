@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/image"
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -23,14 +25,16 @@ func addGpusFlag(cmd *cobra.Command) {
 
 func newRunCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "run <command> [arg...]",
-		Short: "Run a command inside a Docker environment",
-		RunE:  run,
-		Args:  cobra.MinimumNArgs(1),
+		Use:     "run <command> [arg...]",
+		Short:   "Run a command inside a Docker environment",
+		RunE:    run,
+		PreRunE: checkMutuallyExclusiveFlags,
+		Args:    cobra.MinimumNArgs(1),
 	}
 	addBuildProgressOutputFlag(cmd)
 	addDockerfileFlag(cmd)
 	addUseCudaBaseImageFlag(cmd)
+	addUseCogBaseImageFlag(cmd)
 	addGpusFlag(cmd)
 
 	flags := cmd.Flags()
@@ -50,8 +54,7 @@ func run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-
-	imageName, err := image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, buildProgressOutput)
+	imageName, err := image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, buildUseCogBaseImage, buildProgressOutput)
 	if err != nil {
 		return err
 	}
@@ -70,6 +73,10 @@ func run(cmd *cobra.Command, args []string) error {
 		Image:   imageName,
 		Volumes: []docker.Volume{{Source: projectDir, Destination: "/src"}},
 		Workdir: "/src",
+	}
+
+	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
+		runOptions.Platform = "linux/amd64"
 	}
 
 	for _, portString := range runPorts {

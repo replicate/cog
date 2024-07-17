@@ -1,0 +1,54 @@
+name: Push to Replicate
+
+on:
+  # Workflow dispatch allows you to manually trigger the workflow from GitHub.com
+  # Go to your repo, click "Actions", click "Push to Replicate", click "Run workflow"
+  workflow_dispatch:
+    inputs:
+      model_name:
+        description: 'Enter the model name, like "alice/bunny-detector". If unset, this will default to the value of `image` in cog.yaml.'
+  # # Uncomment these lines to trigger the workflow on every push to the main branch
+  # push:
+  #   branches:
+  #     - main
+
+jobs:
+  push_to_replicate:
+    name: Push to Replicate
+
+    # If your model is large, the default GitHub Actions runner may not 
+    # have enough disk space. If you need more space you can set up a 
+    # bigger runner on GitHub.
+    runs-on: ubuntu-latest
+
+    steps:
+      # This action cleans up disk space to make more room for your
+      # model code, weights, etc.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          docker-images: false
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # This action installs Docker buildx and Cog (and optionally CUDA)
+      - name: Setup Cog
+        uses: replicate/setup-cog@v2
+        with:
+          # If you set REPLICATE_API_TOKEN in your GitHub repository secrets,
+          # the action will authenticate with Replicate automatically so you
+          # can push your model
+          token: ${{ secrets.REPLICATE_API_TOKEN }}
+
+      # If you trigger the workflow manually, you can specify the model name.
+      # If you leave it blank (or if the workflow is triggered by a push), the 
+      # model name will be derived from the `image` value in cog.yaml.
+      - name: Push to Replicate
+        run: |
+          if [ -n "${{ inputs.model_name }}" ]; then
+            cog push r8.im/${{ inputs.model_name }}
+          else
+            cog push
+          fi

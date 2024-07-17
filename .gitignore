@@ -13,3 +13,5 @@ pkg/dockerfile/embed/cog.whl
 .venv/
 .idea/
 .DS_Store
+docs/README.md
+docs/CONTRIBUTING.md

@@ -8,28 +8,11 @@ from requests.packages.urllib3.util.retry import Retry  # type: ignore
 
 from ..schema import Status, WebhookEvent
 from .response_throttler import ResponseThrottler
+from .telemetry import current_trace_context
+from .useragent import get_user_agent
 
 log = structlog.get_logger(__name__)
 
-
-def _get_version() -> str:
-    use_importlib = True
-    try:
-        from importlib.metadata import version
-    except ImportError:
-        use_importlib = False
-
-    try:
-        if use_importlib:
-            return version("cog")
-        import pkg_resources
-
-        return pkg_resources.get_distribution("cog").version
-    except Exception:
-        return "unknown"
-
-
-_user_agent = f"cog-worker/{_get_version()}"
 _response_interval = float(os.environ.get("COG_THROTTLE_RESPONSE_INTERVAL", 0.5))
 
 # HACK: signal that we should skip the start webhook when the response interval
@@ -39,8 +22,9 @@ SKIP_START_EVENT = _response_interval < 0.1
 
 
 def webhook_caller_filtered(
-    webhook: str, webhook_events_filter: Set[WebhookEvent]
-) -> Callable:
+    webhook: str,
+    webhook_events_filter: Set[WebhookEvent],
+) -> Callable[[Any, WebhookEvent], None]:
     upstream_caller = webhook_caller(webhook)
 
     def caller(response: Any, event: WebhookEvent) -> None:
@@ -50,7 +34,7 @@ def webhook_caller_filtered(
     return caller
 
 
-def webhook_caller(webhook: str) -> Callable:
+def webhook_caller(webhook: str) -> Callable[[Any], None]:
     # TODO: we probably don't need to create new sessions and new throttlers
     # for every prediction.
     throttler = ResponseThrottler(response_interval=_response_interval)
@@ -77,8 +61,13 @@ def webhook_caller(webhook: str) -> Callable:
 def requests_session() -> requests.Session:
     session = requests.Session()
     session.headers["user-agent"] = (
-        _user_agent + " " + str(session.headers["user-agent"])
+        get_user_agent() + " " + str(session.headers["user-agent"])
     )
+
+    ctx = current_trace_context() or {}
+    for key, value in ctx.items():
+        session.headers[key] = str(value)
+
     auth_token = os.environ.get("WEBHOOK_AUTH_TOKEN")
     if auth_token:
         session.headers["authorization"] = "Bearer " + auth_token

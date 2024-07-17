@@ -4,11 +4,13 @@ import os
 import pathlib
 import shutil
 import tempfile
-import urllib
+import urllib.parse
+import urllib.request
 from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
 
 import requests
-from pydantic import Field
+from pydantic import Field, SecretStr
+from typing_extensions import NotRequired, TypedDict
 
 FILENAME_ILLEGAL_CHARS = set("\u0000/")
 
@@ -16,6 +18,23 @@ FILENAME_ILLEGAL_CHARS = set("\u0000/")
 # filename so that there's room for prefixes added by
 # tempfile.NamedTemporaryFile, etc.
 FILENAME_MAX_LENGTH = 200
+
+
+class CogConfig(TypedDict):
+    build: "CogBuildConfig"
+    image: NotRequired[str]
+    predict: NotRequired[str]
+    train: NotRequired[str]
+
+
+class CogBuildConfig(TypedDict, total=False):
+    cuda: Optional[str]
+    gpu: Optional[bool]
+    python_packages: Optional[List[str]]
+    system_packages: Optional[List[str]]
+    python_requirements: Optional[str]
+    python_version: Optional[str]
+    run: Optional[Union[List[str], List[Dict[str, Any]]]]
 
 
 def Input(
@@ -41,7 +60,22 @@ def Input(
     )
 
 
+class Secret(SecretStr):
+    @classmethod
+    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+        """Defines what this type should be in openapi.json"""
+        field_schema.update(
+            {
+                "type": "string",
+                "format": "password",
+                "x-cog-secret": True,
+            }
+        )
+
+
 class File(io.IOBase):
+    """Deprecated: use Path instead."""
+
     validate_always = True
 
     @classmethod
@@ -123,12 +157,7 @@ class URLPath(pathlib.PosixPath):
 
     def unlink(self, missing_ok: bool = False) -> None:
         if self._path:
-            # TODO: use unlink(missing_ok=...) when we drop Python 3.7 support.
-            try:
-                self._path.unlink()
-            except FileNotFoundError:
-                if not missing_ok:
-                    raise
+            self._path.unlink(missing_ok=missing_ok)
 
     def __str__(self) -> str:
         # FastAPI's jsonable_encoder will encode subclasses of pathlib.Path by
@@ -199,11 +228,7 @@ class URLFile(io.IOBase):
                 type(self).__name__, id(self), object.__getattribute__(self, "__url__")
             )
         else:
-            return "<{} at 0x{:x} wrapping {!r}>".format(
-                type(self).__name__,
-                id(self),
-                target,
-            )
+            return f"<{type(self).__name__} at 0x{id(self):x} wrapping {target!r}>"
 
 
 def get_filename(url: str) -> str:
@@ -256,15 +281,15 @@ class ConcatenateIterator(Iterator[Item]):
         yield cls.validate
 
     @classmethod
-    def validate(cls, value: Any) -> Iterator:
+    def validate(cls, value: Iterator[Any]) -> Iterator[Any]:
         return value
 
 
-def _len_bytes(s, encoding="utf-8") -> int:
+def _len_bytes(s: str, encoding: str = "utf-8") -> int:
     return len(s.encode(encoding))
 
 
-def _truncate_filename_bytes(s, length, encoding="utf-8") -> str:
+def _truncate_filename_bytes(s: str, length: int, encoding: str = "utf-8") -> str:
     """
     Truncate a filename to at most `length` bytes, preserving file extension
     and avoiding text encoding corruption from truncation.

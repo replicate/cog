@@ -351,6 +351,55 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "aron",
+      "name": "Aron Carroll",
+      "avatar_url": "https://avatars.githubusercontent.com/u/47144?v=4",
+      "profile": "http://aroncarroll.com",
+      "contributions": [
+        "doc",
+        "code",
+        "ideas"
+      ]
+    },
+    {
+      "login": "Theodotus1243",
+      "name": "Bohdan Mykhailenko",
+      "avatar_url": "https://avatars.githubusercontent.com/u/32220358?v=4",
+      "profile": "https://github.com/Theodotus1243",
+      "contributions": [
+        "doc",
+        "bug"
+      ]
+    },
+    {
+      "login": "one1zero1one",
+      "name": "Daniel Radu",
+      "avatar_url": "https://avatars.githubusercontent.com/u/724604?v=4",
+      "profile": "https://github.com/one1zero1one",
+      "contributions": [
+        "doc",
+        "bug"
+      ]
+    },
+    {
+      "login": "Etelis",
+      "name": "Itay Etelis",
+      "avatar_url": "https://avatars.githubusercontent.com/u/92247226?v=4",
+      "profile": "https://github.com/Etelis",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "gschian0",
+      "name": "Gennaro Schiano",
+      "avatar_url": "https://avatars.githubusercontent.com/u/54407820?v=4",
+      "profile": "http://www.wavefunction.dev",
+      "contributions": [
+        "doc"
+      ]
     }
   ],
   "contributorsPerLine": 7,

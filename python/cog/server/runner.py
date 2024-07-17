@@ -1,12 +1,15 @@
 import io
+import sys
 import threading
 import traceback
+import typing  # TypeAlias, py3.10
 from datetime import datetime, timezone
 from multiprocessing.pool import AsyncResult, ThreadPool
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple, Union, cast
 
 import requests
 import structlog
+from attrs import define
 from fastapi.encoders import jsonable_encoder
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry  # type: ignore
@@ -16,6 +19,8 @@ from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
 from .probes import ProbeHelper
+from .telemetry import current_trace_context
+from .useragent import get_user_agent
 from .webhook import SKIP_START_EVENT, webhook_caller_filtered
 from .worker import Worker
 
@@ -34,6 +39,22 @@ class UnknownPredictionError(Exception):
     pass
 
 
+@define
+class SetupResult:
+    started_at: datetime
+    completed_at: datetime
+    logs: str
+    status: schema.Status
+
+
+PredictionTask: "typing.TypeAlias" = "AsyncResult[schema.PredictionResponse]"
+SetupTask: "typing.TypeAlias" = "AsyncResult[SetupResult]"
+if sys.version_info < (3, 9):
+    PredictionTask = AsyncResult
+    SetupTask = AsyncResult
+RunnerTask: "typing.TypeAlias" = Union[PredictionTask, SetupTask]
+
+
 class PredictionRunner:
     def __init__(
         self,
@@ -46,7 +67,7 @@ class PredictionRunner:
         self._threadpool = ThreadPool(processes=1)
 
         self._response: Optional[schema.PredictionResponse] = None
-        self._result: Optional[AsyncResult] = None
+        self._result: Optional[RunnerTask] = None
 
         self._worker = Worker(predictor_ref=predictor_ref)
         self._should_cancel = threading.Event()
@@ -54,7 +75,7 @@ class PredictionRunner:
         self._shutdown_event = shutdown_event
         self._upload_url = upload_url
 
-    def setup(self) -> AsyncResult:
+    def setup(self) -> SetupTask:
         if self.is_busy():
             raise RunnerBusyError()
 
@@ -79,8 +100,10 @@ class PredictionRunner:
     # TODO: Make the return type AsyncResult[schema.PredictionResponse] when we
     # no longer have to support Python 3.8
     def predict(
-        self, prediction: schema.PredictionRequest, upload: bool = True
-    ) -> Tuple[schema.PredictionResponse, AsyncResult]:
+        self,
+        prediction: schema.PredictionRequest,
+        upload: bool = True,
+    ) -> Tuple[schema.PredictionResponse, PredictionTask]:
         # It's the caller's responsibility to not call us if we're busy.
         if self.is_busy():
             # If self._result is set, but self._response is not, we're still
@@ -89,7 +112,8 @@ class PredictionRunner:
                 raise RunnerBusyError()
             assert self._result is not None
             if prediction.id is not None and prediction.id == self._response.id:
-                return (self._response, self._result)
+                result = cast(PredictionTask, self._result)
+                return (self._response, result)
             raise RunnerBusyError()
 
         # Set up logger context for main thread. The same thing happens inside
@@ -99,11 +123,15 @@ class PredictionRunner:
 
         self._should_cancel.clear()
         upload_url = self._upload_url if upload else None
-        event_handler = create_event_handler(prediction, upload_url=upload_url)
+        event_handler = create_event_handler(
+            prediction,
+            upload_url=upload_url,
+        )
 
-        def cleanup(_: Optional[Any] = None) -> None:
-            if hasattr(prediction.input, "cleanup"):
-                prediction.input.cleanup()
+        def cleanup(_: Optional[schema.PredictionResponse] = None) -> None:
+            input = cast(Any, prediction.input)
+            if hasattr(input, "cleanup"):
+                input.cleanup()
 
         def handle_error(error: BaseException) -> None:
             # Re-raise the exception in order to more easily capture exc_info,
@@ -157,7 +185,8 @@ class PredictionRunner:
 
 
 def create_event_handler(
-    prediction: schema.PredictionRequest, upload_url: Optional[str] = None
+    prediction: schema.PredictionRequest,
+    upload_url: Optional[str] = None,
 ) -> "PredictionEventHandler":
     response = schema.PredictionResponse(**prediction.dict())
 
@@ -168,11 +197,11 @@ def create_event_handler(
 
     webhook_sender = None
     if webhook is not None:
-        webhook_sender = webhook_caller_filtered(webhook, events_filter)
+        webhook_sender = webhook_caller_filtered(webhook, set(events_filter))
 
     file_uploader = None
     if upload_url is not None:
-        file_uploader = generate_file_uploader(upload_url)
+        file_uploader = generate_file_uploader(upload_url, prediction_id=prediction.id)
 
     event_handler = PredictionEventHandler(
         response, webhook_sender=webhook_sender, file_uploader=file_uploader
@@ -181,12 +210,16 @@ def create_event_handler(
     return event_handler
 
 
-def generate_file_uploader(upload_url: str) -> Callable:
+def generate_file_uploader(
+    upload_url: str, prediction_id: Optional[str]
+) -> Callable[[Any], Any]:
     client = _make_file_upload_http_client()
 
     def file_uploader(output: Any) -> Any:
         def upload_file(fh: io.IOBase) -> str:
-            return put_file_to_signed_endpoint(fh, upload_url, client=client)
+            return put_file_to_signed_endpoint(
+                fh, endpoint=upload_url, prediction_id=prediction_id, client=client
+            )
 
         return upload_files(output, upload_file=upload_file)
 
@@ -197,8 +230,8 @@ class PredictionEventHandler:
     def __init__(
         self,
         p: schema.PredictionResponse,
-        webhook_sender: Optional[Callable] = None,
-        file_uploader: Optional[Callable] = None,
+        webhook_sender: Optional[Callable[[Any, schema.WebhookEvent], None]] = None,
+        file_uploader: Optional[Callable[[Any], Any]] = None,
     ) -> None:
         log.info("starting prediction")
         self.p = p
@@ -287,7 +320,7 @@ class PredictionEventHandler:
             raise FileUploadError("Got error trying to upload output files") from error
 
 
-def setup(*, worker: Worker) -> Dict[str, Any]:
+def setup(*, worker: Worker) -> SetupResult:
     logs = []
     status = None
     started_at = datetime.now(tz=timezone.utc)
@@ -315,12 +348,12 @@ def setup(*, worker: Worker) -> Dict[str, Any]:
         probes = ProbeHelper()
         probes.ready()
 
-    return {
-        "logs": "".join(logs),
-        "status": status,
-        "started_at": started_at,
-        "completed_at": completed_at,
-    }
+    return SetupResult(
+        started_at=started_at,
+        completed_at=completed_at,
+        logs="".join(logs),
+        status=status,
+    )
 
 
 def predict(
@@ -361,15 +394,21 @@ def _predict(
     input_dict = initial_prediction["input"]
 
     for k, v in input_dict.items():
-        if isinstance(v, types.URLPath):
-            try:
+        try:
+            # Check if v is an instance of URLPath
+            if isinstance(v, types.URLPath):
                 input_dict[k] = v.convert()
-            except requests.exceptions.RequestException as e:
-                tb = traceback.format_exc()
-                event_handler.append_logs(tb)
-                event_handler.failed(error=str(e))
-                log.warn("failed to download url path from input", exc_info=True)
-                return event_handler.response
+            # Check if v is a list of URLPath instances
+            elif isinstance(v, list) and all(
+                isinstance(item, types.URLPath) for item in v
+            ):
+                input_dict[k] = [item.convert() for item in v]
+        except requests.exceptions.RequestException as e:
+            tb = traceback.format_exc()
+            event_handler.append_logs(tb)
+            event_handler.failed(error=str(e))
+            log.warn("Failed to download url path from input", exc_info=True)
+            return event_handler.response
 
     for event in worker.predict(input_dict, poll=0.1):
         if should_cancel.is_set():
@@ -405,7 +444,7 @@ def _predict(
             else:
                 event_handler.set_output(event.payload)
 
-        elif isinstance(event, Done):
+        elif isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
             if event.canceled:
                 event_handler.canceled()
             elif event.error:
@@ -413,7 +452,7 @@ def _predict(
             else:
                 event_handler.succeeded()
 
-        else:
+        else:  # shouldn't happen, exhausted the type
             log.warn("received unexpected event from worker", data=event)
 
     return event_handler.response
@@ -421,6 +460,14 @@ def _predict(
 
 def _make_file_upload_http_client() -> requests.Session:
     session = requests.Session()
+    session.headers["user-agent"] = (
+        get_user_agent() + " " + str(session.headers["user-agent"])
+    )
+
+    ctx = current_trace_context() or {}
+    for key, value in ctx.items():
+        session.headers[key] = str(value)
+
     adapter = HTTPAdapter(
         max_retries=Retry(
             total=3,

@@ -14,7 +14,7 @@ func main() {
 	var output string
 
 	var rootCmd = &cobra.Command{
-		Use:   "compatgen <target>",
+		Use:   "compatgen {cuda|torch|tensorflow}",
 		Short: "Generate compatibility matrix for Cog base images",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {

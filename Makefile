@@ -1,4 +1,4 @@
-SHELL := /bin/bash
+SHELL := bash
 
 DESTDIR ?=
 PREFIX = /usr/local
@@ -7,13 +7,13 @@ BINDIR = $(PREFIX)/bin
 INSTALL := install -m 0755
 INSTALL_PROGRAM := $(INSTALL)
 
-GO := go
+GO ?= go
 GOOS := $(shell $(GO) env GOOS)
 GOARCH := $(shell $(GO) env GOARCH)
 
-PYTHON := python
+PYTHON ?= python
 PYTEST := $(PYTHON) -m pytest
-MYPY := $(PYTHON) -m mypy
+PYRIGHT := $(PYTHON) -m pyright
 RUFF := $(PYTHON) -m ruff
 
 default: all
@@ -34,6 +34,13 @@ cog: pkg/dockerfile/embed/cog.whl
 	CGO_ENABLED=0 $(GO) build -o $@ \
 		-ldflags "-X github.com/replicate/cog/pkg/global.Version=$(COG_VERSION) -X github.com/replicate/cog/pkg/global.BuildTime=$(shell date +%Y-%m-%dT%H:%M:%S%z) -w" \
 		cmd/cog/cog.go
+
+.PHONY: base-image
+base-image: pkg/dockerfile/embed/cog.whl
+	$(eval COG_VERSION ?= $(shell git describe --tags --match 'v*' --abbrev=0)+dev)
+	CGO_ENABLED=0 $(GO) build -o $@ \
+		-ldflags "-X github.com/replicate/cog/pkg/global.Version=$(COG_VERSION) -X github.com/replicate/cog/pkg/global.BuildTime=$(shell date +%Y-%m-%dT%H:%M:%S%z) -w" \
+		cmd/base-image/baseimage.go
 
 .PHONY: install
 install: cog
@@ -62,7 +69,7 @@ test-integration: cog
 
 .PHONY: test-python
 test-python:
-	$(PYTEST) -n auto -vv python/tests
+	$(PYTEST) -n auto -vv --cov=python/cog  --cov-report term-missing  python/tests $(if $(FILTER),-k "$(FILTER)",)
 
 .PHONY: test
 test: test-go test-python test-integration
@@ -93,8 +100,10 @@ lint-go:
 
 .PHONY: lint-python
 lint-python:
-	$(RUFF) python/cog
-	$(MYPY) python/cog
+	$(RUFF) check python/cog
+	$(RUFF) format --check python
+	@$(PYTHON) -c 'import sys; sys.exit("Warning: python >=3.10 is needed (not installed) to pass linting (pyright)") if sys.version_info < (3, 10) else None'
+	$(PYRIGHT)
 
 .PHONY: lint
 lint: lint-go lint-python
@@ -102,3 +111,15 @@ lint: lint-go lint-python
 .PHONY: mod-tidy
 mod-tidy:
 	$(GO) mod tidy
+
+.PHONY: install-python # install dev dependencies
+install-python:
+	$(PYTHON) -m pip install '.[dev]'
+
+
+.PHONY: run-docs-server
+run-docs-server:
+	pip install mkdocs-material
+	sed 's/docs\///g' README.md > ./docs/README.md
+	cp CONTRIBUTING.md ./docs/
+	mkdocs serve

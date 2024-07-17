@@ -21,7 +21,7 @@ class ProbeHelper:
             self._root = Path(root)
 
         try:
-            self._root.mkdir(exist_ok=True)
+            self._root.mkdir(exist_ok=True, parents=True)
         except OSError:
             log.error(
                 f"Failed to create cog runtime state directory ({self._root}). "

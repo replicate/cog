@@ -1,5 +1,47 @@
 [
   {
+    "Tag": "12.4.1-cudnn-devel-ubuntu22.04",
+    "CUDA": "12.4.1",
+    "CuDNN": "",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.4.1-cudnn-devel-ubuntu20.04",
+    "CUDA": "12.4.1",
+    "CuDNN": "",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.3.2-cudnn9-devel-ubuntu22.04",
+    "CUDA": "12.3.2",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.3.2-cudnn9-devel-ubuntu20.04",
+    "CUDA": "12.3.2",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.2.2-cudnn8-devel-ubuntu22.04",
+    "CUDA": "12.2.2",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.2.2-cudnn8-devel-ubuntu20.04",
+    "CUDA": "12.2.2",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
     "Tag": "12.1.1-cudnn8-devel-ubuntu22.04",
     "CUDA": "12.1.1",
     "CuDNN": "8",
@@ -124,6 +166,13 @@
     "CuDNN": "8",
     "IsDevel": true,
     "Ubuntu": "18.04"
+  },
+  {
+    "Tag": "11.6.1-cudnn8-devel-ubuntu20.04",
+    "CUDA": "11.6.1",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
   },
   {
     "Tag": "11.5.2-cudnn8-devel-ubuntu20.04",

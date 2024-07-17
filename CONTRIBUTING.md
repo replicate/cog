@@ -93,7 +93,7 @@ Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the fu
 
 ## Development environment
 
-You'll need to [install Go 1.20](https://golang.org/doc/install). If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
+You'll need to [install Go 1.21](https://golang.org/doc/install). If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
 
 Install the Python dependencies:
 
@@ -142,7 +142,7 @@ There are a few concepts used throughout Cog that might be helpful to understand
 - **Prediction**: A single run of the model, that takes **input** and produces **output**.
 - **Predictor**: Defines how Cog runs **predictions** on a **model**.
 
-## Runnings tests
+## Running tests
 
 To run the entire test suite:
 
@@ -174,6 +174,14 @@ docker run -p 5001:5000 --init --platform=linux/amd64 cog-file-project
 ```
 
 Then visit [localhost:5001](http://localhost:5001) in your browser.
+
+## Running the docs server
+
+To run the docs website server locally:
+
+```sh
+make run-docs-server
+```
 
 ## Publishing a release
 

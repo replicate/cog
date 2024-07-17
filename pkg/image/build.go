@@ -9,6 +9,8 @@ import (
 	"path"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
@@ -20,19 +22,27 @@ import (
 
 const dockerignoreBackupPath = ".dockerignore.cog.bak"
 const weightsManifestPath = ".cog/cache/weights_manifest.json"
+const bundledSchemaFile = ".cog/openapi_schema.json"
+const bundledSchemaPy = ".cog/schema.py"
 
 // Build a Cog model from a config
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
-func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string) error {
+func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string, useCogBaseImage bool) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
+
+	// remove bundled schema files that may be left from previous builds
+	_ = os.Remove(bundledSchemaFile)
+	_ = os.Remove(bundledSchemaPy)
+
+	var cogBaseImageName string
 
 	if dockerfileFile != "" {
 		dockerfileContents, err := os.ReadFile(dockerfileFile)
 		if err != nil {
 			return fmt.Errorf("Failed to read Dockerfile at %s: %w", dockerfileFile, err)
 		}
-		if err := docker.Build(dir, string(dockerfileContents), imageName, secrets, noCache, progressOutput); err != nil {
+		if err := docker.Build(dir, string(dockerfileContents), imageName, secrets, noCache, progressOutput, config.BuildSourceEpochTimestamp); err != nil {
 			return fmt.Errorf("Failed to build Docker image: %w", err)
 		}
 	} else {
@@ -46,9 +56,17 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			}
 		}()
 		generator.SetUseCudaBaseImage(useCudaBaseImage)
+		generator.SetUseCogBaseImage(useCogBaseImage)
+
+		if generator.IsUsingCogBaseImage() {
+			cogBaseImageName, err = generator.BaseImage()
+			if err != nil {
+				return fmt.Errorf("Failed to get cog base image name: %s", err)
+			}
+		}
 
 		if separateWeights {
-			weightsDockerfile, runnerDockerfile, dockerignore, err := generator.Generate(imageName)
+			weightsDockerfile, runnerDockerfile, dockerignore, err := generator.GenerateModelBaseWithSeparateWeights(imageName)
 			if err != nil {
 				return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 			}
@@ -83,7 +101,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			if err != nil {
 				return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 			}
-			if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput); err != nil {
+			if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput, config.BuildSourceEpochTimestamp); err != nil {
 				return fmt.Errorf("Failed to build Docker image: %w", err)
 			}
 		}
@@ -111,6 +129,12 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}
 
 		schemaJSON = data
+	}
+
+	// save open_api schema file
+	err := os.WriteFile(bundledSchemaFile, schemaJSON, 0o644)
+	if err != nil {
+		return fmt.Errorf("failed to store bundled schema file %s: %w", bundledSchemaFile, err)
 	}
 
 	loader := openapi3.NewLoader()
@@ -141,12 +165,36 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		// Mark the image as having an appropriate init entrypoint. We can use this
 		// to decide how/if to shim the image.
 		global.LabelNamespace + "has_init": "true",
+	}
 
-		// Backwards compatibility. Remove for 1.0.
-		"org.cogmodel.deprecated":     "The org.cogmodel labels are deprecated. Use run.cog.",
-		"org.cogmodel.cog_version":    global.Version,
-		"org.cogmodel.config":         string(bytes.TrimSpace(configJSON)),
-		"org.cogmodel.openapi_schema": string(schemaJSON),
+	if cogBaseImageName != "" {
+		labels[global.LabelNamespace+"cog-base-image-name"] = cogBaseImageName
+
+		ref, err := name.ParseReference(cogBaseImageName)
+		if err != nil {
+			return fmt.Errorf("Failed to parse cog base image reference: %w", err)
+		}
+
+		img, err := remote.Image(ref)
+		if err != nil {
+			return fmt.Errorf("Failed to fetch cog base image: %w", err)
+		}
+
+		manifest, err := img.Manifest()
+		if err != nil {
+			return fmt.Errorf("Failed to get manifest for cog base image: %w", err)
+		}
+
+		if len(manifest.Layers) == 0 {
+			return fmt.Errorf("Cog base image has no layers: %s", cogBaseImageName)
+		}
+
+		lastLayerIndex := len(manifest.Layers) - 1
+		lastLayer := manifest.Layers[lastLayerIndex].Digest.String()
+		console.Debugf("Last layer of the cog base image: %s", lastLayer)
+
+		labels[global.LabelNamespace+"cog-base-image-last-layer-sha"] = lastLayer
+		labels[global.LabelNamespace+"cog-base-image-last-layer-idx"] = fmt.Sprintf("%d", lastLayerIndex)
 	}
 
 	if isGitRepo(dir) {
@@ -163,13 +211,13 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}
 	}
 
-	if err := docker.BuildAddLabelsToImage(imageName, labels); err != nil {
+	if err := docker.BuildAddLabelsAndSchemaToImage(imageName, labels, bundledSchemaFile, bundledSchemaPy); err != nil {
 		return fmt.Errorf("Failed to add labels to image: %w", err)
 	}
 	return nil
 }
 
-func BuildBase(cfg *config.Config, dir string, useCudaBaseImage string, progressOutput string) (string, error) {
+func BuildBase(cfg *config.Config, dir string, useCudaBaseImage string, useCogBaseImage bool, progressOutput string) (string, error) {
 	// TODO: better image management so we don't eat up disk space
 	// https://github.com/replicate/cog/issues/80
 	imageName := config.BaseDockerImageName(dir)
@@ -186,12 +234,13 @@ func BuildBase(cfg *config.Config, dir string, useCudaBaseImage string, progress
 	}()
 
 	generator.SetUseCudaBaseImage(useCudaBaseImage)
+	generator.SetUseCogBaseImage(useCogBaseImage)
 
-	dockerfileContents, err := generator.GenerateBase()
+	dockerfileContents, err := generator.GenerateModelBase()
 	if err != nil {
 		return "", fmt.Errorf("Failed to generate Dockerfile: %w", err)
 	}
-	if err := docker.Build(dir, dockerfileContents, imageName, []string{}, false, progressOutput); err != nil {
+	if err := docker.Build(dir, dockerfileContents, imageName, []string{}, false, progressOutput, config.BuildSourceEpochTimestamp); err != nil {
 		return "", fmt.Errorf("Failed to build Docker image: %w", err)
 	}
 	return imageName, nil
@@ -235,7 +284,7 @@ func buildWeightsImage(dir, dockerfileContents, imageName string, secrets []stri
 	if err := makeDockerignoreForWeightsImage(); err != nil {
 		return fmt.Errorf("Failed to create .dockerignore file: %w", err)
 	}
-	if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput); err != nil {
+	if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput, config.BuildSourceEpochTimestamp); err != nil {
 		return fmt.Errorf("Failed to build Docker image for model weights: %w", err)
 	}
 	return nil
@@ -245,7 +294,7 @@ func buildRunnerImage(dir, dockerfileContents, dockerignoreContents, imageName s
 	if err := writeDockerignore(dockerignoreContents); err != nil {
 		return fmt.Errorf("Failed to write .dockerignore file with weights included: %w", err)
 	}
-	if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput); err != nil {
+	if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput, config.BuildSourceEpochTimestamp); err != nil {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
 	}
 	if err := restoreDockerignore(); err != nil {

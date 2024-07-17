@@ -14,7 +14,10 @@ def test_build_without_predictor(docker_image):
         capture_output=True,
     )
     assert build_process.returncode > 0
-    assert "Model schema is invalid" in build_process.stderr.decode()
+    assert (
+        "Can't run predictions: 'predict' option not found"
+        in build_process.stderr.decode()
+    )
 
 
 def test_build_names_uses_image_option_in_cog_yaml(tmpdir, docker_image):
@@ -49,7 +52,7 @@ class Predictor(BasePredictor):
 
 
 def test_build_with_model(docker_image):
-    project_dir = Path(__file__).parent / "fixtures/file-project"
+    project_dir = Path(__file__).parent / "fixtures/path-project"
     subprocess.run(
         ["cog", "build", "-t", docker_image],
         cwd=project_dir,
@@ -64,9 +67,6 @@ def test_build_with_model(docker_image):
     )
     labels = image[0]["Config"]["Labels"]
     schema = json.loads(labels["run.cog.openapi_schema"])
-
-    # Backwards compatibility
-    assert "org.cogmodel.openapi_schema" in labels
 
     assert schema["components"]["schemas"]["Input"] == {
         "title": "Input",
@@ -95,10 +95,8 @@ def test_build_invalid_schema(docker_image):
     assert "invalid default: number must be at least 2" in build_process.stderr.decode()
 
 
+@pytest.mark.skipif(os.environ.get("CI") != "true", reason="only runs in CI")
 def test_build_gpu_model_on_cpu(tmpdir, docker_image):
-    if os.environ.get("CI") != "true":
-        pytest.skip("only runs on CI environment")
-
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
 build:
@@ -176,19 +174,6 @@ class Predictor(BasePredictor):
     }
     assert "run.cog.openapi_schema" in labels
 
-    # Deprecated. Remove for 1.0.
-    assert len(labels["org.cogmodel.cog_version"]) > 0
-    assert json.loads(labels["org.cogmodel.config"]) == {
-        "build": {
-            "python_version": "3.8",
-            "gpu": True,
-            "cuda": "11.8",
-            "cudnn": "8",
-        },
-        "predict": "predict.py:Predictor",
-    }
-    assert "org.cogmodel.openapi_schema" in labels
-
     assert len(labels["org.opencontainers.image.version"]) > 0
     assert len(labels["org.opencontainers.image.revision"]) > 0
 
@@ -210,3 +195,28 @@ def test_build_with_cog_init_templates(tmpdir, docker_image):
 
     assert build_process.returncode == 0
     assert "Image built as cog-" in build_process.stderr.decode()
+
+
+def test_build_with_complex_output(tmpdir, docker_image):
+    project_dir = Path(__file__).parent / "fixtures/complex_output_project"
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode == 0
+    assert "Image built as cog-" in build_process.stderr.decode()
+
+
+def test_python_37_deprecated(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/python_37"
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode > 0
+    assert (
+        "minimum supported Python version is 3.8. requested 3.7"
+        in build_process.stderr.decode()
+    )

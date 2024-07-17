@@ -32,7 +32,7 @@ func getSchema(version string) (gojsonschema.JSONLoader, error) {
 	// Default schema
 	currentSchema := schemaV1
 
-	switch version {
+	switch version { //nolint:gocritic
 	case defaultVersion:
 		currentSchema = schemaV1
 	}

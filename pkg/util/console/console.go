@@ -91,11 +91,10 @@ func (c *Console) log(level Level, msg string) {
 	formattedMsg := msg
 
 	if c.Color {
-		if level == WarnLevel {
+		switch level {
+		case WarnLevel:
 			prompt = aurora.Yellow("⚠ ").String()
-		} else if level == ErrorLevel {
-			prompt = aurora.Red("ⅹ ").String()
-		} else if level == FatalLevel {
+		case ErrorLevel, FatalLevel:
 			prompt = aurora.Red("ⅹ ").String()
 		}
 	}

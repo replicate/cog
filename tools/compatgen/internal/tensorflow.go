@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/replicate/cog/pkg/util/version"
+
 	"github.com/anaskhan96/soup"
 
 	"github.com/replicate/cog/pkg/config"
@@ -12,6 +14,8 @@ import (
 
 func FetchTensorFlowCompatibilityMatrix() ([]config.TFCompatibility, error) {
 	url := "https://www.tensorflow.org/install/source"
+	minCudaVersion := strconv.Itoa(config.MinimumMajorCudaVersion)
+
 	resp, err := soup.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to download %s: %w", url, err)
@@ -33,6 +37,10 @@ func FetchTensorFlowCompatibilityMatrix() ([]config.TFCompatibility, error) {
 		cuDNN := cells[4].Text()
 		cuda := cells[5].Text()
 
+		if !version.Greater(cuda, minCudaVersion) && !version.Equal(cuda, minCudaVersion) {
+			continue
+		}
+
 		compat := config.TFCompatibility{
 			TF:           packageVersion,
 			TFCPUPackage: "tensorflow==" + packageVersion,
@@ -45,7 +53,7 @@ func FetchTensorFlowCompatibilityMatrix() ([]config.TFCompatibility, error) {
 	}
 
 	// sanity check
-	if len(compats) < 21 {
+	if len(compats) < 12 {
 		return nil, fmt.Errorf("Tensorflow compatibility matrix only had %d rows, has the html changed?", len(compats))
 	}
 

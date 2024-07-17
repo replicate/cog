@@ -11,7 +11,7 @@ build:
     - pytorch==2.0.1
   system_packages:
     - "ffmpeg"
-    - "libavcodec-dev"
+    - "git"
 predict: "predict.py:Predictor"
 ```
 
@@ -25,13 +25,13 @@ This stanza describes how to build the Docker image your model runs in. It conta
 
 ### `cuda`
 
-Cog automatically picks the correct version of CUDA to install, but this lets you override it for whatever reason.
+Cog automatically picks the correct version of CUDA to install, but this lets you override it for whatever reason by specifying the minor (`11.8`) or patch (`11.8.0`) version of CUDA to use.
 
 For example:
 
 ```yaml
 build:
-  cuda: "11.1"
+  cuda: "11.8"
 ```
 
 ### `gpu`
@@ -49,7 +49,7 @@ When you use `cog run` or `cog predict`, Cog will automatically pass the `--gpus
 
 ### `python_packages`
 
-A list of Python packages to install, in the format `package==version`. For example:
+A list of Python packages to install from the PyPi package index, in the format `package==version`. For example:
 
 ```yaml
 build:
@@ -57,6 +57,28 @@ build:
     - pillow==8.3.1
     - tensorflow==2.5.0
 ```
+
+To install Git-hosted Python packages, add `git` to the `system_packages` list, then use the `git+https://` syntax to specify the package name. For example:
+
+```yaml
+build:
+  system_packages:
+    - "git"
+  python_packages:
+    - "git+https://github.com/huggingface/transformers"
+```
+
+You can also pin Python package installations to a specific git commit:
+
+```yaml
+build:
+  system_packages:
+    - "git"
+  python_packages:
+    - "git+https://github.com/huggingface/transformers@2d1602a"
+```
+
+Note that you can use a shortened prefix of the 40-character git commit SHA, but you must use at least six characters, like `2d1602a` above.
 
 ### `python_requirements`
 
@@ -78,7 +100,7 @@ build:
   python_version: "3.11.1"
 ```
 
-Cog supports all active branches of Python: 3.8, 3.9, 3.10, 3.11.
+Cog supports all active branches of Python: 3.8, 3.9, 3.10, 3.11, 3.12. If you don't define a version, Cog will use the latest version of Python 3.12 or a version of Python that is compatible with the versions of PyTorch or TensorFlow you specify.
 
 Note that these are the versions supported **in the Docker container**, not your host machine. You can run any version(s) of Python you wish on your host machine.
 
@@ -134,7 +156,11 @@ image: "r8.im/your-username/your-model"
 
 r8.im is Replicate's registry, but this can be any Docker registry.
 
-If you don't provide this, a name will be generated from the directory name.
+If you don't set this, then a name will be generated from the directory name.
+
+If you set this, then you can run `cog push` without specifying the model name. 
+
+If you specify an image name argument when pushing (like `cog push your-username/custom-model-name`), the argument will be used and the value of `image` in cog.yaml will be ignored.
 
 ## `predict`
 

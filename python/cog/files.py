@@ -2,6 +2,7 @@ import base64
 import io
 import mimetypes
 import os
+from typing import Optional
 from urllib.parse import urlparse
 
 import requests
@@ -23,7 +24,8 @@ def upload_file(fh: io.IOBase, output_file_prefix: str = None) -> str:
         b = b.encode("utf-8")
     encoded_body = base64.b64encode(b)
     if getattr(fh, "name", None):
-        # despite doing a getattr check here, mypy complains that io.IOBase has no attribute name
+        # despite doing a getattr check here, pyright complains that io.IOBase has no attribute name
+        # TODO: switch to typing.IO[]?
         mime_type = mimetypes.guess_type(fh.name)[0]  # type: ignore
     else:
         mime_type = "application/octet-stream"
@@ -38,7 +40,7 @@ def guess_filename(obj: io.IOBase) -> str:
 
 
 def put_file_to_signed_endpoint(
-    fh: io.IOBase, endpoint: str, client: requests.Session
+    fh: io.IOBase, endpoint: str, client: requests.Session, prediction_id: Optional[str]
 ) -> str:
     fh.seek(0)
 
@@ -50,18 +52,28 @@ def put_file_to_signed_endpoint(
     connect_timeout = 10
     read_timeout = 15
 
+    headers = {
+        "Content-Type": content_type,
+    }
+    if prediction_id is not None:
+        headers["X-Prediction-ID"] = prediction_id
+
     resp = client.put(
         ensure_trailing_slash(endpoint) + filename,
         fh,  # type: ignore
-        headers={"Content-type": content_type},
+        headers=headers,
         timeout=(connect_timeout, read_timeout),
     )
     resp.raise_for_status()
 
-    # strip any signing gubbins from the URL
-    final_url = urlparse(resp.url)._replace(query="").geturl()
+    # Try to extract the final asset URL from the `Location` header
+    # otherwise fallback to the URL of the final request.
+    final_url = resp.url
+    if "location" in resp.headers:
+        final_url = resp.headers.get("location")
 
-    return final_url
+    # strip any signing gubbins from the URL
+    return str(urlparse(final_url)._replace(query="").geturl())
 
 
 def ensure_trailing_slash(url: str) -> str:

@@ -21,25 +21,27 @@ jobs:
       fail-fast: false
       matrix:
         # https://docs.github.com/en/free-pro-team@latest/actions/reference/specifications-for-github-hosted-runners#supported-runners-and-hardware-resources
-        platform: [ubuntu-latest-8-cores, macos-12]
+        platform: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.platform }}
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: 3.12
       - name: Install Python dependencies
         run: |
-          python -m pip install '.[dev]'
-          yes | python -m mypy --install-types replicate || true
+          python -m pip install --no-cache uv
+          python -m uv pip install '.'
       - name: Build
         run: make cog
+      - name: Lint
+        run: make lint-go || true
       - name: Test
         run: make test-go
 
@@ -49,19 +51,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.7", "3.8", "3.9", "3.10", "3.11"]
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install Python dependencies
         run: |
-          python -m pip install '.[dev]'
-          yes | python -m mypy --install-types replicate || true
+          python -m pip install --no-cache uv
+          python -m uv pip install '.[dev]'
+      - name: Lint
+        run: |
+          if [[ $(python -c 'import sys; print(sys.version_info >= (3, 10))') == "True" ]]; then
+            make lint-python || true
+          fi
       - name: Test
         run: make test-python
         env:
@@ -71,18 +78,19 @@ jobs:
   test-integration:
     name: "Test integration"
     runs-on: ubuntu-latest-16-cores
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: 3.12
       - name: Install Python dependencies
         run: |
-          python -m pip install '.[dev]'
-          yes | python -m mypy --install-types replicate || true
+          python -m pip install --no-cache uv
+          python -m uv pip install '.[dev]'
       - name: Test
         run: make test-integration
 
@@ -99,7 +107,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - name: Build

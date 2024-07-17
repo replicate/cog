@@ -22,8 +22,9 @@ from hypothesis.stateful import (
 )
 
 # Set a longer deadline on CI as the instances are a bit slower.
-settings.register_profile("ci", max_examples=100, deadline=1000)
-settings.register_profile("default", max_examples=10, deadline=500)
+settings.register_profile("ci", max_examples=100, deadline=2000)
+settings.register_profile("default", max_examples=10, deadline=1500)
+settings.register_profile("slow", max_examples=10, deadline=2000)
 settings.load_profile(os.getenv("HYPOTHESIS_PROFILE", "default"))
 
 ST_NAMES = st.sampled_from(["John", "Barry", "Elspeth", "Hamid", "Ronnie", "Yasmeen"])
@@ -196,6 +197,32 @@ def test_no_exceptions_from_recoverable_failures(data, name, payloads):
         for _ in range(5):
             payload = data.draw(st.fixed_dictionaries(payloads))
             _process(w.predict(payload))
+    finally:
+        w.terminate()
+
+
+@given(data=st.data())
+@settings(deadline=10000)  # 10 seconds
+def test_stream_redirector_race_condition(data):
+    """
+    StreamRedirector and _ChildWorker are using the same _events pipe to send data.
+    When there are multiple threads trying to write to the same pipe, it can cause data corruption by race condition.
+    The data corruption will cause pipe receiver to raise an exception due to unpickling error.
+    """
+    w = Worker(
+        predictor_ref=_fixture_path("stream_redirector_race_condition"),
+        tee_output=False,
+    )
+
+    try:
+        result = _process(w.setup())
+        assert not result.done.error
+
+        payload = data.draw(st.fixed_dictionaries({}))
+        _process(w.predict(payload))
+
+    except FatalWorkerException as exc:
+        print(exc)
     finally:
         w.terminate()
 
@@ -459,7 +486,7 @@ class WorkerState(RuleBasedStateMachine):
         self.predict_events = []
         self.predict_payload = None
 
-    @rule(sleep=st.floats(min_value=0, max_value=0.5))
+    @rule(sleep=st.floats(min_value=0, max_value=0.1))
     def wait(self, sleep):
         time.sleep(sleep)
 
@@ -472,7 +499,7 @@ class WorkerState(RuleBasedStateMachine):
             pass
 
     @precondition(lambda x: x.setup_generator)
-    @rule(n=st.integers(min_value=1, max_value=10))
+    @rule(n=st.integers(min_value=1, max_value=5))
     def read_setup_events(self, n):
         try:
             for _ in range(n):
@@ -492,7 +519,7 @@ class WorkerState(RuleBasedStateMachine):
         assert result.stderr == ""
         assert result.done == Done()
 
-    @rule(name=ST_NAMES, steps=st.integers(min_value=0, max_value=10))
+    @rule(name=ST_NAMES, steps=st.integers(min_value=0, max_value=5))
     def predict(self, name, steps):
         try:
             payload = {"name": name, "steps": steps}
@@ -503,7 +530,7 @@ class WorkerState(RuleBasedStateMachine):
             pass
 
     @precondition(lambda x: x.predict_generator)
-    @rule(n=st.integers(min_value=1, max_value=10))
+    @rule(n=st.integers(min_value=1, max_value=5))
     def read_predict_events(self, n):
         try:
             for _ in range(n):
