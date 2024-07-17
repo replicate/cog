@@ -531,22 +531,26 @@ For example:
     return TrainingOutput
 
 
-def human_readable_type_name(t: Type[Any]) -> str:
+def human_readable_type_name(t: Type[Union[Any, None]]) -> str:
     """
     Generates a useful-for-humans label for a type. For builtin types, it's just the class name (eg "str" or "int"). For other types, it includes the module (eg "pathlib.Path" or "cog.File").
 
     The special case for Cog modules is because the type lives in `cog.types` internally, but just `cog` when included as a dependency.
     """
-    module = t.__module__
-    if module == "builtins":
-        return t.__qualname__
-    elif module.split(".")[0] == "cog":
-        module = "cog"
 
-    try:
-        return module + "." + t.__qualname__
-    except AttributeError:
-        return str(t)
+    if hasattr(t, "__module__"):
+        module = t.__module__
+        if module == "builtins":
+            return t.__qualname__
+        elif module.split(".")[0] == "cog":
+            module = "cog"
+
+        try:
+            return f"{module}.{t.__qualname__}"
+        except AttributeError:
+            pass
+
+    return str(t)
 
 
 def readable_types_list(type_list: List[Type[Any]]) -> str:
