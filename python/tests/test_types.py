@@ -4,7 +4,7 @@ import urllib.request
 
 import pytest
 import responses
-from cog.types import Secret, URLFile, get_filename_from_url, get_filename_from_urlopen,
+from cog.types import Secret, URLFile, get_filename_from_url, get_filename_from_urlopen
 
 
 @responses.activate
