@@ -190,6 +190,9 @@ class ClientManager:
     ) -> str:
         """put file to signed endpoint"""
         log.debug("upload_file")
+
+        fh.seek(0)
+
         # try to guess the filename of the given object
         name = getattr(fh, "name", "file")
         filename = os.path.basename(name) or "file"
