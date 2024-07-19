@@ -319,6 +319,14 @@ def get_filename_from_urlopen(resp: urllib.response.addinfourl) -> str:  # type:
 def get_filename_from_url(url: str) -> str:
     parsed_url = urllib.parse.urlparse(url)
 
+    if parsed_url.scheme == "data":
+        resp = urllib.request.urlopen(url)  # noqa: S310
+        mime_type = resp.headers.get_content_type()
+        extension = mimetypes.guess_extension(mime_type)
+        if extension is None:
+            return "file"
+        return "file" + extension
+
     filename = os.path.basename(parsed_url.path)
     filename = urllib.parse.unquote_plus(filename)
 
