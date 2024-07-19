@@ -1,36 +1,22 @@
+import json
+
+import httpx
 import pytest
-import requests
-import responses
+import respx
 from cog.schema import PredictionResponse, Status, WebhookEvent
-from cog.server.webhook import webhook_caller, webhook_caller_filtered
-from responses import registries
-
-pytest.skip(allow_module_level=True)
+from cog.server.clients import ClientManager
 
 
-@responses.activate
-def test_webhook_caller_basic():
-    c = webhook_caller("https://example.com/webhook/123")
-
-    payload = {
-        "status": Status.PROCESSING,
-        "output": {"animal": "giraffe"},
-        "input": {},
-    }
-    response = PredictionResponse(**payload)
-
-    responses.post(
-        "https://example.com/webhook/123",
-        json=payload,
-        status=200,
-    )
-
-    c(response)
+@pytest.fixture
+def client_manager():
+    return ClientManager()
 
 
-@responses.activate
-def test_webhook_caller_non_terminal_does_not_retry():
-    c = webhook_caller("https://example.com/webhook/123")
+@pytest.mark.asyncio
+@respx.mock
+async def test_webhook_caller_basic(client_manager):
+    url = "https://example.com/webhook/123"
+    sender = client_manager.make_webhook_sender(url, WebhookEvent.default_events())
 
     payload = {
         "status": Status.PROCESSING,
@@ -39,89 +25,80 @@ def test_webhook_caller_non_terminal_does_not_retry():
     }
     response = PredictionResponse(**payload)
 
-    responses.post(
-        "https://example.com/webhook/123",
-        json=payload,
-        status=429,
-    )
+    route = respx.post(url).mock(return_value=httpx.Response(200))
 
-    c(response)
+    await sender(response, WebhookEvent.COMPLETED)
+
+    assert route.called
+    assert json.loads(route.calls.last.request.content) == payload
 
 
-@responses.activate(registry=registries.OrderedRegistry)
-def test_webhook_caller_terminal_retries():
-    c = webhook_caller("https://example.com/webhook/123")
-    resps = []
+@pytest.mark.asyncio
+@respx.mock
+async def test_webhook_caller_non_terminal_does_not_retry(client_manager):
+    url = "https://example.com/webhook/123"
+    sender = client_manager.make_webhook_sender(url, WebhookEvent.default_events())
+
+    payload = {
+        "status": Status.PROCESSING,
+        "output": {"animal": "giraffe"},
+        "input": {},
+    }
+    response = PredictionResponse(**payload)
+
+    route = respx.post(url).mock(return_value=httpx.Response(429))
+
+    await sender(response, WebhookEvent.COMPLETED)
+
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_webhook_caller_terminal_retries(client_manager):
+    url = "https://example.com/webhook/123"
+    sender = client_manager.make_webhook_sender(url, WebhookEvent.default_events())
 
     payload = {"status": Status.SUCCEEDED, "output": {"animal": "giraffe"}, "input": {}}
     response = PredictionResponse(**payload)
 
-    for _ in range(2):
-        resps.append(
-            responses.post(
-                "https://example.com/webhook/123",
-                json=payload,
-                status=429,
-            )
-        )
-    resps.append(
-        responses.post(
-            "https://example.com/webhook/123",
-            json=payload,
-            status=200,
-        )
+    route = respx.post(url).mock(
+        side_effect=[httpx.Response(429), httpx.Response(429), httpx.Response(200)]
     )
 
-    c(response)
+    await sender(response, WebhookEvent.COMPLETED)
 
-    assert all(r.call_count == 1 for r in resps)
-
-
-@responses.activate
-def test_webhook_includes_user_agent():
-    c = webhook_caller("https://example.com/webhook/123")
-
-    payload = {
-        "status": Status.PROCESSING,
-        "output": {"animal": "giraffe"},
-        "input": {},
-    }
-    response = PredictionResponse(**payload)
-
-    responses.post(
-        "https://example.com/webhook/123",
-        json=payload,
-        status=200,
-    )
-
-    c(response)
-
-    assert len(responses.calls) == 1
-    user_agent = responses.calls[0].request.headers["user-agent"]
-    assert user_agent.startswith("cog-worker/")
+    assert route.call_count == 3
 
 
-@responses.activate
-def test_webhook_caller_filtered_basic():
+@pytest.mark.asyncio
+@respx.mock
+async def test_webhook_caller_filtered_basic(client_manager):
+    url = "https://example.com/webhook/123"
     events = WebhookEvent.default_events()
-    c = webhook_caller_filtered("https://example.com/webhook/123", events)
+    sender = client_manager.make_webhook_sender(url, events)
 
-    payload = {"status": Status.PROCESSING, "animal": "giraffe", "input": {}}
+    payload = {
+        "status": Status.PROCESSING,
+        "output": {"animal": "giraffe"},
+        "input": {},
+    }
     response = PredictionResponse(**payload)
 
-    responses.post(
-        "https://example.com/webhook/123",
-        json=payload,
-        status=200,
-    )
+    route = respx.post(url).mock(return_value=httpx.Response(200))
 
-    c(response, WebhookEvent.LOGS)
+    await sender(response, WebhookEvent.LOGS)
+
+    assert route.called
+    assert json.loads(route.calls.last.request.content) == payload
 
 
-@responses.activate
-def test_webhook_caller_filtered_omits_filtered_events():
+@pytest.mark.asyncio
+@respx.mock
+async def test_webhook_caller_filtered_omits_filtered_events(client_manager):
+    url = "https://example.com/webhook/123"
     events = {WebhookEvent.COMPLETED}
-    c = webhook_caller_filtered("https://example.com/webhook/123", events)
+    sender = client_manager.make_webhook_sender(url, events)
 
     payload = {
         "status": Status.PROCESSING,
@@ -130,20 +107,18 @@ def test_webhook_caller_filtered_omits_filtered_events():
     }
     response = PredictionResponse(**payload)
 
-    c(response, WebhookEvent.LOGS)
+    route = respx.post(url).mock(return_value=httpx.Response(200))
+
+    await sender(response, WebhookEvent.LOGS)
+
+    assert not route.called
 
 
-@responses.activate
-def test_webhook_caller_connection_errors():
-    connerror_resp = responses.Response(
-        responses.POST,
-        "https://example.com/webhook/123",
-        status=200,
-    )
-    connerror_exc = requests.ConnectionError("failed to connect")
-    connerror_exc.response = connerror_resp
-    connerror_resp.body = connerror_exc
-    responses.add(connerror_resp)
+@pytest.mark.asyncio
+@respx.mock
+async def test_webhook_caller_connection_errors(client_manager):
+    url = "https://example.com/webhook/123"
+    sender = client_manager.make_webhook_sender(url, WebhookEvent.default_events())
 
     payload = {
         "status": Status.PROCESSING,
@@ -152,6 +127,9 @@ def test_webhook_caller_connection_errors():
     }
     response = PredictionResponse(**payload)
 
-    c = webhook_caller("https://example.com/webhook/123")
+    route = respx.post(url).mock(side_effect=httpx.RequestError("Connection error"))
+
     # this should not raise an error
-    c(response)
+    await sender(response, WebhookEvent.COMPLETED)
+
+    assert route.called

@@ -198,6 +198,9 @@ class ClientManager:
     ) -> str:
         """put file to signed endpoint"""
         log.debug("upload_file")
+
+        fh.seek(0)
+
         # try to guess the filename of the given object
         name = getattr(fh, "name", "file")
         filename = os.path.basename(name) or "file"
@@ -238,10 +241,14 @@ class ClientManager:
                 url = resp1.headers["Location"]
 
         log.info("doing real upload to %s", url)
+        # set connect timeout to slightly more than a multiple of 3 to avoid
+        # aligning perfectly with TCP retransmission timer
+        timeout = httpx.Timeout(10.0, read=15.0)
         resp = await self.file_client.put(
             url,
             content=ChunkFileReader(fh),
             headers=headers,
+            timeout=timeout,
         )
         # TODO: if file size is >1MB, show upload throughput
         resp.raise_for_status()
