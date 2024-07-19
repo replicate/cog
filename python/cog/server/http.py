@@ -55,6 +55,7 @@ from .runner import (
     SetupTask,
     UnknownPredictionError,
 )
+from .telemetry import make_trace_context, trace_context
 
 log = structlog.get_logger("cog.server.http")
 
@@ -66,6 +67,7 @@ class Health(Enum):
     READY = auto()
     BUSY = auto()
     SETUP_FAILED = auto()
+    SHUTTING_DOWN = auto()
 
 
 class MyState:
@@ -284,9 +286,16 @@ def create_app(
         )
         def train(
             request: TrainingRequest = Body(default=None),
-            prefer: Union[str, None] = Header(default=None),
+            prefer: Optional[str] = Header(default=None),
+            traceparent: Optional[str] = Header(default=None, include_in_schema=False),
+            tracestate: Optional[str] = Header(default=None, include_in_schema=False),
         ) -> Any:  # type: ignore
-            return predict(request, prefer)
+            return predict(
+                request,
+                prefer=prefer,
+                traceparent=traceparent,
+                tracestate=tracestate,
+            )
 
         @app.put(
             "/trainings/{training_id}",
@@ -296,9 +305,17 @@ def create_app(
         def train_idempotent(
             training_id: str = Path(..., title="Training ID"),
             request: TrainingRequest = Body(..., title="Training Request"),
-            prefer: Union[str, None] = Header(default=None),
+            prefer: Optional[str] = Header(default=None),
+            traceparent: Optional[str] = Header(default=None, include_in_schema=False),
+            tracestate: Optional[str] = Header(default=None, include_in_schema=False),
         ) -> Any:
-            return predict_idempotent(training_id, request, prefer)
+            return predict_idempotent(
+                prediction_id=training_id,
+                request=request,
+                prefer=prefer,
+                traceparent=traceparent,
+                tracestate=tracestate,
+            )
 
         @app.post("/trainings/{training_id}/cancel")
         def cancel_training(training_id: str = Path(..., title="Training ID")) -> Any:
@@ -340,7 +357,9 @@ def create_app(
     @app.get("/health-check")
     async def healthcheck() -> Any:
         await _check_setup_task()
-        if app.state.health == Health.READY:
+        if shutdown_event is not None and shutdown_event.is_set():
+            health = Health.SHUTTING_DOWN
+        elif app.state.health == Health.READY:
             health = Health.BUSY if runner.is_busy() else Health.READY
         else:
             health = app.state.health
@@ -370,11 +389,15 @@ def create_app(
     )
     async def predict(
         request: PredictionRequest = Body(default=None),
-        prefer: Union[str, None] = Header(default=None),
+        prefer: Optional[str] = Header(default=None),
+        traceparent: Optional[str] = Header(default=None, include_in_schema=False),
+        tracestate: Optional[str] = Header(default=None, include_in_schema=False),
     ) -> Any:  # type: ignore
         """
         Run a single prediction on the model
         """
+        if shutdown_event is not None and shutdown_event.is_set():
+            return JSONResponse({"detail": "Model shutting down"}, status_code=409)
         if runner.is_busy():
             return JSONResponse(
                 {"detail": "Already running a prediction"}, status_code=409
@@ -383,7 +406,8 @@ def create_app(
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
 
-        return await shared_predict(request=request, respond_async=respond_async)
+        with trace_context(make_trace_context(traceparent, tracestate)):
+            return await shared_predict(request=request, respond_async=respond_async)
 
     @limited
     @app.put(
@@ -394,11 +418,15 @@ def create_app(
     async def predict_idempotent(
         prediction_id: str = Path(..., title="Prediction ID"),
         request: PredictionRequest = Body(..., title="Prediction Request"),
-        prefer: Union[str, None] = Header(default=None),
+        prefer: Optional[str] = Header(default=None),
+        traceparent: Optional[str] = Header(default=None, include_in_schema=False),
+        tracestate: Optional[str] = Header(default=None, include_in_schema=False),
     ) -> Any:
         """
         Run a single prediction on the model (idempotent creation).
         """
+        if shutdown_event is not None and shutdown_event.is_set():
+            return JSONResponse({"detail": "Model shutting down"}, status_code=409)
         if request.id is not None and request.id != prediction_id:
             body = {
                 "loc": ("body", "id"),
@@ -414,7 +442,8 @@ def create_app(
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
 
-        return await shared_predict(request=request, respond_async=respond_async)
+        with trace_context(make_trace_context(traceparent, tracestate)):
+            return await shared_predict(request=request, respond_async=respond_async)
 
     async def shared_predict(
         *, request: Optional[PredictionRequest], respond_async: bool = False
@@ -526,6 +555,7 @@ class Server(uvicorn.Server):
 
     def stop(self) -> None:
         log.info("stopping server")
+        self.should_exit = True
 
         self._thread.join(timeout=5)
         if not self._thread.is_alive():

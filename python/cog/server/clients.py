@@ -2,7 +2,17 @@ import base64
 import io
 import mimetypes
 import os
-from typing import Any, AsyncIterator, Awaitable, Callable, Collection, Dict, Optional
+from typing import (
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Collection,
+    Dict,
+    Mapping,
+    Optional,
+    cast,
+)
 from urllib.parse import urlparse
 
 import httpx
@@ -15,6 +25,7 @@ from ..types import PYDANTIC_V2, File, Path
 from .eventtypes import PredictionInput
 from .response_throttler import ResponseThrottler
 from .retry_transport import RetryTransport
+from .telemetry import current_trace_context
 
 log = structlog.get_logger(__name__)
 
@@ -45,12 +56,23 @@ SKIP_START_EVENT = _response_interval < 0.1
 WebhookSenderType = Callable[[Any, WebhookEvent], Awaitable[None]]
 
 
-def webhook_headers() -> "dict[str, str]":
+def common_headers() -> "dict[str, str]":
     headers = {"user-agent": _user_agent}
+    return headers
+
+
+def webhook_headers() -> "dict[str, str]":
+    headers = common_headers()
     auth_token = os.environ.get("WEBHOOK_AUTH_TOKEN")
     if auth_token:
         headers["authorization"] = "Bearer " + auth_token
+
     return headers
+
+
+async def on_request_trace_context_hook(request: httpx.Request) -> None:
+    ctx = current_trace_context() or {}
+    request.headers.update(cast(Mapping[str, str], ctx))
 
 
 def httpx_webhook_client() -> httpx.AsyncClient:
@@ -68,7 +90,10 @@ def httpx_retry_client() -> httpx.AsyncClient:
         retryable_methods=["POST"],
     )
     return httpx.AsyncClient(
-        headers=webhook_headers(), transport=transport, follow_redirects=True
+        event_hooks={"request": [on_request_trace_context_hook]},
+        headers=webhook_headers(),
+        transport=transport,
+        follow_redirects=True,
     )
 
 
@@ -87,11 +112,29 @@ def httpx_file_client() -> httpx.AsyncClient:
     # httpx default for pool is 5, use that
     timeout = httpx.Timeout(connect=10, read=15, write=None, pool=5)
     return httpx.AsyncClient(
+        event_hooks={"request": [on_request_trace_context_hook]},
+        headers=common_headers(),
         transport=transport,
         follow_redirects=True,
         timeout=timeout,
         http2=True,
     )
+
+
+class ChunkFileReader:
+    def __init__(self, fh: io.IOBase) -> None:
+        self.fh = fh
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        self.fh.seek(0)
+        while True:
+            chunk = self.fh.read(1024 * 1024)
+            if isinstance(chunk, str):
+                chunk = chunk.encode("utf-8")
+            if not chunk:
+                log.info("finished reading file")
+                break
+            yield chunk
 
 
 # there's a case for splitting this apart or inlining parts of it
@@ -158,10 +201,11 @@ class ClientManager:
 
     # files
 
-    async def upload_file(self, fh: io.IOBase, url: Optional[str]) -> str:
+    async def upload_file(
+        self, fh: io.IOBase, *, url: Optional[str], prediction_id: Optional[str]
+    ) -> str:
         """put file to signed endpoint"""
         log.debug("upload_file")
-        fh.seek(0)
         # try to guess the filename of the given object
         name = getattr(fh, "name", "file")
         filename = os.path.basename(name) or "file"
@@ -179,62 +223,51 @@ class ClientManager:
         # ensure trailing slash
         url_with_trailing_slash = url if url.endswith("/") else url + "/"
 
-        async def chunk_file_reader() -> AsyncIterator[bytes]:
-            while 1:
-                chunk = fh.read(1024 * 1024)
-                if isinstance(chunk, str):
-                    chunk = chunk.encode("utf-8")
-                if not chunk:
-                    log.info("finished reading file")
-                    break
-                yield chunk
-
         url = url_with_trailing_slash + filename
+
+        headers = {"Content-Type": content_type}
+        if prediction_id is not None:
+            headers["X-Prediction-ID"] = prediction_id
+
         # this is a somewhat unfortunate hack, but it works
         # and is critical for upload training/quantization outputs
         # if we get multipart uploads working or a separate API route
         # then we could drop this
-        if url and ".internal" in url:
+        if url and (".internal" in url or ".local" in url):
             log.info("doing test upload to %s", url)
             resp1 = await self.file_client.put(
                 url,
                 content=b"",
-                headers={"Content-Type": content_type},
+                headers=headers,
                 follow_redirects=False,
             )
             if resp1.status_code == 307 and resp1.headers["Location"]:
                 log.info("got file upload redirect from api")
                 url = resp1.headers["Location"]
+
         log.info("doing real upload to %s", url)
-        try:
-            resp = await self.file_client.put(
-                url,
-                content=chunk_file_reader(),
-                headers={"Content-Type": content_type},
-            )
-            # TODO: if file size is >1MB, show upload throughput
-            resp.raise_for_status()
-        except httpx.StreamConsumed:
-            log.warn(
-                "got StreamConsumed error while attempting to do streaming upload, likely because of multiple redirects. retrying without streaming (will be slower)"
-            )
-            fh.seek(0)
-            resp = await self.file_client.put(
-                url,
-                content=fh.read(),
-                headers={"Content-Type": content_type},
-            )
-            # TODO: if file size is >1MB, show upload throughput
-            resp.raise_for_status()
+        resp = await self.file_client.put(
+            url,
+            content=ChunkFileReader(fh),
+            headers=headers,
+        )
+        # TODO: if file size is >1MB, show upload throughput
+        resp.raise_for_status()
+
+        # Try to extract the final asset URL from the `Location` header
+        # otherwise fallback to the URL of the final request.
+        final_url = str(resp.url)
+        if "location" in resp.headers:
+            final_url = resp.headers.get("location")
 
         # strip any signing gubbins from the URL
-        final_url = urlparse(str(resp.url))._replace(query="").geturl()
-
-        return final_url
+        return urlparse(final_url)._replace(query="").geturl()
 
     # this previously lived in json.upload_files, but it's clearer here
     # this is a great pattern that should be adopted for input files
-    async def upload_files(self, obj: Any, url: Optional[str]) -> Any:
+    async def upload_files(
+        self, obj: Any, *, url: Optional[str], prediction_id: Optional[str]
+    ) -> Any:
         """
         Iterates through an object from make_encodeable and uploads any files.
         When a file is encountered, it will be passed to upload_file. Any paths will be opened and converted to files.
@@ -249,10 +282,16 @@ class ClientManager:
         # TODO: upload concurrently
         if isinstance(obj, dict):
             return {
-                key: await self.upload_files(value, url) for key, value in obj.items()
+                key: await self.upload_files(
+                    value, url=url, prediction_id=prediction_id
+                )
+                for key, value in obj.items()
             }
         if isinstance(obj, list):
-            return [await self.upload_files(value, url) for value in obj]
+            return [
+                await self.upload_files(value, url, prediction_id=prediction_id)
+                for value in obj
+            ]
 
         if PYDANTIC_V2:
             from pydantic import TypeAdapter
@@ -260,22 +299,24 @@ class ClientManager:
             try:
                 if TypeAdapter(Path).validate_python(obj):
                     with obj.open("rb") as f:
-                        return await self.upload_file(f, url)
+                        return await self.upload_file(
+                            f, url, prediction_id=prediction_id
+                        )
             except Exception:  # pylint: disable=broad-except # noqa: S110
                 pass
 
             try:
                 if TypeAdapter(File).validate_python(obj):
-                    return await self.upload_file(obj, url)
+                    return await self.upload_file(obj, url, prediction_id=prediction_id)
             except Exception:  # pylint: disable=broad-except # noqa: S110
                 pass
         else:
             if isinstance(obj, Path):
                 with obj.open("rb") as f:
-                    return await self.upload_file(f, url)
+                    return await self.upload_file(f, url, prediction_id=prediction_id)
 
             if isinstance(obj, io.IOBase):
-                return await self.upload_file(obj, url)
+                return await self.upload_file(obj, url, prediction_id=prediction_id)
 
         return obj
 

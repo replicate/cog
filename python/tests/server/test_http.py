@@ -1,5 +1,7 @@
 import base64
+import httpx
 import io
+import respx
 import time
 import unittest.mock as mock
 
@@ -558,6 +560,64 @@ def test_asynchronous_prediction_endpoint(client, match):
         n += 1
 
     assert webhook.call_count == 1
+
+
+# End-to-end test for passing tracing headers on to downstream services.
+@pytest.mark.asyncio
+@pytest.mark.respx(base_url="https://example.com")
+@uses_predictor_with_client_options(
+    "output_file", upload_url="https://example.com/upload"
+)
+async def test_asynchronous_prediction_endpoint_with_trace_context(
+    respx_mock: respx.MockRouter, client, match
+):
+    webhook = respx_mock.post(
+        "/webhook",
+        json__id="12345abcde",
+        json__status="succeeded",
+        json__output="https://example.com/upload/file",
+        headers={
+            "traceparent": "traceparent-123",
+            "tracestate": "tracestate-123",
+        },
+    ).respond(200)
+    uploader = respx_mock.put(
+        "/upload/file",
+        headers={
+            "content-type": "application/octet-stream",
+            "traceparent": "traceparent-123",
+            "tracestate": "tracestate-123",
+        },
+    ).respond(200)
+
+    resp = client.post(
+        "/predictions",
+        json={
+            "id": "12345abcde",
+            "input": {},
+            "webhook": "https://example.com/webhook",
+            "webhook_events_filter": ["completed"],
+        },
+        headers={
+            "Prefer": "respond-async",
+            "traceparent": "traceparent-123",
+            "tracestate": "tracestate-123",
+        },
+    )
+    assert resp.status_code == 202
+
+    assert resp.json() == match(
+        {"status": "processing", "output": None, "started_at": mock.ANY}
+    )
+    assert resp.json()["started_at"] is not None
+
+    n = 0
+    while webhook.call_count < 1 and n < 10:
+        time.sleep(0.1)
+        n += 1
+
+    assert webhook.call_count == 1
+    assert uploader.call_count == 1
 
 
 @uses_predictor("sleep")

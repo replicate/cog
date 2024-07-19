@@ -118,7 +118,7 @@ def get_weights_argument(
                 except Exception:  # pylint: disable=broad-except # noqa: S110
                     pass
 
-            if weights_type == str:
+            if weights_type is str:
                 return weights_url
 
             raise ValueError(
@@ -134,12 +134,11 @@ def get_weights_argument(
             if weights_type == CogPath:
                 # TODO: So this can be a url. evil!
                 return cast(CogPath, CogPath.validate(weights_url))
-            if weights_type == str:
+            if weights_type is str:
                 return weights_url
             raise ValueError(
                 f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
             )
-
     if os.path.exists(weights_path):
         if weights_type == CogFile:
             return cast(CogFile, open(weights_path, "rb"))
@@ -330,15 +329,14 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
         if choices:
             assert isinstance(choices, list), "choices must be a list"
 
-            if InputType == str:
-
+            if InputType is str:
                 class StringEnum(str, enum.Enum):
                     pass
 
                 InputType = StringEnum(  # type: ignore
                     name, {value: value for value in choices}
                 )
-            elif InputType == int:
+            elif InputType is int:
                 InputType = enum.IntEnum(name, {str(value): value for value in choices})  # type: ignore
             else:
                 raise TypeError(

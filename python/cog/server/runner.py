@@ -517,6 +517,7 @@ class PredictionEventHandler:
         if self.time_share_tracker and self.p.id:
             time_share = self.time_share_tracker.end_tracking(self.p.id)
             self.p.metrics["predict_time_share"] = time_share
+            self.p.metrics["batch_size"] = self.p.metrics["predict_time"] / time_share
         await self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     async def failed(self, error: str) -> None:
@@ -541,7 +542,9 @@ class PredictionEventHandler:
     async def _upload_files(self, output: Any) -> Any:
         try:
             # TODO: clean up output files
-            return await self._client_manager.upload_files(output, self._upload_url)
+            return await self._client_manager.upload_files(
+                output, url=self._upload_url, prediction_id=self.p.id
+            )
         except Exception as error:
             # If something goes wrong uploading a file, it's irrecoverable.
             # The re-raised exception will be caught and cause the prediction
