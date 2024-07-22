@@ -69,6 +69,21 @@ reportUnusedExpression = "warning"
 [tool.setuptools]
 package-dir = { "" = "python" }
 
+[tool.pylint.main]
+disable = [
+  "C0114", # Missing module docstring
+  "C0115", # Missing class docstring
+  "C0116", # Missing function or method docstring
+  "C0301", # Line too long
+  "C0413", # Import should be placed at the top of the module
+  "R0903", # Too few public methods
+  "W0622", # Redefining built-in
+]
+good-names = ["id", "input"]
+
+ignore-paths = ["python/cog/_version.py", "python/tests"]
+
+
 [tool.ruff]
 lint.select = [
   "E",   # pycodestyle error
