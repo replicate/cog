@@ -60,8 +60,8 @@ class Mux:
         self.terminating = terminating
         self.fatal: Optional[FatalWorkerException] = None
 
-    async def write(self, id: str, item: PublicEventType) -> None:
-        await self.outs[id].put(item)
+    def write(self, id: str, item: PublicEventType) -> None:
+        self.outs[id].put_nowait(item)
 
     async def read(
         self, id: str, poll: Optional[float] = None
