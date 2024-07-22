@@ -102,8 +102,6 @@ def get_weights_argument(  # pylint: disable=too-many-return-statements
     weights_type = get_weights_type(predictor.setup)
     if weights_type is None:
         return None
-    weights_url = os.environ.get("COG_WEIGHTS")
-    weights_path = "weights"  # this is the source of a bug isn't it?
 
     # TODO: Cog{File,Path}.validate(...) methods accept either "real"
     # paths/files or URLs to those things. In future we can probably tidy this
@@ -113,6 +111,7 @@ def get_weights_argument(  # pylint: disable=too-many-return-statements
     # this is a breaking change
     # previously, CogPath wouldn't be converted in setup(); now it is
     # essentially everyone needs to switch from Path to str (or a new URL type)
+    weights_url = os.environ.get("COG_WEIGHTS")
     if weights_url:
         if weights_type == CogFile:
             return cast(CogFile, CogFile.validate(weights_url))
@@ -122,11 +121,12 @@ def get_weights_argument(  # pylint: disable=too-many-return-statements
         # allow people to download weights themselves
         if weights_type is str:
             return weights_url
-        else:
-            raise ValueError(
-                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
-            )
-    elif os.path.exists(weights_path):
+        raise ValueError(
+            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
+        )
+
+    weights_path = "weights"  # this is the source of a bug isn't it?
+    if os.path.exists(weights_path):
         if weights_type == CogFile:
             return cast(CogFile, open(weights_path, "rb"))
         if weights_type == CogPath:
