@@ -20,12 +20,13 @@ from typing import (
     cast,
     get_type_hints,
 )
-from unittest.mock import patch
 
 try:
     from typing import get_args, get_origin
 except ImportError:  # Python < 3.8
     from typing_compat import get_args, get_origin  # type: ignore
+
+from unittest.mock import patch
 
 import structlog
 import yaml

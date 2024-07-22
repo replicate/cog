@@ -8,7 +8,6 @@ import traceback
 import types
 from collections import defaultdict
 from contextvars import ContextVar
-from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
 from typing import Any, AsyncIterator, Callable, Iterator, Optional, TextIO
 
@@ -40,16 +39,6 @@ from .exceptions import (
 from .helpers import StreamRedirector, WrappedStream
 
 _spawn = multiprocessing.get_context("spawn")
-
-
-@unique
-class WorkerState(Enum):
-    NEW = auto()
-    STARTING = auto()
-    IDLE = auto()
-    PROCESSING = auto()
-    BUSY = auto()
-    DEFUNCT = auto()
 
 
 class Mux:
