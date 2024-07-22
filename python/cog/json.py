@@ -1,15 +1,12 @@
-import io
 from datetime import datetime
 from enum import Enum
 from types import GeneratorType
-from typing import Any, Callable
+from typing import Any
 
 from pydantic import BaseModel
 
-from .types import Path
 
-
-def make_encodeable(obj: Any) -> Any:
+def make_encodeable(obj: Any) -> Any:  # pylint: disable=too-many-return-statements
     """
     Returns a pickle-compatible version of the object. It will encode any Pydantic models and custom types.
 
@@ -17,6 +14,7 @@ def make_encodeable(obj: Any) -> Any:
 
     Somewhat based on FastAPI's jsonable_encoder().
     """
+
     if isinstance(obj, BaseModel):
         return make_encodeable(obj.dict(exclude_unset=True))
     if isinstance(obj, dict):
@@ -28,7 +26,7 @@ def make_encodeable(obj: Any) -> Any:
     if isinstance(obj, datetime):
         return obj.isoformat()
     try:
-        import numpy as np  # type: ignore
+        import numpy as np  # type: ignore # pylint: disable=import-outside-toplevel
     except ImportError:
         pass
     else:
@@ -38,25 +36,4 @@ def make_encodeable(obj: Any) -> Any:
             return float(obj)
         if isinstance(obj, np.ndarray):
             return obj.tolist()
-    return obj
-
-
-def upload_files(obj: Any, upload_file: Callable[[io.IOBase], str]) -> Any:
-    """
-    Iterates through an object from make_encodeable and uploads any files.
-
-    When a file is encountered, it will be passed to upload_file. Any paths will be opened and converted to files.
-    """
-    # skip four isinstance checks for fast text models
-    if type(obj) == str:  # noqa: E721
-        return obj
-    if isinstance(obj, dict):
-        return {key: upload_files(value, upload_file) for key, value in obj.items()}
-    if isinstance(obj, list):
-        return [upload_files(value, upload_file) for value in obj]
-    if isinstance(obj, Path):
-        with obj.open("rb") as f:
-            return upload_file(f)
-    if isinstance(obj, io.IOBase):
-        return upload_file(obj)
     return obj

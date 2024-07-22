@@ -147,6 +147,24 @@ BASE_SCHEMA = """
         "summary": "Healthcheck"
       }
     },
+    "/ready": {
+      "get": {
+        "summary": "Ready",
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Ready Ready Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/predictions": {
       "post": {
         "description": "Run a single prediction on the model",
@@ -324,13 +342,12 @@ if typing.TYPE_CHECKING:
 def to_serializable(val: "AstVal") -> "JSONObject":
     if isinstance(val, bytes):
         return val.decode("utf-8")
-    elif isinstance(val, list):
+    if isinstance(val, list):
         return [to_serializable(x) for x in val]
-    elif isinstance(val, complex):
+    if isinstance(val, complex):
         msg = "complex inputs are not supported"
         raise ValueError(msg)
-    else:
-        return val
+    return val
 
 
 def get_value(node: ast.AST) -> "AstVal":
@@ -372,7 +389,7 @@ def get_call_name(call: ast.Call) -> str:
 def parse_args(tree: ast.AST) -> "list[tuple[ast.arg, ast.expr | types.EllipsisType]]":
     """Parse argument, default pairs from a file with a predict function"""
     predict = find(tree, "predict")
-    assert isinstance(predict, ast.FunctionDef)
+    assert isinstance(predict, (ast.FunctionDef, ast.AsyncFunctionDef))
     args = predict.args.args  # [-len(defaults) :]
     # use Ellipsis instead of None here to distinguish a default of None
     defaults = [...] * (len(args) - len(predict.args.defaults)) + predict.args.defaults
@@ -449,7 +466,7 @@ def parse_return_annotation(
     tree: ast.AST, fn: str = "predict"
 ) -> "tuple[JSONDict, JSONDict]":
     predict = find(tree, fn)
-    if not isinstance(predict, ast.FunctionDef):
+    if not isinstance(predict, (ast.FunctionDef, ast.AsyncFunctionDef)):
         raise ValueError("Could not find predict function")
     annotation = predict.returns
     if not annotation:
@@ -472,8 +489,8 @@ For example:
     name = resolve_name(annotation)
     if isinstance(annotation, ast.Subscript):
         # forget about other subscripts like Optional, and assume otherlib.File will still be an uri
-        slice = resolve_name(annotation.slice)
-        format = {"format": "uri"} if slice in ("Path", "File") else {}
+        slice = resolve_name(annotation.slice)  # pylint: disable=redefined-builtin
+        format = {"format": "uri"} if slice in ("Path", "File") else {}  # pylint: disable=redefined-builtin
         array_type = {"x-cog-array-type": "iterator"} if "Iterator" in name else {}
         display_type = (
             {"x-cog-array-display": "concatenate"} if "Concatenate" in name else {}
@@ -503,7 +520,7 @@ For example:
 KEPT_ATTRS = ("description", "default", "ge", "le", "max_length", "min_length", "regex")
 
 
-def extract_info(code: str) -> "JSONDict":
+def extract_info(code: str) -> "JSONDict":  # pylint: disable=too-many-branches,too-many-locals
     """Parse the schemas from a file with a predict function"""
     tree = ast.parse(code)
     properties: JSONDict = {}
@@ -526,7 +543,7 @@ def extract_info(code: str) -> "JSONDict":
             kws = {}
         else:
             raise ValueError("Unexpected default value", default)
-        input: JSONDict = {"x-order": len(properties)}
+        input: JSONDict = {"x-order": len(properties)}  # pylint: disable=redefined-builtin
         # need to handle other types?
         arg_type = OPENAPI_TYPES.get(get_annotation(arg.annotation), "string")
         if get_annotation(arg.annotation) in ("Path", "File"):

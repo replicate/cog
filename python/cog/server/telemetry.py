@@ -7,7 +7,7 @@ from typing_extensions import TypedDict
 
 
 # See: https://www.w3.org/TR/trace-context/
-class TraceContext(TypedDict, total=False):
+class TraceContext(TypedDict, total=False):  # pylint: disable=too-many-ancestors
     traceparent: str
     tracestate: str
 

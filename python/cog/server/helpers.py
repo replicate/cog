@@ -3,7 +3,12 @@ import os
 import selectors
 import threading
 import uuid
-from typing import Callable, Optional, Sequence, TextIO
+from typing import (
+    Callable,
+    Optional,
+    Sequence,
+    TextIO,
+)
 
 
 class WrappedStream:

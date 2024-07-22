@@ -6,8 +6,8 @@ from typing import Iterator
 
 @contextmanager
 def suppress_output() -> Iterator[None]:
-    null_out = open(os.devnull, "w")
-    null_err = open(os.devnull, "w")
+    null_out = open(os.devnull, "w", encoding="utf-8")
+    null_err = open(os.devnull, "w", encoding="utf-8")
     out_fd = sys.stdout.fileno()
     err_fd = sys.stderr.fileno()
     out_dup_fd = os.dup(out_fd)

@@ -1,16 +1,16 @@
 import enum
 import importlib.util
 import inspect
-import io
 import os.path
 import sys
 import types
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import (
     Any,
+    Awaitable,
     Callable,
     Dict,
     List,
@@ -20,17 +20,15 @@ from typing import (
     cast,
     get_type_hints,
 )
-from unittest.mock import patch
-
-import structlog
-
-import cog.code_xforms as code_xforms
 
 try:
     from typing import get_args, get_origin
 except ImportError:  # Python < 3.8
     from typing_compat import get_args, get_origin  # type: ignore
 
+from unittest.mock import patch
+
+import structlog
 import yaml
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
@@ -38,18 +36,11 @@ from pydantic.fields import FieldInfo
 # Added in Python 3.9. Can be from typing if we drop support for <3.9
 from typing_extensions import Annotated
 
+from . import code_xforms
 from .errors import ConfigDoesNotExist, PredictorNotSet
-from .types import (
-    CogConfig,
-    Input,
-    URLPath,
-)
-from .types import (
-    File as CogFile,
-)
-from .types import (
-    Path as CogPath,
-)
+from .types import CogConfig, Input, URLTempFile
+from .types import File as CogFile
+from .types import Path as CogPath
 from .types import Secret as CogSecret
 
 log = structlog.get_logger("cog.server.predictor")
@@ -66,7 +57,10 @@ ALLOWED_INPUT_TYPES: List[Type[Any]] = [
 
 
 class BasePredictor(ABC):
-    def setup(self, weights: Optional[Union[CogFile, CogPath, str]] = None) -> None:
+    def setup(
+        self,
+        weights: Optional[Union[CogFile, CogPath, str]] = None,  # pylint: disable=unused-argument
+    ) -> Optional[Awaitable[None]]:
         """
         An optional method to prepare the model so multiple predictions run efficiently.
         """
@@ -77,64 +71,84 @@ class BasePredictor(ABC):
         """
         Run a single prediction on the model
         """
-        pass
+
+    def log(self, *messages: str) -> None:
+        """
+        Write a log message that will be tagged with the current prediction
+        even during concurrent predictions. At runtime this method is overriden.
+        """
+        print(*messages)
 
 
 def run_setup(predictor: BasePredictor) -> None:
-    weights_type = get_weights_type(predictor.setup)
-
-    # No weights need to be passed, so just run setup() without any arguments.
-    if weights_type is None:
+    weights = get_weights_argument(predictor)
+    if weights:
+        predictor.setup(weights=weights)
+    else:
         predictor.setup()
-        return
 
-    weights: Union[io.IOBase, Path, str, None]
 
-    weights_url = os.environ.get("COG_WEIGHTS")
-    weights_path = "weights"
+async def run_setup_async(predictor: BasePredictor) -> None:
+    weights = get_weights_argument(predictor)
+    maybe_coro = predictor.setup(weights=weights) if weights else predictor.setup()
+    if maybe_coro:
+        return await maybe_coro
+
+
+def get_weights_argument(  # pylint: disable=too-many-return-statements
+    predictor: BasePredictor,
+) -> Union[CogFile, CogPath, str, None]:
+    # by the time we get here we assume predictor has a setup method
+    weights_type = get_weights_type(predictor.setup)
+    if weights_type is None:
+        return None
 
     # TODO: Cog{File,Path}.validate(...) methods accept either "real"
     # paths/files or URLs to those things. In future we can probably tidy this
     # up a little bit.
     # TODO: CogFile/CogPath should have subclasses for each of the subtypes
+
+    # this is a breaking change
+    # previously, CogPath wouldn't be converted in setup(); now it is
+    # essentially everyone needs to switch from Path to str (or a new URL type)
+    weights_url = os.environ.get("COG_WEIGHTS")
     if weights_url:
         if weights_type == CogFile:
-            weights = cast(CogFile, CogFile.validate(weights_url))
-        elif weights_type == CogPath:
+            return cast(CogFile, CogFile.validate(weights_url))
+        if weights_type == CogPath:
             # TODO: So this can be a url. evil!
-            weights = cast(CogPath, CogPath.validate(weights_url))
+            return cast(CogPath, CogPath.validate(weights_url))
         # allow people to download weights themselves
-        elif weights_type == str:  # noqa: E721
-            weights = weights_url
-        else:
-            raise ValueError(
-                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
-            )
-    elif os.path.exists(weights_path):
+        if weights_type is str:
+            return weights_url
+        raise ValueError(
+            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
+        )
+
+    weights_path = "weights"  # this is the source of a bug isn't it?
+    if os.path.exists(weights_path):
         if weights_type == CogFile:
-            weights = cast(CogFile, open(weights_path, "rb"))
-        elif weights_type == CogPath:
-            weights = CogPath(weights_path)
-        else:
-            raise ValueError(
-                f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
-            )
-    else:
-        weights = None
-
-    predictor.setup(weights=weights)
+            return cast(CogFile, open(weights_path, "rb"))
+        if weights_type == CogPath:
+            return CogPath(weights_path)
+        raise ValueError(
+            f"Predictor.setup() has an argument 'weights' of type {weights_type}, but only File, Path and str are supported"
+        )
+    return None
 
 
-def get_weights_type(setup_function: Callable[[Any], None]) -> Optional[Any]:
+def get_weights_type(
+    setup_function: Callable[[Any], Optional[Awaitable[None]]],
+) -> Optional[Any]:
     signature = inspect.signature(setup_function)
     if "weights" not in signature.parameters:
         return None
-    Type = signature.parameters["weights"].annotation
+    Type = signature.parameters["weights"].annotation  # pylint: disable=invalid-name,redefined-outer-name
     # Handle Optional. It is Union[Type, None]
     if get_origin(Type) == Union:
         args = get_args(Type)
         if len(args) == 2 and args[1] is type(None):
-            Type = get_args(Type)[0]
+            Type = get_args(Type)[0]  # pylint: disable=invalid-name
     return Type
 
 
@@ -160,7 +174,7 @@ def load_config() -> CogConfig:
     # Assumes the working directory is /src
     config_path = os.path.abspath("cog.yaml")
     try:
-        with open(config_path) as fh:
+        with open(config_path, encoding="utf-8") as fh:
             config = yaml.safe_load(fh)
     except FileNotFoundError as e:
         raise ConfigDoesNotExist(
@@ -235,7 +249,7 @@ def load_slim_predictor_from_ref(ref: str, method_name: str) -> BasePredictor:
                 log.debug(f"[{module_name}] fast loader returned None")
         else:
             log.debug(f"[{module_name}] cannot use fast loader as current Python <3.9")
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         log.debug(f"[{module_name}] fast loader failed: {e}")
     finally:
         if not module:
@@ -266,20 +280,30 @@ class BaseInput(BaseModel):
         Cleanup any temporary files created by the input.
         """
         for _, value in self:
-            # Handle URLPath objects specially for cleanup.
+            # Handle URLTempFile objects specially for cleanup.
             # Also handle pathlib.Path objects, which cog.Path is a subclass of.
             # A pathlib.Path object shouldn't make its way here,
             # but both have an unlink() method, so we may as well be safe.
-            if isinstance(value, (URLPath, Path)):
-                value.unlink(missing_ok=True)
+            if isinstance(value, (URLTempFile, Path)):
+                try:
+                    value.unlink(missing_ok=True)
+                except FileNotFoundError:
+                    pass
+
+    # if we had a separate method to traverse the input and apply some function to each value
+    # we could have cleanup/get_tempfile/convert functions that operate on a single value
+    # and do it that way. convert is supposed to mutate though, so it's tricky
 
 
-def validate_input_type(type: Type[Any], name: str) -> None:
+def validate_input_type(
+    type: Type[Any],  # pylint: disable=redefined-builtin
+    name: str,
+) -> None:
     if type is inspect.Signature.empty:
         raise TypeError(
             f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
         )
-    elif type not in ALLOWED_INPUT_TYPES:
+    if type not in ALLOWED_INPUT_TYPES:
         if get_origin(type) in (Union, List, list) or (
             hasattr(types, "UnionType") and get_origin(type) is types.UnionType
         ):  # noqa: E721
@@ -302,7 +326,7 @@ def get_input_create_model_kwargs(
         if name not in input_types:
             raise TypeError(f"No input type provided for parameter `{name}`.")
 
-        InputType = input_types[name]
+        InputType = input_types[name]  # pylint: disable=invalid-name
 
         validate_input_type(InputType, name)
 
@@ -325,16 +349,16 @@ def get_input_create_model_kwargs(
             choices = default.extra["choices"]
             # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
             del default.extra["choices"]
-            if InputType == str:  # noqa: E721
+            if InputType is str:
 
                 class StringEnum(str, enum.Enum):
                     pass
 
-                InputType = StringEnum(  # type: ignore
+                InputType = StringEnum(  # pylint: disable=invalid-name
                     name, {value: value for value in choices}
                 )
-            elif InputType == int:  # noqa: E721
-                InputType = enum.IntEnum(name, {str(value): value for value in choices})  # type: ignore
+            elif InputType is int:
+                InputType = enum.IntEnum(name, {str(value): value for value in choices})  # pylint: disable=invalid-name
             else:
                 raise TypeError(
                     f"The input {name} uses the option choices. Choices can only be used with str or int types."
@@ -391,8 +415,8 @@ def get_output_type(predictor: BasePredictor) -> Type[BaseModel]:
 
     input_types = get_type_hints(predict)
 
-    OutputType = input_types.pop("return", None)
-    if OutputType is None:
+    OutputType = input_types.pop("return", None)  # pylint: disable=invalid-name
+    if not OutputType:
         raise TypeError(
             """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
 
@@ -409,7 +433,7 @@ For example:
         )
 
     # The type that goes in the response is a list of the yielded type
-    if get_origin(OutputType) is Iterator:
+    if get_origin(OutputType) in {Iterator, AsyncIterator}:
         # Annotated allows us to attach Field annotations to the list, which we use to mark that this is an iterator
         # https://pydantic-docs.helpmanual.io/usage/schema/#typingannotated-fields
         field = Field(**{"x-cog-array-type": "iterator"})  # type: ignore
@@ -434,7 +458,7 @@ For example:
     #
     # So we work around this by inheriting from the original class rather
     # than using "__root__".
-    if name == "TrainingOutput":
+    if name == "TrainingOutput":  # pylint: disable=no-else-return
 
         class Output(OutputType):  # type: ignore
             pass
@@ -492,7 +516,7 @@ def get_training_output_type(predictor: BasePredictor) -> Type[BaseModel]:
     train = get_train(predictor)
 
     input_types = get_type_hints(train)
-    TrainingOutputType = input_types.pop("return", None)
+    TrainingOutputType = input_types.pop("return", None)  # pylint: disable=invalid-name
     if TrainingOutputType is None:
         raise TypeError(
             """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
@@ -518,17 +542,18 @@ For example:
     if name == "TrainingOutput":
         return TrainingOutputType
 
-    if name == "Output":
+    if name == "Output":  # pylint: disable=no-else-return
 
         class TrainingOutput(TrainingOutputType):  # type: ignore
             pass
 
         return TrainingOutput
+    else:
 
-    class TrainingOutput(BaseModel):
-        __root__: TrainingOutputType  # type: ignore
+        class TrainingOutput(BaseModel):
+            __root__: TrainingOutputType  # type: ignore
 
-    return TrainingOutput
+        return TrainingOutput
 
 
 def human_readable_type_name(t: Type[Union[Any, None]]) -> str:
@@ -540,9 +565,11 @@ def human_readable_type_name(t: Type[Union[Any, None]]) -> str:
 
     if hasattr(t, "__module__"):
         module = t.__module__
+
         if module == "builtins":
             return t.__qualname__
-        elif module.split(".")[0] == "cog":
+
+        if module.split(".")[0] == "cog":
             module = "cog"
 
         try:
