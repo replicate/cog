@@ -6,7 +6,7 @@ from typing import Any
 from pydantic import BaseModel
 
 
-def make_encodeable(obj: Any) -> Any:
+def make_encodeable(obj: Any) -> Any:  # pylint: disable=too-many-return-statements
     """
     Returns a pickle-compatible version of the object. It will encode any Pydantic models and custom types.
 
@@ -14,6 +14,7 @@ def make_encodeable(obj: Any) -> Any:
 
     Somewhat based on FastAPI's jsonable_encoder().
     """
+
     if isinstance(obj, BaseModel):
         return make_encodeable(obj.dict(exclude_unset=True))
     if isinstance(obj, dict):
@@ -25,7 +26,7 @@ def make_encodeable(obj: Any) -> Any:
     if isinstance(obj, datetime):
         return obj.isoformat()
     try:
-        import numpy as np  # type: ignore
+        import numpy as np  # type: ignore # pylint: disable=import-outside-toplevel
     except ImportError:
         pass
     else:

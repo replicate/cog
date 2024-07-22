@@ -80,7 +80,11 @@ class MyFastAPI(FastAPI):
     state: MyState  # type: ignore
 
 
-def add_setup_failed_routes(app: MyFastAPI, started_at: datetime, msg: str) -> None:
+def add_setup_failed_routes(
+    app: MyFastAPI,  # pylint: disable=redefined-outer-name
+    started_at: datetime,
+    msg: str,
+) -> None:
     print(msg)
     result = SetupResult(
         started_at=started_at,
@@ -97,10 +101,10 @@ def add_setup_failed_routes(app: MyFastAPI, started_at: datetime, msg: str) -> N
         return jsonable_encoder({"status": app.state.health.name, "setup": setup})
 
 
-def create_app(
-    config: CogConfig,
-    shutdown_event: Optional[threading.Event],
-    threads: int = 1,
+def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
+    config: CogConfig,  # pylint: disable=redefined-outer-name
+    shutdown_event: Optional[threading.Event],  # pylint: disable=redefined-outer-name
+    threads: int = 1,  # pylint: disable=redefined-outer-name
     upload_url: Optional[str] = None,
     mode: str = "predict",
     is_build: bool = False,
@@ -126,9 +130,9 @@ def create_app(
     try:
         predictor_ref = get_predictor_ref(config, mode)
         predictor = load_slim_predictor_from_ref(predictor_ref, "predict")
-        InputType = get_input_type(predictor)
-        OutputType = get_output_type(predictor)
-    except Exception:
+        InputType = get_input_type(predictor)  # pylint: disable=invalid-name
+        OutputType = get_output_type(predictor)  # pylint: disable=invalid-name
+    except Exception:  # pylint: disable=broad-exception-caught
         msg = "Error while loading predictor:\n\n" + traceback.format_exc()
         add_setup_failed_routes(app, started_at, msg)
         return app
@@ -145,19 +149,19 @@ def create_app(
     class PredictionRequest(schema.PredictionRequest.with_types(input_type=InputType)):
         pass
 
-    PredictionResponse = schema.PredictionResponse.with_types(
+    PredictionResponse = schema.PredictionResponse.with_types(  # pylint: disable=invalid-name
         input_type=InputType, output_type=OutputType
     )
 
     http_semaphore = asyncio.Semaphore(threads)
 
     if TYPE_CHECKING:
-        P = ParamSpec("P")
-        T = TypeVar("T")
+        P = ParamSpec("P")  # pylint: disable=invalid-name
+        T = TypeVar("T")  # pylint: disable=invalid-name
 
     def limited(f: "Callable[P, Awaitable[T]]") -> "Callable[P, Awaitable[T]]":
         @functools.wraps(f)
-        async def wrapped(*args: "P.args", **kwargs: "P.kwargs") -> "T":
+        async def wrapped(*args: "P.args", **kwargs: "P.kwargs") -> "T":  # pylint: disable=redefined-outer-name
             async with http_semaphore:
                 return await f(*args, **kwargs)
 
@@ -167,15 +171,15 @@ def create_app(
         try:
             trainer_ref = get_predictor_ref(config, "train")
             trainer = load_slim_predictor_from_ref(trainer_ref, "train")
-            TrainingInputType = get_training_input_type(trainer)
-            TrainingOutputType = get_training_output_type(trainer)
+            TrainingInputType = get_training_input_type(trainer)  # pylint: disable=invalid-name
+            TrainingOutputType = get_training_output_type(trainer)  # pylint: disable=invalid-name
 
             class TrainingRequest(
                 schema.TrainingRequest.with_types(input_type=TrainingInputType)
             ):
                 pass
 
-            TrainingResponse = schema.TrainingResponse.with_types(
+            TrainingResponse = schema.TrainingResponse.with_types(  # pylint: disable=invalid-name
                 input_type=TrainingInputType, output_type=TrainingOutputType
             )
 
@@ -222,7 +226,7 @@ def create_app(
             ) -> Any:
                 return cancel(training_id)
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             if isinstance(e, (PredictorNotSet, FileNotFoundError)) and not is_build:
                 pass  # ignore missing train.py for backward compatibility with existing "bad" models in use
             else:
@@ -354,7 +358,7 @@ def create_app(
         # [compat] If body is supplied but input is None, set it to an empty
         # dictionary so that later code can be simpler.
         if request.input is None:
-            request.input = {}
+            request.input = {}  # pylint: disable=attribute-defined-outside-init
 
         try:
             # Previously, we only asked PredictionRunner to handle file uploads for
@@ -444,19 +448,19 @@ def _log_invalid_output(error: Any) -> None:
 
 class Server(uvicorn.Server):
     def start(self) -> None:
-        self._thread = threading.Thread(target=self.run)
+        self._thread = threading.Thread(target=self.run)  # pylint: disable=attribute-defined-outside-init
         self._thread.start()
 
     def stop(self) -> None:
         log.info("stopping server")
-        self.should_exit = True
+        self.should_exit = True  # pylint: disable=attribute-defined-outside-init
 
         self._thread.join(timeout=5)
         if not self._thread.is_alive():
             return
 
         log.warn("failed to exit after 5 seconds, setting force_exit")
-        self.force_exit = True
+        self.force_exit = True  # pylint: disable=attribute-defined-outside-init
         self._thread.join(timeout=5)
         if not self._thread.is_alive():
             return
@@ -470,12 +474,12 @@ def is_port_in_use(port: int) -> bool:
         return s.connect_ex(("localhost", port)) == 0
 
 
-def signal_ignore(signum: Any, frame: Any) -> None:
+def signal_ignore(signum: Any, frame: Any) -> None:  # pylint: disable=unused-argument
     log.warn("Got a signal to exit, ignoring it...", signal=signal.Signals(signum).name)
 
 
 def signal_set_event(event: threading.Event) -> Callable[[Any, Any], None]:
-    def _signal_set_event(signum: Any, frame: Any) -> None:
+    def _signal_set_event(signum: Any, frame: Any) -> None:  # pylint: disable=unused-argument
         event.set()
 
     return _signal_set_event

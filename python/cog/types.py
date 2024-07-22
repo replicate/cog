@@ -39,7 +39,7 @@ class CogBuildConfig(TypedDict, total=False):
     run: Optional[Union[List[str], List[Dict[str, Any]]]]
 
 
-def Input(
+def Input(  # pylint: disable=invalid-name, too-many-arguments
     default: Any = ...,
     description: str = None,
     ge: float = None,

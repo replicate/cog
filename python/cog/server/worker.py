@@ -60,11 +60,17 @@ class Mux:
         self.terminating = terminating
         self.fatal: "Optional[FatalWorkerException]" = None
 
-    async def write(self, id: str, item: PublicEventType) -> None:
+    async def write(
+        self,
+        id: str,
+        item: PublicEventType,
+    ) -> None:
         await self.outs[id].put(item)
 
     async def read(
-        self, id: str, poll: Optional[float] = None
+        self,
+        id: str,
+        poll: Optional[float] = None,
     ) -> AsyncIterator[PublicEventType]:
         if poll:
             send_heartbeats = True
@@ -83,7 +89,7 @@ class Mux:
                 self.outs.pop(id)
                 break
         if self.fatal:
-            raise self.fatal
+            raise self.fatal  # pylint: disable=raising-bad-type
 
 
 # janky mutable container for a single eventual ChildWorker
@@ -97,7 +103,7 @@ def emit_metric(metric_name: str, metric_value: "float | int") -> None:
     worker._emit_metric(metric_name, metric_value)
 
 
-class _ChildWorker(_spawn.Process):  # type: ignore
+class _ChildWorker(_spawn.Process):  # type: ignore # pylint: disable=too-many-instance-attributes
     def __init__(
         self,
         predictor_ref: str,
@@ -122,7 +128,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         signal.signal(signal.SIGUSR1, self._signal_handler)
 
         worker_reference[None] = self
-        self.prediction_id_context: ContextVar[str] = ContextVar("prediction_context")
+        self.prediction_id_context: ContextVar[str] = ContextVar("prediction_context")  # pylint: disable=attribute-defined-outside-init
 
         # <could be moved into StreamRedirector>
         ws_stdout = WrappedStream("stdout", sys.stdout)
@@ -132,8 +138,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
         # using a thread for this can potentially cause a deadlock
         # however, if we made this async, we might interfere with a user's event loop
-        self._stream_redirector = StreamRedirector(
-            [ws_stdout, ws_stderr], self._stream_write_hook
+        self._stream_redirector = (  # pylint: disable=attribute-defined-outside-init
+            StreamRedirector([ws_stdout, ws_stderr], self._stream_write_hook)
         )
         self._stream_redirector.start()
         # </could be moved into StreamRedirector>
@@ -156,7 +162,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             # then tries to use the same session from async predict, they would get an error.
             # that's significant if connections are open and would need to be discarded
             if is_async_predictor(self._predictor):
-                self.loop = get_loop()
+                self.loop = get_loop()  # pylint: disable=attribute-defined-outside-init
             # Could be a function or a class
             if hasattr(self._predictor, "setup"):
                 if inspect.iscoroutinefunction(self._predictor.setup):
@@ -169,7 +175,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         done = Done()
         try:
             yield
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             traceback.print_exc()
             done.error = True
             done.error_detail = str(e)
@@ -242,7 +248,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             done.canceled = True
         except asyncio.CancelledError:
             done.canceled = True
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             tb = traceback.format_exc()
             self._log(tb)
             done.error = True
@@ -253,19 +259,25 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._stream_redirector.drain()
         self._events.send((id, done))
 
-    def _emit_metric(self, name: str, value: "int | float") -> None:
+    def emit_metric(self, name: str, value: "int | float") -> None:
         prediction_id = self.prediction_id_context.get(None)
         if prediction_id is None:
-            raise Exception("Tried to emit a metric outside a prediction context")
+            raise RuntimeError("Tried to emit a metric outside a prediction context")
         self._events.send((prediction_id, PredictionMetric(name, value)))
 
-    def _mk_send(self, id: str) -> Callable[[PublicEventType], None]:
+    def _mk_send(
+        self,
+        id: str,
+    ) -> Callable[[PublicEventType], None]:
         def send(event: PublicEventType) -> None:
             self._events.send((id, event))
 
         return send
 
-    async def _predict_async(self, input: PredictionInput) -> None:
+    async def _predict_async(
+        self,
+        input: PredictionInput,
+    ) -> None:
         with self._handle_predict_error(input.id):
             predict = get_predict(self._predictor)
             result = predict(**input.payload)
@@ -280,7 +292,10 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     send(PredictionOutputType(multi=False))
                     send(PredictionOutput(payload=make_encodeable(output)))
 
-    def _predict_sync(self, input: PredictionInput) -> None:
+    def _predict_sync(
+        self,
+        input: PredictionInput,
+    ) -> None:
         with self._handle_predict_error(input.id):
             predict = get_predict(self._predictor)
             result = predict(**input.payload)
@@ -294,7 +309,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     send(PredictionOutputType(multi=False))
                     send(PredictionOutput(payload=make_encodeable(result)))
 
-    def _signal_handler(self, signum: int, frame: Optional[types.FrameType]) -> None:
+    def _signal_handler(
+        self,
+        signum: int,
+        frame: Optional[types.FrameType],  # pylint: disable=unused-argument
+    ) -> None:
         if self._predictor and is_async(get_predict(self._predictor)):
             # we could try also canceling the async task around here
             # but for now in async mode signals are ignored

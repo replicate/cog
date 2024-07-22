@@ -109,8 +109,8 @@ class TimeShareTracker:
         return self._time_shares_per_prediction.pop(id)
 
 
-class PredictionRunner:
-    def __init__(
+class PredictionRunner:  # pylint: disable=too-many-instance-attributes
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         *,
         predictor_ref: str,
@@ -193,7 +193,7 @@ class PredictionRunner:
                         else:
                             status = schema.Status.SUCCEEDED
                         self._state = WorkerState.IDLE
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 logs.append(traceback.format_exc())
                 status = schema.Status.FAILED
 
@@ -224,7 +224,7 @@ class PredictionRunner:
             # worker state if an exception was thrown.
             try:
                 raise exc
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 self.log.error("caught exception while running setup", exc_info=True)
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
@@ -248,7 +248,10 @@ class PredictionRunner:
     def is_busy(self) -> bool:
         return self._state not in {WorkerState.PROCESSING, WorkerState.IDLE}
 
-    def enter_predict(self, id: str) -> None:
+    def enter_predict(
+        self,
+        id: str,
+    ) -> None:
         if self.is_busy():
             raise InvalidStateException(
                 f"Invalid operation: state is {self._state} (must be processing or idle)"
@@ -263,12 +266,18 @@ class PredictionRunner:
         self._predictions_in_flight.add(id)
         self._state = self.state_from_predictions_in_flight()
 
-    def exit_predict(self, id: str) -> None:
+    def exit_predict(
+        self,
+        id: str,
+    ) -> None:
         self._predictions_in_flight.remove(id)
         self._state = self.state_from_predictions_in_flight()
 
     @contextlib.contextmanager
-    def prediction_ctx(self, id: str) -> Iterator[None]:
+    def prediction_ctx(
+        self,
+        id: str,
+    ) -> Iterator[None]:
         self.enter_predict(id)
         try:
             yield
@@ -439,7 +448,7 @@ class PredictionRunner:
 
 
 class PredictionEventHandler:
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         request: schema.PredictionRequest,
         client_manager: ClientManager,
@@ -557,7 +566,7 @@ class PredictionEventHandler:
     async def noop(self) -> None:
         pass
 
-    def event_to_handle_future(self, event: PublicEventType) -> Awaitable[None]:
+    def event_to_handle_future(self, event: PublicEventType) -> Awaitable[None]:  # pylint: disable=too-many-return-statements
         if isinstance(event, Heartbeat):
             # Heartbeat events exist solely to ensure that we have a
             # regular opportunity to check for cancelation and
@@ -589,5 +598,7 @@ class PredictionEventHandler:
             if event.error:
                 return self.failed(error=str(event.error_detail))
             return self.succeeded()
+
         self.logger.warn("received unexpected event from worker", data=event)
+
         return self.noop()

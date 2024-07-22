@@ -57,7 +57,8 @@ ALLOWED_INPUT_TYPES: List[Type[Any]] = [
 
 class BasePredictor(ABC):
     def setup(
-        self, weights: Optional[Union[CogFile, CogPath, str]] = None
+        self,
+        weights: Optional[Union[CogFile, CogPath, str]] = None,  # pylint: disable=unused-argument
     ) -> Optional[Awaitable[None]]:
         """
         An optional method to prepare the model so multiple predictions run efficiently.
@@ -94,7 +95,7 @@ async def run_setup_async(predictor: BasePredictor) -> None:
         return await maybe_coro
 
 
-def get_weights_argument(
+def get_weights_argument(  # pylint: disable=too-many-return-statements
     predictor: BasePredictor,
 ) -> Union[CogFile, CogPath, str, None]:
     # by the time we get here we assume predictor has a setup method
@@ -142,12 +143,12 @@ def get_weights_type(
     signature = inspect.signature(setup_function)
     if "weights" not in signature.parameters:
         return None
-    Type = signature.parameters["weights"].annotation
+    Type = signature.parameters["weights"].annotation  # pylint: disable=invalid-name,redefined-outer-name
     # Handle Optional. It is Union[Type, None]
     if get_origin(Type) == Union:
         args = get_args(Type)
         if len(args) == 2 and args[1] is type(None):
-            Type = get_args(Type)[0]
+            Type = get_args(Type)[0]  # pylint: disable=invalid-name
     return Type
 
 
@@ -248,7 +249,7 @@ def load_slim_predictor_from_ref(ref: str, method_name: str) -> BasePredictor:
                 log.debug(f"[{module_name}] fast loader returned None")
         else:
             log.debug(f"[{module_name}] cannot use fast loader as current Python <3.9")
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         log.debug(f"[{module_name}] fast loader failed: {e}")
     finally:
         if not module:
@@ -294,7 +295,10 @@ class BaseInput(BaseModel):
     # and do it that way. convert is supposed to mutate though, so it's tricky
 
 
-def validate_input_type(type: Type[Any], name: str) -> None:
+def validate_input_type(
+    type: Type[Any],  # pylint: disable=redefined-builtin
+    name: str,
+) -> None:
     if type is inspect.Signature.empty:
         raise TypeError(
             f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
@@ -322,7 +326,7 @@ def get_input_create_model_kwargs(
         if name not in input_types:
             raise TypeError(f"No input type provided for parameter `{name}`.")
 
-        InputType = input_types[name]
+        InputType = input_types[name]  # pylint: disable=invalid-name
 
         validate_input_type(InputType, name)
 
@@ -350,11 +354,11 @@ def get_input_create_model_kwargs(
                 class StringEnum(str, enum.Enum):
                     pass
 
-                InputType = StringEnum(  # type: ignore
+                InputType = StringEnum(  # pylint: disable=invalid-name
                     name, {value: value for value in choices}
                 )
             elif InputType is int:
-                InputType = enum.IntEnum(name, {str(value): value for value in choices})  # type: ignore
+                InputType = enum.IntEnum(name, {str(value): value for value in choices})  # pylint: disable=invalid-name
             else:
                 raise TypeError(
                     f"The input {name} uses the option choices. Choices can only be used with str or int types."
@@ -411,8 +415,8 @@ def get_output_type(predictor: BasePredictor) -> Type[BaseModel]:
 
     input_types = get_type_hints(predict)
 
-    OutputType = input_types.pop("return", None)
-    if OutputType is None:
+    OutputType = input_types.pop("return", None)  # pylint: disable=invalid-name
+    if not OutputType:
         raise TypeError(
             """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
 
@@ -454,7 +458,7 @@ For example:
     #
     # So we work around this by inheriting from the original class rather
     # than using "__root__".
-    if name == "TrainingOutput":
+    if name == "TrainingOutput":  # pylint: disable=no-else-return
 
         class Output(OutputType):  # type: ignore
             pass
@@ -512,7 +516,7 @@ def get_training_output_type(predictor: BasePredictor) -> Type[BaseModel]:
     train = get_train(predictor)
 
     input_types = get_type_hints(train)
-    TrainingOutputType = input_types.pop("return", None)
+    TrainingOutputType = input_types.pop("return", None)  # pylint: disable=invalid-name
     if TrainingOutputType is None:
         raise TypeError(
             """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
@@ -538,17 +542,18 @@ For example:
     if name == "TrainingOutput":
         return TrainingOutputType
 
-    if name == "Output":
+    if name == "Output":  # pylint: disable=no-else-return
 
         class TrainingOutput(TrainingOutputType):  # type: ignore
             pass
 
         return TrainingOutput
+    else:
 
-    class TrainingOutput(BaseModel):
-        __root__: TrainingOutputType  # type: ignore
+        class TrainingOutput(BaseModel):
+            __root__: TrainingOutputType  # type: ignore
 
-    return TrainingOutput
+        return TrainingOutput
 
 
 def human_readable_type_name(t: Type[Union[Any, None]]) -> str:

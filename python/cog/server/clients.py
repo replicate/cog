@@ -33,7 +33,9 @@ log = structlog.get_logger(__name__)
 def _get_version() -> str:
     try:
         try:
-            from importlib.metadata import version
+            from importlib.metadata import (  # pylint: disable=import-outside-toplevel
+                version,
+            )
         except ImportError:
             pass
         else:
@@ -272,7 +274,7 @@ class ClientManager:
         When a file is encountered, it will be passed to upload_file. Any paths will be opened and converted to files.
         """
         # skip four isinstance checks for fast text models
-        if type(obj) == str:  # noqa: E721
+        if type(obj) == str:  # noqa: E721 # pylint: disable=unidiomatic-typecheck
             return obj
         # # it would be kind of cleaner to make the default file_url
         # # instead of skipping entirely, we need to convert to datauri

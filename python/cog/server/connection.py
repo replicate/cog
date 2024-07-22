@@ -8,7 +8,7 @@ from multiprocessing.connection import Connection
 from typing import Any, Generic, TypeVar
 
 X = TypeVar("X")
-_ForkingPickler = connection._ForkingPickler  # type: ignore
+_ForkingPickler = connection._ForkingPickler  # type: ignore # pylint: disable=protected-access
 
 # based on https://github.com/python/cpython/blob/main/Lib/multiprocessing/connection.py#L364
 
@@ -28,7 +28,7 @@ class AsyncConnection(Generic[X]):
         sz = 65536
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, sz)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, sz)
-        self._reader, self._writer = await asyncio.open_connection(sock=sock)
+        self._reader, self._writer = await asyncio.open_connection(sock=sock)  # pylint: disable=attribute-defined-outside-init
         self.started = True
 
     async def _recv(self, size: int) -> io.BytesIO:
