@@ -20,14 +20,14 @@ FILENAME_ILLEGAL_CHARS = set("\u0000/")
 FILENAME_MAX_LENGTH = 200
 
 
-class CogConfig(TypedDict):
+class CogConfig(TypedDict):  # pylint: disable=too-many-ancestors
     build: "CogBuildConfig"
     image: NotRequired[str]
     predict: NotRequired[str]
     train: NotRequired[str]
 
 
-class CogBuildConfig(TypedDict, total=False):
+class CogBuildConfig(TypedDict, total=False):  # pylint: disable=too-many-ancestors
     cuda: Optional[str]
     gpu: Optional[bool]
     python_packages: Optional[List[str]]
@@ -37,7 +37,7 @@ class CogBuildConfig(TypedDict, total=False):
     run: Optional[Union[List[str], List[Dict[str, Any]]]]
 
 
-def Input(
+def Input(  # pylint: disable=invalid-name, too-many-arguments
     default: Any = ...,
     description: str = None,
     ge: float = None,
@@ -104,7 +104,7 @@ class File(io.IOBase):
         field_schema.update(type="string", format="uri")
 
 
-class Path(pathlib.PosixPath):
+class Path(pathlib.PosixPath):  # pylint: disable=abstract-method
     validate_always = True
 
     @classmethod
@@ -129,7 +129,7 @@ class Path(pathlib.PosixPath):
         field_schema.update(type="string", format="uri")
 
 
-class URLPath(pathlib.PosixPath):
+class URLPath(pathlib.PosixPath):  # pylint: disable=abstract-method
     """
     URLPath is a nasty hack to ensure that we can defer the downloading of a
     URL passed as a path until later in prediction dispatch.
@@ -140,7 +140,7 @@ class URLPath(pathlib.PosixPath):
 
     _path: Optional[Path]
 
-    def __init__(self, *, source: str, filename: str, fileobj: io.IOBase) -> None:
+    def __init__(self, *, source: str, filename: str, fileobj: io.IOBase) -> None:  # pylint: disable=super-init-not-called
         self.source = source
         self.filename = filename
         self.fileobj = fileobj

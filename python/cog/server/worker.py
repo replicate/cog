@@ -201,7 +201,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             # Could be a function or a class
             if hasattr(self._predictor, "setup"):
                 run_setup(self._predictor)
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             traceback.print_exc()
             done.error = True
             done.error_detail = str(e)
@@ -245,7 +245,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     self._events.send(PredictionOutput(payload=make_encodeable(result)))
         except CancelationException:
             done.canceled = True
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             traceback.print_exc()
             done.error = True
             done.error_detail = str(e)
@@ -255,7 +255,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 self._stream_redirector.drain()
             self._events.send(done)
 
-    def _signal_handler(self, signum: int, frame: Optional[types.FrameType]) -> None:
+    def _signal_handler(
+        self,
+        signum: int,
+        frame: Optional[types.FrameType],  # pylint: disable=unused-argument
+    ) -> None:
         if signum == signal.SIGUSR1 and self._cancelable:
             raise CancelationException()
 

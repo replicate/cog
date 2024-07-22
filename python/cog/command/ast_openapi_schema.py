@@ -471,8 +471,8 @@ For example:
     name = resolve_name(annotation)
     if isinstance(annotation, ast.Subscript):
         # forget about other subscripts like Optional, and assume otherlib.File will still be an uri
-        slice = resolve_name(annotation.slice)
-        format = {"format": "uri"} if slice in ("Path", "File") else {}
+        slice = resolve_name(annotation.slice)  # pylint: disable=redefined-builtin
+        format = {"format": "uri"} if slice in ("Path", "File") else {}  # pylint: disable=redefined-builtin
         array_type = {"x-cog-array-type": "iterator"} if "Iterator" in name else {}
         display_type = (
             {"x-cog-array-display": "concatenate"} if "Concatenate" in name else {}
@@ -502,7 +502,7 @@ For example:
 KEPT_ATTRS = ("description", "default", "ge", "le", "max_length", "min_length", "regex")
 
 
-def extract_info(code: str) -> "JSONDict":
+def extract_info(code: str) -> "JSONDict":  # pylint: disable=too-many-branches,too-many-locals
     """Parse the schemas from a file with a predict function"""
     tree = ast.parse(code)
     properties: JSONDict = {}

@@ -12,7 +12,7 @@ def load_module_from_string(
     if not source or not name:
         return None
     module = types.ModuleType(name)
-    exec(source, module.__dict__)  # noqa: S102
+    exec(source, module.__dict__)  # noqa: S102 # pylint: disable=exec-used
     return module
 
 
@@ -32,7 +32,7 @@ def extract_class_source(source_code: str, class_name: str) -> str:
         def __init__(self) -> None:
             self.class_source = None
 
-        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:  # pylint: disable=invalid-name
             if node.name in all_class_names:
                 self.class_source = ast.get_source_segment(source_code, node)
 
@@ -56,7 +56,7 @@ def extract_function_source(source_code: str, function_name: str) -> str:
         def __init__(self) -> None:
             self.function_source = None
 
-        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # pylint: disable=invalid-name
             if node.name == function_name and not isinstance(node, ast.Module):
                 # Extract the source segment for this function definition
                 self.function_source = ast.get_source_segment(source_code, node)
@@ -79,7 +79,7 @@ def make_class_methods_empty(source_code: Union[str, ast.AST], class_name: str) 
     """
 
     class MethodBodyTransformer(ast.NodeTransformer):
-        def visit_ClassDef(self, node: ast.ClassDef) -> Optional[ast.AST]:
+        def visit_ClassDef(self, node: ast.ClassDef) -> Optional[ast.AST]:  # pylint: disable=invalid-name
             if node.name == class_name:
                 for body_item in node.body:
                     if isinstance(body_item, ast.FunctionDef):
@@ -113,11 +113,11 @@ def extract_method_return_type(
         def __init__(self) -> None:
             self.return_type = None
 
-        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:  # pylint: disable=invalid-name
             if node.name == class_name:
                 self.generic_visit(node)
 
-        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # pylint: disable=invalid-name
             if node.name == method_name and node.returns:
                 self.return_type = ast.unparse(node.returns)
 
@@ -144,7 +144,7 @@ def extract_function_return_type(
         def __init__(self) -> None:
             self.return_type = None
 
-        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # pylint: disable=invalid-name
             if node.name == function_name and node.returns:
                 # Extract and return the string representation of the return type
                 self.return_type = ast.unparse(node.returns)
@@ -168,7 +168,7 @@ def make_function_empty(source_code: Union[str, ast.AST], function_name: str) ->
     """
 
     class FunctionBodyTransformer(ast.NodeTransformer):
-        def visit_FunctionDef(self, node: ast.FunctionDef) -> Optional[ast.AST]:
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> Optional[ast.AST]:  # pylint: disable=invalid-name
             if node.name == function_name:
                 # Replace the body of the function with `return None`
                 node.body = [ast.Return(value=ast.Constant(value=None))]
@@ -199,12 +199,12 @@ def extract_specific_imports(
         def __init__(self) -> None:
             self.imports = []
 
-        def visit_Import(self, node: ast.Import) -> None:
+        def visit_Import(self, node: ast.Import) -> None:  # pylint: disable=invalid-name
             for alias in node.names:
                 if alias.name in module_names:
                     self.imports.append(ast.unparse(node))
 
-        def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # pylint: disable=invalid-name
             if node.module in module_names:
                 self.imports.append(ast.unparse(node))
 

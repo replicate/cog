@@ -65,7 +65,10 @@ ALLOWED_INPUT_TYPES: List[Type[Any]] = [
 
 
 class BasePredictor(ABC):
-    def setup(self, weights: Optional[Union[CogFile, CogPath, str]] = None) -> None:
+    def setup(
+        self,
+        weights: Optional[Union[CogFile, CogPath, str]] = None,  # pylint: disable=unused-argument
+    ) -> None:
         """
         An optional method to prepare the model so multiple predictions run efficiently.
         """
@@ -128,12 +131,12 @@ def get_weights_type(setup_function: Callable[[Any], None]) -> Optional[Any]:
     signature = inspect.signature(setup_function)
     if "weights" not in signature.parameters:
         return None
-    Type = signature.parameters["weights"].annotation
+    Type = signature.parameters["weights"].annotation  # pylint: disable=invalid-name,redefined-outer-name
     # Handle Optional. It is Union[Type, None]
     if get_origin(Type) == Union:
         args = get_args(Type)
         if len(args) == 2 and args[1] is type(None):
-            Type = get_args(Type)[0]
+            Type = get_args(Type)[0]  # pylint: disable=invalid-name
     return Type
 
 
@@ -232,7 +235,7 @@ def load_slim_predictor_from_ref(ref: str, method_name: str) -> BasePredictor:
                 log.debug(f"[{module_name}] fast loader returned None")
         else:
             log.debug(f"[{module_name}] cannot use fast loader as current Python <3.9")
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         log.debug(f"[{module_name}] fast loader failed: {e}")
     finally:
         if not module:
@@ -271,7 +274,10 @@ class BaseInput(BaseModel):
                 value.unlink(missing_ok=True)
 
 
-def validate_input_type(type: Type[Any], name: str) -> None:
+def validate_input_type(
+    type: Type[Any],  # pylint: disable=redefined-builtin
+    name: str,
+) -> None:
     if type is inspect.Signature.empty:
         raise TypeError(
             f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
@@ -299,7 +305,7 @@ def get_input_create_model_kwargs(
         if name not in input_types:
             raise TypeError(f"No input type provided for parameter `{name}`.")
 
-        InputType = input_types[name]
+        InputType = input_types[name]  # pylint: disable=invalid-name
 
         validate_input_type(InputType, name)
 
@@ -327,11 +333,11 @@ def get_input_create_model_kwargs(
                 class StringEnum(str, enum.Enum):
                     pass
 
-                InputType = StringEnum(  # type: ignore
+                InputType = StringEnum(  # pylint: disable=invalid-name
                     name, {value: value for value in choices}
                 )
             elif InputType == int:  # noqa: E721
-                InputType = enum.IntEnum(name, {str(value): value for value in choices})  # type: ignore
+                InputType = enum.IntEnum(name, {str(value): value for value in choices})  # type: ignore # pylint: disable=invalid-name
             else:
                 raise TypeError(
                     f"The input {name} uses the option choices. Choices can only be used with str or int types."
@@ -431,7 +437,7 @@ For example:
     #
     # So we work around this by inheriting from the original class rather
     # than using "__root__".
-    if name == "TrainingOutput":
+    if name == "TrainingOutput":  # pylint: disable=no-else-return
 
         class Output(OutputType):  # type: ignore
             pass
@@ -517,7 +523,7 @@ For example:
     if name == "TrainingOutput":
         return TrainingOutputType
 
-    if name == "Output":
+    if name == "Output":  # pylint: disable=no-else-return
 
         class TrainingOutput(TrainingOutputType):
             pass
