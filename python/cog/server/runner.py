@@ -411,7 +411,8 @@ class PredictionRunner:
             #
             # if the real Done event comes through, it shouldn't cause any problems
             # it will just stay in an ignored queue in the mux
-            self._mux.write(prediction_id, Done(canceled=True))
+            if os.getenv("COG_FAKE_CANCEL"):
+                self._mux.write(prediction_id, Done(canceled=True))
 
     _read_events_task: "Optional[asyncio.Task[None]]" = None
 
