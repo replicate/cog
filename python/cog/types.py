@@ -91,14 +91,13 @@ class File(io.IOBase):
 
         parsed_url = urllib.parse.urlparse(value)
         if parsed_url.scheme == "data":
-            res = urllib.request.urlopen(value)  # noqa: S310
-            return io.BytesIO(res.read())
-        elif parsed_url.scheme == "http" or parsed_url.scheme == "https":
+            with urllib.request.urlopen(value) as res:  # noqa: S310
+                return io.BytesIO(res.read())
+        if parsed_url.scheme in ("http", "https"):
             return URLFile(value)
-        else:
-            raise ValueError(
-                f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
-            )
+        raise ValueError(
+            f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
+        )
 
     @classmethod
     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
@@ -132,7 +131,7 @@ class Path(pathlib.PosixPath):
         # this is also where you need to somehow note which tempfiles need to be filled
         if parsed_url.scheme == "data":
             return DataURLTempFilePath(value)
-        if not (parsed_url.scheme == "http" or parsed_url.scheme == "https"):
+        if parsed_url.scheme not in ("http", "https"):
             raise ValueError(
                 f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
             )
@@ -246,8 +245,7 @@ class URLFile(io.IOBase):
     def __getattr__(self, name: str) -> Any:
         if name in ("__target__", "__wrapped__", "__url__"):
             raise AttributeError(name)
-        else:
-            return getattr(self.__wrapped__, name)
+        return getattr(self.__wrapped__, name)
 
     def __delattr__(self, name: str) -> None:
         if hasattr(type(self), name):
@@ -275,11 +273,9 @@ class URLFile(io.IOBase):
         try:
             target = object.__getattribute__(self, "__target__")
         except AttributeError:
-            return "<{} at 0x{:x} for {!r}>".format(
-                type(self).__name__, id(self), object.__getattribute__(self, "__url__")
-            )
-        else:
-            return f"<{type(self).__name__} at 0x{id(self):x} wrapping {target!r}>"
+            return f"<{type(self).__name__} at 0x{id(self):x} for {object.__getattribute__(self, '__url__')!r}>"
+
+        return f"<{type(self).__name__} at 0x{id(self):x} wrapping {target!r}>"
 
 
 Item = TypeVar("Item")
@@ -337,12 +333,12 @@ def get_filename_from_url(url: str) -> str:
     parsed_url = urllib.parse.urlparse(url)
 
     if parsed_url.scheme == "data":
-        resp = urllib.request.urlopen(url)  # noqa: S310
-        mime_type = resp.headers.get_content_type()
-        extension = mimetypes.guess_extension(mime_type)
-        if extension is None:
-            return "file"
-        return "file" + extension
+        with urllib.request.urlopen(url) as resp:  # noqa: S310
+            mime_type = resp.headers.get_content_type()
+            extension = mimetypes.guess_extension(mime_type)
+            if extension is None:
+                return "file"
+            return "file" + extension
 
     filename = os.path.basename(parsed_url.path)
     filename = urllib.parse.unquote_plus(filename)

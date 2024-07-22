@@ -186,12 +186,12 @@ class PredictionRunner:  # pylint: disable=too-many-instance-attributes
                         logs.append(event.message)
                     elif isinstance(event, Done):
                         if event.error:
+                            status = schema.Status.FAILED
                             raise FatalWorkerException(
                                 "Predictor errored during setup: " + event.error_detail
                             )
-                            status = schema.Status.FAILED
-                        else:
-                            status = schema.Status.SUCCEEDED
+
+                        status = schema.Status.SUCCEEDED
                         self._state = WorkerState.IDLE
             except Exception:  # pylint: disable=broad-exception-caught
                 logs.append(traceback.format_exc())

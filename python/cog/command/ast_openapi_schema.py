@@ -342,13 +342,12 @@ if typing.TYPE_CHECKING:
 def to_serializable(val: "AstVal") -> "JSONObject":
     if isinstance(val, bytes):
         return val.decode("utf-8")
-    elif isinstance(val, list):
+    if isinstance(val, list):
         return [to_serializable(x) for x in val]
-    elif isinstance(val, complex):
+    if isinstance(val, complex):
         msg = "complex inputs are not supported"
         raise ValueError(msg)
-    else:
-        return val
+    return val
 
 
 def get_value(node: ast.AST) -> "AstVal":

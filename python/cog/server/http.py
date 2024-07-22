@@ -11,17 +11,7 @@ import threading
 import traceback
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Awaitable,
-    Callable,
-    Optional,
-    TypeVar,
-)
-
-if TYPE_CHECKING:
-    from typing import ParamSpec
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional, TypeVar
 
 import attrs
 import structlog
@@ -108,8 +98,9 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     upload_url: Optional[str] = None,
     mode: str = "predict",
     is_build: bool = False,
+    await_explicit_shutdown: bool = False,  # pylint: disable=redefined-outer-name
 ) -> MyFastAPI:
-    app = MyFastAPI(
+    app = MyFastAPI(  # pylint: disable=redefined-outer-name
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
     )
@@ -156,6 +147,8 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     http_semaphore = asyncio.Semaphore(threads)
 
     if TYPE_CHECKING:
+        from typing import ParamSpec  # pylint: disable=import-outside-toplevel
+
         P = ParamSpec("P")  # pylint: disable=invalid-name
         T = TypeVar("T")  # pylint: disable=invalid-name
 
@@ -242,7 +235,8 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             app.state.setup_result
             and app.state.setup_result.status == schema.Status.FAILED
         ):
-            if not args.await_explicit_shutdown:  # signal shutdown if interactive run
+            # signal shutdown if interactive run
+            if not await_explicit_shutdown:
                 if shutdown_event is not None:
                     shutdown_event.set()
         else:
@@ -403,8 +397,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             runner.cancel(prediction_id)
         except UnknownPredictionError:
             return JSONResponse({}, status_code=404)
-        else:
-            return JSONResponse({}, status_code=200)
+        return JSONResponse({}, status_code=200)
 
     async def _check_setup_task() -> Any:
         if app.state.setup_task is None:
@@ -469,9 +462,9 @@ class Server(uvicorn.Server):
         os.kill(os.getpid(), signal.SIGKILL)
 
 
-def is_port_in_use(port: int) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex(("localhost", port)) == 0
+def is_port_in_use(port: int) -> bool:  # pylint: disable=redefined-outer-name
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        return sock.connect_ex(("localhost", port)) == 0
 
 
 def signal_ignore(signum: Any, frame: Any) -> None:  # pylint: disable=unused-argument
@@ -541,25 +534,31 @@ if __name__ == "__main__":
 
     config = load_config()
 
-    threads: Optional[int] = args.threads
+    threads = args.threads
     if threads is None:
-        if config.get("build", {}).get("gpu", False):
-            threads = 1
-        else:
-            threads = _cpu_count()
+        gpu_enabled = config.get("build", {}).get("gpu", False)
+        threads = 1 if gpu_enabled else _cpu_count()
 
     shutdown_event = threading.Event()
+
+    await_explicit_shutdown = args.await_explicit_shutdown
+    if await_explicit_shutdown:
+        signal.signal(signal.SIGTERM, signal_ignore)
+    else:
+        signal.signal(signal.SIGTERM, signal_set_event(shutdown_event))
+
     app = create_app(
         config=config,
         shutdown_event=shutdown_event,
         threads=threads,
         upload_url=args.upload_url,
         mode=args.mode,
+        await_explicit_shutdown=await_explicit_shutdown,
     )
 
     host: str = args.host
 
-    port = int(os.getenv("PORT", 5000))
+    port = int(os.getenv("PORT", "5000"))
     if is_port_in_use(port):
         log.error(f"Port {port} is already in use")
         sys.exit(1)
@@ -573,11 +572,6 @@ if __name__ == "__main__":
         workers=1,
     )
 
-    if args.await_explicit_shutdown:
-        signal.signal(signal.SIGTERM, signal_ignore)
-    else:
-        signal.signal(signal.SIGTERM, signal_set_event(shutdown_event))
-
     s = Server(config=server_config)
     s.start()
 
@@ -589,6 +583,6 @@ if __name__ == "__main__":
     s.stop()
 
     # return error exit code when setup failed and cog is running in interactive mode (not k8s)
-    if app.state.setup_result and not args.await_explicit_shutdown:
+    if app.state.setup_result and not await_explicit_shutdown:
         if app.state.setup_result.status == schema.Status.FAILED:
-            exit(-1)
+            sys.exit(-1)

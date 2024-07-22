@@ -24,9 +24,10 @@ class ProbeHelper:
             self._root.mkdir(exist_ok=True, parents=True)
         except OSError:
             log.error(
-                f"Failed to create cog runtime state directory ({self._root}). "
+                "Failed to create cog runtime state directory (%s). "
                 "Does it already exist and is a file? Does the user running cog "
-                "have permissions?"
+                "have permissions?",
+                self._root,
             )
         else:
             self._enabled = True

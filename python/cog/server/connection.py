@@ -42,8 +42,7 @@ class AsyncConnection(Generic[X]):
             if n == 0:
                 if remaining == size:
                     raise EOFError
-                else:
-                    raise OSError("got end of file during message")
+                raise OSError("got end of file during message")
             buf.write(chunk)
             remaining -= n
         return buf

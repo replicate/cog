@@ -40,14 +40,14 @@ def _get_version() -> str:
             pass
         else:
             return version("cog")
-        import pkg_resources
+        import pkg_resources  # pylint: disable=import-outside-toplevel
 
         return pkg_resources.get_distribution("cog").version
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         return "unknown"
 
 
-_user_agent = f"cog-worker/{_get_version()} {httpx._client.USER_AGENT}"
+_user_agent = f"cog-worker/{_get_version()}"
 _response_interval = float(os.environ.get("COG_THROTTLE_RESPONSE_INTERVAL", 0.5))
 
 # HACK: signal that we should skip the start webhook when the response interval
