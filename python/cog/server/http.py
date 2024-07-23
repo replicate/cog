@@ -162,7 +162,8 @@ def create_app(
 
         return wrapped
 
-    if "train" in config:
+    # if train is set but null/blank, don't do training
+    if config.get("train"):
         try:
             # TODO: avoid loading trainer code in this process
             trainer = load_predictor_from_ref(config["train"])
@@ -240,6 +241,7 @@ def create_app(
 
     @app.on_event("shutdown")
     def shutdown() -> None:
+        log.info("app shutdown event has occurred")
         runner.shutdown()
 
     @app.get("/")
@@ -447,6 +449,7 @@ class Server(uvicorn.Server):
 
         self._thread.join(timeout=5)
         if not self._thread.is_alive():
+            log.info("server thread is not running after join")
             return
 
         log.warn("failed to exit after 5 seconds, setting force_exit")

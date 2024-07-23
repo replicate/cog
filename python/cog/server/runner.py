@@ -195,9 +195,14 @@ class PredictionRunner:
                         else:
                             status = schema.Status.SUCCEEDED
                         self._state = WorkerState.IDLE
-            except BaseException:
+            except Exception:
                 logs.append(traceback.format_exc())
                 status = schema.Status.FAILED
+            except BaseException:
+                self.log("caught BaseException during setup, did something go wrong?")
+                logs.append(traceback.format_exc())
+                status = schema.Status.FAILED
+
             # fixme: handle BaseException is mux.read times out and gets cancelled
 
             if status is None:
@@ -227,8 +232,12 @@ class PredictionRunner:
             # worker state if an exception was thrown.
             try:
                 raise exc
-            except BaseException:
+            except Exception:
                 self.log.error("caught exception while running setup", exc_info=True)
+                if self._shutdown_event is not None:
+                    self._shutdown_event.set()
+            except BaseException:
+                self.log.error("caught base exception while running setup", exc_info=True)
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
 
@@ -331,7 +340,7 @@ class PredictionRunner:
                 await event_handler.failed(error=str(e))
                 self.log.warn("failed to download url path from input", exc_info=True)
                 return event_handler.response
-            except Exception as e:
+            except Exception as e: # should this be BaseException?
                 tb = traceback.format_exc()
                 await event_handler.append_logs(tb)
                 await event_handler.failed(error=str(e))
@@ -339,6 +348,7 @@ class PredictionRunner:
                     "caught exception while running prediction", exc_info=True
                 )
                 if self._shutdown_event is not None:
+                    self.log.info("setting shutdown_event")
                     self._shutdown_event.set()
                 raise  # we don't actually want to raise anymore but w/e
             finally:
@@ -362,15 +372,18 @@ class PredictionRunner:
         return (response, result)
 
     def shutdown(self) -> None:
+        self.log.info("runner.shutdown called")
         if self._state == WorkerState.DEFUNCT:
             return
         # shutdown requested, but keep reading events
         self._shutting_down = True
 
         if self._child.is_alive():
+            self.log.info("child is alive during shutdown, sending Shutdown event")
             self._events.send(Shutdown())
 
     def terminate(self) -> None:
+        self.log.info("runner.terminate is called")
         for _, task in self._predictions.values():
             task.cancel()
         if self._state == WorkerState.DEFUNCT:
@@ -381,6 +394,7 @@ class PredictionRunner:
 
         if self._child.is_alive():
             self._child.terminate()
+            self.log.info("joining child worker")
             self._child.join()
         self._events.close()
 
@@ -439,6 +453,7 @@ class PredictionRunner:
         # this is the same event as self._terminating
         # we need to set it so mux.reads wake up and throw an error if needed
         self._mux.terminating.set()
+        self.log.info("exited _read_events")
 
 
 class PredictionEventHandler:
