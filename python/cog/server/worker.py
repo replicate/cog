@@ -160,6 +160,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             # Could be a function or a class
             if hasattr(self._predictor, "setup"):
                 if inspect.iscoroutinefunction(self._predictor.setup):
+                    # we should probably handle Shutdown during this process?
                     self.loop.run_until_complete(run_setup_async(self._predictor))
                 else:
                     run_setup(self._predictor)
@@ -188,6 +189,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         while True:
             ev = self._events.recv()
             if isinstance(ev, Shutdown):
+                self._log("got Shutdown event")
                 break
             if isinstance(ev, PredictionInput):
                 self._predict_sync(ev)
@@ -210,6 +212,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 except asyncio.CancelledError:
                     return
                 if isinstance(ev, Shutdown):
+                    self._log("got shutdown event [async]")
                     return
                 if isinstance(ev, PredictionInput):
                     # keep track of these so they can be cancelled
@@ -295,6 +298,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     send(PredictionOutput(payload=make_encodeable(result)))
 
     def _signal_handler(self, signum: int, frame: Optional[types.FrameType]) -> None:
+        # perhaps we should handle shutdown during setup using a signal?
         if self._predictor and is_async(get_predict(self._predictor)):
             # we could try also canceling the async task around here
             # but for now in async mode signals are ignored
