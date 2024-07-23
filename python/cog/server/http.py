@@ -160,7 +160,8 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
 
         return wrapped
 
-    if "train" in config:
+    # if train is set but null/blank, don't do training
+    if config.get("train"):
         try:
             trainer_ref = get_predictor_ref(config, "train")
             trainer = load_slim_predictor_from_ref(trainer_ref, "train")
@@ -243,8 +244,12 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             app.state.setup_task = runner.setup()
 
     @app.on_event("shutdown")
-    def shutdown() -> None:
-        runner.shutdown()
+    async def shutdown() -> None:
+        # this will fire when Server.stop sets should_exit
+        # the server and hence the server thread will not exit until this completes
+        # so we want runner.shutdown to block until everything is good
+        log.info("app shutdown event has occurred")
+        await runner.shutdown()
 
     @app.get("/")
     async def root() -> Any:
@@ -441,24 +446,45 @@ def _log_invalid_output(error: Any) -> None:
 
 class Server(uvicorn.Server):
     def start(self) -> None:
+        # run is a uvicorn.Server method that runs the server
+        # it will keep running until server shutdown handlers complete
         self._thread = threading.Thread(target=self.run)  # pylint: disable=attribute-defined-outside-init
         self._thread.start()
 
     def stop(self) -> None:
         log.info("stopping server")
+        # https://github.com/encode/uvicorn/blob/master/uvicorn/server.py#L250-L252
+        # https://github.com/encode/uvicorn/discussions/1103#discussioncomment-941739
+        # uvicorn's loop will check should_exit to see if it will exit
+        # once uvicorn starts exiting, the `shutdown` event will fire
         self.should_exit = True  # pylint: disable=attribute-defined-outside-init
 
         self._thread.join(timeout=5)
         if not self._thread.is_alive():
+            log.info("server has stopped gracefully, not forcing exit")
             return
 
         log.warn("failed to exit after 5 seconds, setting force_exit")
+        # as of uvicorn 0.30.5, force_exit does three things:
+        # 1. don't wait for connections to close. if force_exit becomes set
+        # while waiting for connections to close, uvicorn stops waiting
+        # https://github.com/encode/uvicorn/blob/master/uvicorn/server.py#L294-L298
+        # 2. don't wait for background tasks to complete.
+        # this respects force_exit becoming after the wait starts
+        # https://github.com/encode/uvicorn/blob/master/uvicorn/server.py#L300-L305
+        # 3. when shutdown starts, skip the shutdown event / lifecycle
+        # the shutdown handler is not interrupted by force_exit becoming set
+        # https://github.com/encode/uvicorn/blob/master/uvicorn/server.py#L289-L290
         self.force_exit = True  # pylint: disable=attribute-defined-outside-init
+        # this join is supposed to block until the shutdown handler completes
         self._thread.join(timeout=5)
         if not self._thread.is_alive():
             return
 
         log.warn("failed to exit after another 5 seconds, sending SIGKILL")
+        # because the child is created with spawn, it won't share a process group
+        # so killing the parent process will orphan the child
+        # FIXME: should we manually kill the child?
         os.kill(os.getpid(), signal.SIGKILL)
 
 
@@ -579,7 +605,7 @@ if __name__ == "__main__":
         shutdown_event.wait()
     except KeyboardInterrupt:
         pass
-
+    # this will try to shut down gracefully, then kill our process after 10s
     s.stop()
 
     # return error exit code when setup failed and cog is running in interactive mode (not k8s)

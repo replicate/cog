@@ -43,7 +43,7 @@ async def runner():
         await runner.setup()
         yield runner
     finally:
-        runner.shutdown()
+        await runner.shutdown()
 
 
 @pytest.mark.asyncio
@@ -59,7 +59,7 @@ async def test_prediction_runner_setup():
         assert isinstance(result.started_at, datetime)
         assert isinstance(result.completed_at, datetime)
     finally:
-        runner.shutdown()
+        await runner.shutdown()
 
 
 @pytest.mark.asyncio

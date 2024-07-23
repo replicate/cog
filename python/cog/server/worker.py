@@ -117,7 +117,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore # pylint: disable=too-many-i
         signal.signal(signal.SIGUSR1, self._signal_handler)
 
         worker_reference[None] = self
-        self.prediction_id_context: ContextVar[str] = ContextVar("prediction_context")  # pylint: disable=attribute-defined-outside-init
+        self.prediction_id_context: ContextVar[str] = ContextVar(
+            "prediction_context"
+        )  # pylint: disable=attribute-defined-outside-init
 
         # <could be moved into StreamRedirector>
         ws_stdout = WrappedStream("stdout", sys.stdout)
@@ -155,6 +157,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore # pylint: disable=too-many-i
             # Could be a function or a class
             if hasattr(self._predictor, "setup"):
                 if inspect.iscoroutinefunction(self._predictor.setup):
+                    # we should probably handle Shutdown during this process?
                     self.loop.run_until_complete(run_setup_async(self._predictor))
                 else:
                     run_setup(self._predictor)
@@ -183,6 +186,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore # pylint: disable=too-many-i
         while True:
             ev = self._events.recv()
             if isinstance(ev, Shutdown):
+                self._log("got Shutdown event")
                 break
             if isinstance(ev, PredictionInput):
                 self._predict_sync(ev)
@@ -205,6 +209,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore # pylint: disable=too-many-i
                 except asyncio.CancelledError:
                     return
                 if isinstance(ev, Shutdown):
+                    self._log("got shutdown event [async]")
                     return
                 if isinstance(ev, PredictionInput):
                     # keep track of these so they can be cancelled
@@ -303,6 +308,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore # pylint: disable=too-many-i
         signum: int,
         frame: Optional[types.FrameType],  # pylint: disable=unused-argument
     ) -> None:
+        # perhaps we should handle shutdown during setup using a signal?
         if self._predictor and is_async(get_predict(self._predictor)):
             # we could try also canceling the async task around here
             # but for now in async mode signals are ignored

@@ -196,6 +196,13 @@ class PredictionRunner:  # pylint: disable=too-many-instance-attributes
             except Exception:  # pylint: disable=broad-exception-caught
                 logs.append(traceback.format_exc())
                 status = schema.Status.FAILED
+            except asyncio.CancelledError:
+                self.log.info("caught CancelledError during setup")
+                logs.append(traceback.format_exc())
+                status = schema.Status.FAILED
+                # unclear if we should re-raise this
+
+            # fixme: handle BaseException is mux.read times out and gets cancelled
 
             if status is None:
                 logs.append("Error: did not receive 'done' event from setup!")
@@ -228,6 +235,13 @@ class PredictionRunner:  # pylint: disable=too-many-instance-attributes
                 self.log.error("caught exception while running setup", exc_info=True)
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
+            except BaseException:
+                self.log.error(
+                    "caught base exception while running setup", exc_info=True
+                )
+                if self._shutdown_event is not None:
+                    self._shutdown_event.set()
+                raise
 
         result = asyncio.create_task(inner())
         result.add_done_callback(handle_error)
@@ -337,7 +351,7 @@ class PredictionRunner:  # pylint: disable=too-many-instance-attributes
                 await event_handler.failed(error=str(e))
                 self.log.warn("failed to download url path from input", exc_info=True)
                 return event_handler.response
-            except Exception as e:
+            except Exception as e:  # should this be BaseException?
                 tb = traceback.format_exc()
                 await event_handler.append_logs(tb)
                 await event_handler.failed(error=str(e))
@@ -345,6 +359,7 @@ class PredictionRunner:  # pylint: disable=too-many-instance-attributes
                     "caught exception while running prediction", exc_info=True
                 )
                 if self._shutdown_event is not None:
+                    self.log.info("setting shutdown_event")
                     self._shutdown_event.set()
                 raise  # we don't actually want to raise anymore but w/e
             finally:
@@ -367,29 +382,45 @@ class PredictionRunner:  # pylint: disable=too-many-instance-attributes
 
         return (response, result)
 
-    def shutdown(self) -> None:
+    async def shutdown(self) -> None:
+        # this is called by the app's shutdown handler. server won't exit until this is done
+        self.log.info("runner.shutdown called")
         if self._state == WorkerState.DEFUNCT:
             return
         # shutdown requested, but keep reading events
         self._shutting_down = True
 
         if self._child.is_alive():
+            self.log.info("child is alive during shutdown, sending Shutdown event")
             self._events.send(Shutdown())
 
-    def terminate(self) -> None:
-        for _, task in self._predictions.values():
-            task.cancel()
         if self._state == WorkerState.DEFUNCT:
+            self.log.info("worker state is already defunct, no need to terminate")
             return
 
-        self._terminating.set()
+        prediction_tasks = [task for _, task in self._predictions.values()]
+        try:
+            if prediction_tasks:
+                await asyncio.wait(prediction_tasks, timeout=9)
+        # should we do this?
+        except TimeoutError:
+            self.log.warn("runner timeout while waiting for predictions to complete")
+
         self._state = WorkerState.DEFUNCT
+        # in case we timed out, cancel everything
+        for task in prediction_tasks:
+            task.cancel()
+
+        # tell _read_events and Mux to exit
+        self._terminating.set()
 
         if self._child.is_alive():
             self._child.terminate()
+            self.log.info("joining child worker")
             self._child.join()
+        # close the pipe
         self._events.close()
-
+        # stop reading events from the pipe
         if self._read_events_task:
             self._read_events_task.cancel()
 
@@ -445,6 +476,7 @@ class PredictionRunner:  # pylint: disable=too-many-instance-attributes
         # this is the same event as self._terminating
         # we need to set it so mux.reads wake up and throw an error if needed
         self._mux.terminating.set()
+        self.log.info("exited _read_events")
 
 
 class PredictionEventHandler:
