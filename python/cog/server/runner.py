@@ -195,9 +195,10 @@ class PredictionRunner:
                         else:
                             status = schema.Status.SUCCEEDED
                         self._state = WorkerState.IDLE
-            except Exception:
+            except BaseException:
                 logs.append(traceback.format_exc())
                 status = schema.Status.FAILED
+            # fixme: handle BaseException is mux.read times out and gets cancelled
 
             if status is None:
                 logs.append("Error: did not receive 'done' event from setup!")
@@ -226,7 +227,7 @@ class PredictionRunner:
             # worker state if an exception was thrown.
             try:
                 raise exc
-            except Exception:
+            except BaseException:
                 self.log.error("caught exception while running setup", exc_info=True)
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()

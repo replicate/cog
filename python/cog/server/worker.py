@@ -160,6 +160,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             # Could be a function or a class
             if hasattr(self._predictor, "setup"):
                 if inspect.iscoroutinefunction(self._predictor.setup):
+                    # we should probably handle Shutdown during this process?
                     self.loop.run_until_complete(run_setup_async(self._predictor))
                 else:
                     run_setup(self._predictor)
