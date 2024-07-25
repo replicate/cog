@@ -387,8 +387,7 @@ def create_app(
             runner.cancel(prediction_id)
         except UnknownPredictionError:
             return JSONResponse({}, status_code=404)
-        else:
-            return JSONResponse({}, status_code=200)
+        return JSONResponse({}, status_code=200)
 
     def _check_setup_result() -> Any:
         if app.state.setup_task is None:
