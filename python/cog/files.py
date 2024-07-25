@@ -14,7 +14,7 @@ def upload_file(fh: io.IOBase, output_file_prefix: str = None) -> str:
     if output_file_prefix is not None:
         name = getattr(fh, "name", "output")
         url = output_file_prefix + os.path.basename(name)
-        resp = requests.put(url, files={"file": fh})
+        resp = requests.put(url, files={"file": fh}, timeout=None)
         resp.raise_for_status()
         return url
 
