@@ -276,7 +276,7 @@ def validate_input_type(type: Type[Any], name: str) -> None:
         raise TypeError(
             f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
         )
-    elif type not in ALLOWED_INPUT_TYPES:
+    if type not in ALLOWED_INPUT_TYPES:
         if get_origin(type) in (Union, List, list) or (
             hasattr(types, "UnionType") and get_origin(type) is types.UnionType
         ):  # noqa: E721
@@ -540,9 +540,11 @@ def human_readable_type_name(t: Type[Union[Any, None]]) -> str:
 
     if hasattr(t, "__module__"):
         module = t.__module__
+
         if module == "builtins":
             return t.__qualname__
-        elif module.split(".")[0] == "cog":
+
+        if module.split(".")[0] == "cog":
             module = "cog"
 
         try:
