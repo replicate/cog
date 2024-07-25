@@ -451,9 +451,9 @@ class Server(uvicorn.Server):
         os.kill(os.getpid(), signal.SIGKILL)
 
 
-def is_port_in_use(port: int) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex(("localhost", port)) == 0
+def is_port_in_use(port: int) -> bool:  # pylint: disable=redefined-outer-name
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        return sock.connect_ex(("localhost", port)) == 0
 
 
 def signal_ignore(signum: Any, frame: Any) -> None:
