@@ -59,6 +59,7 @@ ALLOWED_INPUT_TYPES: List[Type[Any]] = [
     int,
     float,
     bool,
+    None,
     CogFile,
     CogPath,
     CogSecret,
