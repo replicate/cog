@@ -104,7 +104,7 @@ def create_app(
     is_build: bool = False,
     await_explicit_shutdown: bool = False,  # pylint: disable=redefined-outer-name
 ) -> MyFastAPI:
-    app = MyFastAPI(
+    app = MyFastAPI(  # pylint: disable=redefined-outer-name
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
     )
@@ -523,12 +523,10 @@ if __name__ == "__main__":
 
     config = load_config()
 
-    threads: Optional[int] = args.threads
+    threads = args.threads
     if threads is None:
-        if config.get("build", {}).get("gpu", False):
-            threads = 1
-        else:
-            threads = _cpu_count()
+        gpu_enabled = config.get("build", {}).get("gpu", False)
+        threads = 1 if gpu_enabled else _cpu_count()
 
     shutdown_event = threading.Event()
 
