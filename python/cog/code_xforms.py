@@ -87,6 +87,8 @@ def make_class_methods_empty(source_code: Union[str, ast.AST], class_name: str) 
                         body_item.body = [ast.Return(value=ast.Constant(value=None))]
                 return node
 
+            return None
+
     tree = source_code if isinstance(source_code, ast.AST) else ast.parse(source_code)
     transformer = MethodBodyTransformer()
     transformed_tree = transformer.visit(tree)
@@ -171,6 +173,8 @@ def make_function_empty(source_code: Union[str, ast.AST], function_name: str) ->
                 # Replace the body of the function with `return None`
                 node.body = [ast.Return(value=ast.Constant(value=None))]
                 return node
+
+            return None
 
     tree = source_code if isinstance(source_code, ast.AST) else ast.parse(source_code)
     transformer = FunctionBodyTransformer()
