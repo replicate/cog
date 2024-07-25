@@ -112,7 +112,8 @@ def run_setup(predictor: BasePredictor) -> None:
             )
     elif os.path.exists(weights_path):
         if weights_type == CogFile:
-            weights = cast(CogFile, open(weights_path, "rb"))
+            with open(weights_path, "rb") as f:
+                weights = cast(CogFile, f)
         elif weights_type == CogPath:
             weights = CogPath(weights_path)
         else:
