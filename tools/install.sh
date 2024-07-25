@@ -152,7 +152,9 @@ main() {
   fi
 
   # Set install directory
-  read -p "Install location? [/usr/local/bin]: " INSTALL_DIR
+  if [ -z "${INSTALL_DIR}" ]; then
+    read -p "Install location? [/usr/local/bin]: " INSTALL_DIR
+  fi
   if [ ! -d "$INSTALL_DIR" ]; then
     echo "The directory $INSTALL_DIR does not exist. Please create it and re-run this script."
     # Ask user to manually create directory rather than making it for them,
