@@ -392,7 +392,7 @@ def get_output_type(predictor: BasePredictor) -> Type[BaseModel]:
     input_types = get_type_hints(predict)
 
     OutputType = input_types.pop("return", None)
-    if OutputType is None:
+    if not OutputType:
         raise TypeError(
             """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
 
