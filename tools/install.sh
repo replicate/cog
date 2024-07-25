@@ -82,8 +82,7 @@ check_docker() {
   fi
 
   if ! docker run hello-world >/dev/null 2>&1; then
-    echo "Docker engine is not running, or docker cannot be run without sudo. Please setup Docker so that your user has permission to run it: https://docs.docker.com/engine/install/linux-postinstall/"
-    exit 1
+    echo "WARNING: Docker engine is not running, or docker cannot be run without sudo. Please setup Docker so that your user has permission to run it: https://docs.docker.com/engine/install/linux-postinstall/"
   fi
 }
 
