@@ -219,7 +219,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             ev = self._events.recv()
             if isinstance(ev, Shutdown):
                 break
-            elif isinstance(ev, PredictionInput):
+            if isinstance(ev, PredictionInput):
                 self._predict(ev.payload)
             else:
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
