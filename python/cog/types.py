@@ -214,7 +214,7 @@ class URLFile(io.IOBase):
             return object.__getattribute__(self, "__target__")
         except AttributeError:
             url = object.__getattribute__(self, "__url__")
-            resp = requests.get(url, stream=True)
+            resp = requests.get(url, stream=True, timeout=None)
             resp.raise_for_status()
             resp.raw.decode_content = True
             object.__setattr__(self, "__target__", resp.raw)
