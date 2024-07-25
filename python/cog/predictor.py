@@ -391,7 +391,6 @@ def get_output_type(predictor: BasePredictor) -> Type[BaseModel]:
 
     input_types = get_type_hints(predict)
 
-    OutputType = input_types.pop("return", None)
     if "return" not in input_types:
         raise TypeError(
             """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
@@ -407,6 +406,7 @@ For example:
         ...
 """
         )
+    OutputType = input_types.pop("return")  # pylint: disable=invalid-name
 
     # The type that goes in the response is a list of the yielded type
     if get_origin(OutputType) is Iterator:
