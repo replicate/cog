@@ -164,6 +164,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._predictor: Optional[BasePredictor] = None
         self._events = LockedConn(events)
         self._tee_output = tee_output
+        self._stream_redirector: Optional[StreamRedirector] = None
         self._cancelable = False
 
         super().__init__()
@@ -190,7 +191,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._setup()
         self._loop()
 
-        self._stream_redirector.shutdown()
+        if self._stream_redirector:
+            self._stream_redirector.shutdown()
 
     def _setup(self) -> None:
         done = Done()
@@ -211,7 +213,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             done.error_detail = str(e)
             raise
         finally:
-            self._stream_redirector.drain()
+            if self._stream_redirector:
+                self._stream_redirector.drain()
             self._events.send(done)
 
     def _loop(self) -> None:
@@ -248,8 +251,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             done.error_detail = str(e)
         finally:
             self._cancelable = False
-        self._stream_redirector.drain()
-        self._events.send(done)
+            if self._stream_redirector:
+                self._stream_redirector.drain()
+            self._events.send(done)
 
     def _signal_handler(self, signum: int, frame: Optional[types.FrameType]) -> None:
         if signum == signal.SIGUSR1 and self._cancelable:
