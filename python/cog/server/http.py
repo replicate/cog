@@ -11,17 +11,7 @@ import threading
 import traceback
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Awaitable,
-    Callable,
-    Optional,
-    TypeVar,
-)
-
-if TYPE_CHECKING:
-    from typing import ParamSpec
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 import attrs
 import structlog
@@ -56,6 +46,12 @@ from .runner import (
     UnknownPredictionError,
 )
 from .telemetry import make_trace_context, trace_context
+
+if TYPE_CHECKING:
+    from typing import ParamSpec, TypeVar  # pylint: disable=import-outside-toplevel
+
+    P = ParamSpec("P")  # pylint: disable=invalid-name
+    T = TypeVar("T")  # pylint: disable=invalid-name
 
 log = structlog.get_logger("cog.server.http")
 
@@ -149,10 +145,6 @@ def create_app(
     )
 
     http_semaphore = asyncio.Semaphore(threads)
-
-    if TYPE_CHECKING:
-        P = ParamSpec("P")
-        T = TypeVar("T")
 
     def limited(f: "Callable[P, Awaitable[T]]") -> "Callable[P, Awaitable[T]]":
         @functools.wraps(f)
