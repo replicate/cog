@@ -20,17 +20,15 @@ from typing import (
     cast,
     get_type_hints,
 )
-from unittest.mock import patch
-
-import structlog
-
-import cog.code_xforms as code_xforms
 
 try:
     from typing import get_args, get_origin
 except ImportError:  # Python < 3.8
     from typing_compat import get_args, get_origin  # type: ignore
 
+from unittest.mock import patch
+
+import structlog
 import yaml
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
@@ -38,6 +36,7 @@ from pydantic.fields import FieldInfo
 # Added in Python 3.9. Can be from typing if we drop support for <3.9
 from typing_extensions import Annotated
 
+from .code_xforms import load_module_from_string, strip_model_source_code
 from .errors import ConfigDoesNotExist, PredictorNotSet
 from .types import (
     CogConfig,
@@ -210,10 +209,8 @@ def load_slim_predictor_from_file(
 ) -> Optional[types.ModuleType]:
     with open(module_path, encoding="utf-8") as file:
         source_code = file.read()
-    stripped_source = code_xforms.strip_model_source_code(
-        source_code, class_name, method_name
-    )
-    module = code_xforms.load_module_from_string(uuid.uuid4().hex, stripped_source)
+    stripped_source = strip_model_source_code(source_code, class_name, method_name)
+    module = load_module_from_string(uuid.uuid4().hex, stripped_source)
     return module
 
 
