@@ -91,7 +91,7 @@ class File(io.IOBase):
         if parsed_url.scheme == "data":
             with urllib.request.urlopen(value) as res:  # noqa: S310
                 return io.BytesIO(res.read())
-        elif parsed_url.scheme == "http" or parsed_url.scheme == "https":
+        elif parsed_url.scheme in ("http", "https"):
             return URLFile(value)
         else:
             raise ValueError(
