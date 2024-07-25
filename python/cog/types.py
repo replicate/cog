@@ -89,8 +89,8 @@ class File(io.IOBase):
 
         parsed_url = urllib.parse.urlparse(value)
         if parsed_url.scheme == "data":
-            res = urllib.request.urlopen(value)  # noqa: S310
-            return io.BytesIO(res.read())
+            with urllib.request.urlopen(value) as res:  # noqa: S310
+                return io.BytesIO(res.read())
         elif parsed_url.scheme == "http" or parsed_url.scheme == "https":
             return URLFile(value)
         else:
@@ -226,23 +226,21 @@ class URLFile(io.IOBase):
         try:
             target = object.__getattribute__(self, "__target__")
         except AttributeError:
-            return "<{} at 0x{:x} for {!r}>".format(
-                type(self).__name__, id(self), object.__getattribute__(self, "__url__")
-            )
-        else:
-            return f"<{type(self).__name__} at 0x{id(self):x} wrapping {target!r}>"
+            return f"<{type(self).__name__} at 0x{id(self):x} for {object.__getattribute__(self, '__url__')!r}>"
+
+        return f"<{type(self).__name__} at 0x{id(self):x} wrapping {target!r}>"
 
 
 def get_filename(url: str) -> str:
     parsed_url = urllib.parse.urlparse(url)
 
     if parsed_url.scheme == "data":
-        resp = urllib.request.urlopen(url)  # noqa: S310
-        mime_type = resp.headers.get_content_type()
-        extension = mimetypes.guess_extension(mime_type)
-        if extension is None:
-            return "file"
-        return "file" + extension
+        with urllib.request.urlopen(url) as resp:  # noqa: S310
+            mime_type = resp.headers.get_content_type()
+            extension = mimetypes.guess_extension(mime_type)
+            if extension is None:
+                return "file"
+            return "file" + extension
 
     basename = os.path.basename(parsed_url.path)
     basename = urllib.parse.unquote_plus(basename)
