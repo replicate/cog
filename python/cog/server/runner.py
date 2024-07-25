@@ -11,7 +11,7 @@ import requests
 import structlog
 from attrs import define
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry  # type: ignore
+from urllib3.util.retry import Retry
 
 from .. import schema, types
 from ..files import put_file_to_signed_endpoint
