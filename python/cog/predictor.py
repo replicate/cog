@@ -76,7 +76,6 @@ class BasePredictor(ABC):
         """
         Run a single prediction on the model
         """
-        pass
 
 
 def run_setup(predictor: BasePredictor) -> None:
