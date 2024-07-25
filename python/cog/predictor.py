@@ -159,7 +159,7 @@ def load_config() -> CogConfig:
     # Assumes the working directory is /src
     config_path = os.path.abspath("cog.yaml")
     try:
-        with open(config_path) as fh:
+        with open(config_path, encoding="utf-8") as fh:
             config = yaml.safe_load(fh)
     except FileNotFoundError as e:
         raise ConfigDoesNotExist(
