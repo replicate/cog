@@ -574,4 +574,4 @@ if __name__ == "__main__":
     # return error exit code when setup failed and cog is running in interactive mode (not k8s)
     if app.state.setup_result and not await_explicit_shutdown:
         if app.state.setup_result.status == schema.Status.FAILED:
-            exit(-1)
+            sys.exit(-1)
