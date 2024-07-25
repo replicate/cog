@@ -102,6 +102,7 @@ def create_app(
     upload_url: Optional[str] = None,
     mode: str = "predict",
     is_build: bool = False,
+    await_explicit_shutdown: bool = False,  # pylint: disable=redefined-outer-name
 ) -> MyFastAPI:
     app = MyFastAPI(
         title="Cog",  # TODO: mention model name?
@@ -229,7 +230,8 @@ def create_app(
             app.state.setup_result
             and app.state.setup_result.status == schema.Status.FAILED
         ):
-            if not args.await_explicit_shutdown:  # signal shutdown if interactive run
+            # signal shutdown if interactive run
+            if not await_explicit_shutdown:
                 if shutdown_event is not None:
                     shutdown_event.set()
         else:
@@ -530,12 +532,20 @@ if __name__ == "__main__":
             threads = _cpu_count()
 
     shutdown_event = threading.Event()
+
+    await_explicit_shutdown = args.await_explicit_shutdown
+    if await_explicit_shutdown:
+        signal.signal(signal.SIGTERM, signal_ignore)
+    else:
+        signal.signal(signal.SIGTERM, signal_set_event(shutdown_event))
+
     app = create_app(
         config=config,
         shutdown_event=shutdown_event,
         threads=threads,
         upload_url=args.upload_url,
         mode=args.mode,
+        await_explicit_shutdown=await_explicit_shutdown,
     )
 
     host: str = args.host
@@ -554,11 +564,6 @@ if __name__ == "__main__":
         workers=1,
     )
 
-    if args.await_explicit_shutdown:
-        signal.signal(signal.SIGTERM, signal_ignore)
-    else:
-        signal.signal(signal.SIGTERM, signal_set_event(shutdown_event))
-
     s = Server(config=server_config)
     s.start()
 
@@ -570,6 +575,6 @@ if __name__ == "__main__":
     s.stop()
 
     # return error exit code when setup failed and cog is running in interactive mode (not k8s)
-    if app.state.setup_result and not args.await_explicit_shutdown:
+    if app.state.setup_result and not await_explicit_shutdown:
         if app.state.setup_result.status == schema.Status.FAILED:
             exit(-1)
