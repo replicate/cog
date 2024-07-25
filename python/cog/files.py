@@ -80,7 +80,5 @@ def ensure_trailing_slash(url: str) -> str:
     """
     Adds a trailing slash to `url` if not already present, and then returns it.
     """
-    if url.endswith("/"):
-        return url
-    else:
-        return url + "/"
+
+    return url if url.endswith("/") else url + "/"
