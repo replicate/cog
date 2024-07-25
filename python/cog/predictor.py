@@ -525,14 +525,14 @@ For example:
 
     if name == "Output":  # pylint: disable=no-else-return
 
-        class TrainingOutput(TrainingOutputType):
+        class TrainingOutput(TrainingOutputType):  # type: ignore
             pass
 
         return TrainingOutput
     else:
 
         class TrainingOutput(BaseModel):
-            __root__: TrainingOutputType
+            __root__: TrainingOutputType  # type: ignore
 
         return TrainingOutput
 
