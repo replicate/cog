@@ -492,8 +492,7 @@ def get_training_output_type(predictor: BasePredictor) -> Type[BaseModel]:
     train = get_train(predictor)
 
     input_types = get_type_hints(train)
-    TrainingOutputType = input_types.pop("return", None)
-    if TrainingOutputType is None:
+    if "return" not in input_types:
         raise TypeError(
             """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
 
@@ -509,9 +508,12 @@ For example:
 """
         )
 
+    TrainingOutputType = input_types.pop("return")  # pylint: disable=invalid-name
+
     name = (
         TrainingOutputType.__name__ if hasattr(TrainingOutputType, "__name__") else ""
     )
+
     # We wrap the OutputType in a TrainingOutput class to
     # ensure consistent naming of the interface in the schema
     # See comment in get_output_type for more info.
@@ -520,15 +522,16 @@ For example:
 
     if name == "Output":
 
-        class TrainingOutput(TrainingOutputType):  # type: ignore
+        class TrainingOutput(TrainingOutputType):
             pass
 
         return TrainingOutput
+    else:
 
-    class TrainingOutput(BaseModel):
-        __root__: TrainingOutputType  # type: ignore
+        class TrainingOutput(BaseModel):
+            __root__: TrainingOutputType
 
-    return TrainingOutput
+        return TrainingOutput
 
 
 def human_readable_type_name(t: Type[Union[Any, None]]) -> str:
