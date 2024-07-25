@@ -547,7 +547,7 @@ if __name__ == "__main__":
 
     host: str = args.host
 
-    port = int(os.getenv("PORT", 5000))
+    port = int(os.getenv("PORT", "5000"))
     if is_port_in_use(port):
         log.error(f"Port {port} is already in use")
         sys.exit(1)
