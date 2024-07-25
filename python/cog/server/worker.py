@@ -128,9 +128,8 @@ class Worker:
         if done:
             if done.error and raise_on_error:
                 raise FatalWorkerException(raise_on_error + ": " + done.error_detail)
-            else:
-                self._state = WorkerState.READY
-                self._allow_cancel = False
+            self._state = WorkerState.READY
+            self._allow_cancel = False
 
         # If we dropped off the end off the end of the loop, check if it's
         # because the child process died.
