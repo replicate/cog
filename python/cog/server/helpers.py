@@ -7,10 +7,6 @@ import uuid
 from typing import Callable, Optional, Sequence, TextIO
 
 
-def debug(*args: str, f: io.IOBase = open("/tmp/debug", "a")) -> None:  # noqa
-    print(*args, file=f, flush=True)
-
-
 async def async_fdopen(fd: int) -> asyncio.StreamReader:
     loop = asyncio.get_running_loop()
     reader = asyncio.StreamReader()
@@ -102,31 +98,23 @@ class StreamRedirector(threading.Thread):
 
     def drain(self) -> None:
         if self.is_async:
-            debug("ignoring drain")
             # if we're async, we assume that logs will be processed promptly,
             # and we don't want to block the event loop
             return
         self.drain_event.clear()
         for stream in self._streams:
-            debug(repr(stream), stream.name)
             stream.write(self.drain_token + "\n")
-            debug(repr(stream), "flush")
             stream.flush()
-        debug("wait drain")
         if not self.drain_event.wait(timeout=1):
-            debug("drain timed out")
             raise RuntimeError("output streams failed to drain")
-        debug("drain done")
 
     def shutdown(self) -> None:
         if not self.is_alive():
-            debug("skipping shutdown because not alive")
             return
         for stream in self._streams:
             stream.write(self.terminate_token + "\n")
             stream.flush()
             break  # only need to write one terminate token
-        debug("joining")
         self.join()
 
     async def shutdown_async(self) -> None:
@@ -149,13 +137,10 @@ class StreamRedirector(threading.Thread):
             drain_tokens_needed += 1
 
         while not should_exit:
-            debug("selector.select")
             for key, _ in selector.select():
-                debug("selector key")
                 stream = key.data
 
                 for line in stream.wrapped:
-                    debug("redirector saw", line)
                     if not line.endswith("\n"):
                         # TODO: limit how much we're prepared to buffer on a
                         # single line
@@ -180,12 +165,9 @@ class StreamRedirector(threading.Thread):
                     # thing in the line was a drain token (or a terminate
                     # token).
                     if full_line:
-                        debug("write hook")
                         self._write_hook(stream.name, stream.original, full_line + "\n")
-                        debug("write hook done")
 
                     if drain_tokens_seen >= drain_tokens_needed:
-                        debug("drain event set")
                         self.drain_event.set()
                         drain_tokens_seen = 0
 
@@ -203,14 +185,11 @@ class StreamRedirector(threading.Thread):
 
         We must not call write_hook twice for the same data during the switch.
         """
-        debug("switch async, drain")
         # Drain the streams to ensure all buffered data is processed
         try:
             self.drain()
         except RuntimeError:
-            debug("drain failed")
             raise
-        debug("drain done, shutdown")
 
         # Shut down the thread
         # we do this before starting a coroutine that will also read from the same fd
@@ -218,7 +197,6 @@ class StreamRedirector(threading.Thread):
         self.shutdown()
         self.stream_tasks = []
         self.is_async = True
-        debug("set is async")
 
         for stream in self._streams:
             # Open each stream as a StreamReader
@@ -235,7 +213,6 @@ class StreamRedirector(threading.Thread):
     async def process_stream(
         self, stream: WrappedStream, reader: asyncio.StreamReader
     ) -> None:
-        debug("process_stream", stream.name)
         buffer = io.StringIO()
         drain_tokens_seen = 0
         should_exit = False
@@ -246,7 +223,6 @@ class StreamRedirector(threading.Thread):
                 break
 
             line = line.decode()
-            debug("redirector saw", line)
 
             if not line.endswith("\n"):
                 buffer.write(line)
@@ -270,7 +246,6 @@ class StreamRedirector(threading.Thread):
                 self._write_hook(stream.name, stream.original, full_line + "\n")
 
             if drain_tokens_seen >= len(self._streams):
-                debug("drain event set")
                 self.drain_event.set()
                 drain_tokens_seen = 0
             if should_exit:

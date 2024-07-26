@@ -38,7 +38,7 @@ from .exceptions import (
     CancelationException,
     FatalWorkerException,
 )
-from .helpers import StreamRedirector, WrappedStream, debug
+from .helpers import StreamRedirector, WrappedStream
 
 _spawn = multiprocessing.get_context("spawn")
 
@@ -119,7 +119,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         super().__init__()
 
     def run(self) -> None:
-        debug("run")
         self._sync_events_lock = threading.Lock()
         # If we're running at a shell, SIGINT will be sent to every process in
         # the process group. We ignore it in the child process and require that
@@ -146,17 +145,12 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._stream_redirector.start()
         # </could be moved into StreamRedirector>
 
-        debug("setup")
         self._setup()
-        debug("loop")
         self._loop()  # shuts down stream redirector the correct way
-        debug("loop done")
         self._events.close()
 
     async def _async_init(self) -> None:
-        debug("async_init start")
         if self._events_async:
-            debug("async_init finished")
             return
         # if AsyncConnection is created before switch_to_async, a race condition can cause drain to fail
         # and write, seemingly, to block
@@ -164,15 +158,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         await self._stream_redirector.switch_to_async()
         self._events_async = AsyncConnection(self._events)
         await self._events_async.async_init()
-        debug("async_init done")
 
     def _setup(self) -> None:
-        debug("_setup start")
         with self._handle_setup_error():
             # we need to load the predictor to know if setup is async
-            debug("'about to load")
             self._predictor = load_predictor_from_ref(self._predictor_ref)
-            debug("loaded ref")
             self._predictor.log = self._log
             # if users want to access the same event loop from setup and predict,
             # both have to be async. if setup isn't async, it doesn't matter if we
@@ -181,36 +171,24 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             # otherwise, if setup is sync and the user does new_event_loop to use a ClientSession,
             # then tries to use the same session from async predict, they would get an error.
             # that's significant if connections are open and would need to be discarded
-            debug("async predictor")
             if is_async_predictor(self._predictor):
-                debug("getting loop")
                 self.loop = get_loop()
-                debug("got loop")
-            debug("getattr")
             # Could be a function or a class
             if hasattr(self._predictor, "setup"):
-                debug("inspect")
                 if inspect.iscoroutinefunction(self._predictor.setup):
                     # we should probably handle Shutdown during this process?
                     # possibly we prefer to not stop-start the event loop
                     # between these calls
                     self.loop.run_until_complete(self._async_init())
                     self.loop.run_until_complete(run_setup_async(self._predictor))
-                    debug("run_setup_async done")
                 else:
-                    debug("sync setup")
                     run_setup(self._predictor)
-            debug("_setup done inside ctx mgr")
-        debug("_setup done")
 
     @contextlib.contextmanager
     def _handle_setup_error(self) -> Iterator[None]:
         done = Done()
-        debug("done")
         try:
-            debug("yield")
             yield
-            debug("yield done")
         except Exception as e:
             traceback.print_exc()
             done.error = True
@@ -226,15 +204,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             # we can arrive here if there was an error setting up stream_redirector
             # for example, because drain failed
             # in this case this drain could block or fail
-            debug("setup done, calling drain")
             try:
                 self._stream_redirector.drain()
-            except Exception as e:
-                debug("exc", str(e))
+            except Exception:
                 raise
-            debug("sending setup done")
             self.send(("SETUP", done))
-            debug("sent setup done")
 
     def _loop_sync(self) -> None:
         while True:
@@ -253,7 +227,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._stream_redirector.shutdown()
 
     async def _loop_async(self) -> None:
-        debug("loop async")
         await self._async_init()
         assert self._events_async
         tasks: dict[str, asyncio.Task[None]] = {}
@@ -277,14 +250,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     print(f"Got unexpected cancellation: {ev}", file=sys.stderr)
             else:
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
-        debug("shutdown_async")
         await self._stream_redirector.shutdown_async()
         self._events_async.close()
 
     def _loop(self) -> None:
-        debug("in loop")
         if is_async(get_predict(self._predictor)):
-            debug("async loop")
             self.loop.run_until_complete(self._loop_async())
         else:
             self._loop_sync()
@@ -320,14 +290,10 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
     def send(self, obj: Any) -> None:
         if self._events_async:
-            debug("sending on async")
             self._events_async.send(obj)
-            debug("sent on async")
         else:
-            debug("send lock")
             with self._sync_events_lock:
                 self._events.send(obj)
-                debug("finished sync send")
 
     def _mk_send(self, id: str) -> Callable[[PublicEventType], None]:
         def send(event: PublicEventType) -> None:

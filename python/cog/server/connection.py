@@ -3,7 +3,6 @@ import io
 import os
 import socket
 import struct
-import threading
 from multiprocessing import connection
 from multiprocessing.connection import Connection
 from typing import Any, Generic, TypeVar
@@ -18,9 +17,6 @@ class AsyncConnection(Generic[X]):
     def __init__(self, conn: Connection) -> None:
         self.wrapped_conn = conn
         self.started = False
-        print("conn __init__")
-        # perhaps the lock should be here
-        # self.sync_lock = threading.Lock()
 
     async def async_init(self) -> None:
         if self.started:
@@ -29,10 +25,10 @@ class AsyncConnection(Generic[X]):
         # mp may have handled something already but let's dup so exit is clean
         dup_fd = os.dup(fd)
         sock = socket.socket(fileno=dup_fd)
-        # sock = socket.socket(fileno=fd)
         # we don't want to see EAGAIN, we'd rather wait
         # however, perhaps this is wrong and in some cases this could still block terribly
         # sock.setblocking(False)
+        sock.setblocking(True)
         # TODO: use /proc/sys/net/core/rmem_max, but special-case language models
         sz = 65536
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, sz)
@@ -93,11 +89,6 @@ class AsyncConnection(Generic[X]):
 
     def send(self, obj: Any) -> None:
         self._send_bytes(_ForkingPickler.dumps(obj, protocol=5))
-
-    # # perhaps we could do it like this
-    # def send_sync(self, obj: Any) -> None:
-    #     with self.sync_lock:
-    #         self.wrapped_conn.send(obj)
 
     # we could implement async def drain() but it's not really necessary for our purposes
 
