@@ -199,7 +199,7 @@ class PredictionRunner:
                 logs.append(traceback.format_exc())
                 status = schema.Status.FAILED
             except BaseException:
-                self.log("caught BaseException during setup, did something go wrong?")
+                self.log.info("caught BaseException during setup, did something go wrong?")
                 logs.append(traceback.format_exc())
                 status = schema.Status.FAILED
 

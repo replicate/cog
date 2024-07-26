@@ -23,7 +23,7 @@ class AsyncConnection(Generic[X]):
         # mp may have handled something already but let's dup so exit is clean
         dup_fd = os.dup(fd)
         sock = socket.socket(fileno=dup_fd)
-        sock.setblocking(False)
+        sock.setblocking(True)
         # TODO: use /proc/sys/net/core/rmem_max, but special-case language models
         sz = 65536
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, sz)
