@@ -35,8 +35,6 @@ from pydantic.error_wrappers import ErrorWrapper
 
 from .. import schema
 from ..errors import PredictorNotSet
-from ..files import upload_file
-from ..json import upload_files
 from ..logging import setup_logging
 from ..predictor import (
     get_input_type,
@@ -257,7 +255,7 @@ def create_app(
 
     @app.get("/health-check")
     async def healthcheck() -> Any:
-        _check_setup_result()
+        await _check_setup_task()
         if app.state.health == Health.READY:
             health = Health.BUSY if runner.is_busy() else Health.READY
         else:
@@ -289,10 +287,7 @@ def create_app(
         respond_async = prefer == "respond-async"
 
         with trace_context(make_trace_context(traceparent, tracestate)):
-            return _predict(
-                request=request,
-                respond_async=respond_async,
-            )
+            return await shared_predict(request=request, respond_async=respond_async)
 
     @limited
     @app.put(
@@ -330,15 +325,11 @@ def create_app(
         respond_async = prefer == "respond-async"
 
         with trace_context(make_trace_context(traceparent, tracestate)):
-            return _predict(
-                request=request,
-                respond_async=respond_async,
-            )
+            return await shared_predict(request=request, respond_async=respond_async)
 
-    def _predict(
-        *,
-        request: Optional[PredictionRequest],
-        respond_async: bool = False,
+
+    async def shared_predict(
+        *, request: Optional[PredictionRequest], respond_async: bool = False
     ) -> Response:
         # [compat] If no body is supplied, assume that this model can be run
         # with empty input. This will throw a ValidationError if that's not
@@ -351,13 +342,10 @@ def create_app(
             request.input = {}
 
         try:
-            # For now, we only ask PredictionRunner to handle file uploads for
-            # async predictions. This is unfortunate but required to ensure
-            # backwards-compatible behaviour for synchronous predictions.
-            initial_response, async_result = runner.predict(
-                request,
-                upload=respond_async,
-            )
+            # Previously, we only asked PredictionRunner to handle file uploads for
+            # async predictions. However, PredictionRunner now handles data uris.
+            # If we ever want to do output_file_prefix, runner also sees that
+            initial_response, async_result = runner.predict(request)
         except RunnerBusyError:
             return JSONResponse(
                 {"detail": "Already running a prediction"}, status_code=409
@@ -366,20 +354,27 @@ def create_app(
         if respond_async:
             return JSONResponse(jsonable_encoder(initial_response), status_code=202)
 
+        # by now, output Path and File are already converted to str
+        # so when we validate the schema, those urls get cast back to Path and File
+        # in the previous implementation those would then get encoded as strings
+        # however the changes to Path and File break this and return the filename instead
         try:
-            response = PredictionResponse(**async_result.get().dict())
+            prediction = await async_result
+            # we're only doing this to catch validation errors
+            response = PredictionResponse(**prediction.dict())
+            del response
         except ValidationError as e:
             _log_invalid_output(e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
-        response_object = response.dict()
-        response_object["output"] = upload_files(
-            response_object["output"],
-            upload_file=lambda fh: upload_file(fh, request.output_file_prefix),  # type: ignore
-        )
+        # this is how it used to work, but we now upload files as soon as they are emitted
+        # dict_resp = response.dict()
+        # output = await runner.client_manager.upload_files(dict_resp["output"], upload_url)
+        # dict_resp["output"] = output
+        # encoded_response = jsonable_encoder(dict_resp)
 
-        # FIXME: clean up output files
-        encoded_response = jsonable_encoder(response_object)
+        # return *prediction* and not *response* to preserve urls
+        encoded_response = jsonable_encoder(prediction.dict())
         return JSONResponse(content=encoded_response)
 
     @app.post("/predictions/{prediction_id}/cancel")
@@ -396,14 +391,15 @@ def create_app(
         else:
             return JSONResponse({}, status_code=200)
 
-    def _check_setup_result() -> Any:
+    async def _check_setup_task() -> Any:
         if app.state.setup_task is None:
             return
 
-        if not app.state.setup_task.ready():
+        if not app.state.setup_task.done():
             return
 
-        result = app.state.setup_task.get()
+        # this can raise CancelledError
+        result = app.state.setup_task.result()
 
         if result.status == schema.Status.SUCCEEDED:
             app.state.health = Health.READY

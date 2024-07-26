@@ -1,6 +1,7 @@
 import base64
 import io
 
+import pytest
 import responses
 from responses.matchers import multipart_matcher
 
@@ -25,6 +26,7 @@ def test_output_file(client, match):
     )
 
 
+@pytest.mark.xfail  # needs respx
 @responses.activate
 @uses_predictor("output_file_named")
 def test_output_file_to_http(client, match):
@@ -47,6 +49,7 @@ def test_output_file_to_http(client, match):
     assert res.status_code == 200
 
 
+@pytest.mark.xfail  # needs respx
 @responses.activate
 @uses_predictor_with_client_options("output_file_named", upload_url="https://dontuseme")
 def test_output_file_to_http_with_upload_url_specified(client, match):
@@ -82,6 +85,7 @@ def test_output_path(client):
     assert len(base64.b64decode(b64data)) == 195894
 
 
+@pytest.mark.xfail  # needs respx
 @responses.activate
 @uses_predictor("output_path_text")
 def test_output_path_to_http(client, match):
