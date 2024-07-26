@@ -258,10 +258,7 @@ def get_filename(url: str) -> str:
 Item = TypeVar("Item")
 
 
-class ConcatenateIterator(Iterator[Item]):
-    def __next__(self) -> Item:
-        raise NotImplementedError("This is a stub class for typing purposes only")
-
+class ConcatenateIterator(Iterator[Item]):  # pylint: disable=abstract-method
     @classmethod
     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
         """Defines what this type should be in openapi.json"""
