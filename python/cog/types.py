@@ -149,11 +149,9 @@ class URLPath(pathlib.PosixPath):  # pylint: disable=abstract-method
 
     def convert(self) -> Path:
         if self._path is None:
-            with tempfile.NamedTemporaryFile(
-                suffix=self.filename, delete=False
-            ) as dest:
-                shutil.copyfileobj(self.fileobj, dest)
-                self._path = Path(dest.name)
+            dest = tempfile.NamedTemporaryFile(suffix=self.filename, delete=False)  # pylint: disable=consider-using-with
+            shutil.copyfileobj(self.fileobj, dest)
+            self._path = Path(dest.name)
         return self._path
 
     def unlink(self, missing_ok: bool = False) -> None:
