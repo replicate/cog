@@ -151,6 +151,12 @@ make
 sudo make install
 ```
 
+Or if you are on docker:
+
+```
+RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run/install.sh)"
+```
+
 ## Upgrade
 
 If you're using macOS and you previously installed Cog with Homebrew, run the following:

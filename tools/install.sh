@@ -49,7 +49,7 @@ command_exists() {
 
 user_can_sudo() {
   # Check if sudo is installed
-  command_exists sudo || return 1
+  command_exists $SUDO || return 1
   # Termux can't run sudo, so we can detect it and exit the function early.
   case "$PREFIX" in
   *com.termux*) return 1 ;;
@@ -72,7 +72,7 @@ user_can_sudo() {
   #    to run `sudo` in the default locale (with `LANG=`) so that the message
   #    stays consistent regardless of the user's locale.
   #
-  ! LANG= sudo -n -v 2>&1 | grep -q "may not run sudo"
+  ! LANG= $SUDO -n -v 2>&1 | grep -q "may not run $SUDO"
 }
 
 check_docker() {
@@ -82,8 +82,7 @@ check_docker() {
   fi
 
   if ! docker run hello-world >/dev/null 2>&1; then
-    echo "Docker engine is not running, or docker cannot be run without sudo. Please setup Docker so that your user has permission to run it: https://docs.docker.com/engine/install/linux-postinstall/"
-    exit 1
+    echo "WARNING: Docker engine is not running, or docker cannot be run without sudo. Please setup Docker so that your user has permission to run it: https://docs.docker.com/engine/install/linux-postinstall/"
   fi
 }
 
@@ -95,16 +94,16 @@ setup_cog() {
     echo "Do you want to delete this file and continue with this installation anyway?"
     read -p "Delete file? (y/N): " choice
     case "$choice" in 
-      y|Y ) echo "Deleting existing file and continuing with installation..."; sudo rm $COG_LOCATION;;
+      y|Y ) echo "Deleting existing file and continuing with installation..."; $SUDO rm $COG_LOCATION;;
       * ) echo "Exiting installation."; exit 1;;
     esac
   fi
   if command_exists curl; then
-    sudo curl -o $COG_LOCATION -L $BINARY_URI
+    $SUDO curl -o $COG_LOCATION -L $BINARY_URI
   elif command_exists wget; then
-    sudo wget $BINARY_URI -O $COG_LOCATION
+    $SUDO wget $BINARY_URI -O $COG_LOCATION
   elif command_exists fetch; then
-    sudo fetch -o $COG_LOCATION $BINARY_URI
+    $SUDO fetch -o $COG_LOCATION $BINARY_URI
   else
     echo "One of curl, wget, or fetch must be present for this installer to work."
     exit 1
@@ -115,7 +114,7 @@ setup_cog() {
     exit 1
   fi
 
-  sudo chmod +x $COG_LOCATION
+  $SUDO chmod +x $COG_LOCATION
 
   SHELL_NAME=$(basename "$SHELL")
   if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
@@ -152,7 +151,9 @@ main() {
   fi
 
   # Set install directory
-  read -p "Install location? [/usr/local/bin]: " INSTALL_DIR
+  if [ -z "${INSTALL_DIR}" ]; then
+    read -p "Install location? [/usr/local/bin]: " INSTALL_DIR
+  fi
   if [ ! -d "$INSTALL_DIR" ]; then
     echo "The directory $INSTALL_DIR does not exist. Please create it and re-run this script."
     # Ask user to manually create directory rather than making it for them,
@@ -173,7 +174,12 @@ main() {
       * ) echo "Exiting installation."; exit 1;;
     esac
   fi
-  if ! user_can_sudo; then
+
+  # Check the users sudo priviledges
+  if [ -z "${SUDO+set}" ]; then
+    SUDO="sudo"
+  fi
+  if [ ! user_can_sudo ] && [ "${SUDO}" != "" ]; then
     echo "You need sudo permissions to run this install script. Please try again as a sudoer."
     exit 1
   fi
