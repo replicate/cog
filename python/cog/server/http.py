@@ -11,17 +11,7 @@ import threading
 import traceback
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Awaitable,
-    Callable,
-    Optional,
-    TypeVar,
-)
-
-if TYPE_CHECKING:
-    from typing import ParamSpec
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 import attrs
 import structlog
@@ -57,6 +47,12 @@ from .runner import (
 )
 from .telemetry import make_trace_context, trace_context
 
+if TYPE_CHECKING:
+    from typing import ParamSpec, TypeVar  # pylint: disable=import-outside-toplevel
+
+    P = ParamSpec("P")  # pylint: disable=invalid-name
+    T = TypeVar("T")  # pylint: disable=invalid-name
+
 log = structlog.get_logger("cog.server.http")
 
 
@@ -82,7 +78,11 @@ class MyFastAPI(FastAPI):
     state: MyState  # type: ignore
 
 
-def add_setup_failed_routes(app: MyFastAPI, started_at: datetime, msg: str) -> None:
+def add_setup_failed_routes(
+    app: MyFastAPI,  # pylint: disable=redefined-outer-name
+    started_at: datetime,
+    msg: str,
+) -> None:
     print(msg)
     result = SetupResult(
         started_at=started_at,
@@ -99,15 +99,16 @@ def add_setup_failed_routes(app: MyFastAPI, started_at: datetime, msg: str) -> N
         return jsonable_encoder({"status": app.state.health.name, "setup": setup})
 
 
-def create_app(
-    config: CogConfig,
-    shutdown_event: Optional[threading.Event],
-    threads: int = 1,
+def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
+    config: CogConfig,  # pylint: disable=redefined-outer-name
+    shutdown_event: Optional[threading.Event],  # pylint: disable=redefined-outer-name
+    threads: int = 1,  # pylint: disable=redefined-outer-name
     upload_url: Optional[str] = None,
     mode: str = "predict",
     is_build: bool = False,
+    await_explicit_shutdown: bool = False,  # pylint: disable=redefined-outer-name
 ) -> MyFastAPI:
-    app = MyFastAPI(
+    app = MyFastAPI(  # pylint: disable=redefined-outer-name
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
     )
@@ -128,9 +129,9 @@ def create_app(
     try:
         predictor_ref = get_predictor_ref(config, mode)
         predictor = load_slim_predictor_from_ref(predictor_ref, "predict")
-        InputType = get_input_type(predictor)
-        OutputType = get_output_type(predictor)
-    except Exception:
+        InputType = get_input_type(predictor)  # pylint: disable=invalid-name
+        OutputType = get_output_type(predictor)  # pylint: disable=invalid-name
+    except Exception:  # pylint: disable=broad-exception-caught
         msg = "Error while loading predictor:\n\n" + traceback.format_exc()
         add_setup_failed_routes(app, started_at, msg)
         return app
@@ -144,19 +145,15 @@ def create_app(
     class PredictionRequest(schema.PredictionRequest.with_types(input_type=InputType)):
         pass
 
-    PredictionResponse = schema.PredictionResponse.with_types(
+    PredictionResponse = schema.PredictionResponse.with_types(  # pylint: disable=invalid-name
         input_type=InputType, output_type=OutputType
     )
 
     http_semaphore = asyncio.Semaphore(threads)
 
-    if TYPE_CHECKING:
-        P = ParamSpec("P")
-        T = TypeVar("T")
-
     def limited(f: "Callable[P, Awaitable[T]]") -> "Callable[P, Awaitable[T]]":
         @functools.wraps(f)
-        async def wrapped(*args: "P.args", **kwargs: "P.kwargs") -> "T":
+        async def wrapped(*args: "P.args", **kwargs: "P.kwargs") -> "T":  # pylint: disable=redefined-outer-name
             async with http_semaphore:
                 return await f(*args, **kwargs)
 
@@ -166,15 +163,15 @@ def create_app(
         try:
             trainer_ref = get_predictor_ref(config, "train")
             trainer = load_slim_predictor_from_ref(trainer_ref, "train")
-            TrainingInputType = get_training_input_type(trainer)
-            TrainingOutputType = get_training_output_type(trainer)
+            TrainingInputType = get_training_input_type(trainer)  # pylint: disable=invalid-name
+            TrainingOutputType = get_training_output_type(trainer)  # pylint: disable=invalid-name
 
             class TrainingRequest(
                 schema.TrainingRequest.with_types(input_type=TrainingInputType)
             ):
                 pass
 
-            TrainingResponse = schema.TrainingResponse.with_types(
+            TrainingResponse = schema.TrainingResponse.with_types(  # pylint: disable=invalid-name
                 input_type=TrainingInputType, output_type=TrainingOutputType
             )
 
@@ -221,7 +218,7 @@ def create_app(
             ) -> Any:
                 return cancel(training_id)
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             if isinstance(e, (PredictorNotSet, FileNotFoundError)) and not is_build:
                 pass  # ignore missing train.py for backward compatibility with existing "bad" models in use
             else:
@@ -237,7 +234,8 @@ def create_app(
             app.state.setup_result
             and app.state.setup_result.status == schema.Status.FAILED
         ):
-            if not args.await_explicit_shutdown:  # signal shutdown if interactive run
+            # signal shutdown if interactive run
+            if not await_explicit_shutdown:
                 if shutdown_event is not None:
                     shutdown_event.set()
         else:
@@ -348,7 +346,7 @@ def create_app(
         # [compat] If body is supplied but input is None, set it to an empty
         # dictionary so that later code can be simpler.
         if request.input is None:
-            request.input = {}
+            request.input = {}  # pylint: disable=attribute-defined-outside-init
 
         try:
             # For now, we only ask PredictionRunner to handle file uploads for
@@ -393,8 +391,7 @@ def create_app(
             runner.cancel(prediction_id)
         except UnknownPredictionError:
             return JSONResponse({}, status_code=404)
-        else:
-            return JSONResponse({}, status_code=200)
+        return JSONResponse({}, status_code=200)
 
     def _check_setup_result() -> Any:
         if app.state.setup_task is None:
@@ -437,19 +434,19 @@ def _log_invalid_output(error: Any) -> None:
 
 class Server(uvicorn.Server):
     def start(self) -> None:
-        self._thread = threading.Thread(target=self.run)
+        self._thread = threading.Thread(target=self.run)  # pylint: disable=attribute-defined-outside-init
         self._thread.start()
 
     def stop(self) -> None:
         log.info("stopping server")
-        self.should_exit = True
+        self.should_exit = True  # pylint: disable=attribute-defined-outside-init
 
         self._thread.join(timeout=5)
         if not self._thread.is_alive():
             return
 
         log.warn("failed to exit after 5 seconds, setting force_exit")
-        self.force_exit = True
+        self.force_exit = True  # pylint: disable=attribute-defined-outside-init
         self._thread.join(timeout=5)
         if not self._thread.is_alive():
             return
@@ -458,17 +455,17 @@ class Server(uvicorn.Server):
         os.kill(os.getpid(), signal.SIGKILL)
 
 
-def is_port_in_use(port: int) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex(("localhost", port)) == 0
+def is_port_in_use(port: int) -> bool:  # pylint: disable=redefined-outer-name
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        return sock.connect_ex(("localhost", port)) == 0
 
 
-def signal_ignore(signum: Any, frame: Any) -> None:
+def signal_ignore(signum: Any, frame: Any) -> None:  # pylint: disable=unused-argument
     log.warn("Got a signal to exit, ignoring it...", signal=signal.Signals(signum).name)
 
 
 def signal_set_event(event: threading.Event) -> Callable[[Any, Any], None]:
-    def _signal_set_event(signum: Any, frame: Any) -> None:
+    def _signal_set_event(signum: Any, frame: Any) -> None:  # pylint: disable=unused-argument
         event.set()
 
     return _signal_set_event
@@ -530,25 +527,31 @@ if __name__ == "__main__":
 
     config = load_config()
 
-    threads: Optional[int] = args.threads
+    threads = args.threads
     if threads is None:
-        if config.get("build", {}).get("gpu", False):
-            threads = 1
-        else:
-            threads = _cpu_count()
+        gpu_enabled = config.get("build", {}).get("gpu", False)
+        threads = 1 if gpu_enabled else _cpu_count()
 
     shutdown_event = threading.Event()
+
+    await_explicit_shutdown = args.await_explicit_shutdown
+    if await_explicit_shutdown:
+        signal.signal(signal.SIGTERM, signal_ignore)
+    else:
+        signal.signal(signal.SIGTERM, signal_set_event(shutdown_event))
+
     app = create_app(
         config=config,
         shutdown_event=shutdown_event,
         threads=threads,
         upload_url=args.upload_url,
         mode=args.mode,
+        await_explicit_shutdown=await_explicit_shutdown,
     )
 
     host: str = args.host
 
-    port = int(os.getenv("PORT", 5000))
+    port = int(os.getenv("PORT", "5000"))
     if is_port_in_use(port):
         log.error(f"Port {port} is already in use")
         sys.exit(1)
@@ -562,11 +565,6 @@ if __name__ == "__main__":
         workers=1,
     )
 
-    if args.await_explicit_shutdown:
-        signal.signal(signal.SIGTERM, signal_ignore)
-    else:
-        signal.signal(signal.SIGTERM, signal_set_event(shutdown_event))
-
     s = Server(config=server_config)
     s.start()
 
@@ -578,6 +576,6 @@ if __name__ == "__main__":
     s.stop()
 
     # return error exit code when setup failed and cog is running in interactive mode (not k8s)
-    if app.state.setup_result and not args.await_explicit_shutdown:
+    if app.state.setup_result and not await_explicit_shutdown:
         if app.state.setup_result.status == schema.Status.FAILED:
-            exit(-1)
+            sys.exit(-1)

@@ -20,14 +20,14 @@ FILENAME_ILLEGAL_CHARS = set("\u0000/")
 FILENAME_MAX_LENGTH = 200
 
 
-class CogConfig(TypedDict):
+class CogConfig(TypedDict):  # pylint: disable=too-many-ancestors
     build: "CogBuildConfig"
     image: NotRequired[str]
     predict: NotRequired[str]
     train: NotRequired[str]
 
 
-class CogBuildConfig(TypedDict, total=False):
+class CogBuildConfig(TypedDict, total=False):  # pylint: disable=too-many-ancestors
     cuda: Optional[str]
     gpu: Optional[bool]
     python_packages: Optional[List[str]]
@@ -37,7 +37,7 @@ class CogBuildConfig(TypedDict, total=False):
     run: Optional[Union[List[str], List[Dict[str, Any]]]]
 
 
-def Input(
+def Input(  # pylint: disable=invalid-name, too-many-arguments
     default: Any = ...,
     description: str = None,
     ge: float = None,
@@ -89,14 +89,13 @@ class File(io.IOBase):
 
         parsed_url = urllib.parse.urlparse(value)
         if parsed_url.scheme == "data":
-            res = urllib.request.urlopen(value)  # noqa: S310
-            return io.BytesIO(res.read())
-        elif parsed_url.scheme == "http" or parsed_url.scheme == "https":
+            with urllib.request.urlopen(value) as res:  # noqa: S310
+                return io.BytesIO(res.read())
+        if parsed_url.scheme in ("http", "https"):
             return URLFile(value)
-        else:
-            raise ValueError(
-                f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
-            )
+        raise ValueError(
+            f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
+        )
 
     @classmethod
     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
@@ -105,7 +104,7 @@ class File(io.IOBase):
         field_schema.update(type="string", format="uri")
 
 
-class Path(pathlib.PosixPath):
+class Path(pathlib.PosixPath):  # pylint: disable=abstract-method
     validate_always = True
 
     @classmethod
@@ -130,7 +129,7 @@ class Path(pathlib.PosixPath):
         field_schema.update(type="string", format="uri")
 
 
-class URLPath(pathlib.PosixPath):
+class URLPath(pathlib.PosixPath):  # pylint: disable=abstract-method
     """
     URLPath is a nasty hack to ensure that we can defer the downloading of a
     URL passed as a path until later in prediction dispatch.
@@ -141,7 +140,7 @@ class URLPath(pathlib.PosixPath):
 
     _path: Optional[Path]
 
-    def __init__(self, *, source: str, filename: str, fileobj: io.IOBase) -> None:
+    def __init__(self, *, source: str, filename: str, fileobj: io.IOBase) -> None:  # pylint: disable=super-init-not-called
         self.source = source
         self.filename = filename
         self.fileobj = fileobj
@@ -150,7 +149,7 @@ class URLPath(pathlib.PosixPath):
 
     def convert(self) -> Path:
         if self._path is None:
-            dest = tempfile.NamedTemporaryFile(suffix=self.filename, delete=False)
+            dest = tempfile.NamedTemporaryFile(suffix=self.filename, delete=False)  # pylint: disable=consider-using-with
             shutil.copyfileobj(self.fileobj, dest)
             self._path = Path(dest.name)
         return self._path
@@ -195,8 +194,7 @@ class URLFile(io.IOBase):
     def __getattr__(self, name: str) -> Any:
         if name in ("__target__", "__wrapped__", "__url__"):
             raise AttributeError(name)
-        else:
-            return getattr(self.__wrapped__, name)
+        return getattr(self.__wrapped__, name)
 
     def __delattr__(self, name: str) -> None:
         if hasattr(type(self), name):
@@ -214,7 +212,7 @@ class URLFile(io.IOBase):
             return object.__getattribute__(self, "__target__")
         except AttributeError:
             url = object.__getattribute__(self, "__url__")
-            resp = requests.get(url, stream=True)
+            resp = requests.get(url, stream=True, timeout=None)
             resp.raise_for_status()
             resp.raw.decode_content = True
             object.__setattr__(self, "__target__", resp.raw)
@@ -224,23 +222,21 @@ class URLFile(io.IOBase):
         try:
             target = object.__getattribute__(self, "__target__")
         except AttributeError:
-            return "<{} at 0x{:x} for {!r}>".format(
-                type(self).__name__, id(self), object.__getattribute__(self, "__url__")
-            )
-        else:
-            return f"<{type(self).__name__} at 0x{id(self):x} wrapping {target!r}>"
+            return f"<{type(self).__name__} at 0x{id(self):x} for {object.__getattribute__(self, '__url__')!r}>"
+
+        return f"<{type(self).__name__} at 0x{id(self):x} wrapping {target!r}>"
 
 
 def get_filename(url: str) -> str:
     parsed_url = urllib.parse.urlparse(url)
 
     if parsed_url.scheme == "data":
-        resp = urllib.request.urlopen(url)  # noqa: S310
-        mime_type = resp.headers.get_content_type()
-        extension = mimetypes.guess_extension(mime_type)
-        if extension is None:
-            return "file"
-        return "file" + extension
+        with urllib.request.urlopen(url) as resp:  # noqa: S310
+            mime_type = resp.headers.get_content_type()
+            extension = mimetypes.guess_extension(mime_type)
+            if extension is None:
+                return "file"
+            return "file" + extension
 
     basename = os.path.basename(parsed_url.path)
     basename = urllib.parse.unquote_plus(basename)
@@ -262,7 +258,7 @@ def get_filename(url: str) -> str:
 Item = TypeVar("Item")
 
 
-class ConcatenateIterator(Iterator[Item]):
+class ConcatenateIterator(Iterator[Item]):  # pylint: disable=abstract-method
     @classmethod
     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
         """Defines what this type should be in openapi.json"""
