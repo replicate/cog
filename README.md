@@ -154,7 +154,7 @@ sudo make install
 Or if you are on docker:
 
 ```
-RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO_CMD=\"\" $(curl -fsSL https://cog.run/install.sh)"
+RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run/install.sh)"
 ```
 
 ## Upgrade

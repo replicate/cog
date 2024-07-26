@@ -99,11 +99,11 @@ setup_cog() {
     esac
   fi
   if command_exists curl; then
-    $SUDO_CMD curl -o $COG_LOCATION -L $BINARY_URI
+    $SUDO curl -o $COG_LOCATION -L $BINARY_URI
   elif command_exists wget; then
-    $SUDO_CMD wget $BINARY_URI -O $COG_LOCATION
+    $SUDO wget $BINARY_URI -O $COG_LOCATION
   elif command_exists fetch; then
-    $SUDO_CMD fetch -o $COG_LOCATION $BINARY_URI
+    $SUDO fetch -o $COG_LOCATION $BINARY_URI
   else
     echo "One of curl, wget, or fetch must be present for this installer to work."
     exit 1
@@ -114,7 +114,7 @@ setup_cog() {
     exit 1
   fi
 
-  $SUDO_CMD chmod +x $COG_LOCATION
+  $SUDO chmod +x $COG_LOCATION
 
   SHELL_NAME=$(basename "$SHELL")
   if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
@@ -176,10 +176,10 @@ main() {
   fi
 
   # Check the users sudo priviledges
-  if [ -z "${SUDO_CMD}" ]; then
-    SUDO_CMD="sudo"
+  if [ -z "${SUDO}" ]; then
+    SUDO="sudo"
   fi
-  if [ ! user_can_sudo ] && [ "${SUDO_CMD}" != "" ]; then
+  if [ ! user_can_sudo ] && [ "${SUDO}" != "" ]; then
     echo "You need sudo permissions to run this install script. Please try again as a sudoer."
     exit 1
   fi
