@@ -8,7 +8,7 @@ require (
 	github.com/docker/docker v27.0.3+incompatible
 	github.com/getkin/kin-openapi v0.126.0
 	github.com/golangci/golangci-lint v1.59.1
-	github.com/google/go-containerregistry v0.20.0
+	github.com/google/go-containerregistry v0.20.1
 	github.com/hashicorp/go-version v1.7.0
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/mattn/go-isatty v0.0.20
