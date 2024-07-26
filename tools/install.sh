@@ -49,7 +49,7 @@ command_exists() {
 
 user_can_sudo() {
   # Check if sudo is installed
-  command_exists sudo || return 1
+  command_exists $SUDO || return 1
   # Termux can't run sudo, so we can detect it and exit the function early.
   case "$PREFIX" in
   *com.termux*) return 1 ;;
@@ -72,7 +72,7 @@ user_can_sudo() {
   #    to run `sudo` in the default locale (with `LANG=`) so that the message
   #    stays consistent regardless of the user's locale.
   #
-  ! LANG= sudo -n -v 2>&1 | grep -q "may not run sudo"
+  ! LANG= $SUDO -n -v 2>&1 | grep -q "may not run $SUDO"
 }
 
 check_docker() {
@@ -94,7 +94,7 @@ setup_cog() {
     echo "Do you want to delete this file and continue with this installation anyway?"
     read -p "Delete file? (y/N): " choice
     case "$choice" in 
-      y|Y ) echo "Deleting existing file and continuing with installation..."; sudo rm $COG_LOCATION;;
+      y|Y ) echo "Deleting existing file and continuing with installation..."; $SUDO rm $COG_LOCATION;;
       * ) echo "Exiting installation."; exit 1;;
     esac
   fi
