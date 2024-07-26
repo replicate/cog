@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from .types import Path
 
 
-def make_encodeable(obj: Any) -> Any:
+def make_encodeable(obj: Any) -> Any:  # pylint: disable=too-many-return-statements
     """
     Returns a pickle-compatible version of the object. It will encode any Pydantic models and custom types.
 
@@ -17,6 +17,7 @@ def make_encodeable(obj: Any) -> Any:
 
     Somewhat based on FastAPI's jsonable_encoder().
     """
+
     if isinstance(obj, BaseModel):
         return make_encodeable(obj.dict(exclude_unset=True))
     if isinstance(obj, dict):
@@ -28,7 +29,7 @@ def make_encodeable(obj: Any) -> Any:
     if isinstance(obj, datetime):
         return obj.isoformat()
     try:
-        import numpy as np  # type: ignore
+        import numpy as np  # type: ignore # pylint: disable=import-outside-toplevel
     except ImportError:
         pass
     else:
@@ -48,7 +49,7 @@ def upload_files(obj: Any, upload_file: Callable[[io.IOBase], str]) -> Any:
     When a file is encountered, it will be passed to upload_file. Any paths will be opened and converted to files.
     """
     # skip four isinstance checks for fast text models
-    if type(obj) == str:  # noqa: E721
+    if type(obj) == str:  # noqa: E721 # pylint: disable=unidiomatic-typecheck
         return obj
     if isinstance(obj, dict):
         return {key: upload_files(value, upload_file) for key, value in obj.items()}

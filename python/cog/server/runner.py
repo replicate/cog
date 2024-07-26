@@ -11,7 +11,7 @@ import requests
 import structlog
 from attrs import define
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry  # type: ignore
+from urllib3.util.retry import Retry
 
 from .. import schema, types
 from ..files import put_file_to_signed_endpoint
@@ -54,7 +54,7 @@ if sys.version_info < (3, 9):
 RunnerTask: "typing.TypeAlias" = Union[PredictionTask, SetupTask]
 
 
-class PredictionRunner:
+class PredictionRunner:  # pylint: disable=too-many-instance-attributes
     def __init__(
         self,
         *,
@@ -84,7 +84,7 @@ class PredictionRunner:
             # worker state if an exception was thrown.
             try:
                 raise error
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 log.error("caught exception while running setup", exc_info=True)
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
@@ -138,7 +138,7 @@ class PredictionRunner:
             # worker state if an exception was thrown.
             try:
                 raise error
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 log.error("caught exception while running prediction", exc_info=True)
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
@@ -311,7 +311,7 @@ class PredictionEventHandler:
         try:
             # TODO: clean up output files
             return self._file_uploader(output)
-        except Exception as error:
+        except Exception as error:  # pylint: disable=broad-exception-caught
             # If something goes wrong uploading a file, it's irrecoverable.
             # The re-raised exception will be caught and cause the prediction
             # to be failed, with a useful error message.
@@ -331,7 +331,7 @@ def setup(*, worker: Worker) -> SetupResult:
                 status = (
                     schema.Status.FAILED if event.error else schema.Status.SUCCEEDED
                 )
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         logs.append(traceback.format_exc())
         status = schema.Status.FAILED
 
@@ -372,14 +372,14 @@ def predict(
             event_handler=event_handler,
             should_cancel=should_cancel,
         )
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         tb = traceback.format_exc()
         event_handler.append_logs(tb)
         event_handler.failed(error=str(e))
         raise
 
 
-def _predict(
+def _predict(  # pylint: disable=too-many-branches
     *,
     worker: Worker,
     request: schema.PredictionRequest,
@@ -420,10 +420,8 @@ def _predict(
             #
             # We don't need to do anything with them.
             pass
-
         elif isinstance(event, Log):
             event_handler.append_logs(event.message)
-
         elif isinstance(event, PredictionOutputType):
             if output_type is not None:
                 event_handler.failed(error="Predictor returned unexpected output")
@@ -441,7 +439,6 @@ def _predict(
                 event_handler.append_output(event.payload)
             else:
                 event_handler.set_output(event.payload)
-
         elif isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
             if event.canceled:
                 event_handler.canceled()
@@ -449,7 +446,6 @@ def _predict(
                 event_handler.failed(error=str(event.error_detail))
             else:
                 event_handler.succeeded()
-
         else:  # shouldn't happen, exhausted the type
             log.warn("received unexpected event from worker", data=event)
 

@@ -5,7 +5,7 @@ import requests
 import structlog
 from fastapi.encoders import jsonable_encoder
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry  # type: ignore
+from urllib3.util.retry import Retry
 
 from ..schema import PredictionResponse, Status, WebhookEvent
 from .response_throttler import ResponseThrottler
