@@ -180,17 +180,22 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			return fmt.Errorf("Failed to fetch cog base image: %w", err)
 		}
 
-		manifest, err := img.Manifest()
+		layers, err := img.Layers()
 		if err != nil {
-			return fmt.Errorf("Failed to get manifest for cog base image: %w", err)
+			return fmt.Errorf("Failed to get layers for cog base image: %w", err)
 		}
 
-		if len(manifest.Layers) == 0 {
+		if len(layers) == 0 {
 			return fmt.Errorf("Cog base image has no layers: %s", cogBaseImageName)
 		}
 
-		lastLayerIndex := len(manifest.Layers) - 1
-		lastLayer := manifest.Layers[lastLayerIndex].Digest.String()
+		lastLayerIndex := len(layers) - 1
+		layerLayerDigest, err := layers[lastLayerIndex].DiffID()
+		if err != nil {
+			return fmt.Errorf("Failed to get last layer digest for cog base image: %w", err)
+		}
+
+		lastLayer := layerLayerDigest.String()
 		console.Debugf("Last layer of the cog base image: %s", lastLayer)
 
 		labels[global.LabelNamespace+"cog-base-image-last-layer-sha"] = lastLayer
