@@ -1,4 +1,5 @@
 import asyncio
+import collections
 import os
 import threading
 import time
@@ -40,6 +41,23 @@ async def runner():
     )
     try:
         await runner.setup()
+        yield runner
+    finally:
+        runner.shutdown()
+
+
+@pytest_asyncio.fixture
+async def async_runner():
+    runner = PredictionRunner(
+        predictor_ref=_fixture_path("async_noisy_yield"),
+        shutdown_event=threading.Event(),
+        concurrency=128,
+    )
+    print("made runner")
+    try:
+        print("doing setup")
+        await runner.setup()
+        print("did setup")
         yield runner
     finally:
         runner.shutdown()
@@ -159,6 +177,25 @@ async def test_prediction_runner_cancel(runner):
     assert response.logs == ""
     assert isinstance(response.started_at, datetime)
     assert isinstance(response.completed_at, datetime)
+
+@pytest.mark.asyncio
+async def test_prediction_runner_cancel_async(async_runner):
+    responses = []
+    async def run_then_cancel():
+        request = PredictionRequest(input={"sleep": 0.001, "n": 1000})
+        initial_resp, async_result = async_runner.predict(request)
+        responses.append(initial_resp)
+        await asyncio.sleep(0.001)
+        async_runner.cancel(request.id)
+        response = await async_result
+        assert response.status == "canceled"
+
+    tasks = [asyncio.create_task(run_then_cancel()) for i in range(128)]
+    try:
+        await asyncio.wait_for(asyncio.gather(*tasks), 5)
+    except TimeoutError:
+        print(collections.Counter([r.status for r in responses]))
+        raise
 
 
 @pytest.mark.asyncio

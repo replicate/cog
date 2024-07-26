@@ -648,3 +648,21 @@ def test_weights_are_read_from_environment_variables(client, match):
     resp = client.post("/predictions")
     assert resp.status_code == 200
     assert resp.json() == match({"status": "succeeded", "output": "hello"})
+
+
+# @uses_predictor_with_client_options("async_noisy_yield", concurrency={"max": 128})
+# @pytest.mark.asyncio
+# async def test_prediction_cancel(client):
+#     for i in range(128):
+#         # TODO: needs to be async or maybe threaded
+#         resp = client.post(
+#             "/predictions",
+#             json={"id": str(i), "input": {"n": 1000, "sleep": 0.001}},
+#             headers={"Prefer": "respond-async"},
+#         )
+#         assert resp.status_code == 202
+#     for i in range(128):
+#         resp = client.post(f"/predictions/{i}/cancel")
+#         assert resp.status_code == 200
+#     # TODO: check if the prediction was actually canclled within 10s
+#     # we need to receive webhooks somehow?
