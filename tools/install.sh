@@ -176,7 +176,7 @@ main() {
   fi
 
   # Check the users sudo priviledges
-  if [ -z "${SUDO}" ]; then
+  if [ -z "${SUDO+set}" ]; then
     SUDO="sudo"
   fi
   if [ ! user_can_sudo ] && [ "${SUDO}" != "" ]; then
