@@ -10,6 +10,6 @@ class Predictor(BasePredictor):
         sleep: float = 0.0001,
     ) -> AsyncIterator[str]:
         for i in range(n):
-            print("hi")
+            #print("hi")
             yield f"hello {i}"
             await asyncio.sleep(sleep)

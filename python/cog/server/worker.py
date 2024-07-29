@@ -247,10 +247,14 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             elif isinstance(ev, Cancel):
                 # in sync mode, Cancel events are ignored
                 # only signals are respected
+                debug("ignoring cancel")
                 pass
             else:
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
         self._stream_redirector.shutdown()
+
+
+    did_cancel = 0
 
     async def _loop_async(self) -> None:
         debug("loop async")
@@ -269,10 +273,15 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 # keep track of these so they can be cancelled
                 tasks[ev.id] = asyncio.create_task(self._predict_async(ev))
             elif isinstance(ev, Cancel):
+                debug("got cancel", ev)
                 # in async mode, cancel signals are ignored
                 # only Cancel events are ignored
                 if ev.id in tasks:
+                    assert tasks[ev.id]
                     tasks[ev.id].cancel()
+                    self.did_cancel += 1
+                    debug("cancels attempted:", self.did_cancel)
+                    # await self._events_async.drain()
                 else:
                     print(f"Got unexpected cancellation: {ev}", file=sys.stderr)
             else:
@@ -289,6 +298,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         else:
             self._loop_sync()
 
+    done_sent = 0
+
     @contextlib.contextmanager
     def _handle_predict_error(self, id: str) -> Iterator[None]:
         assert self._predictor
@@ -300,6 +311,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         except CancelationException:
             done.canceled = True
         except asyncio.CancelledError:
+            # this only runs... once?
+            debug("cought asyncio CancelledError")
             done.canceled = True
         except Exception as e:
             tb = traceback.format_exc()
@@ -310,7 +323,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             self.prediction_id_context.reset(token)
             self._cancelable = False
         self._stream_redirector.drain()
+        debug("send Done")
         self.send((id, done))
+        self.done_sent += 1
+        debug("total dones sent:", self.done_sent)
+        # perhaps we should call drain... somehow
 
     def _emit_metric(self, name: str, value: "int | float") -> None:
         prediction_id = self.prediction_id_context.get(None)
@@ -335,6 +352,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
         return send
 
+    errs_seen = 0
+
     async def _predict_async(self, input: PredictionInput) -> None:
         with self._handle_predict_error(input.id):
             predict = get_predict(self._predictor)
@@ -343,8 +362,13 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             if result:
                 if inspect.isasyncgen(result):
                     send(PredictionOutputType(multi=True))
-                    async for r in result:
-                        send(PredictionOutput(payload=make_encodeable(r)))
+                    try:
+                        async for r in result:
+                            send(PredictionOutput(payload=make_encodeable(r)))
+                    except BaseException as e:
+                        self.errs_seen += 1
+                        debug("errs seen:", self.errs_seen)
+                        raise
                 elif inspect.isawaitable(result):
                     output = await result
                     send(PredictionOutputType(multi=False))

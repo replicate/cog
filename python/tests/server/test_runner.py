@@ -178,11 +178,14 @@ async def test_prediction_runner_cancel(runner):
     assert isinstance(response.started_at, datetime)
     assert isinstance(response.completed_at, datetime)
 
+
 @pytest.mark.asyncio
 async def test_prediction_runner_cancel_async(async_runner):
     responses = []
-    async def run_then_cancel():
-        request = PredictionRequest(input={"sleep": 0.001, "n": 1000})
+    n = 1000
+
+    async def run_then_cancel(i):
+        request = PredictionRequest(input={"sleep": 1 / n, "n": n}, id=str(i))
         initial_resp, async_result = async_runner.predict(request)
         responses.append(initial_resp)
         await asyncio.sleep(0.001)
@@ -190,11 +193,13 @@ async def test_prediction_runner_cancel_async(async_runner):
         response = await async_result
         assert response.status == "canceled"
 
-    tasks = [asyncio.create_task(run_then_cancel()) for i in range(128)]
+    tasks = [asyncio.create_task(run_then_cancel(i)) for i in range(128)]
     try:
-        await asyncio.wait_for(asyncio.gather(*tasks), 5)
+        await asyncio.sleep(5)
+        await asyncio.wait_for(asyncio.gather(*tasks), 3)
     except TimeoutError:
         print(collections.Counter([r.status for r in responses]))
+        await asyncio.sleep(5)
         raise
 
 

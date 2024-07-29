@@ -32,7 +32,7 @@ class AsyncConnection(Generic[X]):
         # sock = socket.socket(fileno=fd)
         # we don't want to see EAGAIN, we'd rather wait
         # however, perhaps this is wrong and in some cases this could still block terribly
-        # sock.setblocking(False)
+        sock.setblocking(True)
         # TODO: use /proc/sys/net/core/rmem_max, but special-case language models
         sz = 65536
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, sz)
@@ -99,7 +99,8 @@ class AsyncConnection(Generic[X]):
     #     with self.sync_lock:
     #         self.wrapped_conn.send(obj)
 
-    # we could implement async def drain() but it's not really necessary for our purposes
+    async def drain(self) -> None:
+        await self._writer.drain()
 
     def close(self) -> None:
         self.wrapped_conn.close()
