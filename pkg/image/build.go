@@ -2,12 +2,15 @@ package image
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path"
+	"time"
 
+	"github.com/docker/docker/client"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -30,6 +33,8 @@ const bundledSchemaPy = ".cog/schema.py"
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
 func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string, useCogBaseImage bool) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
+
+	ping()
 
 	// remove bundled schema files that may be left from previous builds
 	_ = os.Remove(bundledSchemaFile)
@@ -359,4 +364,23 @@ func restoreDockerignore() error {
 	}
 
 	return os.Rename(dockerignoreBackupPath, ".dockerignore")
+}
+
+func ping() {
+	cli, err := client.NewClientWithOpts(client.FromEnv)
+	if err != nil {
+		fmt.Println("Failed to create docker client.")
+		return
+	}
+
+	ctxTimeout, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	_, err = cli.Ping(ctxTimeout)
+
+	if err != nil {
+		fmt.Println("Failed to ping docker, please try restarting the docker daemon.")
+		// We swallow this error, for now this should just be a warning.
+		return
+	}
 }
