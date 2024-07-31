@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/mitchellh/go-homedir"
@@ -64,6 +65,10 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	imageName := ""
 	volumes := []docker.Volume{}
 	gpus := gpusFlag
+
+	if err := docker.Ping(cmd.Context(), time.Second*5); err != nil {
+		return fmt.Errorf("Failed to ping docker, please try restarting the docker daemon: %w", err)
+	}
 
 	if len(args) == 0 {
 		// Build image
