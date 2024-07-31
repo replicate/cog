@@ -118,6 +118,13 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Copy arm64 to aarch64
+        run: mkdir -p dist/cog_linux_aarch64 && cp dist/cog_linux_arm64/cog dist/cog_linux_aarch64/cog
+      - name: Upload aarch64 cog binary to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cog_Linux_aarch64
+          path: dist/cog_linux_aarch64/cog
       - name: Build Python package
         id: build-python-package
         run: |
