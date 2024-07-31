@@ -555,6 +555,7 @@ if __name__ == "__main__":
         log_config=None,
         # This is the default, but to be explicit: only run a single worker
         workers=1,
+        loop="uvloop",
     )
 
     if args.await_explicit_shutdown:
