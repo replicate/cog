@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -50,6 +51,10 @@ Otherwise, it will build the model in the current directory and train it.`,
 }
 
 func cmdTrain(cmd *cobra.Command, args []string) error {
+	if err := docker.Ping(cmd.Context(), time.Second*5); err != nil {
+		return fmt.Errorf("Failed to ping docker, please try restarting the docker daemon: %w", err)
+	}
+
 	imageName := ""
 	volumes := []docker.Volume{}
 	gpus := gpusFlag
