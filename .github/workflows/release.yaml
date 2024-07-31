@@ -7,7 +7,6 @@ on:
       - completed
     branches:
       - main
-  workflow_dispatch:
 
 concurrency:
   group: release-${{ github.ref }}
