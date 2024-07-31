@@ -1,11 +1,9 @@
 package cli
 
 import (
-	"fmt"
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -52,10 +50,6 @@ func newRunCommand() *cobra.Command {
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	if err := docker.Ping(cmd.Context(), time.Second*5); err != nil {
-		return fmt.Errorf("Failed to ping docker, please try restarting the docker daemon: %w", err)
-	}
-
 	cfg, projectDir, err := config.GetConfig(projectDirFlag)
 	if err != nil {
 		return err

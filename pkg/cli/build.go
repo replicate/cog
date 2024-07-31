@@ -4,13 +4,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
 	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -47,10 +45,6 @@ func newBuildCommand() *cobra.Command {
 }
 
 func buildCommand(cmd *cobra.Command, args []string) error {
-	if err := docker.Ping(cmd.Context(), time.Second*5); err != nil {
-		return fmt.Errorf("Failed to ping docker, please try restarting the docker daemon: %w", err)
-	}
-
 	cfg, projectDir, err := config.GetConfig(projectDirFlag)
 	if err != nil {
 		return err
