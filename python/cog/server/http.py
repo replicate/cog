@@ -449,7 +449,7 @@ class Server(uvicorn.Server):
 
         self._thread.join(timeout=5)
         if not self._thread.is_alive():
-            log.info("server thread is not running after join")
+            log.info("server has stopped gracefully, not forcing exit")
             return
 
         log.warn("failed to exit after 5 seconds, setting force_exit")

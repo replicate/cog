@@ -198,8 +198,12 @@ class PredictionRunner:
             except Exception:
                 logs.append(traceback.format_exc())
                 status = schema.Status.FAILED
+            except asyncio.CancelledError:
+                self.log.info("caught CancelledError during setup")
+                logs.append(traceback.format_exc())
+                status = schema.Status.FAILED
             except BaseException:
-                self.log.info("caught BaseException during setup, did something go wrong?")
+                self.log.info("caught BaseException during setup")
                 logs.append(traceback.format_exc())
                 status = schema.Status.FAILED
 
@@ -237,7 +241,9 @@ class PredictionRunner:
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
             except BaseException:
-                self.log.error("caught base exception while running setup", exc_info=True)
+                self.log.error(
+                    "caught base exception while running setup", exc_info=True
+                )
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
 
@@ -340,7 +346,7 @@ class PredictionRunner:
                 await event_handler.failed(error=str(e))
                 self.log.warn("failed to download url path from input", exc_info=True)
                 return event_handler.response
-            except Exception as e: # should this be BaseException?
+            except Exception as e:  # should this be BaseException?
                 tb = traceback.format_exc()
                 await event_handler.append_logs(tb)
                 await event_handler.failed(error=str(e))
@@ -363,6 +369,13 @@ class PredictionRunner:
                 # since this is just before this coroutine exits
                 self._predictions.pop(request.id)
 
+                # all predictions in flight have been processed, we can exit
+                if self._shutting_down and not self._predictions:
+                    # note: this will do a bunch of work
+                    # and potentially slow down the coroutine completing
+                    # however, this should be okay
+                    self.terminate()
+
         # this is still a little silly
         result = asyncio.create_task(async_predict_handling_errors())
         # result.add_done_callback(self.make_error_handler("prediction"))
@@ -381,16 +394,25 @@ class PredictionRunner:
         if self._child.is_alive():
             self.log.info("child is alive during shutdown, sending Shutdown event")
             self._events.send(Shutdown())
+            asyncio.create_task(self.terminate_later())
+
+    async def terminate_later(self) -> None:
+        self.log.info("scheduling termination in 10s")
+        await asyncio.sleep(10)
+        self.log.info("10s has passed, terminating")
+        self.terminate()
 
     def terminate(self) -> None:
         self.log.info("runner.terminate is called")
-        for _, task in self._predictions.values():
-            task.cancel()
         if self._state == WorkerState.DEFUNCT:
+            self.log.info("worker state is already defunct, no need to terminate")
             return
 
-        self._terminating.set()
         self._state = WorkerState.DEFUNCT
+        for _, task in self._predictions.values():
+            task.cancel()
+
+        self._terminating.set()
 
         if self._child.is_alive():
             self._child.terminate()
