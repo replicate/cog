@@ -369,13 +369,6 @@ class PredictionRunner:
                 # since this is just before this coroutine exits
                 self._predictions.pop(request.id)
 
-                # all predictions in flight have been processed, we can exit
-                if self._shutting_down and not self._predictions:
-                    # note: this will do a bunch of work
-                    # and potentially slow down the coroutine completing
-                    # however, this should be okay
-                    self.terminate()
-
         # this is still a little silly
         result = asyncio.create_task(async_predict_handling_errors())
         # result.add_done_callback(self.make_error_handler("prediction"))
@@ -384,7 +377,8 @@ class PredictionRunner:
 
         return (response, result)
 
-    def shutdown(self) -> None:
+    async def shutdown(self) -> None:
+        # this is called by the app's shutdown handler. server won't exit until this is done
         self.log.info("runner.shutdown called")
         if self._state == WorkerState.DEFUNCT:
             return
@@ -394,32 +388,34 @@ class PredictionRunner:
         if self._child.is_alive():
             self.log.info("child is alive during shutdown, sending Shutdown event")
             self._events.send(Shutdown())
-            asyncio.create_task(self.terminate_later())
 
-    async def terminate_later(self) -> None:
-        self.log.info("scheduling termination in 10s")
-        await asyncio.sleep(10)
-        self.log.info("10s has passed, terminating")
-        self.terminate()
-
-    def terminate(self) -> None:
-        self.log.info("runner.terminate is called")
         if self._state == WorkerState.DEFUNCT:
             self.log.info("worker state is already defunct, no need to terminate")
             return
 
+        prediction_tasks = [task for _, task in self._predictions.values()]
+        try:
+            if prediction_tasks:
+                await asyncio.wait(prediction_tasks, timeout=9)
+        # should we do this?
+        except TimeoutError:
+            self.log.warn("runner timeout while waiting for predictions to complete")
+
         self._state = WorkerState.DEFUNCT
-        for _, task in self._predictions.values():
+        # in case we timed out, cancel everything
+        for task in prediction_tasks:
             task.cancel()
 
+        # tell _read_events and Mux to exit
         self._terminating.set()
 
         if self._child.is_alive():
             self._child.terminate()
             self.log.info("joining child worker")
             self._child.join()
+        # close the pipe
         self._events.close()
-
+        # stop reading events from the pipe
         if self._read_events_task:
             self._read_events_task.cancel()
 
