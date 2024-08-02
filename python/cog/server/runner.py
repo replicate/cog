@@ -202,10 +202,7 @@ class PredictionRunner:
                 self.log.info("caught CancelledError during setup")
                 logs.append(traceback.format_exc())
                 status = schema.Status.FAILED
-            except BaseException:
-                self.log.info("caught BaseException during setup")
-                logs.append(traceback.format_exc())
-                status = schema.Status.FAILED
+                # unclear if we should re-raise this
 
             # fixme: handle BaseException is mux.read times out and gets cancelled
 
@@ -246,6 +243,7 @@ class PredictionRunner:
                 )
                 if self._shutdown_event is not None:
                     self._shutdown_event.set()
+                raise
 
         result = asyncio.create_task(inner())
         result.add_done_callback(handle_error)
