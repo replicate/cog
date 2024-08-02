@@ -65,13 +65,27 @@ func push(cmd *cobra.Command, args []string) error {
 
 	console.Infof("\nPushing image '%s'...", imageName)
 
-	exitStatus := docker.Push(imageName)
-	if exitStatus == nil {
-		console.Infof("Image '%s' pushed", imageName)
-		if strings.HasPrefix(imageName, replicatePrefix) {
-			replicatePage := fmt.Sprintf("https://%s", strings.Replace(imageName, global.ReplicateRegistryHost, global.ReplicateWebsiteHost, 1))
-			console.Infof("\nRun your model on Replicate:\n    %s", replicatePage)
+	err = docker.Push(imageName)
+	if err != nil {
+		if strings.Contains(err.Error(), "NAME_UNKNOWN") {
+			return fmt.Errorf("Unable to find existing Replicate model for %s. " +
+				"Go to replicate.com and create a new model before pushing." +
+				"\n\n" +
+				"If the model already exists, you may be getting this error " +
+				"because you're not logged in as owner of the model. " +
+				"This can happen if you did `sudo cog login` instead of `cog login` " +
+				"or `sudo cog push` instead of `cog push`, " +
+				"which causes Docker to use the wrong Docker credentials." +
+				imageName)
 		}
+		return fmt.Errorf("Failed to push image: %w", err)
 	}
-	return exitStatus
+
+	console.Infof("Image '%s' pushed", imageName)
+	if strings.HasPrefix(imageName, replicatePrefix) {
+		replicatePage := fmt.Sprintf("https://%s", strings.Replace(imageName, global.ReplicateRegistryHost, global.ReplicateWebsiteHost, 1))
+		console.Infof("\nRun your model on Replicate:\n    %s", replicatePage)
+	}
+
+	return nil
 }
