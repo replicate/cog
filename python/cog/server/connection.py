@@ -19,11 +19,16 @@ class AsyncConnection(Generic[X]):
         self.started = False
 
     async def async_init(self) -> None:
+        if self.started:
+            return
         fd = self.wrapped_conn.fileno()
         # mp may have handled something already but let's dup so exit is clean
         dup_fd = os.dup(fd)
         sock = socket.socket(fileno=dup_fd)
-        sock.setblocking(False)
+        # we don't want to see EAGAIN, we'd rather wait
+        # however, perhaps this is wrong and in some cases this could still block terribly
+        # sock.setblocking(False)
+        sock.setblocking(True)
         # TODO: use /proc/sys/net/core/rmem_max, but special-case language models
         sz = 65536
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, sz)
