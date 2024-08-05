@@ -32,7 +32,7 @@ build:
     - "libglib2.0-0"
   python_version: "3.12"
   python_packages:
-    - "torch==2.2.1"
+    - "torch==2.3"
 predict: "predict.py:Predictor"
 ```
 
