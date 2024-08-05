@@ -13,7 +13,7 @@ urls."Source" = "https://github.com/replicate/cog"
 requires-python = ">=3.7"
 dependencies = [
   # intentionally loose. perhaps these should be vendored to not collide with user code?
-  "attrs>=20.1,<24",
+  "attrs>=20.1,<25",
   "fastapi>=0.75.2,<0.99.0",
   "pydantic>=1.9,<2",
   "PyYAML",
