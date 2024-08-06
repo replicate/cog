@@ -1,18 +1,13 @@
 import os
 import threading
+from concurrent.futures import Future
 from datetime import datetime
 from unittest import mock
 
 import pytest
 
 from cog.schema import PredictionRequest, PredictionResponse, Status, WebhookEvent
-from cog.server.eventtypes import (
-    Done,
-    Heartbeat,
-    Log,
-    PredictionOutput,
-    PredictionOutputType,
-)
+from cog.server.eventtypes import Done, Log, PredictionOutput, PredictionOutputType
 from cog.server.runner import (
     PredictionEventHandler,
     PredictionRunner,
@@ -61,7 +56,7 @@ def test_prediction_runner(runner):
     assert response.output == "done in 0.1 seconds"
     assert response.status == "succeeded"
     assert response.error is None
-    assert response.logs == ""
+    assert response.logs == "starting\n"
     assert isinstance(response.started_at, datetime)
     assert isinstance(response.completed_at, datetime)
 
@@ -116,7 +111,7 @@ def test_prediction_runner_cancel(runner):
     assert response.output is None
     assert response.status == "canceled"
     assert response.error is None
-    assert response.logs == ""
+    assert response.logs == "starting\n"
     assert isinstance(response.started_at, datetime)
     assert isinstance(response.completed_at, datetime)
 
@@ -144,16 +139,50 @@ def test_prediction_runner_cancel_by_mismatched_id(runner):
     assert response.status == "succeeded"
 
 
-# list of (events, calls)
+# list of (events, done, calls)
 PREDICT_TESTS = [
-    ([Heartbeat()], []),
-    ([Done()], [mock.call.succeeded()]),
-    ([Done(canceled=True)], [mock.call.canceled()]),
-    ([Done(error=True, error_detail="foo")], [mock.call.failed(error="foo")]),
-    ([Log(source="stdout", message="help")], [mock.call.append_logs("help")]),
     (
-        [PredictionOutputType(multi=False), PredictionOutput(payload="hello world")],
-        [mock.call.set_output("hello world")],
+        [],
+        Done(),
+        [
+            mock.call.succeeded(),
+        ],
+    ),
+    (
+        [],
+        Done(canceled=True),
+        [
+            mock.call.canceled(),
+        ],
+    ),
+    (
+        [],
+        Done(error=True, error_detail="foo"),
+        [
+            mock.call.failed(error="foo"),
+        ],
+    ),
+    (
+        [
+            Log(source="stdout", message="help"),
+        ],
+        Done(),
+        [
+            mock.call.append_logs("help"),
+            mock.call.succeeded(),
+        ],
+    ),
+    (
+        [
+            PredictionOutputType(multi=False),
+            PredictionOutput(payload="hello world"),
+        ],
+        Done(),
+        [
+            mock.call.set_output_type(multi=False),
+            mock.call.append_output("hello world"),
+            mock.call.succeeded(),
+        ],
     ),
     (
         [
@@ -161,10 +190,12 @@ PREDICT_TESTS = [
             PredictionOutput(payload="hello"),
             PredictionOutput(payload="world"),
         ],
+        Done(),
         [
-            mock.call.set_output([]),
+            mock.call.set_output_type(multi=True),
             mock.call.append_output("hello"),
             mock.call.append_output("world"),
+            mock.call.succeeded(),
         ],
     ),
     (
@@ -173,35 +204,59 @@ PREDICT_TESTS = [
             PredictionOutputType(multi=False),
             PredictionOutput(payload="hello world"),
         ],
-        [mock.call.failed(error="Predictor returned unexpected output")],
+        Done(),
+        [
+            mock.call.set_output_type(multi=False),
+            mock.call.set_output_type(multi=False),
+            mock.call.append_output("hello world"),
+            mock.call.succeeded(),
+        ],
     ),
     (
-        [PredictionOutput(payload="hello world"), Done()],
-        [mock.call.failed(error="Predictor returned unexpected output")],
+        [
+            PredictionOutput(payload="hello world"),
+        ],
+        Done(),
+        [
+            mock.call.append_output("hello world"),
+            mock.call.succeeded(),
+        ],
     ),
 ]
 
 
-def fake_worker(events):
+def fake_worker(events, done):
     class FakeWorker:
-        def predict(self, input_, poll=None):
-            yield from events
+        def predict(self, _):
+            for event in events:
+                self.subscriber(event)
+            fut = Future()
+            fut.set_result(done)
+            return fut
+
+        def subscribe(self, subscriber):
+            self.subscriber = subscriber
+
+        def unsubscribe(self, _):
+            pass
 
     return FakeWorker()
 
 
-@pytest.mark.parametrize("events,calls", PREDICT_TESTS)
-def test_predict(events, calls):
-    worker = fake_worker(events)
+@pytest.mark.parametrize("events,done,calls", PREDICT_TESTS)
+def test_predict(events, done, calls):
+    worker = fake_worker(events, done)
     request = PredictionRequest(input={"text": "hello"}, foo="bar")
     event_handler = mock.Mock()
     should_cancel = threading.Event()
+    should_exit = threading.Event()
 
     predict(
         worker=worker,
         request=request,
         event_handler=event_handler,
         should_cancel=should_cancel,
+        should_exit=should_exit,
     )
 
     assert event_handler.method_calls == calls
@@ -216,12 +271,21 @@ def test_prediction_event_handler():
     assert p.logs == ""
     assert isinstance(p.started_at, datetime)
 
-    h.set_output("giraffes")
+    h.set_output_type(multi=False)
+    h.append_output("giraffes")
     assert p.output == "giraffes"
 
-    # cheat and reset output behind event handler's back
-    p.output = None
-    h.set_output([])
+
+def test_prediction_event_handler_multi():
+    p = PredictionResponse(input={"hello": "there"})
+    h = PredictionEventHandler(p)
+
+    assert p.status == Status.PROCESSING
+    assert p.output is None
+    assert p.logs == ""
+    assert isinstance(p.started_at, datetime)
+
+    h.set_output_type(multi=True)
     h.append_output("elephant")
     h.append_output("duck")
     assert p.output == ["elephant", "duck"]
@@ -244,12 +308,12 @@ def test_prediction_event_handler():
     assert isinstance(p.completed_at, datetime)
 
 
-def test_prediction_event_handler_webhook_sender(match):
+def test_prediction_event_handler_webhook_sender():
     s = mock.Mock()
     p = PredictionResponse(input={"hello": "there"})
     h = PredictionEventHandler(p, webhook_sender=s)
 
-    h.set_output([])
+    h.set_output_type(multi=True)
     h.append_output("elephant")
     h.append_output("duck")
 
@@ -281,14 +345,24 @@ def test_prediction_event_handler_webhook_sender_intermediate():
     assert actual.status == "processing"
 
     s.reset_mock()
-    h.set_output("giraffes")
+    h.set_output_type(multi=False)
+    h.append_output("giraffes")
     assert s.call_count == 0
 
-    # cheat and reset output behind event handler's back
-    p.output = None
+
+def test_prediction_event_handler_webhook_sender_intermediate_multi():
+    s = mock.Mock()
+    p = PredictionResponse(input={"hello": "there"})
+    h = PredictionEventHandler(p, webhook_sender=s)
+
+    s.assert_called_once_with(mock.ANY, WebhookEvent.START)
+    actual = s.call_args[0][0]
+    assert actual.status == "processing"
+
     s.reset_mock()
-    h.set_output([])
+    h.set_output_type(multi=True)
     h.append_output("elephant")
+    print(s.call_args_list)
     assert s.call_count == 1
     actual = s.call_args_list[0][0][0]
     assert actual.output == ["elephant"]
@@ -347,17 +421,20 @@ def test_prediction_event_handler_file_uploads():
     # passes the output into the upload files function and uses whatever comes
     # back as final output.
     u.return_value = "http://example.com/output-image.png"
-    h.set_output("Path(to/my/file)")
+    h.set_output_type(multi=False)
+    h.append_output("Path(to/my/file)")
 
     u.assert_called_once_with("Path(to/my/file)")
     assert p.output == "http://example.com/output-image.png"
 
-    # cheat and reset output behind event handler's back
-    p.output = None
-    u.reset_mock()
+
+def test_prediction_event_handler_file_uploads_multi():
+    u = mock.Mock()
+    p = PredictionResponse(input={"hello": "there"})
+    h = PredictionEventHandler(p, file_uploader=u)
 
     u.return_value = []
-    h.set_output([])
+    h.set_output_type(multi=True)
 
     u.return_value = "http://example.com/hello.jpg"
     h.append_output("hello.jpg")
@@ -365,5 +442,5 @@ def test_prediction_event_handler_file_uploads():
     u.return_value = "http://example.com/world.jpg"
     h.append_output("world.jpg")
 
-    u.assert_has_calls([mock.call([]), mock.call("hello.jpg"), mock.call("world.jpg")])
+    u.assert_has_calls([mock.call("hello.jpg"), mock.call("world.jpg")])
     assert p.output == ["http://example.com/hello.jpg", "http://example.com/world.jpg"]
