@@ -3,6 +3,7 @@ import sys
 import threading
 import traceback
 import typing  # TypeAlias, py3.10
+from concurrent.futures import TimeoutError
 from datetime import datetime, timezone
 from multiprocessing.pool import AsyncResult, ThreadPool
 from typing import Any, Callable, Optional, Tuple, Union, cast
@@ -16,12 +17,12 @@ from urllib3.util.retry import Retry
 from .. import schema, types
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
-from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
+from .eventtypes import Done, Log, PredictionOutput, PredictionOutputType
 from .probes import ProbeHelper
 from .telemetry import current_trace_context
 from .useragent import get_user_agent
 from .webhook import SKIP_START_EVENT, webhook_caller_filtered
-from .worker import Worker
+from .worker import Worker, _PublicEventType
 
 log = structlog.get_logger("cog.server.runner")
 
@@ -70,6 +71,7 @@ class PredictionRunner:  # pylint: disable=too-many-instance-attributes
 
         self._worker = Worker(predictor_ref=predictor_ref)
         self._should_cancel = threading.Event()
+        self._should_exit = threading.Event()
 
         self._shutdown_event = shutdown_event
         self._upload_url = upload_url
@@ -151,6 +153,7 @@ class PredictionRunner:  # pylint: disable=too-many-instance-attributes
                 "request": prediction,
                 "event_handler": event_handler,
                 "should_cancel": self._should_cancel,
+                "should_exit": self._should_exit,
             },
             callback=cleanup,
             error_callback=handle_error,
@@ -170,6 +173,7 @@ class PredictionRunner:  # pylint: disable=too-many-instance-attributes
         return False
 
     def shutdown(self) -> None:
+        self._should_exit.set()
         self._worker.terminate()
         self._threadpool.terminate()
         self._threadpool.join()
@@ -235,6 +239,7 @@ class PredictionEventHandler:
         log.info("starting prediction")
         self.p = p
         self.p.status = schema.Status.PROCESSING
+        self._output_type_multi = None
         self.p.output = None
         self.p.logs = ""
         self.p.started_at = datetime.now(tz=timezone.utc)
@@ -252,19 +257,33 @@ class PredictionEventHandler:
     def response(self) -> schema.PredictionResponse:
         return self.p
 
-    def set_output(self, output: Any) -> None:
-        assert self.p.output is None, "Predictor unexpectedly returned multiple outputs"
-        self.p.output = self._upload_files(output)
-        # We don't send a webhook for compatibility with the behaviour of
-        # redis_queue. In future we can consider whether it makes sense to send
-        # one here.
+    def set_output_type(self, *, multi: bool) -> None:
+        assert (
+            self._output_type_multi is None
+        ), "Predictor unexpectedly returned multiple output types"
+        assert (
+            self.p.output is None
+        ), "Predictor unexpectedly returned output type after output"
+
+        if multi:
+            self.p.output = []
+
+        self._output_type_multi = multi
 
     def append_output(self, output: Any) -> None:
-        assert isinstance(
-            self.p.output, list
-        ), "Cannot append output before setting output"
-        self.p.output.append(self._upload_files(output))
-        self._send_webhook(schema.WebhookEvent.OUTPUT)
+        assert (
+            self._output_type_multi is not None
+        ), "Predictor unexpectedly returned output before output type"
+
+        uploaded_output = self._upload_files(output)
+        if self._output_type_multi:
+            self.p.output.append(uploaded_output)
+            self._send_webhook(schema.WebhookEvent.OUTPUT)
+        else:
+            self.p.output = uploaded_output
+            # We don't send a webhook for compatibility with the behaviour of
+            # redis_queue. In future we can consider whether it makes sense to send
+            # one here.
 
     def append_logs(self, logs: str) -> None:
         assert self.p.logs is not None
@@ -323,21 +342,22 @@ def setup(*, worker: Worker) -> SetupResult:
     status = None
     started_at = datetime.now(tz=timezone.utc)
 
+    def append_logs(event: _PublicEventType) -> None:
+        if isinstance(event, Log):
+            logs.append(event.message)
+
+    subscription_idx = worker.subscribe(append_logs)
     try:
-        for event in worker.setup():
-            if isinstance(event, Log):
-                logs.append(event.message)
-            elif isinstance(event, Done):
-                status = (
-                    schema.Status.FAILED if event.error else schema.Status.SUCCEEDED
-                )
+        result = worker.setup().result()
+        if result.error:
+            status = schema.Status.FAILED
+        else:
+            status = schema.Status.SUCCEEDED
     except Exception:  # pylint: disable=broad-exception-caught
         logs.append(traceback.format_exc())
         status = schema.Status.FAILED
-
-    if status is None:
-        logs.append("Error: did not receive 'done' event from setup!")
-        status = schema.Status.FAILED
+    finally:
+        worker.unsubscribe(subscription_idx)
 
     completed_at = datetime.now(tz=timezone.utc)
 
@@ -360,6 +380,7 @@ def predict(
     request: schema.PredictionRequest,
     event_handler: PredictionEventHandler,
     should_cancel: threading.Event,
+    should_exit: threading.Event,
 ) -> schema.PredictionResponse:
     # Set up logger context within prediction thread.
     structlog.contextvars.clear_contextvars()
@@ -371,6 +392,7 @@ def predict(
             request=request,
             event_handler=event_handler,
             should_cancel=should_cancel,
+            should_exit=should_exit,
         )
     except Exception as e:  # pylint: disable=broad-exception-caught
         tb = traceback.format_exc()
@@ -379,16 +401,31 @@ def predict(
         raise
 
 
+def _handle_event(
+    event_handler: PredictionEventHandler, event: _PublicEventType
+) -> None:
+    if isinstance(event, Log):
+        event_handler.append_logs(event.message)
+    elif isinstance(event, PredictionOutputType):
+        event_handler.set_output_type(multi=event.multi)
+    elif isinstance(event, PredictionOutput):
+        event_handler.append_output(event.payload)
+    elif isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
+        pass
+    else:  # shouldn't happen, exhausted the type
+        log.warn("received unexpected event from worker", data=event)
+
+
 def _predict(  # pylint: disable=too-many-branches
     *,
     worker: Worker,
     request: schema.PredictionRequest,
     event_handler: PredictionEventHandler,
     should_cancel: threading.Event,
+    should_exit: threading.Event,
 ) -> schema.PredictionResponse:
     initial_prediction = request.dict()
 
-    output_type = None
     input_dict = initial_prediction["input"]
 
     for k, v in input_dict.items():
@@ -408,46 +445,36 @@ def _predict(  # pylint: disable=too-many-branches
             log.warn("Failed to download url path from input", exc_info=True)
             return event_handler.response
 
-    for event in worker.predict(input_dict, poll=0.1):
-        if should_cancel.is_set():
-            worker.cancel()
-            should_cancel.clear()
+    subscription_idx = worker.subscribe(
+        lambda event: _handle_event(event_handler, event)
+    )
+    try:
+        prediction = worker.predict(input_dict)
 
-        if isinstance(event, Heartbeat):
-            # Heartbeat events exist solely to ensure that we have a
-            # regular opportunity to check for cancelation and
-            # timeouts.
-            #
-            # We don't need to do anything with them.
-            pass
-        elif isinstance(event, Log):
-            event_handler.append_logs(event.message)
-        elif isinstance(event, PredictionOutputType):
-            if output_type is not None:
-                event_handler.failed(error="Predictor returned unexpected output")
+        while True:
+            try:
+                prediction.result(timeout=0.1)
+            except TimeoutError:
+                pass
+            else:
                 break
 
-            output_type = event
-            if output_type.multi:
-                event_handler.set_output([])
-        elif isinstance(event, PredictionOutput):
-            if output_type is None:
-                event_handler.failed(error="Predictor returned unexpected output")
-                break
+            if should_cancel.is_set():
+                worker.cancel()
+                should_cancel.clear()
 
-            if output_type.multi:
-                event_handler.append_output(event.payload)
-            else:
-                event_handler.set_output(event.payload)
-        elif isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
-            if event.canceled:
-                event_handler.canceled()
-            elif event.error:
-                event_handler.failed(error=str(event.error_detail))
-            else:
-                event_handler.succeeded()
-        else:  # shouldn't happen, exhausted the type
-            log.warn("received unexpected event from worker", data=event)
+            if should_exit.is_set():
+                return event_handler.response
+
+        result = prediction.result()
+        if result.canceled:
+            event_handler.canceled()
+        elif result.error:
+            event_handler.failed(error=str(result.error_detail))
+        else:
+            event_handler.succeeded()
+    finally:
+        worker.unsubscribe(subscription_idx)
 
     return event_handler.response
 
