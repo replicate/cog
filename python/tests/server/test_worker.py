@@ -2,7 +2,7 @@ import os
 import threading
 import time
 from concurrent.futures import TimeoutError
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 import pytest
 from attrs import define, field
@@ -81,8 +81,8 @@ PREDICT_LOGS_FIXTURES = [
 
 @define
 class Result:
-    stdout_lines: list[str] = field(factory=list)
-    stderr_lines: list[str] = field(factory=list)
+    stdout_lines: List[str] = field(factory=list)
+    stderr_lines: List[str] = field(factory=list)
     heartbeat_count: int = 0
     output_type: Optional[PredictionOutputType] = None
     output: Any = None

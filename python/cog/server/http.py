@@ -13,7 +13,6 @@ from datetime import datetime, timezone
 from enum import Enum, auto, unique
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
-import attrs
 import structlog
 import uvicorn
 from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
@@ -87,7 +86,7 @@ def add_setup_failed_routes(
     result = SetupResult(
         started_at=started_at,
         completed_at=datetime.now(tz=timezone.utc),
-        logs=msg,
+        logs=[msg],
         status=schema.Status.FAILED,
     )
     app.state.setup_result = result
@@ -95,8 +94,13 @@ def add_setup_failed_routes(
 
     @app.get("/health-check")
     async def healthcheck_startup_failed() -> Any:
-        setup = attrs.asdict(app.state.setup_result)
-        return jsonable_encoder({"status": app.state.health.name, "setup": setup})
+        assert app.state.setup_result
+        return jsonable_encoder(
+            {
+                "status": app.state.health.name,
+                "setup": app.state.setup_result.to_dict(),
+            }
+        )
 
 
 def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
@@ -260,7 +264,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             health = Health.BUSY if runner.is_busy() else Health.READY
         else:
             health = app.state.health
-        setup = attrs.asdict(app.state.setup_result) if app.state.setup_result else {}
+        setup = app.state.setup_result.to_dict() if app.state.setup_result else {}
         return jsonable_encoder({"status": health.name, "setup": setup})
 
     @limited

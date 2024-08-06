@@ -6,10 +6,11 @@ import typing  # TypeAlias, py3.10
 from concurrent.futures import TimeoutError
 from datetime import datetime, timezone
 from multiprocessing.pool import AsyncResult, ThreadPool
-from typing import Any, Callable, Optional, Tuple, Union, cast
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union, cast
 
 import requests
 import structlog
+from attr import field
 from attrs import define
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -17,6 +18,7 @@ from urllib3.util.retry import Retry
 from .. import schema, types
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
+from ..predictor import BaseInput
 from .eventtypes import Done, Log, PredictionOutput, PredictionOutputType
 from .probes import ProbeHelper
 from .telemetry import current_trace_context
@@ -42,9 +44,17 @@ class UnknownPredictionError(Exception):
 @define
 class SetupResult:
     started_at: datetime
-    completed_at: datetime
-    logs: str
-    status: schema.Status
+    completed_at: Optional[datetime] = None
+    logs: List[str] = field(factory=list)
+    status: Optional[Literal[schema.Status.FAILED, schema.Status.SUCCEEDED]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
+            "logs": "".join(self.logs),
+            "status": self.status,
+        }
 
 
 PredictionTask: "typing.TypeAlias" = "AsyncResult[schema.PredictionResponse]"
@@ -63,7 +73,6 @@ class PredictionRunner:  # pylint: disable=too-many-instance-attributes
         shutdown_event: Optional[threading.Event],
         upload_url: Optional[str] = None,
     ) -> None:
-        self._thread = None
         self._threadpool = ThreadPool(processes=1)
 
         self._response: Optional[schema.PredictionResponse] = None
@@ -313,6 +322,23 @@ class PredictionEventHandler:
         self._set_completed_at()
         self._send_webhook(schema.WebhookEvent.COMPLETED)
 
+    def handle_event(self, event: _PublicEventType) -> None:
+        if isinstance(event, Log):
+            self.append_logs(event.message)
+        elif isinstance(event, PredictionOutputType):
+            self.set_output_type(multi=event.multi)
+        elif isinstance(event, PredictionOutput):
+            self.append_output(event.payload)
+        elif isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
+            if event.canceled:
+                self.canceled()
+            elif event.error:
+                self.failed(error=str(event.error_detail))
+            else:
+                self.succeeded()
+        else:  # shouldn't happen, exhausted the type
+            log.warn("received unexpected event during predict", data=event)
+
     def _set_completed_at(self) -> None:
         self.p.completed_at = datetime.now(tz=timezone.utc)
 
@@ -366,7 +392,7 @@ def setup(*, worker: Worker) -> SetupResult:
     return SetupResult(
         started_at=started_at,
         completed_at=completed_at,
-        logs="".join(logs),
+        logs=logs,
         status=status,
     )
 
@@ -418,32 +444,20 @@ def _predict(  # pylint: disable=too-many-branches
     event_handler: PredictionEventHandler,
     should_cancel: threading.Event,
 ) -> schema.PredictionResponse:
-    initial_prediction = request.dict()
-
-    input_dict = initial_prediction["input"]
-
-    for k, v in input_dict.items():
-        try:
-            # Check if v is an instance of URLPath
-            if isinstance(v, types.URLPath):
-                input_dict[k] = v.convert()
-            # Check if v is a list of URLPath instances
-            elif isinstance(v, list) and all(
-                isinstance(item, types.URLPath) for item in v
-            ):
-                input_dict[k] = [item.convert() for item in v]
-        except requests.exceptions.RequestException as e:
-            tb = traceback.format_exc()
-            event_handler.append_logs(tb)
-            event_handler.failed(error=str(e))
-            log.warn("Failed to download url path from input", exc_info=True)
-            return event_handler.response
+    try:
+        payload = _prepare_predict_payload(request.input)
+    except requests.exceptions.RequestException as e:
+        tb = traceback.format_exc()
+        event_handler.append_logs(tb)
+        event_handler.failed(error=str(e))
+        log.warn("Failed to download url path from input", exc_info=True)
+        return event_handler.response
 
     subscription_idx = worker.subscribe(
         lambda event: _handle_event(event_handler, event)
     )
     try:
-        prediction = worker.predict(input_dict)
+        prediction = worker.predict(payload)
 
         while True:
             try:
@@ -468,6 +482,25 @@ def _predict(  # pylint: disable=too-many-branches
         worker.unsubscribe(subscription_idx)
 
     return event_handler.response
+
+
+def _prepare_predict_payload(
+    prediction_input: Union[BaseInput, Dict[str, Any]],
+) -> Dict[str, Any]:
+    if isinstance(prediction_input, BaseInput):
+        input_dict = prediction_input.dict()
+    else:
+        input_dict = prediction_input.copy()
+
+    for k, v in input_dict.items():
+        # Check if v is an instance of URLPath
+        if isinstance(v, types.URLPath):
+            input_dict[k] = v.convert()
+        # Check if v is a list of URLPath instances
+        elif isinstance(v, list) and all(isinstance(item, types.URLPath) for item in v):
+            input_dict[k] = [item.convert() for item in v]
+
+    return input_dict
 
 
 def _make_file_upload_http_client() -> requests.Session:
