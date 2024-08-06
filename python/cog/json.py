@@ -4,7 +4,10 @@ from enum import Enum
 from types import GeneratorType
 from typing import Any, Callable
 
-from pydantic import BaseModel
+try:
+    from pydantic.v1 import BaseModel
+except ImportError:
+    from pydantic import BaseModel
 
 from .types import Path
 

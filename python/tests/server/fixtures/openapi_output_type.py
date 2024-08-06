@@ -1,5 +1,8 @@
 from cog import BasePredictor
-from pydantic import BaseModel
+try:
+    from pydantic.v1 import BaseModel
+except ImportError:
+    from pydantic import BaseModel
 
 
 # An output object called `Output` needs to be special cased because pydantic tries to dedupe it with the internal `Output`

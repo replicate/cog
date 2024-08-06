@@ -1,7 +1,10 @@
 from typing import Iterator, List
 
 from cog import BasePredictor
-from pydantic import BaseModel
+try:
+    from pydantic.v1 import BaseModel
+except ImportError:
+    from pydantic import BaseModel
 
 
 class Output(BaseModel):

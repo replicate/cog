@@ -1,5 +1,8 @@
 from cog import BasePredictor
-from pydantic import BaseModel
+try:
+    from pydantic.v1 import BaseModel
+except ImportError:
+    from pydantic import BaseModel
 
 
 # Calling this `MyOutput` to test if cog renames it to `Output` in the schema

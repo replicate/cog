@@ -30,8 +30,13 @@ from unittest.mock import patch
 
 import structlog
 import yaml
-from pydantic import BaseModel, Field, create_model
-from pydantic.fields import FieldInfo
+
+try:
+    from pydantic.v1 import BaseModel, Field, create_model
+    from pydantic.v1.fields import FieldInfo
+except ImportError:
+    from pydantic import BaseModel, Field, create_model
+    from pydantic.fields import FieldInfo
 
 # Added in Python 3.9. Can be from typing if we drop support for <3.9
 from typing_extensions import Annotated
