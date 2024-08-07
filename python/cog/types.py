@@ -80,9 +80,13 @@ def Input(  # pylint: disable=invalid-name, too-many-arguments
 
 class Secret(pydantic.SecretStr):
     if PYDANTIC_V2:
+        from pydantic.json_schema import JsonSchemaValue
+        from pydantic_core import CoreSchema
 
         @classmethod
-        def __get_pydantic_json_schema__(cls, core_schema, handler):
+        def __get_pydantic_json_schema__(
+            cls, core_schema: CoreSchema, handler: Any
+        ) -> JsonSchemaValue:
             json_schema = handler(core_schema)
             json_schema.update(
                 {
@@ -112,10 +116,6 @@ class File(io.IOBase):
     validate_always = True
 
     @classmethod
-    def __get_validators__(cls) -> Iterator[Any]:
-        yield cls.validate
-
-    @classmethod
     def validate(cls, value: Any) -> io.IOBase:
         if isinstance(value, io.IOBase):
             return value
@@ -131,13 +131,28 @@ class File(io.IOBase):
         )
 
     if PYDANTIC_V2:
+        from pydantic import GetCoreSchemaHandler, TypeAdapter
+        from pydantic_core.core_schema import CoreSchema
+
+        @classmethod
+        def __get_pydantic_core_schema__(
+            cls, source_type: Any, handler: GetCoreSchemaHandler
+        ) -> CoreSchema:
+            from pydantic_core import core_schema
+
+            return core_schema.no_info_plain_validator_function(cls.validate)
 
         @classmethod
         def __get_pydantic_json_schema__(cls, core_schema, handler):
             json_schema = handler(core_schema)
             json_schema.update(type="string", format="uri")
             return json_schema
+
     else:
+
+        @classmethod
+        def __get_validators__(cls) -> Iterator[Any]:
+            yield cls.validate
 
         @classmethod
         def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
@@ -148,10 +163,6 @@ class File(io.IOBase):
 
 class Path(pathlib.PosixPath):  # pylint: disable=abstract-method
     validate_always = True
-
-    @classmethod
-    def __get_validators__(cls) -> Iterator[Any]:
-        yield cls.validate
 
     @classmethod
     def validate(cls, value: Any) -> pathlib.Path:
@@ -165,13 +176,30 @@ class Path(pathlib.PosixPath):  # pylint: disable=abstract-method
         )
 
     if PYDANTIC_V2:
+        from pydantic import GetCoreSchemaHandler
+        from pydantic.json_schema import JsonSchemaValue
+        from pydantic_core import CoreSchema
 
         @classmethod
-        def __get_pydantic_json_schema__(cls, core_schema, handler):
+        def __get_pydantic_core_schema__(
+            cls, _source_type: Any, handler: GetCoreSchemaHandler
+        ) -> CoreSchema:
+            from pydantic_core import core_schema
+
+            return core_schema.no_info_plain_validator_function(cls.validate)
+
+        @classmethod
+        def __get_pydantic_json_schema__(
+            cls, core_schema: CoreSchema, handler: Any
+        ) -> JsonSchemaValue:
             json_schema = handler(core_schema)
             json_schema.update(type="string", format="uri")
             return json_schema
     else:
+
+        @classmethod
+        def __get_validators__(cls) -> Iterator[Any]:
+            yield cls.validate
 
         @classmethod
         def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
@@ -315,10 +343,27 @@ Item = TypeVar("Item")
 
 
 class ConcatenateIterator(Iterator[Item]):  # pylint: disable=abstract-method
+    @classmethod
+    def validate(cls, value: Iterator[Any]) -> Iterator[Any]:
+        return value
+
     if PYDANTIC_V2:
+        from pydantic import GetCoreSchemaHandler
+        from pydantic.json_schema import JsonSchemaValue
+        from pydantic_core import CoreSchema
 
         @classmethod
-        def __get_pydantic_json_schema__(cls, core_schema, handler):
+        def __get_pydantic_core_schema__(
+            cls, _source_type: Any, handler: GetCoreSchemaHandler
+        ) -> CoreSchema:
+            from pydantic_core import core_schema
+
+            return core_schema.no_info_plain_validator_function(cls.validate)
+
+        @classmethod
+        def __get_pydantic_json_schema__(
+            cls, core_schema: CoreSchema, handler: Any
+        ) -> JsonSchemaValue:
             json_schema = handler(core_schema)
             json_schema.pop("allOf", None)
             json_schema.update(
@@ -333,6 +378,10 @@ class ConcatenateIterator(Iterator[Item]):  # pylint: disable=abstract-method
     else:
 
         @classmethod
+        def __get_validators__(cls) -> Iterator[Any]:
+            yield cls.validate
+
+        @classmethod
         def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
             """Defines what this type should be in openapi.json"""
             field_schema.pop("allOf", None)
@@ -344,14 +393,6 @@ class ConcatenateIterator(Iterator[Item]):  # pylint: disable=abstract-method
                     "x-cog-array-display": "concatenate",
                 }
             )
-
-    @classmethod
-    def __get_validators__(cls) -> Iterator[Any]:
-        yield cls.validate
-
-    @classmethod
-    def validate(cls, value: Iterator[Any]) -> Iterator[Any]:
-        return value
 
 
 def _len_bytes(s: str, encoding: str = "utf-8") -> int:
