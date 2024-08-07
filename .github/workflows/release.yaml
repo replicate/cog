@@ -5,8 +5,7 @@ on:
     workflows: ["CI"]
     types:
       - completed
-    branches:
-      - main
+    branches: ["v*.*.*"]
 
 concurrency:
   group: release-${{ github.ref }}
