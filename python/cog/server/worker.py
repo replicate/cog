@@ -197,13 +197,14 @@ class Worker:
         # If we dropped off the end off the end of the loop, it's because the
         # child process died.
         if not self._terminating:
-            exitcode = self._child.exitcode
-            self._result.set_exception(
-                FatalWorkerException(
-                    f"Prediction failed for an unknown reason. It might have run out of memory? (exitcode {exitcode})"
+            if self._result:
+                exitcode = self._child.exitcode
+                self._result.set_exception(
+                    FatalWorkerException(
+                        f"Prediction failed for an unknown reason. It might have run out of memory? (exitcode {exitcode})"
+                    )
                 )
-            )
-            self._result = None
+                self._result = None
             self._state = WorkerState.DEFUNCT
 
     def _publish(self, ev: _PublicEventType) -> None:
@@ -313,6 +314,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     def _predict(self, payload: Dict[str, Any]) -> None:
         assert self._predictor
         done = Done()
+        send_done = True
         self._cancelable = True
         try:
             predict = get_predict(self._predictor)
@@ -332,6 +334,14 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             traceback.print_exc()
             done.error = True
             done.error_detail = str(e)
+        except BaseException:
+            # For SystemExit and friends we attempt to add some useful context
+            # to the logs, but reraise to ensure the process dies.
+            traceback.print_exc()
+            # This is fatal, so we should not send a done event, as this
+            # implies we're ready for more work.
+            send_done = False
+            raise
         finally:
             self._cancelable = False
             try:
@@ -344,7 +354,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     )
                 )
                 raise
-            self._events.send(done)
+            if send_done:
+                self._events.send(done)
 
     def _signal_handler(
         self,

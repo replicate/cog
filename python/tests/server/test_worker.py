@@ -172,8 +172,10 @@ def test_fatalworkerexception_from_irrecoverable_failures(data, name, payloads):
     assert not result.done.error
 
     with pytest.raises(FatalWorkerException):
-        for _ in range(5):
-            _process(w, lambda: w.predict(data.draw(st.fixed_dictionaries(payloads))))
+        _process(w, lambda: w.predict(data.draw(st.fixed_dictionaries(payloads))))
+
+    with pytest.raises(InvalidStateException):
+        _process(w, lambda: w.predict(data.draw(st.fixed_dictionaries(payloads))))
 
     w.terminate()
 
