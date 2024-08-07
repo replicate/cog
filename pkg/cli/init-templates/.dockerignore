@@ -3,9 +3,9 @@
 # https://docs.docker.com/engine/reference/builder/#dockerignore-file
 
 # Exclude Git files
-.git
-.github
-.gitignore
+**/.git
+**/.github
+**/.gitignore
 
 # Exclude Python cache files
 __pycache__
