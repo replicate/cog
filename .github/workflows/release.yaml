@@ -5,8 +5,7 @@ on:
     workflows: ["CI"]
     types:
       - completed
-    branches:
-      - main
+    branches: ["v*.*.*"]
 
 concurrency:
   group: release-${{ github.ref }}
@@ -23,8 +22,7 @@ jobs:
       - name: Check if commit has a version tag
         id: check-tag
         run: |
-          LATEST_TAG=$(git tag | sort --version-sort | tail -n1)
-          if [[ ${{ github.ref_name == $LATEST_TAG }} -a $LATEST_TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ ${{ github.event.workflow_run.head_branch }} =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "is-release=true" >> $GITHUB_OUTPUT
           else
             echo "is-release=false" >> $GITHUB_OUTPUT
