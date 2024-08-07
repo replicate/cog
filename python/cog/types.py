@@ -66,16 +66,22 @@ def Input(  # pylint: disable=invalid-name, too-many-arguments
     choices: List[Union[str, int]] = None,
 ) -> Any:
     """Input is similar to pydantic.Field, but doesn't require a default value to be the first argument."""
-    return pydantic.Field(
-        default,
-        description=description,
-        ge=ge,
-        le=le,
-        min_length=min_length,
-        max_length=max_length,
-        regex=regex,
-        choices=choices,
-    )
+    field_kwargs = {
+        "default": default,
+        "description": description,
+        "ge": ge,
+        "le": le,
+        "min_length": min_length,
+        "max_length": max_length,
+    }
+
+    if PYDANTIC_V2:
+        field_kwargs["pattern"] = regex
+        field_kwargs["json_schema_extra"] = {"enum": choices}
+    else:
+        field_kwargs["regex"] = regex
+        field_kwargs["enum"] = choices
+    return pydantic.Field(**field_kwargs)
 
 
 class Secret(pydantic.SecretStr):
