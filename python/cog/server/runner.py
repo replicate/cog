@@ -16,6 +16,7 @@ from .. import schema
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from ..predictor import BaseInput
+from ..types import PYDANTIC_V2
 from .eventtypes import Done, Log, PredictionOutput, PredictionOutputType
 from .telemetry import current_trace_context
 from .useragent import get_user_agent
@@ -254,7 +255,12 @@ class PredictTask(Task[schema.PredictionResponse]):
 
         self._fut: "Optional[Future[Done]]" = None
 
-        self._p = schema.PredictionResponse(**prediction_request.dict())
+        if PYDANTIC_V2:
+            request_dict = prediction_request.model_dump()
+        else:
+            request_dict = prediction_request.dict()
+
+        self._p = schema.PredictionResponse(**request_dict)
         self._p.status = schema.Status.PROCESSING
         self._output_type_multi = None
         self._p.output = None
