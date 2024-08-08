@@ -86,13 +86,13 @@ class StreamRedirector(threading.Thread):
         # still running, Python will exit.
         super().__init__(daemon=True)
 
-    def drain(self) -> None:
+    def drain(self, timeout: float = 1) -> None:
         self.drain_event.clear()
         for stream in self._streams:
             stream.write(self.drain_token + "\n")
             stream.flush()
-        if not self.drain_event.wait(timeout=1):
-            raise RuntimeError("output streams failed to drain")
+        if not self.drain_event.wait(timeout=timeout):
+            raise TimeoutError("output streams failed to drain")
 
     def shutdown(self) -> None:
         for stream in self._streams:
