@@ -241,7 +241,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._predictor: Optional[BasePredictor] = None
         self._events = LockedConn(events)
         self._tee_output = tee_output
-        self._stream_redirector: Optional[StreamRedirector] = None
         self._cancelable = False
 
         super().__init__()
@@ -268,8 +267,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._setup()
         self._loop()
 
-        if self._stream_redirector:
-            self._stream_redirector.shutdown()
+        self._stream_redirector.shutdown()
 
     def _setup(self) -> None:
         done = Done()
@@ -290,8 +288,16 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             done.error_detail = str(e)
             raise
         finally:
-            if self._stream_redirector:
-                self._stream_redirector.drain()
+            try:
+                self._stream_redirector.drain(timeout=10)
+            except TimeoutError:
+                self._events.send(
+                    Log(
+                        "WARNING: logs may be truncated due to excessive volume.",
+                        source="stderr",
+                    )
+                )
+                raise
             self._events.send(done)
 
     def _loop(self) -> None:
@@ -328,8 +334,16 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             done.error_detail = str(e)
         finally:
             self._cancelable = False
-            if self._stream_redirector:
-                self._stream_redirector.drain()
+            try:
+                self._stream_redirector.drain(timeout=10)
+            except TimeoutError:
+                self._events.send(
+                    Log(
+                        "WARNING: logs may be truncated due to excessive volume.",
+                        source="stderr",
+                    )
+                )
+                raise
             self._events.send(done)
 
     def _signal_handler(
