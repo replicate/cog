@@ -521,10 +521,13 @@ def test_asynchronous_prediction_endpoint(client, match):
     )
     assert resp.status_code == 202
 
-    assert resp.json() == match(
-        {"status": "processing", "output": None, "started_at": mock.ANY}
-    )
-    assert resp.json()["started_at"] is not None
+    result = resp.json()
+
+    # The response might be a "processing" response, but the prediction can
+    # also complete before the response is sent.
+    assert result["started_at"] is not None
+    assert result["status"] in {"processing", "succeeded"}
+    assert result["output"] in {None, "hello world"}
 
     n = 0
     while webhook.call_count < 1 and n < 10:
@@ -589,10 +592,13 @@ def test_asynchronous_prediction_endpoint_with_trace_context(client, match):
     )
     assert resp.status_code == 202
 
-    assert resp.json() == match(
-        {"status": "processing", "output": None, "started_at": mock.ANY}
-    )
-    assert resp.json()["started_at"] is not None
+    result = resp.json()
+
+    # The response might be a "processing" response, but the prediction can
+    # also complete before the response is sent.
+    assert result["started_at"] is not None
+    assert result["status"] in {"processing", "succeeded"}
+    assert result["output"] in {None, "https://example.com/upload/file"}
 
     n = 0
     while webhook.call_count < 1 and n < 10:
