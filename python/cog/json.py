@@ -6,6 +6,13 @@ from typing import Any, Callable
 
 from pydantic import BaseModel
 
+# numpy is an optional dependency, but the process of importing it is not
+# thread-safe, so we attempt the import once here.
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
 from .types import Path
 
 
@@ -28,11 +35,7 @@ def make_encodeable(obj: Any) -> Any:  # pylint: disable=too-many-return-stateme
         return obj.value
     if isinstance(obj, datetime):
         return obj.isoformat()
-    try:
-        import numpy as np  # type: ignore # pylint: disable=import-outside-toplevel
-    except ImportError:
-        pass
-    else:
+    if np:
         if isinstance(obj, np.integer):
             return int(obj)
         if isinstance(obj, np.floating):
