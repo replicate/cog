@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 import uuid
 
 import pytest
@@ -138,6 +139,40 @@ def test_stream_redirector(tmpfile):
     ]
 
     r.shutdown()
+
+
+def test_stream_redirector_bench():
+    fake_stdout = open("/dev/null", "w")
+    ws_stdout = WrappedStream("fake_stdout", fake_stdout)
+
+    def _write_hook(stream_name, original_stream, data):
+        pass
+
+    ws_stdout.wrap()
+    r = StreamRedirector([ws_stdout], _write_hook)
+    r.start()
+
+    n = 1024
+    i = 0
+    now = time.monotonic()
+
+    while time.monotonic() - now < 1:
+        fake_stdout.write("0" * (n - 1) + "\n")
+        fake_stdout.flush()
+        i += 1
+
+    r.drain()
+
+    delta = time.monotonic() - now
+
+    print(
+        f"wrote {i} lines in {delta:.4f} seconds ({i / delta:.2f} lines/sec, {i * n / delta:.2f} bytes/sec)"
+    )
+    # We should be able to push at least 100MB/s through the stream redirector.
+    #
+    # For reasons we're not yet sure of, throughput on GitHub Actions is really
+    # poor, so we're setting the threshold to 25MB/s for now.
+    assert i * n / delta > 25e6
 
 
 @pytest.mark.parametrize(
