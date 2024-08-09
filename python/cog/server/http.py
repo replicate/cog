@@ -179,7 +179,8 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
         ) -> None:
             if isinstance(openapi_schema, dict):
-                for _key, value in list(openapi_schema.items()):
+                schemas = openapi_schema.get("components", {}).get("schemas", {})
+                for _key, value in list(schemas.items()):
                     if isinstance(value, dict) and value.get("enum"):
                         value["description"] = value.get(
                             "description", "An enumeration."
