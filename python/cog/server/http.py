@@ -175,6 +175,35 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             except KeyError:
                 pass
 
+        def extract_enum_properties(
+            openapi_schema: Dict[str, Any],
+        ) -> None:
+            schemas = openapi_schema.get("components", {}).get("schemas", {})
+            if "Input" in schemas and "properties" in schemas["Input"]:
+                input_properties = schemas["Input"]["properties"]
+                for prop_name, prop_value in input_properties.items():
+                    if "enum" in prop_value:
+                        # Create a new schema for the enum
+                        schemas[prop_name] = {
+                            "type": prop_value["type"],
+                            "enum": prop_value["enum"],
+                            "title": prop_name,
+                            "description": prop_value.get(
+                                "description", "An enumeration."
+                            ),
+                        }
+
+                        # Replace the original property with an allOf reference
+                        input_properties[prop_name] = {
+                            "allOf": [{"$ref": f"#/components/schemas/{prop_name}"}]
+                        }
+
+                        # Preserve x-order if it exists
+                        if "x-order" in prop_value:
+                            input_properties[prop_name]["x-order"] = prop_value[
+                                "x-order"
+                            ]
+
         def set_default_enumeration_description(
             openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
         ) -> None:
@@ -202,6 +231,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
 
                 remove_nullable_anyof(openapi_schema)
                 flatten_selected_allof_refs(openapi_schema)
+                extract_enum_properties(openapi_schema)
                 set_default_enumeration_description(openapi_schema)
 
                 app.openapi_schema = openapi_schema
