@@ -27,8 +27,6 @@ if pydantic.__version__.startswith("1."):
     PYDANTIC_V2 = False
 else:
     PYDANTIC_V2 = True
-    if TYPE_CHECKING:
-        pass  # type: ignore
 
 
 FILENAME_ILLEGAL_CHARS = set("\u0000/")
