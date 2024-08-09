@@ -122,7 +122,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     if PYDANTIC_V2:
         from fastapi.openapi.utils import get_openapi
 
-        def remove_nullable_anyof(
+        def remove_empty_or_nullable_anyof(
             openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
         ) -> None:
             if isinstance(openapi_schema, dict):
@@ -131,7 +131,9 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                         non_null_types = [
                             item for item in value if item.get("type") != "null"
                         ]
-                        if len(value) > len(non_null_types) == 1:
+                        if len(non_null_types) == 0:
+                            del openapi_schema[key]
+                        elif len(non_null_types) == 1:
                             openapi_schema.update(non_null_types[0])
                             del openapi_schema[key]
 
@@ -139,10 +141,10 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                             # openapi_schema["nullable"] = True
 
                     else:
-                        remove_nullable_anyof(value)
+                        remove_empty_or_nullable_anyof(value)
             elif isinstance(openapi_schema, list):  # pyright: ignore
                 for item in openapi_schema:
-                    remove_nullable_anyof(item)
+                    remove_empty_or_nullable_anyof(item)
 
         def flatten_selected_allof_refs(
             openapi_schema: Dict[str, Any],
@@ -229,7 +231,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                     routes=app.routes,
                 )
 
-                remove_nullable_anyof(openapi_schema)
+                remove_empty_or_nullable_anyof(openapi_schema)
                 flatten_selected_allof_refs(openapi_schema)
                 extract_enum_properties(openapi_schema)
                 set_default_enumeration_description(openapi_schema)

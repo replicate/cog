@@ -151,7 +151,12 @@ class File(io.IOBase):
                 core_schema,
             )
 
-            return core_schema.no_info_plain_validator_function(cls.validate)
+            return core_schema.union_schema(
+                [
+                    core_schema.is_instance_schema(io.IOBase),
+                    core_schema.no_info_plain_validator_function(cls.validate),
+                ]
+            )
 
         @classmethod
         def __get_pydantic_json_schema__(
@@ -203,7 +208,12 @@ class Path(pathlib.PosixPath):  # pylint: disable=abstract-method
                 core_schema,
             )
 
-            return core_schema.no_info_plain_validator_function(cls.validate)
+            return core_schema.union_schema(
+                [
+                    core_schema.is_instance_schema(pathlib.Path),
+                    core_schema.no_info_plain_validator_function(cls.validate),
+                ]
+            )
 
         @classmethod
         def __get_pydantic_json_schema__(
@@ -379,7 +389,12 @@ class ConcatenateIterator(Iterator[Item]):  # pylint: disable=abstract-method
                 core_schema,
             )
 
-            return core_schema.no_info_plain_validator_function(cls.validate)
+            return core_schema.union_schema(
+                [
+                    core_schema.is_instance_schema(Iterator),
+                    core_schema.no_info_plain_validator_function(cls.validate),
+                ]
+            )
 
         @classmethod
         def __get_pydantic_json_schema__(
