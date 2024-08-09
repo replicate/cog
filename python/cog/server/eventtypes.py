@@ -38,8 +38,3 @@ class Done:
     canceled: bool = False
     error: bool = False
     error_detail: str = ""
-
-
-@define
-class Heartbeat:
-    pass
