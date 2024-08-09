@@ -2,6 +2,7 @@ import base64
 import io
 
 import responses
+from cog.types import PYDANTIC_V2
 from responses.matchers import multipart_matcher
 
 from .conftest import uses_predictor, uses_predictor_with_client_options
@@ -106,13 +107,6 @@ def test_output_path_to_http(client, match):
     assert res.status_code == 200
 
 
-@uses_predictor("output_numpy")
-def test_json_output_numpy(client, match):
-    resp = client.post("/predictions")
-    assert resp.status_code == 200
-    assert resp.json() == match({"output": 1.0, "status": "succeeded"})
-
-
 @uses_predictor("output_complex")
 def test_complex_output(client, match):
     resp = client.post("/predictions")
@@ -138,3 +132,12 @@ def test_iterator_of_list_of_complex_output(client, match):
         }
     )
     assert resp.status_code == 200
+
+
+if not PYDANTIC_V2:
+
+    @uses_predictor("output_numpy")
+    def test_json_output_numpy(client, match):
+        resp = client.post("/predictions")
+        assert resp.status_code == 200
+        assert resp.json() == match({"output": 1.0, "status": "succeeded"})

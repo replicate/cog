@@ -16,6 +16,7 @@ from urllib3.util.retry import Retry
 from .. import schema, types
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
+from ..types import PYDANTIC_V2
 from .eventtypes import Done, Heartbeat, Log, PredictionOutput, PredictionOutputType
 from .probes import ProbeHelper
 from .telemetry import current_trace_context
@@ -187,7 +188,10 @@ def create_event_handler(
     prediction: schema.PredictionRequest,
     upload_url: Optional[str] = None,
 ) -> "PredictionEventHandler":
-    response = schema.PredictionResponse(**prediction.dict())
+    if PYDANTIC_V2:
+        response = schema.PredictionResponse(**prediction.model_dump())
+    else:
+        response = schema.PredictionResponse(**prediction.dict())
 
     webhook = prediction.webhook
     events_filter = (
@@ -386,7 +390,10 @@ def _predict(  # pylint: disable=too-many-branches
     event_handler: PredictionEventHandler,
     should_cancel: threading.Event,
 ) -> schema.PredictionResponse:
-    initial_prediction = request.dict()
+    if PYDANTIC_V2:
+        initial_prediction = request.model_dump()
+    else:
+        initial_prediction = request.dict()
 
     output_type = None
     input_dict = initial_prediction["input"]
@@ -407,6 +414,13 @@ def _predict(  # pylint: disable=too-many-branches
             event_handler.failed(error=str(e))
             log.warn("Failed to download url path from input", exc_info=True)
             return event_handler.response
+
+    if PYDANTIC_V2:
+        for k, v in input_dict.items():
+            # Unwrap pydantic's SerializationIterator
+            if type(v).__name__ == "SerializationIterator":
+                value = next(v)
+                input_dict[k] = io.BytesIO(value)
 
     for event in worker.predict(input_dict, poll=0.1):
         if should_cancel.is_set():
