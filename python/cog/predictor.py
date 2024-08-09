@@ -300,6 +300,11 @@ def validate_input_type(
             for t in get_args(type):
                 validate_input_type(t, name)
         else:
+            if PYDANTIC_V2:
+                # Cog types are exported as `Annotated[Type, ...]`, but `type` is the inner type
+                if hasattr(type, "__module__") and type.__module__ == "cog.types":
+                    return
+
             raise TypeError(
                 f"Unsupported input type {human_readable_type_name(type)} for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
             )
