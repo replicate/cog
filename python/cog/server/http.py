@@ -180,7 +180,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                 response_model=TrainingResponse,
                 response_model_exclude_unset=True,
             )
-            def train(
+            async def train(
                 request: TrainingRequest = Body(default=None),
                 prefer: Optional[str] = Header(default=None),
                 traceparent: Optional[str] = Header(
@@ -191,14 +191,14 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                 ),
             ) -> Any:  # type: ignore
                 with trace_context(make_trace_context(traceparent, tracestate)):
-                    return predict(request, prefer)
+                    return await predict(request, prefer)
 
             @app.put(
                 "/trainings/{training_id}",
                 response_model=PredictionResponse,
                 response_model_exclude_unset=True,
             )
-            def train_idempotent(
+            async def train_idempotent(
                 training_id: str = Path(..., title="Training ID"),
                 request: TrainingRequest = Body(..., title="Training Request"),
                 prefer: Optional[str] = Header(default=None),
@@ -210,13 +210,13 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                 ),
             ) -> Any:
                 with trace_context(make_trace_context(traceparent, tracestate)):
-                    return predict_idempotent(training_id, request, prefer)
+                    return await predict_idempotent(training_id, request, prefer)
 
             @app.post("/trainings/{training_id}/cancel")
-            def cancel_training(
+            async def cancel_training(
                 training_id: str = Path(..., title="Training ID"),
             ) -> Any:
-                return cancel(training_id)
+                return await cancel(training_id)
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             if isinstance(e, (PredictorNotSet, FileNotFoundError)) and not is_build:
