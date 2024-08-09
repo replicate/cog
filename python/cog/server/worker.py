@@ -24,7 +24,7 @@ from .exceptions import (
     FatalWorkerException,
     InvalidStateException,
 )
-from .helpers import StreamRedirector, WrappedStream
+from .helpers import StreamRedirector, WrappedStream, increase_conn_size
 
 _spawn = multiprocessing.get_context("spawn")
 
@@ -47,6 +47,9 @@ class Worker:
 
         # A pipe with which to communicate with the child worker.
         self._events, child_events = _spawn.Pipe()
+        # just increasing our end's rcv buffer might be sufficient?🤷‍
+        increase_conn_size(self._events)
+        increase_conn_size(child_events)
         self._child = _ChildWorker(predictor_ref, child_events, tee_output)
         self._terminating = False
 
