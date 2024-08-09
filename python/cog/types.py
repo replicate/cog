@@ -14,6 +14,7 @@ from typing import (
     Iterator,
     List,
     Optional,
+    Type,
     TypeVar,
     Union,
 )
@@ -142,14 +143,20 @@ class File(io.IOBase):
 
         @classmethod
         def __get_pydantic_core_schema__(
-            cls, source_type: Any, handler: GetCoreSchemaHandler
-        ) -> CoreSchema:
-            from pydantic_core import core_schema
+            cls,
+            source: Type[Any],  # pylint: disable=unused-argument
+            handler: "pydantic.GetCoreSchemaHandler",  # pylint: disable=unused-argument
+        ) -> "CoreSchema":
+            from pydantic_core import (  # pylint: disable=import-outside-toplevel
+                core_schema,
+            )
 
             return core_schema.no_info_plain_validator_function(cls.validate)
 
         @classmethod
-        def __get_pydantic_json_schema__(cls, core_schema, handler):
+        def __get_pydantic_json_schema__(
+            cls, core_schema: "CoreSchema", handler: "pydantic.GetJsonSchemaHandler"
+        ) -> "JsonSchemaValue":  # type: ignore # noqa: F821
             json_schema = handler(core_schema)
             json_schema.update(type="string", format="uri")
             return json_schema
@@ -188,16 +195,20 @@ class Path(pathlib.PosixPath):  # pylint: disable=abstract-method
 
         @classmethod
         def __get_pydantic_core_schema__(
-            cls, _source_type: Any, handler: GetCoreSchemaHandler
-        ) -> CoreSchema:
-            from pydantic_core import core_schema
+            cls,
+            source: Type[Any],  # pylint: disable=unused-argument
+            handler: "pydantic.GetCoreSchemaHandler",  # pylint: disable=unused-argument
+        ) -> "CoreSchema":
+            from pydantic_core import (  # pylint: disable=import-outside-toplevel
+                core_schema,
+            )
 
             return core_schema.no_info_plain_validator_function(cls.validate)
 
         @classmethod
         def __get_pydantic_json_schema__(
-            cls, core_schema: CoreSchema, handler: Any
-        ) -> JsonSchemaValue:
+            cls, core_schema: "CoreSchema", handler: "pydantic.GetJsonSchemaHandler"
+        ) -> "JsonSchemaValue":  # type: ignore # noqa: F821
             json_schema = handler(core_schema)
             json_schema.update(type="string", format="uri")
             return json_schema
@@ -360,16 +371,20 @@ class ConcatenateIterator(Iterator[Item]):  # pylint: disable=abstract-method
 
         @classmethod
         def __get_pydantic_core_schema__(
-            cls, _source_type: Any, handler: GetCoreSchemaHandler
-        ) -> CoreSchema:
-            from pydantic_core import core_schema
+            cls,
+            source: Type[Any],  # pylint: disable=unused-argument
+            handler: "pydantic.GetCoreSchemaHandler",  # pylint: disable=unused-argument
+        ) -> "CoreSchema":
+            from pydantic_core import (  # pylint: disable=import-outside-toplevel
+                core_schema,
+            )
 
             return core_schema.no_info_plain_validator_function(cls.validate)
 
         @classmethod
         def __get_pydantic_json_schema__(
-            cls, core_schema: CoreSchema, handler: Any
-        ) -> JsonSchemaValue:
+            cls, core_schema: "CoreSchema", handler: "pydantic.GetJsonSchemaHandler"
+        ) -> "JsonSchemaValue":  # type: ignore # noqa: F821
             json_schema = handler(core_schema)
             json_schema.pop("allOf", None)
             json_schema.update(
