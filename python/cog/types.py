@@ -1,7 +1,9 @@
+import ctypes
 import io
 import mimetypes
 import os
 import pathlib
+import re
 import shutil
 import tempfile
 import urllib.parse
@@ -114,6 +116,24 @@ class Secret(pydantic.SecretStr):
                 }
             )
 
+def _unwrap_serialization_iterator(x: Any) -> Any:
+    # serializationiterator doesn't expose the object it wraps
+    # but does give us a pointer in the __repr__ string
+    return ctypes.cast(
+        int(re.findall(r'0x[0-9A-F]+', repr(x), re.I)[0], 16),
+        ctypes.py_object,
+    ).value
+
+def unwrap_sis(obj: Any) -> Any:
+    if type(obj).__name__ == "SerializationIterator":
+        return unwrap_sis(_unwrap_serialization_iterator(obj))
+    if type(obj) == str:  # noqa: E721 # pylint: disable=unidiomatic-typecheck
+        return obj
+    if isinstance(obj, dict):
+        return {key: unwrap_sis(value) for key, value in obj.items()}
+    if isinstance(obj, list):
+        return [unwrap_sis(value) for value in obj]
+    return obj
 
 class File(io.IOBase):
     """Deprecated: use Path instead."""
