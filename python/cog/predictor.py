@@ -1,3 +1,4 @@
+import builtins
 import enum
 import importlib.util
 import inspect
@@ -17,6 +18,7 @@ from typing import (
     Optional,
     Type,
     Union,
+    Literal,
     cast,
 )
 
@@ -294,7 +296,10 @@ def validate_input_type(
             f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
         )
     if type not in ALLOWED_INPUT_TYPES:
-        if get_origin(type) in (Union, List, list) or (
+        if get_origin(type) is Literal:
+            for t in get_args(type):
+                validate_input_type(builtins.type(t), name)
+        elif get_origin(type) in (Union, List, list) or (
             hasattr(types, "UnionType") and get_origin(type) is types.UnionType
         ):  # noqa: E721
             for t in get_args(type):
