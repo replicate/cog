@@ -119,7 +119,7 @@ class PredictionResponse(PredictionBaseModel):
             cls.__name__,
             __base__=cls,
             input=(Optional[input_type], None),
-            output=(output_type, None),
+            output=(Optional[output_type], None),
         )
 
 
