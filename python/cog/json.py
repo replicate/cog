@@ -13,7 +13,7 @@ try:
 except ImportError:
     np = None
 
-from .types import PYDANTIC_V2, Path
+from .types import PYDANTIC_V2, Path, unwrap_sis
 
 
 def make_encodeable(obj: Any) -> Any:  # pylint: disable=too-many-return-statements
@@ -27,7 +27,7 @@ def make_encodeable(obj: Any) -> Any:  # pylint: disable=too-many-return-stateme
 
     if isinstance(obj, BaseModel):
         if PYDANTIC_V2:
-            return make_encodeable(obj.model_dump(exclude_unset=True))
+            return make_encodeable(unwrap_sis(obj.model_dump(exclude_unset=True)))
         else:
             return make_encodeable(obj.dict())
     if isinstance(obj, dict):
