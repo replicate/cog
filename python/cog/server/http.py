@@ -400,8 +400,9 @@ def create_app(
         return JSONResponse({}, status_code=200)
 
     def _handle_predict_done(response: schema.PredictionResponse) -> None:
-        if response._fatal_exception:
-            _maybe_shutdown(response._fatal_exception)
+        exception = response._fatal_exception  # pylint: disable=protected-access
+        if exception:
+            _maybe_shutdown(exception)
 
     def _handle_setup_done(setup_result: SetupResult) -> None:
         app.state.setup_result = setup_result
