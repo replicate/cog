@@ -1,6 +1,7 @@
 import os
 import threading
 import time
+import warnings
 from contextlib import ExitStack
 from typing import Any, Dict, Optional
 from unittest import mock
@@ -69,7 +70,12 @@ def make_client(
         shutdown_event=threading.Event(),
         upload_url=upload_url,
     )
-    return TestClient(app)
+    with warnings.catch_warnings():
+        # DeprecationWarning: The 'app' shortcut is now deprecated. Use the explicit style 'transport=WSGITransport(app=...)' instead.
+        warnings.filterwarnings(
+            "ignore", category=DeprecationWarning, message=".*WSGITransport.*"
+        )
+        return TestClient(app)
 
 
 def wait_for_setup(client: TestClient):
