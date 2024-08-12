@@ -370,6 +370,29 @@ def test_train_openapi_specification(client):
     }
 
 
+@uses_predictor("input_literal")
+def test_openapi_specification_with_literal(client, static_schema):
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+
+    schema = resp.json()
+    assert schema["openapi"] == "3.0.2"
+    assert schema["info"] == {"title": "Cog", "version": "0.1.0"}
+
+    schemas = schema["components"]["schemas"]
+
+    assert schemas["Input"]["properties"]["text"] == {
+        "allOf": [{"$ref": "#/components/schemas/text"}],
+        "x-order": 0,
+    }
+    assert schemas["text"] == {
+        "description": "An enumeration.",
+        "enum": ["foo", "bar"],
+        "title": "text",
+        "type": "string",
+    }
+
+
 @uses_predictor("yield_strings")
 def test_yielding_strings_from_generator_predictors(client, match):
     resp = client.post("/predictions")

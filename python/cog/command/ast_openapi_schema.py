@@ -354,8 +354,23 @@ def get_annotation(node: "ast.AST | None") -> str:
         return node.id
     if isinstance(node, ast.Constant):
         return node.value  # e.g. arg: "Path"
-    # ignore Subscript (Optional[str]), BinOp (str | int), and stuff like that
-    # except we may need to care about list/List[str]
+    if isinstance(node, ast.Subscript):
+        value = get_annotation(node.value)
+        if value == "Literal":
+            if sys.version_info < (3, 9):
+                elts = (
+                    node.slice.elts
+                    if isinstance(node.slice, ast.Tuple)
+                    else [node.slice]
+                )
+            else:
+                elts = (
+                    node.slice.elts
+                    if isinstance(node.slice, ast.Tuple)
+                    else [node.slice]
+                )
+            return f"Literal[{','.join(repr(get_value(e)) for e in elts)}]"
+        # ignore other Subscript (Optional[str]), BinOp (str | int), and stuff like that
     raise ValueError("Unexpected annotation type", type(node))
 
 
@@ -527,9 +542,20 @@ def extract_info(code: str) -> "JSONDict":  # pylint: disable=too-many-branches,
             raise ValueError("Unexpected default value", default)
         input: JSONDict = {"x-order": len(properties)}
         # need to handle other types?
-        arg_type = OPENAPI_TYPES.get(get_annotation(arg.annotation), "string")
-        if get_annotation(arg.annotation) in ("Path", "File"):
+
+        annotation = get_annotation(arg.annotation)
+        arg_type = OPENAPI_TYPES.get(annotation, "string")
+        if annotation in ("Path", "File"):
             input["format"] = "uri"
+        elif annotation.startswith("Literal["):
+            input["enum"] = list(
+                ast.literal_eval(annotation[7:])  # Safely eval the literal values
+            )
+            arg_type = (
+                OPENAPI_TYPES.get(type(input["enum"][0]).__name__, "string")
+                if input["enum"]
+                else "string"
+            )
         for attr in KEPT_ATTRS:
             if attr in kws:
                 input[attr] = kws[attr]
@@ -544,6 +570,10 @@ def extract_info(code: str) -> "JSONDict":  # pylint: disable=too-many-branches,
                 "type": arg_type,
                 "description": "An enumeration.",
             }
+        elif "enum" in input:
+            input["title"] = arg.arg.replace("_", " ").title()
+            input["type"] = arg_type
+            input["description"] = "An enumeration."
         else:
             input["title"] = arg.arg.replace("_", " ").title()
             input["type"] = arg_type
