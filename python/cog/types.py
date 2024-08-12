@@ -10,7 +10,6 @@ import urllib.parse
 import urllib.request
 import urllib.response
 from typing import (
-    TYPE_CHECKING,
     Any,
     Dict,
     Iterator,
@@ -77,10 +76,12 @@ def Input(  # pylint: disable=invalid-name, too-many-arguments
     }
 
     if PYDANTIC_V2:
-        # Choices is deprecated and should be replaced by a Literal[...] type by the user.
-        # Validation won't work.
         field_kwargs["pattern"] = regex
-        field_kwargs["json_schema_extra"] = {"enum": choices}
+        if choices:
+            # The `choices` parameter is deprecated in Pydantic v2.
+            # Instead, the user should use `Literal[...]`
+            # to specify the allowed values.
+            field_kwargs["json_schema_extra"] = {"enum": choices}
     else:
         field_kwargs["regex"] = regex
         field_kwargs["enum"] = choices
@@ -118,13 +119,15 @@ class Secret(pydantic.SecretStr):
                 }
             )
 
+
 def _unwrap_serialization_iterator(x: Any) -> Any:
     # serializationiterator doesn't expose the object it wraps
     # but does give us a pointer in the __repr__ string
     return ctypes.cast(
-        int(re.findall(r'0x[0-9A-F]+', repr(x), re.I)[0], 16),
+        int(re.findall(r"0x[0-9A-F]+", repr(x), re.I)[0], 16),
         ctypes.py_object,
     ).value
+
 
 def unwrap_sis(obj: Any) -> Any:
     if type(obj).__name__ == "SerializationIterator":
@@ -136,6 +139,7 @@ def unwrap_sis(obj: Any) -> Any:
     if isinstance(obj, list):
         return [unwrap_sis(value) for value in obj]
     return obj
+
 
 class File(io.IOBase):
     """Deprecated: use Path instead."""

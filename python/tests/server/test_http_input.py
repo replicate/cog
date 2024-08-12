@@ -220,6 +220,22 @@ def test_choices_int(client):
     assert resp.status_code == 422
 
 
+@uses_predictor("input_literal")
+def test_literal_str(client):
+    resp = client.post("/predictions", json={"input": {"text": "foo"}})
+    assert resp.status_code == 200
+    resp = client.post("/predictions", json={"input": {"text": "baz"}})
+    assert resp.status_code == 422
+
+
+@uses_predictor("input_literal_integer")
+def test_literal_int(client):
+    resp = client.post("/predictions", json={"input": {"x": 1}})
+    assert resp.status_code == 200
+    resp = client.post("/predictions", json={"input": {"x": 3}})
+    assert resp.status_code == 422
+
+
 @uses_predictor("input_union_string_or_list_of_strings")
 def test_union_strings(client):
     resp = client.post("/predictions", json={"input": {"args": "abc"}})

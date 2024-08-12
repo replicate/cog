@@ -15,10 +15,10 @@ from typing import (
     Callable,
     Dict,
     List,
+    Literal,
     Optional,
     Type,
     Union,
-    Literal,
     cast,
 )
 
@@ -347,10 +347,13 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
         order += 1
 
         # Choices!
-        if extra.get("choices"):
-            choices = extra["choices"]
-            # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
-            del extra["choices"]
+        choices = (
+            extra.pop("choices", None)  # Pydantic v1
+            or extra.pop("enum", None)  # Pydantic v2
+        )
+        # In either case, remove it as an extra field because it will be
+        # passed automatically as 'enum' in the schema
+        if choices:
             if InputType == str and isinstance(choices, list):  # noqa: E721
 
                 class StringEnum(str, enum.Enum):
