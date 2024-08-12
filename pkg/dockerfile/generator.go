@@ -53,7 +53,7 @@ type Generator struct {
 	GOARCH string
 
 	useCudaBaseImage bool
-	useCogBaseImage  bool
+	useCogBaseImage  *bool
 
 	// absolute path to tmpDir, a directory that will be cleaned up
 	tmpDir string
@@ -94,7 +94,7 @@ func NewGenerator(config *config.Config, dir string) (*Generator, error) {
 		relativeTmpDir:   relativeTmpDir,
 		fileWalker:       filepath.Walk,
 		useCudaBaseImage: true,
-		useCogBaseImage:  false,
+		useCogBaseImage:  nil,
 	}, nil
 }
 
@@ -104,11 +104,16 @@ func (g *Generator) SetUseCudaBaseImage(argumentValue string) {
 }
 
 func (g *Generator) SetUseCogBaseImage(useCogBaseImage bool) {
-	g.useCogBaseImage = useCogBaseImage
+	g.useCogBaseImage = new(bool)
+	*g.useCogBaseImage = useCogBaseImage
 }
 
 func (g *Generator) IsUsingCogBaseImage() bool {
-	return g.useCogBaseImage
+	useCogBaseImage := g.useCogBaseImage
+	if useCogBaseImage != nil {
+		return *useCogBaseImage
+	}
+	return true
 }
 
 func (g *Generator) generateInitialSteps() (string, error) {
@@ -129,7 +134,7 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		return "", err
 	}
 
-	if g.useCogBaseImage {
+	if g.IsUsingCogBaseImage() {
 		pipInstalls, err := g.pipInstalls()
 		if err != nil {
 			return "", err
@@ -265,37 +270,14 @@ func (g *Generator) Cleanup() error {
 }
 
 func (g *Generator) BaseImage() (string, error) {
-	if g.useCogBaseImage {
-		var changed bool
-		var err error
-
-		cudaVersion := g.Config.Build.CUDA
-
-		pythonVersion := g.Config.Build.PythonVersion
-		pythonVersion, changed, err = stripPatchVersion(pythonVersion)
+	if g.IsUsingCogBaseImage() {
+		baseImage, err := g.determineBaseImageName()
+		if err == nil || g.useCogBaseImage != nil {
+			return baseImage, err
+		}
 		if err != nil {
-			return "", err
+			console.Warnf("Could not find a suitable base image, continuing without base image support (%v).", err)
 		}
-		if changed {
-			console.Warnf("Stripping patch version from Python version %s to %s", g.Config.Build.PythonVersion, pythonVersion)
-		}
-
-		torchVersion, _ := g.Config.TorchVersion()
-		torchVersion, changed, err = stripPatchVersion(torchVersion)
-		if err != nil {
-			return "", err
-		}
-		if changed {
-			console.Warnf("Stripping patch version from Torch version %s to %s", g.Config.Build.PythonVersion, pythonVersion)
-		}
-
-		// validate that the base image configuration exists
-		imageGenerator, err := NewBaseImageGenerator(cudaVersion, pythonVersion, torchVersion)
-		if err != nil {
-			return "", err
-		}
-		baseImage := BaseImageName(imageGenerator.cudaVersion, imageGenerator.pythonVersion, imageGenerator.torchVersion)
-		return baseImage, nil
 	}
 
 	if g.Config.Build.GPU && g.useCudaBaseImage {
@@ -337,7 +319,7 @@ func (g *Generator) aptInstalls() (string, error) {
 		return "", nil
 	}
 
-	if g.useCogBaseImage {
+	if g.IsUsingCogBaseImage() {
 		packages = slices.FilterString(packages, func(pkg string) bool {
 			return !slices.ContainsString(baseImageSystemPackages, pkg)
 		})
@@ -349,7 +331,7 @@ func (g *Generator) aptInstalls() (string, error) {
 }
 
 func (g *Generator) installPython() (string, error) {
-	if g.Config.Build.GPU && g.useCudaBaseImage && !g.useCogBaseImage {
+	if g.Config.Build.GPU && g.useCudaBaseImage && !g.IsUsingCogBaseImage() {
 		return g.installPythonCUDA()
 	}
 	return "", nil
@@ -478,7 +460,7 @@ func (g *Generator) copyPipPackagesFromInstallStage() string {
 	// return "COPY --from=deps --link /dep COPY --from=deps /src"
 	// ...except it's actually /root/.pyenv/versions/3.8.17/lib/python3.8/site-packages
 	py := g.Config.Build.PythonVersion
-	if g.Config.Build.GPU && (g.useCudaBaseImage || g.useCogBaseImage) {
+	if g.Config.Build.GPU && (g.useCudaBaseImage || g.IsUsingCogBaseImage()) {
 		// this requires buildkit!
 		// we should check for buildkit and otherwise revert to symlinks or copying into /src
 		// we mount to avoid copying, which avoids having two copies in this layer
@@ -585,6 +567,39 @@ func (g *Generator) GenerateWeightsManifest() (*weights.Manifest, error) {
 	}
 
 	return m, nil
+}
+
+func (g *Generator) determineBaseImageName() (string, error) {
+	var changed bool
+	var err error
+
+	cudaVersion := g.Config.Build.CUDA
+
+	pythonVersion := g.Config.Build.PythonVersion
+	pythonVersion, changed, err = stripPatchVersion(pythonVersion)
+	if err != nil {
+		return "", err
+	}
+	if changed {
+		console.Warnf("Stripping patch version from Python version %s to %s", g.Config.Build.PythonVersion, pythonVersion)
+	}
+
+	torchVersion, _ := g.Config.TorchVersion()
+	torchVersion, changed, err = stripPatchVersion(torchVersion)
+	if err != nil {
+		return "", err
+	}
+	if changed {
+		console.Warnf("Stripping patch version from Torch version %s to %s", g.Config.Build.PythonVersion, pythonVersion)
+	}
+
+	// validate that the base image configuration exists
+	imageGenerator, err := NewBaseImageGenerator(cudaVersion, pythonVersion, torchVersion)
+	if err != nil {
+		return "", err
+	}
+	baseImage := BaseImageName(imageGenerator.cudaVersion, imageGenerator.pythonVersion, imageGenerator.torchVersion)
+	return baseImage, nil
 }
 
 func stripPatchVersion(versionString string) (string, bool, error) {

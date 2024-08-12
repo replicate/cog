@@ -48,7 +48,9 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 	}()
 
 	generator.SetUseCudaBaseImage(buildUseCudaBaseImage)
-	generator.SetUseCogBaseImage(buildUseCogBaseImage)
+	if buildUseCogBaseImage != nil {
+		generator.SetUseCogBaseImage(*buildUseCogBaseImage)
+	}
 
 	if buildSeparateWeights {
 		if imageName == "" {
