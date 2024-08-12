@@ -336,11 +336,12 @@ def get_value(node: ast.AST) -> "AstVal":
     """Return the value of constant or list of constants"""
     if isinstance(node, ast.Constant):
         return node.value
-    # for python3.7, were deprecated for Constant
-    if isinstance(node, (ast.Str, ast.Bytes)):
-        return node.s
-    if isinstance(node, ast.Num):
-        return node.n
+    # DeprecationWarning: ast.Str | ast.Num is deprecated and will be removed in Python 3.14; use ast.Constant instead
+    if sys.version_info < (3, 8):
+        if isinstance(node, (ast.Str, ast.Bytes)):
+            return node.s
+        if isinstance(node, ast.Num):
+            return node.n
     if isinstance(node, (ast.List, ast.Tuple)):
         return [get_value(e) for e in node.elts]
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
@@ -534,7 +535,10 @@ def extract_info(code: str) -> "JSONDict":  # pylint: disable=too-many-branches,
                     msg = "unknown argument for Input"
                     raise ValueError(msg)
                 kws[kw.arg] = to_serializable(get_value(kw.value))
-        elif isinstance(default, (ast.Constant, ast.List, ast.Tuple, ast.Str, ast.Num)):
+        elif isinstance(default, (ast.Constant, ast.List, ast.Tuple)) or (
+            # DeprecationWarning: ast.Str | ast.Num is deprecated and will be removed in Python 3.14; use ast.Constant instead
+            sys.version_info < (3, 8) and isinstance(default, (ast.Str, ast.Num))
+        ):
             kws = {"default": to_serializable(get_value(default))}  # could be None
         elif default == ...:  # no default
             kws = {}
