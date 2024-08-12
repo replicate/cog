@@ -1,8 +1,10 @@
 import base64
 import os
+import sys
 import threading
 import time
 
+import pytest
 import responses
 from werkzeug.wrappers import Response
 
@@ -220,6 +222,9 @@ def test_choices_int(client):
     assert resp.status_code == 422
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 9), reason="Literal is unsupported in Python 3.8 and earlier"
+)
 @uses_predictor("input_literal")
 def test_literal_str(client):
     resp = client.post("/predictions", json={"input": {"text": "foo"}})
@@ -228,6 +233,9 @@ def test_literal_str(client):
     assert resp.status_code == 422
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 9), reason="Literal is unsupported in Python 3.8 and earlier"
+)
 @uses_predictor("input_literal_integer")
 def test_literal_int(client):
     resp = client.post("/predictions", json={"input": {"x": 1}})

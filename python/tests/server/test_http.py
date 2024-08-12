@@ -1,8 +1,10 @@
 import base64
 import io
+import sys
 import time
 import unittest.mock as mock
 
+import pytest
 import responses
 from PIL import Image
 from responses import matchers
@@ -370,6 +372,9 @@ def test_train_openapi_specification(client):
     }
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 9), reason="Literal is unsupported in Python 3.8 and earlier"
+)
 @uses_predictor("input_literal")
 def test_openapi_specification_with_literal(client, static_schema):
     resp = client.get("/openapi.json")
