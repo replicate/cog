@@ -16,3 +16,4 @@ pkg/dockerfile/embed/cog.whl
 docs/README.md
 docs/CONTRIBUTING.md
 venv
+base-image
