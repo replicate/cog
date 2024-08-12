@@ -274,7 +274,7 @@ class BaseInput(BaseModel):
         Cleanup any temporary files created by the input.
         """
 
-        for _, value in self.__dict__.items():
+        for _, value in dict(self).items():
             # Handle URLPath objects specially for cleanup.
             # Also handle pathlib.Path objects, which cog.Path is a subclass of.
             # A pathlib.Path object shouldn't make its way here,
