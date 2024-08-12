@@ -55,7 +55,9 @@ func generateDockerArgs(options internalRunOptions) []string {
 	dockerArgs := []string{
 		"run",
 		"--rm",
-		"--shm-size", "8G", // https://github.com/pytorch/pytorch/issues/2244
+		"--shm-size", "6G",
+		// https://github.com/pytorch/pytorch/issues/2244
+		// https://github.com/replicate/cog/issues/1293
 		// TODO: relative to pwd and cog.yaml
 	}
 

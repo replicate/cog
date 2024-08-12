@@ -14,7 +14,7 @@ def upload_file(fh: io.IOBase, output_file_prefix: str = None) -> str:
     if output_file_prefix is not None:
         name = getattr(fh, "name", "output")
         url = output_file_prefix + os.path.basename(name)
-        resp = requests.put(url, files={"file": fh})
+        resp = requests.put(url, files={"file": fh}, timeout=None)
         resp.raise_for_status()
         return url
 
@@ -80,7 +80,5 @@ def ensure_trailing_slash(url: str) -> str:
     """
     Adds a trailing slash to `url` if not already present, and then returns it.
     """
-    if url.endswith("/"):
-        return url
-    else:
-        return url + "/"
+
+    return url if url.endswith("/") else url + "/"

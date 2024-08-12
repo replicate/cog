@@ -161,7 +161,7 @@ foo==1.0.0`), 0o644)
 	}
 	err = config.ValidateAndComplete(tmpDir)
 	require.NoError(t, err)
-	require.Equal(t, "11.0.3", config.Build.CUDA)
+	require.Equal(t, "11.0", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
@@ -191,7 +191,7 @@ foo==1.0.0`), 0o644)
 	}
 	err = config.ValidateAndComplete(tmpDir)
 	require.NoError(t, err)
-	require.Equal(t, "11.6.2", config.Build.CUDA)
+	require.Equal(t, "11.6", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
@@ -291,9 +291,9 @@ func TestValidateAndCompleteCUDAForSelectedTorch(t *testing.T) {
 		cuda  string
 		cuDNN string
 	}{
-		{"2.0.1", "11.8.0", "8"},
-		{"1.8.0", "11.1.1", "8"},
-		{"1.7.0", "11.0.3", "8"},
+		{"2.0.1", "11.8", "8"},
+		{"1.8.0", "11.1", "8"},
+		{"1.7.0", "11.0", "8"},
 	} {
 		config := &Config{
 			Build: &Build{
@@ -468,6 +468,31 @@ func TestPythonPackagesForArchTensorflowGPU(t *testing.T) {
 foo==1.0.0`
 	require.Equal(t, expected, requirements)
 	require.NotContains(t, requirements, "tensorflow_gpu")
+}
+
+func TestPythonPackagesBothTorchAndTensorflow(t *testing.T) {
+	config := &Config{
+		Build: &Build{
+			GPU:           true,
+			PythonVersion: "3.11",
+			PythonPackages: []string{
+				"tensorflow==2.16.1",
+				"torch==2.3.1",
+			},
+			CUDA: "12.3",
+		},
+	}
+	err := config.ValidateAndComplete("")
+	require.NoError(t, err)
+	require.Equal(t, "12.3", config.Build.CUDA)
+	require.Equal(t, "8", config.Build.CuDNN)
+
+	requirements, err := config.PythonRequirementsForArch("", "", []string{})
+	require.NoError(t, err)
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu121
+tensorflow==2.16.1
+torch==2.3.1+cu121`
+	require.Equal(t, expected, requirements)
 }
 
 func TestCUDABaseImageTag(t *testing.T) {

@@ -2,6 +2,7 @@ import io
 from unittest.mock import Mock
 
 import requests
+
 from cog.files import put_file_to_signed_endpoint
 
 

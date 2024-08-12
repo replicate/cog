@@ -3,6 +3,7 @@ import os
 import sys
 
 import pytest
+
 from cog.predictor import (
     get_predict,
     get_predictor,

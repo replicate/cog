@@ -382,6 +382,24 @@
         "doc",
         "bug"
       ]
+    },
+    {
+      "login": "Etelis",
+      "name": "Itay Etelis",
+      "avatar_url": "https://avatars.githubusercontent.com/u/92247226?v=4",
+      "profile": "https://github.com/Etelis",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "gschian0",
+      "name": "Gennaro Schiano",
+      "avatar_url": "https://avatars.githubusercontent.com/u/54407820?v=4",
+      "profile": "http://www.wavefunction.dev",
+      "contributions": [
+        "doc"
+      ]
     }
   ],
   "contributorsPerLine": 7,

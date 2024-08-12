@@ -80,6 +80,12 @@ class PredictionResponse(PredictionBaseModel):
 
     metrics: t.Optional[t.Dict[str, t.Any]]
 
+    # This is used to track a fatal exception that occurs during a prediction.
+    # "Fatal" means that we require the worker to be shut down to recover:
+    # regular exceptions raised during predict are handled and do not use this
+    # field.
+    _fatal_exception: t.Optional[BaseException] = pydantic.PrivateAttr(default=None)
+
     @classmethod
     def with_types(cls, input_type: t.Type[t.Any], output_type: t.Type[t.Any]) -> t.Any:
         # [compat] Input is implicitly optional -- previous versions of the

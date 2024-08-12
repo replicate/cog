@@ -18,18 +18,17 @@ from typing import (
     Type,
     Union,
     cast,
+    get_type_hints,
 )
-from unittest.mock import patch
-
-import structlog
-
-import cog.code_xforms as code_xforms
 
 try:
     from typing import get_args, get_origin
 except ImportError:  # Python < 3.8
     from typing_compat import get_args, get_origin  # type: ignore
 
+from unittest.mock import patch
+
+import structlog
 import yaml
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
@@ -37,6 +36,7 @@ from pydantic.fields import FieldInfo
 # Added in Python 3.9. Can be from typing if we drop support for <3.9
 from typing_extensions import Annotated
 
+from .code_xforms import load_module_from_string, strip_model_source_code
 from .errors import ConfigDoesNotExist, PredictorNotSet
 from .types import (
     CogConfig,
@@ -65,7 +65,10 @@ ALLOWED_INPUT_TYPES: List[Type[Any]] = [
 
 
 class BasePredictor(ABC):
-    def setup(self, weights: Optional[Union[CogFile, CogPath, str]] = None) -> None:
+    def setup(
+        self,
+        weights: Optional[Union[CogFile, CogPath, str]] = None,  # pylint: disable=unused-argument
+    ) -> None:
         """
         An optional method to prepare the model so multiple predictions run efficiently.
         """
@@ -76,7 +79,6 @@ class BasePredictor(ABC):
         """
         Run a single prediction on the model
         """
-        pass
 
 
 def run_setup(predictor: BasePredictor) -> None:
@@ -103,7 +105,7 @@ def run_setup(predictor: BasePredictor) -> None:
             # TODO: So this can be a url. evil!
             weights = cast(CogPath, CogPath.validate(weights_url))
         # allow people to download weights themselves
-        elif weights_type == str:
+        elif weights_type == str:  # noqa: E721
             weights = weights_url
         else:
             raise ValueError(
@@ -111,7 +113,8 @@ def run_setup(predictor: BasePredictor) -> None:
             )
     elif os.path.exists(weights_path):
         if weights_type == CogFile:
-            weights = cast(CogFile, open(weights_path, "rb"))
+            with open(weights_path, "rb") as f:
+                weights = cast(CogFile, f)
         elif weights_type == CogPath:
             weights = CogPath(weights_path)
         else:
@@ -128,12 +131,12 @@ def get_weights_type(setup_function: Callable[[Any], None]) -> Optional[Any]:
     signature = inspect.signature(setup_function)
     if "weights" not in signature.parameters:
         return None
-    Type = signature.parameters["weights"].annotation
+    Type = signature.parameters["weights"].annotation  # pylint: disable=invalid-name,redefined-outer-name
     # Handle Optional. It is Union[Type, None]
     if get_origin(Type) == Union:
         args = get_args(Type)
         if len(args) == 2 and args[1] is type(None):
-            Type = get_args(Type)[0]
+            Type = get_args(Type)[0]  # pylint: disable=invalid-name
     return Type
 
 
@@ -159,7 +162,7 @@ def load_config() -> CogConfig:
     # Assumes the working directory is /src
     config_path = os.path.abspath("cog.yaml")
     try:
-        with open(config_path) as fh:
+        with open(config_path, encoding="utf-8") as fh:
             config = yaml.safe_load(fh)
     except FileNotFoundError as e:
         raise ConfigDoesNotExist(
@@ -208,10 +211,8 @@ def load_slim_predictor_from_file(
 ) -> Optional[types.ModuleType]:
     with open(module_path, encoding="utf-8") as file:
         source_code = file.read()
-    stripped_source = code_xforms.strip_model_source_code(
-        source_code, class_name, method_name
-    )
-    module = code_xforms.load_module_from_string(uuid.uuid4().hex, stripped_source)
+    stripped_source = strip_model_source_code(source_code, class_name, method_name)
+    module = load_module_from_string(uuid.uuid4().hex, stripped_source)
     return module
 
 
@@ -234,7 +235,7 @@ def load_slim_predictor_from_ref(ref: str, method_name: str) -> BasePredictor:
                 log.debug(f"[{module_name}] fast loader returned None")
         else:
             log.debug(f"[{module_name}] cannot use fast loader as current Python <3.9")
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         log.debug(f"[{module_name}] fast loader failed: {e}")
     finally:
         if not module:
@@ -266,23 +267,22 @@ class BaseInput(BaseModel):
         """
         for _, value in self:
             # Handle URLPath objects specially for cleanup.
-            if isinstance(value, URLPath):
-                value.unlink()
-            # Note this is pathlib.Path, which cog.Path is a subclass of. A pathlib.Path object shouldn't make its way here,
-            # but both have an unlink() method, so may as well be safe.
-            elif isinstance(value, Path):
-                try:
-                    value.unlink()
-                except FileNotFoundError:
-                    pass
+            # Also handle pathlib.Path objects, which cog.Path is a subclass of.
+            # A pathlib.Path object shouldn't make its way here,
+            # but both have an unlink() method, so we may as well be safe.
+            if isinstance(value, (URLPath, Path)):
+                value.unlink(missing_ok=True)
 
 
-def validate_input_type(type: Type[Any], name: str) -> None:
+def validate_input_type(
+    type: Type[Any],  # pylint: disable=redefined-builtin
+    name: str,
+) -> None:
     if type is inspect.Signature.empty:
         raise TypeError(
             f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
         )
-    elif type not in ALLOWED_INPUT_TYPES:
+    if type not in ALLOWED_INPUT_TYPES:
         if get_origin(type) in (Union, List, list) or (
             hasattr(types, "UnionType") and get_origin(type) is types.UnionType
         ):  # noqa: E721
@@ -294,13 +294,18 @@ def validate_input_type(type: Type[Any], name: str) -> None:
             )
 
 
-def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any]:
+def get_input_create_model_kwargs(
+    signature: inspect.Signature, input_types: Dict[str, Any]
+) -> Dict[str, Any]:
     create_model_kwargs = {}
 
     order = 0
 
     for name, parameter in signature.parameters.items():
-        InputType = parameter.annotation
+        if name not in input_types:
+            raise TypeError(f"No input type provided for parameter `{name}`.")
+
+        InputType = input_types[name]  # pylint: disable=invalid-name
 
         validate_input_type(InputType, name)
 
@@ -323,16 +328,16 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
             choices = default.extra["choices"]
             # It will be passed automatically as 'enum' in the schema, so remove it as an extra field.
             del default.extra["choices"]
-            if InputType == str:
+            if InputType == str:  # noqa: E721
 
                 class StringEnum(str, enum.Enum):
                     pass
 
-                InputType = StringEnum(  # type: ignore
+                InputType = StringEnum(  # pylint: disable=invalid-name
                     name, {value: value for value in choices}
                 )
-            elif InputType == int:
-                InputType = enum.IntEnum(name, {str(value): value for value in choices})  # type: ignore
+            elif InputType == int:  # noqa: E721
+                InputType = enum.IntEnum(name, {str(value): value for value in choices})  # type: ignore # pylint: disable=invalid-name
             else:
                 raise TypeError(
                     f"The input {name} uses the option choices. Choices can only be used with str or int types."
@@ -366,13 +371,17 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
     predict = get_predict(predictor)
     signature = inspect.signature(predict)
 
+    input_types = get_type_hints(predict)
+    if "return" in input_types:
+        del input_types["return"]
+
     return create_model(
         "Input",
         __config__=None,
         __base__=BaseInput,
         __module__=__name__,
         __validators__=None,
-        **get_input_create_model_kwargs(signature),
+        **get_input_create_model_kwargs(signature, input_types),
     )  # type: ignore
 
 
@@ -382,9 +391,10 @@ def get_output_type(predictor: BasePredictor) -> Type[BaseModel]:
     """
 
     predict = get_predict(predictor)
-    signature = inspect.signature(predict)
-    OutputType: Type[BaseModel]
-    if signature.return_annotation is inspect.Signature.empty:
+
+    input_types = get_type_hints(predict)
+
+    if "return" not in input_types:
         raise TypeError(
             """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
 
@@ -399,8 +409,7 @@ For example:
         ...
 """
         )
-    else:
-        OutputType = signature.return_annotation
+    OutputType = input_types.pop("return")  # pylint: disable=invalid-name
 
     # The type that goes in the response is a list of the yielded type
     if get_origin(OutputType) is Iterator:
@@ -428,7 +437,7 @@ For example:
     #
     # So we work around this by inheriting from the original class rather
     # than using "__root__".
-    if name == "TrainingOutput":
+    if name == "TrainingOutput":  # pylint: disable=no-else-return
 
         class Output(OutputType):  # type: ignore
             pass
@@ -464,13 +473,17 @@ def get_training_input_type(predictor: BasePredictor) -> Type[BaseInput]:
     train = get_train(predictor)
     signature = inspect.signature(train)
 
+    input_types = get_type_hints(train)
+    if "return" in input_types:
+        del input_types["return"]
+
     return create_model(
         "TrainingInput",
         __config__=None,
         __base__=BaseInput,
         __module__=__name__,
         __validators__=None,
-        **get_input_create_model_kwargs(signature),
+        **get_input_create_model_kwargs(signature, input_types),
     )  # type: ignore
 
 
@@ -480,9 +493,9 @@ def get_training_output_type(predictor: BasePredictor) -> Type[BaseModel]:
     """
 
     train = get_train(predictor)
-    signature = inspect.signature(train)
 
-    if signature.return_annotation is inspect.Signature.empty:
+    input_types = get_type_hints(train)
+    if "return" not in input_types:
         raise TypeError(
             """You must set an output type. If your model can return multiple output types, you can explicitly set `Any` as the output type.
 
@@ -497,47 +510,55 @@ For example:
         ...
 """
         )
-    else:
-        TrainingOutputType = signature.return_annotation
+
+    TrainingOutputType = input_types.pop("return")  # pylint: disable=invalid-name
 
     name = (
         TrainingOutputType.__name__ if hasattr(TrainingOutputType, "__name__") else ""
     )
+
     # We wrap the OutputType in a TrainingOutput class to
     # ensure consistent naming of the interface in the schema
     # See comment in get_output_type for more info.
     if name == "TrainingOutput":
         return TrainingOutputType
 
-    if name == "Output":
+    if name == "Output":  # pylint: disable=no-else-return
 
         class TrainingOutput(TrainingOutputType):  # type: ignore
             pass
 
         return TrainingOutput
+    else:
 
-    class TrainingOutput(BaseModel):
-        __root__: TrainingOutputType  # type: ignore
+        class TrainingOutput(BaseModel):
+            __root__: TrainingOutputType  # type: ignore
 
-    return TrainingOutput
+        return TrainingOutput
 
 
-def human_readable_type_name(t: Type[Any]) -> str:
+def human_readable_type_name(t: Type[Union[Any, None]]) -> str:
     """
     Generates a useful-for-humans label for a type. For builtin types, it's just the class name (eg "str" or "int"). For other types, it includes the module (eg "pathlib.Path" or "cog.File").
 
     The special case for Cog modules is because the type lives in `cog.types` internally, but just `cog` when included as a dependency.
     """
-    module = t.__module__
-    if module == "builtins":
-        return t.__qualname__
-    elif module.split(".")[0] == "cog":
-        module = "cog"
 
-    try:
-        return module + "." + t.__qualname__
-    except AttributeError:
-        return str(t)
+    if hasattr(t, "__module__"):
+        module = t.__module__
+
+        if module == "builtins":
+            return t.__qualname__
+
+        if module.split(".")[0] == "cog":
+            module = "cog"
+
+        try:
+            return f"{module}.{t.__qualname__}"
+        except AttributeError:
+            pass
+
+    return str(t)
 
 
 def readable_types_list(type_list: List[Type[Any]]) -> str:

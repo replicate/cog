@@ -220,3 +220,23 @@ def test_python_37_deprecated(docker_image):
         "minimum supported Python version is 3.8. requested 3.7"
         in build_process.stderr.decode()
     )
+
+
+def test_build_base_image_sha(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/path-project"
+    subprocess.run(
+        ["cog", "build", "-t", docker_image, "--use-cog-base-image"],
+        cwd=project_dir,
+        check=True,
+    )
+    image = json.loads(
+        subprocess.run(
+            ["docker", "image", "inspect", docker_image],
+            capture_output=True,
+            check=True,
+        ).stdout
+    )
+    labels = image[0]["Config"]["Labels"]
+    base_layer_hash = labels["run.cog.cog-base-image-last-layer-sha"]
+    layers = image[0]["RootFS"]["Layers"]
+    assert base_layer_hash in layers

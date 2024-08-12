@@ -9,6 +9,8 @@ import (
 	"path"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
@@ -168,29 +170,33 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	if cogBaseImageName != "" {
 		labels[global.LabelNamespace+"cog-base-image-name"] = cogBaseImageName
 
-		// get the last layer of the cog base image so that when we look at the built cog image,
-		// we know where the base image ends
-		// pull the base image, as we'll need to pull it anyway to build the cog image
-
-		// TODO: implement a manifest inspect which doesn't require a pull
-		// once we do that, we can switch from using layer diff ids to  layer shas
-		err := docker.Pull(cogBaseImageName)
+		ref, err := name.ParseReference(cogBaseImageName)
 		if err != nil {
-			return fmt.Errorf("Failed to pull cog base image: %w", err)
+			return fmt.Errorf("Failed to parse cog base image reference: %w", err)
 		}
 
-		cogBaseImage, err := docker.ImageInspect(cogBaseImageName)
+		img, err := remote.Image(ref)
 		if err != nil {
-			return fmt.Errorf("Failed to inspect cog base image while trying to fetch last layer: %w", err)
+			return fmt.Errorf("Failed to fetch cog base image: %w", err)
 		}
 
-		if cogBaseImage.RootFS.Layers == nil || len(cogBaseImage.RootFS.Layers) == 0 {
-			return fmt.Errorf("Cog base image has no layers or RootFS is nil: %s", cogBaseImageName)
+		layers, err := img.Layers()
+		if err != nil {
+			return fmt.Errorf("Failed to get layers for cog base image: %w", err)
 		}
 
-		lastLayerIndex := len(cogBaseImage.RootFS.Layers) - 1
-		lastLayer := cogBaseImage.RootFS.Layers[lastLayerIndex]
-		console.Debugf("Last layer of the cog base image: %s", lastLayer) // prints the sha
+		if len(layers) == 0 {
+			return fmt.Errorf("Cog base image has no layers: %s", cogBaseImageName)
+		}
+
+		lastLayerIndex := len(layers) - 1
+		layerLayerDigest, err := layers[lastLayerIndex].DiffID()
+		if err != nil {
+			return fmt.Errorf("Failed to get last layer digest for cog base image: %w", err)
+		}
+
+		lastLayer := layerLayerDigest.String()
+		console.Debugf("Last layer of the cog base image: %s", lastLayer)
 
 		labels[global.LabelNamespace+"cog-base-image-last-layer-sha"] = lastLayer
 		labels[global.LabelNamespace+"cog-base-image-last-layer-idx"] = fmt.Sprintf("%d", lastLayerIndex)
@@ -210,7 +216,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}
 	}
 
-	if err := docker.BuildAddLabelsAndSchemaToImage(dir, imageName, labels, bundledSchemaFile, bundledSchemaPy); err != nil {
+	if err := docker.BuildAddLabelsAndSchemaToImage(imageName, labels, bundledSchemaFile, bundledSchemaPy); err != nil {
 		return fmt.Errorf("Failed to add labels to image: %w", err)
 	}
 	return nil

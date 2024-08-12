@@ -4,6 +4,7 @@ import tempfile
 from unittest import mock
 
 import pytest
+
 from cog.server.probes import ProbeHelper
 
 

@@ -33,7 +33,7 @@ optional-dependencies = { "dev" = [
   'numpy<1.22.0; python_version < "3.8"',
   'numpy; python_version >= "3.8"',
   "pillow",
-  "pyright==1.1.347",
+  "pyright==1.1.375",
   "pytest",
   "pytest-httpserver",
   "pytest-rerunfailures",
@@ -66,6 +66,21 @@ reportUnusedExpression = "warning"
 [tool.setuptools]
 package-dir = { "" = "python" }
 
+[tool.pylint.main]
+disable = [
+  "C0114", # Missing module docstring
+  "C0115", # Missing class docstring
+  "C0116", # Missing function or method docstring
+  "C0301", # Line too long
+  "C0413", # Import should be placed at the top of the module
+  "R0903", # Too few public methods
+  "W0622", # Redefining built-in
+]
+good-names = ["id", "input"]
+
+ignore-paths = ["python/cog/_version.py", "python/tests"]
+
+
 [tool.ruff]
 lint.select = [
   "E",   # pycodestyle error
@@ -95,6 +110,7 @@ extend-exclude = [
   "python/tests/server/fixtures/*",
   "test-integration/test_integration/fixtures/*",
 ]
+src = ["python"]
 
 [tool.ruff.lint.per-file-ignores]
 "python/cog/server/http.py" = [

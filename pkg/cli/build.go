@@ -64,6 +64,12 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, buildUseCogBaseImage); err != nil {
+		if buildUseCogBaseImage && cmd.Flags().Changed("use-cog-base-image") {
+			console.Infof("Build failed with Cog base image enabled by default. " +
+				"If you want to build without using pre-built base images, " +
+				"try `cog build --use-cog-base-image=false`.")
+		}
+
 		return err
 	}
 
@@ -110,7 +116,7 @@ func addDockerfileFlag(cmd *cobra.Command) {
 }
 
 func addUseCogBaseImageFlag(cmd *cobra.Command) {
-	cmd.Flags().BoolVar(&buildUseCogBaseImage, "use-cog-base-image", false, "Use pre-built Cog base image for faster cold boots")
+	cmd.Flags().BoolVar(&buildUseCogBaseImage, "use-cog-base-image", true, "Use pre-built Cog base image for faster cold boots")
 }
 
 func addBuildTimestampFlag(cmd *cobra.Command) {

@@ -18,7 +18,7 @@ build:
 Cog can run notebooks in the environment you've defined in `cog.yaml` with the following command:
 
 ```sh
-cog run -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
+cog run -p 8888 jupyter lab --allow-root --ip=0.0.0.0
 ```
 
 ## Use notebook code in your predictor
