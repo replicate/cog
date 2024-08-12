@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import contextlib
+import ctypes
 import io
 import os
+import re
 import selectors
 import sys
 import threading
 import uuid
 from types import TracebackType
-from typing import Callable, Sequence, TextIO
+from typing import Any, Callable, Sequence, TextIO
 
+import pydantic
 from typing_extensions import Self
 
 
@@ -209,3 +212,38 @@ class StreamRedirector(_StreamRedirectorBase):
             s.write(self._terminate_token + "\n")
             s.flush()
             break  # we only need to send the terminate token to one stream
+
+
+# Precompile the regular expression
+_ADDRESS_PATTERN = re.compile(r"0x[0-9A-Fa-f]+")
+
+
+def _unwrap_pydantic_serialization_iterator(obj: Any) -> Any:
+    # serializationiterator doesn't expose the object it wraps
+    # but does give us a pointer in the __repr__ string
+    match = _ADDRESS_PATTERN.search(repr(obj))
+    if match:
+        address = int(match.group(), 16)
+        # Cast the memory address to a Python object
+        return ctypes.cast(address, ctypes.py_object).value
+
+    return obj
+
+
+def unwrap_pydantic_serialization_iterators(obj: Any) -> Any:
+    if type(obj).__name__ == "SerializationIterator":
+        return _unwrap_pydantic_serialization_iterator(obj)
+    if type(obj) == str:  # noqa: E721 # pylint: disable=unidiomatic-typecheck
+        return obj
+    if isinstance(obj, pydantic.BaseModel):
+        return unwrap_pydantic_serialization_iterators(
+            obj.model_dump(exclude_unset=True)
+        )
+    if isinstance(obj, dict):
+        return {
+            key: unwrap_pydantic_serialization_iterators(value)
+            for key, value in obj.items()
+        }
+    if isinstance(obj, list):
+        return [unwrap_pydantic_serialization_iterators(value) for value in obj]
+    return obj

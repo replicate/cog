@@ -16,8 +16,9 @@ from .. import schema
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from ..predictor import BaseInput
-from ..types import PYDANTIC_V2, unwrap_sis
+from ..types import PYDANTIC_V2
 from .eventtypes import Done, Log, PredictionOutput, PredictionOutputType
+from .helpers import unwrap_pydantic_serialization_iterators
 from .telemetry import current_trace_context
 from .useragent import get_user_agent
 from .webhook import SKIP_START_EVENT, webhook_caller_filtered
@@ -96,7 +97,9 @@ class PredictionRunner:
 
         if isinstance(prediction.input, BaseInput):
             if PYDANTIC_V2:
-                payload = unwrap_sis(prediction.input.model_dump())
+                payload = unwrap_pydantic_serialization_iterators(
+                    prediction.input.model_dump()
+                )
             else:
                 payload = prediction.input.dict()
         else:
@@ -259,7 +262,9 @@ class PredictTask(Task[schema.PredictionResponse]):
         self._fut: "Optional[Future[Done]]" = None
 
         if PYDANTIC_V2:
-            request_dict = unwrap_sis(prediction_request.model_dump())
+            request_dict = unwrap_pydantic_serialization_iterators(
+                prediction_request.model_dump()
+            )
         else:
             request_dict = prediction_request.dict()
 

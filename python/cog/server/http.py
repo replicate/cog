@@ -35,7 +35,8 @@ from ..predictor import (
     load_config,
     load_slim_predictor_from_ref,
 )
-from ..types import PYDANTIC_V2, CogConfig, unwrap_sis
+from ..types import PYDANTIC_V2, CogConfig
+from .helpers import unwrap_pydantic_serialization_iterators
 from .probes import ProbeHelper
 from .runner import (
     PredictionRunner,
@@ -503,7 +504,9 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
 
         # ...and return the result.
         if PYDANTIC_V2:
-            response_object = unwrap_sis(predict_task.result.model_dump())
+            response_object = unwrap_pydantic_serialization_iterators(
+                predict_task.result.model_dump()
+            )
         else:
             response_object = predict_task.result.dict()
         try:
