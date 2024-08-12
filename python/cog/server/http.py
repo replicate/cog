@@ -9,6 +9,7 @@ import sys
 import textwrap
 import threading
 import traceback
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
@@ -66,20 +67,8 @@ class Health(Enum):
     DEFUNCT = auto()
 
 
-class MyState:
-    health: Health
-    setup_result: Optional[SetupResult]
-
-
-class MyFastAPI(FastAPI):
-    # TODO: not, strictly speaking, legal
-    # https://github.com/microsoft/pyright/issues/5933
-    # but it'd need a FastAPI patch to fix
-    state: MyState  # type: ignore
-
-
 def add_setup_failed_routes(
-    app: MyFastAPI,  # pylint: disable=redefined-outer-name
+    app: FastAPI,  # pylint: disable=redefined-outer-name
     started_at: datetime,
     msg: str,
 ) -> None:
@@ -104,7 +93,7 @@ def add_setup_failed_routes(
         )
 
 
-def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
+def create_app(
     config: CogConfig,  # pylint: disable=redefined-outer-name
     shutdown_event: Optional[threading.Event],  # pylint: disable=redefined-outer-name
     threads: int = 1,  # pylint: disable=redefined-outer-name
@@ -112,12 +101,29 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     mode: str = "predict",
     is_build: bool = False,
     await_explicit_shutdown: bool = False,  # pylint: disable=redefined-outer-name
-) -> MyFastAPI:
-    app = MyFastAPI(  # pylint: disable=redefined-outer-name
-        title="Cog",  # TODO: mention model name?
-        # version=None # TODO
-    )
+) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):  # noqa: ANN202 # pylint: disable=redefined-outer-name
+        # Startup
+        if (
+            app.state.setup_result
+            and app.state.setup_result.status == schema.Status.FAILED
+        ):
+            # signal shutdown if interactive run
+            if shutdown_event and not await_explicit_shutdown:
+                shutdown_event.set()
+        else:
+            setup_task = runner.setup()
+            setup_task.add_done_callback(_handle_setup_done)
 
+        yield
+
+        # Shutdown
+        worker.terminate()
+
+    app = FastAPI(title="Cog", lifespan=lifespan)  # pylint: disable=redefined-outer-name
+
+    # Initialize app state
     app.state.health = Health.STARTING
     app.state.setup_result = None
     started_at = datetime.now(tz=timezone.utc)
@@ -227,24 +233,6 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                 msg = "Error while loading trainer:\n\n" + traceback.format_exc()
                 add_setup_failed_routes(app, started_at, msg)
                 return app
-
-    @app.on_event("startup")
-    def startup() -> None:
-        # check for early setup failures
-        if (
-            app.state.setup_result
-            and app.state.setup_result.status == schema.Status.FAILED
-        ):
-            # signal shutdown if interactive run
-            if shutdown_event and not await_explicit_shutdown:
-                shutdown_event.set()
-        else:
-            setup_task = runner.setup()
-            setup_task.add_done_callback(_handle_setup_done)
-
-    @app.on_event("shutdown")
-    def shutdown() -> None:
-        worker.terminate()
 
     @app.get("/")
     async def root() -> Any:
