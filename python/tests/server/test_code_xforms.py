@@ -2,8 +2,9 @@ import os
 import sys
 import uuid
 
-import cog.code_xforms as code_xforms
 import pytest
+
+import cog.code_xforms as code_xforms
 
 g_module_dir = os.path.dirname(os.path.abspath(__file__))
 

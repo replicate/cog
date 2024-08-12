@@ -110,6 +110,7 @@ extend-exclude = [
   "python/tests/server/fixtures/*",
   "test-integration/test_integration/fixtures/*",
 ]
+src = ["python"]
 
 [tool.ruff.lint.per-file-ignores]
 "python/cog/server/http.py" = [

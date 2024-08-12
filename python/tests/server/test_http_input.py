@@ -3,9 +3,9 @@ import os
 import threading
 
 import responses
+
 from cog import schema
 from cog.server.http import Health, create_app
-
 from tests.server.conftest import _fixture_path
 
 from .conftest import uses_predictor

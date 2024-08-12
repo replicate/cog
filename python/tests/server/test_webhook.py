@@ -1,8 +1,9 @@
 import requests
 import responses
+from responses import registries
+
 from cog.schema import PredictionResponse, Status, WebhookEvent
 from cog.server.webhook import webhook_caller, webhook_caller_filtered
-from responses import registries
 
 
 @responses.activate

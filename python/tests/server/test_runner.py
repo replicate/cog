@@ -4,6 +4,7 @@ from datetime import datetime
 from unittest import mock
 
 import pytest
+
 from cog.schema import PredictionRequest, PredictionResponse, Status, WebhookEvent
 from cog.server.eventtypes import (
     Done,

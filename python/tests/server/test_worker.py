@@ -4,6 +4,14 @@ from typing import Any, Optional
 
 import pytest
 from attrs import define
+from hypothesis import given, settings
+from hypothesis import strategies as st
+from hypothesis.stateful import (
+    RuleBasedStateMachine,
+    precondition,
+    rule,
+)
+
 from cog.server.eventtypes import (
     Done,
     Heartbeat,
@@ -13,13 +21,6 @@ from cog.server.eventtypes import (
 )
 from cog.server.exceptions import FatalWorkerException, InvalidStateException
 from cog.server.worker import Worker
-from hypothesis import given, settings
-from hypothesis import strategies as st
-from hypothesis.stateful import (
-    RuleBasedStateMachine,
-    precondition,
-    rule,
-)
 
 # Set a longer deadline on CI as the instances are a bit slower.
 settings.register_profile("ci", max_examples=100, deadline=2000)
