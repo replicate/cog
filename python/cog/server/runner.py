@@ -292,17 +292,19 @@ class PredictTask(Task[schema.PredictionResponse]):
         self._webhook_sender = webhook_sender
         self._file_uploader = file_uploader
 
+    @property
+    def result(self) -> schema.PredictionResponse:
+        return self._p
+
+    def track(self, fut: "Future[Done]") -> None:
+        self._log.info("started prediction")
+
         # HACK: don't send an initial webhook if we're trying to optimize for
         # latency (this guarantees that the first output webhook won't be
         # throttled.)
         if not SKIP_START_EVENT:
             self._send_webhook(schema.WebhookEvent.START)
 
-    @property
-    def result(self) -> schema.PredictionResponse:
-        return self._p
-
-    def track(self, fut: "Future[Done]") -> None:
         self._fut = fut
         self._fut.add_done_callback(self._handle_done)
 
