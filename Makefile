@@ -5,11 +5,9 @@ PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
 
 INSTALL := install -m 0755
-INSTALL_PROGRAM := $(INSTALL)
 
 GO ?= go
-GOOS := $(shell $(GO) env GOOS)
-GOARCH := $(shell $(GO) env GOARCH)
+GORELEASER := $(GO) run github.com/goreleaser/goreleaser/v2@latest
 
 PYTHON ?= python
 PYTEST := $(PYTHON) -m pytest
@@ -26,8 +24,11 @@ endif
 COG_WHEEL := dist/cog-$(COG_PYTHON_VERSION)-py3-none-any.whl
 endif
 
+COG_GO_SOURCE := $(shell find cmd pkg -type f)
 COG_PYTHON_SOURCE := $(shell find python/cog -type f -name '*.py')
 COG_EMBEDDED_WHEEL := pkg/dockerfile/embed/$(notdir $(COG_WHEEL))
+
+COG_BINARIES := cog base-image
 
 default: all
 
@@ -45,30 +46,18 @@ $(COG_EMBEDDED_WHEEL): $(COG_WHEEL)
 $(COG_WHEEL): $(COG_PYTHON_SOURCE)
 	$(PYTHON) -m build
 
-cog: $(COG_EMBEDDED_WHEEL)
-	CGO_ENABLED=0 $(GO) build -o $@ \
-		-ldflags "-X github.com/replicate/cog/pkg/global.Version=$(COG_VERSION) -X github.com/replicate/cog/pkg/global.BuildTime=$(shell date +%Y-%m-%dT%H:%M:%S%z) -w" \
-		cmd/cog/cog.go
-
-base-image: $(COG_EMBEDDED_WHEEL)
-	CGO_ENABLED=0 $(GO) build -o $@ \
-		-ldflags "-X github.com/replicate/cog/pkg/global.Version=$(COG_VERSION) -X github.com/replicate/cog/pkg/global.BuildTime=$(shell date +%Y-%m-%dT%H:%M:%S%z) -w" \
-		cmd/base-image/baseimage.go
+$(COG_BINARIES): $(COG_GO_SOURCE) $(COG_EMBEDDED_WHEEL)
+	$(GORELEASER) build --clean --snapshot --single-target --id $@ --output $@
 
 .PHONY: install
-install: cog
-	$(INSTALL_PROGRAM) -d $(DESTDIR)$(BINDIR)
-	$(INSTALL_PROGRAM) cog $(DESTDIR)$(BINDIR)/cog
-
-.PHONY: uninstall
-uninstall:
-	rm -f $(DESTDIR)$(BINDIR)/cog
+install: $(COG_BINARIES)
+	$(INSTALL) -d $(DESTDIR)$(BINDIR)
+	$(INSTALL) $< $(DESTDIR)$(BINDIR)/$<
 
 .PHONY: clean
 clean:
-	$(GO) clean
 	rm -rf build dist pkg/dockerfile/embed
-	rm -f cog
+	rm -f $(COG_BINARIES)
 
 .PHONY: test-go
 test-go: $(COG_EMBEDDED_WHEEL) | check-fmt vet lint-go
@@ -76,8 +65,8 @@ test-go: $(COG_EMBEDDED_WHEEL) | check-fmt vet lint-go
 	$(GO) run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
 
 .PHONY: test-integration
-test-integration: cog
-	cd test-integration/ && $(MAKE) PATH="$(PWD):$(PATH)" test
+test-integration: $(COG_BINARIES)
+	$(MAKE) -C test-integration PATH="$(PWD):$(PATH)" test
 
 .PHONY: test-python
 test-python:
@@ -85,7 +74,6 @@ test-python:
 
 .PHONY: test
 test: test-go test-python test-integration
-
 
 .PHONY: fmt
 fmt:
@@ -95,11 +83,9 @@ fmt:
 generate:
 	$(GO) generate ./...
 
-
 .PHONY: vet
 vet:
 	$(GO) vet ./...
-
 
 .PHONY: check-fmt
 check-fmt:
@@ -119,10 +105,6 @@ lint-python:
 
 .PHONY: lint
 lint: lint-go lint-python
-
-.PHONY: mod-tidy
-mod-tidy:
-	$(GO) mod tidy
 
 .PHONY: run-docs-server
 run-docs-server:
