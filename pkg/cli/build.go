@@ -21,7 +21,7 @@ var buildProgressOutput string
 var buildSchemaFile string
 var buildUseCudaBaseImage string
 var buildDockerfileFile string
-var buildUseCogBaseImage *bool = nil
+var buildUseCogBaseImage bool
 
 const useCogBaseImageFlagKey = "use-cog-base-image"
 
@@ -65,7 +65,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, buildUseCogBaseImage); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd)); err != nil {
 		return err
 	}
 
@@ -112,11 +112,7 @@ func addDockerfileFlag(cmd *cobra.Command) {
 }
 
 func addUseCogBaseImageFlag(cmd *cobra.Command) {
-	buildUseCogBaseImage = new(bool)
-	cmd.Flags().BoolVar(buildUseCogBaseImage, useCogBaseImageFlagKey, true, "Use pre-built Cog base image for faster cold boots")
-	if !cmd.Flags().Changed(useCogBaseImageFlagKey) {
-		buildUseCogBaseImage = nil
-	}
+	cmd.Flags().BoolVar(&buildUseCogBaseImage, useCogBaseImageFlagKey, true, "Use pre-built Cog base image for faster cold boots")
 }
 
 func addBuildTimestampFlag(cmd *cobra.Command) {
@@ -136,4 +132,13 @@ func checkMutuallyExclusiveFlags(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("The flags %s are mutually exclusive: you can only set one of them.", strings.Join(flagsSet, " and "))
 	}
 	return nil
+}
+
+func DetermineUseCogBaseImage(cmd *cobra.Command) *bool {
+	if !cmd.Flags().Changed(useCogBaseImageFlagKey) {
+		return nil
+	}
+	useCogBaseImage := new(bool)
+	*useCogBaseImage = buildUseCogBaseImage
+	return useCogBaseImage
 }
