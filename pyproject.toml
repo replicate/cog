@@ -65,7 +65,12 @@ reportMissingTypeArgument = "error"
 reportUnusedExpression = "warning"
 
 [tool.setuptools]
-package-dir = { "" = "python" }
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = ["python"]
+include = ["cog*"]
+exclude = ["tests*"]
 
 [tool.pylint.main]
 disable = [
