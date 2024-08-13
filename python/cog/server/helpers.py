@@ -219,8 +219,8 @@ _ADDRESS_PATTERN = re.compile(r"0x[0-9A-Fa-f]+")
 
 
 def _unwrap_pydantic_serialization_iterator(obj: Any) -> Any:
-    # serializationiterator doesn't expose the object it wraps
-    # but does give us a pointer in the __repr__ string
+    # SerializationIterator doesn't expose the object it wraps
+    # but does give us a pointer in the `__repr__` string
     match = _ADDRESS_PATTERN.search(repr(obj))
     if match:
         address = int(match.group(), 16)
@@ -231,6 +231,17 @@ def _unwrap_pydantic_serialization_iterator(obj: Any) -> Any:
 
 
 def unwrap_pydantic_serialization_iterators(obj: Any) -> Any:
+    """
+    Unwraps instances of `pydantic_core._pydantic_core.SerializationIterator`,
+    returning their underlying object so that it can be pickled when passed
+    between multiprocessing workers.
+
+    This is a temporary workaround until the following issues are fixed:
+    - https://github.com/pydantic/pydantic/issues/8907
+    - https://github.com/pydantic/pydantic-core/pull/1399
+    - https://github.com/pydantic/pydantic-core/pull/1401
+    """
+
     if type(obj).__name__ == "SerializationIterator":
         return _unwrap_pydantic_serialization_iterator(obj)
     if type(obj) == str:  # noqa: E721 # pylint: disable=unidiomatic-typecheck
