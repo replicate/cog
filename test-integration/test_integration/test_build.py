@@ -240,3 +240,13 @@ def test_build_base_image_sha(docker_image):
     base_layer_hash = labels["run.cog.cog-base-image-last-layer-sha"]
     layers = image[0]["RootFS"]["Layers"]
     assert base_layer_hash in layers
+
+
+def test_torch_2_0_3_cu118_base_image(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/torch-cuda-baseimage-project"
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image, "--use-cog-base-image"],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode == 0

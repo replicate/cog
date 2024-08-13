@@ -166,8 +166,38 @@ func generateTorchMinorVersionCompatibilityMatrix(matrix []TorchCompatibility) [
 
 }
 
+func cudaVersionFromTorchPlusVersion(ver string) (string, string) {
+	const cudaVersionPrefix = "cu"
+	versionPluses := strings.Split(ver, "+")
+	if len(versionPluses) <= 1 {
+		return "", ver
+	}
+	versionPlus := versionPluses[len(versionPluses)-1]
+	if !strings.HasPrefix(versionPlus, cudaVersionPrefix) {
+		return "", ver
+	}
+	cleanVersion := strings.TrimPrefix(versionPlus, cudaVersionPrefix)
+	cleanVersion = cleanVersion[:len(cleanVersion)-1] + "." + cleanVersion[len(cleanVersion)-1:]
+	return cleanVersion, versionPluses[0]
+}
+
 func cudasFromTorch(ver string) ([]string, error) {
 	cudas := []string{}
+
+	// Check the version modifier on torch (such as +cu118)
+	cudaVer, ver := cudaVersionFromTorchPlusVersion(ver)
+	if len(cudaVer) > 0 {
+		for _, compat := range TorchCompatibilityMatrix {
+			if compat.CUDA == nil {
+				continue
+			}
+			if ver == compat.TorchVersion() && *compat.CUDA == cudaVer {
+				cudas = append(cudas, *compat.CUDA)
+				return cudas, nil
+			}
+		}
+	}
+
 	for _, compat := range TorchCompatibilityMatrix {
 		if ver == compat.TorchVersion() && compat.CUDA != nil {
 			cudas = append(cudas, *compat.CUDA)
