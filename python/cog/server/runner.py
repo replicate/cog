@@ -168,6 +168,7 @@ class SetupTask(Task[SetupResult]):
         if self._clock is None:
             self._clock = lambda: datetime.now(timezone.utc)
 
+        self._fut: "Optional[Future[Done]]" = None
         self._result = SetupResult(started_at=self._clock())
 
     @property
@@ -278,6 +279,9 @@ class PredictTask(Task[schema.PredictionResponse]):
         self._log = log.bind(prediction_id=p.id)
 
         self._log.info("starting prediction")
+
+        self._fut: "Optional[Future[Done]]" = None
+
         self._p = p
         self._p.status = schema.Status.PROCESSING
         self._output_type_multi = None
