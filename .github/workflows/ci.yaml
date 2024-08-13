@@ -1,43 +1,56 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - "v*"
-  pull_request:
-    branches:
-      - main
   merge_group:
-    branches:
-      - main
-    types:
-      - checks_requested
+  push:
+    branches: [main]
+    tags: ["*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FORCE_COLOR: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_NO_PYTHON_VERSION_WARNING: "1"
+
+permissions: {}
+
 jobs:
+  build-python:
+    name: Build & verify python package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # needed for setuptools_scm version determination
+      - uses: hynek/build-and-inspect-python-package@v2
+        id: baipp
+    outputs:
+      python-versions: ${{ steps.baipp.outputs.supported_python_classifiers_json_array }}
+
   test-go:
     name: "Test Go"
+    needs: build-python
     strategy:
       fail-fast: false
       matrix:
         # https://docs.github.com/en/free-pro-team@latest/actions/reference/specifications-for-github-hosted-runners#supported-runners-and-hardware-resources
         platform: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.platform }}
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # needed for goreleaser version determination
+      - name: Download pre-built packages
+        uses: actions/download-artifact@v4
+        with:
+          name: Packages
+          path: dist
+      - name: Set COG_WHEEL
+        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.12
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --no-cache uv
-          python -m uv pip install '.'
       - name: Build
         run: make cog
       - name: Lint
@@ -47,23 +60,29 @@ jobs:
 
   test-python:
     name: "Test Python ${{ matrix.python-version }}"
+    needs: build-python
     runs-on: ubuntu-latest-8-cores
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
-    defaults:
-      run:
-        shell: bash
+        python-version: ${{ fromJson(needs.build-python.outputs.python-versions) }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Download pre-built packages
+        uses: actions/download-artifact@v4
+        with:
+          name: Packages
+          path: dist
+      - name: Set COG_WHEEL
+        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
+      - name: Extract source distribution
+        run: tar xf dist/*.tar.gz --strip-components=1
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install Python dependencies
         run: |
           python -m pip install --no-cache uv
-          python -m uv pip install '.[dev]'
+          python -m uv pip install "${COG_WHEEL}[dev]"
       - name: Lint
         run: |
           if [[ $(python -c 'import sys; print(sys.version_info >= (3, 10))') == "True" ]]; then
@@ -77,10 +96,20 @@ jobs:
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-integration:
     name: "Test integration"
+    needs: build-python
     runs-on: ubuntu-latest-16-cores
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # needed for goreleaser version determination
+      - name: Download pre-built packages
+        uses: actions/download-artifact@v4
+        with:
+          name: Packages
+          path: dist
+      - name: Set COG_WHEEL
+        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -90,6 +119,6 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --no-cache uv
-          python -m uv pip install '.[dev]'
+          python -m uv pip install "${COG_WHEEL}[dev]"
       - name: Test
         run: make test-integration
