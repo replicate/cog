@@ -41,6 +41,7 @@ optional-dependencies = { "dev" = [
   "pytest-cov",
   "responses",
   "ruff",
+  "setuptools_scm",
 ] }
 
 dynamic = ["version"]
