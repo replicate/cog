@@ -12,7 +12,7 @@ import (
 const BaseImageRegistry = "r8.im"
 const MinimumCUDAVersion = "11.6"
 const MinimumPythonVersion = "3.8"
-const MinimumTorchVersion = "1.13.1"
+const MinimumTorchVersion = "1.13.0"
 
 var (
 	baseImageSystemPackages = []string{

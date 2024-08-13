@@ -28,3 +28,15 @@ func TestBaseImageName(t *testing.T) {
 		require.Equal(t, tt.expected, actual)
 	}
 }
+
+func TestBaseImageConfigurations(t *testing.T) {
+	actual := BaseImageConfigurations()
+	foundTorch1_13 := false
+	for _, config := range actual {
+		if config.TorchVersion == "1.13" {
+			foundTorch1_13 = true
+			break
+		}
+	}
+	require.True(t, foundTorch1_13)
+}
