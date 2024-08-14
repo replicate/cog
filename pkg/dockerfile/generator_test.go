@@ -91,6 +91,7 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -123,6 +124,7 @@ predict: predict.py:Predictor
 	require.NoError(t, conf.ValidateAndComplete(""))
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -167,6 +169,7 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -218,6 +221,7 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -268,6 +272,7 @@ build:
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -303,6 +308,7 @@ build:
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 	fmt.Println(actual)
@@ -356,6 +362,7 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
 
 	gen.fileWalker = func(root string, walkFn filepath.WalkFunc) error {
 		for _, path := range []string{"checkpoints/large-a", "models/large-b", "root-large"} {
@@ -453,6 +460,7 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
 	actual, err := gen.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
 
