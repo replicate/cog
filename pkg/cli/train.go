@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -121,7 +122,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	if err := predictor.Start(os.Stderr); err != nil {
+	if err := predictor.Start(os.Stderr, time.Duration(predictTimeout)*time.Second); err != nil {
 		return err
 	}
 

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/mitchellh/go-homedir"
@@ -26,9 +27,10 @@ import (
 )
 
 var (
-	envFlags   []string
-	inputFlags []string
-	outPath    string
+	envFlags       []string
+	inputFlags     []string
+	outPath        string
+	predictTimeout uint32
 )
 
 func newPredictCommand() *cobra.Command {
@@ -52,6 +54,7 @@ the prediction on that.`,
 	addBuildProgressOutputFlag(cmd)
 	addDockerfileFlag(cmd)
 	addGpusFlag(cmd)
+	addTimeoutFlag(cmd)
 
 	cmd.Flags().StringArrayVarP(&inputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
@@ -137,7 +140,8 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	if err := predictor.Start(os.Stderr); err != nil {
+	timeout := time.Duration(predictTimeout) * time.Second
+	if err := predictor.Start(os.Stderr, timeout); err != nil {
 		// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
 		// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
 		if gpus == "all" && errors.Is(err, docker.ErrMissingDeviceDriver) {
@@ -150,7 +154,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 				Env:     envFlags,
 			})
 
-			if err := predictor.Start(os.Stderr); err != nil {
+			if err := predictor.Start(os.Stderr, timeout); err != nil {
 				return err
 			}
 		} else {
@@ -375,4 +379,8 @@ func parseInputFlags(inputs []string) (predict.Inputs, error) {
 	}
 
 	return predict.NewInputs(keyVals), nil
+}
+
+func addTimeoutFlag(cmd *cobra.Command) {
+	cmd.Flags().Uint32Var(&predictTimeout, "timeout", 5*60, "The timeout for a prediction to wait for a container boot (in seconds).")
 }

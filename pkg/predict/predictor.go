@@ -58,7 +58,7 @@ func NewPredictor(runOptions docker.RunOptions) Predictor {
 	return Predictor{runOptions: runOptions}
 }
 
-func (p *Predictor) Start(logsWriter io.Writer) error {
+func (p *Predictor) Start(logsWriter io.Writer, timeout time.Duration) error {
 	var err error
 	containerPort := 5000
 
@@ -83,16 +83,16 @@ func (p *Predictor) Start(logsWriter io.Writer) error {
 		}
 	}()
 
-	return p.waitForContainerReady()
+	return p.waitForContainerReady(timeout)
 }
 
-func (p *Predictor) waitForContainerReady() error {
+func (p *Predictor) waitForContainerReady(timeout time.Duration) error {
 	url := fmt.Sprintf("http://localhost:%d/health-check", p.port)
 
 	start := time.Now()
 	for {
 		now := time.Now()
-		if now.Sub(start) > global.StartupTimeout {
+		if now.Sub(start) > timeout {
 			return fmt.Errorf("Timed out")
 		}
 
