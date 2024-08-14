@@ -185,9 +185,13 @@ class Worker:
             return
 
         assert self._result
-        self._result.set_result(done)
+
+        # We capture the setup future and then set state to READY before
+        # completing it, so that we can immediately accept work.
+        result = self._result
         self._result = None
         self._state = WorkerState.READY
+        result.set_result(done)
 
         # Predictions
         while self._child.is_alive():
@@ -213,12 +217,15 @@ class Worker:
                 if not done:
                     break
 
+            # We capture the predict future and then reset state before
+            # completing it, so that we can immediately accept work.
+            result = self._result
             self._predict_payload = None
             self._predict_start.clear()
-            self._result.set_result(done)
             self._result = None
             self._state = WorkerState.READY
             self._allow_cancel = False
+            result.set_result(done)
 
         # If we dropped off the end off the end of the loop, it's because the
         # child process died.
