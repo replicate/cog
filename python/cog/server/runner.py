@@ -92,17 +92,14 @@ class PredictionRunner:
         self._predict_task = create_predict_task(prediction, **task_kwargs)
         self._prediction_id = prediction.id
 
-        try:
-            payload = _prepare_predict_payload(prediction.input)
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            # Fail the prediction
-            self._predict_task.failed_early(error=str(e))
+        if isinstance(prediction.input, BaseInput):
+            payload = prediction.input.dict()
         else:
-            sid = self._worker.subscribe(self._predict_task.handle_event)
-            self._predict_task.track(self._worker.predict(payload))
-            self._predict_task.add_done_callback(
-                lambda _: self._worker.unsubscribe(sid)
-            )
+            payload = prediction.input.copy()
+
+        sid = self._worker.subscribe(self._predict_task.handle_event)
+        self._predict_task.track(self._worker.predict(payload))
+        self._predict_task.add_done_callback(lambda _: self._worker.unsubscribe(sid))
 
         return self._predict_task
 
@@ -288,10 +285,6 @@ class PredictTask(Task[schema.PredictionResponse]):
         self._p.logs = ""
         self._p.started_at = datetime.now(tz=timezone.utc)
 
-        # Records whether the predict task failed before it even started (e.g.
-        # during validation of inputs).
-        self._early_failure = False
-
         self._webhook_sender = webhook_sender
         self._file_uploader = file_uploader
 
@@ -312,21 +305,14 @@ class PredictTask(Task[schema.PredictionResponse]):
     def add_done_callback(
         self, fn: Callable[[schema.PredictionResponse], None]
     ) -> None:
-        if self._early_failure:
-            fn(self.result)
-            return
         assert self._fut, "call track before adding callbacks"
         self._fut.add_done_callback(lambda _: fn(self.result))
 
     def done(self) -> bool:
-        if self._early_failure:
-            return True
         assert self._fut, "call track before checking done"
         return self._fut.done()
 
     def wait(self, timeout: Optional[float] = None) -> None:
-        if self._early_failure:
-            return
         assert self._fut, "call track before waiting"
         self._fut.result(timeout=timeout)
 
@@ -383,10 +369,6 @@ class PredictTask(Task[schema.PredictionResponse]):
         self._set_completed_at()
         self._send_webhook(schema.WebhookEvent.COMPLETED)
 
-    def failed_early(self, error: str) -> None:
-        self.failed(error)
-        self._early_failure = True
-
     def canceled(self) -> None:
         self._log.info("prediction canceled")
         self._p.status = schema.Status.CANCELED
@@ -439,25 +421,6 @@ class PredictTask(Task[schema.PredictionResponse]):
             self.append_logs(traceback.format_exc())
             self.failed(error=str(e))
             self._p._fatal_exception = e
-
-
-def _prepare_predict_payload(
-    prediction_input: Union[BaseInput, Dict[str, Any]],
-) -> Dict[str, Any]:
-    if isinstance(prediction_input, BaseInput):
-        input_dict = prediction_input.dict()
-    else:
-        input_dict = prediction_input.copy()
-
-    for k, v in input_dict.items():
-        # Check if v is an instance of URLPath
-        if isinstance(v, types.URLPath):
-            input_dict[k] = v.convert()
-        # Check if v is a list of URLPath instances
-        elif isinstance(v, list) and all(isinstance(item, types.URLPath) for item in v):
-            input_dict[k] = [item.convert() for item in v]
-
-    return input_dict
 
 
 def _make_file_upload_http_client() -> requests.Session:

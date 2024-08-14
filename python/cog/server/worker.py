@@ -2,6 +2,7 @@ import multiprocessing
 import os
 import signal
 import sys
+import threading
 import traceback
 import types
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -11,6 +12,7 @@ from typing import Any, Callable, Dict, Optional, TextIO, Union
 
 import structlog
 
+from ..types import URLPath
 from ..json import make_encodeable
 from ..predictor import BasePredictor, get_predict, load_predictor_from_ref, run_setup
 from .eventtypes import (
@@ -52,6 +54,9 @@ class Worker:
         self._result: Optional["Future[Done]"] = None
         self._subscribers: Dict[int, Optional[Callable[[_PublicEventType], None]]] = {}
 
+        self._predict_payload: Optional[Dict[str, Any]] = None
+        self._predict_start = threading.Event()  # set when a prediction is started
+
         self._pool = ThreadPoolExecutor(max_workers=1)
         self._event_consumer = None
 
@@ -76,7 +81,8 @@ class Worker:
         self._allow_cancel = True
         result = Future()
         self._result = result
-        self._events.send(PredictionInput(payload=payload))
+        self._predict_payload = payload
+        self._predict_start.set()
         return result
 
     def subscribe(self, subscriber: Callable[[_PublicEventType], None]) -> int:
@@ -184,11 +190,31 @@ class Worker:
         self._state = WorkerState.READY
 
         # Predictions
-        while True:
-            done = self._consume_events_until_done()
-            if not done:
-                break
+        while self._child.is_alive():
+            start = self._predict_start.wait(timeout=0.1)
+            if not start:
+                continue
+
+            assert self._predict_payload is not None
             assert self._result
+
+            # Prepare payload (download URLPath objects)
+            try:
+                _prepare_payload(self._predict_payload)
+            except Exception as e:
+                done = Done(error=True, error_detail=str(e))
+                self._publish(done)
+            else:
+                # Start the prediction
+                self._events.send(PredictionInput(payload=self._predict_payload))
+
+                # Consume and publish prediction events
+                done = self._consume_events_until_done()
+                if not done:
+                    break
+
+            self._predict_payload = None
+            self._predict_start.clear()
             self._result.set_result(done)
             self._result = None
             self._state = WorkerState.READY
@@ -372,3 +398,13 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             original_stream.write(data)
             original_stream.flush()
         self._events.send(Log(data, source=stream_name))
+
+
+def _prepare_payload(payload: Dict[str, Any]) -> None:
+    for k, v in payload.items():
+        # Check if v is an instance of URLPath
+        if isinstance(v, URLPath):
+            payload[k] = v.convert()
+        # Check if v is a list of URLPath instances
+        elif isinstance(v, list) and all(isinstance(item, URLPath) for item in v):
+            payload[k] = [item.convert() for item in v]
