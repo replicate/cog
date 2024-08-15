@@ -45,6 +45,7 @@ optional-dependencies = { "dev" = [
   "pytest",
   "pytest-httpserver",
   "pytest-rerunfailures",
+  "pytest-timeout",
   "pytest-xdist",
   "pytest-cov",
   "responses",
@@ -94,6 +95,8 @@ good-names = ["id", "input"]
 
 ignore-paths = ["python/cog/_version.py", "python/tests"]
 
+[tool.pytest.ini_options]
+addopts = ["--timeout=10"]
 
 [tool.ruff]
 lint.select = [

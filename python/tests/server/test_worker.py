@@ -20,6 +20,10 @@ settings.register_profile("default", max_examples=10, deadline=1500)
 settings.register_profile("slow", max_examples=10, deadline=2000)
 settings.load_profile(os.getenv("HYPOTHESIS_PROFILE", "default"))
 
+HYPOTHESIS_TEST_TIMEOUT = (
+    settings().max_examples * settings().deadline
+).total_seconds() + 5
+
 ST_NAMES = st.sampled_from(["John", "Barry", "Elspeth", "Hamid", "Ronnie", "Yasmeen"])
 
 SETUP_FATAL_FIXTURES = [
@@ -159,6 +163,7 @@ def test_fatalworkerexception_from_setup_failures(name, payloads):
     w.terminate()
 
 
+@pytest.mark.timeout(HYPOTHESIS_TEST_TIMEOUT)
 @pytest.mark.parametrize("name,payloads", PREDICTION_FATAL_FIXTURES)
 @given(data=st.data())
 def test_fatalworkerexception_from_irrecoverable_failures(data, name, payloads):
@@ -180,6 +185,7 @@ def test_fatalworkerexception_from_irrecoverable_failures(data, name, payloads):
     w.terminate()
 
 
+@pytest.mark.timeout(HYPOTHESIS_TEST_TIMEOUT)
 @pytest.mark.parametrize("name,payloads", RUNNABLE_FIXTURES)
 @given(data=st.data())
 def test_no_exceptions_from_recoverable_failures(data, name, payloads):
@@ -222,6 +228,7 @@ def test_stream_redirector_race_condition():
         w.terminate()
 
 
+@pytest.mark.timeout(HYPOTHESIS_TEST_TIMEOUT)
 @pytest.mark.parametrize("name,payloads,output_generator", OUTPUT_FIXTURES)
 @given(data=st.data())
 def test_output(data, name, payloads, output_generator):
@@ -541,4 +548,4 @@ class WorkerState(RuleBasedStateMachine):
         return r
 
 
-TestWorkerState = WorkerState.TestCase
+TestWorkerState = pytest.mark.timeout(HYPOTHESIS_TEST_TIMEOUT)(WorkerState.TestCase)
