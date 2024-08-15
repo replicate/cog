@@ -26,9 +26,21 @@ ENTRYPOINT ["/sbin/tini", "--"]
 `
 }
 
+func getWheelName() string {
+	files, err := cogEmbed.ReadDir("embed")
+	if err != nil {
+		panic(err)
+	}
+	if len(files) != 1 {
+		panic("couldn't find wheel embed or too many files in embed")
+	}
+	return files[0].Name()
+}
+
 func testInstallCog(relativeTmpDir string) string {
-	return fmt.Sprintf(`COPY %s/cog-0.0.1.dev-py3-none-any.whl /tmp/cog-0.0.1.dev-py3-none-any.whl
-RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep /tmp/cog-0.0.1.dev-py3-none-any.whl`, relativeTmpDir)
+	wheel := getWheelName()
+	return fmt.Sprintf(`COPY %s/%s /tmp/%s
+RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep /tmp/%s`, relativeTmpDir, wheel, wheel, wheel)
 }
 
 func testPipInstallStage(relativeTmpDir string) string {
@@ -79,6 +91,7 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -111,6 +124,7 @@ predict: predict.py:Predictor
 	require.NoError(t, conf.ValidateAndComplete(""))
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -155,6 +169,7 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -206,6 +221,7 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -256,6 +272,7 @@ build:
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -291,6 +308,7 @@ build:
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 	fmt.Println(actual)
@@ -344,6 +362,7 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
 
 	gen.fileWalker = func(root string, walkFn filepath.WalkFunc) error {
 		for _, path := range []string{"checkpoints/large-a", "models/large-b", "root-large"} {
@@ -441,6 +460,7 @@ predict: predict.py:Predictor
 
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
 	actual, err := gen.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
 

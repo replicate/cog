@@ -1,6 +1,6 @@
 module github.com/replicate/cog
 
-go 1.21
+go 1.22
 
 require (
 	github.com/anaskhan96/soup v1.2.5

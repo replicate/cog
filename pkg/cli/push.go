@@ -56,12 +56,7 @@ func push(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, buildUseCogBaseImage); err != nil {
-		if buildUseCogBaseImage && cmd.Flags().Changed("use-cog-base-image") {
-			console.Infof("Push failed with Cog base image enabled by default. " +
-				"If you want to push without using pre-built base images, " +
-				"try `cog push --use-cog-base-image=false`.")
-		}
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd)); err != nil {
 
 		return err
 	}
