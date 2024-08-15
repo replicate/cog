@@ -168,17 +168,34 @@ func generateTorchMinorVersionCompatibilityMatrix(matrix []TorchCompatibility) [
 
 func cudaVersionFromTorchPlusVersion(ver string) (string, string) {
 	const cudaVersionPrefix = "cu"
-	versionPluses := strings.Split(ver, "+")
-	if len(versionPluses) <= 1 {
+
+	// Split the version string by the '+' character.
+	versionParts := strings.Split(ver, "+")
+
+	// If there is no '+' in the version string, return the original string with an empty CUDA version.
+	if len(versionParts) <= 1 {
 		return "", ver
 	}
-	versionPlus := versionPluses[len(versionPluses)-1]
-	if !strings.HasPrefix(versionPlus, cudaVersionPrefix) {
+
+	// Extract the part after the last '+'.
+	cudaVersionPart := versionParts[len(versionParts)-1]
+
+	// Check if the extracted part has the CUDA version prefix.
+	if !strings.HasPrefix(cudaVersionPart, cudaVersionPrefix) {
 		return "", ver
 	}
-	cleanVersion := strings.TrimPrefix(versionPlus, cudaVersionPrefix)
+
+	// Trim the CUDA version prefix and reformat the version string.
+	cleanVersion := strings.TrimPrefix(cudaVersionPart, cudaVersionPrefix)
+	if len(cleanVersion) < 2 {
+		return "", ver // Handle case where cleanVersion is too short to reformat.
+	}
+
+	// Insert a dot before the last character to format it as expected.
 	cleanVersion = cleanVersion[:len(cleanVersion)-1] + "." + cleanVersion[len(cleanVersion)-1:]
-	return cleanVersion, versionPluses[0]
+
+	// Return the reformatted CUDA version and the main version.
+	return cleanVersion, versionParts[0]
 }
 
 func cudasFromTorch(ver string) ([]string, error) {
