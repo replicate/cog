@@ -61,6 +61,13 @@ func TestGenerateTorchMinorVersionCompatibilityMatrix(t *testing.T) {
 	require.Equal(t, expected, actual)
 }
 
+func TestCudasFromTorchWithCUVersionModifier(t *testing.T) {
+	cudas, err := cudasFromTorch("2.0.1+cu118")
+	require.GreaterOrEqual(t, len(cudas), 1)
+	require.Equal(t, cudas[0], "11.8")
+	require.Nil(t, err)
+}
+
 func stringp(s string) *string {
 	return &s
 }

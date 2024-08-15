@@ -166,8 +166,55 @@ func generateTorchMinorVersionCompatibilityMatrix(matrix []TorchCompatibility) [
 
 }
 
+func cudaVersionFromTorchPlusVersion(ver string) (string, string) {
+	const cudaVersionPrefix = "cu"
+
+	// Split the version string by the '+' character.
+	versionParts := strings.Split(ver, "+")
+
+	// If there is no '+' in the version string, return the original string with an empty CUDA version.
+	if len(versionParts) <= 1 {
+		return "", ver
+	}
+
+	// Extract the part after the last '+'.
+	cudaVersionPart := versionParts[len(versionParts)-1]
+
+	// Check if the extracted part has the CUDA version prefix.
+	if !strings.HasPrefix(cudaVersionPart, cudaVersionPrefix) {
+		return "", ver
+	}
+
+	// Trim the CUDA version prefix and reformat the version string.
+	cleanVersion := strings.TrimPrefix(cudaVersionPart, cudaVersionPrefix)
+	if len(cleanVersion) < 2 {
+		return "", ver // Handle case where cleanVersion is too short to reformat.
+	}
+
+	// Insert a dot before the last character to format it as expected.
+	cleanVersion = cleanVersion[:len(cleanVersion)-1] + "." + cleanVersion[len(cleanVersion)-1:]
+
+	// Return the reformatted CUDA version and the main version.
+	return cleanVersion, versionParts[0]
+}
+
 func cudasFromTorch(ver string) ([]string, error) {
 	cudas := []string{}
+
+	// Check the version modifier on torch (such as +cu118)
+	cudaVer, ver := cudaVersionFromTorchPlusVersion(ver)
+	if len(cudaVer) > 0 {
+		for _, compat := range TorchCompatibilityMatrix {
+			if compat.CUDA == nil {
+				continue
+			}
+			if ver == compat.TorchVersion() && *compat.CUDA == cudaVer {
+				cudas = append(cudas, *compat.CUDA)
+				return cudas, nil
+			}
+		}
+	}
+
 	for _, compat := range TorchCompatibilityMatrix {
 		if ver == compat.TorchVersion() && compat.CUDA != nil {
 			cudas = append(cudas, *compat.CUDA)
