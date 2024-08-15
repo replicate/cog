@@ -240,3 +240,49 @@ def test_build_base_image_sha(docker_image):
     base_layer_hash = labels["run.cog.cog-base-image-last-layer-sha"]
     layers = image[0]["RootFS"]["Layers"]
     assert base_layer_hash in layers
+
+
+def test_torch_1_13_0_base_image_fallback(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/torch-baseimage-project"
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image, "--openapi-schema", "openapi.json"],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode == 0
+
+
+def test_torch_1_13_0_base_image_fail(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/torch-baseimage-project"
+    build_process = subprocess.run(
+        [
+            "cog",
+            "build",
+            "-t",
+            docker_image,
+            "--openapi-schema",
+            "openapi.json",
+            "--use-cog-base-image",
+        ],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode == 1
+
+
+def test_torch_1_13_0_base_image_fail_explicit(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/torch-baseimage-project"
+    build_process = subprocess.run(
+        [
+            "cog",
+            "build",
+            "-t",
+            docker_image,
+            "--openapi-schema",
+            "openapi.json",
+            "--use-cog-base-image=false",
+        ],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode == 0

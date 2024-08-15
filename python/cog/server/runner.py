@@ -3,7 +3,7 @@ import traceback
 from abc import ABC, abstractmethod
 from concurrent.futures import Future
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Generic, List, Literal, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, Generic, List, Literal, Optional, TypeVar
 
 import requests
 import structlog
@@ -11,7 +11,7 @@ from attrs import define, field
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from .. import schema, types
+from .. import schema
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from ..predictor import BaseInput
@@ -89,7 +89,7 @@ class PredictionRunner:
 
         task_kwargs = task_kwargs or {}
 
-        self._predict_task = create_predict_task(prediction, **task_kwargs)
+        self._predict_task = PredictTask(prediction, **task_kwargs)
         self._prediction_id = prediction.id
 
         if isinstance(prediction.input, BaseInput):
@@ -168,6 +168,7 @@ class SetupTask(Task[SetupResult]):
         if self._clock is None:
             self._clock = lambda: datetime.now(timezone.utc)
 
+        self._fut: "Optional[Future[Done]]" = None
         self._result = SetupResult(started_at=self._clock())
 
     @property
@@ -224,32 +225,6 @@ class SetupTask(Task[SetupResult]):
             self.failed()
 
 
-def create_predict_task(
-    prediction: schema.PredictionRequest,
-    upload_url: Optional[str] = None,
-) -> "PredictTask":
-    response = schema.PredictionResponse(**prediction.dict())
-
-    webhook = prediction.webhook
-    events_filter = (
-        prediction.webhook_events_filter or schema.WebhookEvent.default_events()
-    )
-
-    webhook_sender = None
-    if webhook is not None:
-        webhook_sender = webhook_caller_filtered(webhook, set(events_filter))
-
-    file_uploader = None
-    if upload_url is not None:
-        file_uploader = generate_file_uploader(upload_url, prediction_id=prediction.id)
-
-    event_handler = PredictTask(
-        response, webhook_sender=webhook_sender, file_uploader=file_uploader
-    )
-
-    return event_handler
-
-
 def generate_file_uploader(
     upload_url: str, prediction_id: Optional[str]
 ) -> Callable[[Any], Any]:
@@ -269,24 +244,44 @@ def generate_file_uploader(
 class PredictTask(Task[schema.PredictionResponse]):
     def __init__(
         self,
-        p: schema.PredictionResponse,
-        webhook_sender: Optional[Callable[[Any, schema.WebhookEvent], None]] = None,
-        file_uploader: Optional[Callable[[Any], Any]] = None,
+        prediction_request: schema.PredictionRequest,
+        upload_url: Optional[str] = None,
     ) -> None:
-        super().__init__()
-
-        self._log = log.bind(prediction_id=p.id)
+        self._log = log.bind(prediction_id=prediction_request.id)
 
         self._log.info("starting prediction")
-        self._p = p
+
+        self._fut: "Optional[Future[Done]]" = None
+
+        self._p = schema.PredictionResponse(**prediction_request.dict())
         self._p.status = schema.Status.PROCESSING
         self._output_type_multi = None
         self._p.output = None
         self._p.logs = ""
         self._p.started_at = datetime.now(tz=timezone.utc)
 
-        self._webhook_sender = webhook_sender
-        self._file_uploader = file_uploader
+        self._webhook_sender = None
+        if prediction_request.webhook:
+            self._webhook_sender = webhook_caller_filtered(
+                str(prediction_request.webhook),
+                set(
+                    prediction_request.webhook_events_filter
+                    or schema.WebhookEvent.default_events()
+                ),
+            )
+
+        self._file_uploader = None
+        if upload_url:
+            self._file_uploader = generate_file_uploader(
+                upload_url, prediction_id=self._p.id
+            )
+
+    @property
+    def result(self) -> schema.PredictionResponse:
+        return self._p
+
+    def track(self, fut: "Future[Done]") -> None:
+        self._log.info("started prediction")
 
         # HACK: don't send an initial webhook if we're trying to optimize for
         # latency (this guarantees that the first output webhook won't be
@@ -294,11 +289,6 @@ class PredictTask(Task[schema.PredictionResponse]):
         if not SKIP_START_EVENT:
             self._send_webhook(schema.WebhookEvent.START)
 
-    @property
-    def result(self) -> schema.PredictionResponse:
-        return self._p
-
-    def track(self, fut: "Future[Done]") -> None:
         self._fut = fut
         self._fut.add_done_callback(self._handle_done)
 
