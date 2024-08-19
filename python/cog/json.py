@@ -9,7 +9,7 @@ from pydantic import BaseModel
 # numpy is an optional dependency, but the process of importing it is not
 # thread-safe, so we attempt the import once here.
 try:
-    import numpy as np
+    import numpy as np  # type: ignore
 except ImportError:
     np = None
 

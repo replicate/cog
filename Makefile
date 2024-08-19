@@ -10,9 +10,7 @@ GO ?= go
 GORELEASER := $(GO) run github.com/goreleaser/goreleaser/v2@latest
 
 PYTHON ?= python
-PYTEST := $(PYTHON) -m pytest
-PYRIGHT := $(PYTHON) -m pyright
-RUFF := $(PYTHON) -m ruff
+TOX := $(PYTHON) -Im tox
 
 # If cog's wheel has been prebuilt, it can be specified with the COG_WHEEL
 # environment variable and we will not attempt to build it.
@@ -60,17 +58,17 @@ clean:
 	rm -f $(COG_BINARIES)
 
 .PHONY: test-go
-test-go: $(COG_EMBEDDED_WHEEL) | check-fmt vet lint-go
+test-go: $(COG_EMBEDDED_WHEEL)
 	$(GO) get gotest.tools/gotestsum
 	$(GO) run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
 
 .PHONY: test-integration
 test-integration: $(COG_BINARIES)
-	$(MAKE) -C test-integration PATH="$(PWD):$(PATH)" test
+	PATH="$(PWD):$(PATH)" $(TOX) -e integration
 
 .PHONY: test-python
-test-python:
-	$(PYTEST) -n auto -vv --cov=python/cog  --cov-report term-missing  python/tests $(if $(FILTER),-k "$(FILTER)",)
+test-python: $(COG_WHEEL)
+	$(TOX) run --installpkg $(COG_WHEEL) -f tests
 
 .PHONY: test
 test: test-go test-python test-integration
@@ -92,19 +90,10 @@ check-fmt:
 	$(GO) run golang.org/x/tools/cmd/goimports -d .
 	@test -z $$($(GO) run golang.org/x/tools/cmd/goimports -l .)
 
-.PHONY: lint-go
-lint-go:
-	$(GO) run github.com/golangci/golangci-lint/cmd/golangci-lint run ./...
-
-.PHONY: lint-python
-lint-python:
-	$(RUFF) check python/cog
-	$(RUFF) format --check python
-	@$(PYTHON) -c 'import sys; sys.exit("Warning: python >=3.10 is needed (not installed) to pass linting (pyright)") if sys.version_info < (3, 10) else None'
-	$(PYRIGHT)
-
 .PHONY: lint
-lint: lint-go lint-python
+lint: $(COG_EMBEDDED_WHEEL) $(COG_WHEEL) check-fmt vet
+	$(GO) run github.com/golangci/golangci-lint/cmd/golangci-lint run ./...
+	$(TOX) run --installpkg $(COG_WHEEL) -e lint,typecheck
 
 .PHONY: run-docs-server
 run-docs-server:
