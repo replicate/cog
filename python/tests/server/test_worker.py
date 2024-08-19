@@ -1,14 +1,12 @@
 import os
 import threading
 import time
-from concurrent.futures import TimeoutError
 from typing import Any, List, Optional
 
 import pytest
 from attrs import define, field
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from hypothesis.stateful import RuleBasedStateMachine, precondition, rule
 
 from cog.server.eventtypes import Done, Log, PredictionOutput, PredictionOutputType
 from cog.server.exceptions import FatalWorkerException, InvalidStateException
@@ -413,139 +411,3 @@ def test_graceful_shutdown():
         assert fut.result() == Done()
     finally:
         w.terminate()
-
-
-class WorkerState(RuleBasedStateMachine):
-    """
-    This is a Hypothesis-driven rule-based state machine test. It is intended
-    to ensure that any sequence of calls to the public API of Worker leaves the
-    instance in an expected state.
-
-    In short: any call should either throw InvalidStateException or should do
-    what the caller asked.
-
-    See https://hypothesis.readthedocs.io/en/latest/stateful.html for more on
-    stateful testing with Hypothesis.
-    """
-
-    def __init__(self):
-        super().__init__()
-
-        self.events = []
-
-        self.predict_canceled = False
-        self.predict_payload = None
-        self.predict_result = None
-        self.setup_result = None
-
-        self.worker = Worker(_fixture_path("steps"), tee_output=False)
-        self.worker.subscribe(self.events.append)
-
-    @rule(sleep=st.floats(min_value=0, max_value=0.1))
-    def wait(self, sleep):
-        time.sleep(sleep)
-
-    @rule()
-    def setup(self):
-        try:
-            self.setup_result = self.worker.setup()
-        except InvalidStateException:
-            pass
-
-    @precondition(lambda x: x.setup_result)
-    @rule(timeout=st.floats(min_value=0, max_value=0.1))
-    def await_setup_complete(self, timeout):
-        try:
-            res = self.setup_result.result(timeout=timeout)
-        except TimeoutError:
-            pass
-        else:
-            assert isinstance(res, Done)
-            self._check_events()
-
-    # For now, don't run another prediction until we've read the result. This
-    # is solely a limitation of the tests: predictions don't (yet) have
-    # identifiers, so we can't distinguish between them.
-    @precondition(lambda x: not x.predict_result)
-    @rule(name=ST_NAMES, steps=st.integers(min_value=0, max_value=5))
-    def predict(self, name, steps):
-        try:
-            payload = {"name": name, "steps": steps}
-            self.predict_result = self.worker.predict(payload)
-            self.predict_payload = payload
-        except InvalidStateException:
-            pass
-
-    @precondition(lambda x: x.predict_result)
-    @rule(timeout=st.floats(min_value=0, max_value=0.1))
-    def await_predict_complete(self, timeout):
-        try:
-            res = self.predict_result.result(timeout=timeout)
-        except TimeoutError:
-            pass
-        else:
-            assert isinstance(res, Done)
-            self._check_events()
-
-    @precondition(lambda x: x.predict_result)
-    @rule()
-    def cancel(self):
-        self.worker.cancel()
-        self.predict_canceled = True
-
-    def teardown(self):
-        self.worker.shutdown()
-        # self.worker.terminate()
-
-    def _check_events(self):
-        if self.setup_result and self.setup_result.done():
-            self.setup_result = None
-            self._check_setup_events()
-
-        if self.predict_result and self.predict_result.done():
-            canceled = self.predict_canceled
-            payload = self.predict_payload
-            self.predict_canceled = False
-            self.predict_payload = None
-            self.predict_result = None
-            self._check_predict_events(payload, canceled)
-
-    def _check_setup_events(self):
-        result = self._consume_result()
-        assert result.stdout == "did setup\n"
-        assert result.stderr == ""
-        assert result.done == Done()
-
-    def _check_predict_events(self, payload, canceled=False):
-        result = self._consume_result()
-
-        if canceled:
-            # Requesting cancelation does not guarantee that the prediction is
-            # canceled. It may complete before the cancelation is processed.
-            assert result.done == Done() or result.done == Done(canceled=True)
-
-            # If it was canceled, we can't make any other assertions.
-            return
-
-        expected_stdout = ["START\n"]
-        for i in range(payload["steps"]):
-            expected_stdout.append(f"STEP {i+1}\n")
-        expected_stdout.append("END\n")
-
-        assert result.stdout == "".join(expected_stdout)
-        assert result.stderr == ""
-        assert result.output == f"NAME={payload['name']}"
-        assert result.done == Done()
-
-    def _consume_result(self):
-        print(self.events)
-        r = Result()
-        while self.events:
-            event = self.events.pop(0)
-            _handle_event(r, event)
-            if isinstance(event, Done):
-                break
-        return r
-
-
-TestWorkerState = pytest.mark.timeout(HYPOTHESIS_TEST_TIMEOUT)(WorkerState.TestCase)

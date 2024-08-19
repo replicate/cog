@@ -108,6 +108,7 @@ class Worker:
         if self._event_consumer:
             self._event_consumer.result(timeout=timeout)
 
+        self._events.close()
         self._pool.shutdown()
 
     def terminate(self) -> None:
