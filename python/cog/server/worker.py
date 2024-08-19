@@ -12,9 +12,9 @@ from typing import Any, Callable, Dict, Optional, TextIO, Union
 
 import structlog
 
-from ..types import URLPath
 from ..json import make_encodeable
 from ..predictor import BasePredictor, get_predict, load_predictor_from_ref, run_setup
+from ..types import URLPath
 from .eventtypes import (
     Done,
     Log,

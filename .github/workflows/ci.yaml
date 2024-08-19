@@ -9,6 +9,7 @@ on:
   workflow_dispatch:
 
 env:
+  HYPOTHESIS_PROFILE: ci
   FORCE_COLOR: "1"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_NO_PYTHON_VERSION_WARNING: "1"
@@ -27,6 +28,29 @@ jobs:
         id: baipp
     outputs:
       python-versions: ${{ steps.baipp.outputs.supported_python_classifiers_json_array }}
+
+  lint:
+    name: Lint
+    needs: build-python
+    runs-on: ubuntu-latest-8-cores
+    steps:
+      - name: Download pre-built packages
+        uses: actions/download-artifact@v4
+        with:
+          name: Packages
+          path: dist
+      - name: Set COG_WHEEL
+        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
+      - name: Extract source distribution
+        run: tar xf dist/*.tar.gz --strip-components=1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+      - uses: hynek/setup-cached-uv@v2
+      - name: Prepare tox
+        run: uv pip install --system tox tox-uv
+      - name: Lint
+        run: make lint
 
   test-go:
     name: "Test Go"
@@ -53,8 +77,6 @@ jobs:
           go-version-file: go.mod
       - name: Build
         run: make cog
-      - name: Lint
-        run: make lint-go || true
       - name: Test
         run: make test-go
 
@@ -79,19 +101,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install Python dependencies
+      - uses: hynek/setup-cached-uv@v2
+      - name: Prepare tox
         run: |
-          python -m pip install --no-cache uv
-          python -m uv pip install "${COG_WHEEL}[dev]"
-      - name: Lint
-        run: |
-          if [[ $(python -c 'import sys; print(sys.version_info >= (3, 10))') == "True" ]]; then
-            make lint-python || true
-          fi
+          echo TOX_PYTHON=py$(echo "${{ matrix.python-version }}" | tr -d .) >>$GITHUB_ENV
+          uv pip install --system tox
+      - run: uv pip install --system tox-uv
+        if: matrix.python-version != '3.7'
+      - name: Remove src to ensure tests run against wheel
+        run: rm -rf python/cog
       - name: Test
-        run: make test-python
-        env:
-          HYPOTHESIS_PROFILE: ci
+        run: python -Im tox run --installpkg "$COG_WHEEL" -e ${{ env.TOX_PYTHON }}-tests
 
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-integration:
@@ -116,10 +136,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --no-cache uv
-          python -m uv pip install "${COG_WHEEL}[dev]"
+      - uses: hynek/setup-cached-uv@v2
+      - name: Prepare tox
+        run: uv pip install --system tox tox-uv
       - name: Test
         run: make test-integration
 
