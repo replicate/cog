@@ -181,6 +181,10 @@ func (c *Config) TorchvisionVersion() (string, bool) {
 	return c.pythonPackageVersion("torchvision")
 }
 
+func (c *Config) TorchaudioVersion() (string, bool) {
+	return c.pythonPackageVersion("torchaudio")
+}
+
 func (c *Config) TensorFlowVersion() (string, bool) {
 	return c.pythonPackageVersion("tensorflow")
 }
