@@ -401,6 +401,9 @@ func (g *Generator) pipInstalls() (string, error) {
 	if torchvisionVersion, ok := g.Config.TorchvisionVersion(); ok {
 		excludePackages = append(excludePackages, "torchvision=="+torchvisionVersion)
 	}
+	if torchaudioVersion, ok := g.Config.TorchaudioVersion(); ok {
+		excludePackages = append(excludePackages, "torchaudio=="+torchaudioVersion)
+	}
 	g.pythonRequirementsContents, err = g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH, excludePackages)
 	if err != nil {
 		return "", err
