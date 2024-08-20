@@ -28,3 +28,8 @@ func TestBaseImageName(t *testing.T) {
 		require.Equal(t, tt.expected, actual)
 	}
 }
+
+func TestBaseImageNameWithVersionModifier(t *testing.T) {
+	actual := BaseImageName("12.1", "3.8", "2.0.1+cu118")
+	require.Equal(t, "r8.im/cog-base:cuda12.1-python3.8-torch2.0.1", actual)
+}

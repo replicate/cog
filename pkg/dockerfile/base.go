@@ -226,7 +226,7 @@ func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string
 		components = append(components, "python"+version.StripPatch(pythonVersion))
 	}
 	if torchVersion != "" {
-		components = append(components, "torch"+version.StripPatch(torchVersion))
+		components = append(components, "torch"+version.StripModifier(torchVersion))
 	}
 
 	tag := strings.Join(components, "-")

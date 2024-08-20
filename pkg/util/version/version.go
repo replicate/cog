@@ -115,3 +115,8 @@ func StripPatch(v string) string {
 	ver := MustVersion(v)
 	return fmt.Sprintf("%d.%d", ver.Major, ver.Minor)
 }
+
+func StripModifier(v string) string {
+	modifierSplit := strings.Split(v, "+")
+	return modifierSplit[0]
+}
