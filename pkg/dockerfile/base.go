@@ -110,7 +110,7 @@ func BaseImageConfigurations() []BaseImageConfiguration {
 	cudaVersionsSet := make(map[string]bool)
 
 	// Torch configs
-	for _, compat := range config.TorchMinorCompatibilityMatrix {
+	for _, compat := range config.TorchCompatibilityMatrix {
 		for _, python := range compat.Pythons {
 
 			// Only support fast cold boots for Torch with CUDA.

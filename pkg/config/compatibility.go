@@ -97,11 +97,6 @@ var TFCompatibilityMatrix []TFCompatibility
 var torchCompatibilityMatrixData []byte
 var TorchCompatibilityMatrix []TorchCompatibility
 
-// For minor Torch versions we use the latest patch version.
-// This is semantically different to pip, which uses the .0
-// patch version.
-var TorchMinorCompatibilityMatrix []TorchCompatibility
-
 func init() {
 	if err := json.Unmarshal(cudaBaseImagesData, &CUDABaseImages); err != nil {
 		console.Fatalf("Failed to load embedded CUDA base images: %s", err)
@@ -125,45 +120,6 @@ func init() {
 		}
 	}
 	TorchCompatibilityMatrix = filteredTorchCompatibilityMatrix
-	TorchMinorCompatibilityMatrix = generateTorchMinorVersionCompatibilityMatrix(TorchCompatibilityMatrix)
-}
-
-func generateTorchMinorVersionCompatibilityMatrix(matrix []TorchCompatibility) []TorchCompatibility {
-	minorMatrix := []TorchCompatibility{}
-
-	// First sort compatibilities by Torch version descending
-	matrixByTorchDesc := make([]TorchCompatibility, len(matrix))
-	copy(matrixByTorchDesc, matrix)
-	sort.Slice(matrixByTorchDesc, func(i, j int) bool {
-		return version.Greater(matrixByTorchDesc[i].Torch, matrixByTorchDesc[j].Torch)
-	})
-
-	// Then pick CUDA for the most recent patch versions
-	seenCUDATorchMinor := make(map[[2]string]bool)
-
-	for _, compat := range matrixByTorchDesc {
-		cudaString := ""
-		if compat.CUDA != nil {
-			cudaString = *compat.CUDA
-		}
-		torchMinor := version.StripPatch(compat.Torch)
-		key := [2]string{cudaString, torchMinor}
-
-		if seen := seenCUDATorchMinor[key]; !seen {
-			minorMatrix = append(minorMatrix, TorchCompatibility{
-				Torch:         torchMinor,
-				CUDA:          compat.CUDA,
-				Pythons:       compat.Pythons,
-				Torchvision:   compat.Torchvision,
-				Torchaudio:    compat.Torchaudio,
-				FindLinks:     compat.FindLinks,
-				ExtraIndexURL: compat.ExtraIndexURL,
-			})
-			seenCUDATorchMinor[key] = true
-		}
-	}
-	return minorMatrix
-
 }
 
 func cudaVersionFromTorchPlusVersion(ver string) (string, string) {
@@ -221,11 +177,7 @@ func cudasFromTorch(ver string) ([]string, error) {
 		}
 	}
 	slices.Sort(cudas)
-	for _, compat := range TorchMinorCompatibilityMatrix {
-		if ver == compat.TorchVersion() && compat.CUDA != nil {
-			cudas = append(cudas, *compat.CUDA)
-		}
-	}
+
 	return cudas, nil
 }
 

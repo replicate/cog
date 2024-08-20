@@ -594,13 +594,6 @@ func (g *Generator) determineBaseImageName() (string, error) {
 	}
 
 	torchVersion, _ := g.Config.TorchVersion()
-	torchVersion, changed, err = stripPatchVersion(torchVersion)
-	if err != nil {
-		return "", err
-	}
-	if changed {
-		console.Warnf("Stripping patch version from Torch version %s to %s", g.Config.Build.PythonVersion, pythonVersion)
-	}
 
 	// validate that the base image configuration exists
 	imageGenerator, err := NewBaseImageGenerator(cudaVersion, pythonVersion, torchVersion)
