@@ -560,6 +560,7 @@ func TestGenerateFullGPUWithCogBaseImage(t *testing.T) {
 build:
   gpu: true
   cuda: "11.8"
+  python_version: "3.11"
   system_packages:
     - ffmpeg
     - cowsay
@@ -580,9 +581,14 @@ predict: predict.py:Predictor
 		_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 		require.NoError(t, err)
 
+		// We add the patch version to the expected torch version
+		expectedTorchVersion := torchVersion
+		if torchVersion == "2.3" {
+			expectedTorchVersion = "2.3.1"
+		}
 		expected := fmt.Sprintf(`#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
-FROM r8.im/cog-base:cuda11.8-python3.12-torch%s
+FROM r8.im/cog-base:cuda11.8-python3.11-torch%s
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY `+gen.relativeTmpDir+`/requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
@@ -590,7 +596,7 @@ RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
-COPY . /src`, torchVersion)
+COPY . /src`, expectedTorchVersion)
 
 		require.Equal(t, expected, actual)
 

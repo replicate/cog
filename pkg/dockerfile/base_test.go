@@ -46,3 +46,19 @@ func TestGenerateDockerfile(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, strings.Contains(dockerfile, "FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04"))
 }
+
+func TestBaseImageConfigurationExists(t *testing.T) {
+	exists, _, _, torchVersion := BaseImageConfigurationExists("12.1", "3.9", "2.3")
+	require.True(t, exists)
+	require.Equal(t, "2.3.1", torchVersion)
+}
+
+func TestBaseImageConfigurationExistsNoTorch(t *testing.T) {
+	exists, _, _, _ := BaseImageConfigurationExists("", "3.12", "")
+	require.True(t, exists)
+}
+
+func TestIsVersionCompatible(t *testing.T) {
+	compatible := isVersionCompatible("2.3.1+cu121", "2.3")
+	require.True(t, compatible)
+}
