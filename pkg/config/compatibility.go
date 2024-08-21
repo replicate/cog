@@ -61,13 +61,11 @@ type TorchCompatibility struct {
 }
 
 func (c *TorchCompatibility) TorchVersion() string {
-	parts := strings.Split(c.Torch, "+")
-	return parts[0]
+	return version.StripModifier(c.Torch)
 }
 
 func (c *TorchCompatibility) TorchvisionVersion() string {
-	parts := strings.Split(c.Torchvision, "+")
-	return parts[0]
+	return version.StripModifier(c.Torchvision)
 }
 
 type CUDABaseImage struct {
@@ -164,7 +162,7 @@ func cudasFromTorch(ver string) ([]string, error) {
 			if compat.CUDA == nil {
 				continue
 			}
-			if ver == compat.TorchVersion() && *compat.CUDA == cudaVer {
+			if version.Matches(ver, compat.TorchVersion()) && *compat.CUDA == cudaVer {
 				cudas = append(cudas, *compat.CUDA)
 				return cudas, nil
 			}
@@ -172,7 +170,7 @@ func cudasFromTorch(ver string) ([]string, error) {
 	}
 
 	for _, compat := range TorchCompatibilityMatrix {
-		if ver == compat.TorchVersion() && compat.CUDA != nil {
+		if version.Matches(ver, compat.TorchVersion()) && compat.CUDA != nil {
 			cudas = append(cudas, *compat.CUDA)
 		}
 	}

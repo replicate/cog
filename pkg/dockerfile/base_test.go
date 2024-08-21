@@ -46,3 +46,19 @@ func TestBaseImageNameWithVersionModifier(t *testing.T) {
 	actual := BaseImageName("12.1", "3.8", "2.0.1+cu118")
 	require.Equal(t, "r8.im/cog-base:cuda12.1-python3.8-torch2.0.1", actual)
 }
+
+func TestBaseImageConfigurationExists(t *testing.T) {
+	exists, _, _, torchVersion := BaseImageConfigurationExists("12.1", "3.9", "2.3")
+	require.True(t, exists)
+	require.Equal(t, "2.3.1", torchVersion)
+}
+
+func TestBaseImageConfigurationExistsNoTorch(t *testing.T) {
+	exists, _, _, _ := BaseImageConfigurationExists("", "3.12", "")
+	require.True(t, exists)
+}
+
+func TestIsVersionCompatible(t *testing.T) {
+	compatible := isVersionCompatible("2.3.1+cu121", "2.3")
+	require.True(t, compatible)
+}

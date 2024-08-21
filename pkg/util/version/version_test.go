@@ -67,3 +67,15 @@ func TestVersionStripModifier(t *testing.T) {
 	versionWithoutModifier := StripModifier(versionWithModifier)
 	require.Equal(t, versionWithoutModifier, version)
 }
+
+func TestVersionMatches(t *testing.T) {
+	version := "2.3"
+	matchVersion := "2.3.2"
+	require.True(t, Matches(version, matchVersion))
+}
+
+func TestVersionMatchesModifier(t *testing.T) {
+	version := "2.3"
+	matchVersion := "2.3.2+cu118"
+	require.True(t, Matches(version, matchVersion))
+}
