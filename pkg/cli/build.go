@@ -22,6 +22,7 @@ var buildSchemaFile string
 var buildUseCudaBaseImage string
 var buildDockerfileFile string
 var buildUseCogBaseImage bool
+var buildNix bool
 
 const useCogBaseImageFlagKey = "use-cog-base-image"
 
@@ -113,6 +114,15 @@ func addDockerfileFlag(cmd *cobra.Command) {
 
 func addUseCogBaseImageFlag(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&buildUseCogBaseImage, useCogBaseImageFlagKey, true, "Use pre-built Cog base image for faster cold boots")
+}
+
+func addNixFlag(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&buildNix, "nix", false, "Push the image using Nix instead of Docker")
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		if f.Name == "nix" {
+			f.Hidden = true
+		}
+	})
 }
 
 func addBuildTimestampFlag(cmd *cobra.Command) {
