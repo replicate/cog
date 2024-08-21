@@ -299,6 +299,20 @@ def test_predict_works_with_deferred_annotations():
         timeout=DEFAULT_TIMEOUT,
     )
 
+def test_predict_works_with_partial_wrapper():
+    project_dir = Path(__file__).parent / "fixtures/partial-predict-project"
+
+    subprocess.check_call(
+        ["cog", "predict", "-i", "prompt=world"],
+        cwd=project_dir,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    subprocess.check_call(
+        ["cog", "train", "-i", "prompt=world"],
+        cwd=project_dir,
+        timeout=DEFAULT_TIMEOUT,
+    )
+
 
 def test_predict_int_none_output():
     project_dir = Path(__file__).parent / "fixtures/int-none-output-project"
