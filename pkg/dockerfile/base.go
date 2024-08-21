@@ -99,8 +99,6 @@ func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
 }
 
 // BaseImageConfigurations returns a list of CUDA/Python/Torch versions
-// with patch versions stripped out. Each version is greater or equal to
-// MinimumCUDAVersion/MinimumPythonVersion/MinimumTorchVersion.
 func BaseImageConfigurations() []BaseImageConfiguration {
 	configs := []BaseImageConfiguration{}
 
@@ -113,9 +111,11 @@ func BaseImageConfigurations() []BaseImageConfiguration {
 	for _, compat := range config.TorchCompatibilityMatrix {
 		for _, python := range compat.Pythons {
 
-			// Only support fast cold boots for Torch with CUDA.
-			// Torch without CUDA is a rarely used edge case.
 			if compat.CUDA == nil {
+				configs = append(configs, BaseImageConfiguration{
+					PythonVersion: python,
+					TorchVersion:  compat.Torch,
+				})
 				continue
 			}
 
@@ -221,6 +221,8 @@ func (g *BaseImageGenerator) runStatements() []config.RunItem {
 }
 
 func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string) string {
+	_, cudaVersion, pythonVersion, torchVersion = BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion)
+
 	components := []string{}
 	if cudaVersion != "" {
 		components = append(components, "cuda"+version.StripPatch(cudaVersion))

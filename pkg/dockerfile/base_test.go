@@ -17,13 +17,13 @@ func TestBaseImageName(t *testing.T) {
 		{"", "3.8", "",
 			"r8.im/cog-base:python3.8"},
 		{"", "3.8", "2.1",
-			"r8.im/cog-base:python3.8-torch2.1"},
+			"r8.im/cog-base:python3.8-torch2.1.2"},
 		{"12.1", "3.8", "",
 			"r8.im/cog-base:cuda12.1-python3.8"},
 		{"12.1", "3.8", "2.1",
-			"r8.im/cog-base:cuda12.1-python3.8-torch2.1"},
+			"r8.im/cog-base:cuda12.1-python3.8-torch2.1.2"},
 		{"12.1", "3.8", "2.1",
-			"r8.im/cog-base:cuda12.1-python3.8-torch2.1"},
+			"r8.im/cog-base:cuda12.1-python3.8-torch2.1.2"},
 	} {
 		actual := BaseImageName(tt.cuda, tt.python, tt.torch)
 		require.Equal(t, tt.expected, actual)
@@ -56,6 +56,12 @@ func TestBaseImageConfigurationExists(t *testing.T) {
 func TestBaseImageConfigurationExistsNoTorch(t *testing.T) {
 	exists, _, _, _ := BaseImageConfigurationExists("", "3.12", "")
 	require.True(t, exists)
+}
+
+func TestBaseImageConfigurationExistsNoCUDA(t *testing.T) {
+	exists, _, _, torchVersion := BaseImageConfigurationExists("", "3.8", "2.1")
+	require.True(t, exists)
+	require.Equal(t, "2.1.2", torchVersion)
 }
 
 func TestIsVersionCompatible(t *testing.T) {
