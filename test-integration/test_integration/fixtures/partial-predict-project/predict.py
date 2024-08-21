@@ -1,5 +1,6 @@
-from typing import Callable
 import functools
+import inspect
+from typing import Any, Callable
 
 from cog import BasePredictor, Input
 
@@ -10,7 +11,7 @@ class Predictor(BasePredictor):
     ) -> int:
         return 1
 
-    def _remove(f: Callable, defaults: dict[str, Any]) -> Callable:
+    def _remove(f: Callable, defaults: "dict[str, Any]") -> Callable:
         # pylint: disable=no-self-argument
         def wrapper(self, *args, **kwargs):
             kwargs.update(defaults)
@@ -31,7 +32,7 @@ class Predictor(BasePredictor):
     predict = _remove(general, {"system_prompt": ""})
 
 
-def _train(self, prompt: str = Input(description="hi"), system_prompt: str = None):
+def _train(prompt: str = Input(description="hi"), system_prompt: str = None) -> int:
     return 1
 
 
