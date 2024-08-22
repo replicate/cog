@@ -394,17 +394,17 @@ func (g *Generator) installCog() (string, error) {
 
 func (g *Generator) pipInstalls() (string, error) {
 	var err error
-	excludePackages := []string{}
+	includePackages := []string{}
 	if torchVersion, ok := g.Config.TorchVersion(); ok {
-		excludePackages = []string{"torch==" + torchVersion}
+		includePackages = []string{"torch==" + torchVersion}
 	}
 	if torchvisionVersion, ok := g.Config.TorchvisionVersion(); ok {
-		excludePackages = append(excludePackages, "torchvision=="+torchvisionVersion)
+		includePackages = append(includePackages, "torchvision=="+torchvisionVersion)
 	}
 	if torchaudioVersion, ok := g.Config.TorchaudioVersion(); ok {
-		excludePackages = append(excludePackages, "torchaudio=="+torchaudioVersion)
+		includePackages = append(includePackages, "torchaudio=="+torchaudioVersion)
 	}
-	g.pythonRequirementsContents, err = g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH, excludePackages)
+	g.pythonRequirementsContents, err = g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH, includePackages)
 	if err != nil {
 		return "", err
 	}

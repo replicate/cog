@@ -694,3 +694,27 @@ func TestSplitPinnedPythonRequirement(t *testing.T) {
 		}
 	}
 }
+
+func TestPythonRequirementsForArchWithAddedPackage(t *testing.T) {
+	config := &Config{
+		Build: &Build{
+			GPU:           true,
+			PythonVersion: "3.8",
+			PythonPackages: []string{
+				"torch==2.4.0 --extra-index-url=https://download.pytorch.org/whl/cu116",
+			},
+			CUDA: "11.6.2",
+		},
+	}
+	err := config.ValidateAndComplete("")
+	require.NoError(t, err)
+	require.Equal(t, "11.6.2", config.Build.CUDA)
+	requirements, err := config.PythonRequirementsForArch("", "", []string{
+		"torchvision==2.4.0",
+	})
+	require.NoError(t, err)
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu116
+torch==2.4.0
+torchvision==2.4.0`
+	require.Equal(t, expected, requirements)
+}

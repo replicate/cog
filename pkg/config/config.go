@@ -21,6 +21,7 @@ import (
 var (
 	BuildSourceEpochTimestamp int64 = -1
 	BuildXCachePath           string
+	PipPackageNameRegex       = regexp.MustCompile(`^([^>=<~ \n[#]+)`)
 )
 
 // TODO(andreas): support conda packages
@@ -311,13 +312,31 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 }
 
 // PythonRequirementsForArch returns a requirements.txt file with all the GPU packages resolved for given OS and architecture.
-func (c *Config) PythonRequirementsForArch(goos string, goarch string, excludePackages []string) (string, error) {
+func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePackages []string) (string, error) {
 	packages := []string{}
 	findLinksSet := map[string]bool{}
 	extraIndexURLSet := map[string]bool{}
+
+	includePackageNames := []string{}
+	for _, pkg := range includePackages {
+		includePackageNames = append(includePackageNames, packageName(pkg))
+	}
+
+	// Include all the requirements and remove our include packages if they exist
 	for _, pkg := range c.Build.pythonRequirementsContent {
-		if slices.ContainsString(excludePackages, pkg) {
-			continue
+		packageName := packageName(pkg)
+		if packageName != "" {
+			foundIdx := -1
+			for i, includePkg := range includePackageNames {
+				if includePkg == packageName {
+					foundIdx = i
+					break
+				}
+			}
+			if foundIdx != -1 {
+				includePackageNames = append(includePackageNames[:foundIdx], includePackageNames[foundIdx+1:]...)
+				includePackages = append(includePackages[:foundIdx], includePackages[foundIdx+1:]...)
+			}
 		}
 
 		archPkg, findLinksList, extraIndexURLs, err := c.pythonPackageForArch(pkg, goos, goarch)
@@ -336,6 +355,9 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, excludePa
 			}
 		}
 	}
+
+	// If we still have some include packages add them in
+	packages = append(packages, includePackages...)
 
 	// Create final requirements.txt output
 	// Put index URLs first
@@ -579,4 +601,12 @@ func sliceContains(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func packageName(pipRequirement string) string {
+	match := PipPackageNameRegex.FindStringSubmatch(pipRequirement)
+	if len(match) <= 1 {
+		return ""
+	}
+	return match[1]
 }
