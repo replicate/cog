@@ -1,3 +1,6 @@
+import asyncio
+import contextlib
+import inspect
 import multiprocessing
 import os
 import signal
@@ -9,13 +12,15 @@ import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, Iterator, Optional, Union
 
 import structlog
 
 from ..json import make_encodeable
 from ..predictor import BasePredictor, get_predict, load_predictor_from_ref, run_setup
 from ..types import PYDANTIC_V2, URLPath
+from .connection import AsyncConnection, LockedConnection
+
 from .eventtypes import (
     Done,
     Log,
@@ -61,7 +66,7 @@ class Worker:
         self._terminating = False
 
         self._result: Optional["Future[Done]"] = None
-        self._subscribers: Dict[int, Callable[[_PublicEventType], None]] = {}
+        self._subscribers: Dict[int, Optional[Callable[[_PublicEventType], None]]] = {}
 
         self._predict_payload: Optional[Dict[str, Any]] = None
         self._predict_start = threading.Event()  # set when a prediction is started
@@ -241,10 +246,13 @@ class Worker:
 
     def _publish(self, ev: _PublicEventType) -> None:
         for subscriber in self._subscribers.values():
-            try:
-                subscriber(ev)
-            except Exception:
-                log.warn("publish failed", subscriber=subscriber, ev=ev, exc_info=True)
+            if subscriber:
+                try:
+                    subscriber(ev)
+                except Exception:
+                    log.warn(
+                        "publish failed", subscriber=subscriber, ev=ev, exc_info=True
+                    )
 
 
 class LockedConn:
@@ -260,7 +268,7 @@ class LockedConn:
         return self.conn.recv()
 
 
-class ChildWorker(_spawn.Process):  # type: ignore
+class _ChildWorker(_spawn.Process):  # type: ignore
     def __init__(
         self,
         predictor_ref: str,
@@ -269,7 +277,9 @@ class ChildWorker(_spawn.Process):  # type: ignore
     ) -> None:
         self._predictor_ref = predictor_ref
         self._predictor: Optional[BasePredictor] = None
-        self._events = LockedConn(events)
+        self._events: Union[AsyncConnection, LockedConnection] = LockedConnection(
+            events
+        )
         self._tee_output = tee_output
         self._cancelable = False
 
@@ -291,7 +301,18 @@ class ChildWorker(_spawn.Process):  # type: ignore
 
         with redirector:
             self._setup(redirector)
-            self._loop(redirector)
+
+            # If setup didn't set the predictor, we're done here.
+            if not self._predictor:
+                return
+
+            predict = get_predict(self._predictor)
+            if inspect.iscoroutinefunction(predict) or inspect.isasyncgenfunction(
+                predict
+            ):
+                asyncio.run(self._aloop(predict))
+            else:
+                self._loop(predict, redirector)
 
     def send_cancel(self) -> None:
         if self.is_alive() and self.pid:
@@ -328,27 +349,43 @@ class ChildWorker(_spawn.Process):  # type: ignore
                 raise
             self._events.send(done)
 
-    def _loop(self, redirector: StreamRedirector) -> None:
+    def _loop(
+        self,
+        predict: Callable[..., Any],
+        redirector: StreamRedirector,
+    ) -> None:
+        with redirector:
+            while True:
+                ev = self._events.recv()
+                if isinstance(ev, Shutdown):
+                    break
+                if isinstance(ev, PredictionInput):
+                    self._predict(ev.payload, predict, redirector)
+                else:
+                    print(f"Got unexpected event: {ev}", file=sys.stderr)
+
+    async def _aloop(self, predict: Callable[..., Any]) -> None:
+        # Unwrap and replace the events connection with an async one.
+        assert isinstance(self._events, LockedConnection)
+        self._events = AsyncConnection(self._events.connection)
+
         while True:
-            ev = self._events.recv()
+            ev = await self._events.recv()
             if isinstance(ev, Shutdown):
                 break
             if isinstance(ev, PredictionInput):
-                self._predict(ev.payload, redirector)
+                # TODO: save this so we can cancel it
+                asyncio.create_task(self._apredict(ev.payload, predict))
             else:
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
 
     def _predict(
         self,
         payload: Dict[str, Any],
+        predict: Callable[..., Any],
         redirector: StreamRedirector,
     ) -> None:
-        assert self._predictor
-        done = Done()
-        send_done = True
-        self._cancelable = True
-        try:
-            predict = get_predict(self._predictor)
+        with self._handle_predict_error(redirector):
             result = predict(**payload)
 
             if result:
@@ -371,6 +408,32 @@ class ChildWorker(_spawn.Process):  # type: ignore
                     else:
                         payload = make_encodeable(result)
                     self._events.send(PredictionOutput(payload=payload))
+
+    async def _apredict(
+        self, payload: Dict[str, Any], predict: Callable[..., Any]
+    ) -> None:
+        with self._handle_predict_error():
+            result = predict(**payload)
+
+            if result:
+                if inspect.isasyncgen(result):
+                    self._events.send(PredictionOutputType(multi=True))
+                    async for r in result:
+                        self._events.send(PredictionOutput(payload=make_encodeable(r)))
+                else:
+                    output = await result
+                    self._events.send(PredictionOutputType(multi=False))
+                    self._events.send(PredictionOutput(payload=make_encodeable(output)))
+
+    @contextlib.contextmanager
+    def _handle_predict_error(
+        self, redirector: Optional[StreamRedirector] = None
+    ) -> Iterator[None]:
+        done = Done()
+        send_done = True
+        self._cancelable = True
+        try:
+            yield
         except CancelationException:
             done.canceled = True
         except Exception as e:  # pylint: disable=broad-exception-caught
@@ -387,16 +450,17 @@ class ChildWorker(_spawn.Process):  # type: ignore
             raise
         finally:
             self._cancelable = False
-            try:
-                redirector.drain(timeout=10)
-            except TimeoutError:
-                self._events.send(
-                    Log(
-                        "WARNING: logs may be truncated due to excessive volume.",
-                        source="stderr",
+            if redirector:
+                try:
+                    redirector.drain(timeout=10)
+                except TimeoutError:
+                    self._events.send(
+                        Log(
+                            "WARNING: logs may be truncated due to excessive volume.",
+                            source="stderr",
+                        )
                     )
-                )
-                raise
+                    raise
             if send_done:
                 self._events.send(done)
 
