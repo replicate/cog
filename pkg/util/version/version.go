@@ -33,11 +33,14 @@ func NewVersion(s string) (version *Version, err error) {
 	}
 	if len(parts) >= 3 {
 		patch, err := strconv.Atoi(parts[2])
-		version.Patch = new(int)
-		*version.Patch = patch
 		if err != nil {
 			return nil, fmt.Errorf("Invalid patch version %s: %w", parts[2], err)
 		}
+		// We assign a pointer here to handle cases where the patch version is not
+		// explicitly assigned and we need to compare versions without patches to
+		// versions with patches.
+		version.Patch = new(int)
+		*version.Patch = patch
 	}
 
 	if len(plusParts) == 2 {
