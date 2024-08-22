@@ -8,7 +8,7 @@ import types
 from concurrent.futures import Future, ThreadPoolExecutor
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
-from typing import Any, Callable, Dict, Optional, TextIO, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 import structlog
 
@@ -28,7 +28,7 @@ from .exceptions import (
     FatalWorkerException,
     InvalidStateException,
 )
-from .helpers import StreamRedirector, WrappedStream
+from .helpers import StreamRedirector
 
 _spawn = multiprocessing.get_context("spawn")
 
@@ -288,63 +288,62 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         # We use SIGUSR1 to signal an interrupt for cancelation.
         signal.signal(signal.SIGUSR1, self._signal_handler)
 
-        ws_stdout = WrappedStream("stdout", sys.stdout)
-        ws_stderr = WrappedStream("stderr", sys.stderr)
-        ws_stdout.wrap()
-        ws_stderr.wrap()
-
-        self._stream_redirector = StreamRedirector(
-            [ws_stdout, ws_stderr], self._stream_write_hook
+        redirector = StreamRedirector(
+            tee=self._tee_output,
+            callback=self._stream_write_hook,
         )
-        self._stream_redirector.start()
 
-        self._setup()
-        self._loop()
+        self._setup(redirector)
+        self._loop(redirector)
 
-        self._stream_redirector.shutdown()
-
-    def _setup(self) -> None:
-        done = Done()
-        try:
-            self._predictor = load_predictor_from_ref(self._predictor_ref)
-            # Could be a function or a class
-            if hasattr(self._predictor, "setup"):
-                run_setup(self._predictor)
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            traceback.print_exc()
-            done.error = True
-            done.error_detail = str(e)
-        except BaseException as e:
-            # For SystemExit and friends we attempt to add some useful context
-            # to the logs, but reraise to ensure the process dies.
-            traceback.print_exc()
-            done.error = True
-            done.error_detail = str(e)
-            raise
-        finally:
+    def _setup(self, redirector: StreamRedirector) -> None:
+        with redirector:
+            done = Done()
             try:
-                self._stream_redirector.drain(timeout=10)
-            except TimeoutError:
-                self._events.send(
-                    Log(
-                        "WARNING: logs may be truncated due to excessive volume.",
-                        source="stderr",
-                    )
-                )
+                self._predictor = load_predictor_from_ref(self._predictor_ref)
+                # Could be a function or a class
+                if hasattr(self._predictor, "setup"):
+                    run_setup(self._predictor)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                traceback.print_exc()
+                done.error = True
+                done.error_detail = str(e)
+            except BaseException as e:
+                # For SystemExit and friends we attempt to add some useful context
+                # to the logs, but reraise to ensure the process dies.
+                traceback.print_exc()
+                done.error = True
+                done.error_detail = str(e)
                 raise
-            self._events.send(done)
+            finally:
+                try:
+                    redirector.drain(timeout=10)
+                except TimeoutError:
+                    self._events.send(
+                        Log(
+                            "WARNING: logs may be truncated due to excessive volume.",
+                            source="stderr",
+                        )
+                    )
+                    raise
+                self._events.send(done)
 
-    def _loop(self) -> None:
-        while True:
-            ev = self._events.recv()
-            if isinstance(ev, Shutdown):
-                break
-            if isinstance(ev, PredictionInput):
-                self._predict(ev.payload)
-            else:
-                print(f"Got unexpected event: {ev}", file=sys.stderr)
+    def _loop(self, redirector: StreamRedirector) -> None:
+        with redirector:
+            while True:
+                ev = self._events.recv()
+                if isinstance(ev, Shutdown):
+                    break
+                if isinstance(ev, PredictionInput):
+                    self._predict(ev.payload, redirector)
+                else:
+                    print(f"Got unexpected event: {ev}", file=sys.stderr)
 
-    def _predict(self, payload: Dict[str, Any]) -> None:
+    def _predict(
+        self,
+        payload: Dict[str, Any],
+        redirector: StreamRedirector,
+    ) -> None:
         assert self._predictor
         done = Done()
         send_done = True
@@ -378,7 +377,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         finally:
             self._cancelable = False
             try:
-                self._stream_redirector.drain(timeout=10)
+                redirector.drain(timeout=10)
             except TimeoutError:
                 self._events.send(
                     Log(
@@ -398,13 +397,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if signum == signal.SIGUSR1 and self._cancelable:
             raise CancelationException()
 
-    def _stream_write_hook(
-        self, stream_name: str, original_stream: TextIO, data: str
-    ) -> None:
-        if self._tee_output:
-            original_stream.write(data)
-            original_stream.flush()
-        self._events.send(Log(data, source=stream_name))
+    def _stream_write_hook(self, stream_name: str, data: str) -> None:
+        if stream_name == sys.stdout.name:
+            self._events.send(Log(data, source="stdout"))
+        else:
+            self._events.send(Log(data, source="stderr"))
 
 
 def _prepare_payload(payload: Dict[str, Any]) -> None:
