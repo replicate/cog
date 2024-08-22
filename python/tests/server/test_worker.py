@@ -56,6 +56,11 @@ OUTPUT_FIXTURES = [
         lambda x: f"hello, {x['name']}",
     ),
     (
+        WorkerConfig("hello_world_async"),
+        {"name": ST_NAMES},
+        lambda x: f"hello, {x['name']}",
+    ),
+    (
         WorkerConfig("count_up"),
         {"upto": st.integers(min_value=0, max_value=100)},
         lambda x: list(range(x["upto"])),
