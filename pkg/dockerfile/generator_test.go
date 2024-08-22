@@ -560,6 +560,7 @@ func TestGenerateFullGPUWithCogBaseImage(t *testing.T) {
 build:
   gpu: true
   cuda: "11.8"
+  python_version: "3.11"
   system_packages:
     - ffmpeg
     - cowsay
@@ -580,9 +581,61 @@ predict: predict.py:Predictor
 		_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 		require.NoError(t, err)
 
-		expected := `#syntax=docker/dockerfile:1.4
+		// We add the patch version to the expected torch version
+		expectedTorchVersion := torchVersion
+		if torchVersion == "2.3" {
+			expectedTorchVersion = "2.3.1"
+		}
+		expected := fmt.Sprintf(`#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
-FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3
+FROM r8.im/cog-base:cuda11.8-python3.11-torch%s
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
+COPY `+gen.relativeTmpDir+`/requirements.txt /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt
+RUN cowsay moo
+WORKDIR /src
+EXPOSE 5000
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`, expectedTorchVersion)
+
+		require.Equal(t, expected, actual)
+
+		requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
+		require.NoError(t, err)
+		require.Equal(t, "pandas==2.0.3", string(requirements))
+	}
+}
+
+func TestGenerateTorchWithStrippedModifiedVersion(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	yaml := `
+build:
+  gpu: true
+  cuda: "11.8"
+  system_packages:
+    - ffmpeg
+    - cowsay
+  python_packages:
+    - torch==2.3.1+cu118
+    - pandas==2.0.3
+  run:
+    - "cowsay moo"
+predict: predict.py:Predictor
+`
+	conf, err := config.FromYAML([]byte(yaml))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	gen, err := NewGenerator(conf, tmpDir)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(true)
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	expected := `#syntax=docker/dockerfile:1.4
+FROM r8.im/replicate/cog-test-weights AS weights
+FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
@@ -592,10 +645,9 @@ EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
-		require.Equal(t, expected, actual)
+	require.Equal(t, expected, actual)
 
-		requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
-		require.NoError(t, err)
-		require.Equal(t, "pandas==2.0.3", string(requirements))
-	}
+	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "pandas==2.0.3", string(requirements))
 }

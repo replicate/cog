@@ -99,8 +99,6 @@ func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
 }
 
 // BaseImageConfigurations returns a list of CUDA/Python/Torch versions
-// with patch versions stripped out. Each version is greater or equal to
-// MinimumCUDAVersion/MinimumPythonVersion/MinimumTorchVersion.
 func BaseImageConfigurations() []BaseImageConfiguration {
 	configs := []BaseImageConfiguration{}
 
@@ -110,17 +108,19 @@ func BaseImageConfigurations() []BaseImageConfiguration {
 	cudaVersionsSet := make(map[string]bool)
 
 	// Torch configs
-	for _, compat := range config.TorchMinorCompatibilityMatrix {
+	for _, compat := range config.TorchCompatibilityMatrix {
 		for _, python := range compat.Pythons {
 
-			// Only support fast cold boots for Torch with CUDA.
-			// Torch without CUDA is a rarely used edge case.
 			if compat.CUDA == nil {
+				configs = append(configs, BaseImageConfiguration{
+					PythonVersion: python,
+					TorchVersion:  compat.Torch,
+				})
 				continue
 			}
 
 			cuda := *compat.CUDA
-			torch := version.StripPatch(compat.Torch)
+			torch := compat.Torch
 			conf := BaseImageConfiguration{
 				CUDAVersion:   cuda,
 				PythonVersion: python,
@@ -158,7 +158,8 @@ func BaseImageConfigurations() []BaseImageConfiguration {
 }
 
 func NewBaseImageGenerator(cudaVersion string, pythonVersion string, torchVersion string) (*BaseImageGenerator, error) {
-	if BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion) {
+	valid, cudaVersion, pythonVersion, torchVersion := BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion)
+	if valid {
 		return &BaseImageGenerator{cudaVersion, pythonVersion, torchVersion}, nil
 	}
 	printNone := func(s string) string {
@@ -220,6 +221,8 @@ func (g *BaseImageGenerator) runStatements() []config.RunItem {
 }
 
 func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string) string {
+	_, cudaVersion, pythonVersion, torchVersion = BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion)
+
 	components := []string{}
 	if cudaVersion != "" {
 		components = append(components, "cuda"+version.StripPatch(cudaVersion))
@@ -228,7 +231,7 @@ func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string
 		components = append(components, "python"+version.StripPatch(pythonVersion))
 	}
 	if torchVersion != "" {
-		components = append(components, "torch"+version.StripPatch(torchVersion))
+		components = append(components, "torch"+version.StripModifier(torchVersion))
 	}
 
 	tag := strings.Join(components, "-")
@@ -239,7 +242,8 @@ func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string
 	return BaseImageRegistry + "/cog-base:" + tag
 }
 
-func BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion string) bool {
+func BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion string) (bool, string, string, string) {
+	compatibleTorchVersion := ""
 	for _, conf := range BaseImageConfigurations() {
 		// Check CUDA version compatibility
 		if !isVersionCompatible(conf.CUDAVersion, cudaVersion) {
@@ -256,14 +260,22 @@ func BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion strin
 			continue
 		}
 
-		return true
+		if compatibleTorchVersion == "" || version.Greater(conf.TorchVersion, compatibleTorchVersion) {
+			compatibleTorchVersion = version.StripModifier(conf.TorchVersion)
+		}
 	}
-	return false
+
+	valid := (torchVersion != "" && compatibleTorchVersion != "") || torchVersion == ""
+	if valid {
+		torchVersion = compatibleTorchVersion
+	}
+
+	return valid, cudaVersion, pythonVersion, torchVersion
 }
 
 func isVersionCompatible(confVersion, requestedVersion string) bool {
 	if confVersion == "" || requestedVersion == "" {
 		return confVersion == requestedVersion
 	}
-	return version.Matches(confVersion, requestedVersion)
+	return version.Matches(requestedVersion, confVersion)
 }
