@@ -324,21 +324,6 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 
 	// Include all the requirements and remove our include packages if they exist
 	for _, pkg := range c.Build.pythonRequirementsContent {
-		packageName := packageName(pkg)
-		if packageName != "" {
-			foundIdx := -1
-			for i, includePkg := range includePackageNames {
-				if includePkg == packageName {
-					foundIdx = i
-					break
-				}
-			}
-			if foundIdx != -1 {
-				includePackageNames = append(includePackageNames[:foundIdx], includePackageNames[foundIdx+1:]...)
-				includePackages = append(includePackages[:foundIdx], includePackages[foundIdx+1:]...)
-			}
-		}
-
 		archPkg, findLinksList, extraIndexURLs, err := c.pythonPackageForArch(pkg, goos, goarch)
 		if err != nil {
 			return "", err
@@ -352,6 +337,21 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 		if len(extraIndexURLs) > 0 {
 			for _, u := range extraIndexURLs {
 				extraIndexURLSet[u] = true
+			}
+		}
+
+		packageName := packageName(archPkg)
+		if packageName != "" {
+			foundIdx := -1
+			for i, includePkg := range includePackageNames {
+				if includePkg == packageName {
+					foundIdx = i
+					break
+				}
+			}
+			if foundIdx != -1 {
+				includePackageNames = append(includePackageNames[:foundIdx], includePackageNames[foundIdx+1:]...)
+				includePackages = append(includePackages[:foundIdx], includePackages[foundIdx+1:]...)
 			}
 		}
 	}
