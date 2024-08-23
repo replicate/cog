@@ -276,7 +276,7 @@ def test_predict_logging(worker, expected_stdout, expected_stderr):
     assert result.stderr == expected_stderr
 
 
-@uses_worker("sleep", setup=False)
+@uses_worker(["sleep", "sleep_async"], setup=False)
 def test_cancel_is_safe(worker):
     """
     Calls to cancel at any time should not result in unexpected things
@@ -310,7 +310,7 @@ def test_cancel_is_safe(worker):
     assert result2.output == "done in 0.1 seconds"
 
 
-@uses_worker("sleep", setup=False)
+@uses_worker(["sleep", "sleep_async"], setup=False)
 def test_cancel_idempotency(worker):
     """
     Multiple calls to cancel within the same prediction, while not necessary or
@@ -342,7 +342,7 @@ def test_cancel_idempotency(worker):
     assert result2.output == "done in 0.1 seconds"
 
 
-@uses_worker("sleep")
+@uses_worker(["sleep", "sleep_async"])
 def test_cancel_multiple_predictions(worker):
     """
     Multiple predictions cancelled in a row shouldn't be a problem. This test
