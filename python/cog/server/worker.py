@@ -32,7 +32,7 @@ from .exceptions import (
     FatalWorkerException,
     InvalidStateException,
 )
-from .helpers import StreamRedirector
+from .helpers import AsyncStreamRedirector, StreamRedirector
 
 _spawn = multiprocessing.get_context("spawn")
 
@@ -282,8 +282,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         signal.signal(signal.SIGUSR1, self._signal_handler)
 
         redirector = StreamRedirector(
-            tee=self._tee_output,
             callback=self._stream_write_hook,
+            tee=self._tee_output,
         )
 
         self._setup(redirector)
@@ -294,7 +294,14 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
         predict = get_predict(self._predictor)
         if inspect.iscoroutinefunction(predict) or inspect.isasyncgenfunction(predict):
-            asyncio.run(self._aloop(predict))
+            # Replace the stream redirector with one that will work in an async
+            # context.
+            redirector = AsyncStreamRedirector(
+                callback=self._stream_write_hook,
+                tee=self._tee_output,
+            )
+
+            asyncio.run(self._aloop(predict, redirector))
         else:
             self._loop(predict, redirector)
 
@@ -345,20 +352,25 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 else:
                     print(f"Got unexpected event: {ev}", file=sys.stderr)
 
-    async def _aloop(self, predict: Callable[..., Any]) -> None:
+    async def _aloop(
+        self,
+        predict: Callable[..., Any],
+        redirector: AsyncStreamRedirector,
+    ) -> None:
         # Unwrap and replace the events connection with an async one.
         assert isinstance(self._events, LockedConnection)
         self._events = AsyncConnection(self._events.connection)
 
-        while True:
-            ev = await self._events.recv()
-            if isinstance(ev, Shutdown):
-                break
-            if isinstance(ev, PredictionInput):
-                # TODO: save this so we can cancel it
-                asyncio.create_task(self._apredict(ev.payload, predict))
-            else:
-                print(f"Got unexpected event: {ev}", file=sys.stderr)
+        with redirector:
+            while True:
+                ev = await self._events.recv()
+                if isinstance(ev, Shutdown):
+                    break
+                if isinstance(ev, PredictionInput):
+                    # TODO: save this so we can cancel it
+                    asyncio.create_task(self._apredict(ev.payload, predict, redirector))
+                else:
+                    print(f"Got unexpected event: {ev}", file=sys.stderr)
 
     def _predict(
         self,
@@ -379,9 +391,12 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     self._events.send(PredictionOutput(payload=make_encodeable(result)))
 
     async def _apredict(
-        self, payload: Dict[str, Any], predict: Callable[..., Any]
+        self,
+        payload: Dict[str, Any],
+        predict: Callable[..., Any],
+        redirector: AsyncStreamRedirector,
     ) -> None:
-        with self._handle_predict_error():
+        with self._handle_predict_error(redirector):
             result = predict(**payload)
 
             if result:
@@ -396,7 +411,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
     @contextlib.contextmanager
     def _handle_predict_error(
-        self, redirector: Optional[StreamRedirector] = None
+        self, redirector: Union[AsyncStreamRedirector, StreamRedirector]
     ) -> Iterator[None]:
         done = Done()
         send_done = True
@@ -419,17 +434,16 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             raise
         finally:
             self._cancelable = False
-            if redirector:
-                try:
-                    redirector.drain(timeout=10)
-                except TimeoutError:
-                    self._events.send(
-                        Log(
-                            "WARNING: logs may be truncated due to excessive volume.",
-                            source="stderr",
-                        )
+            try:
+                redirector.drain(timeout=10)
+            except TimeoutError:
+                self._events.send(
+                    Log(
+                        "WARNING: logs may be truncated due to excessive volume.",
+                        source="stderr",
                     )
-                    raise
+                )
+                raise
             if send_done:
                 self._events.send(done)
 
