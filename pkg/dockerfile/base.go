@@ -211,7 +211,35 @@ func (g *BaseImageGenerator) makeConfig() (*config.Config, error) {
 
 func (g *BaseImageGenerator) pythonPackages() []string {
 	if g.torchVersion != "" {
-		return []string{"torch==" + g.torchVersion}
+		pkgs := []string{"torch==" + g.torchVersion}
+
+		// Find torchvision compatibility.
+		for _, compat := range config.TorchCompatibilityMatrix {
+			if len(compat.Torchvision) == 0 {
+				continue
+			}
+			if !version.Matches(g.torchVersion, compat.TorchVersion()) {
+				continue
+			}
+
+			pkgs = append(pkgs, "torchvision=="+compat.Torchvision)
+			break
+		}
+
+		// Find torchaudio compatibility.
+		for _, compat := range config.TorchCompatibilityMatrix {
+			if len(compat.Torchaudio) == 0 {
+				continue
+			}
+			if !version.Matches(g.torchVersion, compat.TorchVersion()) {
+				continue
+			}
+
+			pkgs = append(pkgs, "torchaudio=="+compat.Torchaudio)
+			break
+		}
+
+		return pkgs
 	}
 	return []string{}
 }

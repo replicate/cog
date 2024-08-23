@@ -274,8 +274,10 @@ func (g *Generator) BaseImage() (string, error) {
 		if err == nil || g.useCogBaseImage != nil {
 			return baseImage, err
 		}
-		if err != nil {
-			console.Warnf("Could not find a suitable base image, continuing without base image support (%v).", err)
+		console.Warnf("Could not find a suitable base image, continuing without base image support (%v).", err)
+		if g.useCogBaseImage == nil {
+			g.useCogBaseImage = new(bool)
+			*g.useCogBaseImage = false
 		}
 	}
 
@@ -394,14 +396,17 @@ func (g *Generator) installCog() (string, error) {
 
 func (g *Generator) pipInstalls() (string, error) {
 	var err error
-	excludePackages := []string{}
+	includePackages := []string{}
 	if torchVersion, ok := g.Config.TorchVersion(); ok {
-		excludePackages = []string{"torch==" + torchVersion}
+		includePackages = []string{"torch==" + torchVersion}
 	}
 	if torchvisionVersion, ok := g.Config.TorchvisionVersion(); ok {
-		excludePackages = append(excludePackages, "torchvision=="+torchvisionVersion)
+		includePackages = append(includePackages, "torchvision=="+torchvisionVersion)
 	}
-	g.pythonRequirementsContents, err = g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH, excludePackages)
+	if torchaudioVersion, ok := g.Config.TorchaudioVersion(); ok {
+		includePackages = append(includePackages, "torchaudio=="+torchaudioVersion)
+	}
+	g.pythonRequirementsContents, err = g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH, includePackages)
 	if err != nil {
 		return "", err
 	}

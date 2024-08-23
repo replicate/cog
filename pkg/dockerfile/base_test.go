@@ -1,6 +1,7 @@
 package dockerfile
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -67,4 +68,11 @@ func TestBaseImageConfigurationExistsNoCUDA(t *testing.T) {
 func TestIsVersionCompatible(t *testing.T) {
 	compatible := isVersionCompatible("2.3.1+cu121", "2.3")
 	require.True(t, compatible)
+}
+
+func TestPythonPackages(t *testing.T) {
+	generator, err := NewBaseImageGenerator("12.1", "3.9", "2.1.0")
+	require.NoError(t, err)
+	pkgs := generator.pythonPackages()
+	require.Truef(t, reflect.DeepEqual(pkgs, []string{"torch==2.1.0", "torchvision==0.16.0", "torchaudio==2.1.0"}), "expected %v", pkgs)
 }

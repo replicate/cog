@@ -301,7 +301,7 @@ func torchGPUPackage(ver string, cuda string) (name, cpuVersion, findLinks, extr
 	var latest *TorchCompatibility
 	for _, compat := range TorchCompatibilityMatrix {
 		compat := compat
-		if compat.TorchVersion() != ver || compat.CUDA == nil {
+		if !version.Matches(compat.TorchVersion(), ver) || compat.CUDA == nil {
 			continue
 		}
 		greater, err := versionGreater(*compat.CUDA, cuda)
@@ -330,7 +330,7 @@ func torchGPUPackage(ver string, cuda string) (name, cpuVersion, findLinks, extr
 		return "torch", ver, "", "", nil
 	}
 
-	return "torch", latest.Torch, latest.FindLinks, latest.ExtraIndexURL, nil
+	return "torch", version.StripModifier(latest.Torch), latest.FindLinks, latest.ExtraIndexURL, nil
 }
 
 func torchvisionCPUPackage(ver, goos, goarch string) (name, cpuVersion, findLinks, extraIndexURL string, err error) {
@@ -379,7 +379,7 @@ func torchvisionGPUPackage(ver, cuda string) (name, cpuVersion, findLinks, extra
 		return "torchvision", ver, "", "", nil
 	}
 
-	return "torchvision", latest.Torchvision, latest.FindLinks, latest.ExtraIndexURL, nil
+	return "torchvision", version.StripModifier(latest.Torchvision), latest.FindLinks, latest.ExtraIndexURL, nil
 }
 
 // aarch64 packages don't have +cpu suffix: https://download.pytorch.org/whl/torch_stable.html

@@ -602,7 +602,10 @@ COPY . /src`, expectedTorchVersion)
 
 		requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 		require.NoError(t, err)
-		require.Equal(t, "pandas==2.0.3", string(requirements))
+		expected = fmt.Sprintf(`--extra-index-url https://download.pytorch.org/whl/cu118
+torch==%s
+pandas==2.0.3`, expectedTorchVersion)
+		require.Equal(t, expected, string(requirements))
 	}
 }
 
@@ -649,5 +652,7 @@ COPY . /src`
 
 	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
-	require.Equal(t, "pandas==2.0.3", string(requirements))
+	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118
+torch==2.3.1
+pandas==2.0.3`, string(requirements))
 }
