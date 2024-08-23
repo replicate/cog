@@ -11,12 +11,30 @@ from fastapi.testclient import TestClient
 
 from cog.command import ast_openapi_schema
 from cog.server.http import create_app
+from cog.server.worker import Worker
 
 
 @define
 class AppConfig:
     predictor_fixture: str
     options: Optional[Dict[str, Any]]
+
+
+@define
+class WorkerConfig:
+    fixture_name: str
+    setup: bool = True
+
+
+def pytest_make_parametrize_id(config, val):
+    """
+    Generates more readable IDs for parametrized tests that use AppConfig or
+    WorkerConfig values.
+    """
+    if isinstance(val, AppConfig):
+        return val.predictor_fixture
+    elif isinstance(val, WorkerConfig):
+        return val.fixture_name
 
 
 def _fixture_path(name):
@@ -49,6 +67,21 @@ def uses_predictor_with_client_options(name, **options):
     return pytest.mark.parametrize(
         "client", [AppConfig(predictor_fixture=name, options=options)], indirect=True
     )
+
+
+def uses_worker(name_or_names, setup=True):
+    """
+    Decorator for tests that require a Worker instance. `name_or_names` can be
+    a single fixture name, or a sequence (list, tuple) of fixture names. If
+    it's a sequence, the test will be run once for each worker.
+
+    If `setup` is True (the default) setup will be run before the test runs.
+    """
+    if isinstance(name_or_names, (tuple, list)):
+        values = (WorkerConfig(fixture_name=n, setup=setup) for n in name_or_names)
+    else:
+        values = (WorkerConfig(fixture_name=name_or_names, setup=setup),)
+    return pytest.mark.parametrize("worker", values, indirect=True)
 
 
 def make_client(
@@ -104,3 +137,15 @@ def static_schema(client) -> dict:
     ref = _fixture_path(client.ref)
     module_path = ref.split(":", 1)[0]
     return ast_openapi_schema.extract_file(module_path)
+
+
+@pytest.fixture
+def worker(request):
+    ref = _fixture_path(request.param.fixture_name)
+    w = Worker(predictor_ref=ref, tee_output=False)
+    if request.param.setup:
+        assert not w.setup().result().error
+    try:
+        yield w
+    finally:
+        w.shutdown()
