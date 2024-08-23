@@ -383,6 +383,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     )
                 else:
                     print(f"Got unexpected event: {ev}", file=sys.stderr)
+            if task:
+                await task
 
     def _predict(
         self,
