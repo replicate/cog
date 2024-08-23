@@ -42,6 +42,7 @@ coverage.xml
 .pytest_cache
 .hypothesis
 `
+const LDConfigCacheBuildCommand = "RUN find / -type f -name \"*python*.so\" > /etc/ld.so.conf.d/cog.conf && ldconfig"
 
 type Generator struct {
 	Config *config.Config
@@ -161,6 +162,7 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		installPython,
 		aptInstalls,
 		g.copyPipPackagesFromInstallStage(),
+		LDConfigCacheBuildCommand,
 		runCommands,
 	}), nil
 }
