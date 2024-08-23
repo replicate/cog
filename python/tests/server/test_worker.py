@@ -315,11 +315,11 @@ def test_cancel_multiple_predictions(worker):
     """
     dones: list[Done] = []
     for _ in range(5):
-        fut = worker.predict({"sleep": 0.1})
-        time.sleep(0.01)
+        fut = worker.predict({"sleep": 1})
+        time.sleep(0.1)
         worker.cancel()
         dones.append(fut.result())
-    assert all(d.canceled for d in dones)
+    assert dones == [Done(canceled=True)] * 5
 
     assert not worker.predict({"sleep": 0}).result().canceled
 
