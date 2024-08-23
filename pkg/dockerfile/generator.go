@@ -274,8 +274,10 @@ func (g *Generator) BaseImage() (string, error) {
 		if err == nil || g.useCogBaseImage != nil {
 			return baseImage, err
 		}
-		if err != nil {
-			console.Warnf("Could not find a suitable base image, continuing without base image support (%v).", err)
+		console.Warnf("Could not find a suitable base image, continuing without base image support (%v).", err)
+		if g.useCogBaseImage == nil {
+			g.useCogBaseImage = new(bool)
+			*g.useCogBaseImage = false
 		}
 	}
 
