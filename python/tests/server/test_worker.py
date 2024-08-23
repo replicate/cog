@@ -360,7 +360,7 @@ def test_cancel_multiple_predictions(worker):
     assert not worker.predict({"sleep": 0}).result().canceled
 
 
-@uses_worker("sleep")
+@uses_worker(["sleep", "sleep_async"])
 def test_graceful_shutdown(worker):
     """
     On shutdown, the worker should finish running the current prediction, and
