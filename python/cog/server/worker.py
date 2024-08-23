@@ -20,6 +20,7 @@ from ..predictor import BasePredictor, get_predict, load_predictor_from_ref, run
 from ..types import URLPath
 from .connection import AsyncConnection, LockedConnection
 from .eventtypes import (
+    Cancel,
     Done,
     Log,
     PredictionInput,
@@ -135,6 +136,7 @@ class Worker:
             and self._child.pid is not None
         ):
             os.kill(self._child.pid, signal.SIGUSR1)
+            self._events.send(Cancel())
             self._allow_cancel = False
 
     def _assert_state(self, state: WorkerState) -> None:
@@ -278,8 +280,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         # shutdown is coordinated by the parent process.
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 
-        # We use SIGUSR1 to signal an interrupt for cancelation.
-        signal.signal(signal.SIGUSR1, self._signal_handler)
+        # Initially, we ignore SIGUSR1.
+        signal.signal(signal.SIGUSR1, signal.SIG_IGN)
 
         redirector = StreamRedirector(
             callback=self._stream_write_hook,
@@ -303,6 +305,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
             asyncio.run(self._aloop(predict, redirector))
         else:
+            # We use SIGUSR1 to signal an interrupt for cancelation.
+            signal.signal(signal.SIGUSR1, self._signal_handler)
+
             self._loop(predict, redirector)
 
     def _setup(self, redirector: StreamRedirector) -> None:
@@ -345,9 +350,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         with redirector:
             while True:
                 ev = self._events.recv()
-                if isinstance(ev, Shutdown):
+                if isinstance(ev, Cancel):
+                    continue  # Ignored in sync predictors.
+                elif isinstance(ev, Shutdown):
                     break
-                if isinstance(ev, PredictionInput):
+                elif isinstance(ev, PredictionInput):
                     self._predict(ev.payload, predict, redirector)
                 else:
                     print(f"Got unexpected event: {ev}", file=sys.stderr)
@@ -361,14 +368,19 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         assert isinstance(self._events, LockedConnection)
         self._events = AsyncConnection(self._events.connection)
 
+        task = None
+
         with redirector:
             while True:
                 ev = await self._events.recv()
-                if isinstance(ev, Shutdown):
+                if isinstance(ev, Cancel) and task and self._cancelable:
+                    task.cancel()
+                elif isinstance(ev, Shutdown):
                     break
-                if isinstance(ev, PredictionInput):
-                    # TODO: save this so we can cancel it
-                    asyncio.create_task(self._apredict(ev.payload, predict, redirector))
+                elif isinstance(ev, PredictionInput):
+                    task = asyncio.create_task(
+                        self._apredict(ev.payload, predict, redirector)
+                    )
                 else:
                     print(f"Got unexpected event: {ev}", file=sys.stderr)
 
@@ -418,8 +430,17 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._cancelable = True
         try:
             yield
+        # regular cancelation
         except CancelationException:
             done.canceled = True
+        # async cancelation
+        except asyncio.CancelledError:
+            done.canceled = True
+            # We've handled the requested cancelation, so we uncancel the task.
+            # This ensures that any cleanup work we do won't be interrupted.
+            task = asyncio.current_task()
+            assert task
+            task.uncancel()
         except Exception as e:  # pylint: disable=broad-exception-caught
             traceback.print_exc()
             done.error = True
