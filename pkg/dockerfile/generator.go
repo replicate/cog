@@ -42,7 +42,7 @@ coverage.xml
 .pytest_cache
 .hypothesis
 `
-const StripDebugSymbolsCommand = "RUN find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
+const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
 
 type Generator struct {
 	Config *config.Config
@@ -140,21 +140,13 @@ func (g *Generator) generateInitialSteps() (string, error) {
 			return "", err
 		}
 
-		commands := []string{
+		return joinStringsWithoutLineSpace([]string{
 			"#syntax=docker/dockerfile:1.4",
 			"FROM " + baseImage,
 			aptInstalls,
 			pipInstalls,
-		}
-
-		// If we aren't installing any python libraries and we are in
-		// a base image, strip has no purpose.
-		if pipInstalls != "" {
-			commands = append(commands, StripDebugSymbolsCommand)
-		}
-		commands = append(commands, runCommands)
-
-		return joinStringsWithoutLineSpace(commands), nil
+			runCommands,
+		}), nil
 	}
 
 	pipInstallStage, err := g.pipInstallStage()
@@ -171,7 +163,6 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		installPython,
 		aptInstalls,
 		g.copyPipPackagesFromInstallStage(),
-		StripDebugSymbolsCommand,
 		runCommands,
 	}), nil
 }
@@ -380,7 +371,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 	export PYTHON_CFLAGS='-march=native -mtune=native -O3' && \
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
-	pip install "wheel<1"`, py, py), nil
+	pip install --no-cache-dir "wheel<1" && %s`, py, py, StripDebugSymbolsCommand), nil
 	// for sitePackagesLocation, kind of need to determine which specific version latest is (3.8 -> 3.8.17 or 3.8.18)
 	// install-latest essentially does pyenv install --list | grep $py | tail -1
 	// there are many bad options, but a symlink to $(pyenv prefix) is the least bad one
@@ -403,7 +394,7 @@ func (g *Generator) installCog() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	lines = append(lines, fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep %s", containerPath))
+	lines = append(lines, fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep %s && %s", containerPath, StripDebugSymbolsCommand))
 	return strings.Join(lines, "\n"), nil
 }
 
@@ -436,7 +427,7 @@ func (g *Generator) pipInstalls() (string, error) {
 
 	return strings.Join([]string{
 		copyLine[0],
-		"RUN pip install -r " + containerPath,
+		"RUN pip install --no-cache-dir -r " + containerPath + " && " + StripDebugSymbolsCommand,
 	}, "\n"), nil
 }
 
@@ -476,7 +467,7 @@ func (g *Generator) pipInstallStage() (string, error) {
 		fromLine,
 		installCog,
 		copyLine[0],
-		"RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r " + containerPath,
+		"RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep -r " + containerPath + " && " + StripDebugSymbolsCommand,
 	}
 	return strings.Join(lines, "\n"), nil
 }
