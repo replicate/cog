@@ -82,20 +82,36 @@ OUTPUT_FIXTURES = [
 
 SETUP_LOGS_FIXTURES = [
     (
+        WorkerConfig("logging", setup=False),
         (
             "writing some stuff from C at import time\n"
             "writing to stdout at import time\n"
             "setting up predictor\n"
         ),
         "writing to stderr at import time\n",
-    )
+    ),
+    (
+        WorkerConfig("logging_async", setup=False),
+        (
+            "writing some stuff from C at import time\n"
+            "writing to stdout at import time\n"
+            "setting up predictor\n"
+        ),
+        "writing to stderr at import time\n",
+    ),
 ]
 
 PREDICT_LOGS_FIXTURES = [
     (
+        WorkerConfig("logging"),
         ("writing from C\n" "writing with print\n"),
         ("WARNING:root:writing log message\n" "writing to stderr\n"),
-    )
+    ),
+    (
+        WorkerConfig("logging_async"),
+        ("writing with print\n"),
+        ("WARNING:root:writing log message\n" "writing to stderr\n"),
+    ),
 ]
 
 
@@ -227,8 +243,11 @@ def test_output(worker, payloads, output_generator, data):
     assert result.output == expected_output
 
 
-@uses_worker("logging", setup=False)
-@pytest.mark.parametrize("expected_stdout,expected_stderr", SETUP_LOGS_FIXTURES)
+@pytest.mark.parametrize(
+    "worker,expected_stdout,expected_stderr",
+    SETUP_LOGS_FIXTURES,
+    indirect=["worker"],
+)
 def test_setup_logging(worker, expected_stdout, expected_stderr):
     """
     We should get the logs we expect from predictors that generate logs during
@@ -241,8 +260,11 @@ def test_setup_logging(worker, expected_stdout, expected_stderr):
     assert result.stderr == expected_stderr
 
 
-@uses_worker("logging")
-@pytest.mark.parametrize("expected_stdout,expected_stderr", PREDICT_LOGS_FIXTURES)
+@pytest.mark.parametrize(
+    "worker,expected_stdout,expected_stderr",
+    PREDICT_LOGS_FIXTURES,
+    indirect=["worker"],
+)
 def test_predict_logging(worker, expected_stdout, expected_stderr):
     """
     We should get the logs we expect from predictors that generate logs during
