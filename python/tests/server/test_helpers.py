@@ -1,167 +1,67 @@
 import os
-import tempfile
+import resource
 import time
 import uuid
 
 import pytest
 
-from cog.server.helpers import StreamRedirector, WrappedStream
+from cog.server.helpers import StreamRedirector
 
 
 @pytest.fixture
-def tmpdir():
-    with tempfile.TemporaryDirectory() as td:
-        yield td
-
-
-@pytest.fixture
-def tmpfile(tmpdir):
+def tmpfile(tmp_path):
     def _tmpfile():
-        return os.path.join(tmpdir, uuid.uuid4().hex)
+        return tmp_path / uuid.uuid4().hex
 
     return _tmpfile
 
 
-def test_wrapped_stream_can_read_from_wrapped(tmpfile):
-    """
-    WrappedStream exposes a `wrapped` file object that can be used to read data
-    written to the stapped stream.
-    """
-    filename = tmpfile()
-    fake_stream = open(filename, "w")
-    ws = WrappedStream("fake", fake_stream)
-    ws.wrap()
-
-    fake_stream.write("test data\n")
-    fake_stream.flush()
-
-    assert ws.wrapped.readline() == "test data\n"
-
-
-def test_wrapped_stream_writes_to_underlying_stream(tmpfile):
-    """
-    WrappedStream has `write()` and `flush()` methods that are passed through to the underlying stream.
-    """
-    filename = tmpfile()
-    fake_stream = open(filename, "w")
-    ws = WrappedStream("fake", fake_stream)
-    ws.wrap()
-
-    ws.write("test data\n")
-    ws.flush()
-
-    assert ws.wrapped.readline() == "test data\n"
-
-
-def test_wrapped_stream_can_write_to_original(tmpfile):
-    """
-    WrappedStream exposes an `original` file object than be used to write data
-    to the original stream destination (before it was wrapped).
-    """
-    filename = tmpfile()
-    fake_stream = open(filename, "w")
-    ws = WrappedStream("fake", fake_stream)
-    ws.wrap()
-
-    ws.original.write("test data\n")
-    ws.original.flush()
-    fake_stream.close()
-
-    output = open(filename).read()
-
-    assert output == "test data\n"
-
-
-def test_wrapped_stream_writes_are_intercepted(tmpfile):
-    """
-    After wrapping, writes to the passed-in stream go to an internal pipe, not
-    the stream.
-    """
-    filename = tmpfile()
-    fake_stream = open(filename, "w")
-    ws = WrappedStream("fake", fake_stream)
-    ws.wrap()
-
-    fake_stream.write("test data\n")
-    fake_stream.flush()
-    fake_stream.close()
-
-    output = open(filename).read()
-
-    assert output == ""
-
-
-def test_wrapped_stream_raises_if_used_before_wrap(tmpfile):
-    """
-    You must explicitly call `.wrap()` before attempting to use the
-    WrappedStream.
-    """
-    filename = tmpfile()
-    fake_stream = open(filename, "w")
-    ws = WrappedStream("fake", fake_stream)
-
-    with pytest.raises(RuntimeError):
-        ws.wrapped.readline()
-
-    with pytest.raises(RuntimeError):
-        ws.original.write("test data\n")
-
-
-def test_stream_redirector(tmpfile):
-    stdout_filename = tmpfile()
-    stderr_filename = tmpfile()
-    fake_stdout = open(stdout_filename, "w")
-    fake_stderr = open(stderr_filename, "w")
-    ws_stdout = WrappedStream("fake_stdout", fake_stdout)
-    ws_stderr = WrappedStream("fake_stderr", fake_stderr)
+def test_stream_redirector_multiple_streams(tmpfile):
+    stdout_file = tmpfile()
+    stderr_file = tmpfile()
+    fake_stdout = stdout_file.open("w")
+    fake_stderr = stderr_file.open("w")
     output = []
 
-    def _write_hook(stream_name, original_stream, data):
+    def _write_hook(stream_name, data):
         output.append((stream_name, data))
 
-    ws_stdout.wrap()
-    ws_stderr.wrap()
-    r = StreamRedirector([ws_stdout, ws_stderr], _write_hook)
-    r.start()
+    r = StreamRedirector(callback=_write_hook, streams=[fake_stdout, fake_stderr])
 
-    fake_stdout.write("hello to stdout\n")
-    fake_stdout.flush()
-    fake_stderr.write("hello to stderr\n")
-    fake_stderr.flush()
+    with r:
+        fake_stdout.write("hello to stdout\n")
+        fake_stdout.flush()
+        fake_stderr.write("hello to stderr\n")
+        fake_stderr.flush()
 
-    r.drain()
+        r.drain()
 
-    assert open(stdout_filename).read() == ""
-    assert open(stderr_filename).read() == ""
+    assert stdout_file.read_text() == ""
+    assert stderr_file.read_text() == ""
     assert output == [
-        ("fake_stdout", "hello to stdout\n"),
-        ("fake_stderr", "hello to stderr\n"),
+        (stdout_file.as_posix(), "hello to stdout\n"),
+        (stderr_file.as_posix(), "hello to stderr\n"),
     ]
-
-    r.shutdown()
 
 
 def test_stream_redirector_bench():
-    fake_stdout = open("/dev/null", "w")
-    ws_stdout = WrappedStream("fake_stdout", fake_stdout)
+    fake_stdout = open(os.devnull, "w")
 
-    def _write_hook(stream_name, original_stream, data):
+    def _write_hook(stream_name, data):
         pass
 
-    ws_stdout.wrap()
-    r = StreamRedirector([ws_stdout], _write_hook)
-    r.start()
+    r = StreamRedirector(callback=_write_hook, streams=[fake_stdout])
 
     n = 1024
     i = 0
     now = time.monotonic()
 
-    while time.monotonic() - now < 1:
-        fake_stdout.write("0" * (n - 1) + "\n")
-        fake_stdout.flush()
-        i += 1
-
-    r.drain()
+    with r:
+        while time.monotonic() - now < 1:
+            fake_stdout.write("0" * (n - 1) + "\n")
+            fake_stdout.flush()
+            i += 1
+        r.drain()
 
     delta = time.monotonic() - now
 
@@ -173,6 +73,8 @@ def test_stream_redirector_bench():
     # For reasons we're not yet sure of, throughput on GitHub Actions is really
     # poor, so we're setting the threshold to 25MB/s for now.
     assert i * n / delta > 25e6
+
+    fake_stdout.close()
 
 
 @pytest.mark.parametrize(
@@ -188,33 +90,116 @@ def test_stream_redirector_bench():
     ],
 )
 def test_stream_redirector_line_handling(tmpfile, writes, expected_output):
-    filename = tmpfile()
-    fake_stream = open(filename, "w")
-    ws = WrappedStream("fake_stream", fake_stream)
+    f = tmpfile()
+    stream = f.open("w")
     output = []
 
-    def _write_hook(stream_name, original_stream, data):
+    def _write_hook(stream_name, data):
         output.append((stream_name, data))
 
-    ws.wrap()
-    r = StreamRedirector([ws], _write_hook)
-    r.start()
+    r = StreamRedirector(callback=_write_hook, streams=[stream])
 
-    for w in writes:
-        fake_stream.write(w)
-        fake_stream.flush()
+    with r:
+        for w in writes:
+            stream.write(w)
+            stream.flush()
 
-    r.drain()
+        r.drain()
 
-    assert open(filename).read() == ""
-    assert output == [("fake_stream", o) for o in expected_output]
+    stream.write("no longer redirected\n")
+    stream.flush()
 
-    r.shutdown()
+    assert f.read_text() == "no longer redirected\n"
+    assert output == [(f.as_posix(), o) for o in expected_output]
+
+    stream.close()
 
 
-def test_stream_redirector_with_no_streams_raises():
-    def _write_hook(stream_name, original_stream, data):
+def test_stream_redirector_reentrant(tmpfile):
+    f = tmpfile()
+    stream = f.open("w")
+    output = []
+
+    def _write_hook(stream_name, data):
+        output.append((stream_name, data))
+
+    r = StreamRedirector(callback=_write_hook, streams=[stream])
+
+    with r:
+        stream.write("one\n")
+        stream.flush()
+
+        with r:
+            stream.write("two\n")
+            stream.flush()
+
+            with r:
+                stream.write("three\n")
+                stream.flush()
+
+        r.drain()
+
+    stream.write("four\n")
+    stream.flush()
+    stream.close()
+
+    assert f.read_text() == "four\n"
+    assert output == [
+        (f.as_posix(), "one\n"),
+        (f.as_posix(), "two\n"),
+        (f.as_posix(), "three\n"),
+    ]
+
+
+def test_stream_redirector_tee(tmpfile):
+    f = tmpfile()
+    stream = f.open("w")
+    output = []
+
+    def _write_hook(stream_name, data):
+        output.append((stream_name, data))
+
+    r = StreamRedirector(callback=_write_hook, tee=True, streams=[stream])
+
+    with r:
+        stream.write("one\n")
+        stream.write("two\n")
+        stream.write("three\n")
+        stream.flush()
+
+        r.drain()
+
+    stream.write("four\n")
+    stream.flush()
+    stream.close()
+
+    assert f.read_text() == "one\ntwo\nthree\nfour\n"
+    assert output == [
+        (f.as_posix(), "one\n"),
+        (f.as_posix(), "two\n"),
+        (f.as_posix(), "three\n"),
+    ]
+
+
+def test_stream_redirector_does_not_leak_file_descriptors(tmpfile, request):
+    f = tmpfile()
+    stream = f.open("w")
+
+    def _write_hook(stream_name, data):
         pass
 
-    with pytest.raises(ValueError):
-        StreamRedirector([], _write_hook)
+    original_limits = resource.getrlimit(resource.RLIMIT_NOFILE)
+    resource.setrlimit(resource.RLIMIT_NOFILE, (128, original_limits[1]))
+    request.addfinalizer(
+        lambda: resource.setrlimit(resource.RLIMIT_NOFILE, original_limits)
+    )
+
+    r = StreamRedirector(callback=_write_hook, streams=[stream])
+
+    for _ in range(10 * 128):
+        with r:
+            stream.write("one\n")
+            stream.flush()
+            r.drain()
+
+    stream.close()
