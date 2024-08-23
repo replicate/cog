@@ -42,6 +42,7 @@ coverage.xml
 .pytest_cache
 .hypothesis
 `
+const StripDebugSymbolsCommand = "RUN find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
 
 type Generator struct {
 	Config *config.Config
@@ -138,13 +139,22 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return joinStringsWithoutLineSpace([]string{
+
+		commands := []string{
 			"#syntax=docker/dockerfile:1.4",
 			"FROM " + baseImage,
 			aptInstalls,
 			pipInstalls,
-			runCommands,
-		}), nil
+		}
+
+		// If we aren't installing any python libraries and we are in
+		// a base image, strip has no purpose.
+		if pipInstalls != "" {
+			commands = append(commands, StripDebugSymbolsCommand)
+		}
+		commands = append(commands, runCommands)
+
+		return joinStringsWithoutLineSpace(commands), nil
 	}
 
 	pipInstallStage, err := g.pipInstallStage()
@@ -161,6 +171,7 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		installPython,
 		aptInstalls,
 		g.copyPipPackagesFromInstallStage(),
+		StripDebugSymbolsCommand,
 		runCommands,
 	}), nil
 }
