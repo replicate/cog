@@ -108,7 +108,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-OO", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, actual)
@@ -144,7 +144,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
     pyenv rehash
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-OO", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, actual)
@@ -190,7 +190,7 @@ COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-OO", "-m", "cog.server.http"]
 COPY . /src`
 	require.Equal(t, expected, actual)
 
@@ -246,7 +246,7 @@ RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-OO", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, actual)
@@ -291,7 +291,7 @@ COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-OO", "-m", "cog.server.http"]
 COPY . /src`
 	require.Equal(t, expected, actual)
 
@@ -408,7 +408,7 @@ COPY --from=weights --link /src/models /src/models
 COPY --from=weights --link /src/root-large /src/root-large
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-OO", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, runnerDockerfile)
@@ -476,7 +476,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-OO", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, actual)
@@ -504,7 +504,7 @@ FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:python3.12
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-OO", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, actual)
@@ -544,7 +544,7 @@ RUN pip install -r /tmp/requirements.txt
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-OO", "-m", "cog.server.http"]
 COPY . /src`
 	require.Equal(t, expected, actual)
 
@@ -597,7 +597,7 @@ RUN pip install -r /tmp/requirements.txt
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-OO", "-m", "cog.server.http"]
 COPY . /src`, expectedTorchVersion)
 
 		require.Equal(t, expected, actual)
@@ -647,7 +647,7 @@ RUN pip install -r /tmp/requirements.txt
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-OO", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, actual)

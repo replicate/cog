@@ -42,6 +42,7 @@ coverage.xml
 .pytest_cache
 .hypothesis
 `
+const PythonCmd = "CMD [\"python\", \"-B\", \"--check-hash-based-pycs\", \"never\", \"-OO\", \"-m\", \"cog.server.http\"]"
 
 type Generator struct {
 	Config *config.Config
@@ -174,7 +175,7 @@ func (g *Generator) GenerateModelBase() (string, error) {
 		initialSteps,
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
-		`CMD ["python", "-m", "cog.server.http"]`,
+		PythonCmd,
 	}, "\n"), nil
 }
 
@@ -226,7 +227,7 @@ func (g *Generator) GenerateModelBaseWithSeparateWeights(imageName string) (weig
 	base = append(base,
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
-		`CMD ["python", "-m", "cog.server.http"]`,
+		PythonCmd,
 		`COPY . /src`,
 	)
 
