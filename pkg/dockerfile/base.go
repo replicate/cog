@@ -20,6 +20,7 @@ var (
 		"cmake",
 		"curl",
 		"ffmpeg",
+		"findutils",
 		"g++",
 		"gcc",
 		"git",
