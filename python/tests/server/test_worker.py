@@ -12,7 +12,7 @@ from hypothesis.stateful import RuleBasedStateMachine, precondition, rule
 
 from cog.server.eventtypes import Done, Log, PredictionOutput, PredictionOutputType
 from cog.server.exceptions import FatalWorkerException, InvalidStateException
-from cog.server.worker import Worker
+from cog.server.worker import make_worker
 
 from .conftest import WorkerConfig, _fixture_path, uses_worker
 
@@ -183,10 +183,10 @@ def test_no_exceptions_from_recoverable_failures(worker):
 @uses_worker("stream_redirector_race_condition")
 def test_stream_redirector_race_condition(worker):
     """
-    StreamRedirector and _ChildWorker are using the same _events pipe to send
-    data. When there are multiple threads trying to write to the same pipe, it
-    can cause data corruption by race condition. The data corruption will cause
-    pipe receiver to raise an exception due to unpickling error.
+    StreamRedirector and ChildWorker are using the same pipe to send data. When
+    there are multiple threads trying to write to the same pipe, it can cause
+    data corruption by race condition. The data corruption will cause pipe
+    receiver to raise an exception due to unpickling error.
     """
     for _ in range(5):
         result = _process(worker, lambda: worker.predict({}))
@@ -367,7 +367,7 @@ class WorkerState(RuleBasedStateMachine):
         self.predict_result = None
         self.setup_result = None
 
-        self.worker = Worker(_fixture_path("steps"), tee_output=False)
+        self.worker = make_worker(_fixture_path("steps"), tee_output=False)
         self.worker.subscribe(self.events.append)
 
     @rule(sleep=st.floats(min_value=0, max_value=0.1))

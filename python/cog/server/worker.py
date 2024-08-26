@@ -47,9 +47,14 @@ class WorkerState(Enum):
 
 
 class Worker:
-    def __init__(self, predictor_ref: str, tee_output: bool = True) -> None:
-        self._state = WorkerState.NEW
+    def __init__(self, child: "ChildWorker", events: Connection) -> None:
+        self._child = child
+        self._events = events
+
         self._allow_cancel = False
+        self._sent_shutdown_event = False
+        self._state = WorkerState.NEW
+        self._terminating = False
 
         self._result: Optional["Future[Done]"] = None
         self._subscribers: Dict[int, Optional[Callable[[_PublicEventType], None]]] = {}
@@ -59,12 +64,6 @@ class Worker:
 
         self._pool = ThreadPoolExecutor(max_workers=1)
         self._event_consumer = None
-
-        # A pipe with which to communicate with the child worker.
-        self._events, child_events = _spawn.Pipe()
-        self._child = _ChildWorker(predictor_ref, child_events, tee_output)
-        self._sent_shutdown_event = False
-        self._terminating = False
 
     def setup(self) -> "Future[Done]":
         self._assert_state(WorkerState.NEW)
@@ -264,7 +263,7 @@ class LockedConn:
         return self.conn.recv()
 
 
-class _ChildWorker(_spawn.Process):  # type: ignore
+class ChildWorker(_spawn.Process):  # type: ignore
     def __init__(
         self,
         predictor_ref: str,
@@ -402,6 +401,13 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             self._events.send(Log(data, source="stdout"))
         else:
             self._events.send(Log(data, source="stderr"))
+
+
+def make_worker(predictor_ref: str, tee_output: bool = True) -> Worker:
+    parent_conn, child_conn = _spawn.Pipe()
+    child = ChildWorker(predictor_ref, events=child_conn, tee_output=tee_output)
+    parent = Worker(child=child, events=parent_conn)
+    return parent
 
 
 def _prepare_payload(payload: Dict[str, Any]) -> None:

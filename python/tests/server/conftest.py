@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from cog.command import ast_openapi_schema
 from cog.server.http import create_app
-from cog.server.worker import Worker
+from cog.server.worker import make_worker
 
 
 @define
@@ -142,7 +142,7 @@ def static_schema(client) -> dict:
 @pytest.fixture
 def worker(request):
     ref = _fixture_path(request.param.fixture_name)
-    w = Worker(predictor_ref=ref, tee_output=False)
+    w = make_worker(predictor_ref=ref, tee_output=False)
     if request.param.setup:
         assert not w.setup().result().error
     try:
