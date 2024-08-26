@@ -41,6 +41,7 @@ var (
 		"unzip",
 		"wget",
 		"zip",
+		"zstd",
 	}
 )
 
