@@ -369,7 +369,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 	export PYTHON_CFLAGS='-march=native -mtune=native -O3' && \
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
-	pip install "wheel<1"`, py, py), nil
+	pip install "wheel<1"`, py, py) + `
+RUN ln -s ` + "`realpath \\`pyenv which python\\`` /python && chmod +x /python", nil
 	// for sitePackagesLocation, kind of need to determine which specific version latest is (3.8 -> 3.8.17 or 3.8.18)
 	// install-latest essentially does pyenv install --list | grep $py | tail -1
 	// there are many bad options, but a symlink to $(pyenv prefix) is the least bad one
