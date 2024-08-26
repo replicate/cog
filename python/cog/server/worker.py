@@ -124,12 +124,8 @@ class Worker:
         self._pool.shutdown(wait=False)
 
     def cancel(self) -> None:
-        if (
-            self._allow_cancel
-            and self._child.is_alive()
-            and self._child.pid is not None
-        ):
-            os.kill(self._child.pid, signal.SIGUSR1)
+        if self._allow_cancel:
+            self._child.send_cancel()
             self._allow_cancel = False
 
     def _assert_state(self, state: WorkerState) -> None:
@@ -294,6 +290,10 @@ class ChildWorker(_spawn.Process):  # type: ignore
 
         self._setup(redirector)
         self._loop(redirector)
+
+    def send_cancel(self) -> None:
+        if self.is_alive() and self.pid:
+            os.kill(self.pid, signal.SIGUSR1)
 
     def _setup(self, redirector: StreamRedirector) -> None:
         with redirector:
