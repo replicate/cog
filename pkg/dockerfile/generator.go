@@ -42,7 +42,7 @@ coverage.xml
 .pytest_cache
 .hypothesis
 `
-const CythonCFlags = "CFLAGS=\"-O3 -march=native -ffast-math -funroll-loops -fno-strict-aliasing -flto -mtune=native -S\""
+const CFlags = "ENV CFLAGS=\"-O3 -march=native -ffast-math -funroll-loops -fno-strict-aliasing -flto -mtune=native -S\""
 
 type Generator struct {
 	Config *config.Config
@@ -364,13 +364,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 	git \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
-` + fmt.Sprintf(`RUN curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash && \
+` + fmt.Sprintf(`
+RUN curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash && \
 	git clone https://github.com/momo-lab/pyenv-install-latest.git "$(pyenv root)"/plugins/pyenv-install-latest && \
 	export PYTHON_CONFIGURE_OPTS='--enable-optimizations --with-lto' && \
 	export PYTHON_CFLAGS='-march=native -mtune=native -O3' && \
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
-	%s pip install "wheel<1"`, py, py, CythonCFlags), nil
+	pip install "wheel<1"`, py, py), nil
 	// for sitePackagesLocation, kind of need to determine which specific version latest is (3.8 -> 3.8.17 or 3.8.18)
 	// install-latest essentially does pyenv install --list | grep $py | tail -1
 	// there are many bad options, but a symlink to $(pyenv prefix) is the least bad one
@@ -393,7 +394,9 @@ func (g *Generator) installCog() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	lines = append(lines, fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip %s pip install -t /dep %s", CythonCFlags, containerPath))
+	lines = append(lines, CFlags)
+	lines = append(lines, fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep %s", containerPath))
+	lines = append(lines, "ENV CFLAGS=")
 	return strings.Join(lines, "\n"), nil
 }
 
@@ -426,7 +429,9 @@ func (g *Generator) pipInstalls() (string, error) {
 
 	return strings.Join([]string{
 		copyLine[0],
-		"RUN " + CythonCFlags + " pip install -r " + containerPath,
+		CFlags,
+		"RUN pip install -r " + containerPath,
+		"ENV CFLAGS=",
 	}, "\n"), nil
 }
 
@@ -466,7 +471,9 @@ func (g *Generator) pipInstallStage() (string, error) {
 		fromLine,
 		installCog,
 		copyLine[0],
-		"RUN --mount=type=cache,target=/root/.cache/pip " + CythonCFlags + " pip install -t /dep -r " + containerPath,
+		CFlags,
+		"RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r " + containerPath,
+		"ENV CFLAGS=",
 	}
 	return strings.Join(lines, "\n"), nil
 }
