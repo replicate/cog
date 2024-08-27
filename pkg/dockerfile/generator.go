@@ -42,7 +42,7 @@ coverage.xml
 .pytest_cache
 .hypothesis
 `
-const LDConfigCacheBuildCommand = "RUN find / -type f -name \"*python*.so\" > /etc/ld.so.conf.d/cog.conf && ldconfig"
+const LDConfigCacheBuildCommand = "RUN find / -type f -name \"*python*.so\" -printf \"%h\\n\" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig"
 
 type Generator struct {
 	Config *config.Config
