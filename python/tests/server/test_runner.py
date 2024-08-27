@@ -16,7 +16,7 @@ from cog.server.runner import (
     SetupTask,
     UnknownPredictionError,
 )
-from cog.server.worker import Worker
+from cog.server.worker import make_worker
 
 
 def _fixture_path(name):
@@ -300,7 +300,7 @@ def test_prediction_runner_predict_cancelation_multiple_predictions():
 
 
 def test_prediction_runner_setup_e2e():
-    w = Worker(predictor_ref=_fixture_path("sleep"))
+    w = make_worker(predictor_ref=_fixture_path("sleep"))
     r = PredictionRunner(worker=w)
 
     try:
@@ -316,7 +316,7 @@ def test_prediction_runner_setup_e2e():
 
 
 def test_prediction_runner_predict_e2e():
-    w = Worker(predictor_ref=_fixture_path("sleep"))
+    w = make_worker(predictor_ref=_fixture_path("sleep"))
     r = PredictionRunner(worker=w)
 
     try:
