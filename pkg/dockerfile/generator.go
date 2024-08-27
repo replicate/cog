@@ -42,7 +42,7 @@ coverage.xml
 .pytest_cache
 .hypothesis
 `
-const CFlags = "ENV CFLAGS=\"-O3 -march=native -ffast-math -funroll-loops -fno-strict-aliasing -flto -mtune=native -S\""
+const CFlags = "ENV CFLAGS=\"-O3 -march=native -funroll-loops -fno-strict-aliasing -flto -mtune=native -S\""
 
 type Generator struct {
 	Config *config.Config
