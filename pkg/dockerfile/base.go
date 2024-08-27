@@ -20,6 +20,7 @@ var (
 		"cmake",
 		"curl",
 		"ffmpeg",
+		"findutils",
 		"g++",
 		"gcc",
 		"git",
@@ -41,6 +42,7 @@ var (
 		"unzip",
 		"wget",
 		"zip",
+		"zstd",
 	}
 )
 
