@@ -394,9 +394,7 @@ func (g *Generator) installCog() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	lines = append(lines, CFlags)
-	lines = append(lines, fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep %s", containerPath))
-	lines = append(lines, "ENV CFLAGS=")
+	lines = append(lines, CFlags, fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep %s", containerPath), "ENV CFLAGS=")
 	return strings.Join(lines, "\n"), nil
 }
 
