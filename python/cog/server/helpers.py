@@ -8,9 +8,48 @@ import sys
 import threading
 import uuid
 from types import TracebackType
-from typing import Callable, Sequence, TextIO
+from typing import BinaryIO, Callable, Sequence, TextIO
 
 from typing_extensions import Self
+
+
+class _SimpleStreamWrapper(io.TextIOWrapper):
+    """
+    _SimpleStreamWrapper wraps a binary I/O buffer and provides a TextIOWrapper
+    interface (primarily write and flush methods) which call a provided
+    callback function instead of (or, if `tee` is True, in addition to) writing
+    to the underlying buffer.
+    """
+
+    def __init__(
+        self,
+        buffer: BinaryIO,
+        callback: Callable[[str, str], None],
+        tee: bool = False,
+    ) -> None:
+        super().__init__(buffer, line_buffering=True)
+
+        self._callback = callback
+        self._tee = tee
+        self._buffer = []
+
+    def write(self, s: str) -> int:
+        length = len(s)
+        self._buffer.append(s)
+        if self._tee:
+            super().write(s)
+        else:
+            # If we're not teeing, we have to handle automatic flush on
+            # newline. When `tee` is true, this is handled by the write method.
+            if "\n" in s or "\r" in s:
+                self.flush()
+        return length
+
+    def flush(self) -> None:
+        self._callback(self.name, "".join(self._buffer))
+        self._buffer.clear()
+        if self._tee:
+            super().flush()
 
 
 class _StreamWrapper:
@@ -78,6 +117,66 @@ class _StreamWrapper:
         if not self._original_fp:
             raise RuntimeError("stream is not wrapped (call wrap first)")
         return self._original_fp
+
+
+if sys.version_info < (3, 9):
+
+    class _AsyncStreamRedirectorBase(contextlib.AbstractContextManager):
+        pass
+else:
+
+    class _AsyncStreamRedirectorBase(
+        contextlib.AbstractContextManager["AsyncStreamRedirector"]
+    ):
+        pass
+
+
+class AsyncStreamRedirector(_AsyncStreamRedirectorBase):
+    """
+    AsyncStreamRedirector is a context manager that redirects I/O streams to a
+    callback function. If `tee` is True, it also writes output to the original
+    streams.
+
+    Unlike StreamRedirector, the underlying stream file descriptors are not
+    modified, which means that only stream writes from Python code will be
+    captured. Writes from native code will not be captured.
+
+    Unlike StreamRedirector, the streams redirected cannot be configured. The
+    context manager is only able to redirect STDOUT and STDERR.
+    """
+
+    def __init__(
+        self,
+        callback: Callable[[str, str], None],
+        tee: bool = False,
+    ) -> None:
+        self._callback = callback
+        self._tee = tee
+
+        stdout_wrapper = _SimpleStreamWrapper(sys.stdout.buffer, callback, tee)
+        stderr_wrapper = _SimpleStreamWrapper(sys.stderr.buffer, callback, tee)
+        self._stdout_ctx = contextlib.redirect_stdout(stdout_wrapper)
+        self._stderr_ctx = contextlib.redirect_stderr(stderr_wrapper)
+
+    def __enter__(self) -> Self:
+        self._stdout_ctx.__enter__()
+        self._stderr_ctx.__enter__()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self._stdout_ctx.__exit__(exc_type, exc_value, traceback)
+        self._stderr_ctx.__exit__(exc_type, exc_value, traceback)
+
+    def drain(self, timeout: float = 0.0) -> None:
+        # Draining isn't complicated for AsyncStreamRedirector, since we're not
+        # moving data between threads. We just need to flush the streams.
+        sys.stdout.flush()
+        sys.stderr.flush()
 
 
 if sys.version_info < (3, 9):
