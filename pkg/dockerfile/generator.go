@@ -444,7 +444,7 @@ func (g *Generator) pipInstalls() (string, error) {
 	}
 	return strings.Join([]string{
 		copyLine[0],
-    CFlags,
+		CFlags,
 		pipInstallLine,
 		"ENV CFLAGS=",
 	}, "\n"), nil
@@ -482,12 +482,18 @@ func (g *Generator) pipInstallStage() (string, error) {
 	if buildStageDeps != "" {
 		fromLine = fromLine + "\nRUN " + buildStageDeps
 	}
+
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep -r " + containerPath
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
+
 	lines := []string{
 		fromLine,
 		installCog,
 		copyLine[0],
 		CFlags,
-		"RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r " + containerPath,
+		pipInstallLine,
 		"ENV CFLAGS=",
 	}
 	return strings.Join(lines, "\n"), nil
