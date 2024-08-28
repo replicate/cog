@@ -54,6 +54,7 @@ type Generator struct {
 
 	useCudaBaseImage bool
 	useCogBaseImage  *bool
+	strip            bool
 
 	// absolute path to tmpDir, a directory that will be cleaned up
 	tmpDir string
@@ -95,6 +96,7 @@ func NewGenerator(config *config.Config, dir string) (*Generator, error) {
 		fileWalker:       filepath.Walk,
 		useCudaBaseImage: true,
 		useCogBaseImage:  nil,
+		strip:            false,
 	}, nil
 }
 
@@ -114,6 +116,10 @@ func (g *Generator) IsUsingCogBaseImage() bool {
 		return *useCogBaseImage
 	}
 	return true
+}
+
+func (g *Generator) SetStrip(strip bool) {
+	g.strip = strip
 }
 
 func (g *Generator) generateInitialSteps() (string, error) {
@@ -371,7 +377,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 	export PYTHON_CFLAGS='-march=native -mtune=native -O3' && \
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
-	pip install --no-cache-dir "wheel<1" && %s`, py, py, StripDebugSymbolsCommand) + `
+	pip install --no-cache-dir "wheel<1"`, py, py) + `
 RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /usr/bin/python3 && chmod +x /usr/bin/python3", nil
 	// for sitePackagesLocation, kind of need to determine which specific version latest is (3.8 -> 3.8.17 or 3.8.18)
 	// install-latest essentially does pyenv install --list | grep $py | tail -1
@@ -395,7 +401,11 @@ func (g *Generator) installCog() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	lines = append(lines, fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep %s && %s", containerPath, StripDebugSymbolsCommand))
+	pipInstallLine := fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep %s", containerPath)
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
+	lines = append(lines, pipInstallLine)
 	return strings.Join(lines, "\n"), nil
 }
 
@@ -426,9 +436,13 @@ func (g *Generator) pipInstalls() (string, error) {
 		return "", err
 	}
 
+	pipInstallLine := "RUN pip install --no-cache-dir -r " + containerPath
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
 	return strings.Join([]string{
 		copyLine[0],
-		"RUN pip install --no-cache-dir -r " + containerPath + " && " + StripDebugSymbolsCommand,
+		pipInstallLine,
 	}, "\n"), nil
 }
 

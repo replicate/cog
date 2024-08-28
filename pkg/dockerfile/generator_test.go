@@ -40,7 +40,7 @@ func getWheelName() string {
 func testInstallCog(relativeTmpDir string) string {
 	wheel := getWheelName()
 	return fmt.Sprintf(`COPY %s/%s /tmp/%s
-RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep /tmp/%s && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;`, relativeTmpDir, wheel, wheel, wheel)
+RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep /tmp/%s`, relativeTmpDir, wheel, wheel, wheel)
 }
 
 func testPipInstallStage(relativeTmpDir string) string {
@@ -76,7 +76,7 @@ RUN curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master
 	export PYTHON_CFLAGS='-march=native -mtune=native -O3' && \
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
-	pip install --no-cache-dir "wheel<1" && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
+	pip install --no-cache-dir "wheel<1"
 `, version, version)
 }
 
@@ -543,7 +543,7 @@ FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:python3.12
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
@@ -596,7 +596,7 @@ FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.11-torch%s
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY `+gen.relativeTmpDir+`/requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
@@ -638,6 +638,55 @@ predict: predict.py:Predictor
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	expected := `#syntax=docker/dockerfile:1.4
+FROM r8.im/replicate/cog-test-weights AS weights
+FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
+COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+RUN cowsay moo
+WORKDIR /src
+EXPOSE 5000
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`
+
+	require.Equal(t, expected, actual)
+
+	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
+	require.NoError(t, err)
+	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118
+torch==2.3.1
+pandas==2.0.3`, string(requirements))
+}
+
+func TestGenerateWithStrip(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	yaml := `
+build:
+  gpu: true
+  cuda: "11.8"
+  system_packages:
+    - ffmpeg
+    - cowsay
+  python_packages:
+    - torch==2.3.1
+    - pandas==2.0.3
+  run:
+    - "cowsay moo"
+predict: predict.py:Predictor
+`
+	conf, err := config.FromYAML([]byte(yaml))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	gen, err := NewGenerator(conf, tmpDir)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(true)
+	gen.SetStrip(true)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
