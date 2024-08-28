@@ -20,6 +20,7 @@ var (
 		"cmake",
 		"curl",
 		"ffmpeg",
+		"findutils",
 		"g++",
 		"gcc",
 		"git",
@@ -30,13 +31,13 @@ var (
 		"libgl1",
 		"libgl1-mesa-glx",
 		"libglib2.0-0",
+		"libopencv-dev",
 		"libsm6",
 		"libsndfile1",
 		"libssl-dev",
 		"libunistring-dev",
 		"libxext6",
 		"libxrender1",
-		"python3-opencv",
 		"sox",
 		"unzip",
 		"wget",
@@ -212,7 +213,10 @@ func (g *BaseImageGenerator) makeConfig() (*config.Config, error) {
 
 func (g *BaseImageGenerator) pythonPackages() []string {
 	if g.torchVersion != "" {
-		pkgs := []string{"torch==" + g.torchVersion}
+		pkgs := []string{
+			"torch==" + g.torchVersion,
+			"opencv-python==4.10.0.84",
+		}
 
 		// Find torchvision compatibility.
 		for _, compat := range config.TorchCompatibilityMatrix {

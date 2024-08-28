@@ -45,7 +45,7 @@ from .runner import (
     UnknownPredictionError,
 )
 from .telemetry import make_trace_context, trace_context
-from .worker import Worker
+from .worker import make_worker
 
 if TYPE_CHECKING:
     from typing import ParamSpec, TypeVar  # pylint: disable=import-outside-toplevel
@@ -140,7 +140,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         add_setup_failed_routes(app, started_at, msg)
         return app
 
-    worker = Worker(predictor_ref=predictor_ref)
+    worker = make_worker(predictor_ref=predictor_ref)
     runner = PredictionRunner(worker=worker)
 
     class PredictionRequest(schema.PredictionRequest.with_types(input_type=InputType)):
