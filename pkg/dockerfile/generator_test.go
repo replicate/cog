@@ -40,7 +40,9 @@ func getWheelName() string {
 func testInstallCog(relativeTmpDir string) string {
 	wheel := getWheelName()
 	return fmt.Sprintf(`COPY %s/%s /tmp/%s
-RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep /tmp/%s`, relativeTmpDir, wheel, wheel, wheel)
+ENV CFLAGS="-O3 -march=native -funroll-loops -fno-strict-aliasing -flto -mtune=native -S"
+RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep /tmp/%s
+ENV CFLAGS=`, relativeTmpDir, wheel, wheel, wheel)
 }
 
 func testPipInstallStage(relativeTmpDir string) string {
@@ -180,7 +182,9 @@ predict: predict.py:Predictor
 FROM r8.im/replicate/cog-test-weights AS weights
 ` + testPipInstallStage(gen.relativeTmpDir) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
-RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
+ENV CFLAGS="-O3 -march=native -funroll-loops -fno-strict-aliasing -flto -mtune=native -S"
+RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r /tmp/requirements.txt
+ENV CFLAGS=
 FROM python:3.12-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -232,7 +236,9 @@ predict: predict.py:Predictor
 FROM r8.im/replicate/cog-test-weights AS weights
 ` + testPipInstallStage(gen.relativeTmpDir) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
-RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
+ENV CFLAGS="-O3 -march=native -funroll-loops -fno-strict-aliasing -flto -mtune=native -S"
+RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r /tmp/requirements.txt
+ENV CFLAGS=
 FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -392,7 +398,9 @@ COPY root-large /src/root-large`
 FROM r8.im/replicate/cog-test-weights AS weights
 ` + testPipInstallStage(gen.relativeTmpDir) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
-RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
+ENV CFLAGS="-O3 -march=native -funroll-loops -fno-strict-aliasing -flto -mtune=native -S"
+RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r /tmp/requirements.txt
+ENV CFLAGS=
 FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -543,7 +551,9 @@ FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:python3.12
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+ENV CFLAGS="-O3 -march=native -funroll-loops -fno-strict-aliasing -flto -mtune=native -S"
+RUN pip install -r /tmp/requirements.txt
+ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
@@ -596,7 +606,9 @@ FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.11-torch%s
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY `+gen.relativeTmpDir+`/requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+ENV CFLAGS="-O3 -march=native -funroll-loops -fno-strict-aliasing -flto -mtune=native -S"
+RUN pip install -r /tmp/requirements.txt
+ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
