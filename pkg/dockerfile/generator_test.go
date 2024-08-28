@@ -105,6 +105,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONOPTIMIZE=2
 ` + testTini() + `COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
 WORKDIR /src
 EXPOSE 5000
@@ -138,6 +140,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONOPTIMIZE=2
 ` + testTini() + testInstallPython("3.12") + `RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
     cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages; \
     cp -rf /dep/bin/* $(pyenv prefix)/bin; \
@@ -185,6 +189,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONOPTIMIZE=2
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
 RUN cowsay moo
@@ -237,6 +243,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONOPTIMIZE=2
 ` + testTini() +
 		testInstallPython("3.12") + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
@@ -286,6 +294,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONOPTIMIZE=2
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
 RUN cowsay moo
@@ -396,6 +406,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONOPTIMIZE=2
 ` + testTini() +
 		testInstallPython("3.12") + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
@@ -473,6 +485,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONOPTIMIZE=2
 ` + testTini() + `COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
 WORKDIR /src
 EXPOSE 5000
