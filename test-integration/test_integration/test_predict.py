@@ -299,6 +299,7 @@ def test_predict_works_with_deferred_annotations():
         timeout=DEFAULT_TIMEOUT,
     )
 
+
 def test_predict_works_with_partial_wrapper():
     project_dir = Path(__file__).parent / "fixtures/partial-predict-project"
 
