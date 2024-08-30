@@ -60,7 +60,7 @@
     ]
   },
   {
-    "Torch": "2.3.1+cpu",
+    "Torch": "2.3.1",
     "Torchvision": "0.18.1",
     "Torchaudio": "2.3.1",
     "FindLinks": "",
@@ -75,7 +75,7 @@
     ]
   },
   {
-    "Torch": "2.3.1+cu118",
+    "Torch": "2.3.1",
     "Torchvision": "0.18.1",
     "Torchaudio": "2.3.1",
     "FindLinks": "",
@@ -90,7 +90,7 @@
     ]
   },
   {
-    "Torch": "2.3.1+cu121",
+    "Torch": "2.3.1",
     "Torchvision": "0.18.1",
     "Torchaudio": "2.3.1",
     "FindLinks": "",
