@@ -57,13 +57,13 @@ jobs:
     needs: generate-matrix
     runs-on: ubuntu-latest-8-cores
     strategy:
-      # TODO: Right Size this, 5 seems like a sane placeholder
-      max-parallel: 5
+      max-parallel: 10
       matrix:
         include: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
     permissions:
       contents: 'read'
       packages: 'write'
+    continue-on-error: true
 
     outputs:
       image: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.title'] }}:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
