@@ -169,5 +169,6 @@ jobs:
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha,scope=${{ matrix.image_name }}-${{ matrix.image_tag }}
           cache-to: type=gha,scope=${{ matrix.image_name }}-${{ matrix.image_tag }},mode=max
+          no-cache: true
         env:
           SOURCE_DATE_EPOCH: 0
