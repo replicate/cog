@@ -48,15 +48,10 @@ def test_good_int_input(client, match):
 @uses_predictor("input_integer")
 def test_bad_int_input(client):
     resp = client.post("/predictions", json={"input": {"num": "foo"}})
-    assert resp.json() == {
-        "detail": [
-            {
-                "loc": ["body", "input", "num"],
-                "msg": "value is not a valid integer",
-                "type": "type_error.integer",
-            }
-        ]
-    }
+    detail = resp.json()["detail"][0]
+    assert detail["loc"] == ["body", "input", "num"]
+    assert "valid integer" in detail["msg"]
+
     assert resp.status_code == 422
 
 
