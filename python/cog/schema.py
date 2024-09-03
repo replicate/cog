@@ -75,7 +75,6 @@ class PredictionRequest(PredictionBaseModel):
     webhook: Optional[WebhookUrl] = None
     webhook_events_filter: Optional[List[WebhookEvent]] = pydantic.Field(
         default=WebhookEvent.default_events(),
-        title=None,
     )
 
     @classmethod

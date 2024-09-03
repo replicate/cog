@@ -263,10 +263,22 @@ def unwrap_pydantic_serialization_iterators(obj: Any) -> Any:
 def update_openapi_schema_for_pydantic_2(
     openapi_schema: Dict[str, Any],
 ) -> None:
+    _remove_webhook_events_filter_title(openapi_schema)
     _remove_empty_or_nullable_anyof(openapi_schema)
     _flatten_selected_allof_refs(openapi_schema)
     _extract_enum_properties(openapi_schema)
     _set_default_enumeration_description(openapi_schema)
+
+
+def _remove_webhook_events_filter_title(
+    openapi_schema: Dict[str, Any],
+) -> None:
+    try:
+        del openapi_schema["components"]["schemas"]["PredictionRequest"]["properties"][
+            "webhook_events_filter"
+        ]["title"]
+    except KeyError:
+        pass
 
 
 def _remove_empty_or_nullable_anyof(
