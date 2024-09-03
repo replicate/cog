@@ -11,13 +11,14 @@ import threading
 import traceback
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional
 
 import structlog
 import uvicorn
 from fastapi import Body, FastAPI, Header, Path, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import HTTPException
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -36,7 +37,10 @@ from ..predictor import (
     load_slim_predictor_from_ref,
 )
 from ..types import PYDANTIC_V2, CogConfig
-from .helpers import unwrap_pydantic_serialization_iterators
+from .helpers import (
+    unwrap_pydantic_serialization_iterators,
+    update_openapi_schema_for_pydantic_2,
+)
 from .probes import ProbeHelper
 from .runner import (
     PredictionRunner,
@@ -118,130 +122,25 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         # version=None # TODO
     )
 
-    # Pydantic 2 changes how optional fields are represented in OpenAPI schema.
-    # See: https://github.com/tiangolo/fastapi/pull/9873#issuecomment-1997105091
-    if PYDANTIC_V2:
-        from fastapi.openapi.utils import get_openapi
+    def custom_openapi() -> Dict[str, Any]:
+        if not app.openapi_schema:
+            openapi_schema = get_openapi(
+                title="Cog",
+                openapi_version="3.0.2",
+                version="0.1.0",
+                routes=app.routes,
+            )
 
-        def remove_empty_or_nullable_anyof(
-            openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
-        ) -> None:
-            if isinstance(openapi_schema, dict):
-                for key, value in list(openapi_schema.items()):
-                    if key == "anyOf" and isinstance(value, list):
-                        non_null_types = [
-                            item for item in value if item.get("type") != "null"
-                        ]
-                        if len(non_null_types) == 0:
-                            del openapi_schema[key]
-                        elif len(non_null_types) == 1:
-                            openapi_schema.update(non_null_types[0])
-                            del openapi_schema[key]
+            # Pydantic 2 changes how optional fields are represented in OpenAPI schema.
+            # See: https://github.com/tiangolo/fastapi/pull/9873#issuecomment-1997105091
+            if PYDANTIC_V2:
+                update_openapi_schema_for_pydantic_2(openapi_schema)
 
-                            # FIXME: Update tests to expect nullable
-                            # openapi_schema["nullable"] = True
+            app.openapi_schema = openapi_schema
 
-                    else:
-                        remove_empty_or_nullable_anyof(value)
-            elif isinstance(openapi_schema, list):  # pyright: ignore
-                for item in openapi_schema:
-                    remove_empty_or_nullable_anyof(item)
+        return app.openapi_schema
 
-        def flatten_selected_allof_refs(
-            openapi_schema: Dict[str, Any],
-        ) -> None:
-            try:
-                response = openapi_schema["components"]["schemas"]["PredictionResponse"]
-                response["properties"]["output"] = {
-                    "$ref": "#/components/schemas/Output"
-                }
-            except KeyError:
-                pass
-
-            for _key, value in (
-                openapi_schema.get("components", {}).get("schemas", {}).items()
-            ):
-                if (
-                    value.get("allOf")
-                    and len(value.get("allOf")) == 1
-                    and value["allOf"][0].get("$ref")
-                ):
-                    value["$ref"] = value["allOf"][0]["$ref"]
-                    del value["allOf"]
-
-            try:
-                path = openapi_schema["paths"]["/predictions"]["post"]
-                body = path["requestBody"]
-                body["content"]["application/json"]["schema"] = {
-                    "$ref": "#/components/schemas/PredictionRequest"
-                }
-            except KeyError:
-                pass
-
-        def extract_enum_properties(
-            openapi_schema: Dict[str, Any],
-        ) -> None:
-            schemas = openapi_schema.get("components", {}).get("schemas", {})
-            if "Input" in schemas and "properties" in schemas["Input"]:
-                input_properties = schemas["Input"]["properties"]
-                for prop_name, prop_value in input_properties.items():
-                    if "enum" in prop_value:
-                        # Create a new schema for the enum
-                        schemas[prop_name] = {
-                            "type": prop_value["type"],
-                            "enum": prop_value["enum"],
-                            "title": prop_name,
-                            "description": prop_value.get(
-                                "description", "An enumeration."
-                            ),
-                        }
-
-                        # Replace the original property with an allOf reference
-                        input_properties[prop_name] = {
-                            "allOf": [{"$ref": f"#/components/schemas/{prop_name}"}]
-                        }
-
-                        # Preserve x-order if it exists
-                        if "x-order" in prop_value:
-                            input_properties[prop_name]["x-order"] = prop_value[
-                                "x-order"
-                            ]
-
-        def set_default_enumeration_description(
-            openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
-        ) -> None:
-            if isinstance(openapi_schema, dict):
-                schemas = openapi_schema.get("components", {}).get("schemas", {})
-                for _key, value in list(schemas.items()):
-                    if isinstance(value, dict) and value.get("enum"):
-                        value["description"] = value.get(
-                            "description", "An enumeration."
-                        )
-                    else:
-                        set_default_enumeration_description(value)
-            elif isinstance(openapi_schema, list):  # pyright: ignore
-                for item in openapi_schema:
-                    set_default_enumeration_description(item)
-
-        def custom_openapi() -> Dict[str, Any]:
-            if not app.openapi_schema:
-                openapi_schema = get_openapi(
-                    title="Cog",
-                    openapi_version="3.0.2",
-                    version="0.1.0",
-                    routes=app.routes,
-                )
-
-                remove_empty_or_nullable_anyof(openapi_schema)
-                flatten_selected_allof_refs(openapi_schema)
-                extract_enum_properties(openapi_schema)
-                set_default_enumeration_description(openapi_schema)
-
-                app.openapi_schema = openapi_schema
-
-            return app.openapi_schema
-
-        app.openapi = custom_openapi
+    app.openapi = custom_openapi
 
     app.state.health = Health.STARTING
     app.state.setup_result = None

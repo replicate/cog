@@ -10,7 +10,7 @@ import sys
 import threading
 import uuid
 from types import TracebackType
-from typing import Any, Callable, Sequence, TextIO
+from typing import Any, Callable, Dict, List, Sequence, TextIO, Union
 
 import pydantic
 from typing_extensions import Self
@@ -258,3 +258,104 @@ def unwrap_pydantic_serialization_iterators(obj: Any) -> Any:
     if isinstance(obj, list):
         return [unwrap_pydantic_serialization_iterators(value) for value in obj]
     return obj
+
+
+def update_openapi_schema_for_pydantic_2(
+    openapi_schema: Dict[str, Any],
+) -> None:
+    _remove_empty_or_nullable_anyof(openapi_schema)
+    _flatten_selected_allof_refs(openapi_schema)
+    _extract_enum_properties(openapi_schema)
+    _set_default_enumeration_description(openapi_schema)
+
+
+def _remove_empty_or_nullable_anyof(
+    openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
+) -> None:
+    if isinstance(openapi_schema, dict):
+        for key, value in list(openapi_schema.items()):
+            if key == "anyOf" and isinstance(value, list):
+                non_null_types = [item for item in value if item.get("type") != "null"]
+                if len(non_null_types) == 0:
+                    del openapi_schema[key]
+                elif len(non_null_types) == 1:
+                    openapi_schema.update(non_null_types[0])
+                    del openapi_schema[key]
+
+                    # FIXME: Update tests to expect nullable
+                    # openapi_schema["nullable"] = True
+
+            else:
+                _remove_empty_or_nullable_anyof(value)
+    elif isinstance(openapi_schema, list):  # pyright: ignore
+        for item in openapi_schema:
+            _remove_empty_or_nullable_anyof(item)
+
+
+def _flatten_selected_allof_refs(
+    openapi_schema: Dict[str, Any],
+) -> None:
+    try:
+        response = openapi_schema["components"]["schemas"]["PredictionResponse"]
+        response["properties"]["output"] = {"$ref": "#/components/schemas/Output"}
+    except KeyError:
+        pass
+
+    for _key, value in openapi_schema.get("components", {}).get("schemas", {}).items():
+        if (
+            value.get("allOf")
+            and len(value.get("allOf")) == 1
+            and value["allOf"][0].get("$ref")
+        ):
+            value["$ref"] = value["allOf"][0]["$ref"]
+            del value["allOf"]
+
+    try:
+        path = openapi_schema["paths"]["/predictions"]["post"]
+        body = path["requestBody"]
+        body["content"]["application/json"]["schema"] = {
+            "$ref": "#/components/schemas/PredictionRequest"
+        }
+    except KeyError:
+        pass
+
+
+def _extract_enum_properties(
+    openapi_schema: Dict[str, Any],
+) -> None:
+    schemas = openapi_schema.get("components", {}).get("schemas", {})
+    if "Input" in schemas and "properties" in schemas["Input"]:
+        input_properties = schemas["Input"]["properties"]
+        for prop_name, prop_value in input_properties.items():
+            if "enum" in prop_value:
+                # Create a new schema for the enum
+                schemas[prop_name] = {
+                    "type": prop_value["type"],
+                    "enum": prop_value["enum"],
+                    "title": prop_name,
+                    "description": prop_value.get("description", "An enumeration."),
+                }
+
+                # Replace the original property with an allOf reference
+                input_properties[prop_name] = {
+                    "allOf": [{"$ref": f"#/components/schemas/{prop_name}"}]
+                }
+
+                # Preserve x-order if it exists
+                if "x-order" in prop_value:
+                    input_properties[prop_name]["x-order"] = prop_value["x-order"]
+
+
+def _set_default_enumeration_description(
+    openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
+) -> None:
+    if isinstance(openapi_schema, dict):
+        schemas = openapi_schema.get("components", {}).get("schemas", {})
+        for _key, value in list(schemas.items()):
+            if isinstance(value, dict) and value.get("enum"):
+                value["description"] = value.get("description", "An enumeration.")
+            else:
+                _set_default_enumeration_description(value)
+    elif isinstance(openapi_schema, list):  # pyright: ignore
+        for item in openapi_schema:
+            _set_default_enumeration_description(item)
