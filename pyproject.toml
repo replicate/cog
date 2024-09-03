@@ -36,12 +36,7 @@ dependencies = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
-dev = [
-  "build",
-  "setuptools_scm",
-  "tox",
-  "tox-uv",
-]
+dev = ["build", "setuptools_scm", "tox", "tox-uv"]
 
 tests = [
   "httpx",
@@ -108,7 +103,6 @@ lint.select = [
   "F",   # Pyflakes
   "I",   # isort
   "W",   # pycodestyle warning
-  "UP",  # pyupgrade
   "S",   # flake8-bandit
   "B",   # flake8-bugbear
   "ANN", # flake8-annotations
@@ -124,8 +118,6 @@ lint.ignore = [
   "ANN101", # Missing type annotation for self in method
   "ANN102", # Missing type annotation for cls in classmethod
   "ANN401", # Dynamically typed expressions are disallowed
-  # recently ruff added checks for pyupgrade, which is bad for back-compat
-  "UP037", # Remove quotes from type annotation
 ]
 extend-exclude = [
   "python/tests/server/fixtures/*",
