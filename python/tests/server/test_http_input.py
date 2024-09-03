@@ -1,6 +1,5 @@
 import base64
 import os
-import sys
 import threading
 import time
 
@@ -224,8 +223,8 @@ def test_choices_int(client):
 
 
 @pytest.mark.skipif(
-    not (PYDANTIC_V2 and sys.version_info >= (3, 9)),
-    reason="Literal is used for enums in Pydantic v2 and Python 3.9+",
+    not PYDANTIC_V2,
+    reason="Literal is used for enums only in Pydantic v2",
 )
 @uses_predictor("input_literal")
 def test_literal_str(client):
@@ -236,8 +235,8 @@ def test_literal_str(client):
 
 
 @pytest.mark.skipif(
-    not (PYDANTIC_V2 and sys.version_info >= (3, 9)),
-    reason="Literal is used for enums in Pydantic v2 and Python 3.9+",
+    not PYDANTIC_V2,
+    reason="Literal is used for enums only in Pydantic v2",
 )
 @uses_predictor("input_literal_integer")
 def test_literal_int(client):

@@ -1,6 +1,5 @@
 import base64
 import io
-import sys
 import time
 import unittest.mock as mock
 
@@ -375,8 +374,8 @@ def test_train_openapi_specification(client):
 
 
 @pytest.mark.skipif(
-    not (PYDANTIC_V2 and sys.version_info >= (3, 9)),
-    reason="Literal is used for enums in Pydantic v2 and Python 3.9+",
+    not PYDANTIC_V2,
+    reason="Literal is used for enums only in Pydantic v2",
 )
 @uses_predictor("input_literal")
 def test_openapi_specification_with_literal(client, static_schema):

@@ -21,12 +21,11 @@ from typing import (
     cast,
 )
 
-from typing_extensions import Literal  # Python 3.7
-
 try:
-    from typing import get_args, get_origin
+    from typing import Literal, get_args, get_origin
 except ImportError:  # Python < 3.8
     from typing_compat import get_args, get_origin  # type: ignore
+    from typing_extensions import Literal
 
 from unittest.mock import patch
 

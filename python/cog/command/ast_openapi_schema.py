@@ -346,6 +346,8 @@ def get_value(node: ast.AST) -> "AstVal":
         return [get_value(e) for e in node.elts]
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
         return -typing.cast(typing.Union[int, float, complex], get_value(node.operand))
+    if isinstance(node, ast.Index):
+        return node.value  # type: ignore
     raise ValueError("Unexpected node type", type(node))
 
 
@@ -357,11 +359,18 @@ def get_annotation(node: "ast.AST | None") -> str:
         return node.value  # e.g. arg: "Path"
     if isinstance(node, ast.Subscript):
         value = get_annotation(node.value)
-        # Literal is unsupported in Python 3.8 and earlier
-        if value == "Literal" and sys.version_info > (3, 8):
-            elts = (
-                node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
-            )
+        if value == "Literal":
+            if sys.version_info < (3, 9):
+                if isinstance(node.slice, ast.Index):
+                    elts = [node.slice.value]
+                else:
+                    elts = node.slice.elts
+            else:
+                elts = (
+                    node.slice.elts
+                    if isinstance(node.slice, ast.Tuple)
+                    else [node.slice]
+                )
             return f"Literal[{','.join(repr(get_value(e)) for e in elts)}]"
         # ignore other Subscript (Optional[str]), BinOp (str | int), and stuff like that
     raise ValueError("Unexpected annotation type", type(node))
