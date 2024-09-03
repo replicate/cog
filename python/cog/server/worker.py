@@ -14,7 +14,7 @@ import structlog
 
 from ..json import make_encodeable
 from ..predictor import BasePredictor, get_predict, load_predictor_from_ref, run_setup
-from ..types import URLPath
+from ..types import PYDANTIC_V2, URLPath
 from .eventtypes import (
     Done,
     Log,
@@ -355,15 +355,21 @@ class ChildWorker(_spawn.Process):  # type: ignore
                 if isinstance(result, types.GeneratorType):
                     self._events.send(PredictionOutputType(multi=True))
                     for r in result:
-                        payload = make_encodeable(
-                            unwrap_pydantic_serialization_iterators(r)
-                        )
+                        if PYDANTIC_V2:
+                            payload = make_encodeable(
+                                unwrap_pydantic_serialization_iterators(r)
+                            )
+                        else:
+                            payload = make_encodeable(r)
                         self._events.send(PredictionOutput(payload=payload))
                 else:
                     self._events.send(PredictionOutputType(multi=False))
-                    payload = make_encodeable(
-                        unwrap_pydantic_serialization_iterators(result)
-                    )
+                    if PYDANTIC_V2:
+                        payload = make_encodeable(
+                            unwrap_pydantic_serialization_iterators(result)
+                        )
+                    else:
+                        payload = make_encodeable(result)
                     self._events.send(PredictionOutput(payload=payload))
         except CancelationException:
             done.canceled = True
