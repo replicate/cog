@@ -9,6 +9,8 @@ import responses
 from PIL import Image
 from responses import matchers
 
+from cog.types import PYDANTIC_V2
+
 from .conftest import (
     make_client,
     uses_predictor,
@@ -373,7 +375,8 @@ def test_train_openapi_specification(client):
 
 
 @pytest.mark.skipif(
-    sys.version_info < (3, 9), reason="Literal is unsupported in Python 3.8 and earlier"
+    not (PYDANTIC_V2 and sys.version_info >= (3, 9)),
+    reason="Literal is used for enums in Pydantic v2 and Python 3.9+",
 )
 @uses_predictor("input_literal")
 def test_openapi_specification_with_literal(client, static_schema):
