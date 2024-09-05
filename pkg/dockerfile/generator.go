@@ -42,7 +42,7 @@ coverage.xml
 .pytest_cache
 .hypothesis
 `
-const PythonCmd = "CMD [\"python\", \"-B\", \"--check-hash-based-pycs\", \"never\", \"-OO\", \"-m\", \"cog.server.http\"]"
+const PythonCmd = "CMD [\"python\", \"-B\", \"--check-hash-based-pycs\", \"never\", \"-m\", \"cog.server.http\"]"
 const CFlags = "ENV CFLAGS=\"-O3 -march=native -funroll-loops -fno-strict-aliasing -flto -mtune=native -S\""
 
 type Generator struct {
@@ -294,8 +294,7 @@ func (g *Generator) preamble() string {
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONOPTIMIZE=2`
+ENV PYTHONDONTWRITEBYTECODE=1`
 }
 
 func (g *Generator) installTini() string {
