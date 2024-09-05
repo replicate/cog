@@ -15,7 +15,7 @@ def test_build_without_predictor(docker_image):
     )
     assert build_process.returncode > 0
     assert (
-        "Can't run predictions: 'predict' option not found"
+        "Can\\'t run predictions: \\'predict\\' option not found"
         in build_process.stderr.decode()
     )
 
