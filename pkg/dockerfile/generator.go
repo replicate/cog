@@ -43,6 +43,7 @@ coverage.xml
 .hypothesis
 `
 const PythonCmd = "CMD [\"python\", \"-B\", \"--check-hash-based-pycs\", \"never\", \"-m\", \"cog.server.http\"]"
+const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
 const CFlags = "ENV CFLAGS=\"-O3 -march=native -funroll-loops -fno-strict-aliasing -flto -mtune=native -S\""
 
 type Generator struct {
@@ -55,6 +56,7 @@ type Generator struct {
 
 	useCudaBaseImage bool
 	useCogBaseImage  *bool
+	strip            bool
 
 	// absolute path to tmpDir, a directory that will be cleaned up
 	tmpDir string
@@ -96,6 +98,7 @@ func NewGenerator(config *config.Config, dir string) (*Generator, error) {
 		fileWalker:       filepath.Walk,
 		useCudaBaseImage: true,
 		useCogBaseImage:  nil,
+		strip:            false,
 	}, nil
 }
 
@@ -115,6 +118,10 @@ func (g *Generator) IsUsingCogBaseImage() bool {
 		return *useCogBaseImage
 	}
 	return true
+}
+
+func (g *Generator) SetStrip(strip bool) {
+	g.strip = strip
 }
 
 func (g *Generator) generateInitialSteps() (string, error) {
@@ -140,6 +147,7 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		if err != nil {
 			return "", err
 		}
+
 		return joinStringsWithoutLineSpace([]string{
 			"#syntax=docker/dockerfile:1.4",
 			"FROM " + baseImage,
@@ -373,7 +381,7 @@ RUN curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master
 	export PYTHON_CFLAGS='-march=native -mtune=native -O3' && \
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
-	pip install "wheel<1"`, py, py) + `
+	pip install --no-cache-dir "wheel<1"`, py, py) + `
 RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /usr/bin/python3 && chmod +x /usr/bin/python3", nil
 	// for sitePackagesLocation, kind of need to determine which specific version latest is (3.8 -> 3.8.17 or 3.8.18)
 	// install-latest essentially does pyenv install --list | grep $py | tail -1
@@ -397,7 +405,11 @@ func (g *Generator) installCog() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	lines = append(lines, CFlags, fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep %s", containerPath), "ENV CFLAGS=")
+	pipInstallLine := fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep %s", containerPath)
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
+	lines = append(lines, CFlags, pipInstallLine, "ENV CFLAGS=")
 	return strings.Join(lines, "\n"), nil
 }
 
@@ -428,10 +440,14 @@ func (g *Generator) pipInstalls() (string, error) {
 		return "", err
 	}
 
+	pipInstallLine := "RUN pip install --no-cache-dir -r " + containerPath
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
 	return strings.Join([]string{
 		copyLine[0],
 		CFlags,
-		"RUN pip install -r " + containerPath,
+		pipInstallLine,
 		"ENV CFLAGS=",
 	}, "\n"), nil
 }
@@ -468,12 +484,18 @@ func (g *Generator) pipInstallStage() (string, error) {
 	if buildStageDeps != "" {
 		fromLine = fromLine + "\nRUN " + buildStageDeps
 	}
+
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep -r " + containerPath
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
+
 	lines := []string{
 		fromLine,
 		installCog,
 		copyLine[0],
 		CFlags,
-		"RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r " + containerPath,
+		pipInstallLine,
 		"ENV CFLAGS=",
 	}
 	return strings.Join(lines, "\n"), nil
