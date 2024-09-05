@@ -671,7 +671,7 @@ ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, actual)
