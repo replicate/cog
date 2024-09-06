@@ -74,5 +74,10 @@ func TestPythonPackages(t *testing.T) {
 	generator, err := NewBaseImageGenerator("12.1", "3.9", "2.1.0")
 	require.NoError(t, err)
 	pkgs := generator.pythonPackages()
-	require.Truef(t, reflect.DeepEqual(pkgs, []string{"torch==2.1.0", "torchvision==0.16.0", "torchaudio==2.1.0"}), "expected %v", pkgs)
+	require.Truef(t, reflect.DeepEqual(pkgs, []string{
+		"torch==2.1.0",
+		"opencv-python==4.10.0.84",
+		"torchvision==0.16.0",
+		"torchaudio==2.1.0",
+	}), "expected %v", pkgs)
 }
