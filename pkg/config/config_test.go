@@ -413,33 +413,6 @@ foo==1.0.0`
 	require.Equal(t, expected, requirements)
 }
 
-func TestPythonPackagesForArchTorchCPU(t *testing.T) {
-	config := &Config{
-		Build: &Build{
-			GPU:           false,
-			PythonVersion: "3.8",
-			PythonPackages: []string{
-				"torch==1.7.1",
-				"torchvision==0.8.2",
-				"torchaudio==0.7.2",
-				"foo==1.0.0",
-			},
-			CUDA: "11.8",
-		},
-	}
-	err := config.ValidateAndComplete("")
-	require.NoError(t, err)
-
-	requirements, err := config.PythonRequirementsForArch("", "", []string{})
-	require.NoError(t, err)
-	expected := `--find-links https://download.pytorch.org/whl/torch_stable.html
-torch==1.7.1+cpu
-torchvision==0.8.2+cpu
-torchaudio==0.7.2
-foo==1.0.0`
-	require.Equal(t, expected, requirements)
-}
-
 func TestPythonPackagesForArchTensorflowGPU(t *testing.T) {
 	config := &Config{
 		Build: &Build{

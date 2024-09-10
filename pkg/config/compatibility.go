@@ -333,55 +333,6 @@ func torchGPUPackage(ver string, cuda string) (name, cpuVersion, findLinks, extr
 	return "torch", version.StripModifier(latest.Torch), latest.FindLinks, latest.ExtraIndexURL, nil
 }
 
-func torchvisionCPUPackage(ver, goos, goarch string) (name, cpuVersion, findLinks, extraIndexURL string, err error) {
-	for _, compat := range TorchCompatibilityMatrix {
-		if compat.TorchvisionVersion() == ver && compat.CUDA == nil {
-			return "torchvision", torchStripCPUSuffixForM1(compat.Torchvision, goos, goarch), compat.FindLinks, compat.ExtraIndexURL, nil
-		}
-	}
-	// Fall back to just installing default version. For older torchvision versions, they don't have any CPU versions.
-	return "torchvision", ver, "", "", nil
-}
-
-func torchvisionGPUPackage(ver, cuda string) (name, cpuVersion, findLinks, extraIndexURL string, err error) {
-	// find the torchvision package that has the requested
-	// torchvision version and the latest cuda version that is at
-	// most as high as the requested cuda version
-	var latest *TorchCompatibility
-	for _, compat := range TorchCompatibilityMatrix {
-		compat := compat
-		if compat.TorchvisionVersion() != ver || compat.CUDA == nil {
-			continue
-		}
-		greater, err := versionGreater(*compat.CUDA, cuda)
-		if err != nil {
-			panic(fmt.Sprintf("Invalid CUDA version: %s", err))
-		}
-		if greater {
-			continue
-		}
-		if latest == nil {
-			latest = &compat
-		} else {
-			greater, err := versionGreater(*compat.CUDA, *latest.CUDA)
-			if err != nil {
-				// should never happen
-				panic(fmt.Sprintf("Invalid CUDA version: %s", err))
-			}
-			if greater {
-				latest = &compat
-			}
-		}
-	}
-	if latest == nil {
-		// TODO: can we suggest a CUDA version known to be compatible?
-		console.Warnf("Cog doesn't know if CUDA %s is compatible with torchvision %s. This might cause CUDA problems.", cuda, ver)
-		return "torchvision", ver, "", "", nil
-	}
-
-	return "torchvision", version.StripModifier(latest.Torchvision), latest.FindLinks, latest.ExtraIndexURL, nil
-}
-
 // aarch64 packages don't have +cpu suffix: https://download.pytorch.org/whl/torch_stable.html
 // TODO(andreas): clean up this hack by actually parsing the torch_stable.html list in the generator
 func torchStripCPUSuffixForM1(version string, goos string, goarch string) string {

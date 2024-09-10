@@ -410,18 +410,6 @@ func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage s
 				return "", nil, nil, err
 			}
 		}
-	case "torchvision":
-		if c.Build.GPU {
-			name, version, findLinks, extraIndexURL, err = torchvisionGPUPackage(version, c.Build.CUDA)
-			if err != nil {
-				return "", nil, nil, err
-			}
-		} else {
-			name, version, findLinks, extraIndexURL, err = torchvisionCPUPackage(version, goos, goarch)
-			if err != nil {
-				return "", nil, nil, err
-			}
-		}
 	}
 	pkgWithVersion := name
 	if version != "" {
