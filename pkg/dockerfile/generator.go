@@ -44,6 +44,7 @@ coverage.xml
 `
 const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
 const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
+const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 
 type Generator struct {
 	Config *config.Config
@@ -56,6 +57,7 @@ type Generator struct {
 	useCudaBaseImage bool
 	useCogBaseImage  *bool
 	strip            bool
+	precompile       bool
 
 	// absolute path to tmpDir, a directory that will be cleaned up
 	tmpDir string
@@ -123,6 +125,10 @@ func (g *Generator) SetStrip(strip bool) {
 	g.strip = strip
 }
 
+func (g *Generator) SetPrecompile(precompile bool) {
+	g.precompile = precompile
+}
+
 func (g *Generator) generateInitialSteps() (string, error) {
 	baseImage, err := g.BaseImage()
 	if err != nil {
@@ -161,7 +167,7 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		return "", err
 	}
 
-	return joinStringsWithoutLineSpace([]string{
+	steps := []string{
 		"#syntax=docker/dockerfile:1.4",
 		pipInstallStage,
 		"FROM " + baseImage,
@@ -170,8 +176,13 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		installPython,
 		aptInstalls,
 		g.copyPipPackagesFromInstallStage(),
-		runCommands,
-	}), nil
+	}
+	if g.precompile {
+		steps = append(steps, PrecompilePythonCommand)
+	}
+	steps = append(steps, runCommands)
+
+	return joinStringsWithoutLineSpace(steps), nil
 }
 
 func (g *Generator) GenerateModelBase() (string, error) {

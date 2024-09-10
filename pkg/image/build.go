@@ -28,7 +28,7 @@ const bundledSchemaPy = ".cog/schema.py"
 // Build a Cog model from a config
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
-func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string, useCogBaseImage *bool, strip bool) error {
+func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string, useCogBaseImage *bool, strip bool, precompile bool) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 
 	// remove bundled schema files that may be left from previous builds
@@ -56,6 +56,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			}
 		}()
 		generator.SetStrip(strip)
+		generator.SetPrecompile(precompile)
 		generator.SetUseCudaBaseImage(useCudaBaseImage)
 		if useCogBaseImage != nil {
 			generator.SetUseCogBaseImage(*useCogBaseImage)

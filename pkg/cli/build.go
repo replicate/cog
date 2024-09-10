@@ -23,6 +23,7 @@ var buildUseCudaBaseImage string
 var buildDockerfileFile string
 var buildUseCogBaseImage bool
 var buildStrip bool
+var buildPrecompile bool
 
 const useCogBaseImageFlagKey = "use-cog-base-image"
 
@@ -44,6 +45,7 @@ func newBuildCommand() *cobra.Command {
 	addUseCogBaseImageFlag(cmd)
 	addBuildTimestampFlag(cmd)
 	addStripFlag(cmd)
+	addPrecompileFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
 }
@@ -67,7 +69,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile); err != nil {
 		return err
 	}
 
@@ -126,6 +128,12 @@ func addStripFlag(cmd *cobra.Command) {
 	const stripFlag = "strip"
 	cmd.Flags().BoolVar(&buildStrip, stripFlag, false, "Whether to strip shared libraries for faster inference times")
 	_ = cmd.Flags().MarkHidden(stripFlag)
+}
+
+func addPrecompileFlag(cmd *cobra.Command) {
+	const precompileFlag = "precompile"
+	cmd.Flags().BoolVar(&buildPrecompile, precompileFlag, false, "Whether to precompile python files for faster load times")
+	_ = cmd.Flags().MarkHidden(precompileFlag)
 }
 
 func checkMutuallyExclusiveFlags(cmd *cobra.Command, args []string) error {
