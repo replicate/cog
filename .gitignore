@@ -7,12 +7,14 @@ __pycache__
 build
 dist
 *.egg-info
-pkg/dockerfile/embed/cog.whl
+pkg/dockerfile/embed/*.whl
 # Used by a vim plugin (projectionist)
 .projections.json
+.tox/
 .venv/
 .idea/
 .DS_Store
 docs/README.md
 docs/CONTRIBUTING.md
 venv
+base-image

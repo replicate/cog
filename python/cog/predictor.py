@@ -140,21 +140,6 @@ def get_weights_type(setup_function: Callable[[Any], None]) -> Optional[Any]:
     return Type
 
 
-def run_prediction(
-    predictor: BasePredictor,
-    inputs: Dict[Any, Any],
-    cleanup_functions: List[Callable[[], None]],
-) -> Any:
-    """
-    Run the predictor on the inputs, and append resulting paths
-    to cleanup functions for removal.
-    """
-    result = predictor.predict(**inputs)
-    if isinstance(result, Path):
-        cleanup_functions.append(result.unlink)
-    return result
-
-
 def load_config() -> CogConfig:
     """
     Reads cog.yaml and returns it as a typed dict.
@@ -271,7 +256,11 @@ class BaseInput(BaseModel):
             # A pathlib.Path object shouldn't make its way here,
             # but both have an unlink() method, so we may as well be safe.
             if isinstance(value, (URLPath, Path)):
-                value.unlink(missing_ok=True)
+                # TODO: use unlink(missing_ok=...) when we drop Python 3.7 support.
+                try:
+                    value.unlink()
+                except FileNotFoundError:
+                    pass
 
 
 def validate_input_type(

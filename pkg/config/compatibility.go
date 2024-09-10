@@ -61,13 +61,11 @@ type TorchCompatibility struct {
 }
 
 func (c *TorchCompatibility) TorchVersion() string {
-	parts := strings.Split(c.Torch, "+")
-	return parts[0]
+	return version.StripModifier(c.Torch)
 }
 
 func (c *TorchCompatibility) TorchvisionVersion() string {
-	parts := strings.Split(c.Torchvision, "+")
-	return parts[0]
+	return version.StripModifier(c.Torchvision)
 }
 
 type CUDABaseImage struct {
@@ -97,11 +95,6 @@ var TFCompatibilityMatrix []TFCompatibility
 var torchCompatibilityMatrixData []byte
 var TorchCompatibilityMatrix []TorchCompatibility
 
-// For minor Torch versions we use the latest patch version.
-// This is semantically different to pip, which uses the .0
-// patch version.
-var TorchMinorCompatibilityMatrix []TorchCompatibility
-
 func init() {
 	if err := json.Unmarshal(cudaBaseImagesData, &CUDABaseImages); err != nil {
 		console.Fatalf("Failed to load embedded CUDA base images: %s", err)
@@ -125,60 +118,64 @@ func init() {
 		}
 	}
 	TorchCompatibilityMatrix = filteredTorchCompatibilityMatrix
-	TorchMinorCompatibilityMatrix = generateTorchMinorVersionCompatibilityMatrix(TorchCompatibilityMatrix)
 }
 
-func generateTorchMinorVersionCompatibilityMatrix(matrix []TorchCompatibility) []TorchCompatibility {
-	minorMatrix := []TorchCompatibility{}
+func cudaVersionFromTorchPlusVersion(ver string) (string, string) {
+	const cudaVersionPrefix = "cu"
 
-	// First sort compatibilities by Torch version descending
-	matrixByTorchDesc := make([]TorchCompatibility, len(matrix))
-	copy(matrixByTorchDesc, matrix)
-	sort.Slice(matrixByTorchDesc, func(i, j int) bool {
-		return version.Greater(matrixByTorchDesc[i].Torch, matrixByTorchDesc[j].Torch)
-	})
+	// Split the version string by the '+' character.
+	versionParts := strings.Split(ver, "+")
 
-	// Then pick CUDA for the most recent patch versions
-	seenCUDATorchMinor := make(map[[2]string]bool)
-
-	for _, compat := range matrixByTorchDesc {
-		cudaString := ""
-		if compat.CUDA != nil {
-			cudaString = *compat.CUDA
-		}
-		torchMinor := version.StripPatch(compat.Torch)
-		key := [2]string{cudaString, torchMinor}
-
-		if seen := seenCUDATorchMinor[key]; !seen {
-			minorMatrix = append(minorMatrix, TorchCompatibility{
-				Torch:         torchMinor,
-				CUDA:          compat.CUDA,
-				Pythons:       compat.Pythons,
-				Torchvision:   compat.Torchvision,
-				Torchaudio:    compat.Torchaudio,
-				FindLinks:     compat.FindLinks,
-				ExtraIndexURL: compat.ExtraIndexURL,
-			})
-			seenCUDATorchMinor[key] = true
-		}
+	// If there is no '+' in the version string, return the original string with an empty CUDA version.
+	if len(versionParts) <= 1 {
+		return "", ver
 	}
-	return minorMatrix
 
+	// Extract the part after the last '+'.
+	cudaVersionPart := versionParts[len(versionParts)-1]
+
+	// Check if the extracted part has the CUDA version prefix.
+	if !strings.HasPrefix(cudaVersionPart, cudaVersionPrefix) {
+		return "", ver
+	}
+
+	// Trim the CUDA version prefix and reformat the version string.
+	cleanVersion := strings.TrimPrefix(cudaVersionPart, cudaVersionPrefix)
+	if len(cleanVersion) < 2 {
+		return "", ver // Handle case where cleanVersion is too short to reformat.
+	}
+
+	// Insert a dot before the last character to format it as expected.
+	cleanVersion = cleanVersion[:len(cleanVersion)-1] + "." + cleanVersion[len(cleanVersion)-1:]
+
+	// Return the reformatted CUDA version and the main version.
+	return cleanVersion, versionParts[0]
 }
 
 func cudasFromTorch(ver string) ([]string, error) {
 	cudas := []string{}
+
+	// Check the version modifier on torch (such as +cu118)
+	cudaVer, ver := cudaVersionFromTorchPlusVersion(ver)
+	if len(cudaVer) > 0 {
+		for _, compat := range TorchCompatibilityMatrix {
+			if compat.CUDA == nil {
+				continue
+			}
+			if version.Matches(ver, compat.TorchVersion()) && *compat.CUDA == cudaVer {
+				cudas = append(cudas, *compat.CUDA)
+				return cudas, nil
+			}
+		}
+	}
+
 	for _, compat := range TorchCompatibilityMatrix {
-		if ver == compat.TorchVersion() && compat.CUDA != nil {
+		if version.Matches(ver, compat.TorchVersion()) && compat.CUDA != nil {
 			cudas = append(cudas, *compat.CUDA)
 		}
 	}
 	slices.Sort(cudas)
-	for _, compat := range TorchMinorCompatibilityMatrix {
-		if ver == compat.TorchVersion() && compat.CUDA != nil {
-			cudas = append(cudas, *compat.CUDA)
-		}
-	}
+
 	return cudas, nil
 }
 
@@ -304,7 +301,7 @@ func torchGPUPackage(ver string, cuda string) (name, cpuVersion, findLinks, extr
 	var latest *TorchCompatibility
 	for _, compat := range TorchCompatibilityMatrix {
 		compat := compat
-		if compat.TorchVersion() != ver || compat.CUDA == nil {
+		if !version.Matches(compat.TorchVersion(), ver) || compat.CUDA == nil {
 			continue
 		}
 		greater, err := versionGreater(*compat.CUDA, cuda)
@@ -333,7 +330,7 @@ func torchGPUPackage(ver string, cuda string) (name, cpuVersion, findLinks, extr
 		return "torch", ver, "", "", nil
 	}
 
-	return "torch", latest.Torch, latest.FindLinks, latest.ExtraIndexURL, nil
+	return "torch", version.StripModifier(latest.Torch), latest.FindLinks, latest.ExtraIndexURL, nil
 }
 
 func torchvisionCPUPackage(ver, goos, goarch string) (name, cpuVersion, findLinks, extraIndexURL string, err error) {
@@ -382,7 +379,7 @@ func torchvisionGPUPackage(ver, cuda string) (name, cpuVersion, findLinks, extra
 		return "torchvision", ver, "", "", nil
 	}
 
-	return "torchvision", latest.Torchvision, latest.FindLinks, latest.ExtraIndexURL, nil
+	return "torchvision", version.StripModifier(latest.Torchvision), latest.FindLinks, latest.ExtraIndexURL, nil
 }
 
 // aarch64 packages don't have +cpu suffix: https://download.pytorch.org/whl/torch_stable.html

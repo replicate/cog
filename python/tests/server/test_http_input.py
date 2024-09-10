@@ -1,14 +1,15 @@
 import base64
 import os
 import threading
+import time
 
 import responses
+from werkzeug.wrappers import Response
 
 from cog import schema
 from cog.server.http import Health, create_app
-from tests.server.conftest import _fixture_path
 
-from .conftest import uses_predictor
+from .conftest import _fixture_path, uses_predictor
 
 
 @uses_predictor("input_none")
@@ -120,6 +121,29 @@ def test_path_input_data_url(client, match):
     )
     assert resp.json() == match({"output": "txt bar", "status": "succeeded"})
     assert resp.status_code == 200
+
+
+@uses_predictor("input_path")
+def test_path_input_slow_response(client, httpserver, match):
+    def _handle(_):
+        time.sleep(5)
+        return Response("Slow response!")
+
+    httpserver.expect_request("/foo.txt").respond_with_handler(_handle)
+    now = time.monotonic()
+    resp = client.post(
+        "/predictions",
+        json={
+            "input": {
+                "path": httpserver.url_for("/foo.txt"),
+            }
+        },
+        headers={"Prefer": "respond-async"},
+    )
+    # The download of the slow input file should not happen during the request.
+    assert time.monotonic() - now < 0.2
+    assert resp.json() == match({"status": "processing"})
+    assert resp.status_code == 202
 
 
 @uses_predictor("input_path_2")

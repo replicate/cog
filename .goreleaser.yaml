@@ -2,24 +2,39 @@ version: 2
 before:
   hooks:
     - go mod tidy
+    - make wheel
+dist: ./dist/go
+env:
+  - CGO_ENABLED=0
 builds:
   - binary: cog
     id: cog
-    env:
-      - CGO_ENABLED=0
     goos:
       - darwin
       - linux
     goarch:
       - amd64
       - arm64
-    main: ./cmd/cog/cog.go
+    main: ./cmd/cog
+    ldflags:
+      - "-s -w -X github.com/replicate/cog/pkg/global.Version={{.Version}} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
+  - binary: base-image
+    id: base-image
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    main: ./cmd/base-image
     ldflags:
       - "-s -w -X github.com/replicate/cog/pkg/global.Version={{.Version}} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
 archives:
   - format: binary
+    builds:
+      - cog # for now we only release cog
     name_template: >-
-      {{ .ProjectName }}_
+      {{ .Binary }}_
       {{- title .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else if eq .Arch "386" }}i386
@@ -27,7 +42,7 @@ archives:
 checksum:
   name_template: "checksums.txt"
 snapshot:
-  name_template: "{{ .Tag }}-next"
+  name_template: "{{ incpatch .Version }}-dev+g{{ .ShortCommit }}{{ if .IsGitDirty }}.d{{ .Now.Format \"20060102\" }}{{ end }}"
 changelog:
   sort: asc
   filters:

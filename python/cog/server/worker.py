@@ -2,17 +2,19 @@ import multiprocessing
 import os
 import signal
 import sys
+import threading
 import traceback
 import types
 from concurrent.futures import Future, ThreadPoolExecutor
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
-from typing import Any, Callable, Dict, Optional, TextIO, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 import structlog
 
 from ..json import make_encodeable
 from ..predictor import BasePredictor, get_predict, load_predictor_from_ref, run_setup
+from ..types import URLPath
 from .eventtypes import (
     Done,
     Log,
@@ -26,7 +28,7 @@ from .exceptions import (
     FatalWorkerException,
     InvalidStateException,
 )
-from .helpers import StreamRedirector, WrappedStream
+from .helpers import StreamRedirector
 
 _spawn = multiprocessing.get_context("spawn")
 
@@ -45,21 +47,23 @@ class WorkerState(Enum):
 
 
 class Worker:
-    def __init__(self, predictor_ref: str, tee_output: bool = True) -> None:
-        self._state = WorkerState.NEW
+    def __init__(self, child: "ChildWorker", events: Connection) -> None:
+        self._child = child
+        self._events = events
+
         self._allow_cancel = False
+        self._sent_shutdown_event = False
+        self._state = WorkerState.NEW
+        self._terminating = False
 
         self._result: Optional["Future[Done]"] = None
         self._subscribers: Dict[int, Optional[Callable[[_PublicEventType], None]]] = {}
 
+        self._predict_payload: Optional[Dict[str, Any]] = None
+        self._predict_start = threading.Event()  # set when a prediction is started
+
         self._pool = ThreadPoolExecutor(max_workers=1)
         self._event_consumer = None
-
-        # A pipe with which to communicate with the child worker.
-        self._events, child_events = _spawn.Pipe()
-        self._child = _ChildWorker(predictor_ref, child_events, tee_output)
-        self._sent_shutdown_event = False
-        self._terminating = False
 
     def setup(self) -> "Future[Done]":
         self._assert_state(WorkerState.NEW)
@@ -76,7 +80,8 @@ class Worker:
         self._allow_cancel = True
         result = Future()
         self._result = result
-        self._events.send(PredictionInput(payload=payload))
+        self._predict_payload = payload
+        self._predict_start.set()
         return result
 
     def subscribe(self, subscriber: Callable[[_PublicEventType], None]) -> int:
@@ -119,12 +124,8 @@ class Worker:
         self._pool.shutdown(wait=False)
 
     def cancel(self) -> None:
-        if (
-            self._allow_cancel
-            and self._child.is_alive()
-            and self._child.pid is not None
-        ):
-            os.kill(self._child.pid, signal.SIGUSR1)
+        if self._allow_cancel:
+            self._child.send_cancel()
             self._allow_cancel = False
 
     def _assert_state(self, state: WorkerState) -> None:
@@ -179,20 +180,47 @@ class Worker:
             return
 
         assert self._result
-        self._result.set_result(done)
+
+        # We capture the setup future and then set state to READY before
+        # completing it, so that we can immediately accept work.
+        result = self._result
         self._result = None
         self._state = WorkerState.READY
+        result.set_result(done)
 
         # Predictions
-        while True:
-            done = self._consume_events_until_done()
-            if not done:
-                break
+        while self._child.is_alive():
+            start = self._predict_start.wait(timeout=0.1)
+            if not start:
+                continue
+
+            assert self._predict_payload is not None
             assert self._result
-            self._result.set_result(done)
+
+            # Prepare payload (download URLPath objects)
+            try:
+                _prepare_payload(self._predict_payload)
+            except Exception as e:
+                done = Done(error=True, error_detail=str(e))
+                self._publish(done)
+            else:
+                # Start the prediction
+                self._events.send(PredictionInput(payload=self._predict_payload))
+
+                # Consume and publish prediction events
+                done = self._consume_events_until_done()
+                if not done:
+                    break
+
+            # We capture the predict future and then reset state before
+            # completing it, so that we can immediately accept work.
+            result = self._result
+            self._predict_payload = None
+            self._predict_start.clear()
             self._result = None
             self._state = WorkerState.READY
             self._allow_cancel = False
+            result.set_result(done)
 
         # If we dropped off the end off the end of the loop, it's because the
         # child process died.
@@ -231,7 +259,7 @@ class LockedConn:
         return self.conn.recv()
 
 
-class _ChildWorker(_spawn.Process):  # type: ignore
+class ChildWorker(_spawn.Process):  # type: ignore
     def __init__(
         self,
         predictor_ref: str,
@@ -255,63 +283,66 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         # We use SIGUSR1 to signal an interrupt for cancelation.
         signal.signal(signal.SIGUSR1, self._signal_handler)
 
-        ws_stdout = WrappedStream("stdout", sys.stdout)
-        ws_stderr = WrappedStream("stderr", sys.stderr)
-        ws_stdout.wrap()
-        ws_stderr.wrap()
-
-        self._stream_redirector = StreamRedirector(
-            [ws_stdout, ws_stderr], self._stream_write_hook
+        redirector = StreamRedirector(
+            tee=self._tee_output,
+            callback=self._stream_write_hook,
         )
-        self._stream_redirector.start()
 
-        self._setup()
-        self._loop()
+        self._setup(redirector)
+        self._loop(redirector)
 
-        self._stream_redirector.shutdown()
+    def send_cancel(self) -> None:
+        if self.is_alive() and self.pid:
+            os.kill(self.pid, signal.SIGUSR1)
 
-    def _setup(self) -> None:
-        done = Done()
-        try:
-            self._predictor = load_predictor_from_ref(self._predictor_ref)
-            # Could be a function or a class
-            if hasattr(self._predictor, "setup"):
-                run_setup(self._predictor)
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            traceback.print_exc()
-            done.error = True
-            done.error_detail = str(e)
-        except BaseException as e:
-            # For SystemExit and friends we attempt to add some useful context
-            # to the logs, but reraise to ensure the process dies.
-            traceback.print_exc()
-            done.error = True
-            done.error_detail = str(e)
-            raise
-        finally:
+    def _setup(self, redirector: StreamRedirector) -> None:
+        with redirector:
+            done = Done()
             try:
-                self._stream_redirector.drain(timeout=10)
-            except TimeoutError:
-                self._events.send(
-                    Log(
-                        "WARNING: logs may be truncated due to excessive volume.",
-                        source="stderr",
-                    )
-                )
+                self._predictor = load_predictor_from_ref(self._predictor_ref)
+                # Could be a function or a class
+                if hasattr(self._predictor, "setup"):
+                    run_setup(self._predictor)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                traceback.print_exc()
+                done.error = True
+                done.error_detail = str(e)
+            except BaseException as e:
+                # For SystemExit and friends we attempt to add some useful context
+                # to the logs, but reraise to ensure the process dies.
+                traceback.print_exc()
+                done.error = True
+                done.error_detail = str(e)
                 raise
-            self._events.send(done)
+            finally:
+                try:
+                    redirector.drain(timeout=10)
+                except TimeoutError:
+                    self._events.send(
+                        Log(
+                            "WARNING: logs may be truncated due to excessive volume.",
+                            source="stderr",
+                        )
+                    )
+                    raise
+                self._events.send(done)
 
-    def _loop(self) -> None:
-        while True:
-            ev = self._events.recv()
-            if isinstance(ev, Shutdown):
-                break
-            if isinstance(ev, PredictionInput):
-                self._predict(ev.payload)
-            else:
-                print(f"Got unexpected event: {ev}", file=sys.stderr)
+    def _loop(self, redirector: StreamRedirector) -> None:
+        with redirector:
+            while True:
+                ev = self._events.recv()
+                if isinstance(ev, Shutdown):
+                    break
+                if isinstance(ev, PredictionInput):
+                    self._predict(ev.payload, redirector)
+                else:
+                    print(f"Got unexpected event: {ev}", file=sys.stderr)
 
-    def _predict(self, payload: Dict[str, Any]) -> None:
+    def _predict(
+        self,
+        payload: Dict[str, Any],
+        redirector: StreamRedirector,
+    ) -> None:
         assert self._predictor
         done = Done()
         send_done = True
@@ -345,7 +376,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         finally:
             self._cancelable = False
             try:
-                self._stream_redirector.drain(timeout=10)
+                redirector.drain(timeout=10)
             except TimeoutError:
                 self._events.send(
                     Log(
@@ -365,10 +396,25 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if signum == signal.SIGUSR1 and self._cancelable:
             raise CancelationException()
 
-    def _stream_write_hook(
-        self, stream_name: str, original_stream: TextIO, data: str
-    ) -> None:
-        if self._tee_output:
-            original_stream.write(data)
-            original_stream.flush()
-        self._events.send(Log(data, source=stream_name))
+    def _stream_write_hook(self, stream_name: str, data: str) -> None:
+        if stream_name == sys.stdout.name:
+            self._events.send(Log(data, source="stdout"))
+        else:
+            self._events.send(Log(data, source="stderr"))
+
+
+def make_worker(predictor_ref: str, tee_output: bool = True) -> Worker:
+    parent_conn, child_conn = _spawn.Pipe()
+    child = ChildWorker(predictor_ref, events=child_conn, tee_output=tee_output)
+    parent = Worker(child=child, events=parent_conn)
+    return parent
+
+
+def _prepare_payload(payload: Dict[str, Any]) -> None:
+    for k, v in payload.items():
+        # Check if v is an instance of URLPath
+        if isinstance(v, URLPath):
+            payload[k] = v.convert()
+        # Check if v is a list of URLPath instances
+        elif isinstance(v, list) and all(isinstance(item, URLPath) for item in v):
+            payload[k] = [item.convert() for item in v]

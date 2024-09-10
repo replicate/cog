@@ -60,3 +60,22 @@ func TestVersionGreater(t *testing.T) {
 		require.Equal(t, tt.greater, Greater(tt.v1, tt.v2), "%s is %sgreater than %s", tt.v1, not, tt.v2)
 	}
 }
+
+func TestVersionStripModifier(t *testing.T) {
+	version := "2.3.1"
+	versionWithModifier := version + "+cu118"
+	versionWithoutModifier := StripModifier(versionWithModifier)
+	require.Equal(t, versionWithoutModifier, version)
+}
+
+func TestVersionMatches(t *testing.T) {
+	version := "2.3"
+	matchVersion := "2.3.2"
+	require.True(t, Matches(version, matchVersion))
+}
+
+func TestVersionMatchesModifier(t *testing.T) {
+	version := "2.3"
+	matchVersion := "2.3.2+cu118"
+	require.True(t, Matches(version, matchVersion))
+}

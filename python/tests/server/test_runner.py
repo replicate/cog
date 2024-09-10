@@ -6,7 +6,7 @@ from unittest import mock
 
 import pytest
 
-from cog.schema import PredictionRequest, PredictionResponse, Status, WebhookEvent
+from cog.schema import PredictionRequest, Status, WebhookEvent
 from cog.server.eventtypes import Done, Log
 from cog.server.runner import (
     PredictionRunner,
@@ -16,7 +16,7 @@ from cog.server.runner import (
     SetupTask,
     UnknownPredictionError,
 )
-from cog.server.worker import Worker
+from cog.server.worker import make_worker
 
 
 def _fixture_path(name):
@@ -300,7 +300,7 @@ def test_prediction_runner_predict_cancelation_multiple_predictions():
 
 
 def test_prediction_runner_setup_e2e():
-    w = Worker(predictor_ref=_fixture_path("sleep"))
+    w = make_worker(predictor_ref=_fixture_path("sleep"))
     r = PredictionRunner(worker=w)
 
     try:
@@ -316,7 +316,7 @@ def test_prediction_runner_setup_e2e():
 
 
 def test_prediction_runner_predict_e2e():
-    w = Worker(predictor_ref=_fixture_path("sleep"))
+    w = make_worker(predictor_ref=_fixture_path("sleep"))
     r = PredictionRunner(worker=w)
 
     try:
@@ -387,55 +387,78 @@ def test_setup_task(log, result):
 
 
 def test_predict_task():
-    p = PredictionResponse(input={"hello": "there"})
+    p = PredictionRequest(
+        input={"hello": "there"},
+        id=None,
+        created_at=None,
+        output_file_prefix=None,
+        webhook=None,
+    )
     t = PredictTask(p)
 
-    assert p.status == Status.PROCESSING
-    assert p.output is None
-    assert p.logs == ""
-    assert isinstance(p.started_at, datetime)
+    assert t.result.status == Status.PROCESSING
+    assert t.result.output is None
+    assert t.result.logs == ""
+    assert isinstance(t.result.started_at, datetime)
 
     t.set_output_type(multi=False)
     t.append_output("giraffes")
-    assert p.output == "giraffes"
+    assert t.result.output == "giraffes"
 
 
 def test_predict_task_multi():
-    p = PredictionResponse(input={"hello": "there"})
+    p = PredictionRequest(
+        input={"hello": "there"},
+        id=None,
+        created_at=None,
+        output_file_prefix=None,
+        webhook=None,
+    )
     t = PredictTask(p)
 
-    assert p.status == Status.PROCESSING
-    assert p.output is None
-    assert p.logs == ""
-    assert isinstance(p.started_at, datetime)
+    assert t.result.status == Status.PROCESSING
+    assert t.result.output is None
+    assert t.result.logs == ""
+    assert isinstance(t.result.started_at, datetime)
 
     t.set_output_type(multi=True)
     t.append_output("elephant")
     t.append_output("duck")
-    assert p.output == ["elephant", "duck"]
+    assert t.result.output == ["elephant", "duck"]
 
     t.append_logs("running a prediction\n")
     t.append_logs("still running\n")
-    assert p.logs == "running a prediction\nstill running\n"
+    assert t.result.logs == "running a prediction\nstill running\n"
 
     t.succeeded()
-    assert p.status == Status.SUCCEEDED
-    assert isinstance(p.completed_at, datetime)
+    assert t.result.status == Status.SUCCEEDED
+    assert isinstance(t.result.completed_at, datetime)
 
     t.failed("oops")
-    assert p.status == Status.FAILED
-    assert p.error == "oops"
-    assert isinstance(p.completed_at, datetime)
+    assert t.result.status == Status.FAILED
+    assert t.result.error == "oops"
+    assert isinstance(t.result.completed_at, datetime)
 
     t.canceled()
-    assert p.status == Status.CANCELED
-    assert isinstance(p.completed_at, datetime)
+    assert t.result.status == Status.CANCELED
+    assert isinstance(t.result.completed_at, datetime)
 
 
 def test_predict_task_webhook_sender():
-    s = mock.Mock()
-    p = PredictionResponse(input={"hello": "there"})
-    t = PredictTask(p, webhook_sender=s)
+    p = PredictionRequest(
+        input={"hello": "there"},
+        id=None,
+        created_at=None,
+        output_file_prefix=None,
+        webhook="https://a.url.honest",
+    )
+    t = PredictTask(p)
+    t._webhook_sender = mock.Mock()
+    t.track(Future())
+
+    t._webhook_sender.assert_called_once_with(mock.ANY, WebhookEvent.START)
+    actual = t._webhook_sender.call_args[0][0]
+    assert actual.status == "processing"
 
     t.set_output_type(multi=True)
     t.append_output("elephant")
@@ -444,14 +467,14 @@ def test_predict_task_webhook_sender():
     t.append_logs("running a prediction\n")
     t.append_logs("still running\n")
 
-    s.reset_mock()
+    t._webhook_sender.reset_mock()
     t.succeeded()
 
-    s.assert_called_once_with(
+    t._webhook_sender.assert_called_once_with(
         mock.ANY,
         WebhookEvent.COMPLETED,
     )
-    actual = s.call_args[0][0]
+    actual = t._webhook_sender.call_args[0][0]
     assert actual.input == {"hello": "there"}
     assert actual.output == ["elephant", "duck"]
     assert actual.logs == "running a prediction\nstill running\n"
@@ -460,111 +483,140 @@ def test_predict_task_webhook_sender():
 
 
 def test_predict_task_webhook_sender_intermediate():
-    s = mock.Mock()
-    p = PredictionResponse(input={"hello": "there"})
-    t = PredictTask(p, webhook_sender=s)
+    p = PredictionRequest(
+        input={"hello": "there"},
+        id=None,
+        created_at=None,
+        output_file_prefix=None,
+        webhook="https://a.url.honest",
+    )
+    t = PredictTask(p)
+    t._webhook_sender = mock.Mock()
+    t.track(Future())
 
-    s.assert_called_once_with(mock.ANY, WebhookEvent.START)
-    actual = s.call_args[0][0]
+    t._webhook_sender.assert_called_once_with(mock.ANY, WebhookEvent.START)
+    actual = t._webhook_sender.call_args[0][0]
     assert actual.status == "processing"
 
-    s.reset_mock()
+    t._webhook_sender.reset_mock()
     t.set_output_type(multi=False)
     t.append_output("giraffes")
-    assert s.call_count == 0
+    assert t._webhook_sender.call_count == 0
 
 
 def test_predict_task_webhook_sender_intermediate_multi():
-    s = mock.Mock()
-    p = PredictionResponse(input={"hello": "there"})
-    t = PredictTask(p, webhook_sender=s)
+    p = PredictionRequest(
+        input={"hello": "there"},
+        id=None,
+        created_at=None,
+        output_file_prefix=None,
+        webhook="https://a.url.honest",
+    )
+    t = PredictTask(p)
+    t._webhook_sender = mock.Mock()
+    t.track(Future())
 
-    s.assert_called_once_with(mock.ANY, WebhookEvent.START)
-    actual = s.call_args[0][0]
+    t._webhook_sender.assert_called_once_with(mock.ANY, WebhookEvent.START)
+    actual = t._webhook_sender.call_args[0][0]
     assert actual.status == "processing"
 
-    s.reset_mock()
+    t._webhook_sender.reset_mock()
     t.set_output_type(multi=True)
     t.append_output("elephant")
-    print(s.call_args_list)
-    assert s.call_count == 1
-    actual = s.call_args_list[0][0][0]
+    print(t._webhook_sender.call_args_list)
+    assert t._webhook_sender.call_count == 1
+    actual = t._webhook_sender.call_args_list[0][0][0]
     assert actual.output == ["elephant"]
-    assert s.call_args_list[0][0][1] == WebhookEvent.OUTPUT
+    assert t._webhook_sender.call_args_list[0][0][1] == WebhookEvent.OUTPUT
 
-    s.reset_mock()
+    t._webhook_sender.reset_mock()
     t.append_output("duck")
-    assert s.call_count == 1
-    actual = s.call_args_list[0][0][0]
+    assert t._webhook_sender.call_count == 1
+    actual = t._webhook_sender.call_args_list[0][0][0]
     assert actual.output == ["elephant", "duck"]
-    assert s.call_args_list[0][0][1] == WebhookEvent.OUTPUT
+    assert t._webhook_sender.call_args_list[0][0][1] == WebhookEvent.OUTPUT
 
-    s.reset_mock()
+    t._webhook_sender.reset_mock()
     t.append_logs("running a prediction\n")
-    assert s.call_count == 1
-    actual = s.call_args_list[0][0][0]
+    assert t._webhook_sender.call_count == 1
+    actual = t._webhook_sender.call_args_list[0][0][0]
     assert actual.logs == "running a prediction\n"
-    assert s.call_args_list[0][0][1] == WebhookEvent.LOGS
+    assert t._webhook_sender.call_args_list[0][0][1] == WebhookEvent.LOGS
 
-    s.reset_mock()
+    t._webhook_sender.reset_mock()
     t.append_logs("still running\n")
-    assert s.call_count == 1
-    actual = s.call_args_list[0][0][0]
+    assert t._webhook_sender.call_count == 1
+    actual = t._webhook_sender.call_args_list[0][0][0]
     assert actual.logs == "running a prediction\nstill running\n"
-    assert s.call_args_list[0][0][1] == WebhookEvent.LOGS
+    assert t._webhook_sender.call_args_list[0][0][1] == WebhookEvent.LOGS
 
-    s.reset_mock()
+    t._webhook_sender.reset_mock()
     t.succeeded()
-    s.assert_called_once()
-    actual = s.call_args[0][0]
+    t._webhook_sender.assert_called_once()
+    actual = t._webhook_sender.call_args[0][0]
     assert actual.status == "succeeded"
-    assert s.call_args[0][1] == WebhookEvent.COMPLETED
+    assert t._webhook_sender.call_args[0][1] == WebhookEvent.COMPLETED
 
-    s.reset_mock()
+    t._webhook_sender.reset_mock()
     t.failed("oops")
-    s.assert_called_once()
-    actual = s.call_args[0][0]
+    t._webhook_sender.assert_called_once()
+    actual = t._webhook_sender.call_args[0][0]
     assert actual.status == "failed"
     assert actual.error == "oops"
-    assert s.call_args[0][1] == WebhookEvent.COMPLETED
+    assert t._webhook_sender.call_args[0][1] == WebhookEvent.COMPLETED
 
-    s.reset_mock()
+    t._webhook_sender.reset_mock()
     t.canceled()
-    s.assert_called_once()
-    actual = s.call_args[0][0]
+    t._webhook_sender.assert_called_once()
+    actual = t._webhook_sender.call_args[0][0]
     assert actual.status == "canceled"
-    assert s.call_args[0][1] == WebhookEvent.COMPLETED
+    assert t._webhook_sender.call_args[0][1] == WebhookEvent.COMPLETED
 
 
 def test_predict_task_file_uploads():
-    u = mock.Mock()
-    p = PredictionResponse(input={"hello": "there"})
-    t = PredictTask(p, file_uploader=u)
+    p = PredictionRequest(
+        input={"hello": "there"},
+        id=None,
+        created_at=None,
+        output_file_prefix=None,
+        webhook=None,
+    )
+    t = PredictTask(p, upload_url="https://a.url.honest")
+    t._file_uploader = mock.Mock()
 
     # in reality this would be a Path object, but in this test we just care it
     # passes the output into the upload files function and uses whatever comes
     # back as final output.
-    u.return_value = "http://example.com/output-image.png"
+    t._file_uploader.return_value = "http://example.com/output-image.png"
     t.set_output_type(multi=False)
     t.append_output("Path(to/my/file)")
 
-    u.assert_called_once_with("Path(to/my/file)")
-    assert p.output == "http://example.com/output-image.png"
+    t._file_uploader.assert_called_once_with("Path(to/my/file)")
+    assert t.result.output == "http://example.com/output-image.png"
 
 
 def test_predict_task_file_uploads_multi():
-    u = mock.Mock()
-    p = PredictionResponse(input={"hello": "there"})
-    t = PredictTask(p, file_uploader=u)
+    p = PredictionRequest(
+        input={"hello": "there"},
+        id=None,
+        created_at=None,
+        output_file_prefix=None,
+        webhook=None,
+    )
+    t = PredictTask(p, upload_url="https://a.url.honest")
+    t._file_uploader = mock.Mock()
 
-    u.return_value = []
+    t._file_uploader.return_value = []
     t.set_output_type(multi=True)
 
-    u.return_value = "http://example.com/hello.jpg"
+    t._file_uploader.return_value = "http://example.com/hello.jpg"
     t.append_output("hello.jpg")
 
-    u.return_value = "http://example.com/world.jpg"
+    t._file_uploader.return_value = "http://example.com/world.jpg"
     t.append_output("world.jpg")
 
-    u.assert_has_calls([mock.call("hello.jpg"), mock.call("world.jpg")])
-    assert p.output == ["http://example.com/hello.jpg", "http://example.com/world.jpg"]
+    t._file_uploader.assert_has_calls([mock.call("hello.jpg"), mock.call("world.jpg")])
+    assert t.result.output == [
+        "http://example.com/hello.jpg",
+        "http://example.com/world.jpg",
+    ]
