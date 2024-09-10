@@ -5,11 +5,11 @@ toolchain go1.22.5
 
 require (
 	github.com/anaskhan96/soup v1.2.5
-	github.com/docker/cli v27.1.1+incompatible
+	github.com/docker/cli v27.2.1+incompatible
 	github.com/docker/docker v27.1.1+incompatible
 	github.com/getkin/kin-openapi v0.127.0
 	github.com/golangci/golangci-lint v1.59.1
-	github.com/google/go-containerregistry v0.20.1
+	github.com/google/go-containerregistry v0.20.2
 	github.com/hashicorp/go-version v1.7.0
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/mattn/go-isatty v0.0.20
