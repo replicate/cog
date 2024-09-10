@@ -96,7 +96,7 @@ predict: predict.py:Predictor
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test", "")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -129,7 +129,7 @@ predict: predict.py:Predictor
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test", "")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -175,7 +175,7 @@ predict: predict.py:Predictor
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test", "")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -229,7 +229,7 @@ predict: predict.py:Predictor
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test", "")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -283,7 +283,7 @@ build:
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test", "")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -319,7 +319,7 @@ build:
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test", "")
 	require.NoError(t, err)
 	fmt.Println(actual)
 	require.Contains(t, actual, `pip install --no-cache-dir -t /dep -r /tmp/requirements.txt`)
@@ -381,7 +381,7 @@ predict: predict.py:Predictor
 		return nil
 	}
 
-	modelDockerfile, runnerDockerfile, dockerignore, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	modelDockerfile, runnerDockerfile, dockerignore, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test", "")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -474,7 +474,7 @@ predict: predict.py:Predictor
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
-	actual, err := gen.GenerateDockerfileWithoutSeparateWeights()
+	actual, err := gen.GenerateDockerfileWithoutSeparateWeights("")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -507,12 +507,12 @@ predict: predict.py:Predictor
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test", "")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
-FROM r8.im/cog-base:base0.0.1-python3.12
+FROM r8.im/cog-base:python3.12
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -543,12 +543,12 @@ predict: predict.py:Predictor
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test", "")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
-FROM r8.im/cog-base:base0.0.1-python3.12
+FROM r8.im/cog-base:python3.12
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
@@ -593,7 +593,7 @@ predict: predict.py:Predictor
 		gen, err := NewGenerator(conf, tmpDir)
 		require.NoError(t, err)
 		gen.SetUseCogBaseImage(true)
-		_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+		_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test", "")
 		require.NoError(t, err)
 
 		// We add the patch version to the expected torch version
@@ -603,7 +603,7 @@ predict: predict.py:Predictor
 		}
 		expected := fmt.Sprintf(`#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
-FROM r8.im/cog-base:base0.0.1-cuda11.8-python3.11-torch%s
+FROM r8.im/cog-base:cuda11.8-python3.11-torch%s
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY `+gen.relativeTmpDir+`/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
@@ -650,12 +650,12 @@ predict: predict.py:Predictor
 	gen, err := NewGenerator(conf, tmpDir)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test", "")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
-FROM r8.im/cog-base:base0.0.1-cuda11.8-python3.12-torch2.3.1
+FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
@@ -701,12 +701,12 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	gen.SetStrip(true)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test", "")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
-FROM r8.im/cog-base:base0.0.1-cuda11.8-python3.12-torch2.3.1
+FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"

@@ -10,23 +10,26 @@ import (
 
 func TestBaseImageName(t *testing.T) {
 	for _, tt := range []struct {
-		cuda     string
-		python   string
-		torch    string
-		expected string
+		cuda             string
+		python           string
+		torch            string
+		baseImageVersion string
+		expected         string
 	}{
-		{"", "3.8", "",
-			"r8.im/cog-base:base0.0.1-python3.8"},
-		{"", "3.8", "2.1",
-			"r8.im/cog-base:base0.0.1-python3.8-torch2.1.2"},
-		{"12.1", "3.8", "",
-			"r8.im/cog-base:base0.0.1-cuda12.1-python3.8"},
-		{"12.1", "3.8", "2.1",
-			"r8.im/cog-base:base0.0.1-cuda12.1-python3.8-torch2.1.2"},
-		{"12.1", "3.8", "2.1",
+		{"", "3.8", "", "",
+			"r8.im/cog-base:python3.8"},
+		{"", "3.8", "2.1", "",
+			"r8.im/cog-base:python3.8-torch2.1.2"},
+		{"12.1", "3.8", "", "",
+			"r8.im/cog-base:cuda12.1-python3.8"},
+		{"12.1", "3.8", "2.1", "",
+			"r8.im/cog-base:cuda12.1-python3.8-torch2.1.2"},
+		{"12.1", "3.8", "2.1", "",
+			"r8.im/cog-base:cuda12.1-python3.8-torch2.1.2"},
+		{"12.1", "3.8", "2.1", "0.0.1",
 			"r8.im/cog-base:base0.0.1-cuda12.1-python3.8-torch2.1.2"},
 	} {
-		actual := BaseImageName(tt.cuda, tt.python, tt.torch)
+		actual := BaseImageName(tt.cuda, tt.python, tt.torch, tt.baseImageVersion)
 		require.Equal(t, tt.expected, actual)
 	}
 }
@@ -36,6 +39,7 @@ func TestGenerateDockerfile(t *testing.T) {
 		"12.1",
 		"3.8",
 		"2.1.0",
+		"",
 	)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfile()
@@ -44,8 +48,8 @@ func TestGenerateDockerfile(t *testing.T) {
 }
 
 func TestBaseImageNameWithVersionModifier(t *testing.T) {
-	actual := BaseImageName("12.1", "3.8", "2.0.1+cu118")
-	require.Equal(t, "r8.im/cog-base:base0.0.1-cuda12.1-python3.8-torch2.0.1", actual)
+	actual := BaseImageName("12.1", "3.8", "2.0.1+cu118", "")
+	require.Equal(t, "r8.im/cog-base:cuda12.1-python3.8-torch2.0.1", actual)
 }
 
 func TestBaseImageConfigurationExists(t *testing.T) {
@@ -71,7 +75,7 @@ func TestIsVersionCompatible(t *testing.T) {
 }
 
 func TestPythonPackages(t *testing.T) {
-	generator, err := NewBaseImageGenerator("12.1", "3.9", "2.1.0")
+	generator, err := NewBaseImageGenerator("12.1", "3.9", "2.1.0", "")
 	require.NoError(t, err)
 	pkgs := generator.pythonPackages()
 	require.Truef(t, reflect.DeepEqual(pkgs, []string{

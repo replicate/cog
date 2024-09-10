@@ -28,7 +28,7 @@ const bundledSchemaPy = ".cog/schema.py"
 // Build a Cog model from a config
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
-func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string, useCogBaseImage *bool, strip bool) error {
+func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string, useCogBaseImage *bool, strip bool, baseImageVersion string) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 
 	// remove bundled schema files that may be left from previous builds
@@ -62,14 +62,14 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}
 
 		if generator.IsUsingCogBaseImage() {
-			cogBaseImageName, err = generator.BaseImage()
+			cogBaseImageName, err = generator.BaseImage("")
 			if err != nil {
 				return fmt.Errorf("Failed to get cog base image name: %s", err)
 			}
 		}
 
 		if separateWeights {
-			weightsDockerfile, runnerDockerfile, dockerignore, err := generator.GenerateModelBaseWithSeparateWeights(imageName)
+			weightsDockerfile, runnerDockerfile, dockerignore, err := generator.GenerateModelBaseWithSeparateWeights(imageName, "")
 			if err != nil {
 				return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 			}
@@ -100,7 +100,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 				return fmt.Errorf("Failed to build runner Docker image: %w", err)
 			}
 		} else {
-			dockerfileContents, err := generator.GenerateDockerfileWithoutSeparateWeights()
+			dockerfileContents, err := generator.GenerateDockerfileWithoutSeparateWeights(baseImageVersion)
 			if err != nil {
 				return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 			}
@@ -225,7 +225,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	return nil
 }
 
-func BuildBase(cfg *config.Config, dir string, useCudaBaseImage string, useCogBaseImage *bool, progressOutput string) (string, error) {
+func BuildBase(cfg *config.Config, dir string, useCudaBaseImage string, useCogBaseImage *bool, progressOutput string, baseImageVersion string) (string, error) {
 	// TODO: better image management so we don't eat up disk space
 	// https://github.com/replicate/cog/issues/80
 	imageName := config.BaseDockerImageName(dir)
@@ -246,7 +246,7 @@ func BuildBase(cfg *config.Config, dir string, useCudaBaseImage string, useCogBa
 		generator.SetUseCogBaseImage(*useCogBaseImage)
 	}
 
-	dockerfileContents, err := generator.GenerateModelBase()
+	dockerfileContents, err := generator.GenerateModelBase(baseImageVersion)
 	if err != nil {
 		return "", fmt.Errorf("Failed to generate Dockerfile: %w", err)
 	}

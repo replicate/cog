@@ -19,6 +19,7 @@ var (
 	baseImageCUDAVersion   string
 	baseImagePythonVersion string
 	baseImageTorchVersion  string
+	baseImageVersion       string
 )
 
 func NewBaseImageRootCommand() (*cobra.Command, error) {
@@ -120,7 +121,7 @@ func newBaseImageBuildCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			baseImageName := dockerfile.BaseImageName(baseImageCUDAVersion, baseImagePythonVersion, baseImageTorchVersion)
+			baseImageName := dockerfile.BaseImageName(baseImageCUDAVersion, baseImagePythonVersion, baseImageTorchVersion, baseImageVersion)
 
 			err = docker.Build(cwd, dockerfileContents, baseImageName, []string{}, buildNoCache, buildProgressOutput, config.BuildSourceEpochTimestamp)
 			if err != nil {
@@ -136,10 +137,17 @@ func newBaseImageBuildCommand() *cobra.Command {
 	return cmd
 }
 
+func addBaseImageVersionFlag(cmd *cobra.Command) {
+	const baseImageVersionFlag = "base-image-version"
+	cmd.Flags().StringVar(&baseImageVersion, baseImageVersionFlag, "", "Base image version")
+	_ = cmd.Flags().MarkHidden(baseImageVersionFlag)
+}
+
 func addBaseImageFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&baseImageCUDAVersion, "cuda", "", "CUDA version")
 	cmd.Flags().StringVar(&baseImagePythonVersion, "python", "", "Python version")
 	cmd.Flags().StringVar(&baseImageTorchVersion, "torch", "", "Torch version")
+	addBaseImageVersionFlag(cmd)
 	addBuildTimestampFlag(cmd)
 }
 
@@ -148,5 +156,6 @@ func baseImageGeneratorFromFlags() (*dockerfile.BaseImageGenerator, error) {
 		baseImageCUDAVersion,
 		baseImagePythonVersion,
 		baseImageTorchVersion,
+		baseImageVersion,
 	)
 }

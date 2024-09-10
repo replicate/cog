@@ -13,7 +13,6 @@ const BaseImageRegistry = "r8.im"
 const MinimumCUDAVersion = "11.6"
 const MinimumPythonVersion = "3.8"
 const MinimumTorchVersion = "1.13.1"
-const BaseImageVersion = "0.0.1"
 
 var (
 	baseImageSystemPackages = []string{
@@ -66,15 +65,17 @@ type AvailableBaseImageConfigurations struct {
 }
 
 type BaseImageConfiguration struct {
-	CUDAVersion   string `json:"cuda_version" yaml:"cuda_version"`
-	PythonVersion string `json:"python_version" yaml:"python_version"`
-	TorchVersion  string `json:"torch_version" yaml:"torch_version"`
+	CUDAVersion      string `json:"cuda_version" yaml:"cuda_version"`
+	PythonVersion    string `json:"python_version" yaml:"python_version"`
+	TorchVersion     string `json:"torch_version" yaml:"torch_version"`
+	BaseImageVersion string `json:"base_image_version" yaml:"base_image_version"`
 }
 
 type BaseImageGenerator struct {
-	cudaVersion   string
-	pythonVersion string
-	torchVersion  string
+	cudaVersion      string
+	pythonVersion    string
+	torchVersion     string
+	baseImageVersion string
 }
 
 func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
@@ -85,7 +86,7 @@ func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
 		Tag       string `json:"image_tag,omitempty" yaml:"image_tag,omitempty"`
 	}
 
-	rawName := BaseImageName(b.CUDAVersion, b.PythonVersion, b.TorchVersion)
+	rawName := BaseImageName(b.CUDAVersion, b.PythonVersion, b.TorchVersion, b.BaseImageVersion)
 	rawName = strings.TrimPrefix(rawName, BaseImageRegistry+"/")
 	split := strings.Split(rawName, ":")
 	if len(split) != 2 {
@@ -159,10 +160,10 @@ func BaseImageConfigurations() []BaseImageConfiguration {
 	return configs
 }
 
-func NewBaseImageGenerator(cudaVersion string, pythonVersion string, torchVersion string) (*BaseImageGenerator, error) {
+func NewBaseImageGenerator(cudaVersion string, pythonVersion string, torchVersion string, baseImageVersion string) (*BaseImageGenerator, error) {
 	valid, cudaVersion, pythonVersion, torchVersion := BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion)
 	if valid {
-		return &BaseImageGenerator{cudaVersion, pythonVersion, torchVersion}, nil
+		return &BaseImageGenerator{cudaVersion, pythonVersion, torchVersion, baseImageVersion}, nil
 	}
 	printNone := func(s string) string {
 		if s == "" {
@@ -186,7 +187,7 @@ func (g *BaseImageGenerator) GenerateDockerfile() (string, error) {
 	useCogBaseImage := false
 	generator.useCogBaseImage = &useCogBaseImage
 
-	dockerfile, err := generator.generateInitialSteps()
+	dockerfile, err := generator.generateInitialSteps(g.baseImageVersion)
 	if err != nil {
 		return "", err
 	}
@@ -253,10 +254,13 @@ func (g *BaseImageGenerator) runStatements() []config.RunItem {
 	return []config.RunItem{}
 }
 
-func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string) string {
+func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string, baseImageVersion string) string {
 	_, cudaVersion, pythonVersion, torchVersion = BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion)
 
-	components := []string{"base" + BaseImageVersion}
+	components := []string{}
+	if baseImageVersion != "" {
+		components = append(components, "base"+baseImageVersion)
+	}
 	if cudaVersion != "" {
 		components = append(components, "cuda"+version.StripPatch(cudaVersion))
 	}

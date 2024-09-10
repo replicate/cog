@@ -26,6 +26,7 @@ func newDebugCommand() *cobra.Command {
 	addDockerfileFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
 	addBuildTimestampFlag(cmd)
+	addBaseImageVersionFlag(cmd)
 	cmd.Flags().StringVarP(&imageName, "image-name", "", "", "The image name to use for the generated Dockerfile")
 
 	return cmd
@@ -58,7 +59,7 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 			imageName = config.DockerImageName(projectDir)
 		}
 
-		weightsDockerfile, RunnerDockerfile, dockerignore, err := generator.GenerateModelBaseWithSeparateWeights(imageName)
+		weightsDockerfile, RunnerDockerfile, dockerignore, err := generator.GenerateModelBaseWithSeparateWeights(imageName, baseImageVersion)
 		if err != nil {
 			return err
 		}
@@ -67,7 +68,7 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 		console.Output(fmt.Sprintf("=== Runner Dockerfile contents:\n%s\n===\n", RunnerDockerfile))
 		console.Output(fmt.Sprintf("=== DockerIgnore contents:\n%s===\n", dockerignore))
 	} else {
-		dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
+		dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights(baseImageVersion)
 		if err != nil {
 			return err
 		}
