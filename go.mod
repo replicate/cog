@@ -22,7 +22,7 @@ require (
 	github.com/xeonx/timeago v1.0.0-rc5
 	golang.org/x/exp v0.0.0-20240103183307-be819d1f06fc
 	golang.org/x/sys v0.25.0
-	golang.org/x/term v0.22.0
+	golang.org/x/term v0.24.0
 	golang.org/x/tools v0.23.0
 	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools/gotestsum v1.12.0
