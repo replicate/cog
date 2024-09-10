@@ -13,6 +13,7 @@ const BaseImageRegistry = "r8.im"
 const MinimumCUDAVersion = "11.6"
 const MinimumPythonVersion = "3.8"
 const MinimumTorchVersion = "1.13.1"
+const BaseImageVersion = "0.0.1"
 
 var (
 	baseImageSystemPackages = []string{
@@ -255,7 +256,7 @@ func (g *BaseImageGenerator) runStatements() []config.RunItem {
 func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string) string {
 	_, cudaVersion, pythonVersion, torchVersion = BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion)
 
-	components := []string{}
+	components := []string{"base" + BaseImageVersion}
 	if cudaVersion != "" {
 		components = append(components, "cuda"+version.StripPatch(cudaVersion))
 	}
