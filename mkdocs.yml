@@ -5,6 +5,7 @@ nav:
   - README: README.md
   - Getting Started: getting-started.md
   - Using your own model: getting-started-own-model.md
+  - Deploy your model: deploy.md
   - YAML spec: yaml.md
   - Prediction API: python.md
   - Training API: training.md
@@ -12,6 +13,7 @@ nav:
   - Environment variables: environment.md
   - Private registry: private-package-registry.md
   - Notebooks: notebooks.md
+  - Windows: wsl2/wsl2.md
   - Contributing: CONTRIBUTING.md
   - License: https://github.com/replicate/cog/blob/main/LICENSE
 
