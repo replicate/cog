@@ -43,7 +43,7 @@ coverage.xml
 .hypothesis
 `
 const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
-const CFlags = "ENV CFLAGS=\"-O3 -march=native -funroll-loops -fno-strict-aliasing -flto -mtune=native -S\""
+const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 
 type Generator struct {
 	Config *config.Config
@@ -376,7 +376,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 RUN curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash && \
 	git clone https://github.com/momo-lab/pyenv-install-latest.git "$(pyenv root)"/plugins/pyenv-install-latest && \
 	export PYTHON_CONFIGURE_OPTS='--enable-optimizations --with-lto' && \
-	export PYTHON_CFLAGS='-march=native -mtune=native -O3' && \
+	export PYTHON_CFLAGS='-O3' && \
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
 	pip install --no-cache-dir "wheel<1"`, py, py) + `
