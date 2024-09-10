@@ -100,6 +100,7 @@ func NewGenerator(config *config.Config, dir string) (*Generator, error) {
 		useCudaBaseImage: true,
 		useCogBaseImage:  nil,
 		strip:            false,
+		precompile:       false,
 	}, nil
 }
 
@@ -153,13 +154,18 @@ func (g *Generator) generateInitialSteps() (string, error) {
 			return "", err
 		}
 
-		return joinStringsWithoutLineSpace([]string{
+		steps := []string{
 			"#syntax=docker/dockerfile:1.4",
 			"FROM " + baseImage,
 			aptInstalls,
 			pipInstalls,
-			runCommands,
-		}), nil
+		}
+		if g.precompile {
+			steps = append(steps, PrecompilePythonCommand)
+		}
+		steps = append(steps, runCommands)
+
+		return joinStringsWithoutLineSpace(steps), nil
 	}
 
 	pipInstallStage, err := g.pipInstallStage()
