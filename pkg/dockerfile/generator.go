@@ -42,6 +42,7 @@ coverage.xml
 .pytest_cache
 .hypothesis
 `
+const LDConfigCacheBuildCommand = "RUN find / -type f -name \"*python*.so\" -printf \"%h\\n\" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig"
 const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
 const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 
@@ -170,6 +171,7 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		installPython,
 		aptInstalls,
 		g.copyPipPackagesFromInstallStage(),
+		LDConfigCacheBuildCommand,
 		runCommands,
 	}), nil
 }
