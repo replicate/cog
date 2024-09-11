@@ -42,6 +42,7 @@ coverage.xml
 .pytest_cache
 .hypothesis
 `
+const PythonCmd = "CMD [\"python\", \"-B\", \"--check-hash-based-pycs\", \"never\", \"-m\", \"cog.server.http\"]"
 const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
 const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 
@@ -183,7 +184,7 @@ func (g *Generator) GenerateModelBase() (string, error) {
 		initialSteps,
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
-		`CMD ["python", "-m", "cog.server.http"]`,
+		PythonCmd,
 	}, "\n"), nil
 }
 
@@ -235,7 +236,7 @@ func (g *Generator) GenerateModelBaseWithSeparateWeights(imageName string) (weig
 	base = append(base,
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
-		`CMD ["python", "-m", "cog.server.http"]`,
+		PythonCmd,
 		`COPY . /src`,
 	)
 
@@ -300,7 +301,8 @@ func (g *Generator) preamble() string {
 	return `ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-ENV NVIDIA_DRIVER_CAPABILITIES=all`
+ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV PYTHONDONTWRITEBYTECODE=1`
 }
 
 func (g *Generator) installTini() string {

@@ -107,10 +107,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV PYTHONDONTWRITEBYTECODE=1
 ` + testTini() + `COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, actual)
@@ -140,6 +141,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV PYTHONDONTWRITEBYTECODE=1
 ` + testTini() + testInstallPython("3.12") + "RUN rm -rf /usr/bin/python3 && ln -s `realpath \\`pyenv which python\\`` /usr/bin/python3 && chmod +x /usr/bin/python3" + `
 RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
     cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages; \
@@ -147,7 +149,7 @@ RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
     pyenv rehash
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, actual)
@@ -190,12 +192,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV PYTHONDONTWRITEBYTECODE=1
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-m", "cog.server.http"]
 COPY . /src`
 	require.Equal(t, expected, actual)
 
@@ -244,6 +247,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV PYTHONDONTWRITEBYTECODE=1
 ` + testTini() +
 		testInstallPython("3.12") + "RUN rm -rf /usr/bin/python3 && ln -s `realpath \\`pyenv which python\\`` /usr/bin/python3 && chmod +x /usr/bin/python3" + `
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
@@ -254,7 +258,7 @@ RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, actual)
@@ -294,12 +298,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV PYTHONDONTWRITEBYTECODE=1
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-m", "cog.server.http"]
 COPY . /src`
 	require.Equal(t, expected, actual)
 
@@ -406,6 +411,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV PYTHONDONTWRITEBYTECODE=1
 ` + testTini() +
 		testInstallPython("3.12") + `RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /usr/bin/python3 && chmod +x /usr/bin/python3" + `
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
@@ -419,7 +425,7 @@ COPY --from=weights --link /src/models /src/models
 COPY --from=weights --link /src/root-large /src/root-large
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, runnerDockerfile)
@@ -484,10 +490,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV PYTHONDONTWRITEBYTECODE=1
 ` + testTini() + `COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, actual)
@@ -515,7 +522,7 @@ FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:python3.12
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, actual)
@@ -557,7 +564,7 @@ ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-m", "cog.server.http"]
 COPY . /src`
 	require.Equal(t, expected, actual)
 
@@ -612,7 +619,7 @@ ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-m", "cog.server.http"]
 COPY . /src`, expectedTorchVersion)
 
 		require.Equal(t, expected, actual)
@@ -664,7 +671,7 @@ ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, actual)
@@ -715,7 +722,7 @@ ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
-CMD ["python", "-m", "cog.server.http"]
+CMD ["python", "-B", "--check-hash-based-pycs", "never", "-m", "cog.server.http"]
 COPY . /src`
 
 	require.Equal(t, expected, actual)
