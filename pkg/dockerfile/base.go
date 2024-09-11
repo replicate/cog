@@ -31,13 +31,13 @@ var (
 		"libgl1",
 		"libgl1-mesa-glx",
 		"libglib2.0-0",
+		"libopencv-dev",
 		"libsm6",
 		"libsndfile1",
 		"libssl-dev",
 		"libunistring-dev",
 		"libxext6",
 		"libxrender1",
-		"python3-opencv",
 		"sox",
 		"unzip",
 		"wget",
@@ -112,29 +112,28 @@ func BaseImageConfigurations() []BaseImageConfiguration {
 	// Torch configs
 	for _, compat := range config.TorchCompatibilityMatrix {
 		for _, python := range compat.Pythons {
+			if !version.GreaterOrEqual(python, MinimumPythonVersion) || !version.GreaterOrEqual(compat.Torch, MinimumTorchVersion) {
+				continue
+			}
 
 			if compat.CUDA == nil {
 				configs = append(configs, BaseImageConfiguration{
 					PythonVersion: python,
 					TorchVersion:  compat.Torch,
 				})
-				continue
-			}
-
-			cuda := *compat.CUDA
-			torch := compat.Torch
-			conf := BaseImageConfiguration{
-				CUDAVersion:   cuda,
-				PythonVersion: python,
-				TorchVersion:  torch,
-			}
-
-			if (version.GreaterOrEqual(cuda, MinimumCUDAVersion)) &&
-				version.GreaterOrEqual(python, MinimumPythonVersion) &&
-				version.GreaterOrEqual(compat.Torch, MinimumTorchVersion) {
-				configs = append(configs, conf)
-				pythonVersionsSet[python] = true
-				cudaVersionsSet[cuda] = true
+			} else {
+				cuda := *compat.CUDA
+				torch := compat.Torch
+				conf := BaseImageConfiguration{
+					CUDAVersion:   cuda,
+					PythonVersion: python,
+					TorchVersion:  torch,
+				}
+				if version.GreaterOrEqual(cuda, MinimumCUDAVersion) {
+					configs = append(configs, conf)
+					pythonVersionsSet[python] = true
+					cudaVersionsSet[cuda] = true
+				}
 			}
 		}
 	}
@@ -213,7 +212,10 @@ func (g *BaseImageGenerator) makeConfig() (*config.Config, error) {
 
 func (g *BaseImageGenerator) pythonPackages() []string {
 	if g.torchVersion != "" {
-		pkgs := []string{"torch==" + g.torchVersion}
+		pkgs := []string{
+			"torch==" + g.torchVersion,
+			"opencv-python==4.10.0.84",
+		}
 
 		// Find torchvision compatibility.
 		for _, compat := range config.TorchCompatibilityMatrix {

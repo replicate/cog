@@ -43,6 +43,8 @@ coverage.xml
 .hypothesis
 `
 const LDConfigCacheBuildCommand = "RUN find / -type f -name \"*python*.so\" -printf \"%h\\n\" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig"
+const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
+const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 
 type Generator struct {
 	Config *config.Config
@@ -54,6 +56,7 @@ type Generator struct {
 
 	useCudaBaseImage bool
 	useCogBaseImage  *bool
+	strip            bool
 
 	// absolute path to tmpDir, a directory that will be cleaned up
 	tmpDir string
@@ -95,6 +98,7 @@ func NewGenerator(config *config.Config, dir string) (*Generator, error) {
 		fileWalker:       filepath.Walk,
 		useCudaBaseImage: true,
 		useCogBaseImage:  nil,
+		strip:            false,
 	}, nil
 }
 
@@ -114,6 +118,10 @@ func (g *Generator) IsUsingCogBaseImage() bool {
 		return *useCogBaseImage
 	}
 	return true
+}
+
+func (g *Generator) SetStrip(strip bool) {
+	g.strip = strip
 }
 
 func (g *Generator) generateInitialSteps() (string, error) {
@@ -139,6 +147,7 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		if err != nil {
 			return "", err
 		}
+
 		return joinStringsWithoutLineSpace([]string{
 			"#syntax=docker/dockerfile:1.4",
 			"FROM " + baseImage,
@@ -365,13 +374,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 	git \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
-` + fmt.Sprintf(`RUN curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash && \
+` + fmt.Sprintf(`
+RUN curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash && \
 	git clone https://github.com/momo-lab/pyenv-install-latest.git "$(pyenv root)"/plugins/pyenv-install-latest && \
 	export PYTHON_CONFIGURE_OPTS='--enable-optimizations --with-lto' && \
-	export PYTHON_CFLAGS='-march=native -mtune=native -O3' && \
+	export PYTHON_CFLAGS='-O3' && \
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
-	pip install "wheel<1"`, py, py), nil
+	pip install --no-cache-dir "wheel<1"`, py, py) + `
+RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /usr/bin/python3 && chmod +x /usr/bin/python3", nil
 	// for sitePackagesLocation, kind of need to determine which specific version latest is (3.8 -> 3.8.17 or 3.8.18)
 	// install-latest essentially does pyenv install --list | grep $py | tail -1
 	// there are many bad options, but a symlink to $(pyenv prefix) is the least bad one
@@ -394,7 +405,11 @@ func (g *Generator) installCog() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	lines = append(lines, fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep %s", containerPath))
+	pipInstallLine := fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep %s", containerPath)
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
+	lines = append(lines, CFlags, pipInstallLine, "ENV CFLAGS=")
 	return strings.Join(lines, "\n"), nil
 }
 
@@ -425,9 +440,15 @@ func (g *Generator) pipInstalls() (string, error) {
 		return "", err
 	}
 
+	pipInstallLine := "RUN pip install --no-cache-dir -r " + containerPath
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
 	return strings.Join([]string{
 		copyLine[0],
-		"RUN pip install -r " + containerPath,
+		CFlags,
+		pipInstallLine,
+		"ENV CFLAGS=",
 	}, "\n"), nil
 }
 
@@ -463,11 +484,19 @@ func (g *Generator) pipInstallStage() (string, error) {
 	if buildStageDeps != "" {
 		fromLine = fromLine + "\nRUN " + buildStageDeps
 	}
+
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep -r " + containerPath
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
+
 	lines := []string{
 		fromLine,
 		installCog,
 		copyLine[0],
-		"RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r " + containerPath,
+		CFlags,
+		pipInstallLine,
+		"ENV CFLAGS=",
 	}
 	return strings.Join(lines, "\n"), nil
 }
