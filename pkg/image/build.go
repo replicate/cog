@@ -62,7 +62,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}
 
 		if generator.IsUsingCogBaseImage() {
-			cogBaseImageName, err = generator.BaseImage()
+			cogBaseImageName, _, err = generator.BaseImage()
 			if err != nil {
 				return fmt.Errorf("Failed to get cog base image name: %s", err)
 			}

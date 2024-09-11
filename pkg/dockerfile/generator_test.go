@@ -46,7 +46,7 @@ ENV CFLAGS=`, relativeTmpDir, wheel, wheel, wheel)
 }
 
 func testPipInstallStage(relativeTmpDir string) string {
-	return `FROM python:3.12 as deps
+	return `COPY --from=python:3.12 / /
 ` + testInstallCog(relativeTmpDir)
 }
 
@@ -102,7 +102,7 @@ predict: predict.py:Predictor
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
 ` + testPipInstallStage(gen.relativeTmpDir) + `
-FROM python:3.12-slim
+COPY --from=python:3.12-slim / /
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
@@ -135,7 +135,7 @@ predict: predict.py:Predictor
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
 ` + testPipInstallStage(gen.relativeTmpDir) + `
-FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
+COPY --from=nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 / /
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
@@ -185,7 +185,7 @@ COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep -r /tmp/requirements.txt
 ENV CFLAGS=
-FROM python:3.12-slim
+COPY --from=python:3.12-slim / /
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
@@ -239,7 +239,7 @@ COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep -r /tmp/requirements.txt
 ENV CFLAGS=
-FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
+COPY --from=nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 / /
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
@@ -289,7 +289,7 @@ build:
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
 ` + testPipInstallStage(gen.relativeTmpDir) + `
-FROM python:3.12-slim
+COPY --from=python:3.12-slim / /
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
@@ -401,7 +401,7 @@ COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep -r /tmp/requirements.txt
 ENV CFLAGS=
-FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
+COPY --from=nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 / /
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
@@ -479,7 +479,7 @@ predict: predict.py:Predictor
 
 	expected := `#syntax=docker/dockerfile:1.4
 ` + testPipInstallStage(gen.relativeTmpDir) + `
-FROM python:3.12-slim
+COPY --from=python:3.12-slim / /
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin

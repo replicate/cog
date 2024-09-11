@@ -123,11 +123,12 @@ func (g *Generator) SetStrip(strip bool) {
 	g.strip = strip
 }
 
-func (g *Generator) generateInitialSteps() (string, error) {
-	baseImage, err := g.BaseImage()
+func (g *Generator) generateInitialSteps(extraImageStep string) (string, error) {
+	baseImageStep, err := g.BaseImageStep()
 	if err != nil {
 		return "", err
 	}
+
 	installPython, err := g.installPython()
 	if err != nil {
 		return "", err
@@ -141,41 +142,31 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		return "", err
 	}
 
+	steps := []string{"#syntax=docker/dockerfile:1.4"}
+	if extraImageStep != "" {
+		steps = append(steps, extraImageStep)
+	}
 	if g.IsUsingCogBaseImage() {
 		pipInstalls, err := g.pipInstalls()
 		if err != nil {
 			return "", err
 		}
+		steps = append(steps, baseImageStep, aptInstalls, pipInstalls, runCommands)
 
-		return joinStringsWithoutLineSpace([]string{
-			"#syntax=docker/dockerfile:1.4",
-			"FROM " + baseImage,
-			aptInstalls,
-			pipInstalls,
-			runCommands,
-		}), nil
+		return joinStringsWithoutLineSpace(steps), nil
 	}
 
 	pipInstallStage, err := g.pipInstallStage()
 	if err != nil {
 		return "", err
 	}
+	steps = append(steps, pipInstallStage, baseImageStep, g.preamble(), g.installTini(), installPython, aptInstalls, g.copyPipPackagesFromInstallStage(), runCommands)
 
-	return joinStringsWithoutLineSpace([]string{
-		"#syntax=docker/dockerfile:1.4",
-		pipInstallStage,
-		"FROM " + baseImage,
-		g.preamble(),
-		g.installTini(),
-		installPython,
-		aptInstalls,
-		g.copyPipPackagesFromInstallStage(),
-		runCommands,
-	}), nil
+	return joinStringsWithoutLineSpace(steps), nil
 }
 
 func (g *Generator) GenerateModelBase() (string, error) {
-	initialSteps, err := g.generateInitialSteps()
+	initialSteps, err := g.generateInitialSteps("")
 	if err != nil {
 		return "", err
 	}
@@ -210,24 +201,12 @@ func (g *Generator) GenerateModelBaseWithSeparateWeights(imageName string) (weig
 	if err != nil {
 		return "", "", "", fmt.Errorf("Failed to generate Dockerfile for model weights files: %w", err)
 	}
-	initialSteps, err := g.generateInitialSteps()
+	initialSteps, err := g.generateInitialSteps("FROM " + imageName + "-weights" + " AS weights")
 	if err != nil {
 		return "", "", "", err
 	}
 
-	// Inject weights base image into initial steps so we can COPY from it
-	base := []string{}
-	initialStepsLines := strings.Split(initialSteps, "\n")
-	for i, line := range initialStepsLines {
-		if strings.HasPrefix(line, "FROM ") {
-			base = append(base, fmt.Sprintf("FROM %s AS %s", imageName+"-weights", "weights"))
-			base = append(base, initialStepsLines[i:]...)
-			break
-		} else {
-			base = append(base, line)
-		}
-	}
-
+	base := strings.Split(initialSteps, "\n")
 	for _, p := range append(g.modelDirs, g.modelFiles...) {
 		base = append(base, "COPY --from=weights --link "+path.Join("/src", p)+" "+path.Join("/src", p))
 	}
@@ -277,11 +256,11 @@ func (g *Generator) Cleanup() error {
 	return nil
 }
 
-func (g *Generator) BaseImage() (string, error) {
+func (g *Generator) BaseImage() (string, bool, error) {
 	if g.IsUsingCogBaseImage() {
 		baseImage, err := g.determineBaseImageName()
 		if err == nil || g.useCogBaseImage != nil {
-			return baseImage, err
+			return baseImage, true, err
 		}
 		console.Warnf("Could not find a suitable base image, continuing without base image support (%v).", err)
 		if g.useCogBaseImage == nil {
@@ -291,9 +270,21 @@ func (g *Generator) BaseImage() (string, error) {
 	}
 
 	if g.Config.Build.GPU && g.useCudaBaseImage {
-		return g.Config.CUDABaseImageTag()
+		cudaBaseImage, err := g.Config.CUDABaseImageTag()
+		return cudaBaseImage, false, err
 	}
-	return "python:" + g.Config.Build.PythonVersion + "-slim", nil
+	return "python:" + g.Config.Build.PythonVersion + "-slim", false, nil
+}
+
+func (g *Generator) BaseImageStep() (string, error) {
+	baseImage, isCogBaseImage, err := g.BaseImage()
+	if err != nil {
+		return "", err
+	}
+	if isCogBaseImage {
+		return "FROM " + baseImage, nil
+	}
+	return "COPY --from=" + baseImage + " / /", nil
 }
 
 func (g *Generator) preamble() string {
@@ -462,7 +453,7 @@ func (g *Generator) pipInstallStage() (string, error) {
 
 	pipStageImage := "python:" + g.Config.Build.PythonVersion
 	if strings.Trim(g.pythonRequirementsContents, "") == "" {
-		return `FROM ` + pipStageImage + ` as deps
+		return `COPY --from=` + pipStageImage + ` / /
 ` + installCog, nil
 	}
 
@@ -473,7 +464,7 @@ func (g *Generator) pipInstallStage() (string, error) {
 	}
 
 	// Not slim, so that we can compile wheels
-	fromLine := `FROM ` + pipStageImage + ` as deps`
+	fromLine := `COPY --from=` + pipStageImage + ` / /`
 	// Sometimes, in order to run `pip install` successfully, some system packages need to be installed
 	// or some other change needs to happen
 	// this is a bodge to support that

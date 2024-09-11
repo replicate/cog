@@ -185,7 +185,7 @@ func (g *BaseImageGenerator) GenerateDockerfile() (string, error) {
 	useCogBaseImage := false
 	generator.useCogBaseImage = &useCogBaseImage
 
-	dockerfile, err := generator.generateInitialSteps()
+	dockerfile, err := generator.generateInitialSteps("")
 	if err != nil {
 		return "", err
 	}

@@ -40,7 +40,7 @@ func TestGenerateDockerfile(t *testing.T) {
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfile()
 	require.NoError(t, err)
-	require.True(t, strings.Contains(dockerfile, "FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04"))
+	require.True(t, strings.Contains(dockerfile, "COPY --from=nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04 / /"))
 }
 
 func TestBaseImageNameWithVersionModifier(t *testing.T) {
