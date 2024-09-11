@@ -726,3 +726,34 @@ COPY . /src`
 torch==2.3.1
 pandas==2.0.3`, string(requirements))
 }
+
+func TestGenerateDoesNotContainDangerousCFlags(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	yaml := `
+build:
+  gpu: true
+  cuda: "11.8"
+  system_packages:
+    - ffmpeg
+    - cowsay
+  python_packages:
+    - torch==2.3.1
+    - pandas==2.0.3
+  run:
+    - "cowsay moo"
+predict: predict.py:Predictor
+`
+	conf, err := config.FromYAML([]byte(yaml))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	gen, err := NewGenerator(conf, tmpDir)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(true)
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	require.NotContains(t, actual, "-march=native")
+	require.NotContains(t, actual, "-mtune=native")
+}
