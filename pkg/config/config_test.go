@@ -718,3 +718,89 @@ torch==2.4.0
 torchvision==2.4.0`
 	require.Equal(t, expected, requirements)
 }
+
+func TestResolveTorchVersionWithTorchVisionDependency(t *testing.T) {
+	config := &Config{
+		Build: &Build{
+			GPU:           true,
+			PythonVersion: "3.8",
+			PythonPackages: []string{
+				"torch",
+				"torchvision==0.19.0+cu121",
+			},
+			CUDA: "12.1",
+		},
+	}
+	err := config.ValidateAndComplete("")
+	require.NoError(t, err)
+	torchVersion, found := config.TorchVersion()
+	require.True(t, found)
+	require.Equal(t, "2.4.0", torchVersion)
+}
+
+func TestResolveTorchVersionWithTorchAudioDependency(t *testing.T) {
+	config := &Config{
+		Build: &Build{
+			GPU:           true,
+			PythonVersion: "3.8",
+			PythonPackages: []string{
+				"torch",
+				"torchaudio==2.4.0",
+			},
+			CUDA: "12.1",
+		},
+	}
+	err := config.ValidateAndComplete("")
+	require.NoError(t, err)
+	torchVersion, found := config.TorchVersion()
+	require.True(t, found)
+	require.Equal(t, "2.4.0", torchVersion)
+}
+
+func TestPythonRequirementsWithTorchvisionVersionModifierStripped(t *testing.T) {
+	tmpDir := t.TempDir()
+	err := os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`torch
+torchvision==0.19.0+cu121`), 0o644)
+	require.NoError(t, err)
+
+	config := &Config{
+		Build: &Build{
+			GPU:                true,
+			PythonVersion:      "3.8",
+			PythonRequirements: "requirements.txt",
+		},
+	}
+	err = config.ValidateAndComplete(tmpDir)
+	require.NoError(t, err)
+
+	requirements, err := config.PythonRequirementsForArch("", "", []string{})
+	require.NoError(t, err)
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.4.0
+torchvision==0.19.0`
+	require.Equal(t, expected, requirements)
+}
+
+func TestPythonRequirementsWithTorchaudio(t *testing.T) {
+	tmpDir := t.TempDir()
+	err := os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`torch
+torchaudio==2.4.0`), 0o644)
+	require.NoError(t, err)
+
+	config := &Config{
+		Build: &Build{
+			GPU:                true,
+			PythonVersion:      "3.8",
+			PythonRequirements: "requirements.txt",
+		},
+	}
+	err = config.ValidateAndComplete(tmpDir)
+	require.NoError(t, err)
+
+	requirements, err := config.PythonRequirementsForArch("", "", []string{})
+	require.NoError(t, err)
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.4.0
+torchaudio==2.4.0`
+	require.Equal(t, expected, requirements)
+}

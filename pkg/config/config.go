@@ -33,6 +33,9 @@ const (
 	MinimumMajorPythonVersion int = 3
 	MinimumMinorPythonVersion int = 8
 	MinimumMajorCudaVersion   int = 11
+	TorchPackageName              = "torch"
+	TorchvisionPackageName        = "torchvision"
+	TorchaudioPackageName         = "torchaudio"
 )
 
 type RunItem struct {
@@ -175,15 +178,46 @@ func (c *Config) CUDABaseImageTag() (string, error) {
 }
 
 func (c *Config) TorchVersion() (string, bool) {
-	return c.pythonPackageVersion("torch")
+	torchVersion, found := c.pythonPackageVersion(TorchPackageName)
+	if !found {
+		// Can we determine the torch version based on other packages related to it?
+		tvVersion, tvVersionFound := c.TorchvisionVersion()
+		tvVersion = version.StripModifier(tvVersion)
+		if tvVersionFound {
+			for _, compat := range TorchCompatibilityMatrix {
+				if version.Equal(tvVersion, version.StripModifier(compat.Torchvision)) {
+					return compat.Torch, true
+				}
+			}
+		}
+
+		taVersion, taVersionFound := c.TorchaudioVersion()
+		taVersion = version.StripModifier(taVersion)
+		if taVersionFound {
+			for _, compat := range TorchCompatibilityMatrix {
+				if version.Equal(taVersion, version.StripModifier(compat.Torchaudio)) {
+					return compat.Torch, true
+				}
+			}
+		}
+	}
+	return torchVersion, found
 }
 
 func (c *Config) TorchvisionVersion() (string, bool) {
-	return c.pythonPackageVersion("torchvision")
+	tvVersion, found := c.pythonPackageVersion(TorchvisionPackageName)
+	if found {
+		tvVersion = version.StripModifier(tvVersion)
+	}
+	return tvVersion, found
 }
 
 func (c *Config) TorchaudioVersion() (string, bool) {
-	return c.pythonPackageVersion("torchaudio")
+	taVersion, found := c.pythonPackageVersion(TorchaudioPackageName)
+	if found {
+		taVersion = version.StripModifier(taVersion)
+	}
+	return taVersion, found
 }
 
 func (c *Config) TensorFlowVersion() (string, bool) {
@@ -380,8 +414,12 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage string, findLinksList []string, extraIndexURLs []string, err error) {
 	name, version, findLinksList, extraIndexURLs, err := splitPinnedPythonRequirement(pkg)
 	if err != nil {
-		// It's not pinned, so just return the line verbatim
-		return pkg, []string{}, []string{}, nil
+		// It's not pinned, so just return the line verbatim, unless its one of our special packages
+		if pkg == TorchPackageName || pkg == TorchvisionPackageName || pkg == TorchaudioPackageName {
+			name = pkg
+		} else {
+			return pkg, []string{}, []string{}, nil
+		}
 	}
 	if len(extraIndexURLs) > 0 {
 		return name + "==" + version, findLinksList, extraIndexURLs, nil
@@ -398,7 +436,11 @@ func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage s
 			}
 		}
 		// There is no CPU case for tensorflow because the default package is just the CPU package, so no transformation of version is needed
-	case "torch":
+	case TorchPackageName:
+		torchVersion, found := c.TorchVersion()
+		if found {
+			version = torchVersion
+		}
 		if c.Build.GPU {
 			name, version, findLinks, extraIndexURL, err = torchGPUPackage(version, c.Build.CUDA)
 			if err != nil {
@@ -410,7 +452,11 @@ func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage s
 				return "", nil, nil, err
 			}
 		}
-	case "torchvision":
+	case TorchvisionPackageName:
+		tvVersion, found := c.TorchvisionVersion()
+		if found {
+			version = tvVersion
+		}
 		if c.Build.GPU {
 			name, version, findLinks, extraIndexURL, err = torchvisionGPUPackage(version, c.Build.CUDA)
 			if err != nil {
@@ -418,6 +464,22 @@ func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage s
 			}
 		} else {
 			name, version, findLinks, extraIndexURL, err = torchvisionCPUPackage(version, goos, goarch)
+			if err != nil {
+				return "", nil, nil, err
+			}
+		}
+	case TorchaudioPackageName:
+		taVersion, found := c.TorchaudioVersion()
+		if found {
+			version = taVersion
+		}
+		if c.Build.GPU {
+			name, version, findLinks, extraIndexURL, err = torchaudioGPUPackage(version, c.Build.CUDA)
+			if err != nil {
+				return "", nil, nil, err
+			}
+		} else {
+			name, version, findLinks, extraIndexURL, err = torchaudioCPUPackage(version, goos, goarch)
 			if err != nil {
 				return "", nil, nil, err
 			}

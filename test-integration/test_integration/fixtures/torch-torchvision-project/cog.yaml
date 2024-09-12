@@ -1,0 +1,7 @@
+build:
+  gpu: true
+  python_version: "3.9"
+  python_packages:
+    - "torch"
+    - "torchvision==0.19.0+cu121"
+predict: "predict.py:Predictor"
