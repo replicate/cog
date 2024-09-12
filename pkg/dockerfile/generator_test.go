@@ -108,6 +108,7 @@ ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
+RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -145,6 +146,7 @@ RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
     cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages; \
     cp -rf /dep/bin/* $(pyenv prefix)/bin; \
     pyenv rehash
+RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -192,6 +194,7 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
+RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
@@ -251,6 +254,7 @@ RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
     cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages; \
     cp -rf /dep/bin/* $(pyenv prefix)/bin; \
     pyenv rehash
+RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
@@ -296,6 +300,7 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
+RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
@@ -413,6 +418,7 @@ RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
     cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages; \
     cp -rf /dep/bin/* $(pyenv prefix)/bin; \
     pyenv rehash
+RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 RUN cowsay moo
 COPY --from=weights --link /src/checkpoints /src/checkpoints
 COPY --from=weights --link /src/models /src/models
@@ -485,6 +491,7 @@ ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
+RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -727,6 +734,37 @@ torch==2.3.1
 pandas==2.0.3`, string(requirements))
 }
 
+func TestGenerateDoesNotContainDangerousCFlags(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	yaml := `
+build:
+  gpu: true
+  cuda: "11.8"
+  system_packages:
+    - ffmpeg
+    - cowsay
+  python_packages:
+    - torch==2.3.1
+    - pandas==2.0.3
+  run:
+    - "cowsay moo"
+predict: predict.py:Predictor
+`
+	conf, err := config.FromYAML([]byte(yaml))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	gen, err := NewGenerator(conf, tmpDir)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(true)
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	require.NotContains(t, actual, "-march=native")
+	require.NotContains(t, actual, "-mtune=native")
+}
+  
 func TestGenerateWithPrecompile(t *testing.T) {
 	tmpDir := t.TempDir()
 
