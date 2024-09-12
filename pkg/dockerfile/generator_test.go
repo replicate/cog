@@ -764,7 +764,7 @@ predict: predict.py:Predictor
 	require.NotContains(t, actual, "-march=native")
 	require.NotContains(t, actual, "-mtune=native")
 }
-  
+
 func TestGenerateWithPrecompile(t *testing.T) {
 	tmpDir := t.TempDir()
 
