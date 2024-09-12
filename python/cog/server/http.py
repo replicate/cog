@@ -196,7 +196,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
 
             @app.put(
                 "/trainings/{training_id}",
-                response_model=PredictionResponse,
+                response_model=TrainingResponse,
                 response_model_exclude_unset=True,
             )
             def train_idempotent(
