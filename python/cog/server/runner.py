@@ -3,12 +3,13 @@ import traceback
 from abc import ABC, abstractmethod
 from concurrent.futures import Future
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Generic, List, Literal, Optional, TypeVar
+from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar
 
 import requests
 import structlog
 from attrs import define, field
 from requests.adapters import HTTPAdapter
+from typing_extensions import Literal  # Python 3.7
 from urllib3.util.retry import Retry
 
 from .. import schema

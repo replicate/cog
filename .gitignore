@@ -10,6 +10,7 @@ dist
 pkg/dockerfile/embed/*.whl
 # Used by a vim plugin (projectionist)
 .projections.json
+.tox/
 .venv/
 .idea/
 .DS_Store

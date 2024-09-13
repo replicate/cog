@@ -167,8 +167,8 @@ foo==1.0.0`), 0o644)
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
 	expected := `--find-links https://download.pytorch.org/whl/torch_stable.html
-torch==1.7.1+cu110
-torchvision==0.8.2+cu110
+torch==1.7.1
+torchvision==0.8.2
 torchaudio==0.7.2
 foo==1.0.0`
 	require.Equal(t, expected, requirements)
@@ -197,8 +197,8 @@ foo==1.0.0`), 0o644)
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
 	expected := `--extra-index-url https://download.pytorch.org/whl/cu116
-torch==1.12.1+cu116
-torchvision==0.13.1+cu116
+torch==1.12.1
+torchvision==0.13.1
 torchaudio==0.12.1
 foo==1.0.0`
 	require.Equal(t, expected, requirements)
@@ -406,8 +406,8 @@ func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
 	expected := `--find-links https://download.pytorch.org/whl/torch_stable.html
-torch==1.7.1+cu110
-torchvision==0.8.2+cu110
+torch==1.7.1
+torchvision==0.8.2
 torchaudio==0.7.2
 foo==1.0.0`
 	require.Equal(t, expected, requirements)
@@ -491,7 +491,7 @@ func TestPythonPackagesBothTorchAndTensorflow(t *testing.T) {
 	require.NoError(t, err)
 	expected := `--extra-index-url https://download.pytorch.org/whl/cu121
 tensorflow==2.16.1
-torch==2.3.1+cu121`
+torch==2.3.1`
 	require.Equal(t, expected, requirements)
 }
 
@@ -693,4 +693,28 @@ func TestSplitPinnedPythonRequirement(t *testing.T) {
 			require.Equal(t, tc.expectedExtraIndexURLs, extraIndexURLs, "input: "+tc.input)
 		}
 	}
+}
+
+func TestPythonRequirementsForArchWithAddedPackage(t *testing.T) {
+	config := &Config{
+		Build: &Build{
+			GPU:           true,
+			PythonVersion: "3.8",
+			PythonPackages: []string{
+				"torch==2.4.0 --extra-index-url=https://download.pytorch.org/whl/cu116",
+			},
+			CUDA: "11.6.2",
+		},
+	}
+	err := config.ValidateAndComplete("")
+	require.NoError(t, err)
+	require.Equal(t, "11.6.2", config.Build.CUDA)
+	requirements, err := config.PythonRequirementsForArch("", "", []string{
+		"torchvision==2.4.0",
+	})
+	require.NoError(t, err)
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu116
+torch==2.4.0
+torchvision==2.4.0`
+	require.Equal(t, expected, requirements)
 }

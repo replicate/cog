@@ -1,0 +1,6 @@
+build:
+  gpu: true
+  python_version: "3.9"
+  python_packages:
+    - "torch==2.0.1+cu118"
+predict: "predict.py:Predictor"

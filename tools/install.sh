@@ -42,6 +42,22 @@
 # SOFTWARE.
 set -e
 
+set_install_dir() {
+  # Set install directory
+  DEFAULT_INSTALL_DIR="/usr/local/bin"
+  if [ -z "${INSTALL_DIR}" ]; then
+    read -p "Install location? [$DEFAULT_INSTALL_DIR]: " INSTALL_DIR
+    INSTALL_DIR=${INSTALL_DIR:-$DEFAULT_INSTALL_DIR}
+  fi
+  if [ ! -d "$INSTALL_DIR" ]; then
+    echo "The directory $INSTALL_DIR does not exist. Please create it and re-run this script."
+    # Ask user to manually create directory rather than making it for them,
+    # so they don't just type in "y" again and accidentally install at ./y
+    exit 1
+  fi
+  # Expand abbreviations in INSTALL_DIR
+  INSTALL_DIR=$(cd "$INSTALL_DIR"; pwd)
+}
 
 command_exists() {
   command -v "$@" >/dev/null 2>&1
@@ -150,18 +166,7 @@ main() {
     esac
   fi
 
-  # Set install directory
-  if [ -z "${INSTALL_DIR}" ]; then
-    read -p "Install location? [/usr/local/bin]: " INSTALL_DIR
-  fi
-  if [ ! -d "$INSTALL_DIR" ]; then
-    echo "The directory $INSTALL_DIR does not exist. Please create it and re-run this script."
-    # Ask user to manually create directory rather than making it for them,
-    # so they don't just type in "y" again and accidentally install at ./y
-    exit 1
-  fi
-  # Expand abbreviations in INSTALL_DIR
-  INSTALL_DIR=$(cd "$INSTALL_DIR"; pwd)
+  set_install_dir
 
   # Check if `cog` command already exists
   if command_exists cog; then

@@ -12,55 +12,9 @@ func TestLatestCuDNNForCUDA(t *testing.T) {
 	require.Equal(t, "8", actual)
 }
 
-func TestGenerateTorchMinorVersionCompatibilityMatrix(t *testing.T) {
-	matrix := []TorchCompatibility{{
-		Torch:   "2.0.0",
-		CUDA:    nil,
-		Pythons: []string{"3.7", "3.8"},
-	}, {
-		Torch:   "2.0.0",
-		CUDA:    stringp("12.0"),
-		Pythons: []string{"3.7", "3.8"},
-	}, {
-		Torch:   "2.0.1",
-		CUDA:    stringp("12.0"),
-		Pythons: []string{"3.7", "3.8", "3.9"},
-	}, {
-		Torch:   "2.0.2",
-		CUDA:    stringp("12.0"),
-		Pythons: []string{"3.8", "3.9"},
-	}, {
-		Torch:   "2.1.0",
-		CUDA:    stringp("12.2"),
-		Pythons: []string{"3.8", "3.9"},
-	}, {
-		Torch:   "2.1.1",
-		CUDA:    stringp("12.3"),
-		Pythons: []string{"3.9", "3.10"},
-	}}
-	actual := generateTorchMinorVersionCompatibilityMatrix(matrix)
-
-	expected := []TorchCompatibility{{
-		Torch:   "2.1",
-		CUDA:    stringp("12.3"),
-		Pythons: []string{"3.9", "3.10"},
-	}, {
-		Torch:   "2.1",
-		CUDA:    stringp("12.2"),
-		Pythons: []string{"3.8", "3.9"},
-	}, {
-		Torch:   "2.0",
-		CUDA:    stringp("12.0"),
-		Pythons: []string{"3.8", "3.9"},
-	}, {
-		Torch:   "2.0",
-		CUDA:    nil,
-		Pythons: []string{"3.7", "3.8"},
-	}}
-
-	require.Equal(t, expected, actual)
-}
-
-func stringp(s string) *string {
-	return &s
+func TestCudasFromTorchWithCUVersionModifier(t *testing.T) {
+	cudas, err := cudasFromTorch("2.0.1+cu118")
+	require.GreaterOrEqual(t, len(cudas), 1)
+	require.Equal(t, cudas[0], "11.8")
+	require.Nil(t, err)
 }

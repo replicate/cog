@@ -6,12 +6,10 @@ import time
 import responses
 from werkzeug.wrappers import Response
 
-
 from cog import schema
 from cog.server.http import Health, create_app
-from tests.server.conftest import _fixture_path
 
-from .conftest import uses_predictor
+from .conftest import _fixture_path, uses_predictor
 
 
 @uses_predictor("input_none")

@@ -30,6 +30,8 @@ func newPushCommand() *cobra.Command {
 	addDockerfileFlag(cmd)
 	addBuildProgressOutputFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
+	addStripFlag(cmd)
+	addPrecompileFlag(cmd)
 
 	return cmd
 }
@@ -56,7 +58,7 @@ func push(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd)); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile); err != nil {
 
 		return err
 	}

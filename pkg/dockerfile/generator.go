@@ -42,6 +42,10 @@ coverage.xml
 .pytest_cache
 .hypothesis
 `
+const LDConfigCacheBuildCommand = "RUN find / -type f -name \"*python*.so\" -printf \"%h\\n\" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig"
+const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
+const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
+const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 
 type Generator struct {
 	Config *config.Config
@@ -53,6 +57,8 @@ type Generator struct {
 
 	useCudaBaseImage bool
 	useCogBaseImage  *bool
+	strip            bool
+	precompile       bool
 
 	// absolute path to tmpDir, a directory that will be cleaned up
 	tmpDir string
@@ -94,6 +100,8 @@ func NewGenerator(config *config.Config, dir string) (*Generator, error) {
 		fileWalker:       filepath.Walk,
 		useCudaBaseImage: true,
 		useCogBaseImage:  nil,
+		strip:            false,
+		precompile:       false,
 	}, nil
 }
 
@@ -113,6 +121,14 @@ func (g *Generator) IsUsingCogBaseImage() bool {
 		return *useCogBaseImage
 	}
 	return true
+}
+
+func (g *Generator) SetStrip(strip bool) {
+	g.strip = strip
+}
+
+func (g *Generator) SetPrecompile(precompile bool) {
+	g.precompile = precompile
 }
 
 func (g *Generator) generateInitialSteps() (string, error) {
@@ -138,31 +154,41 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return joinStringsWithoutLineSpace([]string{
+
+		steps := []string{
 			"#syntax=docker/dockerfile:1.4",
 			"FROM " + baseImage,
 			aptInstalls,
 			pipInstalls,
-			runCommands,
-		}), nil
+		}
+		if g.precompile {
+			steps = append(steps, PrecompilePythonCommand)
+		}
+		steps = append(steps, runCommands)
+
+		return joinStringsWithoutLineSpace(steps), nil
 	}
 
-	pipInstallStage, err := g.pipInstallStage()
+	pipInstallStage, err := g.pipInstallStage(aptInstalls)
 	if err != nil {
 		return "", err
 	}
 
-	return joinStringsWithoutLineSpace([]string{
+	steps := []string{
 		"#syntax=docker/dockerfile:1.4",
 		pipInstallStage,
 		"FROM " + baseImage,
 		g.preamble(),
 		g.installTini(),
 		installPython,
-		aptInstalls,
 		g.copyPipPackagesFromInstallStage(),
-		runCommands,
-	}), nil
+	}
+	if g.precompile {
+		steps = append(steps, PrecompilePythonCommand)
+	}
+	steps = append(steps, LDConfigCacheBuildCommand, runCommands)
+
+	return joinStringsWithoutLineSpace(steps), nil
 }
 
 func (g *Generator) GenerateModelBase() (string, error) {
@@ -274,8 +300,10 @@ func (g *Generator) BaseImage() (string, error) {
 		if err == nil || g.useCogBaseImage != nil {
 			return baseImage, err
 		}
-		if err != nil {
-			console.Warnf("Could not find a suitable base image, continuing without base image support (%v).", err)
+		console.Warnf("Could not find a suitable base image, continuing without base image support (%v).", err)
+		if g.useCogBaseImage == nil {
+			g.useCogBaseImage = new(bool)
+			*g.useCogBaseImage = false
 		}
 	}
 
@@ -361,11 +389,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 	git \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
-` + fmt.Sprintf(`RUN curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash && \
+` + fmt.Sprintf(`
+RUN curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash && \
 	git clone https://github.com/momo-lab/pyenv-install-latest.git "$(pyenv root)"/plugins/pyenv-install-latest && \
+	export PYTHON_CONFIGURE_OPTS='--enable-optimizations --with-lto' && \
+	export PYTHON_CFLAGS='-O3' && \
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
-	pip install "wheel<1"`, py, py), nil
+	pip install --no-cache-dir "wheel<1"`, py, py) + `
+RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /usr/bin/python3 && chmod +x /usr/bin/python3", nil
 	// for sitePackagesLocation, kind of need to determine which specific version latest is (3.8 -> 3.8.17 or 3.8.18)
 	// install-latest essentially does pyenv install --list | grep $py | tail -1
 	// there are many bad options, but a symlink to $(pyenv prefix) is the least bad one
@@ -388,20 +420,27 @@ func (g *Generator) installCog() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	lines = append(lines, fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep %s", containerPath))
+	pipInstallLine := fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep %s", containerPath)
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
+	lines = append(lines, CFlags, pipInstallLine, "ENV CFLAGS=")
 	return strings.Join(lines, "\n"), nil
 }
 
 func (g *Generator) pipInstalls() (string, error) {
 	var err error
-	excludePackages := []string{}
+	includePackages := []string{}
 	if torchVersion, ok := g.Config.TorchVersion(); ok {
-		excludePackages = []string{"torch==" + torchVersion}
+		includePackages = []string{"torch==" + torchVersion}
 	}
 	if torchvisionVersion, ok := g.Config.TorchvisionVersion(); ok {
-		excludePackages = append(excludePackages, "torchvision=="+torchvisionVersion)
+		includePackages = append(includePackages, "torchvision=="+torchvisionVersion)
 	}
-	g.pythonRequirementsContents, err = g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH, excludePackages)
+	if torchaudioVersion, ok := g.Config.TorchaudioVersion(); ok {
+		includePackages = append(includePackages, "torchaudio=="+torchaudioVersion)
+	}
+	g.pythonRequirementsContents, err = g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH, includePackages)
 	if err != nil {
 		return "", err
 	}
@@ -416,13 +455,19 @@ func (g *Generator) pipInstalls() (string, error) {
 		return "", err
 	}
 
+	pipInstallLine := "RUN pip install --no-cache-dir -r " + containerPath
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
 	return strings.Join([]string{
 		copyLine[0],
-		"RUN pip install -r " + containerPath,
+		CFlags,
+		pipInstallLine,
+		"ENV CFLAGS=",
 	}, "\n"), nil
 }
 
-func (g *Generator) pipInstallStage() (string, error) {
+func (g *Generator) pipInstallStage(aptInstalls string) (string, error) {
 	installCog, err := g.installCog()
 	if err != nil {
 		return "", err
@@ -435,6 +480,7 @@ func (g *Generator) pipInstallStage() (string, error) {
 	pipStageImage := "python:" + g.Config.Build.PythonVersion
 	if strings.Trim(g.pythonRequirementsContents, "") == "" {
 		return `FROM ` + pipStageImage + ` as deps
+` + aptInstalls + `
 ` + installCog, nil
 	}
 
@@ -454,11 +500,20 @@ func (g *Generator) pipInstallStage() (string, error) {
 	if buildStageDeps != "" {
 		fromLine = fromLine + "\nRUN " + buildStageDeps
 	}
+
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep -r " + containerPath
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
+
 	lines := []string{
 		fromLine,
+		aptInstalls,
 		installCog,
 		copyLine[0],
-		"RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r " + containerPath,
+		CFlags,
+		pipInstallLine,
+		"ENV CFLAGS=",
 	}
 	return strings.Join(lines, "\n"), nil
 }
@@ -594,13 +649,6 @@ func (g *Generator) determineBaseImageName() (string, error) {
 	}
 
 	torchVersion, _ := g.Config.TorchVersion()
-	torchVersion, changed, err = stripPatchVersion(torchVersion)
-	if err != nil {
-		return "", err
-	}
-	if changed {
-		console.Warnf("Stripping patch version from Torch version %s to %s", g.Config.Build.PythonVersion, pythonVersion)
-	}
 
 	// validate that the base image configuration exists
 	imageGenerator, err := NewBaseImageGenerator(cudaVersion, pythonVersion, torchVersion)

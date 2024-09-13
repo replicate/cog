@@ -9,7 +9,7 @@ import (
 type Version struct {
 	Major    int
 	Minor    int
-	Patch    int
+	Patch    *int
 	Metadata string
 }
 
@@ -32,10 +32,15 @@ func NewVersion(s string) (version *Version, err error) {
 		}
 	}
 	if len(parts) >= 3 {
-		version.Patch, err = strconv.Atoi(parts[2])
+		patch, err := strconv.Atoi(parts[2])
 		if err != nil {
 			return nil, fmt.Errorf("Invalid patch version %s: %w", parts[2], err)
 		}
+		// We assign a pointer here to handle cases where the patch version is not
+		// explicitly assigned and we need to compare versions without patches to
+		// versions with patches.
+		version.Patch = new(int)
+		*version.Patch = patch
 	}
 
 	if len(plusParts) == 2 {
@@ -59,7 +64,9 @@ func (v *Version) Greater(other *Version) bool {
 		return true
 	case v.Major == other.Major && v.Minor > other.Minor:
 		return true
-	case v.Major == other.Major && v.Minor == other.Minor && v.Patch > other.Patch:
+	case v.Major == other.Major &&
+		v.Minor == other.Minor &&
+		v.PatchVersion() > other.PatchVersion():
 		return true
 	default:
 		return false
@@ -67,7 +74,10 @@ func (v *Version) Greater(other *Version) bool {
 }
 
 func (v *Version) Equal(other *Version) bool {
-	return v.Major == other.Major && v.Minor == other.Minor && v.Patch == other.Patch && v.Metadata == other.Metadata
+	return v.Major == other.Major &&
+		v.Minor == other.Minor &&
+		v.PatchVersion() == other.PatchVersion() &&
+		v.Metadata == other.Metadata
 }
 
 func (v *Version) GreaterOrEqual(other *Version) bool {
@@ -76,6 +86,17 @@ func (v *Version) GreaterOrEqual(other *Version) bool {
 
 func (v *Version) EqualMinor(other *Version) bool {
 	return v.Major == other.Major && v.Minor == other.Minor
+}
+
+func (v *Version) HasPatch() bool {
+	return v.Patch != nil
+}
+
+func (v *Version) PatchVersion() int {
+	if v.Patch == nil {
+		return 0
+	}
+	return *v.Patch
 }
 
 func Equal(v1 string, v2 string) bool {
@@ -100,7 +121,7 @@ func (v *Version) Matches(other *Version) bool {
 		return false
 	case v.Minor != other.Minor:
 		return false
-	case v.Patch != 0 && v.Patch != other.Patch:
+	case v.HasPatch() && other.HasPatch() && *v.Patch != *other.Patch:
 		return false
 	default:
 		return true
@@ -114,4 +135,9 @@ func Matches(v1 string, v2 string) bool {
 func StripPatch(v string) string {
 	ver := MustVersion(v)
 	return fmt.Sprintf("%d.%d", ver.Major, ver.Minor)
+}
+
+func StripModifier(v string) string {
+	modifierSplit := strings.Split(v, "+")
+	return modifierSplit[0]
 }

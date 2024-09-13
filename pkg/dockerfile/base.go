@@ -20,6 +20,7 @@ var (
 		"cmake",
 		"curl",
 		"ffmpeg",
+		"findutils",
 		"g++",
 		"gcc",
 		"git",
@@ -30,17 +31,18 @@ var (
 		"libgl1",
 		"libgl1-mesa-glx",
 		"libglib2.0-0",
+		"libopencv-dev",
 		"libsm6",
 		"libsndfile1",
 		"libssl-dev",
 		"libunistring-dev",
 		"libxext6",
 		"libxrender1",
-		"python3-opencv",
 		"sox",
 		"unzip",
 		"wget",
 		"zip",
+		"zstd",
 	}
 )
 
@@ -99,8 +101,6 @@ func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
 }
 
 // BaseImageConfigurations returns a list of CUDA/Python/Torch versions
-// with patch versions stripped out. Each version is greater or equal to
-// MinimumCUDAVersion/MinimumPythonVersion/MinimumTorchVersion.
 func BaseImageConfigurations() []BaseImageConfiguration {
 	configs := []BaseImageConfiguration{}
 
@@ -110,29 +110,30 @@ func BaseImageConfigurations() []BaseImageConfiguration {
 	cudaVersionsSet := make(map[string]bool)
 
 	// Torch configs
-	for _, compat := range config.TorchMinorCompatibilityMatrix {
+	for _, compat := range config.TorchCompatibilityMatrix {
 		for _, python := range compat.Pythons {
-
-			// Only support fast cold boots for Torch with CUDA.
-			// Torch without CUDA is a rarely used edge case.
-			if compat.CUDA == nil {
+			if !version.GreaterOrEqual(python, MinimumPythonVersion) || !version.GreaterOrEqual(compat.Torch, MinimumTorchVersion) {
 				continue
 			}
 
-			cuda := *compat.CUDA
-			torch := version.StripPatch(compat.Torch)
-			conf := BaseImageConfiguration{
-				CUDAVersion:   cuda,
-				PythonVersion: python,
-				TorchVersion:  torch,
-			}
-
-			if (version.GreaterOrEqual(cuda, MinimumCUDAVersion)) &&
-				version.GreaterOrEqual(python, MinimumPythonVersion) &&
-				version.GreaterOrEqual(compat.Torch, MinimumTorchVersion) {
-				configs = append(configs, conf)
-				pythonVersionsSet[python] = true
-				cudaVersionsSet[cuda] = true
+			if compat.CUDA == nil {
+				configs = append(configs, BaseImageConfiguration{
+					PythonVersion: python,
+					TorchVersion:  compat.Torch,
+				})
+			} else {
+				cuda := *compat.CUDA
+				torch := compat.Torch
+				conf := BaseImageConfiguration{
+					CUDAVersion:   cuda,
+					PythonVersion: python,
+					TorchVersion:  torch,
+				}
+				if version.GreaterOrEqual(cuda, MinimumCUDAVersion) {
+					configs = append(configs, conf)
+					pythonVersionsSet[python] = true
+					cudaVersionsSet[cuda] = true
+				}
 			}
 		}
 	}
@@ -158,7 +159,8 @@ func BaseImageConfigurations() []BaseImageConfiguration {
 }
 
 func NewBaseImageGenerator(cudaVersion string, pythonVersion string, torchVersion string) (*BaseImageGenerator, error) {
-	if BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion) {
+	valid, cudaVersion, pythonVersion, torchVersion := BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion)
+	if valid {
 		return &BaseImageGenerator{cudaVersion, pythonVersion, torchVersion}, nil
 	}
 	printNone := func(s string) string {
@@ -180,6 +182,8 @@ func (g *BaseImageGenerator) GenerateDockerfile() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	useCogBaseImage := false
+	generator.useCogBaseImage = &useCogBaseImage
 
 	dockerfile, err := generator.generateInitialSteps()
 	if err != nil {
@@ -208,7 +212,38 @@ func (g *BaseImageGenerator) makeConfig() (*config.Config, error) {
 
 func (g *BaseImageGenerator) pythonPackages() []string {
 	if g.torchVersion != "" {
-		return []string{"torch==" + g.torchVersion}
+		pkgs := []string{
+			"torch==" + g.torchVersion,
+			"opencv-python==4.10.0.84",
+		}
+
+		// Find torchvision compatibility.
+		for _, compat := range config.TorchCompatibilityMatrix {
+			if len(compat.Torchvision) == 0 {
+				continue
+			}
+			if !version.Matches(g.torchVersion, compat.TorchVersion()) {
+				continue
+			}
+
+			pkgs = append(pkgs, "torchvision=="+compat.Torchvision)
+			break
+		}
+
+		// Find torchaudio compatibility.
+		for _, compat := range config.TorchCompatibilityMatrix {
+			if len(compat.Torchaudio) == 0 {
+				continue
+			}
+			if !version.Matches(g.torchVersion, compat.TorchVersion()) {
+				continue
+			}
+
+			pkgs = append(pkgs, "torchaudio=="+compat.Torchaudio)
+			break
+		}
+
+		return pkgs
 	}
 	return []string{}
 }
@@ -218,6 +253,8 @@ func (g *BaseImageGenerator) runStatements() []config.RunItem {
 }
 
 func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string) string {
+	_, cudaVersion, pythonVersion, torchVersion = BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion)
+
 	components := []string{}
 	if cudaVersion != "" {
 		components = append(components, "cuda"+version.StripPatch(cudaVersion))
@@ -226,7 +263,7 @@ func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string
 		components = append(components, "python"+version.StripPatch(pythonVersion))
 	}
 	if torchVersion != "" {
-		components = append(components, "torch"+version.StripPatch(torchVersion))
+		components = append(components, "torch"+version.StripModifier(torchVersion))
 	}
 
 	tag := strings.Join(components, "-")
@@ -237,7 +274,8 @@ func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string
 	return BaseImageRegistry + "/cog-base:" + tag
 }
 
-func BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion string) bool {
+func BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion string) (bool, string, string, string) {
+	compatibleTorchVersion := ""
 	for _, conf := range BaseImageConfigurations() {
 		// Check CUDA version compatibility
 		if !isVersionCompatible(conf.CUDAVersion, cudaVersion) {
@@ -254,14 +292,22 @@ func BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion strin
 			continue
 		}
 
-		return true
+		if compatibleTorchVersion == "" || version.Greater(conf.TorchVersion, compatibleTorchVersion) {
+			compatibleTorchVersion = version.StripModifier(conf.TorchVersion)
+		}
 	}
-	return false
+
+	valid := (torchVersion != "" && compatibleTorchVersion != "") || torchVersion == ""
+	if valid {
+		torchVersion = compatibleTorchVersion
+	}
+
+	return valid, cudaVersion, pythonVersion, torchVersion
 }
 
 func isVersionCompatible(confVersion, requestedVersion string) bool {
 	if confVersion == "" || requestedVersion == "" {
 		return confVersion == requestedVersion
 	}
-	return version.Matches(confVersion, requestedVersion)
+	return version.Matches(requestedVersion, confVersion)
 }
