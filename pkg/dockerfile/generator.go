@@ -157,7 +157,7 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		}), nil
 	}
 
-	pipInstallStage, err := g.pipInstallStage()
+	pipInstallStage, err := g.pipInstallStage(aptInstalls)
 	if err != nil {
 		return "", err
 	}
@@ -169,7 +169,6 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		g.preamble(),
 		g.installTini(),
 		installPython,
-		aptInstalls,
 		g.copyPipPackagesFromInstallStage(),
 		LDConfigCacheBuildCommand,
 		runCommands,
@@ -452,7 +451,7 @@ func (g *Generator) pipInstalls() (string, error) {
 	}, "\n"), nil
 }
 
-func (g *Generator) pipInstallStage() (string, error) {
+func (g *Generator) pipInstallStage(aptInstalls string) (string, error) {
 	installCog, err := g.installCog()
 	if err != nil {
 		return "", err
@@ -465,6 +464,7 @@ func (g *Generator) pipInstallStage() (string, error) {
 	pipStageImage := "python:" + g.Config.Build.PythonVersion
 	if strings.Trim(g.pythonRequirementsContents, "") == "" {
 		return `FROM ` + pipStageImage + ` as deps
+` + aptInstalls + `
 ` + installCog, nil
 	}
 
@@ -492,6 +492,7 @@ func (g *Generator) pipInstallStage() (string, error) {
 
 	lines := []string{
 		fromLine,
+		aptInstalls,
 		installCog,
 		copyLine[0],
 		CFlags,
