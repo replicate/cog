@@ -105,8 +105,8 @@ def add_setup_failed_routes(
 
 
 def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
-    config: CogConfig,  # pylint: disable=redefined-outer-name
     shutdown_event: Optional[threading.Event],  # pylint: disable=redefined-outer-name
+    cog_config: Optional[CogConfig] = None,
     app_threads: Optional[int] = None,
     upload_url: Optional[str] = None,
     mode: str = "predict",
@@ -130,8 +130,11 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             shutdown_event.set()
         return JSONResponse({}, status_code=200)
 
+    if cog_config is None:
+        cog_config = load_config()
+
     try:
-        predictor_ref = get_predictor_ref(config, mode)
+        predictor_ref = get_predictor_ref(cog_config, mode)
         predictor = load_slim_predictor_from_ref(predictor_ref, "predict")
         InputType = get_input_type(predictor)  # pylint: disable=invalid-name
         OutputType = get_output_type(predictor)  # pylint: disable=invalid-name
@@ -151,7 +154,9 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     )
 
     if app_threads is None:
-        app_threads = 1 if config.get("build", {}).get("gpu", False) else _cpu_count()
+        app_threads = (
+            1 if cog_config.get("build", {}).get("gpu", False) else _cpu_count()
+        )
     http_semaphore = asyncio.Semaphore(app_threads)
 
     def limited(f: "Callable[P, Awaitable[T]]") -> "Callable[P, Awaitable[T]]":
@@ -162,9 +167,9 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
 
         return wrapped
 
-    if "train" in config:
+    if "train" in cog_config:
         try:
-            trainer_ref = get_predictor_ref(config, "train")
+            trainer_ref = get_predictor_ref(cog_config, "train")
             trainer = load_slim_predictor_from_ref(trainer_ref, "train")
             TrainingInputType = get_training_input_type(trainer)  # pylint: disable=invalid-name
             TrainingOutputType = get_training_output_type(trainer)  # pylint: disable=invalid-name
@@ -551,8 +556,6 @@ if __name__ == "__main__":
     log_level = logging.getLevelName(os.environ.get("COG_LOG_LEVEL", "INFO").upper())
     setup_logging(log_level=log_level)
 
-    config = load_config()
-
     shutdown_event = threading.Event()
 
     await_explicit_shutdown = args.await_explicit_shutdown
@@ -562,7 +565,6 @@ if __name__ == "__main__":
         signal.signal(signal.SIGTERM, signal_set_event(shutdown_event))
 
     app = create_app(
-        config=config,
         shutdown_event=shutdown_event,
         app_threads=args.threads,
         upload_url=args.upload_url,

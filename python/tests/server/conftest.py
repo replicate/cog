@@ -98,7 +98,7 @@ def make_client(
         config.update(additional_config)
 
     app = create_app(
-        config=config,
+        cog_config=config,
         shutdown_event=threading.Event(),
         upload_url=upload_url,
     )
