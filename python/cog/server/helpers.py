@@ -268,6 +268,7 @@ def update_openapi_schema_for_pydantic_2(
     _flatten_selected_allof_refs(openapi_schema)
     _extract_enum_properties(openapi_schema)
     _set_default_enumeration_description(openapi_schema)
+    _restore_allof_for_prediction_id_put(openapi_schema)
 
 
 def _remove_webhook_events_filter_title(
@@ -312,15 +313,6 @@ def _flatten_selected_allof_refs(
         response["properties"]["output"] = {"$ref": "#/components/schemas/Output"}
     except KeyError:
         pass
-
-    for _key, value in openapi_schema.get("components", {}).get("schemas", {}).items():
-        if (
-            value.get("allOf")
-            and len(value.get("allOf")) == 1
-            and value["allOf"][0].get("$ref")
-        ):
-            value["$ref"] = value["allOf"][0]["$ref"]
-            del value["allOf"]
 
     try:
         path = openapi_schema["paths"]["/predictions"]["post"]
@@ -371,3 +363,32 @@ def _set_default_enumeration_description(
     elif isinstance(openapi_schema, list):  # pyright: ignore
         for item in openapi_schema:
             _set_default_enumeration_description(item)
+
+
+def _restore_allof_for_prediction_id_put(
+    openapi_schema: Dict[str, Any],
+) -> None:
+    try:
+        put_operation = openapi_schema["paths"]["/predictions/{prediction_id}"]["put"]
+        request_body = put_operation["requestBody"]
+        json_schema = request_body["content"]["application/json"]["schema"]
+
+        if "$ref" in json_schema:
+            ref = json_schema["$ref"]
+            json_schema.clear()
+            json_schema["allOf"] = [{"$ref": ref}]
+            json_schema["title"] = "Prediction Request"
+    except KeyError:
+        pass
+
+    for _key, value in (
+        openapi_schema.get("components", {})
+        .get("schemas", {})
+        .get("Input", {})
+        .get("properties", {})
+        .items()
+    ):
+        if "$ref" in value:
+            ref = value["$ref"]
+            del value["$ref"]
+            value["allOf"] = [{"$ref": ref}]
