@@ -45,7 +45,7 @@ from .runner import (
     UnknownPredictionError,
 )
 from .telemetry import make_trace_context, trace_context
-from .wait import wait_for_file
+from .wait import wait_for_env
 from .worker import make_worker
 
 if TYPE_CHECKING:
@@ -132,7 +132,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         return JSONResponse({}, status_code=200)
 
     if cog_config is None:
-        wait_for_file()
+        wait_for_env()
         cog_config = load_config()
 
     try:

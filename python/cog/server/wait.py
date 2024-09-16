@@ -1,3 +1,4 @@
+import importlib
 import os
 import threading
 
@@ -6,9 +7,10 @@ from watchdog.observers import Observer
 from .watch_handler import WatchHandler
 
 COG_WAIT_FILE_ENV_VAR = "COG_WAIT_FILE"
+COG_WAIT_IMPORTS_ENV_VAR = "COG_WAIT_IMPORTS"
 
 
-def wait_for_file(timeout: float = 5.0) -> bool:
+def wait_for_file(timeout: float = 60.0) -> bool:
     """Wait for a file in the environment variables."""
     wait_file = os.environ.get(COG_WAIT_FILE_ENV_VAR)
     if wait_file is None:
@@ -28,3 +30,21 @@ def wait_for_file(timeout: float = 5.0) -> bool:
     finally:
         observer.stop()
         observer.join()
+
+
+def wait_for_imports() -> int:
+    """Wait for python to import big modules."""
+    wait_imports = os.environ.get(COG_WAIT_IMPORTS_ENV_VAR)
+    import_count = 0
+    if wait_imports is None:
+        return import_count
+    for import_statement in wait_imports.split(","):
+        importlib.import_module(import_statement)
+        import_count += 1
+    return import_count
+
+
+def wait_for_env(file_timeout: float = 5.0) -> bool:
+    """Wait for the environment to load."""
+    wait_for_imports()
+    return wait_for_file(timeout=file_timeout)
