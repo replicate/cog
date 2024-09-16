@@ -107,7 +107,7 @@ def add_setup_failed_routes(
 def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
     config: CogConfig,  # pylint: disable=redefined-outer-name
     shutdown_event: Optional[threading.Event],  # pylint: disable=redefined-outer-name
-    threads: int = 1,  # pylint: disable=redefined-outer-name
+    app_threads: Optional[int] = None,
     upload_url: Optional[str] = None,
     mode: str = "predict",
     is_build: bool = False,
@@ -150,7 +150,9 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         input_type=InputType, output_type=OutputType
     )
 
-    http_semaphore = asyncio.Semaphore(threads)
+    if app_threads is None:
+        app_threads = 1 if config.get("build", {}).get("gpu", False) else _cpu_count()
+    http_semaphore = asyncio.Semaphore(app_threads)
 
     def limited(f: "Callable[P, Awaitable[T]]") -> "Callable[P, Awaitable[T]]":
         @functools.wraps(f)
@@ -551,11 +553,6 @@ if __name__ == "__main__":
 
     config = load_config()
 
-    threads = args.threads
-    if threads is None:
-        gpu_enabled = config.get("build", {}).get("gpu", False)
-        threads = 1 if gpu_enabled else _cpu_count()
-
     shutdown_event = threading.Event()
 
     await_explicit_shutdown = args.await_explicit_shutdown
@@ -567,7 +564,7 @@ if __name__ == "__main__":
     app = create_app(
         config=config,
         shutdown_event=shutdown_event,
-        threads=threads,
+        app_threads=args.threads,
         upload_url=args.upload_url,
         mode=args.mode,
         await_explicit_shutdown=await_explicit_shutdown,
