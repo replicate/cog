@@ -11,5 +11,5 @@ class WatchHandler(FileSystemEventHandler):
         self.threading_event = threading_event
 
     def on_any_event(self, event: FileSystemEvent) -> None:
-        if event.src_path.endswith(self.filename):
+        if str(event.src_path).endswith(self.filename):
             self.threading_event.set()
