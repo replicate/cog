@@ -45,7 +45,9 @@ def test_wait_for_file_waits_for_file():
 
 
 def test_wait_for_file_timeout():
-    os.environ[COG_WAIT_FILE_ENV_VAR] = "/a_file_unknown"
+    os.environ[COG_WAIT_FILE_ENV_VAR] = os.path.join(
+        os.path.dirname(__file__), "a_file_unknown"
+    )
     result = wait_for_file(timeout=5.0)
     del os.environ[COG_WAIT_FILE_ENV_VAR]
     assert not result, "We should return false when the timeout triggers."
