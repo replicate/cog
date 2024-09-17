@@ -18,7 +18,7 @@ def wait_for_file(timeout: float = 60.0) -> bool:
     file_created_event = threading.Event()
     event_handler = WatchHandler(wait_file, file_created_event)
     observer = Observer()
-    observer.schedule(event_handler, path=wait_file, recursive=False)
+    observer.schedule(event_handler, path=wait_file, recursive=True)
     observer.start()
     try:
         if os.path.exists(wait_file):
