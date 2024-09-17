@@ -15,10 +15,12 @@ def wait_for_file(timeout: float = 60.0) -> bool:
     wait_file = os.environ.get(COG_WAIT_FILE_ENV_VAR)
     if wait_file is None:
         return True
+    dir_path = os.path.dirname(wait_file)
+    os.makedirs(dir_path, exist_ok=True)
     file_created_event = threading.Event()
     event_handler = WatchHandler(wait_file, file_created_event)
     observer = Observer()
-    observer.schedule(event_handler, path=wait_file, recursive=True)
+    observer.schedule(event_handler, path=dir_path, recursive=True)
     observer.start()
     try:
         if os.path.exists(wait_file):
