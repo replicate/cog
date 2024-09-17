@@ -147,7 +147,7 @@ def test_path_input_slow_response(client, httpserver, match):
 
 
 @uses_predictor("input_path_2")
-def test_path_temporary_files_are_removed(client, match):
+def test_path_temporary_files_are_removed(client, httpserver, match):
     resp = client.post(
         "/predictions",
         json={
