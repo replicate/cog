@@ -7,7 +7,7 @@ from watchdog.observers import Observer
 from .watch_handler import WatchHandler
 
 COG_WAIT_FILE_ENV_VAR = "COG_WAIT_FILE"
-COG_WAIT_IMPORTS_ENV_VAR = "COG_WAIT_IMPORTS"
+COG_EAGER_IMPORTS_ENV_VAR = "COG_EAGER_IMPORTS"
 
 
 def wait_for_file(timeout: float = 60.0) -> bool:
@@ -34,9 +34,9 @@ def wait_for_file(timeout: float = 60.0) -> bool:
         observer.join()
 
 
-def wait_for_imports() -> int:
+def eagerly_import_modules() -> int:
     """Wait for python to import big modules."""
-    wait_imports = os.environ.get(COG_WAIT_IMPORTS_ENV_VAR)
+    wait_imports = os.environ.get(COG_EAGER_IMPORTS_ENV_VAR)
     import_count = 0
     if wait_imports is None:
         return import_count
@@ -49,5 +49,5 @@ def wait_for_imports() -> int:
 def wait_for_env(file_timeout: float = 60.0, include_imports: bool = True) -> bool:
     """Wait for the environment to load."""
     if include_imports:
-        wait_for_imports()
+        eagerly_import_modules()
     return wait_for_file(timeout=file_timeout)

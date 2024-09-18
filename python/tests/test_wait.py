@@ -5,11 +5,11 @@ import time
 from pathlib import Path
 
 from cog.wait import (
+    COG_EAGER_IMPORTS_ENV_VAR,
     COG_WAIT_FILE_ENV_VAR,
-    COG_WAIT_IMPORTS_ENV_VAR,
+    eagerly_import_modules,
     wait_for_env,
     wait_for_file,
-    wait_for_imports,
 )
 
 
@@ -55,24 +55,24 @@ def test_wait_for_file_timeout():
     assert not result, "We should return false when the timeout triggers."
 
 
-def test_wait_for_imports_no_env_var():
-    if COG_WAIT_IMPORTS_ENV_VAR in os.environ:
-        del os.environ[COG_WAIT_IMPORTS_ENV_VAR]
-    wait_for_imports()
+def test_eagerly_import_modules_no_env_var():
+    if COG_EAGER_IMPORTS_ENV_VAR in os.environ:
+        del os.environ[COG_EAGER_IMPORTS_ENV_VAR]
+    eagerly_import_modules()
 
 
-def test_wait_for_imports():
-    os.environ[COG_WAIT_IMPORTS_ENV_VAR] = "pytest,pathlib,time"
-    import_count = wait_for_imports()
-    del os.environ[COG_WAIT_IMPORTS_ENV_VAR]
+def test_eagerly_import_modules():
+    os.environ[COG_EAGER_IMPORTS_ENV_VAR] = "pytest,pathlib,time"
+    import_count = eagerly_import_modules()
+    del os.environ[COG_EAGER_IMPORTS_ENV_VAR]
     assert import_count == 3, "There should be 3 imports performed"
 
 
 def test_wait_for_env_no_env_vars():
     if COG_WAIT_FILE_ENV_VAR in os.environ:
         del os.environ[COG_WAIT_FILE_ENV_VAR]
-    if COG_WAIT_IMPORTS_ENV_VAR in os.environ:
-        del os.environ[COG_WAIT_IMPORTS_ENV_VAR]
+    if COG_EAGER_IMPORTS_ENV_VAR in os.environ:
+        del os.environ[COG_EAGER_IMPORTS_ENV_VAR]
     result = wait_for_env()
     assert (
         result
@@ -82,10 +82,10 @@ def test_wait_for_env_no_env_vars():
 def test_wait_for_env():
     with tempfile.NamedTemporaryFile() as tmpfile:
         os.environ[COG_WAIT_FILE_ENV_VAR] = tmpfile.name
-        os.environ[COG_WAIT_IMPORTS_ENV_VAR] = "pytest,pathlib,time"
+        os.environ[COG_EAGER_IMPORTS_ENV_VAR] = "pytest,pathlib,time"
         result = wait_for_env()
         assert (
             result
         ), "We should return true if we have waited for the right environment."
-        del os.environ[COG_WAIT_IMPORTS_ENV_VAR]
+        del os.environ[COG_EAGER_IMPORTS_ENV_VAR]
         del os.environ[COG_WAIT_FILE_ENV_VAR]
