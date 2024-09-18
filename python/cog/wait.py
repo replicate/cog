@@ -46,7 +46,8 @@ def wait_for_imports() -> int:
     return import_count
 
 
-def wait_for_env(file_timeout: float = 5.0) -> bool:
+def wait_for_env(file_timeout: float = 60.0, include_imports: bool = True) -> bool:
     """Wait for the environment to load."""
-    wait_for_imports()
+    if include_imports:
+        wait_for_imports()
     return wait_for_file(timeout=file_timeout)

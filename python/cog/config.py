@@ -59,7 +59,7 @@ class Config:
         """
         config = self._config
         if config is None:
-            wait_for_env()
+            wait_for_env(include_imports=False)
             config_path = os.path.abspath(COG_YAML_FILE)
             try:
                 with open(config_path, encoding="utf-8") as handle:
@@ -96,7 +96,7 @@ class Config:
         if source_code is not None:
             return source_code
         if sys.version_info >= (3, 9):
-            wait_for_env()
+            wait_for_env(include_imports=False)
             with open(module_path, encoding="utf-8") as file:
                 return strip_model_source_code(file.read(), class_name, method_name)
         return None
@@ -112,6 +112,7 @@ class Config:
             except Exception as e:  # pylint: disable=broad-exception-caught
                 log.debug(f"[{module_name}] fast loader failed: {e}")
         if module is None:
+            wait_for_env(include_imports=False)
             module = load_full_predictor_from_file(module_path, module_name)
         return get_predictor(module, class_name)
 
