@@ -1,6 +1,11 @@
+import sys
+
+import pytest
+
 from cog.code_xforms import strip_model_source_code
 
 
+@pytest.mark.skipif(sys.version_info < (3, 9), reason="Requires Python 3.9 or newer")
 def test_strip_model_source_code():
     stripped_code = strip_model_source_code(
         """
