@@ -13,9 +13,9 @@ from typing_extensions import Literal  # Python 3.7
 from urllib3.util.retry import Retry
 
 from .. import schema
+from ..base_input import BaseInput
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
-from ..predictor import BaseInput
 from .eventtypes import Done, Log, PredictionOutput, PredictionOutputType
 from .telemetry import current_trace_context
 from .useragent import get_user_agent

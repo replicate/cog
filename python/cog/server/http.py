@@ -23,20 +23,12 @@ from pydantic import ValidationError
 from pydantic.error_wrappers import ErrorWrapper
 
 from .. import schema
+from ..config import Config
 from ..errors import PredictorNotSet
 from ..files import upload_file
 from ..json import upload_files
 from ..logging import setup_logging
-from ..predictor import (
-    get_input_type,
-    get_output_type,
-    get_predictor_ref,
-    get_training_input_type,
-    get_training_output_type,
-    load_config,
-    load_slim_predictor_from_ref,
-)
-from ..types import CogConfig
+from ..mode import Mode
 from .probes import ProbeHelper
 from .runner import (
     PredictionRunner,
@@ -45,7 +37,6 @@ from .runner import (
     UnknownPredictionError,
 )
 from .telemetry import make_trace_context, trace_context
-from .wait import wait_for_env
 from .worker import make_worker
 
 if TYPE_CHECKING:
@@ -106,11 +97,11 @@ def add_setup_failed_routes(
 
 
 def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
+    cog_config: Config,
     shutdown_event: Optional[threading.Event],  # pylint: disable=redefined-outer-name
-    cog_config: Optional[CogConfig] = None,
     app_threads: Optional[int] = None,
     upload_url: Optional[str] = None,
-    mode: str = "predict",
+    mode: Mode = Mode.PREDICT,
     is_build: bool = False,
     await_explicit_shutdown: bool = False,  # pylint: disable=redefined-outer-name
 ) -> MyFastAPI:
@@ -131,21 +122,14 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             shutdown_event.set()
         return JSONResponse({}, status_code=200)
 
-    if cog_config is None:
-        wait_for_env()
-        cog_config = load_config()
-
     try:
-        predictor_ref = get_predictor_ref(cog_config, mode)
-        predictor = load_slim_predictor_from_ref(predictor_ref, "predict")
-        InputType = get_input_type(predictor)  # pylint: disable=invalid-name
-        OutputType = get_output_type(predictor)  # pylint: disable=invalid-name
+        InputType, OutputType = cog_config.get_predictor_types(mode=Mode.PREDICT)
     except Exception:  # pylint: disable=broad-exception-caught
         msg = "Error while loading predictor:\n\n" + traceback.format_exc()
         add_setup_failed_routes(app, started_at, msg)
         return app
 
-    worker = make_worker(predictor_ref=predictor_ref)
+    worker = make_worker(predictor_ref=cog_config.get_predictor_ref(mode=mode))
     runner = PredictionRunner(worker=worker)
 
     class PredictionRequest(schema.PredictionRequest.with_types(input_type=InputType)):
@@ -156,9 +140,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     )
 
     if app_threads is None:
-        app_threads = (
-            1 if cog_config.get("build", {}).get("gpu", False) else _cpu_count()
-        )
+        app_threads = 1 if cog_config.requires_gpu else _cpu_count()
     http_semaphore = asyncio.Semaphore(app_threads)
 
     def limited(f: "Callable[P, Awaitable[T]]") -> "Callable[P, Awaitable[T]]":
@@ -169,12 +151,11 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
 
         return wrapped
 
-    if "train" in cog_config:
+    if cog_config.predictor_train_ref:
         try:
-            trainer_ref = get_predictor_ref(cog_config, "train")
-            trainer = load_slim_predictor_from_ref(trainer_ref, "train")
-            TrainingInputType = get_training_input_type(trainer)  # pylint: disable=invalid-name
-            TrainingOutputType = get_training_output_type(trainer)  # pylint: disable=invalid-name
+            TrainingInputType, TrainingOutputType = cog_config.get_predictor_types(
+                Mode.TRAIN
+            )
 
             class TrainingRequest(
                 schema.TrainingRequest.with_types(input_type=TrainingInputType)
@@ -544,9 +525,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--x-mode",
         dest="mode",
-        type=str,
-        default="predict",
-        choices=["predict", "train"],
+        type=Mode,
+        default=Mode.PREDICT,
+        choices=list(Mode),
         help="Experimental: Run in 'predict' or 'train' mode",
     )
     args = parser.parse_args()
@@ -567,6 +548,7 @@ if __name__ == "__main__":
         signal.signal(signal.SIGTERM, signal_set_event(shutdown_event))
 
     app = create_app(
+        cog_config=Config(),
         shutdown_event=shutdown_event,
         app_threads=args.threads,
         upload_url=args.upload_url,

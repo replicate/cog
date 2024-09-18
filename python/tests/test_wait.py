@@ -4,7 +4,7 @@ import threading
 import time
 from pathlib import Path
 
-from cog.server.wait import (
+from cog.wait import (
     COG_WAIT_FILE_ENV_VAR,
     COG_WAIT_IMPORTS_ENV_VAR,
     wait_for_env,
@@ -30,6 +30,8 @@ def test_wait_for_file_exists():
 
 def test_wait_for_file_waits_for_file():
     wait_file = os.path.join(os.path.dirname(__file__), "flag_file")
+    if os.path.exists(wait_file):
+        os.remove(wait_file)
     os.environ[COG_WAIT_FILE_ENV_VAR] = wait_file
 
     def create_file():

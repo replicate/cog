@@ -5,8 +5,6 @@ import io
 import os.path
 import sys
 import types
-import uuid
-from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
 from typing import (
@@ -28,22 +26,19 @@ except ImportError:  # Python < 3.8
 from unittest.mock import patch
 
 import structlog
-import yaml
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
 # Added in Python 3.9. Can be from typing if we drop support for <3.9
 from typing_extensions import Annotated
 
-from .code_xforms import load_module_from_string, strip_model_source_code
-from .errors import ConfigDoesNotExist, PredictorNotSet
-from .types import (
-    CogConfig,
-    Input,
-    URLPath,
-)
+from .base_input import BaseInput
+from .base_predictor import BasePredictor
 from .types import (
     File as CogFile,
+)
+from .types import (
+    Input,
 )
 from .types import (
     Path as CogPath,
@@ -61,23 +56,6 @@ ALLOWED_INPUT_TYPES: List[Type[Any]] = [
     CogPath,
     CogSecret,
 ]
-
-
-class BasePredictor(ABC):
-    def setup(
-        self,
-        weights: Optional[Union[CogFile, CogPath, str]] = None,  # pylint: disable=unused-argument
-    ) -> None:
-        """
-        An optional method to prepare the model so multiple predictions run efficiently.
-        """
-        return
-
-    @abstractmethod
-    def predict(self, **kwargs: Any) -> Any:
-        """
-        Run a single prediction on the model
-        """
 
 
 def run_setup(predictor: BasePredictor) -> None:
@@ -139,43 +117,6 @@ def get_weights_type(setup_function: Callable[[Any], None]) -> Optional[Any]:
     return Type
 
 
-def load_config() -> CogConfig:
-    """
-    Reads cog.yaml and returns it as a typed dict.
-    """
-    # Assumes the working directory is /src
-    config_path = os.path.abspath("cog.yaml")
-    try:
-        with open(config_path, encoding="utf-8") as fh:
-            config = yaml.safe_load(fh)
-    except FileNotFoundError as e:
-        raise ConfigDoesNotExist(
-            f"Could not find {config_path}",
-        ) from e
-    return config
-
-
-def load_predictor(config: CogConfig) -> BasePredictor:
-    """
-    Constructs an instance of the user-defined Predictor class from a config.
-    """
-
-    ref = get_predictor_ref(config)
-    return load_predictor_from_ref(ref)
-
-
-def get_predictor_ref(config: CogConfig, mode: str = "predict") -> str:
-    if mode not in ["predict", "train"]:
-        raise ValueError(f"Invalid mode: {mode}")
-
-    if mode not in config:
-        raise PredictorNotSet(
-            f"Can't run predictions: '{mode}' option not found in cog.yaml"
-        )
-
-    return config[mode]
-
-
 def load_full_predictor_from_file(
     module_path: str, module_name: str
 ) -> types.ModuleType:
@@ -190,42 +131,11 @@ def load_full_predictor_from_file(
     return module
 
 
-def load_slim_predictor_from_file(
-    module_path: str, class_name: str, method_name: str
-) -> Optional[types.ModuleType]:
-    with open(module_path, encoding="utf-8") as file:
-        source_code = file.read()
-    stripped_source = strip_model_source_code(source_code, class_name, method_name)
-    module = load_module_from_string(uuid.uuid4().hex, stripped_source)
-    return module
-
-
 def get_predictor(module: types.ModuleType, class_name: str) -> Any:
     predictor = getattr(module, class_name)
     # It could be a class or a function
     if inspect.isclass(predictor):
         return predictor()
-    return predictor
-
-
-def load_slim_predictor_from_ref(ref: str, method_name: str) -> BasePredictor:
-    module_path, class_name = ref.split(":", 1)
-    module_name = os.path.basename(module_path).split(".py", 1)[0]
-    module = None
-    try:
-        if sys.version_info >= (3, 9):
-            module = load_slim_predictor_from_file(module_path, class_name, method_name)
-            if not module:
-                log.debug(f"[{module_name}] fast loader returned None")
-        else:
-            log.debug(f"[{module_name}] cannot use fast loader as current Python <3.9")
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        log.debug(f"[{module_name}] fast loader failed: {e}")
-    finally:
-        if not module:
-            log.debug(f"[{module_name}] falling back to slow loader")
-            module = load_full_predictor_from_file(module_path, module_name)
-    predictor = get_predictor(module, class_name)
     return predictor
 
 
@@ -235,31 +145,6 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
     module = load_full_predictor_from_file(module_path, module_name)
     predictor = get_predictor(module, class_name)
     return predictor
-
-
-# Base class for inputs, constructed dynamically in get_input_type().
-# (This can't be a docstring or it gets passed through to the schema.)
-class BaseInput(BaseModel):
-    class Config:
-        # When using `choices`, the type is converted into an enum to validate
-        # But, after validation, we want to pass the actual value to predict(), not the enum object
-        use_enum_values = True
-
-    def cleanup(self) -> None:
-        """
-        Cleanup any temporary files created by the input.
-        """
-        for _, value in self:
-            # Handle URLPath objects specially for cleanup.
-            # Also handle pathlib.Path objects, which cog.Path is a subclass of.
-            # A pathlib.Path object shouldn't make its way here,
-            # but both have an unlink() method, so we may as well be safe.
-            if isinstance(value, (URLPath, Path)):
-                # TODO: use unlink(missing_ok=...) when we drop Python 3.7 support.
-                try:
-                    value.unlink()
-                except FileNotFoundError:
-                    pass
 
 
 def validate_input_type(

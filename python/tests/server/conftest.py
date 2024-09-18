@@ -10,6 +10,7 @@ from attrs import define
 from fastapi.testclient import TestClient
 
 from cog.command import ast_openapi_schema
+from cog.config import Config
 from cog.server.http import create_app
 from cog.server.worker import make_worker
 
@@ -98,7 +99,7 @@ def make_client(
         config.update(additional_config)
 
     app = create_app(
-        cog_config=config,
+        cog_config=Config(config=config),
         shutdown_event=threading.Event(),
         upload_url=upload_url,
     )

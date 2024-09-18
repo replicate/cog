@@ -7,6 +7,7 @@ import responses
 from werkzeug.wrappers import Response
 
 from cog import schema
+from cog.config import Config
 from cog.server.http import Health, create_app
 
 from .conftest import _fixture_path, uses_predictor
@@ -147,7 +148,7 @@ def test_path_input_slow_response(client, httpserver, match):
 
 
 @uses_predictor("input_path_2")
-def test_path_temporary_files_are_removed(client, httpserver, match):
+def test_path_temporary_files_are_removed(client, match):
     resp = client.post(
         "/predictions",
         json={
@@ -279,7 +280,7 @@ def test_secret_str(client, match):
 def test_untyped_inputs():
     config = {"predict": _fixture_path("input_untyped")}
     app = create_app(
-        cog_config=config,
+        cog_config=Config(config),
         shutdown_event=threading.Event(),
         upload_url="input_untyped",
     )
@@ -293,7 +294,7 @@ def test_untyped_inputs():
 def test_input_with_unsupported_type():
     config = {"predict": _fixture_path("input_unsupported_type")}
     app = create_app(
-        cog_config=config,
+        cog_config=Config(config),
         shutdown_event=threading.Event(),
         upload_url="input_untyped",
     )
