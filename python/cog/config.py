@@ -1,7 +1,7 @@
 import os
 import sys
 import uuid
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Type
 
 import structlog
 import yaml
@@ -129,7 +129,7 @@ class Config:
 
     def get_predictor_types(
         self, mode: Mode
-    ) -> Tuple[type[BaseInput], type[BaseModel]]:
+    ) -> Tuple[Type[BaseInput], Type[BaseModel]]:
         """Find the input and output types of a predictor."""
         predictor_ref = self.get_predictor_ref(mode=mode)
         predictor = self._load_predictor_for_types(
