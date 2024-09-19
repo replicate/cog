@@ -2,12 +2,22 @@ import importlib
 import os
 import threading
 
+import structlog
 from watchdog.observers import Observer
 
 from .watch_handler import WatchHandler
 
 COG_WAIT_FILE_ENV_VAR = "COG_WAIT_FILE"
 COG_EAGER_IMPORTS_ENV_VAR = "COG_EAGER_IMPORTS"
+
+log = structlog.get_logger("cog.wait")
+
+
+def _wait_flag_fallen() -> bool:
+    wait_file = os.environ.get(COG_WAIT_FILE_ENV_VAR)
+    if wait_file is None:
+        return True
+    return os.path.exists(wait_file)
 
 
 def wait_for_file(timeout: float = 60.0) -> bool:
@@ -25,6 +35,7 @@ def wait_for_file(timeout: float = 60.0) -> bool:
     try:
         if os.path.exists(wait_file):
             return True
+        log.info(f"Waiting for flag file {wait_file} to appear.")
         file_created_event.wait(timeout)
         if file_created_event.is_set():
             return True
@@ -40,6 +51,7 @@ def eagerly_import_modules() -> int:
     import_count = 0
     if wait_imports is None:
         return import_count
+    log.info(f"Eagerly importing {wait_imports}.")
     for import_statement in wait_imports.split(","):
         importlib.import_module(import_statement)
         import_count += 1
@@ -48,6 +60,8 @@ def eagerly_import_modules() -> int:
 
 def wait_for_env(file_timeout: float = 60.0, include_imports: bool = True) -> bool:
     """Wait for the environment to load."""
+    if _wait_flag_fallen():
+        return True
     if include_imports:
         eagerly_import_modules()
     return wait_for_file(timeout=file_timeout)

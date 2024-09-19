@@ -32,7 +32,7 @@ COG_GPU_ENV_VAR = "COG_GPU"
 PREDICT_METHOD_NAME = "predict"
 TRAIN_METHOD_NAME = "train"
 
-log = structlog.get_logger("cog.server.predictor")
+log = structlog.get_logger("cog.config")
 
 
 def _method_name_from_mode(mode: Mode) -> str:
