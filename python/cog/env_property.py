@@ -1,8 +1,20 @@
 import os
 from functools import wraps
-from typing import Any, Callable, Optional, TypeVar, Union, get_args, get_origin
+from typing import Any, Callable, Optional, TypeVar, Union
 
 R = TypeVar("R")
+
+
+def _get_origin(typ: Any) -> Any:
+    if hasattr(typ, "__origin__"):
+        return typ.__origin__
+    return None
+
+
+def _get_args(typ: Any) -> Any:
+    if hasattr(typ, "__args__"):
+        return typ.__args__
+    return ()
 
 
 def env_property(
@@ -17,10 +29,10 @@ def env_property(
             if result is not None:
                 expected_type = func.__annotations__.get("return", str)
                 if (
-                    get_origin(expected_type) is Optional
-                    or get_origin(expected_type) is Union
+                    _get_origin(expected_type) is Optional
+                    or _get_origin(expected_type) is Union
                 ):
-                    expected_type = get_args(expected_type)[0]
+                    expected_type = _get_args(expected_type)[0]
                 return expected_type(result)
             result = func(*args, **kwargs)
             return result
