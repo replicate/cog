@@ -163,7 +163,6 @@ import io
 from cog import BasePredictor, Path
 from typing import Optional
 from pydantic import BaseModel
-import torch
 
 
 class ModelOutput(BaseModel):
