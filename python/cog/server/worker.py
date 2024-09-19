@@ -5,6 +5,7 @@ import sys
 import threading
 import traceback
 import types
+import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
@@ -57,7 +58,7 @@ class Worker:
         self._terminating = False
 
         self._result: Optional["Future[Done]"] = None
-        self._subscribers: Dict[int, Optional[Callable[[_PublicEventType], None]]] = {}
+        self._subscribers: Dict[int, Callable[[_PublicEventType], None]] = {}
 
         self._predict_payload: Optional[Dict[str, Any]] = None
         self._predict_start = threading.Event()  # set when a prediction is started
@@ -85,12 +86,12 @@ class Worker:
         return result
 
     def subscribe(self, subscriber: Callable[[_PublicEventType], None]) -> int:
-        idx = len(self._subscribers)
-        self._subscribers[idx] = subscriber
-        return idx
+        sid = uuid.uuid4().int
+        self._subscribers[sid] = subscriber
+        return sid
 
-    def unsubscribe(self, idx: int) -> None:
-        self._subscribers[idx] = None
+    def unsubscribe(self, sid: int) -> None:
+        del self._subscribers[sid]
 
     def shutdown(self, timeout: Optional[float] = None) -> None:
         """
@@ -237,13 +238,10 @@ class Worker:
 
     def _publish(self, ev: _PublicEventType) -> None:
         for subscriber in self._subscribers.values():
-            if subscriber:
-                try:
-                    subscriber(ev)
-                except Exception:
-                    log.warn(
-                        "publish failed", subscriber=subscriber, ev=ev, exc_info=True
-                    )
+            try:
+                subscriber(ev)
+            except Exception:
+                log.warn("publish failed", subscriber=subscriber, ev=ev, exc_info=True)
 
 
 class LockedConn:
