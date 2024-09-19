@@ -15,6 +15,8 @@ from typing import Any, Callable, Dict, List, Sequence, TextIO, Union
 import pydantic
 from typing_extensions import Self
 
+from ..types import PYDANTIC_V2
+
 
 class _StreamWrapper:
     def __init__(self, name: str, stream: TextIO) -> None:
@@ -218,46 +220,47 @@ class StreamRedirector(_StreamRedirectorBase):
 _ADDRESS_PATTERN = re.compile(r"0x[0-9A-Fa-f]+")
 
 
-def _unwrap_pydantic_serialization_iterator(obj: Any) -> Any:
-    # SerializationIterator doesn't expose the object it wraps
-    # but does give us a pointer in the `__repr__` string
-    match = _ADDRESS_PATTERN.search(repr(obj))
-    if match:
-        address = int(match.group(), 16)
-        # Cast the memory address to a Python object
-        return ctypes.cast(address, ctypes.py_object).value
+if PYDANTIC_V2:
 
-    return obj
+    def _unwrap_pydantic_serialization_iterator(obj: Any) -> Any:
+        # SerializationIterator doesn't expose the object it wraps
+        # but does give us a pointer in the `__repr__` string
+        match = _ADDRESS_PATTERN.search(repr(obj))
+        if match:
+            address = int(match.group(), 16)
+            # Cast the memory address to a Python object
+            return ctypes.cast(address, ctypes.py_object).value
 
-
-def unwrap_pydantic_serialization_iterators(obj: Any) -> Any:
-    """
-    Unwraps instances of `pydantic_core._pydantic_core.SerializationIterator`,
-    returning their underlying object so that it can be pickled when passed
-    between multiprocessing workers.
-
-    This is a temporary workaround until the following issues are fixed:
-    - https://github.com/pydantic/pydantic/issues/8907
-    - https://github.com/pydantic/pydantic-core/pull/1399
-    - https://github.com/pydantic/pydantic-core/pull/1401
-    """
-
-    if type(obj).__name__ == "SerializationIterator":
-        return _unwrap_pydantic_serialization_iterator(obj)
-    if type(obj) == str:  # noqa: E721 # pylint: disable=unidiomatic-typecheck
         return obj
-    if isinstance(obj, pydantic.BaseModel):
-        return unwrap_pydantic_serialization_iterators(
-            obj.model_dump(exclude_unset=True)
-        )
-    if isinstance(obj, dict):
-        return {
-            key: unwrap_pydantic_serialization_iterators(value)
-            for key, value in obj.items()
-        }
-    if isinstance(obj, list):
-        return [unwrap_pydantic_serialization_iterators(value) for value in obj]
-    return obj
+
+    def unwrap_pydantic_serialization_iterators(obj: Any) -> Any:
+        """
+        Unwraps instances of `pydantic_core._pydantic_core.SerializationIterator`,
+        returning their underlying object so that it can be pickled when passed
+        between multiprocessing workers.
+
+        This is a temporary workaround until the following issues are fixed:
+        - https://github.com/pydantic/pydantic/issues/8907
+        - https://github.com/pydantic/pydantic-core/pull/1399
+        - https://github.com/pydantic/pydantic-core/pull/1401
+        """
+
+        if type(obj).__name__ == "SerializationIterator":
+            return _unwrap_pydantic_serialization_iterator(obj)
+        if type(obj) == str:  # noqa: E721 # pylint: disable=unidiomatic-typecheck
+            return obj
+        if isinstance(obj, pydantic.BaseModel):
+            return unwrap_pydantic_serialization_iterators(
+                obj.model_dump(exclude_unset=True)
+            )
+        if isinstance(obj, dict):
+            return {
+                key: unwrap_pydantic_serialization_iterators(value)
+                for key, value in obj.items()
+            }
+        if isinstance(obj, list):
+            return [unwrap_pydantic_serialization_iterators(value) for value in obj]
+        return obj
 
 
 def update_openapi_schema_for_pydantic_2(

@@ -37,10 +37,13 @@ from ..predictor import (
     load_slim_predictor_from_ref,
 )
 from ..types import PYDANTIC_V2, CogConfig
-from .helpers import (
-    unwrap_pydantic_serialization_iterators,
-    update_openapi_schema_for_pydantic_2,
-)
+
+if PYDANTIC_V2:
+    from .helpers import (
+        unwrap_pydantic_serialization_iterators,
+        update_openapi_schema_for_pydantic_2,
+    )
+
 from .probes import ProbeHelper
 from .runner import (
     PredictionRunner,

@@ -28,7 +28,10 @@ from .exceptions import (
     FatalWorkerException,
     InvalidStateException,
 )
-from .helpers import StreamRedirector, unwrap_pydantic_serialization_iterators
+from .helpers import StreamRedirector
+
+if PYDANTIC_V2:
+    from .helpers import unwrap_pydantic_serialization_iterators
 
 _spawn = multiprocessing.get_context("spawn")
 
