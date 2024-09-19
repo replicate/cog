@@ -1,11 +1,11 @@
 import importlib
 import os
+import signal
 import threading
+import types
+from typing import Optional
 
 import structlog
-from watchdog.observers import Observer
-
-from .watch_handler import WatchHandler
 
 COG_WAIT_FILE_ENV_VAR = "COG_WAIT_FILE"
 COG_EAGER_IMPORTS_ENV_VAR = "COG_EAGER_IMPORTS"
@@ -20,29 +20,33 @@ def _wait_flag_fallen() -> bool:
     return os.path.exists(wait_file)
 
 
+def wait_for_signal(timeout: float = 60.0) -> bool:
+    """Wait for SIGUSR2 signal."""
+    signal_fired_event = threading.Event()
+
+    def handle_sigusr2(signum: int, _frame: Optional[types.FrameType]) -> None:
+        if signum != signal.SIGUSR2:
+            return
+        signal_fired_event.set()
+
+    signal.signal(signal.SIGUSR2, handle_sigusr2)
+
+    try:
+        signal_fired_event.wait(timeout)
+        return signal_fired_event.is_set()
+    finally:
+        signal.signal(signal.SIGUSR2, signal.SIG_DFL)
+
+
 def wait_for_file(timeout: float = 60.0) -> bool:
     """Wait for a file in the environment variables."""
     wait_file = os.environ.get(COG_WAIT_FILE_ENV_VAR)
     if wait_file is None:
         return True
-    dir_path = os.path.dirname(wait_file)
-    os.makedirs(dir_path, exist_ok=True)
-    file_created_event = threading.Event()
-    event_handler = WatchHandler(wait_file, file_created_event)
-    observer = Observer()
-    observer.schedule(event_handler, path=dir_path, recursive=True)
-    observer.start()
-    try:
-        if os.path.exists(wait_file):
-            return True
-        log.info(f"Waiting for flag file {wait_file} to appear.")
-        file_created_event.wait(timeout)
-        if file_created_event.is_set():
-            return True
-        return False
-    finally:
-        observer.stop()
-        observer.join()
+    if os.path.exists(wait_file):
+        return True
+    signal_set = wait_for_signal(timeout=timeout)
+    return signal_set or os.path.exists(wait_file)
 
 
 def eagerly_import_modules() -> int:

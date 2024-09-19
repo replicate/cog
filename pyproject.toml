@@ -31,7 +31,6 @@ dependencies = [
   'typing-compat; python_version < "3.8"',
   "typing_extensions>=4.4.0",
   "uvicorn[standard]>=0.12,<1",
-  "watchdog>=0.5.2",
 ]
 
 dynamic = ["version"]
