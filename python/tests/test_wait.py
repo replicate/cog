@@ -1,5 +1,4 @@
 import os
-import signal
 import tempfile
 import threading
 import time
@@ -11,7 +10,6 @@ from cog.wait import (
     eagerly_import_modules,
     wait_for_env,
     wait_for_file,
-    wait_for_signal,
 )
 
 
@@ -91,19 +89,3 @@ def test_wait_for_env():
         ), "We should return true if we have waited for the right environment."
         del os.environ[COG_EAGER_IMPORTS_ENV_VAR]
         del os.environ[COG_WAIT_FILE_ENV_VAR]
-
-
-def test_wait_for_signal():
-    wait_file = os.path.join(os.path.dirname(__file__), "signal_flag_file")
-    os.environ[COG_WAIT_FILE_ENV_VAR] = wait_file
-
-    def send_signal():
-        time.sleep(2.0)
-        os.kill(os.getpid(), signal.SIGUSR2)
-
-    thread = threading.Thread(target=send_signal)
-    thread.start()
-
-    signal_set = wait_for_signal(timeout=5.0)
-    del os.environ[COG_WAIT_FILE_ENV_VAR]
-    assert signal_set, "The signal should be set after sending SIGUSR2 to the process."

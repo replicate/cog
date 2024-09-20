@@ -1,9 +1,6 @@
 import importlib
 import os
-import signal
-import threading
-import types
-from typing import Optional
+import time
 
 import structlog
 
@@ -20,24 +17,6 @@ def _wait_flag_fallen() -> bool:
     return os.path.exists(wait_file)
 
 
-def wait_for_signal(timeout: float = 60.0) -> bool:
-    """Wait for SIGUSR2 signal."""
-    signal_fired_event = threading.Event()
-
-    def handle_sigusr2(signum: int, _frame: Optional[types.FrameType]) -> None:
-        if signum != signal.SIGUSR2:
-            return
-        signal_fired_event.set()
-
-    signal.signal(signal.SIGUSR2, handle_sigusr2)
-
-    try:
-        signal_fired_event.wait(timeout)
-        return signal_fired_event.is_set()
-    finally:
-        signal.signal(signal.SIGUSR2, signal.SIG_DFL)
-
-
 def wait_for_file(timeout: float = 60.0) -> bool:
     """Wait for a file in the environment variables."""
     wait_file = os.environ.get(COG_WAIT_FILE_ENV_VAR)
@@ -45,8 +24,14 @@ def wait_for_file(timeout: float = 60.0) -> bool:
         return True
     if os.path.exists(wait_file):
         return True
-    signal_set = wait_for_signal(timeout=timeout)
-    return signal_set or os.path.exists(wait_file)
+    time_taken = 0.0
+    while time_taken < timeout:
+        sleep_time = 0.01
+        time.sleep(sleep_time)
+        time_taken += sleep_time
+        if os.path.exists(wait_file):
+            return True
+    return False
 
 
 def eagerly_import_modules() -> int:
