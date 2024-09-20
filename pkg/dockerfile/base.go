@@ -226,7 +226,7 @@ func (g *BaseImageGenerator) pythonPackages() []string {
 				continue
 			}
 
-			pkgs = append(pkgs, "torchvision=="+compat.Torchvision)
+			pkgs = append(pkgs, "torchvision=="+version.StripModifier(compat.Torchvision))
 			break
 		}
 
@@ -239,7 +239,7 @@ func (g *BaseImageGenerator) pythonPackages() []string {
 				continue
 			}
 
-			pkgs = append(pkgs, "torchaudio=="+compat.Torchaudio)
+			pkgs = append(pkgs, "torchaudio=="+version.StripModifier(compat.Torchaudio))
 			break
 		}
 

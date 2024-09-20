@@ -297,7 +297,7 @@ def test_torch_1_13_0_base_image_fail_explicit(docker_image):
     )
     assert build_process.returncode == 0
 
-
+    
 def test_precompile(docker_image):
     project_dir = Path(__file__).parent / "fixtures/torch-baseimage-project"
     build_process = subprocess.run(
@@ -310,6 +310,21 @@ def test_precompile(docker_image):
             "openapi.json",
             "--use-cog-base-image=false",
             "--precompile",
+        ],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode == 0
+
+
+def test_torch_version_resolution_with_torchvision(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/torch-torchvision-project"
+    build_process = subprocess.run(
+        [
+            "cog",
+            "build",
+            "-t",
+            docker_image,
         ],
         cwd=project_dir,
         capture_output=True,
