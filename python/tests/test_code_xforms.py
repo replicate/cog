@@ -37,7 +37,6 @@ def test_predict_many_inputs():
     new_source = strip_model_source_code(source_code, "Predictor", "predict")
     expected_source = """
 from cog import BasePredictor, Input, Path
-
 class Predictor(BasePredictor):
 
     def predict(self, no_default: str, default_without_input: str='default', input_with_default: int=Input(default=10), path: Path=Input(description='Some path'), image: Path=Input(description='Some path'), choices: str=Input(choices=['foo', 'bar']), int_choices: int=Input(description='hello', choices=[3, 4, 5])) -> str:
@@ -59,7 +58,6 @@ def test_predict_output_path_model():
     expected_source = """
 import os
 from cog import BasePredictor, Path
-
 class Predictor(BasePredictor):
 
     def predict(self) -> Path:
@@ -151,5 +149,53 @@ class ModelOutput(BaseModel):
 class Predictor(BasePredictor):
 
     def predict(self, msg: str) -> ModelOutput:
+        return None"""
+    ), "Stripped code needs to equal the minimum viable type inference."
+
+
+@pytest.mark.skipif(sys.version_info < (3, 9), reason="Requires Python 3.9 or newer")
+def test_strip_model_source_code_keeps_referenced_globals():
+    stripped_code = strip_model_source_code(
+        """
+import io
+
+from cog import BasePredictor, Path
+from typing import Optional
+from pydantic import BaseModel
+import torch
+import numpy as np
+
+
+INPUT_DIMS = list(np.arange(32, 64, 32))
+
+
+class ModelOutput(BaseModel):
+    success: bool
+    error: Optional[str]
+    segmentedImage: Optional[Path]
+
+
+class Predictor(BasePredictor):
+    # setup code
+    def predict(self, height: int=Input(description='Height of image', default=128, choices=INPUT_DIMS)) -> ModelOutput:
+       return ModelOutput(success=False, error=msg, segmentedImage=None)
+""",
+        "Predictor",
+        "predict",
+    )
+    assert (
+        stripped_code
+        == """from cog import BasePredictor, Path
+from typing import Optional
+from pydantic import BaseModel
+import numpy as np
+INPUT_DIMS = list(np.arange(32, 64, 32))
+class ModelOutput(BaseModel):
+    success: bool
+    error: Optional[str]
+    segmentedImage: Optional[Path]
+class Predictor(BasePredictor):
+
+    def predict(self, height: int=Input(description='Height of image', default=128, choices=INPUT_DIMS)) -> ModelOutput:
         return None"""
     ), "Stripped code needs to equal the minimum viable type inference."

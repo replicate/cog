@@ -67,7 +67,9 @@ def extract_function_source(source_code: str, function_name: str) -> str:
     return extractor.function_source if extractor.function_source else ""
 
 
-def make_class_methods_empty(source_code: Union[str, ast.AST], class_name: str) -> str:
+def make_class_methods_empty(
+    source_code: Union[str, ast.AST], class_name: str, globals: list[ast.Assign]
+) -> tuple[str, list[ast.Assign]]:
     """
     Transforms the source code of a specified class to remove the bodies of all its methods
     and replace them with 'return None'.
@@ -79,6 +81,15 @@ def make_class_methods_empty(source_code: Union[str, ast.AST], class_name: str) 
     """
 
     class MethodBodyTransformer(ast.NodeTransformer):
+        def __init__(self, globals: list[ast.Assign]) -> None:
+            self.used_globals = set()
+            self._targets = {
+                target.id: global_name
+                for global_name in globals
+                for target in global_name.targets
+                if isinstance(target, ast.Name)
+            }
+
         def visit_ClassDef(self, node: ast.ClassDef) -> Optional[ast.AST]:  # pylint: disable=invalid-name
             if node.name == class_name:
                 for body_item in node.body:
@@ -87,15 +98,25 @@ def make_class_methods_empty(source_code: Union[str, ast.AST], class_name: str) 
                         body_item.body = [ast.Return(value=ast.Constant(value=None))]
                         # Remove decorators from the function
                         body_item.decorator_list = []
+                        # Determine if one our globals is referenced by the function.
+                        for default in body_item.args.defaults:
+                            if isinstance(default, ast.Call):
+                                for keyword in default.keywords:
+                                    if isinstance(keyword.value, ast.Name):
+                                        corresponding_global = self._targets.get(
+                                            keyword.value.id
+                                        )
+                                        if corresponding_global is not None:
+                                            self.used_globals.add(corresponding_global)
                 return node
 
             return None
 
     tree = source_code if isinstance(source_code, ast.AST) else ast.parse(source_code)
-    transformer = MethodBodyTransformer()
+    transformer = MethodBodyTransformer(globals)
     transformed_tree = transformer.visit(tree)
     class_code = ast.unparse(transformed_tree)
-    return class_code
+    return class_code, transformer.used_globals
 
 
 def extract_method_return_type(
@@ -217,6 +238,15 @@ def extract_specific_imports(
     return "\n".join(extractor.imports)
 
 
+def _extract_globals(source_code: Union[str, ast.AST]) -> list[ast.Assign]:
+    tree = source_code if isinstance(source_code, ast.AST) else ast.parse(source_code)
+    return [x for x in tree.body if isinstance(x, ast.Assign)]
+
+
+def _render_globals(globals: list[ast.Assign]) -> str:
+    return "\n".join([ast.unparse(x) for x in globals])
+
+
 def strip_model_source_code(
     source_code: str, class_name: str, method_name: str
 ) -> Optional[str]:
@@ -236,13 +266,23 @@ def strip_model_source_code(
     class_source = (
         None if not class_name else extract_class_source(source_code, class_name)
     )
+    globals = _extract_globals(source_code)
     if class_source:
-        class_source = make_class_methods_empty(class_source, class_name)
+        class_source, globals = make_class_methods_empty(
+            class_source, class_name, globals
+        )
         return_type = extract_method_return_type(class_source, class_name, method_name)
         return_class_source = (
             extract_class_source(source_code, return_type) if return_type else ""
         )
-        model_source = "\n".join([imports, return_class_source, class_source])
+        rendered_globals = _render_globals(globals)
+        model_source = "\n".join(
+            [
+                x
+                for x in [imports, rendered_globals, return_class_source, class_source]
+                if x
+            ]
+        )
     else:
         # use class_name specified in cog.yaml as method_name
         method_name = class_name
