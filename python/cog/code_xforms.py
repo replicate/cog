@@ -85,6 +85,8 @@ def make_class_methods_empty(source_code: Union[str, ast.AST], class_name: str) 
                     if isinstance(body_item, ast.FunctionDef):
                         # Replace the body of the method with `return None`
                         body_item.body = [ast.Return(value=ast.Constant(value=None))]
+                        # Remove decorators from the function
+                        body_item.decorator_list = []
                 return node
 
             return None
@@ -240,9 +242,7 @@ def strip_model_source_code(
         return_class_source = (
             extract_class_source(source_code, return_type) if return_type else ""
         )
-        model_source = (
-            imports + "\n\n" + return_class_source + "\n\n" + class_source + "\n"
-        )
+        model_source = "\n".join([imports, return_class_source, class_source])
     else:
         # use class_name specified in cog.yaml as method_name
         method_name = class_name
@@ -256,7 +256,5 @@ def strip_model_source_code(
         return_class_source = (
             extract_class_source(source_code, return_type) if return_type else ""
         )
-        model_source = (
-            imports + "\n\n" + return_class_source + "\n\n" + function_source + "\n"
-        )
+        model_source = "\n".join([imports, return_class_source, function_source])
     return model_source
