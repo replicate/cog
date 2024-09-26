@@ -116,7 +116,7 @@ def make_class_methods_empty(
     transformer = MethodBodyTransformer(globals)
     transformed_tree = transformer.visit(tree)
     class_code = ast.unparse(transformed_tree)
-    return class_code, transformer.used_globals
+    return class_code, list(transformer.used_globals)
 
 
 def extract_method_return_type(
