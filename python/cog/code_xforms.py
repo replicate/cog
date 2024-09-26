@@ -68,8 +68,8 @@ def extract_function_source(source_code: str, function_name: str) -> str:
 
 
 def make_class_methods_empty(
-    source_code: Union[str, ast.AST], class_name: str, globals: list[ast.Assign]
-) -> tuple[str, list[ast.Assign]]:
+    source_code: Union[str, ast.AST], class_name: str, globals: List[ast.Assign]
+) -> tuple[str, List[ast.Assign]]:
     """
     Transforms the source code of a specified class to remove the bodies of all its methods
     and replace them with 'return None'.
@@ -81,7 +81,7 @@ def make_class_methods_empty(
     """
 
     class MethodBodyTransformer(ast.NodeTransformer):
-        def __init__(self, globals: list[ast.Assign]) -> None:
+        def __init__(self, globals: List[ast.Assign]) -> None:
             self.used_globals = set()
             self._targets = {
                 target.id: global_name
