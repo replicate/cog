@@ -240,7 +240,9 @@ def extract_specific_imports(
 
 def _extract_globals(source_code: Union[str, ast.AST]) -> list[ast.Assign]:
     tree = source_code if isinstance(source_code, ast.AST) else ast.parse(source_code)
-    return [x for x in tree.body if isinstance(x, ast.Assign)]
+    if isinstance(tree, ast.Module):
+        return [x for x in tree.body if isinstance(x, ast.Assign)]
+    return []
 
 
 def _render_globals(globals: list[ast.Assign]) -> str:
