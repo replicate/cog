@@ -1,7 +1,7 @@
 import ast
 import re
 import types
-from typing import Optional, Set, Union
+from typing import List, Optional, Set, Union
 
 COG_IMPORT_MODULES = {"cog", "typing", "sys", "os", "functools", "pydantic", "numpy"}
 
@@ -238,14 +238,14 @@ def extract_specific_imports(
     return "\n".join(extractor.imports)
 
 
-def _extract_globals(source_code: Union[str, ast.AST]) -> list[ast.Assign]:
+def _extract_globals(source_code: Union[str, ast.AST]) -> List[ast.Assign]:
     tree = source_code if isinstance(source_code, ast.AST) else ast.parse(source_code)
     if isinstance(tree, ast.Module):
         return [x for x in tree.body if isinstance(x, ast.Assign)]
     return []
 
 
-def _render_globals(globals: list[ast.Assign]) -> str:
+def _render_globals(globals: List[ast.Assign]) -> str:
     return "\n".join([ast.unparse(x) for x in globals])
 
 
