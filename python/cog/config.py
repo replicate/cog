@@ -110,7 +110,7 @@ class Config:
             try:
                 module = load_module_from_string(uuid.uuid4().hex, code)
             except Exception as e:  # pylint: disable=broad-exception-caught
-                log.debug(f"[{module_name}] fast loader failed: {e}")
+                log.info(f"[{module_name}] fast loader failed: {e}")
         if module is None:
             wait_for_env(include_imports=False)
             module = load_full_predictor_from_file(module_path, module_name)
