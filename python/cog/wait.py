@@ -24,6 +24,7 @@ def wait_for_file(timeout: float = 60.0) -> bool:
         return True
     if os.path.exists(wait_file):
         return True
+    log.info(f"Waiting for file {wait_file}...")
     time_taken = 0.0
     while time_taken < timeout:
         sleep_time = 0.01
@@ -31,6 +32,7 @@ def wait_for_file(timeout: float = 60.0) -> bool:
         time_taken += sleep_time
         if os.path.exists(wait_file):
             return True
+    log.info(f"Waiting for file {wait_file} timed out.")
     return False
 
 
