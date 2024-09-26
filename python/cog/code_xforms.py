@@ -1,7 +1,7 @@
 import ast
 import re
 import types
-from typing import List, Optional, Set, Union
+from typing import List, Optional, Set, Tuple, Union
 
 COG_IMPORT_MODULES = {"cog", "typing", "sys", "os", "functools", "pydantic", "numpy"}
 
@@ -69,7 +69,7 @@ def extract_function_source(source_code: str, function_name: str) -> str:
 
 def make_class_methods_empty(
     source_code: Union[str, ast.AST], class_name: str, globals: List[ast.Assign]
-) -> tuple[str, List[ast.Assign]]:
+) -> Tuple[str, List[ast.Assign]]:
     """
     Transforms the source code of a specified class to remove the bodies of all its methods
     and replace them with 'return None'.
