@@ -165,6 +165,8 @@ class Task(ABC, Generic[T]):
 
 class SetupTask(Task[SetupResult]):
     def __init__(self, _clock: Optional[Callable[[], datetime]] = None) -> None:
+        log.info("starting setup")
+
         self._clock = _clock
         if self._clock is None:
             self._clock = lambda: datetime.now(timezone.utc)
@@ -177,6 +179,7 @@ class SetupTask(Task[SetupResult]):
         return self._result
 
     def track(self, fut: "Future[Done]") -> None:
+        log.info("started setup")
         self._fut = fut
         self._fut.add_done_callback(self._handle_done)
 
@@ -196,11 +199,13 @@ class SetupTask(Task[SetupResult]):
         self._result.logs.append(message)
 
     def succeeded(self) -> None:
+        log.info("setup succeeded")
         assert self._clock
         self._result.completed_at = self._clock()
         self._result.status = schema.Status.SUCCEEDED
 
     def failed(self) -> None:
+        log.info("setup failed")
         assert self._clock
         self._result.completed_at = self._clock()
         self._result.status = schema.Status.FAILED
