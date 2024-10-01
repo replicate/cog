@@ -155,10 +155,16 @@ func (g *Generator) generateInitialSteps() (string, error) {
 			return "", err
 		}
 
+		installCog, err := g.installCog()
+		if err != nil {
+			return "", err
+		}
+
 		steps := []string{
 			"#syntax=docker/dockerfile:1.4",
 			"FROM " + baseImage,
 			aptInstalls,
+			installCog,
 			pipInstalls,
 		}
 		if g.precompile {

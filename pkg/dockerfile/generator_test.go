@@ -37,12 +37,16 @@ func getWheelName() string {
 	return files[0].Name()
 }
 
-func testInstallCog(relativeTmpDir string) string {
+func testInstallCog(relativeTmpDir string, stripped bool) string {
 	wheel := getWheelName()
+	strippedCall := ""
+	if stripped {
+		strippedCall += " && find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
+	}
 	return fmt.Sprintf(`COPY %s/%s /tmp/%s
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep /tmp/%s
-ENV CFLAGS=`, relativeTmpDir, wheel, wheel, wheel)
+RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep /tmp/%s%s
+ENV CFLAGS=`, relativeTmpDir, wheel, wheel, wheel, strippedCall)
 }
 
 func testInstallPython(version string) string {
@@ -97,7 +101,7 @@ predict: predict.py:Predictor
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM python:3.12 as deps
-` + testInstallCog(gen.relativeTmpDir) + `
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 FROM python:3.12-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -132,7 +136,7 @@ predict: predict.py:Predictor
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM python:3.12 as deps
-` + testInstallCog(gen.relativeTmpDir) + `
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -181,7 +185,7 @@ predict: predict.py:Predictor
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM python:3.12 as deps
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-` + testInstallCog(gen.relativeTmpDir) + `
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r /tmp/requirements.txt
@@ -237,7 +241,7 @@ predict: predict.py:Predictor
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM python:3.12 as deps
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-` + testInstallCog(gen.relativeTmpDir) + `
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r /tmp/requirements.txt
@@ -293,7 +297,7 @@ build:
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM python:3.12 as deps
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
-` + testInstallCog(gen.relativeTmpDir) + `
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 FROM python:3.12-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -403,7 +407,7 @@ COPY root-large /src/root-large`
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM python:3.12 as deps
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-` + testInstallCog(gen.relativeTmpDir) + `
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r /tmp/requirements.txt
@@ -486,7 +490,7 @@ predict: predict.py:Predictor
 
 	expected := `#syntax=docker/dockerfile:1.4
 FROM python:3.12 as deps
-` + testInstallCog(gen.relativeTmpDir) + `
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 FROM python:3.12-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -522,6 +526,7 @@ predict: predict.py:Predictor
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:python3.12
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -559,6 +564,7 @@ predict: predict.py:Predictor
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:python3.12
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
@@ -614,6 +620,7 @@ predict: predict.py:Predictor
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.11-torch%s
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
+`+testInstallCog(gen.relativeTmpDir, gen.strip)+`
 COPY `+gen.relativeTmpDir+`/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
@@ -666,6 +673,7 @@ predict: predict.py:Predictor
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
@@ -717,6 +725,7 @@ predict: predict.py:Predictor
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
@@ -800,6 +809,7 @@ predict: predict.py:Predictor
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
