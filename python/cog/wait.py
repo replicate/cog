@@ -1,5 +1,6 @@
 import importlib
 import os
+import sys
 import time
 
 import structlog
@@ -17,6 +18,17 @@ def _wait_flag_fallen() -> bool:
     return os.path.exists(wait_file)
 
 
+def _insert_pythonpath() -> None:
+    pyenv_path = os.environ.get("COG_PYENV_PATH")
+    if pyenv_path is None:
+        return
+    full_module_path = os.path.join(
+        pyenv_path, "lib", "python" + os.environ["PYTHON_VERSION"], "site-packages"
+    )
+    if full_module_path not in sys.path:
+        sys.path.append(full_module_path)
+
+
 def wait_for_file(timeout: float = 60.0) -> bool:
     """Wait for a file in the environment variables."""
     wait_file = os.environ.get(COG_WAIT_FILE_ENV_VAR)
@@ -31,8 +43,10 @@ def wait_for_file(timeout: float = 60.0) -> bool:
         time.sleep(sleep_time)
         time_taken += sleep_time
         if os.path.exists(wait_file):
+            _insert_pythonpath()
             return True
     log.info(f"Waiting for file {wait_file} timed out.")
+    _insert_pythonpath()
     return False
 
 
@@ -52,6 +66,7 @@ def eagerly_import_modules() -> int:
 def wait_for_env(file_timeout: float = 60.0, include_imports: bool = True) -> bool:
     """Wait for the environment to load."""
     if _wait_flag_fallen():
+        _insert_pythonpath()
         return True
     if include_imports:
         eagerly_import_modules()
