@@ -41,8 +41,6 @@ class WebhookEvent(str, Enum):
 
 
 class PredictionBaseModel(pydantic.BaseModel):
-    input: Dict[str, Any]
-
     if PYDANTIC_V2:
         model_config = pydantic.ConfigDict(use_enum_values=True)  # type: ignore
     else:
@@ -66,6 +64,8 @@ else:
 
 
 class PredictionRequest(PredictionBaseModel):
+    input: Dict[str, Any]
+
     id: Optional[str] = None
     created_at: Optional[datetime] = None
 
@@ -76,6 +76,8 @@ class PredictionRequest(PredictionBaseModel):
     webhook_events_filter: Optional[List[WebhookEvent]] = pydantic.Field(
         default=WebhookEvent.default_events(),
     )
+
+    quiet: bool = False
 
     @classmethod
     def with_types(cls, input_type: Type[Any]) -> Any:
@@ -88,6 +90,8 @@ class PredictionRequest(PredictionBaseModel):
 
 
 class PredictionResponse(PredictionBaseModel):
+    input: Optional[Dict[str, Any]] = None
+
     output: Any = None
 
     id: Optional[str] = None
