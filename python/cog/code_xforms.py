@@ -16,7 +16,7 @@ def load_module_from_string(
     return module
 
 
-def extract_class_source(source_code: str, class_name: str) -> str:
+def extract_class_sources(source_code: str, class_name: str) -> str:
     """
     Extracts the source code for a specified class from a given source text.
     Args:
@@ -30,16 +30,29 @@ def extract_class_source(source_code: str, class_name: str) -> str:
 
     class ClassExtractor(ast.NodeVisitor):
         def __init__(self) -> None:
-            self.class_source = None
+            self.class_sources = []
 
         def visit_ClassDef(self, node: ast.ClassDef) -> None:  # pylint: disable=invalid-name
-            if node.name in all_class_names:
-                self.class_source = ast.get_source_segment(source_code, node)
+            self.class_sources.append(node)
 
     tree = ast.parse(source_code)
     extractor = ClassExtractor()
     extractor.visit(tree)
-    return extractor.class_source if extractor.class_source else ""
+
+    valid_class_names = set(all_class_names)
+    for node in extractor.class_sources:
+        if node.name not in valid_class_names:
+            continue
+        for base_name in node.bases:
+            valid_class_names.add(base_name.id)
+
+    print(valid_class_names)
+
+    return [
+        ast.get_source_segment(source_code, x)
+        for x in extractor.class_sources
+        if x.name in valid_class_names
+    ]
 
 
 def extract_function_source(source_code: str, function_name: str) -> str:
@@ -68,7 +81,9 @@ def extract_function_source(source_code: str, function_name: str) -> str:
 
 
 def make_class_methods_empty(
-    source_code: Union[str, ast.AST], class_name: str, globals: List[ast.Assign]
+    source_code: Union[str, ast.AST],
+    class_name: Optional[str],
+    globals: List[ast.Assign],
 ) -> Tuple[str, List[ast.Assign]]:
     """
     Transforms the source code of a specified class to remove the bodies of all its methods
@@ -91,7 +106,7 @@ def make_class_methods_empty(
             }
 
         def visit_ClassDef(self, node: ast.ClassDef) -> Optional[ast.AST]:  # pylint: disable=invalid-name
-            if node.name == class_name:
+            if class_name is None or node.name == class_name:
                 for body_item in node.body:
                     if isinstance(body_item, ast.FunctionDef):
                         # Replace the body of the method with `return None`
@@ -265,18 +280,19 @@ def strip_model_source_code(
         Returns None if neither the class nor the function specified could be found or processed.
     """
     imports = extract_specific_imports(source_code, COG_IMPORT_MODULES)
-    class_source = (
-        None if not class_name else extract_class_source(source_code, class_name)
+    class_sources = (
+        None if not class_name else extract_class_sources(source_code, class_name)
     )
+    print(class_sources)
     globals = _extract_globals(source_code)
-    if class_source:
-        class_source, globals = make_class_methods_empty(
-            class_source, class_name, globals
-        )
+    if class_sources:
+        class_source = "\n".join(class_sources)
+        class_source, globals = make_class_methods_empty(class_source, None, globals)
         return_type = extract_method_return_type(class_source, class_name, method_name)
-        return_class_source = (
-            extract_class_source(source_code, return_type) if return_type else ""
+        return_class_sources = (
+            extract_class_sources(source_code, return_type) if return_type else ""
         )
+        return_class_source = "\n".join(return_class_sources)
         rendered_globals = _render_globals(globals)
         model_source = "\n".join(
             [
@@ -295,8 +311,9 @@ def strip_model_source_code(
         if not function_source:
             return None
         return_type = extract_function_return_type(function_source, method_name)
-        return_class_source = (
-            extract_class_source(source_code, return_type) if return_type else ""
+        return_class_sources = (
+            extract_class_sources(source_code, return_type) if return_type else ""
         )
+        return_class_source = "\n".join(return_class_sources)
         model_source = "\n".join([imports, return_class_source, function_source])
     return model_source

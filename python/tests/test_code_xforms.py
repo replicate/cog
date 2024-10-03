@@ -199,3 +199,61 @@ class Predictor(BasePredictor):
     def predict(self, height: int=Input(description='Height of image', default=128, choices=INPUT_DIMS)) -> ModelOutput:
         return None"""
     ), "Stripped code needs to equal the minimum viable type inference."
+
+
+@pytest.mark.skipif(sys.version_info < (3, 9), reason="Requires Python 3.9 or newer")
+def test_strip_model_source_code_keeps_referenced_subclasses():
+    stripped_code = strip_model_source_code(
+        """
+import io
+
+from cog import BasePredictor, Path
+from typing import Optional
+from pydantic import BaseModel
+import torch
+import numpy as np
+
+
+INPUT_DIMS = list(np.arange(32, 64, 32))
+
+
+class ModelOutput(BaseModel):
+    success: bool
+    error: Optional[str]
+    segmentedImage: Optional[Path]
+
+
+class Predictor(BasePredictor):
+    # setup code
+    def predict(self, height: int=Input(description='Height of image', default=128, choices=INPUT_DIMS)) -> ModelOutput:
+       return ModelOutput(success=False, error=msg, segmentedImage=None)
+
+class SchnellPredictor(Predictor):
+    # setup code
+    def predict(self, height: int=Input(description='Height of image', default=128, choices=INPUT_DIMS)) -> ModelOutput:
+       return ModelOutput(success=False, error=msg, segmentedImage=None)
+""",
+        "SchnellPredictor",
+        "predict",
+    )
+    assert (
+        stripped_code
+        == """from cog import BasePredictor, Path
+from typing import Optional
+from pydantic import BaseModel
+import numpy as np
+INPUT_DIMS = list(np.arange(32, 64, 32))
+class ModelOutput(BaseModel):
+    success: bool
+    error: Optional[str]
+    segmentedImage: Optional[Path]
+class Predictor(BasePredictor):
+
+    def predict(self, height: int=Input(description='Height of image', default=128, choices=INPUT_DIMS)) -> ModelOutput:
+        return None
+
+class SchnellPredictor(Predictor):
+
+    def predict(self, height: int=Input(description='Height of image', default=128, choices=INPUT_DIMS)) -> ModelOutput:
+        return None"""
+    ), "Stripped code needs to equal the minimum viable type inference."
