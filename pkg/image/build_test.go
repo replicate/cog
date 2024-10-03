@@ -35,7 +35,7 @@ func setupGitWorkTree(t *testing.T) string {
 	r := require.New(t)
 
 	tmp := filepath.Join(t.TempDir(), "wd")
-	r.NoError(os.MkdirAll(tmp, 0755))
+	r.NoError(os.MkdirAll(tmp, 0o755))
 
 	gitRun([]string{"init", tmp}, t)
 	gitRun([]string{"-C", tmp, "config", "user.email", "cog@localhost"}, t)
