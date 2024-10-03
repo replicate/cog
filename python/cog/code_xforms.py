@@ -16,7 +16,7 @@ def load_module_from_string(
     return module
 
 
-def extract_class_sources(source_code: str, class_name: str) -> str:
+def extract_class_sources(source_code: str, class_name: str) -> List[str]:
     """
     Extracts the source code for a specified class from a given source text.
     Args:
@@ -45,8 +45,6 @@ def extract_class_sources(source_code: str, class_name: str) -> str:
             continue
         for base_name in node.bases:
             valid_class_names.add(base_name.id)
-
-    print(valid_class_names)
 
     return [
         ast.get_source_segment(source_code, x)
