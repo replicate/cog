@@ -47,7 +47,7 @@ def extract_class_sources(source_code: str, class_name: str) -> List[str]:
             valid_class_names.add(base_name.id)
 
     return [
-        ast.get_source_segment(source_code, x)
+        str(ast.get_source_segment(source_code, x))
         for x in extractor.class_sources
         if x.name in valid_class_names
     ]
