@@ -1,8 +1,12 @@
 package image
 
 import (
+	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -12,6 +16,16 @@ var hasGit = (func() bool {
 	return err == nil
 })()
 
+func gitRun(argv []string, t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.TODO(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	out, err := exec.CommandContext(ctx, "git", argv...).Output()
+	t.Logf("git output:\n%s", string(out))
+
+	require.NoError(t, err)
+}
+
 func setupGitWorkTree(t *testing.T) string {
 	if !hasGit {
 		t.Skip("no git executable available")
@@ -20,11 +34,12 @@ func setupGitWorkTree(t *testing.T) string {
 
 	r := require.New(t)
 
-	tmp := t.TempDir()
+	tmp := filepath.Join(t.TempDir(), "wd")
+	r.NoError(os.MkdirAll(tmp, 0755))
 
-	r.NoError(exec.Command("git", "init", tmp).Run())
-	r.NoError(exec.Command("git", "-C", tmp, "commit", "--allow-empty", "-m", "walrus").Run())
-	r.NoError(exec.Command("git", "-C", tmp, "tag", "-a", "v0.0.1+walrus", "-m", "walrus time").Run())
+	gitRun([]string{"init", tmp}, t)
+	gitRun([]string{"-C", tmp, "commit", "--allow-empty", "-m", "walrus"}, t)
+	gitRun([]string{"-C", tmp, "tag", "-a", "v0.0.1+walrus", "-m", "walrus time"}, t)
 
 	return tmp
 }

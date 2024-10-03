@@ -261,7 +261,7 @@ func BuildBase(cfg *config.Config, dir string, useCudaBaseImage string, useCogBa
 }
 
 func isGitWorkTree(dir string) bool {
-	ctx, cancel := context.WithTimeout(context.TODO(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
 	defer cancel()
 
 	out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--is-inside-work-tree").Output()
@@ -278,7 +278,7 @@ func gitHead(dir string) (string, error) {
 	}
 
 	if isGitWorkTree(dir) {
-		ctx, cancel := context.WithTimeout(context.TODO(), 1*time.Second)
+		ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
 		defer cancel()
 
 		out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "HEAD").Output()
@@ -298,7 +298,7 @@ func gitTag(dir string) (string, error) {
 	}
 
 	if isGitWorkTree(dir) {
-		ctx, cancel := context.WithTimeout(context.TODO(), 1*time.Second)
+		ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
 		defer cancel()
 
 		out, err := exec.CommandContext(ctx, "git", "-C", dir, "describe", "--tags", "--dirty").Output()
