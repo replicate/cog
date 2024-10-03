@@ -20,7 +20,7 @@ func gitRun(argv []string, t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.TODO(), 2*time.Second)
 	t.Cleanup(cancel)
 
-	out, err := exec.CommandContext(ctx, "git", argv...).Output()
+	out, err := exec.CommandContext(ctx, "git", argv...).CombinedOutput()
 	t.Logf("git output:\n%s", string(out))
 
 	require.NoError(t, err)
