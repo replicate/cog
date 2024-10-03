@@ -69,12 +69,16 @@ func TestGitHead(t *testing.T) {
 			return
 		}
 
+		t.Setenv("GITHUB_SHA", "")
+
 		head, err := gitHead(tmp)
 		require.NoError(t, err)
 		require.NotEqual(t, "", head)
 	})
 
 	t.Run("unavailable", func(t *testing.T) {
+		t.Setenv("GITHUB_SHA", "")
+
 		head, err := gitHead("/dev/null")
 		require.Error(t, err)
 		require.Equal(t, "", head)
@@ -96,12 +100,16 @@ func TestGitTag(t *testing.T) {
 			return
 		}
 
+		t.Setenv("GITHUB_REF_NAME", "")
+
 		tag, err := gitTag(tmp)
 		require.NoError(t, err)
 		require.Equal(t, "v0.0.1+walrus", tag)
 	})
 
 	t.Run("unavailable", func(t *testing.T) {
+		t.Setenv("GITHUB_REF_NAME", "")
+
 		tag, err := gitTag("/dev/null")
 		require.Error(t, err)
 		require.Equal(t, "", tag)

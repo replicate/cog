@@ -273,7 +273,7 @@ func isGitWorkTree(dir string) bool {
 }
 
 func gitHead(dir string) (string, error) {
-	if v, ok := os.LookupEnv("GITHUB_SHA"); ok {
+	if v, ok := os.LookupEnv("GITHUB_SHA"); ok && v != "" {
 		return v, nil
 	}
 
@@ -293,7 +293,7 @@ func gitHead(dir string) (string, error) {
 }
 
 func gitTag(dir string) (string, error) {
-	if v, ok := os.LookupEnv("GITHUB_REF_NAME"); ok {
+	if v, ok := os.LookupEnv("GITHUB_REF_NAME"); ok && v != "" {
 		return v, nil
 	}
 
