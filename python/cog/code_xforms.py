@@ -281,7 +281,6 @@ def strip_model_source_code(
     class_sources = (
         None if not class_name else extract_class_sources(source_code, class_name)
     )
-    print(class_sources)
     globals = _extract_globals(source_code)
     if class_sources:
         class_source = "\n".join(class_sources)
