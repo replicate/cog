@@ -35,6 +35,7 @@ def wait_for_file(timeout: float = 60.0) -> bool:
     if wait_file is None:
         return True
     if os.path.exists(wait_file):
+        log.info(f"Wait file found {wait_file}...")
         return True
     log.info(f"Waiting for file {wait_file}...")
     time_taken = 0.0
@@ -43,10 +44,8 @@ def wait_for_file(timeout: float = 60.0) -> bool:
         time.sleep(sleep_time)
         time_taken += sleep_time
         if os.path.exists(wait_file):
-            _insert_pythonpath()
             return True
     log.info(f"Waiting for file {wait_file} timed out.")
-    _insert_pythonpath()
     return False
 
 
@@ -70,4 +69,6 @@ def wait_for_env(file_timeout: float = 60.0, include_imports: bool = True) -> bo
         return True
     if include_imports:
         eagerly_import_modules()
-    return wait_for_file(timeout=file_timeout)
+    waited = wait_for_file(timeout=file_timeout)
+    _insert_pythonpath()
+    return waited
