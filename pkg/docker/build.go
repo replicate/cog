@@ -1,9 +1,12 @@
 package docker
 
 import (
+	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
+	"path"
 	"runtime"
 	"strings"
 
@@ -11,10 +14,46 @@ import (
 
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/files"
 )
+
+func sanitiseDockerIgnore(dir string) error {
+	dockerIgnorePath := path.Join(dir, ".dockerignore")
+	fileExists, err := files.Exists(dockerIgnorePath)
+	if err != nil {
+		return err
+	}
+	if !fileExists {
+		return nil
+	}
+
+	console.Debug("Sanitising .dockerignore.")
+	file, err := os.Open(dockerIgnorePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	scanner := bufio.NewScanner(file)
+	newContents := ""
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == ".cog" {
+			continue
+		}
+		newContents += line + "\n"
+	}
+	file.Close()
+	if err := scanner.Err(); err != nil {
+		log.Fatal(err)
+	}
+
+	return os.WriteFile(dockerIgnorePath, []byte(newContents), 0o644)
+}
 
 func Build(dir, dockerfile, imageName string, secrets []string, noCache bool, progressOutput string, epoch int64) error {
 	var args []string
+
+	sanitiseDockerIgnore(dir)
 
 	args = append(args,
 		"buildx", "build",

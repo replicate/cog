@@ -315,3 +315,26 @@ def test_precompile(docker_image):
         capture_output=True,
     )
     assert build_process.returncode == 0
+
+
+def test_dockerignore_dot_cog(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/dockerignore-cog-project"
+    # We rewrite the .dockerignore file so preserve its contents across the test.
+    dockerignore_path = os.path.join(project_dir, ".dockerignore")
+    dockerignore_contents = ""
+    with open(dockerignore_path, encoding="utf-8") as handle:
+        dockerignore_contents = handle.read()
+    build_process = subprocess.run(
+        [
+            "cog",
+            "build",
+            "-t",
+            docker_image,
+        ],
+        cwd=project_dir,
+        capture_output=True,
+        check=False,
+    )
+    with open(dockerignore_path, "w", encoding="utf-8") as handle:
+        handle.write(dockerignore_contents)
+    assert build_process.returncode == 0
