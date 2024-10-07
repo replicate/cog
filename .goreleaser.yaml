@@ -42,7 +42,7 @@ archives:
 checksum:
   name_template: "checksums.txt"
 snapshot:
-  name_template: "{{ incpatch .Version }}-dev+g{{ .ShortCommit }}{{ if .IsGitDirty }}.d{{ .Now.Format \"20060102\" }}{{ end }}"
+  version_template: "{{ incpatch .Version }}-dev+g{{ .ShortCommit }}{{ if .IsGitDirty }}.d{{ .Now.Format \"20060102\" }}{{ end }}"
 changelog:
   sort: asc
   filters:
