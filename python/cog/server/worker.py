@@ -247,7 +247,7 @@ class Worker:
 class LockedConn:
     def __init__(self, conn: Connection) -> None:
         self.conn = conn
-        self._lock = _spawn.Lock()
+        self._lock = threading.Lock()
 
     def send(self, obj: Any) -> None:
         with self._lock:
@@ -266,7 +266,7 @@ class ChildWorker(_spawn.Process):  # type: ignore
     ) -> None:
         self._predictor_ref = predictor_ref
         self._predictor: Optional[BasePredictor] = None
-        self._events = LockedConn(events)
+        self._unwrapped_events = events
         self._tee_output = tee_output
         self._cancelable = False
 
@@ -280,6 +280,7 @@ class ChildWorker(_spawn.Process):  # type: ignore
 
         # We use SIGUSR1 to signal an interrupt for cancelation.
         signal.signal(signal.SIGUSR1, self._signal_handler)
+        self._events = LockedConn(self._unwrapped_events)
 
         redirector = StreamRedirector(
             tee=self._tee_output,
