@@ -13,10 +13,10 @@ from typing_extensions import Literal  # Python 3.7
 from urllib3.util.retry import Retry
 
 from .. import schema
-from ..errors import COG_INTERNAL_ERROR_PREFIX
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from ..predictor import BaseInput
+from .errors import FileUploadError, UnknownPredictionError, RunnerBusyError
 from .eventtypes import Done, Log, PredictionOutput, PredictionOutputType
 from .telemetry import current_trace_context
 from .useragent import get_user_agent
@@ -24,18 +24,6 @@ from .webhook import SKIP_START_EVENT, webhook_caller_filtered
 from .worker import Worker, _PublicEventType
 
 log = structlog.get_logger("cog.server.runner")
-
-
-class FileUploadError(Exception):
-    pass
-
-
-class RunnerBusyError(Exception):
-    pass
-
-
-class UnknownPredictionError(Exception):
-    pass
 
 
 @define
@@ -123,19 +111,19 @@ class PredictionRunner:
         if not prediction_id:
             raise ValueError("prediction_id is required")
         if self._prediction_id != prediction_id:
-            raise UnknownPredictionError(COG_INTERNAL_ERROR_PREFIX + "id mismatch")
+            raise UnknownPredictionError("id mismatch")
         self._worker.cancel()
 
     def _raise_if_busy(self) -> None:
         if self._setup_task is None:
             # Setup hasn't been called yet.
-            raise RunnerBusyError(COG_INTERNAL_ERROR_PREFIX + "setup has not started")
+            raise RunnerBusyError("setup has not started")
         if not self._setup_task.done():
             # Setup is still running.
-            raise RunnerBusyError(COG_INTERNAL_ERROR_PREFIX + "setup is not complete")
+            raise RunnerBusyError("setup is not complete")
         if self._predict_task is not None and not self._predict_task.done():
             # Prediction is still running.
-            raise RunnerBusyError(COG_INTERNAL_ERROR_PREFIX + "prediction running")
+            raise RunnerBusyError("prediction running")
 
 
 T = TypeVar("T")
@@ -402,9 +390,7 @@ class PredictTask(Task[schema.PredictionResponse]):
             # If something goes wrong uploading a file, it's irrecoverable.
             # The re-raised exception will be caught and cause the prediction
             # to be failed, with a useful error message.
-            raise FileUploadError(
-                COG_INTERNAL_ERROR_PREFIX + "Got error trying to upload output files"
-            ) from error
+            raise FileUploadError("Got error trying to upload output files") from error
 
     def _handle_done(self, f: "Future[Done]") -> None:
         try:

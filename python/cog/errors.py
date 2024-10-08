@@ -8,7 +8,3 @@ class ConfigDoesNotExist(CogError):
 
 class PredictorNotSet(CogError):
     """Exception raised when 'predict' is not set in cog.yaml when it needs to be."""
-
-
-"""Prefix for all Cog errors attributable to internals or infrastructure."""
-COG_INTERNAL_ERROR_PREFIX = "cog-internal: "
