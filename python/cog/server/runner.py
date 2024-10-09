@@ -16,6 +16,8 @@ from .. import schema
 from ..base_input import BaseInput
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
+from ..predictor import BaseInput
+from .errors import FileUploadError, RunnerBusyError, UnknownPredictionError
 from .eventtypes import Done, Log, PredictionOutput, PredictionOutputType
 from .telemetry import current_trace_context
 from .useragent import get_user_agent
@@ -23,18 +25,6 @@ from .webhook import SKIP_START_EVENT, webhook_caller_filtered
 from .worker import Worker, _PublicEventType
 
 log = structlog.get_logger("cog.server.runner")
-
-
-class FileUploadError(Exception):
-    pass
-
-
-class RunnerBusyError(Exception):
-    pass
-
-
-class UnknownPredictionError(Exception):
-    pass
 
 
 @define
@@ -122,7 +112,7 @@ class PredictionRunner:
         if not prediction_id:
             raise ValueError("prediction_id is required")
         if self._prediction_id != prediction_id:
-            raise UnknownPredictionError()
+            raise UnknownPredictionError("id mismatch")
         self._worker.cancel()
 
     def _raise_if_busy(self) -> None:

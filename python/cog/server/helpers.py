@@ -12,6 +12,8 @@ from typing import Callable, Sequence, TextIO
 
 from typing_extensions import Self
 
+from .errors import CogRuntimeError, CogTimeoutError
+
 
 class _StreamWrapper:
     def __init__(self, name: str, stream: TextIO) -> None:
@@ -22,7 +24,7 @@ class _StreamWrapper:
 
     def wrap(self) -> None:
         if self._wrapped_fp or self._original_fp:
-            raise RuntimeError("stream is already wrapped")
+            raise CogRuntimeError("stream is already wrapped")
 
         r, w = os.pipe()
 
@@ -48,7 +50,7 @@ class _StreamWrapper:
 
     def unwrap(self) -> None:
         if not self._wrapped_fp or not self._original_fp:
-            raise RuntimeError("stream is not wrapped (call wrap first)")
+            raise CogRuntimeError("stream is not wrapped (call wrap first)")
 
         # Put the original file descriptor back.
         os.dup2(self._original_fp.fileno(), self._stream.fileno())
@@ -70,13 +72,13 @@ class _StreamWrapper:
     @property
     def wrapped(self) -> TextIO:
         if not self._wrapped_fp:
-            raise RuntimeError("stream is not wrapped (call wrap first)")
+            raise CogRuntimeError("stream is not wrapped (call wrap first)")
         return self._wrapped_fp
 
     @property
     def original(self) -> TextIO:
         if not self._original_fp:
-            raise RuntimeError("stream is not wrapped (call wrap first)")
+            raise CogRuntimeError("stream is not wrapped (call wrap first)")
         return self._original_fp
 
 
@@ -151,7 +153,7 @@ class StreamRedirector(_StreamRedirectorBase):
             stream.write(self._drain_token + "\n")
             stream.flush()
         if not self._drain_event.wait(timeout=timeout):
-            raise TimeoutError("output streams failed to drain")
+            raise CogTimeoutError("output streams failed to drain")
 
     def _start(self) -> None:
         selector = selectors.DefaultSelector()
