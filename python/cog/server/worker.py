@@ -5,6 +5,7 @@ import sys
 import threading
 import traceback
 import types
+import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
@@ -60,7 +61,7 @@ class Worker:
         self._terminating = False
 
         self._result: Optional["Future[Done]"] = None
-        self._subscribers: Dict[int, Optional[Callable[[_PublicEventType], None]]] = {}
+        self._subscribers: Dict[int, Callable[[_PublicEventType], None]] = {}
 
         self._predict_payload: Optional[Dict[str, Any]] = None
         self._predict_start = threading.Event()  # set when a prediction is started
@@ -88,12 +89,12 @@ class Worker:
         return result
 
     def subscribe(self, subscriber: Callable[[_PublicEventType], None]) -> int:
-        idx = len(self._subscribers)
-        self._subscribers[idx] = subscriber
-        return idx
+        sid = uuid.uuid4().int
+        self._subscribers[sid] = subscriber
+        return sid
 
-    def unsubscribe(self, idx: int) -> None:
-        self._subscribers[idx] = None
+    def unsubscribe(self, sid: int) -> None:
+        del self._subscribers[sid]
 
     def shutdown(self, timeout: Optional[float] = None) -> None:
         """
@@ -240,13 +241,10 @@ class Worker:
 
     def _publish(self, ev: _PublicEventType) -> None:
         for subscriber in self._subscribers.values():
-            if subscriber:
-                try:
-                    subscriber(ev)
-                except Exception:
-                    log.warn(
-                        "publish failed", subscriber=subscriber, ev=ev, exc_info=True
-                    )
+            try:
+                subscriber(ev)
+            except Exception:
+                log.warn("publish failed", subscriber=subscriber, ev=ev, exc_info=True)
 
 
 class LockedConn:
@@ -291,55 +289,54 @@ class ChildWorker(_spawn.Process):  # type: ignore
             callback=self._stream_write_hook,
         )
 
-        self._setup(redirector)
-        self._loop(redirector)
+        with redirector:
+            self._setup(redirector)
+            self._loop(redirector)
 
     def send_cancel(self) -> None:
         if self.is_alive() and self.pid:
             os.kill(self.pid, signal.SIGUSR1)
 
     def _setup(self, redirector: StreamRedirector) -> None:
-        with redirector:
-            done = Done()
+        done = Done()
+        try:
+            self._predictor = load_predictor_from_ref(self._predictor_ref)
+            # Could be a function or a class
+            if hasattr(self._predictor, "setup"):
+                run_setup(self._predictor)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            traceback.print_exc()
+            done.error = True
+            done.error_detail = str(e)
+        except BaseException as e:
+            # For SystemExit and friends we attempt to add some useful context
+            # to the logs, but reraise to ensure the process dies.
+            traceback.print_exc()
+            done.error = True
+            done.error_detail = str(e)
+            raise
+        finally:
             try:
-                self._predictor = load_predictor_from_ref(self._predictor_ref)
-                # Could be a function or a class
-                if hasattr(self._predictor, "setup"):
-                    run_setup(self._predictor)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                traceback.print_exc()
-                done.error = True
-                done.error_detail = str(e)
-            except BaseException as e:
-                # For SystemExit and friends we attempt to add some useful context
-                # to the logs, but reraise to ensure the process dies.
-                traceback.print_exc()
-                done.error = True
-                done.error_detail = str(e)
-                raise
-            finally:
-                try:
-                    redirector.drain(timeout=10)
-                except TimeoutError:
-                    self._events.send(
-                        Log(
-                            "WARNING: logs may be truncated due to excessive volume.",
-                            source="stderr",
-                        )
+                redirector.drain(timeout=10)
+            except TimeoutError:
+                self._events.send(
+                    Log(
+                        "WARNING: logs may be truncated due to excessive volume.",
+                        source="stderr",
                     )
-                    raise
-                self._events.send(done)
+                )
+                raise
+            self._events.send(done)
 
     def _loop(self, redirector: StreamRedirector) -> None:
-        with redirector:
-            while True:
-                ev = self._events.recv()
-                if isinstance(ev, Shutdown):
-                    break
-                if isinstance(ev, PredictionInput):
-                    self._predict(ev.payload, redirector)
-                else:
-                    print(f"Got unexpected event: {ev}", file=sys.stderr)
+        while True:
+            ev = self._events.recv()
+            if isinstance(ev, Shutdown):
+                break
+            if isinstance(ev, PredictionInput):
+                self._predict(ev.payload, redirector)
+            else:
+                print(f"Got unexpected event: {ev}", file=sys.stderr)
 
     def _predict(
         self,
