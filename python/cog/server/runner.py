@@ -367,21 +367,24 @@ class PredictTask(Task[schema.PredictionResponse]):
         self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     def handle_event(self, event: _PublicEventType) -> None:
-        if isinstance(event, Log):
-            self.append_logs(event.message)
-        elif isinstance(event, PredictionOutputType):
-            self.set_output_type(multi=event.multi)
-        elif isinstance(event, PredictionOutput):
-            self.append_output(event.payload)
-        elif isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
-            if event.canceled:
-                self.canceled()
-            elif event.error:
-                self.failed(error=str(event.error_detail))
-            else:
-                self.succeeded()
-        else:  # shouldn't happen, exhausted the type
-            self._log.warn("received unexpected event during predict", data=event)
+        try:
+            if isinstance(event, Log):
+                self.append_logs(event.message)
+            elif isinstance(event, PredictionOutputType):
+                self.set_output_type(multi=event.multi)
+            elif isinstance(event, PredictionOutput):
+                self.append_output(event.payload)
+            elif isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
+                if event.canceled:
+                    self.canceled()
+                elif event.error:
+                    self.failed(error=str(event.error_detail))
+                else:
+                    self.succeeded()
+            else:  # shouldn't happen, exhausted the type
+                self._log.warn("received unexpected event during predict", data=event)
+        except Exception as e:
+            self.failed(str(e))
 
     def _set_completed_at(self) -> None:
         self._p.completed_at = datetime.now(tz=timezone.utc)
