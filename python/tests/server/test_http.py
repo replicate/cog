@@ -3,9 +3,12 @@ import io
 import time
 import unittest.mock as mock
 
+import pytest
 import responses
 from PIL import Image
 from responses import matchers
+
+from cog.types import PYDANTIC_V2
 
 from .conftest import (
     make_client,
@@ -367,6 +370,33 @@ def test_train_openapi_specification(client):
         "required": [
             "weights",
         ],
+    }
+
+
+@pytest.mark.skipif(
+    not PYDANTIC_V2,
+    reason="Literal is used for enums only in Pydantic v2",
+)
+@uses_predictor("input_literal")
+def test_openapi_specification_with_literal(client, static_schema):
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+
+    schema = resp.json()
+    assert schema["openapi"] == "3.0.2"
+    assert schema["info"] == {"title": "Cog", "version": "0.1.0"}
+
+    schemas = schema["components"]["schemas"]
+
+    assert schemas["Input"]["properties"]["text"] == {
+        "allOf": [{"$ref": "#/components/schemas/text"}],
+        "x-order": 0,
+    }
+    assert schemas["text"] == {
+        "description": "An enumeration.",
+        "enum": ["foo", "bar"],
+        "title": "text",
+        "type": "string",
     }
 
 

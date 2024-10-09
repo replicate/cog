@@ -18,6 +18,8 @@ from ..json import make_encodeable
 from ..predictor import get_predict, load_predictor_from_ref, run_setup
 from ..types import URLPath
 from ..wait import wait_for_env
+from ..predictor import BasePredictor, get_predict, load_predictor_from_ref, run_setup
+from ..types import PYDANTIC_V2, URLPath
 from .eventtypes import (
     Done,
     Log,
@@ -32,6 +34,9 @@ from .exceptions import (
     InvalidStateException,
 )
 from .helpers import StreamRedirector
+
+if PYDANTIC_V2:
+    from .helpers import unwrap_pydantic_serialization_iterators
 
 _spawn = multiprocessing.get_context("spawn")
 
@@ -355,10 +360,22 @@ class ChildWorker(_spawn.Process):  # type: ignore
                 if isinstance(result, types.GeneratorType):
                     self._events.send(PredictionOutputType(multi=True))
                     for r in result:
-                        self._events.send(PredictionOutput(payload=make_encodeable(r)))
+                        if PYDANTIC_V2:
+                            payload = make_encodeable(
+                                unwrap_pydantic_serialization_iterators(r)
+                            )
+                        else:
+                            payload = make_encodeable(r)
+                        self._events.send(PredictionOutput(payload=payload))
                 else:
                     self._events.send(PredictionOutputType(multi=False))
-                    self._events.send(PredictionOutput(payload=make_encodeable(result)))
+                    if PYDANTIC_V2:
+                        payload = make_encodeable(
+                            unwrap_pydantic_serialization_iterators(result)
+                        )
+                    else:
+                        payload = make_encodeable(result)
+                    self._events.send(PredictionOutput(payload=payload))
         except CancelationException:
             done.canceled = True
         except Exception as e:  # pylint: disable=broad-exception-caught

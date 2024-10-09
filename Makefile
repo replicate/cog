@@ -95,7 +95,7 @@ check-fmt:
 .PHONY: lint
 lint: $(COG_EMBEDDED_WHEEL) $(COG_WHEEL) check-fmt vet
 	$(GO) run github.com/golangci/golangci-lint/cmd/golangci-lint run ./...
-	$(TOX) run --installpkg $(COG_WHEEL) -e lint,typecheck
+	$(TOX) run --installpkg $(COG_WHEEL) -e lint,typecheck-pydantic2
 
 .PHONY: run-docs-server
 run-docs-server:

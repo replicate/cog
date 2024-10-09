@@ -11,16 +11,16 @@ import threading
 import traceback
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional
 
 import structlog
 import uvicorn
-from fastapi import Body, FastAPI, Header, HTTPException, Path, Response
+from fastapi import Body, FastAPI, Header, Path, Response
 from fastapi.encoders import jsonable_encoder
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import HTTPException
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from pydantic.error_wrappers import ErrorWrapper
 
 from .. import schema
 from ..config import Config
@@ -29,6 +29,23 @@ from ..files import upload_file
 from ..json import upload_files
 from ..logging import setup_logging
 from ..mode import Mode
+from ..predictor import (
+    get_input_type,
+    get_output_type,
+    get_predictor_ref,
+    get_training_input_type,
+    get_training_output_type,
+    load_config,
+    load_slim_predictor_from_ref,
+)
+from ..types import PYDANTIC_V2, CogConfig
+
+if PYDANTIC_V2:
+    from .helpers import (
+        unwrap_pydantic_serialization_iterators,
+        update_openapi_schema_for_pydantic_2,
+    )
+
 from .probes import ProbeHelper
 from .runner import (
     PredictionRunner,
@@ -109,6 +126,26 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
     )
+
+    def custom_openapi() -> Dict[str, Any]:
+        if not app.openapi_schema:
+            openapi_schema = get_openapi(
+                title="Cog",
+                openapi_version="3.0.2",
+                version="0.1.0",
+                routes=app.routes,
+            )
+
+            # Pydantic 2 changes how optional fields are represented in OpenAPI schema.
+            # See: https://github.com/tiangolo/fastapi/pull/9873#issuecomment-1997105091
+            if PYDANTIC_V2:
+                update_openapi_schema_for_pydantic_2(openapi_schema)
+
+            app.openapi_schema = openapi_schema
+
+        return app.openapi_schema
+
+    app.openapi = custom_openapi
 
     app.state.health = Health.STARTING
     app.state.setup_result = None
@@ -294,16 +331,12 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         Run a single prediction on the model (idempotent creation).
         """
         if request.id is not None and request.id != prediction_id:
-            raise RequestValidationError(
-                [
-                    ErrorWrapper(
-                        ValueError(
-                            "prediction ID must match the ID supplied in the URL"
-                        ),
-                        ("body", "id"),
-                    )
-                ]
-            )
+            body = {
+                "loc": ("body", "id"),
+                "msg": "prediction ID must match the ID supplied in the URL",
+                "type": "value_error",
+            }
+            raise HTTPException(422, [body])
 
         # We've already checked that the IDs match, now ensure that an ID is
         # set on the prediction object
@@ -372,13 +405,18 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         predict_task.wait()
 
         # ...and return the result.
+        if PYDANTIC_V2:
+            response_object = unwrap_pydantic_serialization_iterators(
+                predict_task.result.model_dump()
+            )
+        else:
+            response_object = predict_task.result.dict()
         try:
-            response = PredictionResponse(**predict_task.result.dict())
+            _ = PredictionResponse(**response_object)
         except ValidationError as e:
             _log_invalid_output(e)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
-        response_object = response.dict()
         response_object["output"] = upload_files(
             response_object["output"],
             upload_file=lambda fh: upload_file(fh, request.output_file_prefix),  # type: ignore

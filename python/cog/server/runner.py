@@ -16,8 +16,13 @@ from .. import schema
 from ..base_input import BaseInput
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
+from ..predictor import BaseInput
+from ..types import PYDANTIC_V2
 from .errors import FileUploadError, RunnerBusyError, UnknownPredictionError
 from .eventtypes import Done, Log, PredictionOutput, PredictionOutputType
+
+if PYDANTIC_V2:
+    from .helpers import unwrap_pydantic_serialization_iterators
 from .telemetry import current_trace_context
 from .useragent import get_user_agent
 from .webhook import SKIP_START_EVENT, webhook_caller_filtered
@@ -83,7 +88,12 @@ class PredictionRunner:
         self._prediction_id = prediction.id
 
         if isinstance(prediction.input, BaseInput):
-            payload = prediction.input.dict()
+            if PYDANTIC_V2:
+                payload = unwrap_pydantic_serialization_iterators(
+                    prediction.input.model_dump()
+                )
+            else:
+                payload = prediction.input.dict()
         else:
             payload = prediction.input.copy()
 
@@ -248,7 +258,14 @@ class PredictTask(Task[schema.PredictionResponse]):
 
         self._fut: "Optional[Future[Done]]" = None
 
-        self._p = schema.PredictionResponse(**prediction_request.dict())
+        if PYDANTIC_V2:
+            request_dict = unwrap_pydantic_serialization_iterators(
+                prediction_request.model_dump()
+            )
+        else:
+            request_dict = prediction_request.dict()
+
+        self._p = schema.PredictionResponse(**request_dict)
         self._p.status = schema.Status.PROCESSING
         self._output_type_multi = None
         self._p.output = None

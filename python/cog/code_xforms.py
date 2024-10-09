@@ -3,7 +3,16 @@ import re
 import types
 from typing import List, Optional, Set, Tuple, Union
 
-COG_IMPORT_MODULES = {"cog", "typing", "sys", "os", "functools", "pydantic", "numpy"}
+COG_IMPORT_MODULES = {
+    "cog",
+    "typing",
+    "typing_extensions",
+    "sys",
+    "os",
+    "functools",
+    "pydantic",
+    "numpy",
+}
 
 
 def load_module_from_string(
