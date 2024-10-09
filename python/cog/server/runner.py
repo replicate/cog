@@ -16,7 +16,6 @@ from .. import schema
 from ..base_input import BaseInput
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
-from ..predictor import BaseInput
 from .errors import FileUploadError, RunnerBusyError, UnknownPredictionError
 from .eventtypes import Done, Log, PredictionOutput, PredictionOutputType
 from .telemetry import current_trace_context
