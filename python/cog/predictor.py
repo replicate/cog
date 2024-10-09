@@ -38,14 +38,11 @@ from typing_extensions import Annotated
 from .base_input import BaseInput
 from .base_predictor import BasePredictor
 from .types import (
-    File as CogFile,
     PYDANTIC_V2,
-    CogConfig,
     Input,
-    URLPath,
 )
 from .types import (
-    Input,
+    File as CogFile,
 )
 from .types import (
     Path as CogPath,
@@ -168,6 +165,7 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
     module = load_full_predictor_from_file(module_path, module_name)
     predictor = get_predictor(module, class_name)
     return predictor
+
 
 def validate_input_type(
     type: Type[Any],  # pylint: disable=redefined-builtin

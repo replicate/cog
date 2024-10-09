@@ -16,7 +16,6 @@ from .. import schema
 from ..base_input import BaseInput
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
-from ..predictor import BaseInput
 from ..types import PYDANTIC_V2
 from .errors import FileUploadError, RunnerBusyError, UnknownPredictionError
 from .eventtypes import Done, Log, PredictionOutput, PredictionOutputType
