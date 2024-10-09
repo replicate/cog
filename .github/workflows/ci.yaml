@@ -81,13 +81,18 @@ jobs:
         run: make test-go
 
   test-python:
-    name: "Test Python ${{ matrix.python-version }}"
+    name: "Test Python ${{ matrix.python-version }} + Pydantic v${{ matrix.pydantic }}"
     needs: build-python
     runs-on: ubuntu-latest-8-cores
     strategy:
       fail-fast: false
       matrix:
+        pydantic: ["1", "2"]
         python-version: ${{ fromJson(needs.build-python.outputs.python-versions) }}
+        exclude:
+          # Pydantic 2 is not supported on Python 3.7
+          - pydantic: "2"
+            python-version: "3.7"
     steps:
       - name: Download pre-built packages
         uses: actions/download-artifact@v4
@@ -111,7 +116,7 @@ jobs:
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
       - name: Test
-        run: python -Im tox run --installpkg "$COG_WHEEL" -e ${{ env.TOX_PYTHON }}-tests
+        run: python -Im tox run --installpkg "$COG_WHEEL" -e ${{ env.TOX_PYTHON }}-pydantic${{ matrix.pydantic }}-tests
 
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-integration:
