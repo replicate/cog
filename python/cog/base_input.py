@@ -1,19 +1,22 @@
 from pathlib import Path
 
+import pydantic
 from pydantic import BaseModel
 
-from .types import (
-    URLPath,
-)
+from .types import PYDANTIC_V2, URLPath
 
 
 # Base class for inputs, constructed dynamically in get_input_type().
 # (This can't be a docstring or it gets passed through to the schema.)
 class BaseInput(BaseModel):
-    class Config:
-        # When using `choices`, the type is converted into an enum to validate
-        # But, after validation, we want to pass the actual value to predict(), not the enum object
-        use_enum_values = True
+    if PYDANTIC_V2:
+        model_config = pydantic.ConfigDict(use_enum_values=True)  # type: ignore
+    else:
+
+        class Config:
+            # When using `choices`, the type is converted into an enum to validate
+            # But, after validation, we want to pass the actual value to predict(), not the enum object
+            use_enum_values = True
 
     def cleanup(self) -> None:
         """

@@ -29,16 +29,7 @@ from ..files import upload_file
 from ..json import upload_files
 from ..logging import setup_logging
 from ..mode import Mode
-from ..predictor import (
-    get_input_type,
-    get_output_type,
-    get_predictor_ref,
-    get_training_input_type,
-    get_training_output_type,
-    load_config,
-    load_slim_predictor_from_ref,
-)
-from ..types import PYDANTIC_V2, CogConfig
+from ..types import PYDANTIC_V2
 
 if PYDANTIC_V2:
     from .helpers import (
