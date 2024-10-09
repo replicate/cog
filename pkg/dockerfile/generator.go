@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/slices"
 	"github.com/replicate/cog/pkg/util/version"
@@ -421,6 +422,9 @@ func (g *Generator) installCog() (string, error) {
 	data, err := cogEmbed.ReadFile("embed/" + filename)
 	if err != nil {
 		return "", err
+	}
+	if filename == "cog.whl" {
+		filename = "cog-" + global.Version + "-py3-none-any.whl"
 	}
 	lines, containerPath, err := g.writeTemp(filename, data)
 	if err != nil {
