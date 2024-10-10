@@ -1,14 +1,15 @@
 import inspect
 import os
 import sys
+import uuid
 
 import pytest
 
+from cog.code_xforms import load_module_from_string, strip_model_source_code
 from cog.predictor import (
     get_predict,
     get_predictor,
     load_full_predictor_from_file,
-    load_slim_predictor_from_file,
 )
 
 PREDICTOR_FIXTURES = [
@@ -51,7 +52,10 @@ def _fixture_path(name):
 def test_fast_slow_signatures(fixture_name, class_name, method_name):
     module_path = _fixture_path(fixture_name)
     # get signature from FAST loader
-    module_fast = load_slim_predictor_from_file(module_path, class_name, method_name)
+    code = None
+    with open(module_path, encoding="utf-8") as file:
+        code = strip_model_source_code(file.read(), class_name, method_name)
+    module_fast = load_module_from_string(uuid.uuid4().hex, code)
     assert hasattr(module_fast, class_name)
     predictor_fast = get_predictor(module_fast, class_name)
     predict_fast = get_predict(predictor_fast)
