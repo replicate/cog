@@ -16,8 +16,14 @@ builds:
       - amd64
       - arm64
     main: ./cmd/cog
+    flags:
+      - -trimpath
     ldflags:
-      - "-s -w -X github.com/replicate/cog/pkg/global.Version={{.Version}} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
+      - -s
+      - -w
+      - -X github.com/replicate/cog/pkg/global.Version={{ if index .Env "COG_VERSION_OVERRIDE"  }}{{ .Env.COG_VERSION_OVERRIDE }}{{ else }}{{ .Version }}{{ end }}
+      - -X github.com/replicate/cog/pkg/global.Commit={{ if index .Env "COG_COMMIT_OVERRIDE"  }}{{ .Env.COG_COMMIT_OVERRIDE }}{{ else }}{{ .Commit }}{{ end }}
+      - -X github.com/replicate/cog/pkg/global.BuildTime={{ .Date }}
   - binary: base-image
     id: base-image
     goos:
@@ -27,8 +33,14 @@ builds:
       - amd64
       - arm64
     main: ./cmd/base-image
+    flags:
+      - -trimpath
     ldflags:
-      - "-s -w -X github.com/replicate/cog/pkg/global.Version={{.Version}} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
+      - -s
+      - -w
+      - -X github.com/replicate/cog/pkg/global.Version={{ if index .Env "COG_VERSION_OVERRIDE"  }}{{ .Env.COG_VERSION_OVERRIDE }}{{ else }}{{ .Version }}{{ end }}
+      - -X github.com/replicate/cog/pkg/global.Commit={{ if index .Env "COG_COMMIT_OVERRIDE"  }}{{ .Env.COG_COMMIT_OVERRIDE }}{{ else }}{{ .Commit }}{{ end }}
+      - -X github.com/replicate/cog/pkg/global.BuildTime={{ .Date }}
 archives:
   - format: binary
     builds:
