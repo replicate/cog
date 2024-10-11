@@ -98,7 +98,7 @@ class Config:
         if sys.version_info >= (3, 9):
             wait_for_env(include_imports=False)
             with open(module_path, encoding="utf-8") as file:
-                return strip_model_source_code(file.read(), class_name, method_name)
+                return strip_model_source_code(file.read(), [class_name], [method_name])
         return None
 
     def _load_predictor_for_types(self, ref: str, method_name: str) -> BasePredictor:
