@@ -8,8 +8,9 @@ from urllib.parse import urlparse
 import requests
 
 
-def upload_file(fh: io.IOBase, output_file_prefix: str = None) -> str:
-    fh.seek(0)
+def upload_file(fh: io.IOBase, output_file_prefix: Optional[str] = None) -> str:
+    if fh.seekable():
+        fh.seek(0)
 
     if output_file_prefix is not None:
         name = getattr(fh, "name", "output")
@@ -42,7 +43,8 @@ def guess_filename(obj: io.IOBase) -> str:
 def put_file_to_signed_endpoint(
     fh: io.IOBase, endpoint: str, client: requests.Session, prediction_id: Optional[str]
 ) -> str:
-    fh.seek(0)
+    if fh.seekable():
+        fh.seek(0)
 
     filename = guess_filename(fh)
     content_type, _ = mimetypes.guess_type(filename)
