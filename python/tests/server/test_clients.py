@@ -1,9 +1,8 @@
-import httpx
 import os
-import responses
 import tempfile
 
 import cog
+import httpx
 import pytest
 from cog.server.clients import ClientManager
 
@@ -103,9 +102,56 @@ async def test_upload_files_with_retry(respx_mock):
 
     obj = {"path": cog.Path(temp_path)}
     with pytest.raises(httpx.HTTPStatusError):
-        result = await client_manager.upload_files(
+        await client_manager.upload_files(
             obj, url="https://example.com/bucket", prediction_id=None
         )
 
-        assert result == {"path": "https://cdn.example.com/bucket/my_file.txt"}
-        assert uploader.call_count == 3
+    assert uploader.call_count == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.respx(base_url="https://example.com")
+async def test_upload_files_with_url_file(respx_mock):
+    source = respx_mock.get("/cdn/my_file.txt").mock(
+        return_value=httpx.Response(200, text="hello world")
+    )
+
+    uploader = respx_mock.put("/bucket/my_file.txt").mock(
+        return_value=httpx.Response(
+            201, headers={"Location": "https://cdn.example.com/bucket/my_file.txt"}
+        )
+    )
+
+    client_manager = ClientManager()
+
+    obj = {"path": cog.types.URLFile("https://example.com/cdn/my_file.txt")}
+    result = await client_manager.upload_files(
+        obj, url="https://example.com/bucket", prediction_id=None
+    )
+    assert result == {"path": "https://cdn.example.com/bucket/my_file.txt"}
+
+    assert uploader.call_count == 1
+    assert source.call_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.respx(base_url="https://example.com")
+async def test_upload_files_with_url_file_with_retry(respx_mock):
+    source = respx_mock.get("/cdn/my_file.txt").mock(
+        return_value=httpx.Response(200, text="hello world")
+    )
+
+    uploader = respx_mock.put("/bucket/my_file.txt").mock(
+        return_value=httpx.Response(502)
+    )
+
+    client_manager = ClientManager()
+
+    obj = {"path": cog.types.URLFile("https://example.com/cdn/my_file.txt")}
+    with pytest.raises(httpx.HTTPStatusError):
+        await client_manager.upload_files(
+            obj, url="https://example.com/bucket", prediction_id=None
+        )
+
+    assert uploader.call_count == 3
+    assert source.call_count == 3

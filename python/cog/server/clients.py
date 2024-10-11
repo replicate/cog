@@ -1,3 +1,4 @@
+from functools import partial
 import base64
 import io
 import mimetypes
@@ -21,7 +22,7 @@ from fastapi.encoders import jsonable_encoder
 
 from .. import types
 from ..schema import PredictionResponse, Status, WebhookEvent
-from ..types import Path
+from ..types import Path, URLFile
 from .eventtypes import PredictionInput
 from .response_throttler import ResponseThrottler
 from .retry_transport import RetryTransport
@@ -126,14 +127,10 @@ class ChunkFileReader:
         self.fh = fh
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
-        self.fh.seek(0)
-        while True:
-            chunk = self.fh.read(1024 * 1024)
-            if isinstance(chunk, str):
-                chunk = chunk.encode("utf-8")
-            if not chunk:
-                log.info("finished reading file")
-                break
+        if self.fh.seekable():
+            self.fh.seek(0)
+
+        for chunk in iter(self.fh):
             yield chunk
 
 
@@ -288,7 +285,10 @@ class ClientManager:
             with obj.open("rb") as f:
                 return await self.upload_file(f, url=url, prediction_id=prediction_id)
         if isinstance(obj, io.IOBase):
-            return await self.upload_file(obj, url=url, prediction_id=prediction_id)
+            try:
+                return await self.upload_file(obj, url=url, prediction_id=prediction_id)
+            finally:
+                obj.close()
         return obj
 
     # inputs
