@@ -104,6 +104,7 @@ class Secret(pydantic.SecretStr):
                 }
             )
             return json_schema
+
     else:
 
         @classmethod
@@ -223,6 +224,7 @@ class Path(pathlib.PosixPath):  # pylint: disable=abstract-method
             json_schema = handler(core_schema)
             json_schema.update(type="string", format="uri")
             return json_schema
+
     else:
 
         @classmethod
@@ -286,6 +288,7 @@ class URLFile(io.IOBase):
     __slots__ = ("__target__", "__url__")
 
     def __init__(self, url: str) -> None:
+        object.__setattr__(self, "name", os.path.basename(url))
         object.__setattr__(self, "__url__", url)
 
     # We provide __getstate__ and __setstate__ explicitly to ensure that the
@@ -413,6 +416,7 @@ class ConcatenateIterator(Iterator[Item]):  # pylint: disable=abstract-method
                 }
             )
             return json_schema
+
     else:
 
         @classmethod
