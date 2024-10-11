@@ -34,7 +34,7 @@ def test_predict_many_inputs():
     ) as file:
         source_code = file.read()
 
-    new_source = strip_model_source_code(source_code, "Predictor", "predict")
+    new_source = strip_model_source_code(source_code, ["Predictor"], ["predict"])
     expected_source = """
 from cog import BasePredictor, Input, Path
 class Predictor(BasePredictor):
@@ -54,7 +54,7 @@ def test_predict_output_path_model():
     ) as file:
         source_code = file.read()
 
-    new_source = strip_model_source_code(source_code, "Predictor", "predict")
+    new_source = strip_model_source_code(source_code, ["Predictor"], ["predict"])
     expected_source = """
 import os
 from cog import BasePredictor, Path
@@ -90,8 +90,8 @@ class Predictor(BasePredictor):
     def predict(self, msg: str) -> ModelOutput:
        return ModelOutput(success=False, error=msg, segmentedImage=None)
 """,
-        "Predictor",
-        "predict",
+        ["Predictor"],
+        ["predict"],
     )
     assert (
         stripped_code
@@ -134,8 +134,8 @@ class Predictor(BasePredictor):
     def predict(self, msg: str) -> ModelOutput:
        return ModelOutput(success=False, error=msg, segmentedImage=None)
 """,
-        "Predictor",
-        "predict",
+        ["Predictor"],
+        ["predict"],
     )
     assert (
         stripped_code
@@ -180,8 +180,8 @@ class Predictor(BasePredictor):
     def predict(self, height: int=Input(description='Height of image', default=128, choices=INPUT_DIMS)) -> ModelOutput:
        return ModelOutput(success=False, error=msg, segmentedImage=None)
 """,
-        "Predictor",
-        "predict",
+        ["Predictor"],
+        ["predict"],
     )
     assert (
         stripped_code
@@ -233,8 +233,8 @@ class SchnellPredictor(Predictor):
     def predict(self, height: int=Input(description='Height of image', default=128, choices=INPUT_DIMS)) -> ModelOutput:
        return ModelOutput(success=False, error=msg, segmentedImage=None)
 """,
-        "SchnellPredictor",
-        "predict",
+        ["SchnellPredictor"],
+        ["predict"],
     )
     assert (
         stripped_code
