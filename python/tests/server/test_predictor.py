@@ -14,6 +14,7 @@ from cog.predictor import (
 PREDICTOR_FIXTURES = [
     ("input_choices", "Predictor", "predict"),
     ("input_choices_integer", "Predictor", "predict"),
+    ("input_choices_iterable", "Predictor", "predict"),
     ("input_file", "Predictor", "predict"),
     ("function", "predict", "predict"),
     ("input_ge_le", "Predictor", "predict"),

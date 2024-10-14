@@ -214,6 +214,14 @@ def test_choices_str(client):
     assert resp.status_code == 422
 
 
+@uses_predictor("input_choices_iterable")
+def test_choices_str(client):
+    resp = client.post("/predictions", json={"input": {"text": "foo"}})
+    assert resp.status_code == 200
+    resp = client.post("/predictions", json={"input": {"text": "baz"}})
+    assert resp.status_code == 422
+
+
 @uses_predictor("input_choices_integer")
 def test_choices_int(client):
     resp = client.post("/predictions", json={"input": {"x": 1}})
