@@ -237,15 +237,7 @@ class URLFile(io.IOBase):
     # Luckily the only dunder method on HTTPResponse is __iter__
     def __iter__(self) -> Iterator[bytes]:
         response = self.__wrapped__
-
-        # URLFile doesn't support `seek()` so the upload_file function
-        # cannot reset the request should it need to retry. As a hack
-        # we re-create the request each time the iterator is requested.
-        if response.num_bytes_downloaded > 0:
-            response.close()
-            object.__delattr__(self, "__target__")
-
-        yield from self.__wrapped__.iter_raw()
+        return iter(response)
 
     @property
     def __wrapped__(self) -> Any:
@@ -259,9 +251,7 @@ class URLFile(io.IOBase):
             # is that the book keeping for closing the response needs to be
             # handled elsewhere. There's probably a better design for this
             # in the long term.
-            client = httpx.Client()
-            req = client.build_request("GET", url)
-            res = client.send(request=req, stream=True)
+            res = urllib.request.urlopen(url)
             object.__setattr__(self, "__target__", res)
 
             return res

@@ -1,13 +1,18 @@
+from email.message import Message
+import io
 import os
 import tempfile
+from urllib.response import addinfourl
+from unittest import mock
 
 import cog
 import httpx
 import pytest
 from cog.server.clients import ClientManager
 
+pytest.mark.asyncio
 
-@pytest.mark.asyncio
+
 async def test_upload_files_without_url():
     client_manager = ClientManager()
     temp_dir = tempfile.mkdtemp()
@@ -111,9 +116,11 @@ async def test_upload_files_with_retry(respx_mock):
 
 @pytest.mark.asyncio
 @pytest.mark.respx(base_url="https://example.com")
-async def test_upload_files_with_url_file(respx_mock):
-    source = respx_mock.get("/cdn/my_file.txt").mock(
-        return_value=httpx.Response(200, text="hello world")
+@mock.patch("urllib.request.urlopen")
+async def test_upload_files_with_url_file(urlopen_mock, respx_mock):
+    fp = io.BytesIO(b"hello world")
+    urlopen_mock.return_value = addinfourl(
+        fp=fp, headers=Message(), url="https://example.com/cdn/my_file.txt"
     )
 
     uploader = respx_mock.put("/bucket/my_file.txt").mock(
@@ -131,14 +138,17 @@ async def test_upload_files_with_url_file(respx_mock):
     assert result == {"path": "https://cdn.example.com/bucket/my_file.txt"}
 
     assert uploader.call_count == 1
-    assert source.call_count == 1
+    assert urlopen_mock.call_count == 1
+    assert urlopen_mock.call_args[0][0] == "https://example.com/cdn/my_file.txt"
 
 
 @pytest.mark.asyncio
 @pytest.mark.respx(base_url="https://example.com")
-async def test_upload_files_with_url_file_with_retry(respx_mock):
-    source = respx_mock.get("/cdn/my_file.txt").mock(
-        return_value=httpx.Response(200, text="hello world")
+@mock.patch("urllib.request.urlopen")
+async def test_upload_files_with_url_file_with_retry(urlopen_mock, respx_mock):
+    fp = io.BytesIO(b"hello world")
+    urlopen_mock.return_value = addinfourl(
+        fp=fp, headers=Message(), url="https://example.com/cdn/my_file.txt"
     )
 
     uploader = respx_mock.put("/bucket/my_file.txt").mock(
@@ -154,4 +164,5 @@ async def test_upload_files_with_url_file_with_retry(respx_mock):
         )
 
     assert uploader.call_count == 3
-    assert source.call_count == 3
+    assert urlopen_mock.call_count == 1
+    assert urlopen_mock.call_args[0][0] == "https://example.com/cdn/my_file.txt"

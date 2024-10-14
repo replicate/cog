@@ -130,7 +130,11 @@ class ChunkFileReader:
         if self.fh.seekable():
             self.fh.seek(0)
 
-        for chunk in iter(self.fh):
+        while True:
+            chunk = self.fh.read(1024 * 1024)
+            if not chunk:
+                log.info("finished reading file")
+                break
             yield chunk
 
 
