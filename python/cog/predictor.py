@@ -5,8 +5,9 @@ import inspect
 import io
 import os.path
 import sys
-import types
-from collections.abc import Iterator
+import uuid
+from abc import ABC, abstractmethod
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import (
     Any,
@@ -234,7 +235,7 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
         # In either case, remove it as an extra field because it will be
         # passed automatically as 'enum' in the schema
         if choices:
-            if InputType == str and isinstance(choices, list):  # noqa: E721
+            if InputType == str and isinstance(choices, Iterable):  # noqa: E721
 
                 class StringEnum(str, enum.Enum):
                     pass
