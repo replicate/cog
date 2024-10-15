@@ -7,7 +7,6 @@ import os.path
 import sys
 import types
 import uuid
-from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import (
@@ -38,13 +37,14 @@ from pydantic.fields import FieldInfo
 # Added in Python 3.9. Can be from typing if we drop support for <3.9
 from typing_extensions import Annotated
 
+from .base_input import BaseInput
+from .base_predictor import BasePredictor
 from .code_xforms import load_module_from_string, strip_model_source_code
 from .errors import ConfigDoesNotExist, PredictorNotSet
 from .types import (
     PYDANTIC_V2,
     CogConfig,
     Input,
-    URLPath,
 )
 from .types import (
     File as CogFile,
@@ -65,23 +65,6 @@ ALLOWED_INPUT_TYPES: List[Type[Any]] = [
     CogPath,
     CogSecret,
 ]
-
-
-class BasePredictor(ABC):
-    def setup(
-        self,
-        weights: Optional[Union[CogFile, CogPath, str]] = None,  # pylint: disable=unused-argument
-    ) -> None:
-        """
-        An optional method to prepare the model so multiple predictions run efficiently.
-        """
-        return
-
-    @abstractmethod
-    def predict(self, **kwargs: Any) -> Any:
-        """
-        Run a single prediction on the model
-        """
 
 
 def run_setup(predictor: BasePredictor) -> None:
@@ -255,36 +238,6 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
     module = load_full_predictor_from_file(module_path, module_name)
     predictor = get_predictor(module, class_name)
     return predictor
-
-
-# Base class for inputs, constructed dynamically in get_input_type().
-# (This can't be a docstring or it gets passed through to the schema.)
-class BaseInput(BaseModel):
-    if PYDANTIC_V2:
-        model_config = pydantic.ConfigDict(use_enum_values=True)  # type: ignore
-    else:
-
-        class Config:
-            # When using `choices`, the type is converted into an enum to validate
-            # But, after validation, we want to pass the actual value to predict(), not the enum object
-            use_enum_values = True
-
-    def cleanup(self) -> None:
-        """
-        Cleanup any temporary files created by the input.
-        """
-
-        for _, value in dict(self).items():
-            # Handle URLPath objects specially for cleanup.
-            # Also handle pathlib.Path objects, which cog.Path is a subclass of.
-            # A pathlib.Path object shouldn't make its way here,
-            # but both have an unlink() method, so we may as well be safe.
-            if isinstance(value, (URLPath, Path)):
-                # TODO: use unlink(missing_ok=...) when we drop Python 3.7 support.
-                try:
-                    value.unlink()
-                except FileNotFoundError:
-                    pass
 
 
 def validate_input_type(
