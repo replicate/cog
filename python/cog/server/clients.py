@@ -1,4 +1,3 @@
-from functools import partial
 import base64
 import io
 import mimetypes
@@ -22,7 +21,7 @@ from fastapi.encoders import jsonable_encoder
 
 from .. import types
 from ..schema import PredictionResponse, Status, WebhookEvent
-from ..types import Path, URLFile
+from ..types import Path
 from .eventtypes import PredictionInput
 from .response_throttler import ResponseThrottler
 from .retry_transport import RetryTransport

@@ -251,7 +251,7 @@ class URLFile(io.IOBase):
             # is that the book keeping for closing the response needs to be
             # handled elsewhere. There's probably a better design for this
             # in the long term.
-            res = urllib.request.urlopen(url)
+            res = urllib.request.urlopen(url)  # noqa: S310
             object.__setattr__(self, "__target__", res)
 
             return res
