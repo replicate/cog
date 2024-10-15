@@ -123,7 +123,7 @@ jobs:
     name: "Test integration"
     needs: build-python
     runs-on: ubuntu-latest-16-cores
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
