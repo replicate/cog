@@ -131,9 +131,14 @@ class ChunkFileReader:
 
         while True:
             chunk = self.fh.read(1024 * 1024)
+
+            if isinstance(chunk, str):
+                chunk = chunk.encode("utf-8")
+
             if not chunk:
                 log.info("finished reading file")
                 break
+
             yield chunk
 
 

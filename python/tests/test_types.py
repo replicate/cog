@@ -1,38 +1,40 @@
 import io
 import pickle
 import urllib.request
+from urllib.response import addinfourl
+from email.message import Message
+from unittest import mock
 
 import pytest
 import responses
 from cog.types import Secret, URLFile, get_filename_from_url, get_filename_from_urlopen
 
 
-@responses.activate
-def test_urlfile_acts_like_response():
-    responses.get(
-        "https://example.com/some/url",
-        json={"message": "hello world"},
-        status=200,
+# Represents a response from urllib.request.urlopen
+def file_fixture(body: str):
+    return addinfourl(
+        fp=io.BytesIO(bytes(body, "utf-8")),
+        headers=Message(),
+        url="https://example.com/cdn/my_file.txt",
     )
 
+
+@mock.patch("urllib.request.urlopen", return_value=file_fixture("hello world"))
+def test_urlfile_acts_like_response(mock_urlopen):
     u = URLFile("https://example.com/some/url")
 
     assert isinstance(u, io.IOBase)
-    assert u.read() == b'{"message": "hello world"}'
+    assert u.read() == b"hello world"
+    assert mock_urlopen.call_count == 1
 
 
-@responses.activate
-def test_urlfile_iterable():
-    responses.get(
-        "https://example.com/some/url",
-        body="one\ntwo\nthree\n",
-        status=200,
-    )
-
+@mock.patch("urllib.request.urlopen", return_value=file_fixture("one\ntwo\nthree\n"))
+def test_urlfile_iterable(mock_urlopen):
     u = URLFile("https://example.com/some/url")
     result = list(u)
 
     assert result == [b"one\n", b"two\n", b"three\n"]
+    assert mock_urlopen.call_count == 1
 
 
 @responses.activate
@@ -42,29 +44,25 @@ def test_urlfile_no_request_if_not_used():
     URLFile("https://example.com/some/url")
 
 
-@responses.activate
-def test_urlfile_can_be_pickled():
+@mock.patch("urllib.request.urlopen", return_value=file_fixture("hello world"))
+def test_urlfile_can_be_pickled(mock_urlopen):
     u = URLFile("https://example.com/some/url")
 
     result = pickle.loads(pickle.dumps(u))
 
     assert isinstance(result, URLFile)
+    assert mock_urlopen.call_count == 0
 
 
-@responses.activate
-def test_urlfile_can_be_pickled_even_once_loaded():
-    responses.get(
-        "https://example.com/some/url",
-        json={"message": "hello world"},
-        status=200,
-    )
-
+@mock.patch("urllib.request.urlopen", return_value=file_fixture("hello world"))
+def test_urlfile_can_be_pickled_even_once_loaded(mock_urlopen):
     u = URLFile("https://example.com/some/url")
     u.read()
 
     result = pickle.loads(pickle.dumps(u))
 
     assert isinstance(result, URLFile)
+    assert mock_urlopen.call_count == 1
 
 
 @pytest.mark.parametrize(
