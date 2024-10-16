@@ -10,8 +10,6 @@ import httpx
 import pytest
 from cog.server.clients import ClientManager
 
-pytest.mark.asyncio
-
 
 @pytest.mark.asyncio
 async def test_upload_files_without_url():
