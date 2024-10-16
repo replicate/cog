@@ -5,9 +5,9 @@ import pytest
 
 from cog.config import (
     COG_GPU_ENV_VAR,
-    COG_PREDICTOR_ENV_VAR,
-    COG_PREDICTOR_PREDICT_ENV_VAR,
-    COG_PREDICTOR_TRAIN_ENV_VAR,
+    COG_PREDICT_CODE_STRIP_ENV_VAR,
+    COG_PREDICT_TYPE_STUB_ENV_VAR,
+    COG_TRAIN_TYPE_STUB_ENV_VAR,
     COG_YAML_FILE,
     Config,
 )
@@ -17,18 +17,18 @@ from cog.mode import Mode
 
 def test_predictor_predict_ref_env_var():
     predict_ref = "predict.py:Predictor"
-    os.environ[COG_PREDICTOR_PREDICT_ENV_VAR] = predict_ref
+    os.environ[COG_PREDICT_TYPE_STUB_ENV_VAR] = predict_ref
     config = Config()
     config_predict_ref = config.predictor_predict_ref
-    del os.environ[COG_PREDICTOR_PREDICT_ENV_VAR]
+    del os.environ[COG_PREDICT_TYPE_STUB_ENV_VAR]
     assert (
         config_predict_ref == predict_ref
     ), "Predict Reference should come from the environment variable."
 
 
 def test_predictor_predict_ref_no_env_var():
-    if COG_PREDICTOR_PREDICT_ENV_VAR in os.environ:
-        del os.environ[COG_PREDICTOR_PREDICT_ENV_VAR]
+    if COG_PREDICT_TYPE_STUB_ENV_VAR in os.environ:
+        del os.environ[COG_PREDICT_TYPE_STUB_ENV_VAR]
     pwd = os.getcwd()
     with tempfile.TemporaryDirectory() as tmpdir:
         os.chdir(tmpdir)
@@ -47,16 +47,16 @@ predict: "predict.py:Predictor"
 
 
 def test_config_no_config_file():
-    if COG_PREDICTOR_PREDICT_ENV_VAR in os.environ:
-        del os.environ[COG_PREDICTOR_PREDICT_ENV_VAR]
+    if COG_PREDICT_TYPE_STUB_ENV_VAR in os.environ:
+        del os.environ[COG_PREDICT_TYPE_STUB_ENV_VAR]
     config = Config()
     with pytest.raises(ConfigDoesNotExist):
         _ = config.predictor_predict_ref
 
 
 def test_config_initial_values():
-    if COG_PREDICTOR_PREDICT_ENV_VAR in os.environ:
-        del os.environ[COG_PREDICTOR_PREDICT_ENV_VAR]
+    if COG_PREDICT_TYPE_STUB_ENV_VAR in os.environ:
+        del os.environ[COG_PREDICT_TYPE_STUB_ENV_VAR]
     config = Config(config={"predict": "predict.py:Predictor"})
     config_predict_ref = config.predictor_predict_ref
     assert (
@@ -66,10 +66,10 @@ def test_config_initial_values():
 
 def test_predictor_train_ref_env_var():
     train_ref = "predict.py:Predictor"
-    os.environ[COG_PREDICTOR_TRAIN_ENV_VAR] = train_ref
+    os.environ[COG_TRAIN_TYPE_STUB_ENV_VAR] = train_ref
     config = Config()
     config_train_ref = config.predictor_train_ref
-    del os.environ[COG_PREDICTOR_TRAIN_ENV_VAR]
+    del os.environ[COG_TRAIN_TYPE_STUB_ENV_VAR]
     assert (
         config_train_ref == train_ref
     ), "Train Reference should come from the environment variable."
@@ -77,8 +77,8 @@ def test_predictor_train_ref_env_var():
 
 def test_predictor_train_ref_no_env_var():
     train_ref = "predict.py:Predictor"
-    if COG_PREDICTOR_TRAIN_ENV_VAR in os.environ:
-        del os.environ[COG_PREDICTOR_TRAIN_ENV_VAR]
+    if COG_TRAIN_TYPE_STUB_ENV_VAR in os.environ:
+        del os.environ[COG_TRAIN_TYPE_STUB_ENV_VAR]
     config = Config(config={"train": train_ref})
     config_train_ref = config.predictor_train_ref
     assert (
@@ -125,8 +125,8 @@ def test_get_predictor_ref_train():
 
 def test_get_predictor_types_with_env_var():
     predict_ref = "predict.py:Predictor"
-    os.environ[COG_PREDICTOR_PREDICT_ENV_VAR] = predict_ref
-    os.environ[COG_PREDICTOR_ENV_VAR] = """
+    os.environ[COG_PREDICT_TYPE_STUB_ENV_VAR] = predict_ref
+    os.environ[COG_PREDICT_CODE_STRIP_ENV_VAR] = """
 from cog import BasePredictor, Path
 from typing import Optional
 from pydantic import BaseModel
@@ -143,8 +143,8 @@ class Predictor(BasePredictor):
 """
     config = Config()
     input_type, output_type = config.get_predictor_types(Mode.PREDICT)
-    del os.environ[COG_PREDICTOR_ENV_VAR]
-    del os.environ[COG_PREDICTOR_PREDICT_ENV_VAR]
+    del os.environ[COG_PREDICT_CODE_STRIP_ENV_VAR]
+    del os.environ[COG_PREDICT_TYPE_STUB_ENV_VAR]
     assert (
         str(input_type) == "<class 'cog.predictor.Input'>"
     ), "Predict input type should be the predictor Input."

@@ -25,10 +25,10 @@ from .types import CogConfig
 from .wait import wait_for_env
 
 COG_YAML_FILE = "cog.yaml"
-COG_PREDICTOR_PREDICT_ENV_VAR = "COG_PREDICTOR_PREDICT"
-COG_PREDICTOR_TRAIN_ENV_VAR = "COG_PREDICTOR_TRAIN"
-COG_PREDICTOR_ENV_VAR = "COG_PREDICTOR"
-COG_TRAIN_PREDICTOR_ENV_VAR = "COG_TRAIN_PREDICTOR"
+COG_PREDICT_TYPE_STUB_ENV_VAR = "COG_PREDICT_TYPE_STUB"
+COG_TRAIN_TYPE_STUB_ENV_VAR = "COG_TRAIN_TYPE_STUB"
+COG_PREDICT_CODE_STRIP_ENV_VAR = "COG_PREDICT_CODE_STRIP"
+COG_TRAIN_CODE_STRIP_ENV_VAR = "COG_TRAIN_CODE_STRIP"
 COG_GPU_ENV_VAR = "COG_GPU"
 PREDICT_METHOD_NAME = "predict"
 TRAIN_METHOD_NAME = "train"
@@ -46,9 +46,9 @@ def _method_name_from_mode(mode: Mode) -> str:
 
 def _env_var_from_mode(mode: Mode) -> str:
     if mode == Mode.PREDICT:
-        return COG_PREDICTOR_ENV_VAR
+        return COG_PREDICT_CODE_STRIP_ENV_VAR
     elif mode == Mode.TRAIN:
-        return COG_TRAIN_PREDICTOR_ENV_VAR
+        return COG_TRAIN_CODE_STRIP_ENV_VAR
     raise ValueError(f"Mode {mode} not recognised for env var mapping")
 
 
@@ -81,13 +81,13 @@ class Config:
         return config
 
     @property
-    @env_property(COG_PREDICTOR_PREDICT_ENV_VAR)
+    @env_property(COG_PREDICT_TYPE_STUB_ENV_VAR)
     def predictor_predict_ref(self) -> Optional[str]:
         """Find the predictor ref for the predict mode."""
         return self._cog_config.get(str(Mode.PREDICT))
 
     @property
-    @env_property(COG_PREDICTOR_TRAIN_ENV_VAR)
+    @env_property(COG_TRAIN_TYPE_STUB_ENV_VAR)
     def predictor_train_ref(self) -> Optional[str]:
         """Find the predictor ref for the train mode."""
         return self._cog_config.get(str(Mode.TRAIN))
