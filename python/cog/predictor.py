@@ -6,6 +6,7 @@ import io
 import os.path
 import sys
 import types
+import uuid
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import (
@@ -37,6 +38,8 @@ from typing_extensions import Annotated
 
 from .base_input import BaseInput
 from .base_predictor import BasePredictor
+from .code_xforms import load_module_from_string, strip_model_source_code
+from .errors import ConfigDoesNotExist, PredictorNotSet
 from .types import (
     PYDANTIC_V2,
     Input,
