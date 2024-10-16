@@ -28,6 +28,7 @@ COG_YAML_FILE = "cog.yaml"
 COG_PREDICTOR_PREDICT_ENV_VAR = "COG_PREDICTOR_PREDICT"
 COG_PREDICTOR_TRAIN_ENV_VAR = "COG_PREDICTOR_TRAIN"
 COG_PREDICTOR_ENV_VAR = "COG_PREDICTOR"
+COG_TRAIN_PREDICTOR_ENV_VAR = "COG_TRAIN_PREDICTOR"
 COG_GPU_ENV_VAR = "COG_GPU"
 PREDICT_METHOD_NAME = "predict"
 TRAIN_METHOD_NAME = "train"
@@ -41,6 +42,14 @@ def _method_name_from_mode(mode: Mode) -> str:
     elif mode == Mode.TRAIN:
         return TRAIN_METHOD_NAME
     raise ValueError(f"Mode {mode} not recognised for method name mapping")
+
+
+def _env_var_from_mode(mode: Mode) -> str:
+    if mode == Mode.PREDICT:
+        return COG_PREDICTOR_ENV_VAR
+    elif mode == Mode.TRAIN:
+        return COG_TRAIN_PREDICTOR_ENV_VAR
+    raise ValueError(f"Mode {mode} not recognised for env var mapping")
 
 
 class Config:
@@ -90,9 +99,9 @@ class Config:
         return bool(self._cog_config.get("build", {}).get("gpu", False))
 
     def _predictor_code(
-        self, module_path: str, class_name: str, method_name: str
+        self, module_path: str, class_name: str, method_name: str, mode: Mode
     ) -> Optional[str]:
-        source_code = os.environ.get(COG_PREDICTOR_ENV_VAR)
+        source_code = os.environ.get(_env_var_from_mode(mode))
         if source_code is not None:
             return source_code
         if sys.version_info >= (3, 9):
@@ -101,9 +110,11 @@ class Config:
                 return strip_model_source_code(file.read(), [class_name], [method_name])
         return None
 
-    def _load_predictor_for_types(self, ref: str, method_name: str) -> BasePredictor:
+    def _load_predictor_for_types(
+        self, ref: str, method_name: str, mode: Mode
+    ) -> BasePredictor:
         module_path, class_name = ref.split(":", 1)
-        code = self._predictor_code(module_path, class_name, method_name)
+        code = self._predictor_code(module_path, class_name, method_name, mode)
         module_name = os.path.basename(module_path).split(".py", 1)[0]
         module = None
         if code is not None:
@@ -133,7 +144,7 @@ class Config:
         """Find the input and output types of a predictor."""
         predictor_ref = self.get_predictor_ref(mode=mode)
         predictor = self._load_predictor_for_types(
-            predictor_ref, _method_name_from_mode(mode=mode)
+            predictor_ref, _method_name_from_mode(mode=mode), mode
         )
         if mode == Mode.PREDICT:
             return get_input_type(predictor), get_output_type(predictor)
