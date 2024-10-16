@@ -7,6 +7,14 @@ import responses
 from cog.types import Secret, URLFile, get_filename
 
 
+def test_urlfile_protocol_validation():
+    with pytest.raises(ValueError):
+        URLFile("file:///etc/shadow")
+
+    with pytest.raises(ValueError):
+        URLFile("data:text/plain,hello")
+
+
 @responses.activate
 def test_urlfile_acts_like_response():
     responses.get(
