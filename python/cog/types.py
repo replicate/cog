@@ -10,7 +10,6 @@ import urllib.response
 from typing import Any, AsyncIterator, Dict, Iterator, List, Optional, TypeVar, Union
 
 import httpx
-import requests
 from pydantic import Field, SecretStr
 
 FILENAME_ILLEGAL_CHARS = set("\u0000/")
@@ -195,22 +194,18 @@ class DataURLTempFilePath(pathlib.PosixPath):
                     raise
 
 
-# we would prefer URLFile to stay lazy
-# except... that doesn't really work with httpx?
-
-
 class URLFile(io.IOBase):
     """
     URLFile is a proxy object for a :class:`urllib3.response.HTTPResponse`
     object that is created lazily. It's a file-like object constructed from a
     URL that can survive pickling/unpickling.
-
-    This is the only place Cog uses requests
     """
 
     __slots__ = ("__target__", "__url__")
 
     def __init__(self, url: str) -> None:
+        parsed = urllib.parse.urlparse(url)
+        object.__setattr__(self, "name", os.path.basename(parsed.path))
         object.__setattr__(self, "__url__", url)
 
     # We provide __getstate__ and __setstate__ explicitly to ensure that the
@@ -242,7 +237,8 @@ class URLFile(io.IOBase):
 
     # Luckily the only dunder method on HTTPResponse is __iter__
     def __iter__(self) -> Iterator[bytes]:
-        return iter(self.__wrapped__)
+        response = self.__wrapped__
+        return iter(response)
 
     @property
     def __wrapped__(self) -> Any:
@@ -250,11 +246,16 @@ class URLFile(io.IOBase):
             return object.__getattribute__(self, "__target__")
         except AttributeError:
             url = object.__getattribute__(self, "__url__")
-            resp = requests.get(url, stream=True)
-            resp.raise_for_status()
-            resp.raw.decode_content = True
-            object.__setattr__(self, "__target__", resp.raw)
-            return resp.raw
+
+            # We create a streaming response here, much like the `requests`
+            # version in the main 0.9.x branch. The only concerning bit here
+            # is that the book keeping for closing the response needs to be
+            # handled elsewhere. There's probably a better design for this
+            # in the long term.
+            res = urllib.request.urlopen(url)  # noqa: S310
+            object.__setattr__(self, "__target__", res)
+
+            return res
 
     def __repr__(self) -> str:
         try:
