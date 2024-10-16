@@ -1,0 +1,15 @@
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  font-weight: 600;
+}
+
+/* move the "Cog" header to the left */
+[dir="ltr"] .md-header__title {
+  margin-left: 0;
+}
+
+/* Remove the superfluous "Cog" label above the TOC */
+.md-nav__title {
+  display: none;
+}
