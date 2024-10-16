@@ -293,10 +293,8 @@ class ClientManager:
             with obj.open("rb") as f:
                 return await self.upload_file(f, url=url, prediction_id=prediction_id)
         if isinstance(obj, io.IOBase):
-            try:
+            with obj:
                 return await self.upload_file(obj, url=url, prediction_id=prediction_id)
-            finally:
-                obj.close()
         return obj
 
     # inputs
