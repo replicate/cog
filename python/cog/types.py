@@ -22,13 +22,13 @@ FILENAME_MAX_LENGTH = 200
 
 def Input(
     default: Any = ...,
-    description: str = None,
-    ge: float = None,
-    le: float = None,
-    min_length: int = None,
-    max_length: int = None,
-    regex: str = None,
-    choices: List[Union[str, int]] = None,
+    description: Optional[str] = None,
+    ge: Optional[float] = None,
+    le: Optional[float] = None,
+    min_length: Optional[int] = None,
+    max_length: Optional[int] = None,
+    regex: Optional[str] = None,
+    choices: Optional[List[Union[str, int]]] = None,
 ) -> Any:
     """Input is similar to pydantic.Field, but doesn't require a default value to be the first argument."""
     return Field(
