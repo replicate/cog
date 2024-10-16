@@ -19,6 +19,14 @@ def file_fixture(body: str):
     )
 
 
+def test_urlfile_protocol_validation():
+    with pytest.raises(ValueError):
+        URLFile("file:///etc/shadow")
+
+    with pytest.raises(ValueError):
+        URLFile("data:text/plain,hello")
+
+
 @mock.patch("urllib.request.urlopen", return_value=file_fixture("hello world"))
 def test_urlfile_acts_like_response(mock_urlopen):
     u = URLFile("https://example.com/some/url")

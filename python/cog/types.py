@@ -205,6 +205,13 @@ class URLFile(io.IOBase):
 
     def __init__(self, url: str) -> None:
         parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in {
+            "http",
+            "https",
+        }:
+            raise ValueError(
+                "URLFile requires URL to conform to HTTP or HTTPS protocol"
+            )
         object.__setattr__(self, "name", os.path.basename(parsed.path))
         object.__setattr__(self, "__url__", url)
 
