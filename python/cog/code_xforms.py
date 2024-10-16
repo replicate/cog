@@ -1,7 +1,7 @@
 import ast
 import re
 import types
-from typing import Optional, Set, Union
+from typing import List, Optional, Set, Tuple, Union
 
 COG_IMPORT_MODULES = {
     "cog",
@@ -25,7 +25,7 @@ def load_module_from_string(
     return module
 
 
-def extract_class_source(source_code: str, class_name: str) -> str:
+def extract_class_sources(source_code: str, class_names: List[str]) -> List[str]:
     """
     Extracts the source code for a specified class from a given source text.
     Args:
@@ -35,23 +35,36 @@ def extract_class_source(source_code: str, class_name: str) -> str:
         The source code of the specified class if found; otherwise, an empty string.
     """
     class_name_pattern = re.compile(r"\b[A-Z]\w*\b")
-    all_class_names = class_name_pattern.findall(class_name)
+    all_class_names = []
+    for class_name in class_names:
+        all_class_names.extend(class_name_pattern.findall(class_name))
 
     class ClassExtractor(ast.NodeVisitor):
         def __init__(self) -> None:
-            self.class_source = None
+            self.class_sources = []
 
         def visit_ClassDef(self, node: ast.ClassDef) -> None:  # pylint: disable=invalid-name
-            if node.name in all_class_names:
-                self.class_source = ast.get_source_segment(source_code, node)
+            self.class_sources.append(node)
 
     tree = ast.parse(source_code)
     extractor = ClassExtractor()
     extractor.visit(tree)
-    return extractor.class_source if extractor.class_source else ""
+
+    valid_class_names = set(all_class_names)
+    for node in extractor.class_sources:
+        if node.name not in valid_class_names:
+            continue
+        for base_name in node.bases:
+            valid_class_names.add(base_name.id)
+
+    return [
+        str(ast.get_source_segment(source_code, x))
+        for x in extractor.class_sources
+        if x.name in valid_class_names
+    ]
 
 
-def extract_function_source(source_code: str, function_name: str) -> str:
+def extract_function_source(source_code: str, function_names: List[str]) -> str:
     """
     Extracts the source code for a specified function from a given source text.
     Args:
@@ -63,20 +76,24 @@ def extract_function_source(source_code: str, function_name: str) -> str:
 
     class FunctionExtractor(ast.NodeVisitor):
         def __init__(self) -> None:
-            self.function_source = None
+            self.function_sources = []
 
         def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # pylint: disable=invalid-name
-            if node.name == function_name and not isinstance(node, ast.Module):
+            if node.name in function_names and not isinstance(node, ast.Module):
                 # Extract the source segment for this function definition
-                self.function_source = ast.get_source_segment(source_code, node)
+                self.function_sources.append(ast.get_source_segment(source_code, node))
 
     tree = ast.parse(source_code)
     extractor = FunctionExtractor()
     extractor.visit(tree)
-    return extractor.function_source if extractor.function_source else ""
+    return "\n".join(extractor.function_sources)
 
 
-def make_class_methods_empty(source_code: Union[str, ast.AST], class_name: str) -> str:
+def make_class_methods_empty(
+    source_code: Union[str, ast.AST],
+    class_name: Optional[str],
+    globals: List[ast.Assign],
+) -> Tuple[str, List[ast.Assign]]:
     """
     Transforms the source code of a specified class to remove the bodies of all its methods
     and replace them with 'return None'.
@@ -88,26 +105,47 @@ def make_class_methods_empty(source_code: Union[str, ast.AST], class_name: str) 
     """
 
     class MethodBodyTransformer(ast.NodeTransformer):
+        def __init__(self, globals: List[ast.Assign]) -> None:
+            self.used_globals = set()
+            self._targets = {
+                target.id: global_name
+                for global_name in globals
+                for target in global_name.targets
+                if isinstance(target, ast.Name)
+            }
+
         def visit_ClassDef(self, node: ast.ClassDef) -> Optional[ast.AST]:  # pylint: disable=invalid-name
-            if node.name == class_name:
+            if class_name is None or node.name == class_name:
                 for body_item in node.body:
                     if isinstance(body_item, ast.FunctionDef):
                         # Replace the body of the method with `return None`
                         body_item.body = [ast.Return(value=ast.Constant(value=None))]
+                        # Remove decorators from the function
+                        body_item.decorator_list = []
+                        # Determine if one our globals is referenced by the function.
+                        for default in body_item.args.defaults:
+                            if isinstance(default, ast.Call):
+                                for keyword in default.keywords:
+                                    if isinstance(keyword.value, ast.Name):
+                                        corresponding_global = self._targets.get(
+                                            keyword.value.id
+                                        )
+                                        if corresponding_global is not None:
+                                            self.used_globals.add(corresponding_global)
                 return node
 
             return None
 
     tree = source_code if isinstance(source_code, ast.AST) else ast.parse(source_code)
-    transformer = MethodBodyTransformer()
+    transformer = MethodBodyTransformer(globals)
     transformed_tree = transformer.visit(tree)
     class_code = ast.unparse(transformed_tree)
-    return class_code
+    return class_code, list(transformer.used_globals)
 
 
 def extract_method_return_type(
-    source_code: Union[str, ast.AST], class_name: str, method_name: str
-) -> Optional[str]:
+    source_code: Union[str, ast.AST], class_names: List[str], method_names: List[str]
+) -> List[str]:
     """
     Extracts the return type annotation of a specified method within a given class from the source code.
     Args:
@@ -120,26 +158,26 @@ def extract_method_return_type(
 
     class MethodReturnTypeExtractor(ast.NodeVisitor):
         def __init__(self) -> None:
-            self.return_type = None
+            self.return_types = []
 
         def visit_ClassDef(self, node: ast.ClassDef) -> None:  # pylint: disable=invalid-name
-            if node.name == class_name:
+            if node.name in class_names:
                 self.generic_visit(node)
 
         def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # pylint: disable=invalid-name
-            if node.name == method_name and node.returns:
-                self.return_type = ast.unparse(node.returns)
+            if node.name in method_names and node.returns:
+                self.return_types.append(ast.unparse(node.returns))
 
     tree = source_code if isinstance(source_code, ast.AST) else ast.parse(source_code)
     extractor = MethodReturnTypeExtractor()
     extractor.visit(tree)
 
-    return extractor.return_type
+    return extractor.return_types
 
 
-def extract_function_return_type(
-    source_code: Union[str, ast.AST], function_name: str
-) -> Optional[str]:
+def extract_function_return_types(
+    source_code: Union[str, ast.AST], function_names: List[str]
+) -> List[str]:
     """
     Extracts the return type annotation of a specified function from the source code.
     Args:
@@ -151,21 +189,23 @@ def extract_function_return_type(
 
     class FunctionReturnTypeExtractor(ast.NodeVisitor):
         def __init__(self) -> None:
-            self.return_type = None
+            self.return_types = []
 
         def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # pylint: disable=invalid-name
-            if node.name == function_name and node.returns:
+            if node.name in function_names and node.returns:
                 # Extract and return the string representation of the return type
-                self.return_type = ast.unparse(node.returns)
+                self.return_types.append(ast.unparse(node.returns))
 
     tree = source_code if isinstance(source_code, ast.AST) else ast.parse(source_code)
     extractor = FunctionReturnTypeExtractor()
     extractor.visit(tree)
 
-    return extractor.return_type
+    return extractor.return_types
 
 
-def make_function_empty(source_code: Union[str, ast.AST], function_name: str) -> str:
+def make_function_empty(
+    source_code: Union[str, ast.AST], function_names: List[str]
+) -> str:
     """
     Transforms the source code to remove the body of a specified function
     and replace it with 'return None'.
@@ -178,7 +218,7 @@ def make_function_empty(source_code: Union[str, ast.AST], function_name: str) ->
 
     class FunctionBodyTransformer(ast.NodeTransformer):
         def visit_FunctionDef(self, node: ast.FunctionDef) -> Optional[ast.AST]:  # pylint: disable=invalid-name
-            if node.name == function_name:
+            if node.name in function_names:
                 # Replace the body of the function with `return None`
                 node.body = [ast.Return(value=ast.Constant(value=None))]
                 return node
@@ -224,8 +264,19 @@ def extract_specific_imports(
     return "\n".join(extractor.imports)
 
 
+def _extract_globals(source_code: Union[str, ast.AST]) -> List[ast.Assign]:
+    tree = source_code if isinstance(source_code, ast.AST) else ast.parse(source_code)
+    if isinstance(tree, ast.Module):
+        return [x for x in tree.body if isinstance(x, ast.Assign)]
+    return []
+
+
+def _render_globals(globals: List[ast.Assign]) -> str:
+    return "\n".join([ast.unparse(x) for x in globals])
+
+
 def strip_model_source_code(
-    source_code: str, class_name: str, method_name: str
+    source_code: str, class_names: List[str], method_names: List[str]
 ) -> Optional[str]:
     """
     Strips down the model source code by extracting relevant classes and making methods empty.
@@ -240,32 +291,41 @@ def strip_model_source_code(
         Returns None if neither the class nor the function specified could be found or processed.
     """
     imports = extract_specific_imports(source_code, COG_IMPORT_MODULES)
-    class_source = (
-        None if not class_name else extract_class_source(source_code, class_name)
+    class_sources = (
+        None if not class_names else extract_class_sources(source_code, class_names)
     )
-    if class_source:
-        class_source = make_class_methods_empty(class_source, class_name)
-        return_type = extract_method_return_type(class_source, class_name, method_name)
-        return_class_source = (
-            extract_class_source(source_code, return_type) if return_type else ""
+    globals = _extract_globals(source_code)
+    if class_sources:
+        class_source = "\n".join(class_sources)
+        class_source, globals = make_class_methods_empty(class_source, None, globals)
+        return_types = extract_method_return_type(
+            class_source, class_names, method_names
         )
-        model_source = (
-            imports + "\n\n" + return_class_source + "\n\n" + class_source + "\n"
+        return_class_sources = (
+            extract_class_sources(source_code, return_types) if return_types else ""
+        )
+        return_class_source = "\n".join(return_class_sources)
+        rendered_globals = _render_globals(globals)
+        model_source = "\n".join(
+            [
+                x
+                for x in [imports, rendered_globals, return_class_source, class_source]
+                if x
+            ]
         )
     else:
         # use class_name specified in cog.yaml as method_name
-        method_name = class_name
-        function_source = extract_function_source(source_code, method_name)
+        method_names = class_names
+        function_source = extract_function_source(source_code, method_names)
         if not function_source:
             return None
-        function_source = make_function_empty(function_source, method_name)
+        function_source = make_function_empty(function_source, method_names)
         if not function_source:
             return None
-        return_type = extract_function_return_type(function_source, method_name)
-        return_class_source = (
-            extract_class_source(source_code, return_type) if return_type else ""
+        return_types = extract_function_return_types(function_source, method_names)
+        return_class_sources = (
+            extract_class_sources(source_code, return_types) if return_types else ""
         )
-        model_source = (
-            imports + "\n\n" + return_class_source + "\n\n" + function_source + "\n"
-        )
+        return_class_source = "\n".join(return_class_sources)
+        model_source = "\n".join([imports, return_class_source, function_source])
     return model_source
