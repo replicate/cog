@@ -204,7 +204,8 @@ class URLFile(io.IOBase):
     __slots__ = ("__target__", "__url__")
 
     def __init__(self, url: str) -> None:
-        object.__setattr__(self, "name", os.path.basename(url))
+        parsed = urllib.parse.urlparse(url)
+        object.__setattr__(self, "name", os.path.basename(parsed.path))
         object.__setattr__(self, "__url__", url)
 
     # We provide __getstate__ and __setstate__ explicitly to ensure that the
