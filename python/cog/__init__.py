@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from .predictor import BasePredictor
+from .base_predictor import BasePredictor
 from .types import ConcatenateIterator, File, Input, Path, Secret
 
 try:
