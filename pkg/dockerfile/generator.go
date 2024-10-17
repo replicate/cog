@@ -428,7 +428,7 @@ func (g *Generator) installCog() (string, error) {
 	}
 	// Install pydantic<2 for now, installing pydantic>2 wouldn't allow a downgrade later,
 	// but upgrading works fine
-	pipInstallLine := fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -t /dep %s 'pydantic<2'", containerPath)
+	pipInstallLine := fmt.Sprintf("RUN --mount=type=cache,target=/root/.cache/pip pip uninstall -y cog && pip install --no-cache-dir --upgrade -t /dep %s 'pydantic<2'", containerPath)
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
