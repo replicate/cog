@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -315,3 +316,31 @@ def test_precompile(docker_image):
         capture_output=True,
     )
     assert build_process.returncode == 0
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux"),
+    reason="only runs on linux due to CUDA binaries",
+)
+def test_cog_install_base_image(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/torch-cuda-baseimage-project"
+    build_process = subprocess.run(
+        [
+            "cog",
+            "build",
+            "-t",
+            docker_image,
+            "--use-cog-base-image=true",
+        ],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode == 0
+    pip_freeze_process = subprocess.run(
+        ["docker", "run", "-t", docker_image, "sh", "-c", "pip freeze"],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert pip_freeze_process.returncode == 0
+    pip_freeze_stderr = pip_freeze_process.stdout.decode()
+    assert "cog @ file:///tmp/cog-0.1.dev" not in pip_freeze_stderr
