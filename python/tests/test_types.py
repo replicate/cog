@@ -27,6 +27,11 @@ def test_urlfile_protocol_validation():
         URLFile("data:text/plain,hello")
 
 
+def test_urlfile_custom_filename():
+    u = URLFile("https://example.com/some-path", "my_file.txt")
+    assert u.name == "my_file.txt"
+
+
 @mock.patch("urllib.request.urlopen", return_value=file_fixture("hello world"))
 def test_urlfile_acts_like_response(mock_urlopen):
     u = URLFile("https://example.com/some/url")
