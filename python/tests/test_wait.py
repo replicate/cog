@@ -1,4 +1,5 @@
 import os
+import sys
 import tempfile
 import threading
 import time
@@ -6,7 +7,10 @@ from pathlib import Path
 
 from cog.wait import (
     COG_EAGER_IMPORTS_ENV_VAR,
+    COG_PYENV_PATH_ENV_VAR,
     COG_WAIT_FILE_ENV_VAR,
+    PYTHON_VERSION_ENV_VAR,
+    PYTHONPATH_ENV_VAR,
     eagerly_import_modules,
     wait_for_env,
     wait_for_file,
@@ -89,3 +93,31 @@ def test_wait_for_env():
         ), "We should return true if we have waited for the right environment."
         del os.environ[COG_EAGER_IMPORTS_ENV_VAR]
         del os.environ[COG_WAIT_FILE_ENV_VAR]
+
+
+def test_wait_inserts_pythonpath():
+    with tempfile.NamedTemporaryFile() as tmpfile:
+        original_sys_path = sys.path.copy()
+        original_python_path = os.environ.get(PYTHONPATH_ENV_VAR)
+        pyenv_path = os.path.dirname(tmpfile.name)
+        os.environ[COG_WAIT_FILE_ENV_VAR] = tmpfile.name
+        os.environ[COG_EAGER_IMPORTS_ENV_VAR] = "pytest,pathlib,time"
+        os.environ[COG_PYENV_PATH_ENV_VAR] = pyenv_path
+        os.environ[PYTHON_VERSION_ENV_VAR] = "3.11"
+        wait_for_env()
+        del os.environ[PYTHON_VERSION_ENV_VAR]
+        del os.environ[COG_PYENV_PATH_ENV_VAR]
+        del os.environ[COG_EAGER_IMPORTS_ENV_VAR]
+        del os.environ[COG_WAIT_FILE_ENV_VAR]
+        current_python_path = os.environ[PYTHONPATH_ENV_VAR]
+        if original_python_path is None:
+            del os.environ[PYTHONPATH_ENV_VAR]
+        else:
+            os.environ[PYTHONPATH_ENV_VAR] = original_python_path
+        sys.path = original_sys_path
+        expected_path = ":".join(
+            original_sys_path + [pyenv_path + "/lib/python3.11/site-packages"]
+        )
+        assert (
+            expected_path == current_python_path
+        ), "Our python path should be updated with the pyenv path."

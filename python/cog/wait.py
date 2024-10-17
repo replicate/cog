@@ -7,6 +7,9 @@ import structlog
 
 COG_WAIT_FILE_ENV_VAR = "COG_WAIT_FILE"
 COG_EAGER_IMPORTS_ENV_VAR = "COG_EAGER_IMPORTS"
+COG_PYENV_PATH_ENV_VAR = "COG_PYENV_PATH"
+PYTHONPATH_ENV_VAR = "PYTHONPATH"
+PYTHON_VERSION_ENV_VAR = "PYTHON_VERSION"
 
 log = structlog.get_logger("cog.wait")
 
@@ -19,14 +22,18 @@ def _wait_flag_fallen() -> bool:
 
 
 def _insert_pythonpath() -> None:
-    pyenv_path = os.environ.get("COG_PYENV_PATH")
+    pyenv_path = os.environ.get(COG_PYENV_PATH_ENV_VAR)
     if pyenv_path is None:
         return
     full_module_path = os.path.join(
-        pyenv_path, "lib", "python" + os.environ["PYTHON_VERSION"], "site-packages"
+        pyenv_path,
+        "lib",
+        "python" + os.environ[PYTHON_VERSION_ENV_VAR],
+        "site-packages",
     )
     if full_module_path not in sys.path:
         sys.path.append(full_module_path)
+    os.environ[PYTHONPATH_ENV_VAR] = ":".join(sys.path)
 
 
 def wait_for_file(timeout: float = 60.0) -> bool:
