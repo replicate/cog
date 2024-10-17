@@ -201,7 +201,7 @@ class URLFile(io.IOBase):
     URL that can survive pickling/unpickling.
     """
 
-    __slots__ = ("__target__", "__url__")
+    __slots__ = ("__target__", "__url__", "name")
 
     def __init__(self, url: str, filename: Optional[str] = None) -> None:
         parsed = urllib.parse.urlparse(url)
@@ -218,13 +218,27 @@ class URLFile(io.IOBase):
         object.__setattr__(self, "name", filename)
         object.__setattr__(self, "__url__", url)
 
+    def __del__(self) -> None:
+        try:
+            object.__getattribute__(self, "__target__")
+        except AttributeError:
+            # Do nothing when tearing down the object if the response object
+            # hasn't been created yet.
+            return
+
+        super().__del__()
+
     # We provide __getstate__ and __setstate__ explicitly to ensure that the
     # object is always picklable.
     def __getstate__(self) -> Dict[str, Any]:
-        return {"url": object.__getattribute__(self, "__url__")}
+        return {
+            "url": object.__getattribute__(self, "__url__"),
+            "name": object.__getattribute__(self, "name"),
+        }
 
     def __setstate__(self, state: Dict[str, Any]) -> None:
         object.__setattr__(self, "__url__", state["url"])
+        object.__setattr__(self, "name", state["name"])
 
     # Proxy getattr/setattr/delattr through to the response object.
     def __setattr__(self, name: str, value: Any) -> None:
@@ -236,6 +250,8 @@ class URLFile(io.IOBase):
     def __getattr__(self, name: str) -> Any:
         if name in ("__target__", "__wrapped__", "__url__"):
             raise AttributeError(name)
+        elif name == "name":
+            return object.__getattribute__(self, "name")
         else:
             return getattr(self.__wrapped__, name)
 

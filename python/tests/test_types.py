@@ -6,7 +6,6 @@ from email.message import Message
 from unittest import mock
 
 import pytest
-import responses
 from cog.types import Secret, URLFile, get_filename_from_url, get_filename_from_urlopen
 
 
@@ -27,8 +26,9 @@ def test_urlfile_protocol_validation():
         URLFile("data:text/plain,hello")
 
 
-def test_urlfile_custom_filename():
-    u = URLFile("https://example.com/some-path", "my_file.txt")
+@mock.patch("urllib.request.urlopen", return_value=file_fixture("hello world"))
+def test_urlfile_custom_filename(mock_urlopen):
+    u = URLFile("https://example.com/some-path", filename="my_file.txt")
     assert u.name == "my_file.txt"
 
 
@@ -50,20 +50,20 @@ def test_urlfile_iterable(mock_urlopen):
     assert mock_urlopen.call_count == 1
 
 
-@responses.activate
-def test_urlfile_no_request_if_not_used():
-    # This test would be failed by responses if the request were actually made,
-    # as we've not registered the handler for it.
+@mock.patch("urllib.request.urlopen", return_value=file_fixture("hello world"))
+def test_urlfile_no_request_if_not_used(mock_urlopen):
     URLFile("https://example.com/some/url")
+    assert mock_urlopen.call_count == 0
 
 
 @mock.patch("urllib.request.urlopen", return_value=file_fixture("hello world"))
 def test_urlfile_can_be_pickled(mock_urlopen):
-    u = URLFile("https://example.com/some/url")
+    u = URLFile("https://example.com/some/url", filename="my_file.txt")
 
     result = pickle.loads(pickle.dumps(u))
 
     assert isinstance(result, URLFile)
+    assert getattr(result, "name", None) == "my_file.txt"
     assert mock_urlopen.call_count == 0
 
 
