@@ -1,5 +1,8 @@
+import mimetypes
+
 from pydantic import BaseModel
 
+from .mimetypes_ext import install_mime_extensions
 from .predictor import BasePredictor
 from .server.worker import emit_metric
 from .types import (
@@ -10,6 +13,8 @@ from .types import (
     Path,
     Secret,
 )
+
+install_mime_extensions(mimetypes)
 
 try:
     from ._version import __version__
