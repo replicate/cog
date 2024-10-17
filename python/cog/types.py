@@ -203,7 +203,7 @@ class URLFile(io.IOBase):
 
     __slots__ = ("__target__", "__url__")
 
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, filename: Optional[str] = None) -> None:
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in {
             "http",
@@ -212,7 +212,10 @@ class URLFile(io.IOBase):
             raise ValueError(
                 "URLFile requires URL to conform to HTTP or HTTPS protocol"
             )
-        object.__setattr__(self, "name", os.path.basename(parsed.path))
+
+        if not filename:
+            filename = os.path.basename(parsed.path)
+        object.__setattr__(self, "name", filename)
         object.__setattr__(self, "__url__", url)
 
     # We provide __getstate__ and __setstate__ explicitly to ensure that the
