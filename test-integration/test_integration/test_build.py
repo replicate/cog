@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+import cog
+
 
 def test_build_without_predictor(docker_image):
     project_dir = Path(__file__).parent / "fixtures/no-predictor-project"
@@ -336,11 +338,19 @@ def test_cog_install_base_image(docker_image):
         capture_output=True,
     )
     assert build_process.returncode == 0
-    pip_freeze_process = subprocess.run(
-        ["docker", "run", "-t", docker_image, "sh", "-c", "pip freeze"],
+    cog_version_process = subprocess.run(
+        [
+            "docker",
+            "run",
+            "-t",
+            docker_image,
+            "python",
+            "-c",
+            "import cog; print(cog.__version__)",
+        ],
         cwd=project_dir,
         capture_output=True,
     )
-    assert pip_freeze_process.returncode == 0
-    pip_freeze_stderr = pip_freeze_process.stdout.decode()
-    assert "cog @ file:///tmp/cog-0.1.dev" not in pip_freeze_stderr
+    assert cog_version_process.returncode == 0
+    cog_version_stdout = cog_version_process.stdout.decode()
+    assert cog_version_stdout == cog.__version__

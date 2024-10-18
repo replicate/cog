@@ -65,8 +65,8 @@ test-go: $(COG_EMBEDDED_WHEEL)
 	$(GO) run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
 
 .PHONY: test-integration
-test-integration: $(COG_BINARIES)
-	PATH="$(PWD):$(PATH)" $(TOX) -e integration
+test-integration: $(COG_BINARIES) $(COG_WHEEL)
+	PATH="$(PWD):$(PATH)" $(TOX) run --installpkg $(COG_WHEEL) -e integration
 
 .PHONY: test-python
 test-python: $(COG_WHEEL)
