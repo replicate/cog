@@ -352,7 +352,7 @@ def test_cog_install_base_image(docker_image):
     assert cog_installed_version_process.returncode == 0
     # Clean up the cog python version to go from 0.11.2.dev15+g54c08f0 to 0.11.2
     cog_installed_version_stdout = ".".join(
-        cog_installed_version_process.stdout.decode().strip().split(".")[:2]
+        cog_installed_version_process.stdout.decode().strip().split(".")[:3]
     )
     cog_version_process = subprocess.run(
         [
