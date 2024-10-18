@@ -359,6 +359,6 @@ def test_cog_install_base_image(docker_image):
         cwd=project_dir,
         capture_output=True,
     )
-    cog_version_stdout = cog_version_process.stdout.decode().strip()
+    cog_version_stdout = cog_version_process.stdout.decode().strip().split()[2]
 
     assert cog_version_stdout == cog_installed_version_stdout
