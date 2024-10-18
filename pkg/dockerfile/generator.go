@@ -426,11 +426,11 @@ func (g *Generator) installCog() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir "
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir"
 	if !g.IsUsingCogBaseImage() {
-		pipInstallLine += "-t /dep "
+		pipInstallLine += " -t /dep"
 	}
-	pipInstallLine += containerPath
+	pipInstallLine += " " + containerPath
 	// Install pydantic<2 for now, installing pydantic>2 wouldn't allow a downgrade later,
 	// but upgrading works fine
 	pipInstallLine += " 'pydantic<2'"
