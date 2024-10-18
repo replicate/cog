@@ -1,10 +1,11 @@
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from .util import assert_versions_match
 
 
 def test_build_without_predictor(docker_image):
@@ -318,12 +319,8 @@ def test_precompile(docker_image):
     assert build_process.returncode == 0
 
 
-@pytest.mark.skipif(
-    not sys.platform.startswith("linux"),
-    reason="only runs on linux due to CUDA binaries",
-)
 def test_cog_install_base_image(docker_image):
-    project_dir = Path(__file__).parent / "fixtures/torch-cuda-baseimage-project"
+    project_dir = Path(__file__).parent / "fixtures/string-project"
     build_process = subprocess.run(
         [
             "cog",
@@ -350,10 +347,7 @@ def test_cog_install_base_image(docker_image):
         capture_output=True,
     )
     assert cog_installed_version_process.returncode == 0
-    # Clean up the cog python version to go from 0.11.2.dev15+g54c08f0 to 0.11.2
-    cog_installed_version_stdout = ".".join(
-        cog_installed_version_process.stdout.decode().strip().split(".")[:3]
-    )
+    cog_installed_version = cog_installed_version_process.stdout.decode().strip()
     cog_version_process = subprocess.run(
         [
             "cog",
@@ -362,8 +356,9 @@ def test_cog_install_base_image(docker_image):
         cwd=project_dir,
         capture_output=True,
     )
-    cog_version_stdout = cog_version_process.stdout.decode().strip().split()[2]
-    # Clean up the cog go version to go from 0.11.2-dev+g54c08f0 to 0.11.2
-    cog_version_stdout = cog_version_stdout.split("-")[0]
+    cog_version = cog_version_process.stdout.decode().strip().split()[2]
 
-    assert cog_version_stdout == cog_installed_version_stdout
+    assert_versions_match(
+        semver_version=cog_version,
+        pep440_version=cog_installed_version,
+    )
