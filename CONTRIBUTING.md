@@ -87,7 +87,7 @@ To acknowledge a contribution, add a comment to an issue or pull request in the 
 @allcontributors please add @username for doc,code,ideas
 ```
 
-A bot will automatically open a pull requests to add the contributor to the project README.
+A bot will automatically open a pull request to add the contributor to the project README.
 
 Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the full list at [allcontributors.org/docs/en/emoji-key](https://allcontributors.org/docs/en/emoji-key)
 
