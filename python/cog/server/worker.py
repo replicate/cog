@@ -57,7 +57,7 @@ class WorkerState(Enum):
 
 
 class Worker:
-    def __init__(self, child: "ChildWorker", events: Connection) -> None:
+    def __init__(self, child: "_ChildWorker", events: Connection) -> None:
         self._child = child
         self._events = events
 
@@ -522,7 +522,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
 def make_worker(predictor_ref: str, tee_output: bool = True) -> Worker:
     parent_conn, child_conn = _spawn.Pipe()
-    child = ChildWorker(predictor_ref, events=child_conn, tee_output=tee_output)
+    child = _ChildWorker(predictor_ref, events=child_conn, tee_output=tee_output)
     parent = Worker(child=child, events=parent_conn)
     return parent
 
