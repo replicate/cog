@@ -7,9 +7,7 @@ BINDIR = $(PREFIX)/bin
 INSTALL := install -m 0755
 
 GO ?= go
-# goreleaser v2.3.0 requires go 1.23; PR #1950 is where we're doing that. For
-# now, pin to v2.2.0
-GORELEASER := $(GO) run github.com/goreleaser/goreleaser/v2@v2.2.0
+GORELEASER := $(GO) run github.com/goreleaser/goreleaser/v2@v2.3.2
 GOIMPORTS := $(GO) run golang.org/x/tools/cmd/goimports@latest
 GOLINT := $(GO) run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0
 
