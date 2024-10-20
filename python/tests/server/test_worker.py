@@ -402,6 +402,7 @@ class FakeChildWorker:
     exitcode = None
     cancel_sent = False
     alive = True
+    pid: int = 0
 
     def start(self):
         pass
