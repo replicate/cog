@@ -285,9 +285,9 @@ class URLFile(io.IOBase):
     URL that can survive pickling/unpickling.
     """
 
-    __slots__ = ("__target__", "__url__")
+    __slots__ = ("__target__", "__url__", "name")
 
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, filename: Optional[str] = None) -> None:
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in {
             "http",
@@ -296,15 +296,41 @@ class URLFile(io.IOBase):
             raise ValueError(
                 "URLFile requires URL to conform to HTTP or HTTPS protocol"
             )
-        object.__setattr__(self, "name", os.path.basename(parsed.path))
+
+        if parsed.scheme not in {
+            "http",
+            "https",
+        }:
+            raise ValueError(
+                "URLFile requires URL to conform to HTTP or HTTPS protocol"
+            )
+
+        if not filename:
+            filename = os.path.basename(parsed.path)
+
+        object.__setattr__(self, "name", filename)
         object.__setattr__(self, "__url__", url)
+
+    def __del__(self) -> None:
+        try:
+            object.__getattribute__(self, "__target__")
+        except AttributeError:
+            # Do nothing when tearing down the object if the response object
+            # hasn't been created yet.
+            return
+
+        super().__del__()
 
     # We provide __getstate__ and __setstate__ explicitly to ensure that the
     # object is always picklable.
     def __getstate__(self) -> Dict[str, Any]:
-        return {"url": object.__getattribute__(self, "__url__")}
+        return {
+            "name": object.__getattribute__(self, "name"),
+            "url": object.__getattribute__(self, "__url__"),
+        }
 
     def __setstate__(self, state: Dict[str, Any]) -> None:
+        object.__setattr__(self, "name", state["name"])
         object.__setattr__(self, "__url__", state["url"])
 
     # Proxy getattr/setattr/delattr through to the response object.
@@ -317,6 +343,8 @@ class URLFile(io.IOBase):
     def __getattr__(self, name: str) -> Any:
         if name in ("__target__", "__wrapped__", "__url__"):
             raise AttributeError(name)
+        elif name == "name":
+            return object.__getattribute__(self, "name")
         return getattr(self.__wrapped__, name)
 
     def __delattr__(self, name: str) -> None:
