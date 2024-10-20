@@ -10,6 +10,8 @@ GO ?= go
 # goreleaser v2.3.0 requires go 1.23; PR #1950 is where we're doing that. For
 # now, pin to v2.2.0
 GORELEASER := $(GO) run github.com/goreleaser/goreleaser/v2@v2.2.0
+GOIMPORTS := $(GO) run golang.org/x/tools/cmd/goimports@latest
+GOLINT := $(GO) run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0
 
 PYTHON ?= python
 TOX := $(PYTHON) -Im tox
@@ -78,7 +80,7 @@ test: test-go test-python test-integration
 
 .PHONY: fmt
 fmt:
-	$(GO) run golang.org/x/tools/cmd/goimports -w -d .
+	$(GO) run golang.org/x/tools/cmd/goimports@latest -w -d .
 
 .PHONY: generate
 generate:
@@ -90,12 +92,12 @@ vet: pkg/dockerfile/embed/.wheel
 
 .PHONY: check-fmt
 check-fmt:
-	$(GO) run golang.org/x/tools/cmd/goimports -d .
-	@test -z $$($(GO) run golang.org/x/tools/cmd/goimports -l .)
+	$(GOIMPORTS) -d .
+	@test -z $$($(GOIMPORTS) -l .)
 
 .PHONY: lint
 lint: pkg/dockerfile/embed/.wheel check-fmt vet
-	$(GO) run github.com/golangci/golangci-lint/cmd/golangci-lint run ./...
+	$(GOLINT) run ./...
 	$(TOX) run --installpkg $(COG_WHEEL) -e lint,typecheck-pydantic2
 
 .PHONY: run-docs-server
