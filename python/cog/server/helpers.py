@@ -10,7 +10,7 @@ import sys
 import threading
 import uuid
 from types import TracebackType
-from typing import BinaryIO, Any, Callable, Dict, List, Sequence, TextIO, Union
+from typing import Any, BinaryIO, Callable, Dict, List, Sequence, TextIO, Union
 
 import pydantic
 from typing_extensions import Self
