@@ -44,7 +44,6 @@ func NewInputs(keyVals map[string][]string) Inputs {
 func NewInputsWithBaseDir(keyVals map[string]string, baseDir string) Inputs {
 	input := Inputs{}
 	for key, val := range keyVals {
-		val := val
 		if strings.HasPrefix(val, "@") {
 			val = filepath.Join(baseDir, val[1:])
 			input[key] = Input{File: &val}
