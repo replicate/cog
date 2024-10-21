@@ -43,6 +43,9 @@ jobs:
         run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12

@@ -8,7 +8,7 @@ __pycache__
 build
 dist
 *.egg-info
-pkg/dockerfile/embed/*.whl
+pkg/dockerfile/embed/*
 # Used by a vim plugin (projectionist)
 .projections.json
 .tox/

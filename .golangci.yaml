@@ -22,8 +22,8 @@ run:
 linters:
   disable-all: true
   enable:
+    - copyloopvar
     - errcheck
-    - exportloopref
     - gocritic
     - gosec
     - govet
