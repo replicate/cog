@@ -1,11 +1,12 @@
 import io
 import pickle
 import urllib.request
-from urllib.response import addinfourl
 from email.message import Message
 from unittest import mock
+from urllib.response import addinfourl
 
 import pytest
+from cog import __version__
 from cog.types import Secret, URLFile, get_filename_from_url, get_filename_from_urlopen
 
 
@@ -24,6 +25,19 @@ def test_urlfile_protocol_validation():
 
     with pytest.raises(ValueError):
         URLFile("data:text/plain,hello")
+
+
+@mock.patch("urllib.request.urlopen", return_value=file_fixture("hello world"))
+def test_urlfile_headers(mock_urlopen: mock.Mock):
+    u = URLFile("https://example.com/some-path", filename="my_file.txt")
+    u.read()
+
+    assert mock_urlopen.call_count == 1
+
+    req: urllib.request.Request = mock_urlopen.call_args[0][0]
+    assert req.full_url == "https://example.com/some-path"
+    assert req.headers.get("User-agent") == f"cog/{__version__}"
+    assert req.headers.get("Accept") == "*/*"
 
 
 @mock.patch("urllib.request.urlopen", return_value=file_fixture("hello world"))

@@ -278,7 +278,13 @@ class URLFile(io.IOBase):
             # is that the book keeping for closing the response needs to be
             # handled elsewhere. There's probably a better design for this
             # in the long term.
-            res = urllib.request.urlopen(url)  # noqa: S310
+            from . import __version__ as cog_version
+
+            req = urllib.request.Request(  # noqa: S310
+                url,
+                headers={"User-agent": f"cog/{cog_version}", "Accept": "*/*"},
+            )
+            res = urllib.request.urlopen(req)  # noqa: S310
             object.__setattr__(self, "__target__", res)
 
             return res
