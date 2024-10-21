@@ -257,3 +257,36 @@ class SchnellPredictor(Predictor):
     def predict(self, height: int=Input(description='Height of image', default=128, choices=INPUT_DIMS)) -> ModelOutput:
         return None"""
     ), "Stripped code needs to equal the minimum viable type inference."
+
+
+@pytest.mark.skipif(sys.version_info < (3, 9), reason="Requires Python 3.9 or newer")
+def test_strip_model_source_code_keeps_referenced_class_from_function():
+    stripped_code = strip_model_source_code(
+        """
+from cog import BaseModel, Input, Path
+
+class TrainingOutput(BaseModel):
+    weights: Path
+
+def train(
+    n: int,
+) -> TrainingOutput:
+    with open("weights.bin", "w") as fh:
+        for _ in range(n):
+            fh.write("a")
+
+    return TrainingOutput(
+        weights=Path("weights.bin"),
+    )
+""",
+        ["train"],
+        [],
+    )
+    assert (
+        stripped_code
+        == """from cog import BaseModel, Input, Path
+class TrainingOutput(BaseModel):
+    weights: Path
+def train(n: int) -> TrainingOutput:
+    return None"""
+    ), "Stripped code needs to equal the minimum viable type inference."
