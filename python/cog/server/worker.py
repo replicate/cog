@@ -56,7 +56,7 @@ class WorkerState(Enum):
 
 
 class Worker:
-    def __init__(self, child: "ChildWorker", events: Connection) -> None:
+    def __init__(self, child: "_ChildWorker", events: Connection) -> None:
         self._child = child
         self._events = events
 
@@ -297,27 +297,29 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             tee=self._tee_output,
         )
 
+        # TODO: support async setup? see where `redirector` is redefined below if the predict is async
         with redirector:
             self._setup(redirector)
 
-            # If setup didn't set the predictor, we're done here.
-            if not self._predictor:
-                return
+        # If setup didn't set the predictor, we're done here.
+        if not self._predictor:
+            return
 
-            predict = get_predict(self._predictor)
-            if inspect.iscoroutinefunction(predict) or inspect.isasyncgenfunction(predict):
-                # Replace the stream redirector with one that will work in an async
-                # context.
-                redirector = AsyncStreamRedirector(
-                    callback=self._stream_write_hook,
-                    tee=self._tee_output,
-                )
+        predict = get_predict(self._predictor)
+        if inspect.iscoroutinefunction(predict) or inspect.isasyncgenfunction(predict):
+            # Replace the stream redirector with one that will work in an async
+            # context.
+            redirector = AsyncStreamRedirector(
+                callback=self._stream_write_hook,
+                tee=self._tee_output,
+            )
 
-                asyncio.run(self._aloop(predict, redirector))
-            else:
-                # We use SIGUSR1 to signal an interrupt for cancelation.
-                signal.signal(signal.SIGUSR1, self._signal_handler)
+            asyncio.run(self._aloop(predict, redirector))
+        else:
+            # We use SIGUSR1 to signal an interrupt for cancelation.
+            signal.signal(signal.SIGUSR1, self._signal_handler)
 
+            with redirector:
                 self._loop(predict, redirector)
 
     def send_cancel(self) -> None:
@@ -512,7 +514,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
 def make_worker(predictor_ref: str, tee_output: bool = True) -> Worker:
     parent_conn, child_conn = _spawn.Pipe()
-    child = ChildWorker(predictor_ref, events=child_conn, tee_output=tee_output)
+    child = _ChildWorker(predictor_ref, events=child_conn, tee_output=tee_output)
     parent = Worker(child=child, events=parent_conn)
     return parent
 

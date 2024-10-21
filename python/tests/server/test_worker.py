@@ -213,7 +213,7 @@ def test_no_exceptions_from_recoverable_failures(worker):
 @uses_worker("stream_redirector_race_condition")
 def test_stream_redirector_race_condition(worker):
     """
-    StreamRedirector and ChildWorker are using the same pipe to send data. When
+    StreamRedirector and _ChildWorker are using the same pipe to send data. When
     there are multiple threads trying to write to the same pipe, it can cause
     data corruption by race condition. The data corruption will cause pipe
     receiver to raise an exception due to unpickling error.
@@ -402,6 +402,7 @@ class FakeChildWorker:
     exitcode = None
     cancel_sent = False
     alive = True
+    pid: int = 0
 
     def start(self):
         pass
