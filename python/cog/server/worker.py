@@ -305,7 +305,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 return
 
             predict = get_predict(self._predictor)
-            if inspect.iscoroutinefunction(predict) or inspect.isasyncgenfunction(predict):
+            if inspect.iscoroutinefunction(predict) or inspect.isasyncgenfunction(
+                predict
+            ):
                 # Replace the stream redirector with one that will work in an async
                 # context.
                 redirector = AsyncStreamRedirector(
