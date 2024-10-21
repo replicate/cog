@@ -138,7 +138,9 @@ async def test_upload_files_with_url_file(urlopen_mock, respx_mock):
 
     assert uploader.call_count == 1
     assert urlopen_mock.call_count == 1
-    assert urlopen_mock.call_args[0][0] == "https://example.com/cdn/my_file.txt"
+    assert (
+        urlopen_mock.call_args[0][0].full_url == "https://example.com/cdn/my_file.txt"
+    )
 
 
 @pytest.mark.asyncio
@@ -164,4 +166,6 @@ async def test_upload_files_with_url_file_with_retry(urlopen_mock, respx_mock):
 
     assert uploader.call_count == 3
     assert urlopen_mock.call_count == 1
-    assert urlopen_mock.call_args[0][0] == "https://example.com/cdn/my_file.txt"
+    assert (
+        urlopen_mock.call_args[0][0].full_url == "https://example.com/cdn/my_file.txt"
+    )
