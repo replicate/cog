@@ -45,7 +45,7 @@ Use Cog's `Input()` function to define each of the parameters in your `train()` 
 from cog import Input, Path
 
 def train(
-    train_data: Path = Input(description="HTTPS URL of a file containg training data"),
+    train_data: Path = Input(description="HTTPS URL of a file containing training data"),
     learning_rate: float = Input(description="learning rate, for learning!", default=1e-4, ge=0),
     seed: int = Input(description="random seed to use for training", default=None)
 ) -> str:
@@ -86,7 +86,7 @@ class TrainingOutput(BaseModel):
     weights: Path
 
 def train(
-    train_data: Path = Input(description="HTTPS URL of a file containg training data"),
+    train_data: Path = Input(description="HTTPS URL of a file containing training data"),
     learning_rate: float = Input(description="learning rate, for learning!", default=1e-4, ge=0),
     seed: int = Input(description="random seed to use for training", default=42)
 ) -> TrainingOutput:
