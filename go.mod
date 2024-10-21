@@ -1,14 +1,16 @@
 module github.com/replicate/cog
 
-go 1.22
+go 1.23
+
+toolchain go1.23.2
 
 require (
 	github.com/anaskhan96/soup v1.2.5
-	github.com/docker/cli v27.1.1+incompatible
+	github.com/docker/cli v27.2.1+incompatible
 	github.com/docker/docker v27.1.1+incompatible
 	github.com/getkin/kin-openapi v0.127.0
 	github.com/golangci/golangci-lint v1.59.1
-	github.com/google/go-containerregistry v0.20.1
+	github.com/google/go-containerregistry v0.20.2
 	github.com/hashicorp/go-version v1.7.0
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/mattn/go-isatty v0.0.20
@@ -21,8 +23,8 @@ require (
 	github.com/xeipuuv/gojsonschema v1.2.0
 	github.com/xeonx/timeago v1.0.0-rc5
 	golang.org/x/exp v0.0.0-20240103183307-be819d1f06fc
-	golang.org/x/sys v0.22.0
-	golang.org/x/term v0.22.0
+	golang.org/x/sys v0.25.0
+	golang.org/x/term v0.24.0
 	golang.org/x/tools v0.23.0
 	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools/gotestsum v1.12.0

@@ -77,7 +77,7 @@ Before moving forward, make sure you reboot your computer so that Windows 11 wil
 
 Download and run the [WSL2 Linux kernel update package for x64 machines](https://wslstorestorage.blob.core.windows.net/wslblob/wsl_update_x64.msi) msi installer. When prompted for elevated permissions, click 'yes' to approve the installation.
 
-To ensure you are using the correct WSL kernel, `open Windows Terminal as an adminstrator` and enter:
+To ensure you are using the correct WSL kernel, `open Windows Terminal as an administrator` and enter:
 
 ```powershell
 wsl cat /proc/version
@@ -97,7 +97,7 @@ Open `Settings` → `Windows Update` → `Advanced options` and ensure `Receive 
 
 ## 4. Configure WSL 2
 
-First, configure Windows to use the virtualization-based version of WSL (version 2) by default. In a Windows Terminal with adminstrator priveleges, type the following:
+First, configure Windows to use the virtualization-based version of WSL (version 2) by default. In a Windows Terminal with administrator privileges, type the following:
 
 ```powershell
 wsl --set-default-version 2

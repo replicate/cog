@@ -6,11 +6,27 @@ import shutil
 import tempfile
 import urllib.parse
 import urllib.request
-from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
+import urllib.response
+from typing import (
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    Type,
+    TypeVar,
+    Union,
+)
 
+import pydantic
 import requests
-from pydantic import Field, SecretStr
 from typing_extensions import NotRequired, TypedDict
+
+if pydantic.__version__.startswith("1."):
+    PYDANTIC_V2 = False
+else:
+    PYDANTIC_V2 = True
+
 
 FILENAME_ILLEGAL_CHARS = set("\u0000/")
 
@@ -48,39 +64,65 @@ def Input(  # pylint: disable=invalid-name, too-many-arguments
     choices: List[Union[str, int]] = None,
 ) -> Any:
     """Input is similar to pydantic.Field, but doesn't require a default value to be the first argument."""
-    return Field(
-        default,
-        description=description,
-        ge=ge,
-        le=le,
-        min_length=min_length,
-        max_length=max_length,
-        regex=regex,
-        choices=choices,
-    )
+    field_kwargs = {
+        "default": default,
+        "description": description,
+        "ge": ge,
+        "le": le,
+        "min_length": min_length,
+        "max_length": max_length,
+    }
+
+    if PYDANTIC_V2:
+        field_kwargs["pattern"] = regex
+        if choices:
+            # The `choices` parameter is deprecated in Pydantic v2.
+            # Instead, the user should use `Literal[...]`
+            # to specify the allowed values.
+            field_kwargs["json_schema_extra"] = {"enum": choices}
+    else:
+        field_kwargs["regex"] = regex
+        field_kwargs["enum"] = choices
+    return pydantic.Field(**field_kwargs)
 
 
-class Secret(SecretStr):
-    @classmethod
-    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
-        """Defines what this type should be in openapi.json"""
-        field_schema.update(
-            {
-                "type": "string",
-                "format": "password",
-                "x-cog-secret": True,
-            }
-        )
+class Secret(pydantic.SecretStr):
+    if PYDANTIC_V2:
+        from pydantic.json_schema import JsonSchemaValue
+        from pydantic_core import CoreSchema
+
+        @classmethod
+        def __get_pydantic_json_schema__(
+            cls, core_schema: CoreSchema, handler: Any
+        ) -> JsonSchemaValue:
+            json_schema = handler(core_schema)
+            json_schema.update(
+                {
+                    "type": "string",
+                    "format": "password",
+                    "x-cog-secret": True,
+                }
+            )
+            return json_schema
+
+    else:
+
+        @classmethod
+        def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+            """Defines what this type should be in openapi.json"""
+            field_schema.update(
+                {
+                    "type": "string",
+                    "format": "password",
+                    "x-cog-secret": True,
+                }
+            )
 
 
 class File(io.IOBase):
     """Deprecated: use Path instead."""
 
     validate_always = True
-
-    @classmethod
-    def __get_validators__(cls) -> Iterator[Any]:
-        yield cls.validate
 
     @classmethod
     def validate(cls, value: Any) -> io.IOBase:
@@ -97,19 +139,50 @@ class File(io.IOBase):
             f"'{parsed_url.scheme}' is not a valid URL scheme. 'data', 'http', or 'https' is supported."
         )
 
-    @classmethod
-    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
-        """Defines what this type should be in openapi.json"""
-        # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
-        field_schema.update(type="string", format="uri")
+    if PYDANTIC_V2:
+        from pydantic import GetCoreSchemaHandler, TypeAdapter
+        from pydantic_core.core_schema import CoreSchema
+
+        @classmethod
+        def __get_pydantic_core_schema__(
+            cls,
+            source: Type[Any],  # pylint: disable=unused-argument
+            handler: "pydantic.GetCoreSchemaHandler",  # pylint: disable=unused-argument
+        ) -> "CoreSchema":
+            from pydantic_core import (  # pylint: disable=import-outside-toplevel
+                core_schema,
+            )
+
+            return core_schema.union_schema(
+                [
+                    core_schema.is_instance_schema(io.IOBase),
+                    core_schema.no_info_plain_validator_function(cls.validate),
+                ]
+            )
+
+        @classmethod
+        def __get_pydantic_json_schema__(
+            cls, core_schema: "CoreSchema", handler: "pydantic.GetJsonSchemaHandler"
+        ) -> "JsonSchemaValue":  # type: ignore # noqa: F821
+            json_schema = handler(core_schema)
+            json_schema.update(type="string", format="uri")
+            return json_schema
+
+    else:
+
+        @classmethod
+        def __get_validators__(cls) -> Iterator[Any]:
+            yield cls.validate
+
+        @classmethod
+        def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+            """Defines what this type should be in openapi.json"""
+            # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
+            field_schema.update(type="string", format="uri")
 
 
 class Path(pathlib.PosixPath):  # pylint: disable=abstract-method
     validate_always = True
-
-    @classmethod
-    def __get_validators__(cls) -> Iterator[Any]:
-        yield cls.validate
 
     @classmethod
     def validate(cls, value: Any) -> pathlib.Path:
@@ -122,11 +195,47 @@ class Path(pathlib.PosixPath):  # pylint: disable=abstract-method
             fileobj=File.validate(value),
         )
 
-    @classmethod
-    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
-        """Defines what this type should be in openapi.json"""
-        # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
-        field_schema.update(type="string", format="uri")
+    if PYDANTIC_V2:
+        from pydantic import GetCoreSchemaHandler
+        from pydantic.json_schema import JsonSchemaValue
+        from pydantic_core import CoreSchema
+
+        @classmethod
+        def __get_pydantic_core_schema__(
+            cls,
+            source: Type[Any],  # pylint: disable=unused-argument
+            handler: "pydantic.GetCoreSchemaHandler",  # pylint: disable=unused-argument
+        ) -> "CoreSchema":
+            from pydantic_core import (  # pylint: disable=import-outside-toplevel
+                core_schema,
+            )
+
+            return core_schema.union_schema(
+                [
+                    core_schema.is_instance_schema(pathlib.Path),
+                    core_schema.no_info_plain_validator_function(cls.validate),
+                ]
+            )
+
+        @classmethod
+        def __get_pydantic_json_schema__(
+            cls, core_schema: "CoreSchema", handler: "pydantic.GetJsonSchemaHandler"
+        ) -> "JsonSchemaValue":  # type: ignore # noqa: F821
+            json_schema = handler(core_schema)
+            json_schema.update(type="string", format="uri")
+            return json_schema
+
+    else:
+
+        @classmethod
+        def __get_validators__(cls) -> Iterator[Any]:
+            yield cls.validate
+
+        @classmethod
+        def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+            """Defines what this type should be in openapi.json"""
+            # https://json-schema.org/understanding-json-schema/reference/string.html#uri-template
+            field_schema.update(type="string", format="uri")
 
 
 class URLPath(pathlib.PosixPath):  # pylint: disable=abstract-method
@@ -179,6 +288,15 @@ class URLFile(io.IOBase):
     __slots__ = ("__target__", "__url__")
 
     def __init__(self, url: str) -> None:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in {
+            "http",
+            "https",
+        }:
+            raise ValueError(
+                "URLFile requires URL to conform to HTTP or HTTPS protocol"
+            )
+        object.__setattr__(self, "name", os.path.basename(parsed.path))
         object.__setattr__(self, "__url__", url)
 
     # We provide __getstate__ and __setstate__ explicitly to ensure that the
@@ -216,12 +334,13 @@ class URLFile(io.IOBase):
         try:
             return object.__getattribute__(self, "__target__")
         except AttributeError:
-            url = object.__getattribute__(self, "__url__")
-            resp = requests.get(url, stream=True, timeout=None)
-            resp.raise_for_status()
-            resp.raw.decode_content = True
-            object.__setattr__(self, "__target__", resp.raw)
-            return resp.raw
+            pass
+        url = object.__getattribute__(self, "__url__")
+        resp = requests.get(url, stream=True, timeout=None)
+        resp.raise_for_status()
+        resp.raw.decode_content = True
+        object.__setattr__(self, "__target__", resp.raw)
+        return resp.raw
 
     def __repr__(self) -> str:
         try:
@@ -265,25 +384,65 @@ Item = TypeVar("Item")
 
 class ConcatenateIterator(Iterator[Item]):  # pylint: disable=abstract-method
     @classmethod
-    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
-        """Defines what this type should be in openapi.json"""
-        field_schema.pop("allOf", None)
-        field_schema.update(
-            {
-                "type": "array",
-                "items": {"type": "string"},
-                "x-cog-array-type": "iterator",
-                "x-cog-array-display": "concatenate",
-            }
-        )
-
-    @classmethod
-    def __get_validators__(cls) -> Iterator[Any]:
-        yield cls.validate
-
-    @classmethod
     def validate(cls, value: Iterator[Any]) -> Iterator[Any]:
         return value
+
+    if PYDANTIC_V2:
+        from pydantic import GetCoreSchemaHandler
+        from pydantic.json_schema import JsonSchemaValue
+        from pydantic_core import CoreSchema
+
+        @classmethod
+        def __get_pydantic_core_schema__(
+            cls,
+            source: Type[Any],  # pylint: disable=unused-argument
+            handler: "pydantic.GetCoreSchemaHandler",  # pylint: disable=unused-argument
+        ) -> "CoreSchema":
+            from pydantic_core import (  # pylint: disable=import-outside-toplevel
+                core_schema,
+            )
+
+            return core_schema.union_schema(
+                [
+                    core_schema.is_instance_schema(Iterator),
+                    core_schema.no_info_plain_validator_function(cls.validate),
+                ]
+            )
+
+        @classmethod
+        def __get_pydantic_json_schema__(
+            cls, core_schema: "CoreSchema", handler: "pydantic.GetJsonSchemaHandler"
+        ) -> "JsonSchemaValue":  # type: ignore # noqa: F821
+            json_schema = handler(core_schema)
+            json_schema.pop("allOf", None)
+            json_schema.update(
+                {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "x-cog-array-type": "iterator",
+                    "x-cog-array-display": "concatenate",
+                }
+            )
+            return json_schema
+
+    else:
+
+        @classmethod
+        def __get_validators__(cls) -> Iterator[Any]:
+            yield cls.validate
+
+        @classmethod
+        def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+            """Defines what this type should be in openapi.json"""
+            field_schema.pop("allOf", None)
+            field_schema.update(
+                {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "x-cog-array-type": "iterator",
+                    "x-cog-array-display": "concatenate",
+                }
+            )
 
 
 def _len_bytes(s: str, encoding: str = "utf-8") -> int:

@@ -16,25 +16,18 @@ from .. import schema
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from ..predictor import BaseInput
+from ..types import PYDANTIC_V2
+from .errors import FileUploadError, RunnerBusyError, UnknownPredictionError
 from .eventtypes import Done, Log, PredictionOutput, PredictionOutputType
+
+if PYDANTIC_V2:
+    from .helpers import unwrap_pydantic_serialization_iterators
 from .telemetry import current_trace_context
 from .useragent import get_user_agent
 from .webhook import SKIP_START_EVENT, webhook_caller_filtered
 from .worker import Worker, _PublicEventType
 
 log = structlog.get_logger("cog.server.runner")
-
-
-class FileUploadError(Exception):
-    pass
-
-
-class RunnerBusyError(Exception):
-    pass
-
-
-class UnknownPredictionError(Exception):
-    pass
 
 
 @define
@@ -94,7 +87,12 @@ class PredictionRunner:
         self._prediction_id = prediction.id
 
         if isinstance(prediction.input, BaseInput):
-            payload = prediction.input.dict()
+            if PYDANTIC_V2:
+                payload = unwrap_pydantic_serialization_iterators(
+                    prediction.input.model_dump()
+                )
+            else:
+                payload = prediction.input.dict()
         else:
             payload = prediction.input.copy()
 
@@ -122,7 +120,7 @@ class PredictionRunner:
         if not prediction_id:
             raise ValueError("prediction_id is required")
         if self._prediction_id != prediction_id:
-            raise UnknownPredictionError()
+            raise UnknownPredictionError("id mismatch")
         self._worker.cancel()
 
     def _raise_if_busy(self) -> None:
@@ -254,7 +252,14 @@ class PredictTask(Task[schema.PredictionResponse]):
 
         self._fut: "Optional[Future[Done]]" = None
 
-        self._p = schema.PredictionResponse(**prediction_request.dict())
+        if PYDANTIC_V2:
+            request_dict = unwrap_pydantic_serialization_iterators(
+                prediction_request.model_dump()
+            )
+        else:
+            request_dict = prediction_request.dict()
+
+        self._p = schema.PredictionResponse(**request_dict)
         self._p.status = schema.Status.PROCESSING
         self._output_type_multi = None
         self._p.output = None
@@ -367,21 +372,24 @@ class PredictTask(Task[schema.PredictionResponse]):
         self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     def handle_event(self, event: _PublicEventType) -> None:
-        if isinstance(event, Log):
-            self.append_logs(event.message)
-        elif isinstance(event, PredictionOutputType):
-            self.set_output_type(multi=event.multi)
-        elif isinstance(event, PredictionOutput):
-            self.append_output(event.payload)
-        elif isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
-            if event.canceled:
-                self.canceled()
-            elif event.error:
-                self.failed(error=str(event.error_detail))
-            else:
-                self.succeeded()
-        else:  # shouldn't happen, exhausted the type
-            self._log.warn("received unexpected event during predict", data=event)
+        try:
+            if isinstance(event, Log):
+                self.append_logs(event.message)
+            elif isinstance(event, PredictionOutputType):
+                self.set_output_type(multi=event.multi)
+            elif isinstance(event, PredictionOutput):
+                self.append_output(event.payload)
+            elif isinstance(event, Done):  # pyright: ignore reportUnnecessaryIsinstance
+                if event.canceled:
+                    self.canceled()
+                elif event.error:
+                    self.failed(error=str(event.error_detail))
+                else:
+                    self.succeeded()
+            else:  # shouldn't happen, exhausted the type
+                self._log.warn("received unexpected event during predict", data=event)
+        except Exception as e:
+            self.failed(str(e))
 
     def _set_completed_at(self) -> None:
         self._p.completed_at = datetime.now(tz=timezone.utc)

@@ -61,6 +61,6 @@ func main() {
 
 	rootCmd.Flags().StringVarP(&output, "output", "o", "", "Output flag (optional)")
 	if err := rootCmd.Execute(); err != nil {
-		console.Fatalf(err.Error())
+		console.Fatal(err.Error())
 	}
 }

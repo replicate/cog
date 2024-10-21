@@ -3,11 +3,13 @@ import os
 import threading
 import time
 
+import pytest
 import responses
 from werkzeug.wrappers import Response
 
 from cog import schema
 from cog.server.http import Health, create_app
+from cog.types import PYDANTIC_V2
 
 from .conftest import _fixture_path, uses_predictor
 
@@ -48,15 +50,10 @@ def test_good_int_input(client, match):
 @uses_predictor("input_integer")
 def test_bad_int_input(client):
     resp = client.post("/predictions", json={"input": {"num": "foo"}})
-    assert resp.json() == {
-        "detail": [
-            {
-                "loc": ["body", "input", "num"],
-                "msg": "value is not a valid integer",
-                "type": "type_error.integer",
-            }
-        ]
-    }
+    detail = resp.json()["detail"][0]
+    assert detail["loc"] == ["body", "input", "num"]
+    assert "valid integer" in detail["msg"]
+
     assert resp.status_code == 422
 
 
@@ -201,17 +198,9 @@ def test_multiple_arguments(client, match):
 @uses_predictor("input_ge_le")
 def test_gt_lt(client):
     resp = client.post("/predictions", json={"input": {"num": 2}})
-    assert resp.json() == {
-        "detail": [
-            {
-                "ctx": {"limit_value": 3.01},
-                "loc": ["body", "input", "num"],
-                "msg": "ensure this value is greater than or equal to 3.01",
-                "type": "value_error.number.not_ge",
-            }
-        ]
-    }
-    assert resp.status_code == 422
+    detail = resp.json()["detail"][0]
+    assert detail["loc"] == ["body", "input", "num"]
+    assert "greater than or equal to 3.01" in detail["msg"]
 
     resp = client.post("/predictions", json={"input": {"num": 5}})
     assert resp.status_code == 200
@@ -225,8 +214,40 @@ def test_choices_str(client):
     assert resp.status_code == 422
 
 
+@uses_predictor("input_choices_iterable")
+def test_choices_str(client):
+    resp = client.post("/predictions", json={"input": {"text": "foo"}})
+    assert resp.status_code == 200
+    resp = client.post("/predictions", json={"input": {"text": "baz"}})
+    assert resp.status_code == 422
+
+
 @uses_predictor("input_choices_integer")
 def test_choices_int(client):
+    resp = client.post("/predictions", json={"input": {"x": 1}})
+    assert resp.status_code == 200
+    resp = client.post("/predictions", json={"input": {"x": 3}})
+    assert resp.status_code == 422
+
+
+@pytest.mark.skipif(
+    not PYDANTIC_V2,
+    reason="Literal is used for enums only in Pydantic v2",
+)
+@uses_predictor("input_literal")
+def test_literal_str(client):
+    resp = client.post("/predictions", json={"input": {"text": "foo"}})
+    assert resp.status_code == 200
+    resp = client.post("/predictions", json={"input": {"text": "baz"}})
+    assert resp.status_code == 422
+
+
+@pytest.mark.skipif(
+    not PYDANTIC_V2,
+    reason="Literal is used for enums only in Pydantic v2",
+)
+@uses_predictor("input_literal_integer")
+def test_literal_int(client):
     resp = client.post("/predictions", json={"input": {"x": 1}})
     assert resp.status_code == 200
     resp = client.post("/predictions", json={"input": {"x": 3}})

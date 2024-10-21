@@ -54,8 +54,17 @@ func newBaseImageGenerateMatrix() *cobra.Command {
 		Use:   "generate-matrix",
 		Short: "Generate a matrix of Cog base image versions (JSON)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			matrix := dockerfile.BaseImageConfigurations()
-			output, err := json.Marshal(matrix)
+			allConfigurations := dockerfile.BaseImageConfigurations()
+			filteredMatrix := make([]dockerfile.BaseImageConfiguration, 0, len(allConfigurations))
+			for _, config := range allConfigurations {
+				if (baseImageCUDAVersion == "" || config.CUDAVersion == baseImageCUDAVersion) &&
+					(baseImagePythonVersion == "" || config.PythonVersion == baseImagePythonVersion) &&
+					(baseImageTorchVersion == "" || config.TorchVersion == baseImageTorchVersion) {
+					filteredMatrix = append(filteredMatrix, config)
+				}
+			}
+
+			output, err := json.Marshal(filteredMatrix)
 			if err != nil {
 				return err
 			}
@@ -64,6 +73,7 @@ func newBaseImageGenerateMatrix() *cobra.Command {
 		},
 		Args: cobra.MaximumNArgs(0),
 	}
+	addBaseImageFlags(cmd)
 	return cmd
 }
 

@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 import contextlib
+import ctypes
 import io
 import os
+import re
 import selectors
 import sys
 import threading
 import uuid
 from types import TracebackType
-from typing import BinaryIO, Callable, Sequence, TextIO
+from typing import Any, BinaryIO, Callable, Dict, List, Sequence, TextIO, Union
 
+import pydantic
 from typing_extensions import Self
+
+from ..types import PYDANTIC_V2
+from .errors import CogRuntimeError, CogTimeoutError
 
 
 class _SimpleStreamWrapper(io.TextIOWrapper):
@@ -61,7 +67,7 @@ class _StreamWrapper:
 
     def wrap(self) -> None:
         if self._wrapped_fp or self._original_fp:
-            raise RuntimeError("stream is already wrapped")
+            raise CogRuntimeError("stream is already wrapped")
 
         r, w = os.pipe()
 
@@ -87,7 +93,7 @@ class _StreamWrapper:
 
     def unwrap(self) -> None:
         if not self._wrapped_fp or not self._original_fp:
-            raise RuntimeError("stream is not wrapped (call wrap first)")
+            raise CogRuntimeError("stream is not wrapped (call wrap first)")
 
         # Put the original file descriptor back.
         os.dup2(self._original_fp.fileno(), self._stream.fileno())
@@ -109,13 +115,13 @@ class _StreamWrapper:
     @property
     def wrapped(self) -> TextIO:
         if not self._wrapped_fp:
-            raise RuntimeError("stream is not wrapped (call wrap first)")
+            raise CogRuntimeError("stream is not wrapped (call wrap first)")
         return self._wrapped_fp
 
     @property
     def original(self) -> TextIO:
         if not self._original_fp:
-            raise RuntimeError("stream is not wrapped (call wrap first)")
+            raise CogRuntimeError("stream is not wrapped (call wrap first)")
         return self._original_fp
 
 
@@ -250,7 +256,7 @@ class StreamRedirector(_StreamRedirectorBase):
             stream.write(self._drain_token + "\n")
             stream.flush()
         if not self._drain_event.wait(timeout=timeout):
-            raise TimeoutError("output streams failed to drain")
+            raise CogTimeoutError("output streams failed to drain")
 
     def _start(self) -> None:
         selector = selectors.DefaultSelector()
@@ -308,3 +314,184 @@ class StreamRedirector(_StreamRedirectorBase):
             s.write(self._terminate_token + "\n")
             s.flush()
             break  # we only need to send the terminate token to one stream
+
+
+# Precompile the regular expression
+_ADDRESS_PATTERN = re.compile(r"0x[0-9A-Fa-f]+")
+
+
+if PYDANTIC_V2:
+
+    def _unwrap_pydantic_serialization_iterator(obj: Any) -> Any:
+        # SerializationIterator doesn't expose the object it wraps
+        # but does give us a pointer in the `__repr__` string
+        match = _ADDRESS_PATTERN.search(repr(obj))
+        if match:
+            address = int(match.group(), 16)
+            # Cast the memory address to a Python object
+            return ctypes.cast(address, ctypes.py_object).value
+
+        return obj
+
+    def unwrap_pydantic_serialization_iterators(obj: Any) -> Any:
+        """
+        Unwraps instances of `pydantic_core._pydantic_core.SerializationIterator`,
+        returning their underlying object so that it can be pickled when passed
+        between multiprocessing workers.
+
+        This is a temporary workaround until the following issues are fixed:
+        - https://github.com/pydantic/pydantic/issues/8907
+        - https://github.com/pydantic/pydantic-core/pull/1399
+        - https://github.com/pydantic/pydantic-core/pull/1401
+        """
+
+        if type(obj).__name__ == "SerializationIterator":
+            return _unwrap_pydantic_serialization_iterator(obj)
+        if type(obj) == str:  # noqa: E721 # pylint: disable=unidiomatic-typecheck
+            return obj
+        if isinstance(obj, pydantic.BaseModel):
+            return unwrap_pydantic_serialization_iterators(
+                obj.model_dump(exclude_unset=True)
+            )
+        if isinstance(obj, dict):
+            return {
+                key: unwrap_pydantic_serialization_iterators(value)
+                for key, value in obj.items()
+            }
+        if isinstance(obj, list):
+            return [unwrap_pydantic_serialization_iterators(value) for value in obj]
+        return obj
+
+
+def update_openapi_schema_for_pydantic_2(
+    openapi_schema: Dict[str, Any],
+) -> None:
+    _remove_webhook_events_filter_title(openapi_schema)
+    _remove_empty_or_nullable_anyof(openapi_schema)
+    _flatten_selected_allof_refs(openapi_schema)
+    _extract_enum_properties(openapi_schema)
+    _set_default_enumeration_description(openapi_schema)
+    _restore_allof_for_prediction_id_put(openapi_schema)
+
+
+def _remove_webhook_events_filter_title(
+    openapi_schema: Dict[str, Any],
+) -> None:
+    try:
+        del openapi_schema["components"]["schemas"]["PredictionRequest"]["properties"][
+            "webhook_events_filter"
+        ]["title"]
+    except KeyError:
+        pass
+
+
+def _remove_empty_or_nullable_anyof(
+    openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
+) -> None:
+    if isinstance(openapi_schema, dict):
+        for key, value in list(openapi_schema.items()):
+            if key == "anyOf" and isinstance(value, list):
+                non_null_types = [item for item in value if item.get("type") != "null"]
+                if len(non_null_types) == 0:
+                    del openapi_schema[key]
+                elif len(non_null_types) == 1:
+                    openapi_schema.update(non_null_types[0])
+                    del openapi_schema[key]
+
+                    # FIXME: Update tests to expect nullable
+                    # openapi_schema["nullable"] = True
+
+            else:
+                _remove_empty_or_nullable_anyof(value)
+    elif isinstance(openapi_schema, list):  # pyright: ignore
+        for item in openapi_schema:
+            _remove_empty_or_nullable_anyof(item)
+
+
+def _flatten_selected_allof_refs(
+    openapi_schema: Dict[str, Any],
+) -> None:
+    try:
+        response = openapi_schema["components"]["schemas"]["PredictionResponse"]
+        response["properties"]["output"] = {"$ref": "#/components/schemas/Output"}
+    except KeyError:
+        pass
+
+    try:
+        path = openapi_schema["paths"]["/predictions"]["post"]
+        body = path["requestBody"]
+        body["content"]["application/json"]["schema"] = {
+            "$ref": "#/components/schemas/PredictionRequest"
+        }
+    except KeyError:
+        pass
+
+
+def _extract_enum_properties(
+    openapi_schema: Dict[str, Any],
+) -> None:
+    schemas = openapi_schema.get("components", {}).get("schemas", {})
+    if "Input" in schemas and "properties" in schemas["Input"]:
+        input_properties = schemas["Input"]["properties"]
+        for prop_name, prop_value in input_properties.items():
+            if "enum" in prop_value:
+                # Create a new schema for the enum
+                schemas[prop_name] = {
+                    "type": prop_value["type"],
+                    "enum": prop_value["enum"],
+                    "title": prop_name,
+                    "description": prop_value.get("description", "An enumeration."),
+                }
+
+                # Replace the original property with an allOf reference
+                input_properties[prop_name] = {
+                    "allOf": [{"$ref": f"#/components/schemas/{prop_name}"}]
+                }
+
+                # Preserve x-order if it exists
+                if "x-order" in prop_value:
+                    input_properties[prop_name]["x-order"] = prop_value["x-order"]
+
+
+def _set_default_enumeration_description(
+    openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
+) -> None:
+    if isinstance(openapi_schema, dict):
+        schemas = openapi_schema.get("components", {}).get("schemas", {})
+        for _key, value in list(schemas.items()):
+            if isinstance(value, dict) and value.get("enum"):
+                value["description"] = value.get("description", "An enumeration.")
+            else:
+                _set_default_enumeration_description(value)
+    elif isinstance(openapi_schema, list):  # pyright: ignore
+        for item in openapi_schema:
+            _set_default_enumeration_description(item)
+
+
+def _restore_allof_for_prediction_id_put(
+    openapi_schema: Dict[str, Any],
+) -> None:
+    try:
+        put_operation = openapi_schema["paths"]["/predictions/{prediction_id}"]["put"]
+        request_body = put_operation["requestBody"]
+        json_schema = request_body["content"]["application/json"]["schema"]
+
+        if "$ref" in json_schema:
+            ref = json_schema["$ref"]
+            json_schema.clear()
+            json_schema["allOf"] = [{"$ref": ref}]
+            json_schema["title"] = "Prediction Request"
+    except KeyError:
+        pass
+
+    for _key, value in (
+        openapi_schema.get("components", {})
+        .get("schemas", {})
+        .get("Input", {})
+        .get("properties", {})
+        .items()
+    ):
+        if "$ref" in value:
+            ref = value["$ref"]
+            del value["$ref"]
+            value["allOf"] = [{"$ref": ref}]

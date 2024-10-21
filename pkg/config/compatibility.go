@@ -300,7 +300,6 @@ func torchGPUPackage(ver string, cuda string) (name, cpuVersion, findLinks, extr
 	// that is at most as high as the requested cuda version
 	var latest *TorchCompatibility
 	for _, compat := range TorchCompatibilityMatrix {
-		compat := compat
 		if !version.Matches(compat.TorchVersion(), ver) || compat.CUDA == nil {
 			continue
 		}
@@ -349,7 +348,6 @@ func torchvisionGPUPackage(ver, cuda string) (name, cpuVersion, findLinks, extra
 	// most as high as the requested cuda version
 	var latest *TorchCompatibility
 	for _, compat := range TorchCompatibilityMatrix {
-		compat := compat
 		if compat.TorchvisionVersion() != ver || compat.CUDA == nil {
 			continue
 		}

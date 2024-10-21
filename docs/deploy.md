@@ -54,6 +54,7 @@ passing input in the format expected by your model:
 curl http://localhost:5001/predictions -X POST \
     --header "Content-Type: application/json" \
     --data '{"input": {"image": "https://.../input.jpg"}}'
+```
 
 For more details about the HTTP API, 
 see the [HTTP API reference documentation](http.md).

@@ -23,8 +23,8 @@ requires-python = ">=3.7"
 dependencies = [
   # intentionally loose. perhaps these should be vendored to not collide with user code?
   "attrs>=20.1,<24",
-  "fastapi>=0.75.2,<0.99.0",
-  "pydantic>=1.9,<2",
+  "fastapi>=0.75.2,<0.111.0",
+  "pydantic>=1.9,<3",
   "PyYAML",
   "requests>=2,<3",
   "structlog>=20,<25",
@@ -36,12 +36,7 @@ dependencies = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
-dev = [
-  "build",
-  "setuptools_scm",
-  "tox",
-  "tox-uv",
-]
+dev = ["build", "setuptools_scm", "tox", "tox-uv"]
 
 tests = [
   "httpx",
@@ -76,6 +71,9 @@ reportUnneesssaryContains = "warning"
 reportMissingTypeArgument = "error"
 reportUnusedExpression = "warning"
 
+[tool.pyright.defineConstant]
+PYDANTIC_V2 = true
+
 [tool.setuptools]
 include-package-data = false
 
@@ -105,7 +103,6 @@ lint.select = [
   "F",   # Pyflakes
   "I",   # isort
   "W",   # pycodestyle warning
-  "UP",  # pyupgrade
   "S",   # flake8-bandit
   "B",   # flake8-bugbear
   "ANN", # flake8-annotations
@@ -121,8 +118,6 @@ lint.ignore = [
   "ANN101", # Missing type annotation for self in method
   "ANN102", # Missing type annotation for cls in classmethod
   "ANN401", # Dynamically typed expressions are disallowed
-  # recently ruff added checks for pyupgrade, which is bad for back-compat
-  "UP037", # Remove quotes from type annotation
 ]
 extend-exclude = [
   "python/tests/server/fixtures/*",

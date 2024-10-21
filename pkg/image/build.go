@@ -2,11 +2,14 @@ package image
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
+	"strings"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -25,10 +28,12 @@ const weightsManifestPath = ".cog/cache/weights_manifest.json"
 const bundledSchemaFile = ".cog/openapi_schema.json"
 const bundledSchemaPy = ".cog/schema.py"
 
+var errGit = errors.New("git error")
+
 // Build a Cog model from a config
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
-func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string, useCogBaseImage *bool) error {
+func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string, useCogBaseImage *bool, strip bool, precompile bool) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 
 	// remove bundled schema files that may be left from previous builds
@@ -55,6 +60,8 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 				console.Warnf("Error cleaning up Dockerfile generator: %s", err)
 			}
 		}()
+		generator.SetStrip(strip)
+		generator.SetPrecompile(precompile)
 		generator.SetUseCudaBaseImage(useCudaBaseImage)
 		if useCogBaseImage != nil {
 			generator.SetUseCogBaseImage(*useCogBaseImage)
@@ -204,18 +211,16 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		labels[global.LabelNamespace+"cog-base-image-last-layer-idx"] = fmt.Sprintf("%d", lastLayerIndex)
 	}
 
-	if isGitRepo(dir) {
-		if commit, err := gitHead(dir); commit != "" && err == nil {
-			labels["org.opencontainers.image.revision"] = commit
-		} else {
-			console.Info("Unable to determine Git commit")
-		}
+	if commit, err := gitHead(dir); commit != "" && err == nil {
+		labels["org.opencontainers.image.revision"] = commit
+	} else {
+		console.Info("Unable to determine Git commit")
+	}
 
-		if tag, err := gitTag(dir); tag != "" && err == nil {
-			labels["org.opencontainers.image.version"] = tag
-		} else {
-			console.Info("Unable to determine Git tag")
-		}
+	if tag, err := gitTag(dir); tag != "" && err == nil {
+		labels["org.opencontainers.image.version"] = tag
+	} else {
+		console.Info("Unable to determine Git tag")
 	}
 
 	if err := docker.BuildAddLabelsAndSchemaToImage(imageName, labels, bundledSchemaFile, bundledSchemaPy); err != nil {
@@ -255,38 +260,56 @@ func BuildBase(cfg *config.Config, dir string, useCudaBaseImage string, useCogBa
 	return imageName, nil
 }
 
-func isGitRepo(dir string) bool {
-	if _, err := os.Stat(path.Join(dir, ".git")); os.IsNotExist(err) {
+func isGitWorkTree(dir string) bool {
+	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--is-inside-work-tree").Output()
+	if err != nil {
 		return false
 	}
 
-	return true
+	return strings.TrimSpace(string(out)) == "true"
 }
 
 func gitHead(dir string) (string, error) {
-	cmd := exec.Command("git", "rev-parse", "HEAD")
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
+	if v, ok := os.LookupEnv("GITHUB_SHA"); ok && v != "" {
+		return v, nil
 	}
 
-	commit := string(bytes.TrimSpace(out))
+	if isGitWorkTree(dir) {
+		ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
+		defer cancel()
 
-	return commit, nil
+		out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "HEAD").Output()
+		if err != nil {
+			return "", err
+		}
+
+		return string(bytes.TrimSpace(out)), nil
+	}
+
+	return "", fmt.Errorf("Failed to find HEAD commit: %w", errGit)
 }
 
 func gitTag(dir string) (string, error) {
-	cmd := exec.Command("git", "describe", "--tags", "--dirty")
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
+	if v, ok := os.LookupEnv("GITHUB_REF_NAME"); ok && v != "" {
+		return v, nil
 	}
 
-	tag := string(bytes.TrimSpace(out))
+	if isGitWorkTree(dir) {
+		ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
+		defer cancel()
 
-	return tag, nil
+		out, err := exec.CommandContext(ctx, "git", "-C", dir, "describe", "--tags", "--dirty").Output()
+		if err != nil {
+			return "", err
+		}
+
+		return string(bytes.TrimSpace(out)), nil
+	}
+
+	return "", fmt.Errorf("Failed to find ref name: %w", errGit)
 }
 
 func buildWeightsImage(dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string) error {
