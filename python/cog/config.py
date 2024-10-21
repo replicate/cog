@@ -99,7 +99,12 @@ class Config:
         return bool(self._cog_config.get("build", {}).get("gpu", False))
 
     def _predictor_code(
-        self, module_path: str, class_name: str, method_name: str, mode: Mode
+        self,
+        module_path: str,
+        class_name: str,
+        method_name: str,
+        mode: Mode,
+        module_name: str,
     ) -> Optional[str]:
         source_code = os.environ.get(_env_var_from_mode(mode))
         if source_code is not None:
@@ -108,14 +113,18 @@ class Config:
             wait_for_env(include_imports=False)
             with open(module_path, encoding="utf-8") as file:
                 return strip_model_source_code(file.read(), [class_name], [method_name])
+        else:
+            log.debug(f"[{module_name}] cannot use fast loader as current Python <3.9")
         return None
 
     def _load_predictor_for_types(
         self, ref: str, method_name: str, mode: Mode
     ) -> BasePredictor:
         module_path, class_name = ref.split(":", 1)
-        code = self._predictor_code(module_path, class_name, method_name, mode)
         module_name = os.path.basename(module_path).split(".py", 1)[0]
+        code = self._predictor_code(
+            module_path, class_name, method_name, mode, module_name
+        )
         module = None
         if code is not None:
             try:
@@ -123,6 +132,7 @@ class Config:
             except Exception as e:  # pylint: disable=broad-exception-caught
                 log.info(f"[{module_name}] fast loader failed: {e}")
         if module is None:
+            log.debug(f"[{module_name}] falling back to slow loader")
             wait_for_env(include_imports=False)
             module = load_full_predictor_from_file(module_path, module_name)
         return get_predictor(module, class_name)
@@ -135,7 +145,9 @@ class Config:
         elif mode == Mode.TRAIN:
             predictor_ref = self.predictor_train_ref
         if predictor_ref is None:
-            raise ValueError(f"Could not find predictor ref for mode {mode}")
+            raise ValueError(
+                f"Can't run predictions: '{mode}' option not found in cog.yaml"
+            )
         return predictor_ref
 
     def get_predictor_types(
