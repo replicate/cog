@@ -2,7 +2,8 @@ from email.message import Message
 import io
 import os
 import tempfile
-from urllib.response import addinfourl
+import urllib3
+from urllib3.response import HTTPResponse
 from unittest import mock
 
 import cog
@@ -115,11 +116,11 @@ async def test_upload_files_with_retry(respx_mock):
 
 @pytest.mark.asyncio
 @pytest.mark.respx(base_url="https://example.com")
-@mock.patch("urllib.request.urlopen")
+@mock.patch("urllib3.PoolManager.urlopen")
 async def test_upload_files_with_url_file(urlopen_mock, respx_mock):
     fp = io.BytesIO(b"hello world")
-    urlopen_mock.return_value = addinfourl(
-        fp=fp, headers=Message(), url="https://example.com/cdn/my_file.txt"
+    urlopen_mock.return_value = HTTPResponse(
+        fp, headers={}, request_url="https://example.com/cdn/my_file.txt"
     )
 
     uploader = respx_mock.put("/bucket/my_file.txt").mock(
@@ -138,18 +139,17 @@ async def test_upload_files_with_url_file(urlopen_mock, respx_mock):
 
     assert uploader.call_count == 1
     assert urlopen_mock.call_count == 1
-    assert (
-        urlopen_mock.call_args[0][0].full_url == "https://example.com/cdn/my_file.txt"
-    )
+    assert urlopen_mock.call_args[0][0] == "GET"
+    assert urlopen_mock.call_args[0][1] == "https://example.com/cdn/my_file.txt"
 
 
 @pytest.mark.asyncio
 @pytest.mark.respx(base_url="https://example.com")
-@mock.patch("urllib.request.urlopen")
+@mock.patch("urllib3.PoolManager.urlopen")
 async def test_upload_files_with_url_file_with_retry(urlopen_mock, respx_mock):
     fp = io.BytesIO(b"hello world")
-    urlopen_mock.return_value = addinfourl(
-        fp=fp, headers=Message(), url="https://example.com/cdn/my_file.txt"
+    urlopen_mock.return_value = urllib3.response.HTTPResponse(
+        body=fp, headers={}, request_url="https://example.com/cdn/my_file.txt"
     )
 
     uploader = respx_mock.put("/bucket/my_file.txt").mock(
@@ -166,6 +166,5 @@ async def test_upload_files_with_url_file_with_retry(urlopen_mock, respx_mock):
 
     assert uploader.call_count == 3
     assert urlopen_mock.call_count == 1
-    assert (
-        urlopen_mock.call_args[0][0].full_url == "https://example.com/cdn/my_file.txt"
-    )
+    assert urlopen_mock.call_args[0][0] == "GET"
+    assert urlopen_mock.call_args[0][1] == "https://example.com/cdn/my_file.txt"

@@ -10,7 +10,9 @@ import urllib.response
 from typing import Any, AsyncIterator, Dict, Iterator, List, Optional, TypeVar, Union
 
 import httpx
+import urllib3
 from pydantic import Field, SecretStr
+from urllib3 import Retry
 
 FILENAME_ILLEGAL_CHARS = set("\u0000/")
 
@@ -201,6 +203,18 @@ class URLFile(io.IOBase):
     URL that can survive pickling/unpickling.
     """
 
+    __client: urllib3.PoolManager
+
+    @staticmethod
+    def client() -> urllib3.PoolManager:
+        client = getattr(URLFile, "__client", None)
+        if not client:
+            retries = Retry(total=5, backoff_factor=0.2)
+            timeout = urllib3.Timeout(connect=10, read=15)
+            client = urllib3.PoolManager(retries=retries, timeout=timeout)
+
+        return client
+
     __slots__ = ("__target__", "__url__", "name")
 
     def __init__(self, url: str, filename: Optional[str] = None) -> None:
@@ -263,8 +277,7 @@ class URLFile(io.IOBase):
 
     # Luckily the only dunder method on HTTPResponse is __iter__
     def __iter__(self) -> Iterator[bytes]:
-        response = self.__wrapped__
-        return iter(response)
+        return iter(self.__wrapped__)
 
     @property
     def __wrapped__(self) -> Any:
@@ -272,19 +285,16 @@ class URLFile(io.IOBase):
             return object.__getattribute__(self, "__target__")
         except AttributeError:
             url = object.__getattribute__(self, "__url__")
+            from . import __version__ as cog_version
+
+            headers = {"User-Agent": f"cog/{cog_version}", "Accept": "*/*"}
 
             # We create a streaming response here, much like the `requests`
             # version in the main 0.9.x branch. The only concerning bit here
             # is that the book keeping for closing the response needs to be
             # handled elsewhere. There's probably a better design for this
             # in the long term.
-            from . import __version__ as cog_version
-
-            req = urllib.request.Request(  # noqa: S310
-                url,
-                headers={"User-agent": f"cog/{cog_version}", "Accept": "*/*"},
-            )
-            res = urllib.request.urlopen(req)  # noqa: S310
+            res = self.client().urlopen("GET", url, headers=headers)
             object.__setattr__(self, "__target__", res)
 
             return res
