@@ -40,6 +40,11 @@ pkg/dockerfile/embed/.wheel: $(COG_PYTHON_SOURCE)
 	@rm -f pkg/dockerfile/embed/*.whl # there can only be one embedded wheel
 	$(PYTHON) -m pip wheel --no-deps --no-binary=:all: --wheel-dir=pkg/dockerfile/embed .
 	@touch $@
+
+define COG_WHEEL
+    $(shell find pkg/dockerfile/embed -type f -name '*.whl')
+endef
+
 endif
 
 $(COG_BINARIES): $(COG_GO_SOURCE) pkg/dockerfile/embed/.wheel
@@ -70,7 +75,7 @@ test-integration: $(COG_BINARIES)
 	PATH="$(PWD):$(PATH)" $(TOX) -e integration
 
 .PHONY: test-python
-test-python: $(COG_WHEEL)
+test-python: pkg/dockerfile/embed/.wheel
 	$(TOX) run --installpkg $(COG_WHEEL) -f tests
 
 .PHONY: test
