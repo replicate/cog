@@ -126,7 +126,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		Image:   imageName,
 		Volumes: volumes,
 		Env:     envFlags,
-	})
+	}, false)
 
 	go func() {
 		captureSignal := make(chan os.Signal, 1)
@@ -152,7 +152,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 				Image:   imageName,
 				Volumes: volumes,
 				Env:     envFlags,
-			})
+			}, false)
 
 			if err := predictor.Start(os.Stderr, timeout); err != nil {
 				return err
@@ -170,14 +170,14 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	return predictIndividualInputs(predictor, inputFlags, outPath)
+	return predictIndividualInputs(predictor, inputFlags, outPath, false)
 }
 
 func isURI(ref *openapi3.Schema) bool {
 	return ref != nil && ref.Type.Is("string") && ref.Format == "uri"
 }
 
-func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, outputPath string) error {
+func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, outputPath string, isTrain bool) error {
 	console.Info("Running prediction...")
 	schema, err := predictor.GetSchema()
 	if err != nil {
@@ -200,7 +200,11 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 	}
 
 	// Generate output depending on type in schema
-	responseSchema := schema.Paths.Value("/predictions").Post.Responses.Value("200").Value.Content["application/json"].Schema.Value
+	url := "/predictions"
+	if isTrain {
+		url = "/trainings"
+	}
+	responseSchema := schema.Paths.Value(url).Post.Responses.Value("200").Value.Content["application/json"].Schema.Value
 	outputSchema := responseSchema.Properties["output"].Value
 
 	prediction, err := predictor.Predict(inputs)
