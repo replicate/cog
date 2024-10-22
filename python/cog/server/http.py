@@ -11,7 +11,7 @@ import threading
 import traceback
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional, Type
 
 import structlog
 import uvicorn
@@ -209,8 +209,14 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                     default=None, include_in_schema=False
                 ),
             ) -> Any:  # type: ignore
+                respond_async = prefer == "respond-async"
+
                 with trace_context(make_trace_context(traceparent, tracestate)):
-                    return predict(request, prefer)
+                    return _predict(
+                        request=request,
+                        response_type=TrainingResponse,
+                        respond_async=respond_async,
+                    )
 
             @app.put(
                 "/trainings/{training_id}",
@@ -302,6 +308,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         with trace_context(make_trace_context(traceparent, tracestate)):
             return _predict(
                 request=request,
+                response_type=PredictionResponse,
                 respond_async=respond_async,
             )
 
@@ -349,12 +356,14 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         with trace_context(make_trace_context(traceparent, tracestate)):
             return _predict(
                 request=request,
+                response_type=PredictionResponse,
                 respond_async=respond_async,
             )
 
     def _predict(
         *,
         request: Optional[PredictionRequest],
+        response_type: Type[schema.PredictionResponse],
         respond_async: bool = False,
     ) -> Response:
         # [compat] If no body is supplied, assume that this model can be run
@@ -403,7 +412,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         else:
             response_object = predict_task.result.dict()
         try:
-            _ = PredictionResponse(**response_object)
+            _ = response_type(**response_object)
         except ValidationError as e:
             _log_invalid_output(e)
             raise HTTPException(status_code=500, detail=str(e)) from e
