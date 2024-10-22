@@ -92,7 +92,7 @@ def extract_function_source(source_code: str, function_names: List[str]) -> str:
 def make_class_methods_empty(
     source_code: Union[str, ast.AST],
     class_name: Optional[str],
-    globals: List[ast.Assign],
+    global_vars: List[ast.Assign],
 ) -> Tuple[str, List[ast.Assign]]:
     """
     Transforms the source code of a specified class to remove the bodies of all its methods
@@ -105,11 +105,11 @@ def make_class_methods_empty(
     """
 
     class MethodBodyTransformer(ast.NodeTransformer):
-        def __init__(self, globals: List[ast.Assign]) -> None:
+        def __init__(self, global_vars: List[ast.Assign]) -> None:
             self.used_globals = set()
             self._targets = {
                 target.id: global_name
-                for global_name in globals
+                for global_name in global_vars
                 for target in global_name.targets
                 if isinstance(target, ast.Name)
             }
@@ -137,7 +137,7 @@ def make_class_methods_empty(
             return None
 
     tree = source_code if isinstance(source_code, ast.AST) else ast.parse(source_code)
-    transformer = MethodBodyTransformer(globals)
+    transformer = MethodBodyTransformer(global_vars)
     transformed_tree = transformer.visit(tree)
     class_code = ast.unparse(transformed_tree)
     return class_code, list(transformer.used_globals)
@@ -271,8 +271,8 @@ def _extract_globals(source_code: Union[str, ast.AST]) -> List[ast.Assign]:
     return []
 
 
-def _render_globals(globals: List[ast.Assign]) -> str:
-    return "\n".join([ast.unparse(x) for x in globals])
+def _render_globals(global_vars: List[ast.Assign]) -> str:
+    return "\n".join([ast.unparse(x) for x in global_vars])
 
 
 def strip_model_source_code(
@@ -294,10 +294,12 @@ def strip_model_source_code(
     class_sources = (
         None if not class_names else extract_class_sources(source_code, class_names)
     )
-    globals = _extract_globals(source_code)
+    global_vars = _extract_globals(source_code)
     if class_sources:
         class_source = "\n".join(class_sources)
-        class_source, globals = make_class_methods_empty(class_source, None, globals)
+        class_source, global_vars = make_class_methods_empty(
+            class_source, None, global_vars
+        )
         return_types = extract_method_return_type(
             class_source, class_names, method_names
         )
@@ -305,7 +307,7 @@ def strip_model_source_code(
             extract_class_sources(source_code, return_types) if return_types else ""
         )
         return_class_source = "\n".join(return_class_sources)
-        rendered_globals = _render_globals(globals)
+        rendered_globals = _render_globals(global_vars)
         model_source = "\n".join(
             [
                 x
