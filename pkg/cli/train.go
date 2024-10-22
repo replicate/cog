@@ -108,7 +108,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		Volumes: volumes,
 		Env:     trainEnvFlags,
 		Args:    []string{"python", "-m", "cog.server.http", "--x-mode", "train"},
-	})
+	}, true)
 
 	go func() {
 		captureSignal := make(chan os.Signal, 1)
@@ -134,5 +134,5 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	return predictIndividualInputs(predictor, trainInputFlags, trainOutPath)
+	return predictIndividualInputs(predictor, trainInputFlags, trainOutPath, true)
 }
