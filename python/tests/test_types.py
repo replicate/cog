@@ -1,6 +1,7 @@
 import io
 import pickle
 import urllib.request
+import urllib3
 from email.message import Message
 from unittest import mock
 from urllib.response import addinfourl
@@ -12,10 +13,11 @@ from cog.types import Secret, URLFile, get_filename_from_url, get_filename_from_
 
 # Represents a response from urllib.request.urlopen
 def file_fixture(body: str):
-    return addinfourl(
-        fp=io.BytesIO(bytes(body, "utf-8")),
-        headers=Message(),
-        url="https://example.com/cdn/my_file.txt",
+    return urllib3.response.HTTPResponse(
+        body=io.BytesIO(bytes(body, "utf-8")),
+        headers={},
+        request_url="https://example.com/cdn/my_file.txt",
+        preload_content=False,
     )
 
 
@@ -27,26 +29,28 @@ def test_urlfile_protocol_validation():
         URLFile("data:text/plain,hello")
 
 
-@mock.patch("urllib.request.urlopen", return_value=file_fixture("hello world"))
+@mock.patch("urllib3.PoolManager.urlopen", return_value=file_fixture("hello world"))
 def test_urlfile_headers(mock_urlopen: mock.Mock):
     u = URLFile("https://example.com/some-path", filename="my_file.txt")
     u.read()
 
     assert mock_urlopen.call_count == 1
 
-    req: urllib.request.Request = mock_urlopen.call_args[0][0]
-    assert req.full_url == "https://example.com/some-path"
-    assert req.headers.get("User-agent") == f"cog/{__version__}"
-    assert req.headers.get("Accept") == "*/*"
+    assert mock_urlopen.call_args[0][0] == "GET"
+    assert mock_urlopen.call_args[0][1] == "https://example.com/some-path"
+
+    headers = mock_urlopen.call_args_list[0].kwargs["headers"]
+    assert headers.get("User-Agent") == f"cog/{__version__}"
+    assert headers.get("Accept") == "*/*"
 
 
-@mock.patch("urllib.request.urlopen", return_value=file_fixture("hello world"))
+@mock.patch("urllib3.PoolManager.urlopen", return_value=file_fixture("hello world"))
 def test_urlfile_custom_filename(mock_urlopen):
     u = URLFile("https://example.com/some-path", filename="my_file.txt")
     assert u.name == "my_file.txt"
 
 
-@mock.patch("urllib.request.urlopen", return_value=file_fixture("hello world"))
+@mock.patch("urllib3.PoolManager.urlopen", return_value=file_fixture("hello world"))
 def test_urlfile_acts_like_response(mock_urlopen):
     u = URLFile("https://example.com/some/url")
 
@@ -55,22 +59,24 @@ def test_urlfile_acts_like_response(mock_urlopen):
     assert mock_urlopen.call_count == 1
 
 
-@mock.patch("urllib.request.urlopen", return_value=file_fixture("one\ntwo\nthree\n"))
+@mock.patch(
+    "urllib3.PoolManager.urlopen", return_value=file_fixture("one\ntwo\nthree\n")
+)
 def test_urlfile_iterable(mock_urlopen):
     u = URLFile("https://example.com/some/url")
     result = list(u)
 
-    assert result == [b"one\n", b"two\n", b"three\n"]
     assert mock_urlopen.call_count == 1
+    assert result == [b"one\n", b"two\n", b"three\n"]
 
 
-@mock.patch("urllib.request.urlopen", return_value=file_fixture("hello world"))
+@mock.patch("urllib3.PoolManager.urlopen", return_value=file_fixture("hello world"))
 def test_urlfile_no_request_if_not_used(mock_urlopen):
     URLFile("https://example.com/some/url")
     assert mock_urlopen.call_count == 0
 
 
-@mock.patch("urllib.request.urlopen", return_value=file_fixture("hello world"))
+@mock.patch("urllib3.PoolManager.urlopen", return_value=file_fixture("hello world"))
 def test_urlfile_can_be_pickled(mock_urlopen):
     u = URLFile("https://example.com/some/url", filename="my_file.txt")
 
@@ -81,10 +87,10 @@ def test_urlfile_can_be_pickled(mock_urlopen):
     assert mock_urlopen.call_count == 0
 
 
-@mock.patch("urllib.request.urlopen", return_value=file_fixture("hello world"))
+@mock.patch("urllib3.PoolManager.urlopen", return_value=file_fixture("hello world"))
 def test_urlfile_can_be_pickled_even_once_loaded(mock_urlopen):
     u = URLFile("https://example.com/some/url")
-    u.read()
+    assert u.read() == b"hello world"
 
     result = pickle.loads(pickle.dumps(u))
 
