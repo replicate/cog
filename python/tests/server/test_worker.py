@@ -18,6 +18,7 @@ from hypothesis.stateful import (
 
 from cog.server.eventtypes import (
     Done,
+    Envelope,
     Log,
     PredictionMetric,
     PredictionOutput,
@@ -221,6 +222,24 @@ def test_no_exceptions_from_recoverable_failures(worker):
     """
     for _ in range(5):
         _process(worker, lambda: worker.predict({}))
+
+
+# TODO duplicate this for async predictor
+# TODO test this works with outputs and errors and the like
+@uses_worker("simple")
+def test_can_subscribe_for_a_specific_tag(worker):
+    tag = "123"
+
+    result = Result()
+    subid = worker.subscribe(result.handle_event, tag=tag)
+
+    worker.predict({}, tag="not-my-tag").result()
+    assert not result.done
+
+    worker.predict({}, tag=tag).result()
+    assert result.done
+
+    worker.unsubscribe(subid)
 
 
 @uses_worker("stream_redirector_race_condition")
@@ -461,6 +480,8 @@ class WorkerStateMachine(RuleBasedStateMachine):
 
     See https://hypothesis.readthedocs.io/en/latest/stateful.html for more on
     stateful testing with Hypothesis.
+
+    TODO: test concurrent predictions
     """
 
     predict_pending = Bundle("predict_pending")
@@ -510,18 +531,18 @@ class WorkerStateMachine(RuleBasedStateMachine):
         source=st.sampled_from(["stdout", "stderr"]),
     )
     def simulate_setup_logs(self, state: SetupState, text: str, source: str):
-        events = [Log(source=source, message=text)]
+        events = [Envelope(Log(source=source, message=text))]
         self.simulate_events(events, target=state.result)
 
     @rule(state=consumes(setup_pending), target=setup_complete)
     def simulate_setup_success(self, state: SetupState):
-        self.simulate_events(events=[Done()], target=state.result)
+        self.simulate_events(events=[Envelope(Done())], target=state.result)
         return state
 
     @rule(state=consumes(setup_pending), target=setup_complete)
     def simulate_setup_failure(self, state: SetupState):
         self.simulate_events(
-            events=[Done(error=True, error_detail="Setup failed!")],
+            events=[Envelope(Done(error=True, error_detail="Setup failed!"))],
             target=state.result,
         )
         return evolve(state, error=True)
@@ -558,7 +579,7 @@ class WorkerStateMachine(RuleBasedStateMachine):
         source=st.sampled_from(["stdout", "stderr"]),
     )
     def simulate_predict_logs(self, state: PredictState, text: str, source: str):
-        events = [Log(source=source, message=text)]
+        events = [Envelope(Log(source=source, message=text))]
         self.simulate_events(events, target=state.result)
 
     @rule(state=consumes(predict_pending), target=predict_complete)
@@ -569,15 +590,17 @@ class WorkerStateMachine(RuleBasedStateMachine):
         name = state.payload["name"]
 
         if steps == 1:
-            events.append(PredictionOutputType(multi=False))
-            events.append(PredictionOutput(payload=f"NAME={name}"))
+            events.append(Envelope(PredictionOutputType(multi=False)))
+            events.append(Envelope(PredictionOutput(payload=f"NAME={name}")))
 
         elif steps > 1:
-            events.append(PredictionOutputType(multi=True))
+            events.append(Envelope(PredictionOutputType(multi=True)))
             for i in range(steps):
-                events.append(PredictionOutput(payload=f"NAME={name},STEP={i+1}"))
+                events.append(
+                    Envelope(PredictionOutput(payload=f"NAME={name},STEP={i+1}"))
+                )
 
-        events.append(Done(canceled=state.canceled))
+        events.append(Envelope(Done(canceled=state.canceled)))
 
         self.simulate_events(events, target=state.result)
         return state
@@ -585,10 +608,12 @@ class WorkerStateMachine(RuleBasedStateMachine):
     @rule(state=consumes(predict_pending), target=predict_complete)
     def simulate_predict_failure(self, state: PredictState):
         events = [
-            Done(
-                error=True,
-                error_detail="Kaboom!",
-                canceled=state.canceled,
+            Envelope(
+                Done(
+                    error=True,
+                    error_detail="Kaboom!",
+                    canceled=state.canceled,
+                )
             )
         ]
 
