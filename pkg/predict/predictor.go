@@ -227,19 +227,17 @@ func (p *Predictor) buildInputValidationErrorMessage(errorResponse *ValidationEr
 	}
 
 	return fmt.Errorf(
-		`The inputs you passed to cog %s could not be validated:
+		`The inputs you passed to cog %[1]s could not be validated:
 
-%s
+%[2]s
 
 You can provide an input with -i. For example:
 
-    cog %s -i blur=3.5
+    cog %[1]s -i blur=3.5
 
 If your input is a local file, you need to prefix the path with @ to tell Cog to read the file contents. For example:
 
-    cog %s -i path=@image.jpg`,
-		command,
-		command,
+    cog %[1]s -i path=@image.jpg`,
 		command,
 		strings.Join(errorMessages, "\n"),
 	)
