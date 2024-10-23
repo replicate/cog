@@ -198,7 +198,7 @@ def load_slim_predictor_from_file(
 ) -> Optional[types.ModuleType]:
     with open(module_path, encoding="utf-8") as file:
         source_code = file.read()
-    stripped_source = strip_model_source_code(source_code, class_name, method_name)
+    stripped_source = strip_model_source_code(source_code, [class_name], [method_name])
     module = load_module_from_string(uuid.uuid4().hex, stripped_source)
     return module
 
