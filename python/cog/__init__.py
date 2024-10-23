@@ -1,7 +1,12 @@
+import mimetypes
+
 from pydantic import BaseModel
 
 from .base_predictor import BasePredictor
+from .mimetypes_ext import install_mime_extensions
 from .types import ConcatenateIterator, File, Input, Path, Secret
+
+install_mime_extensions(mimetypes)
 
 try:
     from ._version import __version__
