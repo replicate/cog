@@ -400,6 +400,15 @@
       "contributions": [
         "doc"
       ]
+    },
+    {
+      "login": "aknoerig",
+      "name": "André Knörig",
+      "avatar_url": "https://avatars.githubusercontent.com/u/481350?v=4",
+      "profile": "http://andreknoerig.de",
+      "contributions": [
+        "doc"
+      ]
     }
   ],
   "contributorsPerLine": 7,
