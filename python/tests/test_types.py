@@ -15,6 +15,11 @@ def test_urlfile_protocol_validation():
         URLFile("data:text/plain,hello")
 
 
+def test_urlfile_custom_filename():
+    u = URLFile("https://example.com/some-path", filename="my_file.txt")
+    assert u.name == "my_file.txt"
+
+
 @responses.activate
 def test_urlfile_acts_like_response():
     responses.get(
@@ -61,18 +66,23 @@ def test_urlfile_can_be_pickled():
 
 @responses.activate
 def test_urlfile_can_be_pickled_even_once_loaded():
-    responses.get(
+    mock = responses.get(
         "https://example.com/some/url",
         json={"message": "hello world"},
         status=200,
     )
 
-    u = URLFile("https://example.com/some/url")
-    u.read()
+    u = URLFile("https://example.com/some/url", filename="my_file.txt")
+    assert u.name == "my_file.txt"
+    assert u.read() == b'{"message": "hello world"}'
 
     result = pickle.loads(pickle.dumps(u))
 
     assert isinstance(result, URLFile)
+    assert result.name == "my_file.txt"
+    assert result.read() == b'{"message": "hello world"}'
+
+    assert mock.call_count == 2
 
 
 @pytest.mark.parametrize(
