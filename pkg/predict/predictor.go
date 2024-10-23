@@ -43,19 +43,20 @@ type ValidationErrorResponse struct {
 
 type Predictor struct {
 	runOptions docker.RunOptions
+	isTrain    bool
 
 	// Running state
 	containerID string
 	port        int
 }
 
-func NewPredictor(runOptions docker.RunOptions) Predictor {
+func NewPredictor(runOptions docker.RunOptions, isTrain bool) Predictor {
 	if global.Debug {
 		runOptions.Env = append(runOptions.Env, "COG_LOG_LEVEL=debug")
 	} else {
 		runOptions.Env = append(runOptions.Env, "COG_LOG_LEVEL=warning")
 	}
-	return Predictor{runOptions: runOptions}
+	return Predictor{runOptions: runOptions, isTrain: isTrain}
 }
 
 func (p *Predictor) Start(logsWriter io.Writer, timeout time.Duration) error {
@@ -146,7 +147,7 @@ func (p *Predictor) Predict(inputs Inputs) (*Response, error) {
 		return nil, err
 	}
 
-	url := fmt.Sprintf("http://localhost:%d/predictions", p.port)
+	url := p.url()
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create HTTP request to %s: %w", url, err)
@@ -164,14 +165,14 @@ func (p *Predictor) Predict(inputs Inputs) (*Response, error) {
 	if resp.StatusCode == http.StatusUnprocessableEntity {
 		errorResponse := &ValidationErrorResponse{}
 		if err := json.NewDecoder(resp.Body).Decode(errorResponse); err != nil {
-			return nil, fmt.Errorf("/predictions call returned status 422, and the response body failed to decode: %w", err)
+			return nil, fmt.Errorf("/%s call returned status 422, and the response body failed to decode: %w", p.endpoint(), err)
 		}
 
-		return nil, buildInputValidationErrorMessage(errorResponse)
+		return nil, p.buildInputValidationErrorMessage(errorResponse)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("/predictions call returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("/%s call returned status %d", p.endpoint(), resp.StatusCode)
 	}
 
 	prediction := &Response{}
@@ -197,30 +198,47 @@ func (p *Predictor) GetSchema() (*openapi3.T, error) {
 	return openapi3.NewLoader().LoadFromData(body)
 }
 
-func buildInputValidationErrorMessage(errorResponse *ValidationErrorResponse) error {
+func (p *Predictor) endpoint() string {
+	if p.isTrain {
+		return "trainings"
+	}
+	return "predictions"
+}
+
+func (p *Predictor) url() string {
+	return fmt.Sprintf("http://localhost:%d/%s", p.port, p.endpoint())
+}
+
+func (p *Predictor) buildInputValidationErrorMessage(errorResponse *ValidationErrorResponse) error {
 	errorMessages := []string{}
 
 	for _, validationError := range errorResponse.Detail {
 		if len(validationError.Location) != 3 || validationError.Location[0] != "body" || validationError.Location[1] != "input" {
 			responseBody, _ := json.MarshalIndent(errorResponse, "", "\t")
-			return fmt.Errorf("/predictions call returned status 422, and there was an unexpected message in response:\n\n%s", responseBody)
+			return fmt.Errorf("/%s call returned status 422, and there was an unexpected message in response:\n\n%s", p.endpoint(), responseBody)
 		}
 
 		errorMessages = append(errorMessages, fmt.Sprintf("- %s: %s", validationError.Location[2], validationError.Message))
 	}
 
-	return fmt.Errorf(
-		`The inputs you passed to cog predict could not be validated:
+	command := "predict"
+	if p.isTrain {
+		command = "train"
+	}
 
-%s
+	return fmt.Errorf(
+		`The inputs you passed to cog %[1]s could not be validated:
+
+%[2]s
 
 You can provide an input with -i. For example:
 
-    cog predict -i blur=3.5
+    cog %[1]s -i blur=3.5
 
 If your input is a local file, you need to prefix the path with @ to tell Cog to read the file contents. For example:
 
-    cog predict -i path=@image.jpg`,
+    cog %[1]s -i path=@image.jpg`,
+		command,
 		strings.Join(errorMessages, "\n"),
 	)
 }

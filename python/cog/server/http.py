@@ -11,7 +11,7 @@ import threading
 import traceback
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional, Type
 
 import structlog
 import uvicorn
@@ -218,8 +218,14 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                     default=None, include_in_schema=False
                 ),
             ) -> Any:  # type: ignore
+                respond_async = prefer == "respond-async"
+
                 with trace_context(make_trace_context(traceparent, tracestate)):
-                    return predict(request, prefer)
+                    return _predict(
+                        request=request,
+                        response_type=TrainingResponse,
+                        respond_async=respond_async,
+                    )
 
             @app.put(
                 "/trainings/{training_id}",
@@ -237,8 +243,37 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                     default=None, include_in_schema=False
                 ),
             ) -> Any:
+                if request.id is not None and request.id != training_id:
+                    body = {
+                        "loc": ("body", "id"),
+                        "msg": "training ID must match the ID supplied in the URL",
+                        "type": "value_error",
+                    }
+                    raise HTTPException(422, [body])
+
+                # We've already checked that the IDs match, now ensure that an ID is
+                # set on the prediction object
+                request.id = training_id
+
+                # If the prediction service is already running a prediction with a
+                # matching ID, return its current state.
+                if runner.is_busy():
+                    task = runner.get_predict_task(request.id)
+                    if task:
+                        return JSONResponse(
+                            jsonable_encoder(task.result),
+                            status_code=202,
+                        )
+
+                # TODO: spec-compliant parsing of Prefer header.
+                respond_async = prefer == "respond-async"
+
                 with trace_context(make_trace_context(traceparent, tracestate)):
-                    return predict_idempotent(training_id, request, prefer)
+                    return _predict(
+                        request=request,
+                        response_type=TrainingResponse,
+                        respond_async=respond_async,
+                    )
 
             @app.post("/trainings/{training_id}/cancel")
             def cancel_training(
@@ -311,6 +346,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         with trace_context(make_trace_context(traceparent, tracestate)):
             return _predict(
                 request=request,
+                response_type=PredictionResponse,
                 respond_async=respond_async,
             )
 
@@ -358,12 +394,14 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         with trace_context(make_trace_context(traceparent, tracestate)):
             return _predict(
                 request=request,
+                response_type=PredictionResponse,
                 respond_async=respond_async,
             )
 
     def _predict(
         *,
         request: Optional[PredictionRequest],
+        response_type: Type[schema.PredictionResponse],
         respond_async: bool = False,
     ) -> Response:
         # [compat] If no body is supplied, assume that this model can be run
@@ -412,7 +450,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         else:
             response_object = predict_task.result.dict()
         try:
-            _ = PredictionResponse(**response_object)
+            _ = response_type(**response_object)
         except ValidationError as e:
             _log_invalid_output(e)
             raise HTTPException(status_code=500, detail=str(e)) from e

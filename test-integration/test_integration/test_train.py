@@ -11,9 +11,10 @@ def test_train_takes_input_and_produces_weights(tmpdir_factory):
     result = subprocess.run(
         ["cog", "train", "--debug", "-i", "n=42"],
         cwd=out_dir,
-        check=True,
+        check=False,
         capture_output=True,
     )
+    assert result.returncode == 0
     assert result.stdout == b""
     with open(out_dir / "weights.bin", "rb") as f:
         assert len(f.read()) == 42
