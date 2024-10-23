@@ -13,9 +13,9 @@ from typing_extensions import Literal  # Python 3.7
 from urllib3.util.retry import Retry
 
 from .. import schema
+from ..base_input import BaseInput
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
-from ..predictor import BaseInput
 from ..types import PYDANTIC_V2
 from .errors import FileUploadError, RunnerBusyError, UnknownPredictionError
 from .eventtypes import Done, Log, PredictionOutput, PredictionOutputType
@@ -163,6 +163,7 @@ class Task(ABC, Generic[T]):
 
 class SetupTask(Task[SetupResult]):
     def __init__(self, _clock: Optional[Callable[[], datetime]] = None) -> None:
+        log.info("starting setup")
         self._clock = _clock
         if self._clock is None:
             self._clock = lambda: datetime.now(timezone.utc)
@@ -175,6 +176,7 @@ class SetupTask(Task[SetupResult]):
         return self._result
 
     def track(self, fut: "Future[Done]") -> None:
+        log.info("started setup")
         self._fut = fut
         self._fut.add_done_callback(self._handle_done)
 
@@ -194,11 +196,13 @@ class SetupTask(Task[SetupResult]):
         self._result.logs.append(message)
 
     def succeeded(self) -> None:
+        log.info("setup succeeded")
         assert self._clock
         self._result.completed_at = self._clock()
         self._result.status = schema.Status.SUCCEEDED
 
     def failed(self) -> None:
+        log.info("setup failed")
         assert self._clock
         self._result.completed_at = self._clock()
         self._result.status = schema.Status.FAILED
