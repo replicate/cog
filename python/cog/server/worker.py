@@ -484,7 +484,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                         )
                     )
 
-    # TODO make this handle the pydantic v2 shenanigans
     async def _apredict(
         self,
         tag: Optional[str],
@@ -493,36 +492,46 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         redirector: AsyncStreamRedirector,
     ) -> None:
         with self._handle_predict_error(redirector, tag=tag):
-            result = predict(**payload)
+            future_result = predict(**payload)
 
-            if result:
-                if inspect.isasyncgen(result):
+            if future_result:
+                if inspect.isasyncgen(future_result):
                     self._events.send(
                         Envelope(
                             event=PredictionOutputType(multi=True),
                             tag=tag,
                         )
                     )
-                    async for r in result:
-                        # Send the ID for this prediction back with this
+                    async for r in future_result:
+                        if PYDANTIC_V2:
+                            payload = make_encodeable(
+                                unwrap_pydantic_serialization_iterators(r)
+                            )
+                        else:
+                            payload = make_encodeable(r)
                         self._events.send(
                             Envelope(
-                                event=PredictionOutput(payload=make_encodeable(r)),
+                                event=PredictionOutput(payload=payload),
                                 tag=tag,
                             )
                         )
                 else:
-                    output = await result
-                    # Send the ID for this prediction back with these
+                    result = await future_result
                     self._events.send(
                         Envelope(
                             event=PredictionOutputType(multi=False),
                             tag=tag,
                         )
                     )
+                    if PYDANTIC_V2:
+                        payload = make_encodeable(
+                            unwrap_pydantic_serialization_iterators(result)
+                        )
+                    else:
+                        payload = make_encodeable(result)
                     self._events.send(
                         Envelope(
-                            event=PredictionOutput(payload=make_encodeable(output)),
+                            event=PredictionOutput(payload=payload),
                             tag=tag,
                         )
                     )
