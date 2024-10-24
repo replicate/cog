@@ -194,6 +194,20 @@ class DataURLTempFilePath(pathlib.PosixPath):
                     raise
 
 
+class OutputURL:
+    def __init__(self, url: str, filename: Optional[str] = None) -> None:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError(
+                "OutputURL requires URL to conform to HTTP or HTTPS protocol"
+            )
+
+        if not filename:
+            filename = os.path.basename(parsed.path)
+        self.name = filename
+        self.url = url
+
+
 class URLFile(io.IOBase):
     """
     URLFile is a proxy object for a :class:`urllib3.response.HTTPResponse`
