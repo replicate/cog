@@ -4,7 +4,10 @@ from typing import Optional
 from unittest.mock import patch
 
 from cog import File, Path
-from cog.predictor import get_weights_type, load_predictor_from_ref
+from cog.predictor import (
+    get_weights_type,
+    load_predictor_from_ref,
+)
 
 
 def test_get_weights_type() -> None:

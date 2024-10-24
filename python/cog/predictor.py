@@ -30,7 +30,6 @@ from unittest.mock import patch
 
 import pydantic
 import structlog
-import yaml
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
@@ -40,10 +39,8 @@ from typing_extensions import Annotated
 from .base_input import BaseInput
 from .base_predictor import BasePredictor
 from .code_xforms import load_module_from_string, strip_model_source_code
-from .errors import ConfigDoesNotExist, PredictorNotSet
 from .types import (
     PYDANTIC_V2,
-    CogConfig,
     Input,
 )
 from .types import (
@@ -142,43 +139,6 @@ def get_weights_type(setup_function: Callable[[Any], None]) -> Optional[Any]:
     return Type
 
 
-def load_config() -> CogConfig:
-    """
-    Reads cog.yaml and returns it as a typed dict.
-    """
-    # Assumes the working directory is /src
-    config_path = os.path.abspath("cog.yaml")
-    try:
-        with open(config_path, encoding="utf-8") as fh:
-            config = yaml.safe_load(fh)
-    except FileNotFoundError as e:
-        raise ConfigDoesNotExist(
-            f"Could not find {config_path}",
-        ) from e
-    return config
-
-
-def load_predictor(config: CogConfig) -> BasePredictor:
-    """
-    Constructs an instance of the user-defined Predictor class from a config.
-    """
-
-    ref = get_predictor_ref(config)
-    return load_predictor_from_ref(ref)
-
-
-def get_predictor_ref(config: CogConfig, mode: str = "predict") -> str:
-    if mode not in ["predict", "train"]:
-        raise ValueError(f"Invalid mode: {mode}")
-
-    if mode not in config:
-        raise PredictorNotSet(
-            f"Can't run predictions: '{mode}' option not found in cog.yaml"
-        )
-
-    return config[mode]
-
-
 def load_full_predictor_from_file(
     module_path: str, module_name: str
 ) -> types.ModuleType:
@@ -208,27 +168,6 @@ def get_predictor(module: types.ModuleType, class_name: str) -> Any:
     # It could be a class or a function
     if inspect.isclass(predictor):
         return predictor()
-    return predictor
-
-
-def load_slim_predictor_from_ref(ref: str, method_name: str) -> BasePredictor:
-    module_path, class_name = ref.split(":", 1)
-    module_name = os.path.basename(module_path).split(".py", 1)[0]
-    module = None
-    try:
-        if sys.version_info >= (3, 9):
-            module = load_slim_predictor_from_file(module_path, class_name, method_name)
-            if not module:
-                log.debug(f"[{module_name}] fast loader returned None")
-        else:
-            log.debug(f"[{module_name}] cannot use fast loader as current Python <3.9")
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        log.debug(f"[{module_name}] fast loader failed: {e}")
-    finally:
-        if not module:
-            log.debug(f"[{module_name}] falling back to slow loader")
-            module = load_full_predictor_from_file(module_path, module_name)
-    predictor = get_predictor(module, class_name)
     return predictor
 
 

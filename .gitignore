@@ -19,3 +19,4 @@ docs/README.md
 docs/CONTRIBUTING.md
 venv
 base-image
+flag_file
