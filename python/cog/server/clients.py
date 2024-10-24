@@ -11,6 +11,7 @@ from typing import (
     Dict,
     Mapping,
     Optional,
+    Union,
     cast,
 )
 from urllib.parse import urlparse
@@ -21,7 +22,7 @@ from fastapi.encoders import jsonable_encoder
 
 from .. import types
 from ..schema import PredictionResponse, Status, WebhookEvent
-from ..types import Path
+from ..types import OutputURL, Path
 from .eventtypes import PredictionInput
 from .response_throttler import ResponseThrottler
 from .retry_transport import RetryTransport
@@ -199,7 +200,11 @@ class ClientManager:
     # files
 
     async def upload_file(
-        self, fh: io.IOBase, *, url: Optional[str], prediction_id: Optional[str]
+        self,
+        fh: Union[io.IOBase, OutputURL],
+        *,
+        url: Optional[str],
+        prediction_id: Optional[str],
     ) -> str:
         """put file to signed endpoint"""
         log.debug("upload_file")
@@ -213,7 +218,7 @@ class ClientManager:
 
         # this code path happens when running outside replicate without upload-url
         # in that case we need to return data uris
-        if url is None:
+        if url is None and not isinstance(fh, OutputURL):
             return file_to_data_uri(fh, content_type)
         assert url
 
@@ -243,11 +248,14 @@ class ClientManager:
                 url = resp1.headers["Location"]
 
         log.info("doing real upload to %s", url)
-        resp = await self.file_client.put(
-            url,
-            content=ChunkFileReader(fh),
-            headers=headers,
-        )
+        if isinstance(fh, OutputURL):
+            async with self.file_client.stream("GET", fh.url) as resp:
+                content = resp.aiter_bytes()
+                resp = await self.file_client.put(url, content=content, headers=headers)
+        else:
+            resp = await self.file_client.put(
+                url, content=ChunkFileReader(fh), headers=headers
+            )
         # TODO: if file size is >1MB, show upload throughput
         resp.raise_for_status()
 
@@ -292,6 +300,8 @@ class ClientManager:
         if isinstance(obj, Path):
             with obj.open("rb") as f:
                 return await self.upload_file(f, url=url, prediction_id=prediction_id)
+        if isinstance(obj, OutputURL):
+            return await self.upload_file(obj, url=url, prediction_id=prediction_id)
         if isinstance(obj, io.IOBase):
             with obj:
                 return await self.upload_file(obj, url=url, prediction_id=prediction_id)
