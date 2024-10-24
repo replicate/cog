@@ -6,12 +6,6 @@ from attrs import define, field, validators
 # From worker parent process
 #
 @define
-class Cancel:
-    # TODO: identify which prediction!
-    pass
-
-
-@define
 class PredictionInput:
     payload: Dict[str, Any]
 

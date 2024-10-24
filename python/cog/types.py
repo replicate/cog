@@ -288,8 +288,6 @@ class URLFile(io.IOBase):
     __slots__ = ("__target__", "__url__")
 
     def __init__(self, url: str) -> None:
-        object.__setattr__(self, "__url__", None)
-
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in {
             "http",
