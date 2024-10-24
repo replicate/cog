@@ -155,11 +155,10 @@ class Worker:
 
         self._pool.shutdown(wait=False)
 
-    def cancel(self) -> None:
+    def cancel(self, tag: Optional[str] = None) -> None:
         if self._allow_cancel:
             self._child.send_cancel()
-            # TODO send through an ID for the prediction that should be canceled
-            self._events.send(Cancel())
+            self._events.send(Envelope(event=Cancel(), tag=tag))
             self._allow_cancel = False
 
     def _assert_state(self, state: WorkerState) -> None:
@@ -567,7 +566,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             try:
                 redirector.drain(timeout=10)
             except TimeoutError:
-                # TODO send through the ID received through connection
                 self._events.send(
                     Envelope(
                         event=Log(
@@ -579,7 +577,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 )
                 raise
             if send_done:
-                # TODO send through the ID received through connection
                 self._events.send(Envelope(event=done, tag=tag))
 
     def _signal_handler(
@@ -594,10 +591,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if len(data) == 0:
             return
         if stream_name == sys.stdout.name:
-            # TODO send through the ID received through connection
             self._events.send(Envelope(event=Log(data, source="stdout")))
         else:
-            # TODO send through the ID received through connection
             self._events.send(Envelope(event=Log(data, source="stderr")))
 
 
