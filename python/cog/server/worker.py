@@ -12,7 +12,16 @@ import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
-from typing import Any, Callable, Dict, Iterator, Optional, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterator,
+    Optional,
+    Tuple,
+    Union,
+    cast,
+)
 
 import structlog
 
@@ -23,6 +32,7 @@ from .connection import AsyncConnection, LockedConnection
 from .eventtypes import (
     Cancel,
     Done,
+    Envelope,
     Log,
     PredictionInput,
     PredictionOutput,
@@ -66,8 +76,11 @@ class Worker:
         self._terminating = False
 
         self._result: Optional["Future[Done]"] = None
-        self._subscribers: Dict[int, Callable[[_PublicEventType], None]] = {}
+        self._subscribers: Dict[
+            int, Tuple[Callable[[_PublicEventType], None], Optional[str]]
+        ] = {}
 
+        self._predict_tag: Optional[str] = None
         self._predict_payload: Optional[Dict[str, Any]] = None
         self._predict_start = threading.Event()  # set when a prediction is started
 
@@ -83,19 +96,26 @@ class Worker:
         self._event_consumer = self._pool.submit(self._consume_events)
         return result
 
-    def predict(self, payload: Dict[str, Any]) -> "Future[Done]":
+    def predict(
+        self, payload: Dict[str, Any], tag: Optional[str] = None
+    ) -> "Future[Done]":
         self._assert_state(WorkerState.READY)
         self._state = WorkerState.PROCESSING
         self._allow_cancel = True
         result = Future()
         self._result = result
+        self._predict_tag = tag
         self._predict_payload = payload
         self._predict_start.set()
         return result
 
-    def subscribe(self, subscriber: Callable[[_PublicEventType], None]) -> int:
+    def subscribe(
+        self,
+        subscriber: Callable[[_PublicEventType], None],
+        tag: Optional[str] = None,
+    ) -> int:
         sid = uuid.uuid4().int
-        self._subscribers[sid] = subscriber
+        self._subscribers[sid] = (subscriber, tag)
         return sid
 
     def unsubscribe(self, sid: int) -> None:
@@ -110,7 +130,7 @@ class Worker:
         self._state = WorkerState.DEFUNCT
 
         if self._child.is_alive() and not self._sent_shutdown_event:
-            self._events.send(Shutdown())
+            self._events.send(Envelope(event=Shutdown()))
             self._sent_shutdown_event = True
 
         if self._event_consumer:
@@ -132,10 +152,10 @@ class Worker:
 
         self._pool.shutdown(wait=False)
 
-    def cancel(self) -> None:
+    def cancel(self, tag: Optional[str] = None) -> None:
         if self._allow_cancel:
             self._child.send_cancel()
-            self._events.send(Cancel())
+            self._events.send(Envelope(event=Cancel(), tag=tag))
             self._allow_cancel = False
 
     def _assert_state(self, state: WorkerState) -> None:
@@ -149,11 +169,11 @@ class Worker:
             if not self._events.poll(0.1):
                 continue
 
-            ev = self._events.recv()
-            self._publish(ev)
+            e = self._events.recv()
+            self._publish(e)
 
-            if isinstance(ev, Done):
-                return ev
+            if isinstance(e.event, Done):
+                return e.event
         return None
 
     def _consume_events(self) -> None:
@@ -211,11 +231,19 @@ class Worker:
             try:
                 _prepare_payload(self._predict_payload)
             except Exception as e:
-                done = Done(error=True, error_detail=str(e))
+                done = Envelope(
+                    event=Done(error=True, error_detail=str(e)),
+                    tag=self._predict_tag,
+                )
                 self._publish(done)
             else:
                 # Start the prediction
-                self._events.send(PredictionInput(payload=self._predict_payload))
+                self._events.send(
+                    Envelope(
+                        event=PredictionInput(payload=self._predict_payload),
+                        tag=self._predict_tag,
+                    )
+                )
 
                 # Consume and publish prediction events
                 done = self._consume_events_until_done()
@@ -225,6 +253,7 @@ class Worker:
             # We capture the predict future and then reset state before
             # completing it, so that we can immediately accept work.
             result = self._result
+            self._predict_tag = None
             self._predict_payload = None
             self._predict_start.clear()
             self._result = None
@@ -245,25 +274,24 @@ class Worker:
                 self._result = None
             self._state = WorkerState.DEFUNCT
 
-    def _publish(self, ev: _PublicEventType) -> None:
-        for subscriber in self._subscribers.values():
-            try:
-                subscriber(ev)
-            except Exception:
-                log.warn("publish failed", subscriber=subscriber, ev=ev, exc_info=True)
-
-
-class LockedConn:
-    def __init__(self, conn: Connection) -> None:
-        self.conn = conn
-        self._lock = _spawn.Lock()
-
-    def send(self, obj: Any) -> None:
-        with self._lock:
-            self.conn.send(obj)
-
-    def recv(self) -> Any:
-        return self.conn.recv()
+    def _publish(self, e: Envelope) -> None:
+        log.warn(f"handling {e.event} for prediction {e.tag}")
+        for subscriber, requested_tag in self._subscribers.values():
+            if requested_tag is None or e.tag == requested_tag:
+                try:
+                    subscriber(cast(_PublicEventType, e.event))
+                except Exception:
+                    log.warn(
+                        "publish failed",
+                        subscriber=subscriber,
+                        tag=e.tag,
+                        event=e.event,
+                        exc_info=True,
+                    )
+            else:
+                log.warn(
+                    f"skipping publish for {e.event}, because {requested_tag} is None or {e.tag} != {requested_tag}"
+                )
 
 
 class _ChildWorker(_spawn.Process):  # type: ignore
@@ -280,6 +308,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         )
         self._tee_output = tee_output
         self._cancelable = False
+        self._tags: Dict[int, Optional[str]] = {}
 
         super().__init__()
 
@@ -349,13 +378,15 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 redirector.drain(timeout=10)
             except TimeoutError:
                 self._events.send(
-                    Log(
-                        "WARNING: logs may be truncated due to excessive volume.",
-                        source="stderr",
+                    Envelope(
+                        event=Log(
+                            "WARNING: logs may be truncated due to excessive volume.",
+                            source="stderr",
+                        )
                     )
                 )
                 raise
-            self._events.send(done)
+            self._events.send(Envelope(event=done))
 
     def _loop(
         self,
@@ -364,15 +395,15 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     ) -> None:
         with redirector:
             while True:
-                ev = self._events.recv()
-                if isinstance(ev, Cancel):
+                e = cast(Envelope, self._events.recv())
+                if isinstance(e.event, Cancel):
                     continue  # Ignored in sync predictors.
-                elif isinstance(ev, Shutdown):
+                elif isinstance(e.event, Shutdown):
                     break
-                elif isinstance(ev, PredictionInput):
-                    self._predict(ev.payload, predict, redirector)
+                elif isinstance(e.event, PredictionInput):
+                    self._predict(e.tag, e.event.payload, predict, redirector)
                 else:
-                    print(f"Got unexpected event: {ev}", file=sys.stderr)
+                    print(f"Got unexpected event: {e.event}", file=sys.stderr)
 
     async def _aloop(
         self,
@@ -387,32 +418,40 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
         with redirector:
             while True:
-                ev = await self._events.recv()
-                if isinstance(ev, Cancel) and task and self._cancelable:
+                e = cast(Envelope, await self._events.recv())
+                if isinstance(e.event, Cancel) and task and self._cancelable:
                     task.cancel()
-                elif isinstance(ev, Shutdown):
+                elif isinstance(e.event, Shutdown):
                     break
-                elif isinstance(ev, PredictionInput):
+                elif isinstance(e.event, PredictionInput):
                     task = asyncio.create_task(
-                        self._apredict(ev.payload, predict, redirector)
+                        self._apredict(e.tag, e.event.payload, predict, redirector)
                     )
                 else:
-                    print(f"Got unexpected event: {ev}", file=sys.stderr)
+                    print(f"Got unexpected event: {e.event}", file=sys.stderr)
             if task:
                 await task
 
     def _predict(
         self,
+        tag: Optional[str],
         payload: Dict[str, Any],
         predict: Callable[..., Any],
         redirector: StreamRedirector,
     ) -> None:
-        with self._handle_predict_error(redirector):
+        self._tags[threading.get_ident()] = tag
+
+        with self._handle_predict_error(redirector, tag=tag):
             result = predict(**payload)
 
             if result:
                 if isinstance(result, types.GeneratorType):
-                    self._events.send(PredictionOutputType(multi=True))
+                    self._events.send(
+                        Envelope(
+                            event=PredictionOutputType(multi=True),
+                            tag=tag,
+                        )
+                    )
                     for r in result:
                         if PYDANTIC_V2:
                             payload = make_encodeable(
@@ -420,39 +459,91 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                             )
                         else:
                             payload = make_encodeable(r)
-                        self._events.send(PredictionOutput(payload=payload))
+                        self._events.send(
+                            Envelope(
+                                event=PredictionOutput(payload=payload),
+                                tag=tag,
+                            )
+                        )
                 else:
-                    self._events.send(PredictionOutputType(multi=False))
+                    self._events.send(
+                        Envelope(
+                            event=PredictionOutputType(multi=False),
+                            tag=tag,
+                        )
+                    )
                     if PYDANTIC_V2:
                         payload = make_encodeable(
                             unwrap_pydantic_serialization_iterators(result)
                         )
                     else:
                         payload = make_encodeable(result)
-                    self._events.send(PredictionOutput(payload=payload))
+                    self._events.send(
+                        Envelope(
+                            event=PredictionOutput(payload=payload),
+                            tag=tag,
+                        )
+                    )
 
     async def _apredict(
         self,
+        tag: Optional[str],
         payload: Dict[str, Any],
         predict: Callable[..., Any],
         redirector: AsyncStreamRedirector,
     ) -> None:
-        with self._handle_predict_error(redirector):
-            result = predict(**payload)
+        self._tags[threading.get_ident()] = tag
 
-            if result:
-                if inspect.isasyncgen(result):
-                    self._events.send(PredictionOutputType(multi=True))
-                    async for r in result:
-                        self._events.send(PredictionOutput(payload=make_encodeable(r)))
+        with self._handle_predict_error(redirector, tag=tag):
+            future_result = predict(**payload)
+
+            if future_result:
+                if inspect.isasyncgen(future_result):
+                    self._events.send(
+                        Envelope(
+                            event=PredictionOutputType(multi=True),
+                            tag=tag,
+                        )
+                    )
+                    async for r in future_result:
+                        if PYDANTIC_V2:
+                            payload = make_encodeable(
+                                unwrap_pydantic_serialization_iterators(r)
+                            )
+                        else:
+                            payload = make_encodeable(r)
+                        self._events.send(
+                            Envelope(
+                                event=PredictionOutput(payload=payload),
+                                tag=tag,
+                            )
+                        )
                 else:
-                    output = await result
-                    self._events.send(PredictionOutputType(multi=False))
-                    self._events.send(PredictionOutput(payload=make_encodeable(output)))
+                    result = await future_result
+                    self._events.send(
+                        Envelope(
+                            event=PredictionOutputType(multi=False),
+                            tag=tag,
+                        )
+                    )
+                    if PYDANTIC_V2:
+                        payload = make_encodeable(
+                            unwrap_pydantic_serialization_iterators(result)
+                        )
+                    else:
+                        payload = make_encodeable(result)
+                    self._events.send(
+                        Envelope(
+                            event=PredictionOutput(payload=payload),
+                            tag=tag,
+                        )
+                    )
 
     @contextlib.contextmanager
     def _handle_predict_error(
-        self, redirector: Union[AsyncStreamRedirector, StreamRedirector]
+        self,
+        redirector: Union[AsyncStreamRedirector, StreamRedirector],
+        tag: Optional[str],
     ) -> Iterator[None]:
         done = Done()
         send_done = True
@@ -488,14 +579,17 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 redirector.drain(timeout=10)
             except TimeoutError:
                 self._events.send(
-                    Log(
-                        "WARNING: logs may be truncated due to excessive volume.",
-                        source="stderr",
+                    Envelope(
+                        event=Log(
+                            "WARNING: logs may be truncated due to excessive volume.",
+                            source="stderr",
+                        ),
+                        tag=tag,
                     )
                 )
                 raise
             if send_done:
-                self._events.send(done)
+                self._events.send(Envelope(event=done, tag=tag))
 
     def _signal_handler(
         self,
@@ -506,10 +600,12 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             raise CancelationException()
 
     def _stream_write_hook(self, stream_name: str, data: str) -> None:
+        tag = self._tags.get(threading.get_ident())
+
         if stream_name == sys.stdout.name:
-            self._events.send(Log(data, source="stdout"))
+            self._events.send(Envelope(event=Log(data, source="stdout"), tag=tag))
         else:
-            self._events.send(Log(data, source="stderr"))
+            self._events.send(Envelope(event=Log(data, source="stderr"), tag=tag))
 
 
 def make_worker(predictor_ref: str, tee_output: bool = True) -> Worker:

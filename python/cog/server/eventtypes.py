@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Union
 
 from attrs import define, field, validators
 
@@ -7,7 +7,6 @@ from attrs import define, field, validators
 #
 @define
 class Cancel:
-    # TODO: identify which prediction!
     pass
 
 
@@ -44,3 +43,22 @@ class Done:
     canceled: bool = False
     error: bool = False
     error_detail: str = ""
+
+
+@define
+class Envelope:
+    """
+    Envelope contains an arbitrary event along with an optional tag used to
+    tangle/untangle concurrent work.
+    """
+
+    event: Union[
+        Cancel,
+        PredictionInput,
+        Shutdown,
+        Log,
+        PredictionOutput,
+        PredictionOutputType,
+        Done,
+    ]
+    tag: Optional[str] = None
