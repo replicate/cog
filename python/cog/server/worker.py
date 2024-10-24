@@ -306,6 +306,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         )
         self._tee_output = tee_output
         self._cancelable = False
+        self._tags: Dict[int, Optional[str]] = {}
 
         super().__init__()
 
@@ -440,6 +441,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         predict: Callable[..., Any],
         redirector: StreamRedirector,
     ) -> None:
+        self._tags[threading.get_ident()] = tag
+
         with self._handle_predict_error(redirector, tag=tag):
             result = predict(**payload)
 
@@ -491,6 +494,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         predict: Callable[..., Any],
         redirector: AsyncStreamRedirector,
     ) -> None:
+        self._tags[threading.get_ident()] = tag
+
         with self._handle_predict_error(redirector, tag=tag):
             future_result = predict(**payload)
 
@@ -599,10 +604,13 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     def _stream_write_hook(self, stream_name: str, data: str) -> None:
         if len(data) == 0:
             return
+
+        tag = self._tags.get(threading.get_ident())
+
         if stream_name == sys.stdout.name:
-            self._events.send(Envelope(event=Log(data, source="stdout")))
+            self._events.send(Envelope(event=Log(data, source="stdout"), tag=tag))
         else:
-            self._events.send(Envelope(event=Log(data, source="stderr")))
+            self._events.send(Envelope(event=Log(data, source="stderr"), tag=tag))
 
 
 def make_worker(predictor_ref: str, tee_output: bool = True) -> Worker:
