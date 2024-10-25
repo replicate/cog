@@ -1,5 +1,6 @@
 import os
 import resource
+import sys
 import time
 import uuid
 
@@ -137,17 +138,24 @@ def test_stream_redirector_reentrant(tmpfile):
                 stream.write("three\n")
                 stream.flush()
 
+                r.drain()
+
+    with r:
+        stream.write("four\n")
+        stream.flush()
+
         r.drain()
 
-    stream.write("four\n")
+    stream.write("five\n")
     stream.flush()
     stream.close()
 
-    assert f.read_text() == "four\n"
+    assert f.read_text() == "five\n"
     assert output == [
         (f.as_posix(), "one\n"),
         (f.as_posix(), "two\n"),
         (f.as_posix(), "three\n"),
+        (f.as_posix(), "four\n"),
     ]
 
 

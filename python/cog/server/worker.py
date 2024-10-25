@@ -297,6 +297,21 @@ class ChildWorker(_spawn.Process):  # type: ignore
         if self.is_alive() and self.pid:
             os.kill(self.pid, signal.SIGUSR1)
 
+    def _drain_done(self, redirector: StreamRedirector, done: Optional[Done]) -> None:
+        try:
+            redirector.drain(timeout=10)
+        except TimeoutError:
+            self._events.send(
+                Log(
+                    "WARNING: logs may be truncated due to excessive volume.",
+                    source="stderr",
+                )
+            )
+            raise
+        finally:
+            if done is not None:
+                self._events.send(done)
+
     def _setup(self, redirector: StreamRedirector) -> None:
         done = Done()
         try:
@@ -316,17 +331,7 @@ class ChildWorker(_spawn.Process):  # type: ignore
             done.error_detail = str(e)
             raise
         finally:
-            try:
-                redirector.drain(timeout=10)
-            except TimeoutError:
-                self._events.send(
-                    Log(
-                        "WARNING: logs may be truncated due to excessive volume.",
-                        source="stderr",
-                    )
-                )
-                raise
-            self._events.send(done)
+            self._drain_done(redirector, done)
 
     def _loop(self, redirector: StreamRedirector) -> None:
         while True:
@@ -387,18 +392,7 @@ class ChildWorker(_spawn.Process):  # type: ignore
             raise
         finally:
             self._cancelable = False
-            try:
-                redirector.drain(timeout=10)
-            except TimeoutError:
-                self._events.send(
-                    Log(
-                        "WARNING: logs may be truncated due to excessive volume.",
-                        source="stderr",
-                    )
-                )
-                raise
-            if send_done:
-                self._events.send(done)
+            self._drain_done(redirector, done if send_done else None)
 
     def _signal_handler(
         self,
