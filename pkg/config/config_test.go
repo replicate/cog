@@ -24,7 +24,7 @@ func TestValidateModelPythonVersion(t *testing.T) {
 		},
 		{
 			name:        "MinimumVersion",
-			input:       "3.8",
+			input:       "3.9",
 			expectedErr: false,
 		},
 		{
@@ -44,7 +44,7 @@ func TestValidateModelPythonVersion(t *testing.T) {
 		},
 		{
 			name:        "LessThanMinimum",
-			input:       "3.7",
+			input:       "3.8",
 			expectedErr: true,
 		},
 	}
@@ -650,14 +650,14 @@ func TestBlankBuild(t *testing.T) {
 }
 
 func TestModelPythonVersionValidation(t *testing.T) {
-	err := ValidateModelPythonVersion("3.8")
+	err := ValidateModelPythonVersion("3.9")
 	require.NoError(t, err)
-	err = ValidateModelPythonVersion("3.8.1")
+	err = ValidateModelPythonVersion("3.9.20")
 	require.NoError(t, err)
-	err = ValidateModelPythonVersion("3.7")
-	require.Equal(t, "minimum supported Python version is 3.8. requested 3.7", err.Error())
-	err = ValidateModelPythonVersion("3.7.1")
-	require.Equal(t, "minimum supported Python version is 3.8. requested 3.7.1", err.Error())
+	err = ValidateModelPythonVersion("3.8")
+	require.Equal(t, "minimum supported Python version is 3.9. requested 3.8", err.Error())
+	err = ValidateModelPythonVersion("3.8.15")
+	require.Equal(t, "minimum supported Python version is 3.9. requested 3.8.15", err.Error())
 }
 
 func TestSplitPinnedPythonRequirement(t *testing.T) {

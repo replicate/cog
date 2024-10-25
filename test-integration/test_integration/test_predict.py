@@ -20,8 +20,6 @@ def test_predict_takes_string_inputs_and_returns_strings_to_stdout():
     )
     # stdout should be clean without any log messages so it can be piped to other commands
     assert result.stdout == "hello world\n"
-    assert "cannot use fast loader as current Python <3.9" in result.stderr
-    assert "falling back to slow loader" in result.stderr
 
 
 def test_predict_takes_int_inputs_and_returns_ints_to_stdout():
@@ -132,8 +130,6 @@ def test_predict_writes_strings_to_files(tmpdir_factory):
     assert result.stdout == ""
     with open(out_dir / "out.txt", encoding="utf-8") as f:
         assert f.read() == "hello world"
-    assert "cannot use fast loader as current Python <3.9" in result.stderr
-    assert "falling back to slow loader" in result.stderr
 
 
 def test_predict_runs_an_existing_image(docker_image, tmpdir_factory):
@@ -156,8 +152,6 @@ def test_predict_runs_an_existing_image(docker_image, tmpdir_factory):
         timeout=DEFAULT_TIMEOUT,
     )
     assert result.stdout == "hello world\n"
-    assert "cannot use fast loader as current Python <3.9" in result.stderr
-    assert "falling back to slow loader" in result.stderr
 
 
 # https://github.com/replicate/cog/commit/28202b12ea40f71d791e840b97a51164e7be3b3c

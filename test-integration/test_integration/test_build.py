@@ -27,7 +27,7 @@ def test_build_names_uses_image_option_in_cog_yaml(tmpdir, docker_image):
         cog_yaml = f"""
 image: {docker_image}
 build:
-  python_version: 3.8
+  python_version: 3.9
 predict: predict.py:Predictor
 """
         f.write(cog_yaml)
@@ -102,7 +102,7 @@ def test_build_gpu_model_on_cpu(tmpdir, docker_image):
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
 build:
-  python_version: 3.8
+  python_version: 3.9
   gpu: true
 predict: predict.py:Predictor
 """
@@ -167,7 +167,7 @@ class Predictor(BasePredictor):
     assert len(labels["run.cog.version"]) > 0
     assert json.loads(labels["run.cog.config"]) == {
         "build": {
-            "python_version": "3.8",
+            "python_version": "3.9",
             "gpu": True,
             "cuda": "11.8",
             "cudnn": "8",
@@ -210,8 +210,8 @@ def test_build_with_complex_output(tmpdir, docker_image):
     assert "Image built as cog-" in build_process.stderr.decode()
 
 
-def test_python_37_deprecated(docker_image):
-    project_dir = Path(__file__).parent / "fixtures/python_37"
+def test_python_38_deprecated(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/python_38"
     build_process = subprocess.run(
         ["cog", "build", "-t", docker_image],
         cwd=project_dir,
@@ -219,7 +219,7 @@ def test_python_37_deprecated(docker_image):
     )
     assert build_process.returncode > 0
     assert (
-        "minimum supported Python version is 3.8. requested 3.7"
+        "minimum supported Python version is 3.9. requested 3.8"
         in build_process.stderr.decode()
     )
 

@@ -28,8 +28,4 @@ class BaseInput(BaseModel):
             # A pathlib.Path object shouldn't make its way here,
             # but both have an unlink() method, so we may as well be safe.
             if isinstance(value, (URLPath, Path)):
-                # TODO: use unlink(missing_ok=...) when we drop Python 3.7 support.
-                try:
-                    value.unlink()
-                except FileNotFoundError:
-                    pass
+                value.unlink(missing_ok=True)

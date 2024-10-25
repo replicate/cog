@@ -216,12 +216,9 @@ def load_slim_predictor_from_ref(ref: str, method_name: str) -> BasePredictor:
     module_name = os.path.basename(module_path).split(".py", 1)[0]
     module = None
     try:
-        if sys.version_info >= (3, 9):
-            module = load_slim_predictor_from_file(module_path, class_name, method_name)
-            if not module:
-                log.debug(f"[{module_name}] fast loader returned None")
-        else:
-            log.debug(f"[{module_name}] cannot use fast loader as current Python <3.9")
+        module = load_slim_predictor_from_file(module_path, class_name, method_name)
+        if not module:
+            log.debug(f"[{module_name}] fast loader returned None")
     except Exception as e:  # pylint: disable=broad-exception-caught
         log.debug(f"[{module_name}] fast loader failed: {e}")
     finally:

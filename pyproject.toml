@@ -11,14 +11,13 @@ license.file = "LICENSE"
 urls."Source" = "https://github.com/replicate/cog"
 
 classifiers = [
-  "Programming Language :: Python :: 3.7",
-  "Programming Language :: Python :: 3.8",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
 ]
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 
 dependencies = [
   # intentionally loose. perhaps these should be vendored to not collide with user code?
@@ -28,7 +27,6 @@ dependencies = [
   "PyYAML",
   "requests>=2,<3",
   "structlog>=20,<25",
-  'typing-compat; python_version < "3.8"',
   "typing_extensions>=4.6.0",
   "uvicorn[standard]>=0.12,<1",
 ]
@@ -40,10 +38,8 @@ dev = ["build", "setuptools_scm", "tox", "tox-uv"]
 
 tests = [
   "httpx",
-  'hypothesis<6.80.0; python_version < "3.8"',
-  'hypothesis; python_version >= "3.8"',
-  'numpy<1.22.0; python_version < "3.8"',
-  'numpy; python_version >= "3.8"',
+  "hypothesis",
+  "numpy",
   "pillow",
   "pytest",
   "pytest-httpserver",

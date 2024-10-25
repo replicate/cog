@@ -181,6 +181,12 @@ def test_stream_redirector_tee(tmpfile):
     ]
 
 
+# FIXME(meatballhat): This test fails on python 3.13 on darwin with the current value of
+# 128. Setting the value to 203 (found by bisecting) passes the test, but that seems
+# incorrect. When estimating the current number of open files just prior to changing
+# RLIMIT_NOFILE, the count was 13, which suggests that the value of 128 may be working
+# most of the time by accident.
+@pytest.mark.xfail("sys.platform == 'darwin' and sys.version_info >= (3, 13, 0)")
 def test_stream_redirector_does_not_leak_file_descriptors(tmpfile, request):
     f = tmpfile()
     stream = f.open("w")
