@@ -292,14 +292,13 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         # Initially, we ignore SIGUSR1.
         signal.signal(signal.SIGUSR1, signal.SIG_IGN)
 
-        redirector = StreamRedirector(
+        async_redirector = AsyncStreamRedirector(
             callback=self._stream_write_hook,
             tee=self._tee_output,
         )
 
-        # TODO: support async setup? see where `redirector` is redefined below if the predict is async
-        with redirector:
-            self._setup(redirector)
+        with async_redirector:
+            self._setup(async_redirector)
 
         # If setup didn't set the predictor, we're done here.
         if not self._predictor:
@@ -307,26 +306,24 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
         predict = get_predict(self._predictor)
         if inspect.iscoroutinefunction(predict) or inspect.isasyncgenfunction(predict):
-            # Replace the stream redirector with one that will work in an async
-            # context.
-            redirector = AsyncStreamRedirector(
-                callback=self._stream_write_hook,
-                tee=self._tee_output,
-            )
-
-            asyncio.run(self._aloop(predict, redirector))
+            asyncio.run(self._aloop(predict, async_redirector))
         else:
             # We use SIGUSR1 to signal an interrupt for cancelation.
             signal.signal(signal.SIGUSR1, self._signal_handler)
 
-            with redirector:
-                self._loop(predict, redirector)
+            self._loop(
+                predict,
+                StreamRedirector(
+                    callback=self._stream_write_hook,
+                    tee=self._tee_output,
+                ),
+            )
 
     def send_cancel(self) -> None:
         if self.is_alive() and self.pid:
             os.kill(self.pid, signal.SIGUSR1)
 
-    def _setup(self, redirector: StreamRedirector) -> None:
+    def _setup(self, redirector: AsyncStreamRedirector) -> None:
         done = Done()
         try:
             self._predictor = load_predictor_from_ref(self._predictor_ref)
