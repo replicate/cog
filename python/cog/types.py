@@ -265,12 +265,7 @@ class URLPath(pathlib.PosixPath):  # pylint: disable=abstract-method
 
     def unlink(self, missing_ok: bool = False) -> None:
         if self._path:
-            # TODO: use unlink(missing_ok=...) when we drop Python 3.7 support.
-            try:
-                self._path.unlink()
-            except FileNotFoundError:
-                if not missing_ok:
-                    raise
+            self._path.unlink(missing_ok=missing_ok)
 
     def __str__(self) -> str:
         # FastAPI's jsonable_encoder will encode subclasses of pathlib.Path by
@@ -288,6 +283,7 @@ class URLFile(io.IOBase):
     __slots__ = ("__target__", "__url__")
 
     def __init__(self, url: str) -> None:
+        object.__setattr__(self, "__url__", url)
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in {
             "http",
@@ -297,7 +293,6 @@ class URLFile(io.IOBase):
                 "URLFile requires URL to conform to HTTP or HTTPS protocol"
             )
         object.__setattr__(self, "name", os.path.basename(parsed.path))
-        object.__setattr__(self, "__url__", url)
 
     # We provide __getstate__ and __setstate__ explicitly to ensure that the
     # object is always picklable.
