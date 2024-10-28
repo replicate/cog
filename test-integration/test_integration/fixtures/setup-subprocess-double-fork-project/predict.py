@@ -8,6 +8,18 @@ from cog import BasePredictor
 
 
 class Predictor(BasePredictor):
+    """
+    This predictor checks the case where a process is spawned during setup and then each
+    prediction depends on being able to communicate with that process. In the event that
+    stream redirection is not working correctly, the forked process will not be able to
+    write to stdout/stderr and will likely exit. Any state other than "running" is
+    considered an error condition and raises SystemExit to interrupt any more prediction
+    serving.
+
+    This variant runs a forked python process via a shell wrapper to which a "message" is
+    sent via file for each call to `predict`.
+    """
+
     def setup(self) -> None:
         print("---> starting background process")
 
