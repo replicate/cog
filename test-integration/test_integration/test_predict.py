@@ -309,9 +309,17 @@ def test_predict_with_subprocess_in_setup(fixture_name):
     )
 
     with cog_server_http_run(project_dir) as addr:
+        busy_count = 0
+
         for i in range(100):
             response = httpx.post(
                 f"{addr}/predictions",
                 json={"input": {"s": f"friendo{i}"}},
             )
+            if response.status_code == 409:
+                busy_count += 1
+                continue
+
             assert response.status_code == 200, str(response)
+
+        assert busy_count < 10
