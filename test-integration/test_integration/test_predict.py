@@ -1,9 +1,14 @@
+import os
 import pathlib
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
+import httpx
 import pytest
+
+from .util import cog_server_http_run
 
 DEFAULT_TIMEOUT = 60
 
@@ -288,3 +293,25 @@ def test_predict_path_list_input(tmpdir_factory):
     )
     assert "test1" in result.stdout
     assert "test2" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("fixture_name",),
+    [
+        ("simple",),
+        ("double-fork",),
+        ("double-fork-http",),
+    ],
+)
+def test_predict_with_subprocess_in_setup(fixture_name):
+    project_dir = (
+        Path(__file__).parent / "fixtures" / f"setup-subprocess-{fixture_name}-project"
+    )
+
+    with cog_server_http_run(project_dir) as addr:
+        for i in range(100):
+            response = httpx.post(
+                f"{addr}/predictions",
+                json={"input": {"s": f"friendo{i}"}},
+            )
+            assert response.status_code == 200, str(response)
