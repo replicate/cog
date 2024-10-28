@@ -120,7 +120,7 @@ def remove_docker_image(image_name, max_attempts=5, wait_seconds=1):
 
 def random_port() -> int:
     sock = socket.socket()
-    sock.bind(("", 0))
+    sock.bind(("127.0.0.1", 0))
     port = sock.getsockname()[1]
     sock.close()
     return port
