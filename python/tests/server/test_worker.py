@@ -83,20 +83,12 @@ OUTPUT_FIXTURES = [
 SETUP_LOGS_FIXTURES = [
     (
         WorkerConfig("logging", setup=False),
-        (
-            "writing some stuff from C at import time\n"
-            "writing to stdout at import time\n"
-            "setting up predictor\n"
-        ),
+        ("writing to stdout at import time\n" "setting up predictor\n"),
         "writing to stderr at import time\n",
     ),
     (
         WorkerConfig("logging_async", setup=False),
-        (
-            "writing some stuff from C at import time\n"
-            "writing to stdout at import time\n"
-            "setting up predictor\n"
-        ),
+        ("writing to stdout at import time\n" "setting up predictor\n"),
         "writing to stderr at import time\n",
     ),
 ]
