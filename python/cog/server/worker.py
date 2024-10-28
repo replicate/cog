@@ -18,7 +18,6 @@ from ..json import make_encodeable
 from ..predictor import get_predict, load_predictor_from_ref, run_setup
 from ..types import PYDANTIC_V2, URLPath
 from ..wait import wait_for_env
-from .connection import AsyncConnection, LockedConnection
 from .eventtypes import (
     Done,
     Log,
