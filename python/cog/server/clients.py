@@ -218,7 +218,9 @@ class ClientManager:
 
         # this code path happens when running outside replicate without upload-url
         # in that case we need to return data uris
-        if url is None and not isinstance(fh, OutputURL):
+        if url is None:
+            if isinstance(fh, OutputURL):
+              return fh.url
             return file_to_data_uri(fh, content_type)
         assert url
 
