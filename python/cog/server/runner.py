@@ -409,7 +409,7 @@ class PredictTask(Task[schema.PredictionResponse]):
             # TODO: clean up output files
             return self._file_uploader(output)
         except (FileNotFoundError, NotADirectoryError):
-            # These error case indicates that an output path returned by a prediction does
+            # These error cases indicate that an output path returned by a prediction does
             # not actually exist, so there is no way for us to even attempt to upload it.
             # The error is re-raised without wrapping because this is not considered an
             # "infrastructure error", such as happens during an upload of a file that
