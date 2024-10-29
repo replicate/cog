@@ -1,9 +1,23 @@
+import collections.abc
 import asyncio
 import multiprocessing
 from multiprocessing.connection import Connection
 from typing import Any, Optional
 
-from typing_extensions import Buffer
+# Buffer is only available in typing-extensions>=4.6.0 but should be available in stdlib
+# python 3.12+. This compatibility code is nearly identical to the implementation in
+# typing-extensions>=4.6.0
+if hasattr(collections.abc, "Buffer"):
+    Buffer = collections.abc.Buffer
+else:
+    import abc
+
+    class Buffer(abc.ABC):
+        pass
+
+    Buffer.register(memoryview)
+    Buffer.register(bytearray)
+    Buffer.register(bytes)
 
 _spawn = multiprocessing.get_context("spawn")
 
