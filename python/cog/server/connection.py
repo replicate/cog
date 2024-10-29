@@ -1,5 +1,6 @@
-import collections.abc
+import abc
 import asyncio
+import collections.abc
 import multiprocessing
 from multiprocessing.connection import Connection
 from typing import Any, Optional
@@ -8,11 +9,10 @@ from typing import Any, Optional
 # python 3.12+. This compatibility code is nearly identical to the implementation in
 # typing-extensions>=4.6.0
 if hasattr(collections.abc, "Buffer"):
-    Buffer = collections.abc.Buffer
+    Buffer = collections.abc.Buffer  # type: ignore
 else:
-    import abc
 
-    class Buffer(abc.ABC):
+    class Buffer(abc.ABC):  # noqa: B024
         pass
 
     Buffer.register(memoryview)
@@ -72,7 +72,7 @@ class AsyncConnection:
     ) -> None:
         """Send the bytes data from a bytes-like object"""
 
-        self._connection.send_bytes(buf, offset, size)
+        self._connection.send_bytes(buf, offset, size)  # type: ignore
 
     async def recv_bytes(self, maxlength: Optional[int] = None) -> bytes:
         """
