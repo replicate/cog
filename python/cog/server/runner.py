@@ -408,10 +408,17 @@ class PredictTask(Task[schema.PredictionResponse]):
         try:
             # TODO: clean up output files
             return self._file_uploader(output)
+        except (FileNotFoundError, NotADirectoryError):
+            # These error case indicates that an output path returned by a prediction does
+            # not actually exist, so there is no way for us to even attempt to upload it.
+            # The error is re-raised without wrapping because this is not considered an
+            # "infrastructure error", such as happens during an upload of a file that
+            # **does** exist.
+            raise
         except Exception as error:  # pylint: disable=broad-exception-caught
-            # If something goes wrong uploading a file, it's irrecoverable.
-            # The re-raised exception will be caught and cause the prediction
-            # to be failed, with a useful error message.
+            # Any other errors that occur during file upload are irrecoverable and
+            # considered "infrastructure errors" because there is a high likelihood that
+            # the error happened in a layer that is outside the control of the model.
             raise FileUploadError("Got error trying to upload output files") from error
 
     def _handle_done(self, f: "Future[Done]") -> None:
