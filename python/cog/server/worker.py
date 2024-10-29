@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import contextvars
 import inspect
 import multiprocessing
 import os
@@ -53,6 +54,9 @@ if PYDANTIC_V2:
     from .helpers import unwrap_pydantic_serialization_iterators
 
 _spawn = multiprocessing.get_context("spawn")
+_tag_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "tag", default=None
+)
 
 _PublicEventType = Union[Done, Log, PredictionOutput, PredictionOutputType]
 
@@ -306,7 +310,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         )
         self._tee_output = tee_output
         self._cancelable = False
-        self._tags: Dict[int, Optional[str]] = {}
 
         super().__init__()
 
@@ -351,8 +354,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             os.kill(self.pid, signal.SIGUSR1)
 
     def record_metric(self, name: str, value: Union[float, int]) -> None:
-        # TODO: attach tag
-        self._events.send(Envelope(PredictionMetric(name, value)))
+        self._events.send(Envelope(PredictionMetric(name, value), tag=_tag_var.get()))
 
     def _setup(self, redirector: AsyncStreamRedirector) -> None:
         done = Done()
@@ -441,7 +443,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         predict: Callable[..., Any],
         redirector: StreamRedirector,
     ) -> None:
-        self._tags[threading.get_ident()] = tag
+        _tag_var.set(tag)
 
         with self._handle_predict_error(redirector, tag=tag):
             result = predict(**payload)
@@ -494,7 +496,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         predict: Callable[..., Any],
         redirector: AsyncStreamRedirector,
     ) -> None:
-        self._tags[threading.get_ident()] = tag
+        _tag_var.set(tag)
 
         with self._handle_predict_error(redirector, tag=tag):
             future_result = predict(**payload)
@@ -605,7 +607,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if len(data) == 0:
             return
 
-        tag = self._tags.get(threading.get_ident())
+        tag = _tag_var.get()
 
         if stream_name == sys.stdout.name:
             self._events.send(Envelope(event=Log(data, source="stdout"), tag=tag))
