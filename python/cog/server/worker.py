@@ -503,6 +503,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             raise CancelationException()
 
     def _stream_write_hook(self, stream_name: str, data: str) -> None:
+        if len(data) == 0:
+            return
         if stream_name == sys.stdout.name:
             self._events.send(Log(data, source="stdout"))
         else:
