@@ -74,7 +74,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Build: &Build{
 			GPU:           false,
-			PythonVersion: "3.12",
+			PythonVersion: "3.13",
 		},
 	}
 }

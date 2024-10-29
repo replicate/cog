@@ -19,7 +19,7 @@ func TestValidateModelPythonVersion(t *testing.T) {
 	}{
 		{
 			name:        "ValidVersion",
-			input:       "3.12",
+			input:       "3.13",
 			expectedErr: false,
 		},
 		{
