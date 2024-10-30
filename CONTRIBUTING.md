@@ -185,14 +185,17 @@ make run-docs-server
 
 ## Publishing a release
 
-This project has a [GitHub Actions workflow](https://github.com/replicate/cog/blob/39cfc5c44ab81832886c9139ee130296f1585b28/.github/workflows/ci.yaml#L107) that uses [goreleaser](https://goreleaser.com/quick-start/#quick-start) to facilitate the process of publishing new releases. The release process is triggered by manually creating and pushing a new git tag.
+This project has a [GitHub Actions workflow](https://github.com/replicate/cog/blob/39cfc5c44ab81832886c9139ee130296f1585b28/.github/workflows/ci.yaml#L107) that uses [goreleaser](https://goreleaser.com/quick-start/#quick-start) to facilitate the process of publishing new releases. The release process is triggered by manually creating and pushing a new annotated git tag.
 
-To publish a new release, run the following in your local checkout of cog:
+> Deciding what the annotated git tag should be requires some interpretation. Cog generally follows [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html), and since the major version
+> is `0`, the rules get [a bit more loose](https://semver.org/spec/v2.0.0.html#spec-item-4). Broadly speaking, the rules for when to increment the patch version still hold, but
+> backward-incompatible changes **will not** require incrementing the major version. In this way, the minor version may be incremented whether the changes are additive or
+> subtractive. This all changes once the major version is incremented to `1`.
 
-    git checkout main
-    git fetch --all --tags
-    git tag v0.0.11
-    git push --tags
+To publish a new release `v0.13.12` referencing commit `fabdadbead`, for example, one would run the following in one's local checkout of cog:
+
+    git tag --sign --annotate --message 'Release v0.13.12' v0.13.12 fabdadbead
+    git push origin v0.13.12
 
 Then visit [github.com/replicate/cog/actions](https://github.com/replicate/cog/actions) to monitor the release process.
 
