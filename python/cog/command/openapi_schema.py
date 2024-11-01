@@ -37,7 +37,6 @@ if __name__ == "__main__":
     schema = {}
     try:
         with suppress_output():
-            config = load_config()
             app = create_app(cog_config=Config(), shutdown_event=None, is_build=True)
             if (
                 app.state.setup_result
