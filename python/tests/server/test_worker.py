@@ -64,6 +64,11 @@ OUTPUT_FIXTURES = [
         lambda x: f"hello, {x['name']}",
     ),
     (
+        WorkerConfig("hello_world_async"),
+        {"name": ST_NAMES},
+        lambda x: f"hello, {x['name']}",
+    ),
+    (
         WorkerConfig("count_up"),
         {"upto": st.integers(min_value=0, max_value=100)},
         lambda x: list(range(x["upto"])),
@@ -77,20 +82,28 @@ OUTPUT_FIXTURES = [
 
 SETUP_LOGS_FIXTURES = [
     (
-        (
-            "writing some stuff from C at import time\n"
-            "writing to stdout at import time\n"
-            "setting up predictor\n"
-        ),
+        WorkerConfig("logging", setup=False),
+        ("writing to stdout at import time\n" "setting up predictor\n"),
         "writing to stderr at import time\n",
-    )
+    ),
+    (
+        WorkerConfig("logging_async", setup=False),
+        ("writing to stdout at import time\n" "setting up predictor\n"),
+        "writing to stderr at import time\n",
+    ),
 ]
 
 PREDICT_LOGS_FIXTURES = [
     (
+        WorkerConfig("logging"),
         ("writing from C\n" "writing with print\n"),
         ("WARNING:root:writing log message\n" "writing to stderr\n"),
-    )
+    ),
+    (
+        WorkerConfig("logging_async"),
+        ("writing with print\n"),
+        ("WARNING:root:writing log message\n" "writing to stderr\n"),
+    ),
 ]
 
 
@@ -192,7 +205,7 @@ def test_no_exceptions_from_recoverable_failures(worker):
 @uses_worker("stream_redirector_race_condition")
 def test_stream_redirector_race_condition(worker):
     """
-    StreamRedirector and ChildWorker are using the same pipe to send data. When
+    StreamRedirector and _ChildWorker are using the same pipe to send data. When
     there are multiple threads trying to write to the same pipe, it can cause
     data corruption by race condition. The data corruption will cause pipe
     receiver to raise an exception due to unpickling error.
@@ -222,8 +235,11 @@ def test_output(worker, payloads, output_generator, data):
     assert result.output == expected_output
 
 
-@uses_worker("logging", setup=False)
-@pytest.mark.parametrize("expected_stdout,expected_stderr", SETUP_LOGS_FIXTURES)
+@pytest.mark.parametrize(
+    "worker,expected_stdout,expected_stderr",
+    SETUP_LOGS_FIXTURES,
+    indirect=["worker"],
+)
 def test_setup_logging(worker, expected_stdout, expected_stderr):
     """
     We should get the logs we expect from predictors that generate logs during
@@ -236,8 +252,11 @@ def test_setup_logging(worker, expected_stdout, expected_stderr):
     assert result.stderr == expected_stderr
 
 
-@uses_worker("logging")
-@pytest.mark.parametrize("expected_stdout,expected_stderr", PREDICT_LOGS_FIXTURES)
+@pytest.mark.parametrize(
+    "worker,expected_stdout,expected_stderr",
+    PREDICT_LOGS_FIXTURES,
+    indirect=["worker"],
+)
 def test_predict_logging(worker, expected_stdout, expected_stderr):
     """
     We should get the logs we expect from predictors that generate logs during
@@ -249,7 +268,7 @@ def test_predict_logging(worker, expected_stdout, expected_stderr):
     assert result.stderr == expected_stderr
 
 
-@uses_worker("sleep", setup=False)
+@uses_worker(["sleep", "sleep_async"], setup=False)
 def test_cancel_is_safe(worker):
     """
     Calls to cancel at any time should not result in unexpected things
@@ -283,7 +302,7 @@ def test_cancel_is_safe(worker):
     assert result2.output == "done in 0.1 seconds"
 
 
-@uses_worker("sleep", setup=False)
+@uses_worker(["sleep", "sleep_async"], setup=False)
 def test_cancel_idempotency(worker):
     """
     Multiple calls to cancel within the same prediction, while not necessary or
@@ -315,7 +334,7 @@ def test_cancel_idempotency(worker):
     assert result2.output == "done in 0.1 seconds"
 
 
-@uses_worker("sleep")
+@uses_worker(["sleep", "sleep_async"])
 def test_cancel_multiple_predictions(worker):
     """
     Multiple predictions cancelled in a row shouldn't be a problem. This test
@@ -333,7 +352,7 @@ def test_cancel_multiple_predictions(worker):
     assert not worker.predict({"sleep": 0}).result().canceled
 
 
-@uses_worker("sleep")
+@uses_worker(["sleep", "sleep_async"])
 def test_graceful_shutdown(worker):
     """
     On shutdown, the worker should finish running the current prediction, and
@@ -375,6 +394,7 @@ class FakeChildWorker:
     exitcode = None
     cancel_sent = False
     alive = True
+    pid: int = 0
 
     def start(self):
         pass

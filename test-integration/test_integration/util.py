@@ -165,7 +165,7 @@ def cog_server_http_run(project_dir: str):
             try:
                 if httpx.get(f"{addr}/health-check").status_code == 200:
                     break
-            except httpx.ConnectError:
+            except httpx.HTTPError:
                 pass
 
             time.sleep((0.1 + i) * 2)

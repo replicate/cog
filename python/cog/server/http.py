@@ -31,6 +31,11 @@ from ..logging import setup_logging
 from ..mode import Mode
 from ..types import PYDANTIC_V2
 
+try:
+    from .._version import __version__
+except ImportError:
+    __version__ = "dev"
+
 if PYDANTIC_V2:
     from .helpers import (
         unwrap_pydantic_serialization_iterators,
@@ -179,6 +184,17 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
 
         return wrapped
 
+    index_document = {
+        "cog_version": __version__,
+        "docs_url": "/docs",
+        "openapi_url": "/openapi.json",
+        "shutdown_url": "/shutdown",
+        "healthcheck_url": "/health-check",
+        "predictions_url": "/predictions",
+        "predictions_idempotent_url": "/predictions/{prediction_id}",
+        "predictions_cancel_url": "/predictions/{prediction_id}/cancel",
+    }
+
     if cog_config.predictor_train_ref:
         try:
             TrainingInputType, TrainingOutputType = cog_config.get_predictor_types(
@@ -272,6 +288,14 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             ) -> Any:
                 return cancel(training_id)
 
+            index_document.update(
+                {
+                    "trainings_url": "/trainings",
+                    "trainings_idempotent_url": "/trainings/{training_id}",
+                    "trainings_cancel_url": "/trainings/{training_id}/cancel",
+                }
+            )
+
         except Exception as e:  # pylint: disable=broad-exception-caught
             if isinstance(e, (PredictorNotSet, FileNotFoundError)) and not is_build:
                 pass  # ignore missing train.py for backward compatibility with existing "bad" models in use
@@ -301,11 +325,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
 
     @app.get("/")
     async def root() -> Any:
-        return {
-            # "cog_version": "", # TODO
-            "docs_url": "/docs",
-            "openapi_url": "/openapi.json",
-        }
+        return index_document
 
     @app.get("/health-check")
     async def healthcheck() -> Any:
@@ -562,6 +582,9 @@ def _cpu_count() -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Cog HTTP server")
     parser.add_argument(
+        "-v", "--version", action="store_true", help="Show version and exit"
+    )
+    parser.add_argument(
         "--host",
         dest="host",
         type=str,
@@ -598,6 +621,10 @@ if __name__ == "__main__":
         help="Experimental: Run in 'predict' or 'train' mode",
     )
     args = parser.parse_args()
+
+    if args.version:
+        print(f"cog.server.http {__version__}")
+        sys.exit(0)
 
     # log level is configurable so we can make it quiet or verbose for `cog predict`
     # cog predict --debug       # -> debug

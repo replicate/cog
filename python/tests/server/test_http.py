@@ -18,6 +18,24 @@ from .conftest import (
 )
 
 
+def test_index_document():
+    client = make_client(fixture_name="slow_setup")
+    resp = client.get("/")
+    data = resp.json()
+    for field in (
+        "cog_version",
+        "docs_url",
+        "openapi_url",
+        "shutdown_url",
+        "healthcheck_url",
+        "predictions_url",
+        "predictions_idempotent_url",
+        "predictions_cancel_url",
+    ):
+        assert field in data
+        assert data[field] is not None
+
+
 def test_setup_healthcheck():
     client = make_client(fixture_name="slow_setup")
     resp = client.get("/health-check")
