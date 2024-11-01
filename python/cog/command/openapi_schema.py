@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Union
 
 from ..config import Config
 from ..errors import CogError, ConfigDoesNotExist, PredictorNotSet
-from ..predictor import load_config
 from ..schema import Status
 from ..server.http import create_app
 from ..suppress_output import suppress_output
