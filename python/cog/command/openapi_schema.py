@@ -7,6 +7,7 @@ This prints a JSON object describing the inputs of the model.
 import json
 from typing import Any, Dict, List, Union
 
+from ..config import Config
 from ..errors import CogError, ConfigDoesNotExist, PredictorNotSet
 from ..predictor import load_config
 from ..schema import Status
@@ -38,7 +39,7 @@ if __name__ == "__main__":
     try:
         with suppress_output():
             config = load_config()
-            app = create_app(config, shutdown_event=None, is_build=True)
+            app = create_app(cog_config=Config(), shutdown_event=None, is_build=True)
             if (
                 app.state.setup_result
                 and app.state.setup_result.status == Status.FAILED
