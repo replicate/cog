@@ -2,13 +2,14 @@ package predict
 
 import (
 	"fmt"
-	"mime"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/mitchellh/go-homedir"
 	"github.com/vincent-petithory/dataurl"
+
+	"github.com/replicate/cog/pkg/util/mime"
 )
 
 type Input struct {
