@@ -92,10 +92,6 @@ jobs:
       matrix:
         pydantic: ["1", "2"]
         python-version: ${{ fromJson(needs.build-python.outputs.python-versions) }}
-        exclude:
-          # Pydantic 2 is not supported on Python 3.7
-          - pydantic: "2"
-            python-version: "3.7"
     steps:
       - name: Download pre-built packages
         uses: actions/download-artifact@v4
@@ -115,7 +111,6 @@ jobs:
           echo TOX_PYTHON=py$(echo "${{ matrix.python-version }}" | tr -d .) >>$GITHUB_ENV
           uv pip install --system tox
       - run: uv pip install --system tox-uv
-        if: matrix.python-version != '3.7'
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
       - name: Test
