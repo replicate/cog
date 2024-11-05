@@ -8,6 +8,7 @@ import responses
 from werkzeug.wrappers import Response
 
 from cog import schema
+from cog.config import Config
 from cog.server.http import Health, create_app
 from cog.types import PYDANTIC_V2
 
@@ -300,7 +301,7 @@ def test_secret_str(client, match):
 def test_untyped_inputs():
     config = {"predict": _fixture_path("input_untyped")}
     app = create_app(
-        config=config,
+        cog_config=Config(config),
         shutdown_event=threading.Event(),
         upload_url="input_untyped",
     )
@@ -314,7 +315,7 @@ def test_untyped_inputs():
 def test_input_with_unsupported_type():
     config = {"predict": _fixture_path("input_unsupported_type")}
     app = create_app(
-        config=config,
+        cog_config=Config(config),
         shutdown_event=threading.Event(),
         upload_url="input_untyped",
     )
