@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, Union
 
 from attrs import define, field, validators
 
@@ -27,6 +27,12 @@ class Shutdown:
 class Log:
     message: str
     source: str = field(validator=validators.in_(["stdout", "stderr"]))
+
+
+@define
+class PredictionMetric:
+    name: str
+    value: Union[float, int]
 
 
 @define

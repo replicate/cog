@@ -1,7 +1,15 @@
 from pydantic import BaseModel
 
 from .base_predictor import BasePredictor
-from .types import ConcatenateIterator, File, Input, Path, Secret
+from .server.scope import current_scope
+from .types import (
+    ConcatenateIterator,
+    ExperimentalFeatureWarning,
+    File,
+    Input,
+    Path,
+    Secret,
+)
 
 try:
     from ._version import __version__
@@ -14,6 +22,8 @@ __all__ = [
     "BaseModel",
     "BasePredictor",
     "ConcatenateIterator",
+    "current_scope",
+    "ExperimentalFeatureWarning",
     "File",
     "Input",
     "Path",

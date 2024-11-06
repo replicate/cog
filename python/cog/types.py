@@ -36,6 +36,10 @@ FILENAME_ILLEGAL_CHARS = set("\u0000/")
 FILENAME_MAX_LENGTH = 200
 
 
+class ExperimentalFeatureWarning(Warning):
+    pass
+
+
 class CogConfig(TypedDict):  # pylint: disable=too-many-ancestors
     build: "CogBuildConfig"
     image: NotRequired[str]
