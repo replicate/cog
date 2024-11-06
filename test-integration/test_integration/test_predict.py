@@ -301,6 +301,7 @@ def test_predict_path_list_input(tmpdir_factory):
         ("simple",),
         ("double-fork",),
         ("double-fork-http",),
+        ("multiprocessing",),
     ],
 )
 def test_predict_with_subprocess_in_setup(fixture_name):
