@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from .base_input import BaseInput
 from .base_predictor import BasePredictor
 from .code_xforms import load_module_from_string, strip_model_source_code
+from .env_property import env_property
 from .errors import ConfigDoesNotExist
 from .mode import Mode
 from .predictor import (
@@ -23,6 +24,11 @@ from .predictor import (
 from .types import CogConfig
 
 COG_YAML_FILE = "cog.yaml"
+COG_PREDICT_TYPE_STUB_ENV_VAR = "COG_PREDICT_TYPE_STUB"
+COG_TRAIN_TYPE_STUB_ENV_VAR = "COG_TRAIN_TYPE_STUB"
+COG_PREDICT_CODE_STRIP_ENV_VAR = "COG_PREDICT_CODE_STRIP"
+COG_TRAIN_CODE_STRIP_ENV_VAR = "COG_TRAIN_CODE_STRIP"
+COG_GPU_ENV_VAR = "COG_GPU"
 PREDICT_METHOD_NAME = "predict"
 TRAIN_METHOD_NAME = "train"
 
@@ -35,6 +41,14 @@ def _method_name_from_mode(mode: Mode) -> str:
     elif mode == Mode.TRAIN:
         return TRAIN_METHOD_NAME
     raise ValueError(f"Mode {mode} not recognised for method name mapping")
+
+
+def _env_var_from_mode(mode: Mode) -> str:
+    if mode == Mode.PREDICT:
+        return COG_PREDICT_CODE_STRIP_ENV_VAR
+    elif mode == Mode.TRAIN:
+        return COG_TRAIN_CODE_STRIP_ENV_VAR
+    raise ValueError(f"Mode {mode} not recognised for env var mapping")
 
 
 class Config:
@@ -65,16 +79,19 @@ class Config:
         return config
 
     @property
+    @env_property(COG_PREDICT_TYPE_STUB_ENV_VAR)
     def predictor_predict_ref(self) -> Optional[str]:
         """Find the predictor ref for the predict mode."""
         return self._cog_config.get(str(Mode.PREDICT))
 
     @property
+    @env_property(COG_TRAIN_TYPE_STUB_ENV_VAR)
     def predictor_train_ref(self) -> Optional[str]:
         """Find the predictor ref for the train mode."""
         return self._cog_config.get(str(Mode.TRAIN))
 
     @property
+    @env_property(COG_GPU_ENV_VAR)
     def requires_gpu(self) -> bool:
         """Whether this cog requires the use of a GPU."""
         return bool(self._cog_config.get("build", {}).get("gpu", False))
@@ -87,6 +104,9 @@ class Config:
         mode: Mode,
         module_name: str,
     ) -> Optional[str]:
+        source_code = os.environ.get(_env_var_from_mode(mode))
+        if source_code is not None:
+            return source_code
         if sys.version_info >= (3, 9):
             with open(module_path, encoding="utf-8") as file:
                 return strip_model_source_code(file.read(), [class_name], [method_name])
