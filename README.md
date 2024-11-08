@@ -80,6 +80,16 @@ $ curl http://localhost:5000/predictions -X POST \
     -d '{"input": {"image": "https://.../input.jpg"}}'
 ```
 
+Or, combine build and run via the `serve` command:
+
+```console
+$ cog serve -p 8080
+
+$ curl http://localhost:8080/predictions -X POST \
+    -H 'Content-Type: application/json' \
+    -d '{"input": {"image": "https://.../input.jpg"}}'
+```
+
 <!-- NOTE (bfirsh): Development environment instructions intentionally left out of readme for now, so as not to confuse the "ship a model to production" message.
 
 In development, you can also run arbitrary commands inside the Docker environment:
