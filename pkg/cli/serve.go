@@ -79,7 +79,10 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	runOptions.Ports = append(runOptions.Ports, docker.Port{HostPort: port, ContainerPort: 5000})
 
 	console.Info("")
-	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
+	console.Infof("Running '%[1]s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
+	console.Info("")
+	console.Infof("Serving at http://127.0.0.1:%[1]v", port)
+	console.Info("")
 
 	err = docker.Run(runOptions)
 	// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
