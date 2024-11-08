@@ -1,5 +1,6 @@
 import os
 import tempfile
+
 import pytest
 
 from cog.config import (
@@ -150,7 +151,6 @@ class Predictor(BasePredictor):
     assert (
         str(output_type) == "<class 'cog.predictor.get_output_type.<locals>.Output'>"
     ), "Predict output type should be the predictor Output."
-
 
 
 def test_get_predictor_types():
