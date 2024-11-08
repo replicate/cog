@@ -16,7 +16,13 @@ from hypothesis.stateful import (
     rule,
 )
 
-from cog.server.eventtypes import Done, Log, PredictionOutput, PredictionOutputType
+from cog.server.eventtypes import (
+    Done,
+    Log,
+    PredictionMetric,
+    PredictionOutput,
+    PredictionOutputType,
+)
 from cog.server.exceptions import FatalWorkerException, InvalidStateException
 from cog.server.worker import Worker, _PublicEventType
 
@@ -55,6 +61,16 @@ RUNNABLE_FIXTURES = [
     "simple",
     "exc_in_predict",
     "missing_predict",
+]
+
+METRICS_FIXTURES = [
+    (
+        WorkerConfig("record_metric"),
+        {"name": ST_NAMES},
+        {
+            "foo": 123,
+        },
+    ),
 ]
 
 OUTPUT_FIXTURES = [
@@ -112,6 +128,7 @@ class Result:
     stdout_lines: List[str] = field(factory=list)
     stderr_lines: List[str] = field(factory=list)
     heartbeat_count: int = 0
+    metrics: Optional[Dict[str, Any]] = None
     output_type: Optional[PredictionOutputType] = None
     output: Any = None
     done: Optional[Done] = None
@@ -133,6 +150,10 @@ class Result:
         elif isinstance(event, Done):
             assert not self.done
             self.done = event
+        elif isinstance(event, PredictionMetric):
+            if self.metrics is None:
+                self.metrics = {}
+            self.metrics[event.name] = event.value
         elif isinstance(event, PredictionOutput):
             assert self.output_type, "Should get output type before any output"
             if self.output_type.multi:
@@ -213,6 +234,23 @@ def test_stream_redirector_race_condition(worker):
     for _ in range(5):
         result = _process(worker, lambda: worker.predict({}))
         assert not result.done.error
+
+
+@pytest.mark.timeout(HYPOTHESIS_TEST_TIMEOUT)
+@pytest.mark.parametrize(
+    "worker,payloads,expected_metrics", METRICS_FIXTURES, indirect=["worker"]
+)
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(data=st.data())
+def test_metrics(worker, payloads, expected_metrics, data):
+    """
+    We should get the metrics we expect from predictors that emit metrics.
+    """
+    payload = data.draw(st.fixed_dictionaries(payloads))
+
+    result = _process(worker, lambda: worker.predict(payload))
+
+    assert result.metrics == expected_metrics
 
 
 @pytest.mark.timeout(HYPOTHESIS_TEST_TIMEOUT)

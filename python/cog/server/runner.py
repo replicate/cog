@@ -3,7 +3,7 @@ import traceback
 from abc import ABC, abstractmethod
 from concurrent.futures import Future
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Generic, List, Literal, Optional, TypeVar
+from typing import Any, Callable, Dict, Generic, List, Literal, Optional, TypeVar, Union
 
 import requests
 import structlog
@@ -17,7 +17,13 @@ from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
 from ..types import PYDANTIC_V2
 from .errors import FileUploadError, RunnerBusyError, UnknownPredictionError
-from .eventtypes import Done, Log, PredictionOutput, PredictionOutputType
+from .eventtypes import (
+    Done,
+    Log,
+    PredictionMetric,
+    PredictionOutput,
+    PredictionOutputType,
+)
 
 if PYDANTIC_V2:
     from .helpers import unwrap_pydantic_serialization_iterators
@@ -348,6 +354,11 @@ class PredictTask(Task[schema.PredictionResponse]):
         self._p.logs += logs
         self._send_webhook(schema.WebhookEvent.LOGS)
 
+    def set_metric(self, key: str, value: Union[float, int]) -> None:
+        if self._p.metrics is None:
+            self._p.metrics = {}
+        self._p.metrics[key] = value
+
     def succeeded(self) -> None:
         self._log.info("prediction succeeded")
         self._p.status = schema.Status.SUCCEEDED
@@ -356,9 +367,10 @@ class PredictTask(Task[schema.PredictionResponse]):
         # that...
         assert self._p.completed_at is not None
         assert self._p.started_at is not None
-        self._p.metrics = {
-            "predict_time": (self._p.completed_at - self._p.started_at).total_seconds()
-        }
+        self.set_metric(
+            "predict_time",
+            (self._p.completed_at - self._p.started_at).total_seconds(),
+        )
         self._send_webhook(schema.WebhookEvent.COMPLETED)
 
     def failed(self, error: str) -> None:
@@ -378,6 +390,8 @@ class PredictTask(Task[schema.PredictionResponse]):
         try:
             if isinstance(event, Log):
                 self.append_logs(event.message)
+            elif isinstance(event, PredictionMetric):
+                self.set_metric(event.name, event.value)
             elif isinstance(event, PredictionOutputType):
                 self.set_output_type(multi=event.multi)
             elif isinstance(event, PredictionOutput):

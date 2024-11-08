@@ -27,6 +27,7 @@ from .eventtypes import (
     Done,
     Log,
     PredictionInput,
+    PredictionMetric,
     PredictionOutput,
     PredictionOutputType,
     Shutdown,
@@ -37,6 +38,7 @@ from .exceptions import (
     InvalidStateException,
 )
 from .helpers import AsyncStreamRedirector, StreamRedirector
+from .scope import Scope, scope
 
 if PYDANTIC_V2:
     from .helpers import unwrap_pydantic_serialization_iterators
@@ -325,6 +327,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if self.is_alive() and self.pid:
             os.kill(self.pid, signal.SIGUSR1)
 
+    def record_metric(self, name: str, value: Union[float, int]) -> None:
+        self._events.send(PredictionMetric(name, value))
+
     def _setup(self, redirector: AsyncStreamRedirector) -> None:
         done = Done()
         wait_for_env()
@@ -362,7 +367,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         predict: Callable[..., Any],
         redirector: StreamRedirector,
     ) -> None:
-        with redirector:
+        with scope(self._loop_scope()), redirector:
             while True:
                 ev = self._events.recv()
                 if isinstance(ev, Cancel):
@@ -385,7 +390,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
         task = None
 
-        with redirector:
+        with scope(self._loop_scope()), redirector:
             while True:
                 ev = await self._events.recv()
                 if isinstance(ev, Cancel) and task and self._cancelable:
@@ -400,6 +405,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     print(f"Got unexpected event: {ev}", file=sys.stderr)
             if task:
                 await task
+
+    def _loop_scope(self) -> Scope:
+        return Scope(record_metric=self.record_metric)
 
     def _predict(
         self,

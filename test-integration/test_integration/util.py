@@ -137,17 +137,9 @@ def cog_server_http_run(project_dir: str):
         server = subprocess.Popen(
             [
                 "cog",
-                "run",
-                "-e",
-                f"PORT={port}",
+                "serve",
                 "-p",
                 str(port),
-                "python",
-                "--check-hash-based-pycs",
-                "never",
-                "-m",
-                "cog.server.http",
-                "--await-explicit-shutdown=true",
             ],
             cwd=project_dir,
             # NOTE: inheriting stdout and stderr from the parent process when running
