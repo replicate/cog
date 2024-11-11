@@ -323,7 +323,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         signal.signal(signal.SIGUSR1, signal.SIG_IGN)
 
         async_redirector = AsyncStreamRedirector(
-            callback=self._stream_write_hook,
+            callback=self._async_stream_write_hook,
             tee=self._tee_output,
         )
 
@@ -603,7 +603,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if signum == signal.SIGUSR1 and self._cancelable:
             raise CancelationException()
 
-    def _stream_write_hook(self, stream_name: str, data: str) -> None:
+    def _async_stream_write_hook(self, stream_name: str, data: str) -> None:
         if len(data) == 0:
             return
 
@@ -613,6 +613,18 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             self._events.send(Envelope(event=Log(data, source="stdout"), tag=tag))
         else:
             self._events.send(Envelope(event=Log(data, source="stderr"), tag=tag))
+
+    def _stream_write_hook(self, stream_name: str, data: str) -> None:
+        if len(data) == 0:
+            return
+
+        # no tag; we are on a separate thread so we can't access self._tag_var
+        # and we know we don't support concurrent predictions anyway so we don't
+        # need tags
+        if stream_name == sys.stdout.name:
+            self._events.send(Envelope(event=Log(data, source="stdout")))
+        else:
+            self._events.send(Envelope(event=Log(data, source="stderr")))
 
 
 def make_worker(predictor_ref: str, tee_output: bool = True) -> Worker:
