@@ -326,7 +326,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         signal.signal(signal.SIGUSR1, signal.SIG_IGN)
 
         async_redirector = AsyncStreamRedirector(
-            callback=self._async_stream_write_hook,
+            callback=self._stream_write_hook,
             tee=self._tee_output,
         )
 
@@ -347,7 +347,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             self._loop(
                 predict,
                 StreamRedirector(
-                    callback=self._sync_stream_write_hook,
+                    callback=self._stream_write_hook,
                     tee=self._tee_output,
                 ),
             )
@@ -357,7 +357,17 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             os.kill(self.pid, signal.SIGUSR1)
 
     def record_metric(self, name: str, value: Union[float, int]) -> None:
-        self._events.send(Envelope(PredictionMetric(name, value), tag=_tag_var.get()))
+        self._events.send(
+            Envelope(PredictionMetric(name, value), tag=self._current_tag)
+        )
+
+    @property
+    def _current_tag(self) -> Optional[str]:
+        # if _tag_var is set, use that (only applies within _apredict())
+        tag = _tag_var.get()
+        if tag:
+            return tag
+        return self._sync_tag
 
     def _setup(self, redirector: AsyncStreamRedirector) -> None:
         done = Done()
@@ -606,32 +616,17 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if signum == signal.SIGUSR1 and self._cancelable:
             raise CancelationException()
 
-    def _async_stream_write_hook(self, stream_name: str, data: str) -> None:
+    def _stream_write_hook(self, stream_name: str, data: str) -> None:
         if len(data) == 0:
             return
 
-        tag = _tag_var.get()
-
-        if stream_name == sys.stdout.name:
-            self._events.send(Envelope(event=Log(data, source="stdout"), tag=tag))
-        else:
-            self._events.send(Envelope(event=Log(data, source="stderr"), tag=tag))
-
-    def _sync_stream_write_hook(self, stream_name: str, data: str) -> None:
-        if len(data) == 0:
-            return
-
-        # we are on a separate thread from the prediction so we can't access the
-        # _tag_var ContextVar, but when we're using StreamPredictor we only
-        # support one prediction at a time so we can use an attribute on
-        # _ChildWorker
         if stream_name == sys.stdout.name:
             self._events.send(
-                Envelope(event=Log(data, source="stdout"), tag=self._sync_tag)
+                Envelope(event=Log(data, source="stdout"), tag=self._current_tag)
             )
         else:
             self._events.send(
-                Envelope(event=Log(data, source="stderr"), tag=self._sync_tag)
+                Envelope(event=Log(data, source="stderr"), tag=self._current_tag)
             )
 
 
