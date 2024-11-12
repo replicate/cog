@@ -25,6 +25,7 @@ class AppConfig:
 class WorkerConfig:
     fixture_name: str
     setup: bool = True
+    max_concurrency: int = 1
 
 
 def pytest_make_parametrize_id(config, val):
@@ -70,7 +71,7 @@ def uses_predictor_with_client_options(name, **options):
     )
 
 
-def uses_worker(name_or_names, setup=True):
+def uses_worker(name_or_names, setup=True, max_concurrency=1):
     """
     Decorator for tests that require a Worker instance. `name_or_names` can be
     a single fixture name, or a sequence (list, tuple) of fixture names. If
@@ -79,9 +80,16 @@ def uses_worker(name_or_names, setup=True):
     If `setup` is True (the default) setup will be run before the test runs.
     """
     if isinstance(name_or_names, (tuple, list)):
-        values = (WorkerConfig(fixture_name=n, setup=setup) for n in name_or_names)
+        values = (
+            WorkerConfig(fixture_name=n, setup=setup, max_concurrency=max_concurrency)
+            for n in name_or_names
+        )
     else:
-        values = (WorkerConfig(fixture_name=name_or_names, setup=setup),)
+        values = (
+            WorkerConfig(
+                fixture_name=name_or_names, setup=setup, max_concurrency=max_concurrency
+            ),
+        )
     return pytest.mark.parametrize("worker", values, indirect=True)
 
 
@@ -143,7 +151,11 @@ def static_schema(client) -> dict:
 @pytest.fixture
 def worker(request):
     ref = _fixture_path(request.param.fixture_name)
-    w = make_worker(predictor_ref=ref, tee_output=False)
+    w = make_worker(
+        predictor_ref=ref,
+        tee_output=False,
+        max_concurrency=request.param.max_concurrency,
+    )
     if request.param.setup:
         assert not w.setup().result().error
     try:
