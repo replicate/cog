@@ -224,22 +224,27 @@ def test_no_exceptions_from_recoverable_failures(worker):
         _process(worker, lambda: worker.predict({}))
 
 
-# TODO duplicate this for async predictor
-# TODO test this works with outputs and errors and the like
-@uses_worker("simple")
+# TODO test this works with errors and cancelations and the like
+@uses_worker(["simple", "simple_async"])
 def test_can_subscribe_for_a_specific_tag(worker):
     tag = "123"
 
     result = Result()
     subid = worker.subscribe(result.handle_event, tag=tag)
 
-    worker.predict({}, tag="not-my-tag").result()
-    assert not result.done
+    try:
+        worker.predict({}, tag="not-my-tag").result()
+        assert not result.done
 
-    worker.predict({}, tag=tag).result()
-    assert result.done
+        worker.predict({}, tag=tag).result()
+        assert result.done
+        assert not result.done.canceled
+        assert not result.exception
+        assert result.stdout == "did predict\n"
+        assert result.output == "prediction output"
 
-    worker.unsubscribe(subid)
+    finally:
+        worker.unsubscribe(subid)
 
 
 @uses_worker("stream_redirector_race_condition")

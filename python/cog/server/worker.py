@@ -311,6 +311,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._tee_output = tee_output
         self._cancelable = False
 
+        # for synchronous predictors only! async predictors use _tag_var instead
+        self._sync_tag: Optional[str] = None
+
         super().__init__()
 
     def run(self) -> None:
@@ -344,7 +347,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             self._loop(
                 predict,
                 StreamRedirector(
-                    callback=self._stream_write_hook,
+                    callback=self._sync_stream_write_hook,
                     tee=self._tee_output,
                 ),
             )
@@ -443,8 +446,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         predict: Callable[..., Any],
         redirector: StreamRedirector,
     ) -> None:
-        _tag_var.set(tag)
-
         with self._handle_predict_error(redirector, tag=tag):
             result = predict(**payload)
 
@@ -552,6 +553,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         done = Done()
         send_done = True
         self._cancelable = True
+        self._sync_tag = tag
         try:
             yield
         # regular cancelation
@@ -594,6 +596,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 raise
             if send_done:
                 self._events.send(Envelope(event=done, tag=tag))
+            self._sync_tag = None
 
     def _signal_handler(
         self,
@@ -614,17 +617,22 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         else:
             self._events.send(Envelope(event=Log(data, source="stderr"), tag=tag))
 
-    def _stream_write_hook(self, stream_name: str, data: str) -> None:
+    def _sync_stream_write_hook(self, stream_name: str, data: str) -> None:
         if len(data) == 0:
             return
 
-        # no tag; we are on a separate thread so we can't access self._tag_var
-        # and we know we don't support concurrent predictions anyway so we don't
-        # need tags
+        # we are on a separate thread from the prediction so we can't access the
+        # _tag_var ContextVar, but when we're using StreamPredictor we only
+        # support one prediction at a time so we can use an attribute on
+        # _ChildWorker
         if stream_name == sys.stdout.name:
-            self._events.send(Envelope(event=Log(data, source="stdout")))
+            self._events.send(
+                Envelope(event=Log(data, source="stdout"), tag=self._sync_tag)
+            )
         else:
-            self._events.send(Envelope(event=Log(data, source="stderr")))
+            self._events.send(
+                Envelope(event=Log(data, source="stderr"), tag=self._sync_tag)
+            )
 
 
 def make_worker(predictor_ref: str, tee_output: bool = True) -> Worker:
