@@ -18,9 +18,11 @@ from hypothesis.stateful import (
 )
 
 from cog.server.eventtypes import (
+    Cancel,
     Done,
     Envelope,
     Log,
+    PredictionInput,
     PredictionMetric,
     PredictionOutput,
     PredictionOutputType,
@@ -250,6 +252,48 @@ def test_can_subscribe_for_a_specific_tag(worker):
         assert not result.exception
         assert result.stdout == "did predict\n"
         assert result.output == "prediction output"
+
+    finally:
+        worker.unsubscribe(subid)
+
+
+@uses_worker("sleep_async", max_concurrency=5)
+def test_can_run_predictions_concurrently_on_async_predictor(worker):
+    tag = "123"
+
+    result = Result()
+    subid = worker.subscribe(result.handle_event, tag=tag)
+    subids = []
+
+    try:
+        start = time.time()
+        futures = []
+        results = []
+        for i in range(5):
+            result = Result()
+            results.append(result)
+            tag = f"tag-{i}"
+            subids.append(worker.subscribe(result.handle_event, tag=tag))
+            futures.append(worker.predict({"sleep": 0.5}, tag=tag))
+            assert not result.done
+
+        for fut in futures:
+            fut.result()
+
+        end = time.time()
+
+        duration = end - start
+        # we should take at least 0.5 seconds (the time for 1 prediction) but
+        # not more than double that
+        assert duration >= 0.5
+        assert duration <= 1.0
+
+        for result in results:
+            assert result.done
+            assert not result.done.canceled
+            assert not result.exception
+            assert result.stdout == "starting\n"
+            assert result.output == "done in 0.5 seconds"
 
     finally:
         worker.unsubscribe(subid)
@@ -508,14 +552,13 @@ class WorkerStateMachine(RuleBasedStateMachine):
         super().__init__()
 
         parent_conn, child_conn = multiprocessing.get_context("spawn").Pipe()
-        parent_conn.send = lambda x: None  # FIXME: do something less awful
 
         self.child = FakeChildWorker()
         self.child_events = child_conn
 
         self.pending = threading.Semaphore(0)
 
-        self.worker = Worker(child=self.child, events=parent_conn)
+        self.worker = Worker(child=self.child, events=parent_conn, max_concurrency=4)
 
     def simulate_events(self, events, *, tag=None, target=None):
         def _handle_event(ev):
@@ -587,6 +630,13 @@ class WorkerStateMachine(RuleBasedStateMachine):
         except InvalidStateException:
             return multiple()
         else:
+            assert self.child_events.poll(timeout=0.5)
+            e = self.child_events.recv()
+            assert isinstance(e, Envelope)
+            assert isinstance(e.event, PredictionInput)
+            assert e.tag == tag.hex
+            assert not self.child_events.poll(timeout=0.1)
+
             return PredictState(tag=tag.hex, payload=payload, fut=fut, result=Result())
 
     @rule(
@@ -670,7 +720,19 @@ class WorkerStateMachine(RuleBasedStateMachine):
     )
     def cancel(self, state: PredictState):
         self.worker.cancel(tag=state.tag)
-        assert self.child.cancel_sent
+
+        if state.canceled:
+            # if this has previously been canceled, we expect no Cancel event
+            # sent to the child
+            assert not self.child_events.poll(timeout=0.1)
+        else:
+            assert self.child_events.poll(timeout=0.5)
+            e = self.child_events.recv()
+            assert isinstance(e, Envelope)
+            assert isinstance(e.event, Cancel)
+            assert e.tag == state.tag
+            assert self.child.cancel_sent
+
         return evolve(state, canceled=True)
 
     def teardown(self):
