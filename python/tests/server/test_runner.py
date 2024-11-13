@@ -43,7 +43,7 @@ class FakeWorker:
         self._setup_future = None
         self._predict_future = None
 
-    def subscribe(self, subscriber):
+    def subscribe(self, subscriber, tag=None):
         sid = uuid.uuid4()
         self.subscribers[sid] = subscriber
         return sid
@@ -66,7 +66,7 @@ class FakeWorker:
             if isinstance(event, Done):
                 self._setup_future.set_result(event)
 
-    def predict(self, payload):
+    def predict(self, payload, tag=None):
         assert self._predict_future is None or self._predict_future.done()
         self.last_prediction_payload = payload
         self._predict_future = Future()
@@ -82,7 +82,7 @@ class FakeWorker:
             if isinstance(event, Done):
                 self._predict_future.set_result(event)
 
-    def cancel(self):
+    def cancel(self, tag=None):
         done = Done(canceled=True)
         for subscriber in self.subscribers.values():
             subscriber(done)

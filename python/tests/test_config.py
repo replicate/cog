@@ -137,7 +137,6 @@ class ModelOutput(BaseModel):
     segmentedImage: Optional[Path]
 
 class Predictor(BasePredictor):
-
     def predict(self, msg: str) -> ModelOutput:
         return None
 """
