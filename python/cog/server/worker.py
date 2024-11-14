@@ -84,6 +84,7 @@ class Worker:
         self._terminating = False
 
         self._result: Optional["Future[Done]"] = None
+        self._subscribers_lock = threading.Lock()
         self._subscribers: Dict[
             int, Tuple[Callable[[_PublicEventType], None], Optional[str]]
         ] = {}
@@ -123,11 +124,13 @@ class Worker:
         tag: Optional[str] = None,
     ) -> int:
         sid = uuid.uuid4().int
-        self._subscribers[sid] = (subscriber, tag)
+        with self._subscribers_lock:
+            self._subscribers[sid] = (subscriber, tag)
         return sid
 
     def unsubscribe(self, sid: int) -> None:
-        del self._subscribers[sid]
+        with self._subscribers_lock:
+            del self._subscribers[sid]
 
     def shutdown(self, timeout: Optional[float] = None) -> None:
         """
@@ -283,9 +286,13 @@ class Worker:
             self._state = WorkerState.DEFUNCT
 
     def _publish(self, e: Envelope) -> None:
-        for subscriber, requested_tag in self._subscribers.values():
+        with self._subscribers_lock:
+            subscribers_copy = list(self._subscribers.values())
+        for subscriber, requested_tag in subscribers_copy:
             if requested_tag is None or e.tag == requested_tag:
                 try:
+                    if isinstance(e.event, Done):
+                        print(f"publishing done {requested_tag}")
                     subscriber(cast(_PublicEventType, e.event))
                 except Exception:
                     log.warn(
