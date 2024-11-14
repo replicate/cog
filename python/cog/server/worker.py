@@ -30,6 +30,7 @@ from ..base_predictor import BasePredictor
 from ..json import make_encodeable
 from ..predictor import get_predict, load_predictor_from_ref, run_setup
 from ..types import PYDANTIC_V2, URLPath
+from ..wait import wait_for_env
 from .connection import AsyncConnection, LockedConnection
 from .eventtypes import (
     Cancel,
@@ -371,6 +372,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
     def _setup(self, redirector: AsyncStreamRedirector) -> None:
         done = Done()
+        wait_for_env()
         try:
             self._predictor = load_predictor_from_ref(self._predictor_ref)
             # Could be a function or a class

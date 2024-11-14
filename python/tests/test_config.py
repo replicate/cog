@@ -130,10 +130,12 @@ def test_get_predictor_types_with_env_var():
 from cog import BasePredictor, Path
 from typing import Optional
 from pydantic import BaseModel
+
 class ModelOutput(BaseModel):
     success: bool
     error: Optional[str]
     segmentedImage: Optional[Path]
+
 class Predictor(BasePredictor):
     def predict(self, msg: str) -> ModelOutput:
         return None
