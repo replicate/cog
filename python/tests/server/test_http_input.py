@@ -156,6 +156,15 @@ def test_path_temporary_files_are_removed(client, match):
         },
     )
     temporary_path = resp.json()["output"]
+
+    # HACK: the temp file is deleted in a concurrent.futures callback, which
+    # isn't guaranteed to return before the future result resolves.  Therefore
+    # the file might still exist at the point we receive the HTTP response.
+
+    if not os.path.exists(temporary_path):
+        return  # the file is gone, we're done
+    # else wait and try again
+    time.sleep(0.2)
     assert not os.path.exists(temporary_path)
 
 
