@@ -185,6 +185,7 @@ func (g *Generator) generateInitialSteps() (string, error) {
 		pipInstallStage,
 		"FROM " + baseImage,
 		g.preamble(),
+		g.appendEnvironment(),
 		g.installTini(),
 		installPython,
 		g.copyPipPackagesFromInstallStage(),
@@ -583,6 +584,14 @@ This is the offending line: %s`, command)
 		}
 	}
 	return strings.Join(lines, "\n"), nil
+}
+
+func (g *Generator) appendEnvironment() string {
+	environmentPart := ""
+	for _, env := range g.Config.Build.Environment {
+		environmentPart = environmentPart + fmt.Sprintf("ENV %s\n", env)
+	}
+	return environmentPart
 }
 
 // writeTemp writes a temporary file that can be used as part of the build process
