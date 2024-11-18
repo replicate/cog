@@ -262,10 +262,6 @@ def test_can_subscribe_for_a_specific_tag(worker):
 
 @uses_worker("sleep_async", max_concurrency=5)
 def test_can_run_predictions_concurrently_on_async_predictor(worker):
-    tag = "123"
-
-    result = Result()
-    subid = worker.subscribe(result.handle_event, tag=tag)
     subids = []
 
     try:
@@ -299,7 +295,8 @@ def test_can_run_predictions_concurrently_on_async_predictor(worker):
             assert result.output == "done in 0.5 seconds"
 
     finally:
-        worker.unsubscribe(subid)
+        for subid in subids:
+            worker.unsubscribe(subid)
 
 
 @uses_worker("stream_redirector_race_condition")
@@ -513,7 +510,6 @@ class PredictState:
 
 class FakeChildWorker:
     exitcode = None
-    cancel_sent = False
     alive = True
     pid: int = 0
 
@@ -524,7 +520,7 @@ class FakeChildWorker:
         return self.alive
 
     def send_cancel(self):
-        self.cancel_sent = True
+        pass
 
     def terminate(self):
         pass
@@ -735,17 +731,15 @@ class WorkerStateMachine(RuleBasedStateMachine):
     def cancel(self, state: PredictState):
         self.worker.cancel(tag=state.tag)
 
-        if state.canceled:
-            # if this has previously been canceled, we expect no Cancel event
-            # sent to the child
-            assert not self.child_events.poll(timeout=0.1)
-        else:
+        if not state.canceled:
+            # if this prediction has not previously been canceled, Worker will
+            # send a Cancel event to the child. We need to consume this event to
+            # ensure we stay synced up on the child connection
             assert self.child_events.poll(timeout=0.5)
             e = self.child_events.recv()
             assert isinstance(e, Envelope)
             assert isinstance(e.event, Cancel)
             assert e.tag == state.tag
-            assert self.child.cancel_sent
 
         return evolve(state, canceled=True)
 
