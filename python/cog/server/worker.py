@@ -84,15 +84,13 @@ class CancelRequest:
     tag: Optional[str]
 
 
+@define
 class PredictionState:
-    def __init__(
-        self, tag: Optional[str], payload: Dict[str, Any], result: "Future[Done]"
-    ) -> None:
-        self.tag = tag
-        self.payload = payload
-        self.result = result
+    tag: Optional[str]
+    payload: Dict[str, Any]
+    result: "Future[Done]"
 
-        self.cancel_sent = False
+    cancel_sent: bool = False
 
 
 class Worker:
@@ -154,7 +152,7 @@ class Worker:
             self._assert_state(WorkerState.READY)
             result = Future()
             self._predictions_in_flight[tag] = PredictionState(tag, payload, result)
-            self._request_send_conn.send(PredictionRequest(tag))
+        self._request_send_conn.send(PredictionRequest(tag))
         return result
 
     def subscribe(
@@ -236,7 +234,6 @@ class Worker:
         # If we didn't get a done event, the child process died.
         if not done:
             exitcode = self._child.exitcode
-            assert self._setup_result
             self._setup_result.set_exception(
                 FatalWorkerException(
                     f"Predictor setup failed for an unknown reason. It might have run out of memory? (exitcode {exitcode})"
@@ -245,7 +242,6 @@ class Worker:
             self._state = WorkerState.DEFUNCT
             return
         if done.error:
-            assert self._setup_result
             self._setup_result.set_exception(
                 FatalWorkerException(
                     "Predictor errored during setup: " + done.error_detail
@@ -266,42 +262,43 @@ class Worker:
             read_socks, _, _ = select.select(
                 [self._request_recv_conn, self._events], [], [], 0.1
             )
-            for sock in read_socks:
-                if sock == self._request_recv_conn:
-                    ev = self._request_recv_conn.recv()
-                    if isinstance(ev, PredictionRequest):
-                        with self._predictions_lock:
-                            state = self._predictions_in_flight[ev.tag]
+            if self._request_recv_conn in read_socks:
+                ev = self._request_recv_conn.recv()
+                if isinstance(ev, PredictionRequest):
+                    with self._predictions_lock:
+                        state = self._predictions_in_flight[ev.tag]
 
-                        # Prepare payload (download URLPath objects)
-                        # FIXME this blocks the event loop, which is bad in concurrent mode
-                        try:
-                            _prepare_payload(state.payload)
-                        except Exception as e:
-                            done = Done(error=True, error_detail=str(e))
-                            self._publish(Envelope(done, state.tag))
-                            self._complete_prediction(done, state.tag)
-                        else:
-                            # Start the prediction
-                            self._events.send(
-                                Envelope(
-                                    event=PredictionInput(payload=state.payload),
-                                    tag=state.tag,
-                                )
+                    # Prepare payload (download URLPath objects)
+                    # FIXME this blocks the event loop, which is bad in concurrent mode
+                    try:
+                        _prepare_payload(state.payload)
+                    except Exception as e:
+                        done = Done(error=True, error_detail=str(e))
+                        self._publish(Envelope(done, state.tag))
+                        self._complete_prediction(done, state.tag)
+                    else:
+                        # Start the prediction
+                        self._events.send(
+                            Envelope(
+                                event=PredictionInput(payload=state.payload),
+                                tag=state.tag,
                             )
-                    if isinstance(ev, CancelRequest):
-                        with self._predictions_lock:
-                            predict_state = self._predictions_in_flight.get(ev.tag)
-                            if predict_state and not predict_state.cancel_sent:
-                                self._child.send_cancel()
-                                self._events.send(Envelope(event=Cancel(), tag=ev.tag))
-                                predict_state.cancel_sent = True
+                        )
+                elif isinstance(ev, CancelRequest):
+                    with self._predictions_lock:
+                        predict_state = self._predictions_in_flight.get(ev.tag)
+                        if predict_state and not predict_state.cancel_sent:
+                            self._child.send_cancel()
+                            self._events.send(Envelope(event=Cancel(), tag=ev.tag))
+                            predict_state.cancel_sent = True
+                else:
+                    log.warn("unrecognized request event: {ev}")
 
-                else:  # sock == self._events
-                    ev = self._events.recv()
-                    self._publish(ev)
-                    if isinstance(ev.event, Done):
-                        self._complete_prediction(ev.event, ev.tag)
+            if self._events in read_socks:
+                ev = self._events.recv()
+                self._publish(ev)
+                if isinstance(ev.event, Done):
+                    self._complete_prediction(ev.event, ev.tag)
 
         # If we dropped off the end off the end of the loop, it's because the
         # child process died.  First, process any remaining messages on the connection
@@ -314,22 +311,20 @@ class Worker:
         if not self._terminating:
             self._state = WorkerState.DEFUNCT
             with self._predictions_lock:
-                for tag in list(self._predictions_in_flight.keys()):
+                for state in self._predictions_in_flight.values():
                     exitcode = self._child.exitcode
-                    self._predictions_in_flight[tag].result.set_exception(
+                    state.result.set_exception(
                         FatalWorkerException(
                             f"Prediction failed for an unknown reason. It might have run out of memory? (exitcode {exitcode})"
                         )
                     )
-                    del self._predictions_in_flight[tag]
+                self._predictions_in_flight.clear()
 
     def _complete_prediction(self, done: Done, tag: Optional[str]) -> None:
         # We update the in-flight dictionary before completing the prediction
         # future, so that we can immediately accept work.
         with self._predictions_lock:
             predict_state = self._predictions_in_flight.pop(tag)
-        if len(self._predictions_in_flight) == 0:
-            self._state = WorkerState.READY
         predict_state.result.set_result(done)
 
     def _publish(self, e: Envelope) -> None:
