@@ -145,6 +145,8 @@ class Result:
     done: Optional[Done] = None
     exception: Optional[Exception] = None
 
+    event_seen: threading.Event = field(factory=threading.Event)
+
     @property
     def stdout(self):
         return "".join(self.stdout_lines)
@@ -183,6 +185,7 @@ class Result:
                 self.output = []
         else:
             pytest.fail(f"saw unexpected event: {event}")
+        self.event_seen.set()
 
 
 def _process(worker, work, swallow_exceptions=False, tag=None):
@@ -491,6 +494,7 @@ def test_graceful_shutdown(worker):
 class SetupState:
     fut: "Future[Done]"
     result: Result
+    sid: int
 
     error: bool = False
 
@@ -501,6 +505,7 @@ class PredictState:
     payload: Dict[str, Any]
     fut: "Future[Done]"
     result: Result
+    sid: int
 
     canceled: bool = False
     error: bool = False
@@ -539,8 +544,6 @@ class WorkerStateMachine(RuleBasedStateMachine):
 
     See https://hypothesis.readthedocs.io/en/latest/stateful.html for more on
     stateful testing with Hypothesis.
-
-    TODO: test concurrent predictions
     """
 
     predict_pending = Bundle("predict_pending")
@@ -560,19 +563,11 @@ class WorkerStateMachine(RuleBasedStateMachine):
 
         self.worker = Worker(child=self.child, events=parent_conn, max_concurrency=4)
 
-    def simulate_events(self, events, *, tag=None, target=None):
-        def _handle_event(ev):
-            if target:
-                target.handle_event(ev)
-            self.pending.release()
-
-        subid = self.worker.subscribe(_handle_event, tag=tag)
-        try:
-            for event in events:
-                self.child_events.send(Envelope(event, tag=tag))
-                self.pending.acquire()
-        finally:
-            self.worker.unsubscribe(subid)
+    def simulate_events(self, events, event_seen: threading.Event, *, tag=None):
+        for event in events:
+            event_seen.clear()
+            self.child_events.send(Envelope(event, tag=tag))
+            event_seen.wait(timeout=0.5)
 
     @rule(target=setup_pending)
     def setup(self):
@@ -581,7 +576,9 @@ class WorkerStateMachine(RuleBasedStateMachine):
         except InvalidStateException:
             return multiple()
         else:
-            return SetupState(fut=fut, result=Result())
+            result = Result()
+            sid = self.worker.subscribe(result.handle_event)
+            return SetupState(fut=fut, result=result, sid=sid)
 
     @rule(
         state=setup_pending,
@@ -590,20 +587,26 @@ class WorkerStateMachine(RuleBasedStateMachine):
     )
     def simulate_setup_logs(self, state: SetupState, text: str, source: str):
         events = [Log(source=source, message=text)]
-        self.simulate_events(events, target=state.result)
+        self.simulate_events(events, event_seen=state.result.event_seen)
 
     @rule(state=consumes(setup_pending), target=setup_complete)
     def simulate_setup_success(self, state: SetupState):
-        self.simulate_events(events=[Done()], target=state.result)
-        return state
+        try:
+            self.simulate_events(events=[Done()], event_seen=state.result.event_seen)
+            return state
+        finally:
+            self.worker.unsubscribe(state.sid)
 
     @rule(state=consumes(setup_pending), target=setup_complete)
     def simulate_setup_failure(self, state: SetupState):
-        self.simulate_events(
-            events=[Done(error=True, error_detail="Setup failed!")],
-            target=state.result,
-        )
-        return evolve(state, error=True)
+        try:
+            self.simulate_events(
+                events=[Done(error=True, error_detail="Setup failed!")],
+                event_seen=state.result.event_seen,
+            )
+            return evolve(state, error=True)
+        finally:
+            self.worker.unsubscribe(state.sid)
 
     @rule(state=consumes(setup_complete))
     def await_setup(self, state: SetupState):
@@ -637,7 +640,11 @@ class WorkerStateMachine(RuleBasedStateMachine):
             assert e.tag == tag.hex
             assert not self.child_events.poll(timeout=0.1)
 
-            return PredictState(tag=tag.hex, payload=payload, fut=fut, result=Result())
+            result = Result()
+            sid = self.worker.subscribe(result.handle_event, tag=tag.hex)
+            return PredictState(
+                tag=tag.hex, payload=payload, fut=fut, result=result, sid=sid
+            )
 
     @rule(
         state=predict_pending,
@@ -646,7 +653,7 @@ class WorkerStateMachine(RuleBasedStateMachine):
     )
     def simulate_predict_logs(self, state: PredictState, text: str, source: str):
         events = [Log(source=source, message=text)]
-        self.simulate_events(events, tag=state.tag, target=state.result)
+        self.simulate_events(events, event_seen=state.result.event_seen, tag=state.tag)
 
     @rule(state=consumes(predict_pending), target=predict_complete)
     def simulate_predict_success(self, state: PredictState):
@@ -668,7 +675,7 @@ class WorkerStateMachine(RuleBasedStateMachine):
 
         events.append(Done(canceled=state.canceled))
 
-        self.simulate_events(events, tag=state.tag, target=state.result)
+        self.simulate_events(events, event_seen=state.result.event_seen, tag=state.tag)
         return state
 
     @rule(state=consumes(predict_pending), target=predict_complete)
@@ -681,37 +688,40 @@ class WorkerStateMachine(RuleBasedStateMachine):
             ),
         ]
 
-        self.simulate_events(events, tag=state.tag, target=state.result)
+        self.simulate_events(events, event_seen=state.result.event_seen, tag=state.tag)
         return evolve(state, error=True)
 
     @rule(state=consumes(predict_complete))
     def await_predict(self, state: PredictState):
-        ev = state.fut.result()
-        assert isinstance(ev, Done)
-        assert state.result.done
+        try:
+            ev = state.fut.result()
+            assert isinstance(ev, Done)
+            assert state.result.done
 
-        if state.canceled:
-            assert state.result.done.canceled
-            return
+            if state.canceled:
+                assert state.result.done.canceled
+                return
 
-        if state.error:
-            assert state.result.done.error
-            assert state.result.done.error_detail == "Kaboom!"
-            return
+            if state.error:
+                assert state.result.done.error
+                assert state.result.done.error_detail == "Kaboom!"
+                return
 
-        steps = state.payload["steps"]
-        name = state.payload["name"]
+            steps = state.payload["steps"]
+            name = state.payload["name"]
 
-        if steps == 0:
-            assert not state.result.output
-        elif steps == 1:
-            assert state.result.output == f"NAME={name}"
-        else:
-            assert state.result.output == [
-                f"NAME={name},STEP={i+1}" for i in range(steps)
-            ]
+            if steps == 0:
+                assert not state.result.output
+            elif steps == 1:
+                assert state.result.output == f"NAME={name}"
+            else:
+                assert state.result.output == [
+                    f"NAME={name},STEP={i+1}" for i in range(steps)
+                ]
 
-        assert state.result.done == Done()
+            assert state.result.done == Done()
+        finally:
+            self.worker.unsubscribe(state.sid)
 
     # For now, we only try canceling when we know a prediction is running.
     @rule(
