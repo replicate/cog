@@ -633,6 +633,10 @@ class WorkerStateMachine(RuleBasedStateMachine):
         except InvalidStateException:
             return multiple()
         else:
+            # ensure the PredictionInput event has been sent; this needs to
+            # happen before any further rules fire so we don't simulate a
+            # prediction Done event before it has even started - that really
+            # confuses the Worker
             assert self.child_events.poll(timeout=0.5)
             e = self.child_events.recv()
             assert isinstance(e, Envelope)
