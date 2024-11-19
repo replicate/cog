@@ -225,7 +225,7 @@ def test_choices_str(client):
 
 
 @uses_predictor("input_choices_iterable")
-def test_choices_str(client):
+def test_choices_str_iterable(client):
     resp = client.post("/predictions", json={"input": {"text": "foo"}})
     assert resp.status_code == 200
     resp = client.post("/predictions", json={"input": {"text": "baz"}})

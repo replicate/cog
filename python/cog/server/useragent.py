@@ -1,18 +1,9 @@
-import sys
+from importlib.metadata import version
 
 
 def _get_version() -> str:
     try:
-        if sys.version_info >= (3, 8):
-            from importlib.metadata import (
-                version,  # pylint: disable=import-outside-toplevel
-            )
-
-            return version("cog")
-        else:
-            import pkg_resources  # pylint: disable=import-outside-toplevel
-
-            return pkg_resources.get_distribution("cog").version
+        return version("cog")
     except Exception:  # pylint: disable=broad-exception-caught
         return "unknown"
 
