@@ -33,6 +33,7 @@ COG_TRAIN_TYPE_STUB_ENV_VAR = "COG_TRAIN_TYPE_STUB"
 COG_PREDICT_CODE_STRIP_ENV_VAR = "COG_PREDICT_CODE_STRIP"
 COG_TRAIN_CODE_STRIP_ENV_VAR = "COG_TRAIN_CODE_STRIP"
 COG_GPU_ENV_VAR = "COG_GPU"
+COG_MAX_CONCURRENCY_ENV_VAR = "COG_MAX_CONCURRENCY"
 PREDICT_METHOD_NAME = "predict"
 TRAIN_METHOD_NAME = "train"
 
@@ -100,6 +101,12 @@ class Config:
     def requires_gpu(self) -> bool:
         """Whether this cog requires the use of a GPU."""
         return bool(self._cog_config.get("build", {}).get("gpu", False))
+
+    @property
+    @env_property(COG_MAX_CONCURRENCY_ENV_VAR)
+    def max_concurrency(self) -> int:
+        """The maximum concurrency of predictions supported by this model. Defaults to 1."""
+        return int(self._cog_config.get("concurrency", {}).get("max", 1))
 
     def _predictor_code(
         self,

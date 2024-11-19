@@ -43,6 +43,7 @@ class ExperimentalFeatureWarning(Warning):
 
 class CogConfig(TypedDict):  # pylint: disable=too-many-ancestors
     build: "CogBuildConfig"
+    concurrency: "CogConcurrencyConfig"
     image: NotRequired[str]
     predict: NotRequired[str]
     train: NotRequired[str]
@@ -56,6 +57,10 @@ class CogBuildConfig(TypedDict, total=False):  # pylint: disable=too-many-ancest
     python_requirements: Optional[str]
     python_version: Optional[str]
     run: Optional[Union[List[str], List[Dict[str, Any]]]]
+
+
+class CogConcurrencyConfig(TypedDict, total=False):  # pylint: disable=too-many-ancestors
+    max: Optional[int]
 
 
 def Input(  # pylint: disable=invalid-name, too-many-arguments

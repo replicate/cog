@@ -64,9 +64,13 @@ func TestValidateModelPythonVersion(t *testing.T) {
 				Build: &Build{
 					PythonVersion: tc.pythonVersion,
 				},
-				Concurrency: &Concurrency{
+			}
+			if tc.concurrencyMax != 0 {
+				// the Concurrency key is optional, only populate it if
+				// concurrencyMax is a non-default value
+				cfg.Concurrency = &Concurrency{
 					Max: tc.concurrencyMax,
-				},
+				}
 			}
 			err := ValidateModelPythonVersion(cfg)
 			if tc.expectedErr != "" {

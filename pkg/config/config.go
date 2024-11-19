@@ -263,7 +263,7 @@ func ValidateModelPythonVersion(cfg *Config) error {
 		return fmt.Errorf("minimum supported Python version is %d.%d. requested %s",
 			MinimumMajorPythonVersion, MinimumMinorPythonVersion, version)
 	}
-	if cfg.Concurrency.Max > 1 && minor < MinimumMinorPythonVersionForConcurrency {
+	if cfg.Concurrency != nil && cfg.Concurrency.Max > 1 && minor < MinimumMinorPythonVersionForConcurrency {
 		return fmt.Errorf("when concurrency.max is set, minimum supported Python version is %d.%d. requested %s",
 			MinimumMajorPythonVersion, MinimumMinorPythonVersionForConcurrency, version)
 	}
