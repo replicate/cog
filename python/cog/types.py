@@ -14,13 +14,14 @@ from typing import (
     List,
     Optional,
     Type,
+    TypedDict,
     TypeVar,
     Union,
 )
 
 import pydantic
 import requests
-from typing_extensions import NotRequired, TypedDict
+from typing_extensions import NotRequired  # added to typing in python 3.11
 
 if pydantic.__version__.startswith("1."):
     PYDANTIC_V2 = False

@@ -56,7 +56,7 @@ class PredictionBaseModel(pydantic.BaseModel):
 if PYDANTIC_V2:
     from pydantic.networks import UrlConstraints
     from pydantic_core import Url
-    from typing_extensions import Annotated
+    from typing_extensions import Annotated  # added to typing in python 3.9
 
     WebhookUrl = Annotated[
         Url, UrlConstraints(allowed_schemes=["http", "https"], max_length=65536)

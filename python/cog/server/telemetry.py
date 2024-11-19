@@ -1,9 +1,6 @@
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Generator, Optional
-
-# TypedDict was added in 3.8
-from typing_extensions import TypedDict
+from typing import Generator, Optional, TypedDict
 
 
 # See: https://www.w3.org/TR/trace-context/

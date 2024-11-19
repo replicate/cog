@@ -14,18 +14,14 @@ from typing import (
     Callable,
     Dict,
     List,
+    Literal,
     Optional,
     Type,
     Union,
     cast,
+    get_args,
+    get_origin,
 )
-
-try:
-    from typing import Literal, get_args, get_origin
-except ImportError:  # Python < 3.8
-    from typing_compat import get_args, get_origin  # type: ignore
-    from typing_extensions import Literal
-
 from unittest.mock import patch
 
 import pydantic

@@ -9,7 +9,6 @@ import sys
 import time
 
 import httpx
-
 from packaging.version import VERSION_PATTERN
 
 # From the SemVer spec: https://semver.org/
