@@ -22,7 +22,6 @@ from typing import (
     get_args,
     get_origin,
 )
-
 from unittest.mock import patch
 
 import pydantic

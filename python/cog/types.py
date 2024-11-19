@@ -14,8 +14,8 @@ from typing import (
     List,
     Optional,
     Type,
-    TypeVar,
     TypedDict,
+    TypeVar,
     Union,
 )
 
