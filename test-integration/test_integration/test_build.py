@@ -362,3 +362,25 @@ def test_cog_install_base_image(docker_image):
         semver_version=cog_version,
         pep440_version=cog_installed_version,
     )
+
+
+def test_pip_freeze(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/path-project"
+    subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=project_dir,
+        check=True,
+    )
+    image = json.loads(
+        subprocess.run(
+            ["docker", "image", "inspect", docker_image],
+            capture_output=True,
+            check=True,
+        ).stdout
+    )
+    labels = image[0]["Config"]["Labels"]
+    pip_freeze = labels["run.cog.pip_freeze"]
+    assert (
+        pip_freeze
+        == "anyio==4.4.0\nattrs==23.2.0\ncertifi==2024.8.30\ncharset-normalizer==3.3.2\nclick==8.1.7\ncog @ file:///tmp/cog-0.13.3.dev1%2Bg746ec535-py3-none-any.whl\nexceptiongroup==1.2.2\nfastapi==0.98.0\nh11==0.14.0\nhttptools==0.6.1\nidna==3.8\npydantic==1.10.18\npython-dotenv==1.0.1\nPyYAML==6.0.2\nrequests==2.32.3\nsniffio==1.3.1\nstarlette==0.27.0\nstructlog==24.4.0\ntyping_extensions==4.12.2\nurllib3==2.2.2\nuvicorn==0.30.6\nuvloop==0.20.0\nwatchfiles==0.24.0\nwebsockets==13.0.1\n"
+    )
