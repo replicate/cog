@@ -133,7 +133,7 @@ class Worker:
         self, payload: Dict[str, Any], tag: Optional[str] = None
     ) -> "Future[Done]":
         # TODO: tag is Optional, but it's required when in concurrent mode and
-        # basically unnecesary in sequential mode. Should we have a separate
+        # basically unnecessary in sequential mode. Should we have a separate
         # ConcurrentWorker?
         if self._max_concurrency > 1 and tag is None:
             raise TypeError(
