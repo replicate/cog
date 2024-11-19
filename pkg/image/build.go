@@ -167,10 +167,16 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		return fmt.Errorf("Failed to convert config to JSON: %w", err)
 	}
 
+	pipFreeze, err := GeneratePipFreeze(imageName)
+	if err != nil {
+		return fmt.Errorf("Failed to generate pip freeze from image: %w", err)
+	}
+
 	labels := map[string]string{
 		global.LabelNamespace + "version":        global.Version,
 		global.LabelNamespace + "config":         string(bytes.TrimSpace(configJSON)),
 		global.LabelNamespace + "openapi_schema": string(schemaJSON),
+		global.LabelNamespace + "pip_freeze":     pipFreeze,
 		// Mark the image as having an appropriate init entrypoint. We can use this
 		// to decide how/if to shim the image.
 		global.LabelNamespace + "has_init": "true",
