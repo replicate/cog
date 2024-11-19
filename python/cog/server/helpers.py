@@ -13,7 +13,7 @@ from types import TracebackType
 from typing import Any, BinaryIO, Callable, Dict, List, Sequence, TextIO, Union
 
 import pydantic
-from typing_extensions import Self
+from typing_extensions import Self  # added to typing in python 3.11
 
 from ..types import PYDANTIC_V2
 from .errors import CogRuntimeError, CogTimeoutError
