@@ -336,7 +336,7 @@ class URLFile(io.IOBase):
         except AttributeError:
             pass
         url = object.__getattribute__(self, "__url__")
-        resp = requests.get(url, stream=True, timeout=None)
+        resp = requests.get(url, stream=True, timeout=10)
         resp.raise_for_status()
         resp.raw.decode_content = True
         object.__setattr__(self, "__target__", resp.raw)
