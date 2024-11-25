@@ -322,3 +322,19 @@ def test_predict_with_subprocess_in_setup(fixture_name):
             assert response.status_code == 200, str(response)
 
         assert busy_count < 10
+
+
+def test_file_logging_stream_drain(tmpdir_factory):
+    project_dir = Path(__file__).parent / "fixtures/file-logging-stream-drain-project"
+    out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
+    shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
+    cmd = ["cog", "--debug", "predict"]
+
+    subprocess.run(
+        cmd,
+        cwd=out_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
