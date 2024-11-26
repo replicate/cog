@@ -101,11 +101,12 @@ class PredictionRunner:
 
         with self._predict_tasks_lock:
             # first remove finished tasks so we don't grow the dictionary without bound
-            done_ids = [
-                id for id in self._predict_tasks if self._predict_tasks[id].done()
+            # TODO: clean this up by adding a done callback to the task.
+            done_tags = [
+                tag for tag in self._predict_tasks if self._predict_tasks[tag].done()
             ]
-            for id in done_ids:
-                del self._predict_tasks[id]
+            for tag in done_tags:
+                del self._predict_tasks[tag]
 
             self._predict_tasks[tag] = task
 
