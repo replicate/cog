@@ -333,7 +333,7 @@ def test_async_predictor_on_python_3_10_or_older_raises_error(worker):
     assert result.done.error
     assert (
         result.done.error_detail
-        == "Cog requires python >=3.11 for `async def predict(..)` support"
+        == "Cog requires Python >=3.11 for `async def predict()` support"
     )
 
 
@@ -348,7 +348,8 @@ def test_concurrency_with_sync_predictor_raises_error(worker):
     assert result.done
     assert result.done.error
     assert (
-        result.done.error_detail == "max_concurrency>1 requires `async def predict()`"
+        result.done.error_detail
+        == "max_concurrency > 1 requires an async predict function, e.g. `async def predict()`"
     )
 
 

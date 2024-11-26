@@ -472,12 +472,12 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             # We should check for this before getting to this point
             if is_async_predictor and sys.version_info < (3, 11):
                 raise FatalWorkerException(
-                    "Cog requires python >=3.11 for `async def predict(..)` support"
+                    "Cog requires Python >=3.11 for `async def predict()` support"
                 )
 
             if self._max_concurrency > 1 and not is_async_predictor:
                 raise FatalWorkerException(
-                    "max_concurrency>1 requires `async def predict()`"
+                    "max_concurrency > 1 requires an async predict function, e.g. `async def predict()`"
                 )
 
         except Exception as e:  # pylint: disable=broad-exception-caught
