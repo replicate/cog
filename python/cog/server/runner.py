@@ -100,14 +100,6 @@ class PredictionRunner:
         task = PredictTask(prediction, **task_kwargs)
 
         with self._predict_tasks_lock:
-            # first remove finished tasks so we don't grow the dictionary without bound
-            # TODO: clean this up by adding a done callback to the task.
-            done_tags = [
-                tag for tag in self._predict_tasks if self._predict_tasks[tag].done()
-            ]
-            for done_tag in done_tags:
-                del self._predict_tasks[done_tag]
-
             self._predict_tasks[tag] = task
 
         if isinstance(prediction.input, BaseInput):
@@ -122,9 +114,17 @@ class PredictionRunner:
 
         sid = self._worker.subscribe(task.handle_event, tag=tag)
         task.track(self._worker.predict(payload, tag=tag))
-        task.add_done_callback(lambda _: self._worker.unsubscribe(sid))
+        task.add_done_callback(self._task_done_callback(tag, sid))
 
         return task
+
+    def _task_done_callback(self, tag: str, sid: int) -> Callable[[Any], None]:
+        def _callback(_) -> None:
+            self._worker.unsubscribe(sid)
+            with self._predict_tasks_lock:
+                del self._predict_tasks[tag]
+
+        return _callback
 
     def get_predict_task(self, id: str) -> Optional["PredictTask"]:
         with self._predict_tasks_lock:
