@@ -334,7 +334,6 @@ def test_file_logging_stream_drain(tmpdir_factory):
         cmd,
         cwd=out_dir,
         check=True,
-        capture_output=True,
         text=True,
         timeout=DEFAULT_TIMEOUT,
     )
