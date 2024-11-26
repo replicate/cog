@@ -60,7 +60,7 @@ class CogBuildConfig(TypedDict, total=False):  # pylint: disable=too-many-ancest
 
 
 class CogConcurrencyConfig(TypedDict, total=False):  # pylint: disable=too-many-ancestors
-    max: Optional[int]
+    max: NotRequired[int]
 
 
 def Input(  # pylint: disable=invalid-name, too-many-arguments
