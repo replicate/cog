@@ -105,8 +105,8 @@ class PredictionRunner:
             done_tags = [
                 tag for tag in self._predict_tasks if self._predict_tasks[tag].done()
             ]
-            for tag in done_tags:
-                del self._predict_tasks[tag]
+            for done_tag in done_tags:
+                del self._predict_tasks[done_tag]
 
             self._predict_tasks[tag] = task
 
