@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 from .base_predictor import BasePredictor
 from .mimetypes_ext import install_mime_extensions
-from .server.scope import current_scope
+from .server.scope import current_scope, emit_metric
 from .types import (
     ConcatenateIterator,
     ExperimentalFeatureWarning,
@@ -24,10 +24,11 @@ except ImportError:
 
 __all__ = [
     "__version__",
+    "current_scope",
+    "emit_metric",
     "BaseModel",
     "BasePredictor",
     "ConcatenateIterator",
-    "current_scope",
     "ExperimentalFeatureWarning",
     "File",
     "Input",

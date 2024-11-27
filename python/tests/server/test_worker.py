@@ -82,6 +82,20 @@ METRICS_FIXTURES = [
             "foo": 123,
         },
     ),
+    (
+        WorkerConfig("emit_metric"),
+        {"name": ST_NAMES},
+        {
+            "foo": 123,
+        },
+    ),
+    (
+        WorkerConfig("emit_metric_async", is_async=True),
+        {"name": ST_NAMES},
+        {
+            "foo": 123,
+        },
+    ),
 ]
 
 OUTPUT_FIXTURES = [
