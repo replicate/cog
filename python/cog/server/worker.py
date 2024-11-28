@@ -739,7 +739,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             stacklevel=1,
         )
         file = sys.stdout if source == "stdout" else sys.stderr
-        print(*messages, file=file)
+        print(*messages, file=file, end="")
 
 
 def make_worker(
