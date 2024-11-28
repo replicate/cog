@@ -9,6 +9,7 @@ import urllib.request
 import urllib.response
 from typing import (
     Any,
+    AsyncIterator,
     Dict,
     Iterator,
     List,
@@ -65,13 +66,13 @@ class CogConcurrencyConfig(TypedDict, total=False):  # pylint: disable=too-many-
 
 def Input(  # pylint: disable=invalid-name, too-many-arguments
     default: Any = ...,
-    description: str = None,
-    ge: float = None,
-    le: float = None,
-    min_length: int = None,
-    max_length: int = None,
-    regex: str = None,
-    choices: List[Union[str, int]] = None,
+    description: Optional[str] = None,
+    ge: Optional[float] = None,
+    le: Optional[float] = None,
+    min_length: Optional[int] = None,
+    max_length: Optional[int] = None,
+    regex: Optional[str] = None,
+    choices: Optional[List[Union[str, int]]] = None,
 ) -> Any:
     """Input is similar to pydantic.Field, but doesn't require a default value to be the first argument."""
     field_kwargs = {
@@ -415,6 +416,12 @@ def get_filename(url: str) -> str:
 
 
 Item = TypeVar("Item")
+_concatenate_iterator_schema = {
+    "type": "array",
+    "items": {"type": "string"},
+    "x-cog-array-type": "iterator",
+    "x-cog-array-display": "concatenate",
+}
 
 
 class ConcatenateIterator(Iterator[Item]):  # pylint: disable=abstract-method
@@ -450,14 +457,7 @@ class ConcatenateIterator(Iterator[Item]):  # pylint: disable=abstract-method
         ) -> "JsonSchemaValue":  # type: ignore # noqa: F821
             json_schema = handler(core_schema)
             json_schema.pop("allOf", None)
-            json_schema.update(
-                {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "x-cog-array-type": "iterator",
-                    "x-cog-array-display": "concatenate",
-                }
-            )
+            json_schema.update(_concatenate_iterator_schema)
             return json_schema
 
     else:
@@ -470,14 +470,61 @@ class ConcatenateIterator(Iterator[Item]):  # pylint: disable=abstract-method
         def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
             """Defines what this type should be in openapi.json"""
             field_schema.pop("allOf", None)
-            field_schema.update(
-                {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "x-cog-array-type": "iterator",
-                    "x-cog-array-display": "concatenate",
-                }
+            field_schema.update(_concatenate_iterator_schema)
+
+
+class AsyncConcatenateIterator(AsyncIterator[Item]):
+    @classmethod
+    def validate(cls, value: AsyncIterator[Any]) -> AsyncIterator[Any]:
+        return value
+
+    if PYDANTIC_V2:
+        from pydantic import GetCoreSchemaHandler
+        from pydantic.json_schema import JsonSchemaValue
+        from pydantic_core import CoreSchema
+
+        @classmethod
+        def __get_pydantic_core_schema__(
+            cls,
+            source: Type[Any],  # pylint: disable=unused-argument
+            handler: "pydantic.GetCoreSchemaHandler",  # pylint: disable=unused-argument
+        ) -> "CoreSchema":
+            from pydantic_core import (  # pylint: disable=import-outside-toplevel
+                core_schema,
             )
+
+            return core_schema.union_schema(
+                [
+                    core_schema.is_instance_schema(AsyncIterator),
+                    core_schema.no_info_plain_validator_function(cls.validate),
+                ]
+            )
+
+        @classmethod
+        def __get_pydantic_json_schema__(
+            cls, core_schema: "CoreSchema", handler: "pydantic.GetJsonSchemaHandler"
+        ) -> "JsonSchemaValue":  # type: ignore # noqa: F821
+            json_schema = handler(core_schema)
+            json_schema.pop("allOf", None)
+            json_schema.update(_concatenate_iterator_schema)
+            return json_schema
+    else:
+
+        @classmethod
+        def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+            """Defines what this type should be in openapi.json"""
+            field_schema.pop("allOf", None)
+            field_schema.update(_concatenate_iterator_schema)
+
+        @classmethod
+        def __get_validators__(cls) -> Iterator[Any]:
+            yield cls.validate
+
+
+def get_filename_from_urlopen(resp: urllib.response.addinfourl) -> str:
+    mime_type = resp.headers.get_content_type()
+    extension = mimetypes.guess_extension(mime_type)
+    return ("file" + extension) if extension else "file"
 
 
 def _len_bytes(s: str, encoding: str = "utf-8") -> int:
