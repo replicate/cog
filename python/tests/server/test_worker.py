@@ -30,7 +30,7 @@ from cog.server.eventtypes import (
 from cog.server.exceptions import FatalWorkerException, InvalidStateException
 from cog.server.worker import Worker, _PublicEventType
 
-from .conftest import WorkerConfig, uses_worker
+from .conftest import WorkerConfig, uses_worker, uses_worker_configs
 
 if TYPE_CHECKING:
     from concurrent.futures import Future
@@ -238,7 +238,7 @@ def test_no_exceptions_from_recoverable_failures(worker):
 
 
 # TODO test this works with errors and cancelations and the like
-@uses_worker(["simple", "simple_async"])
+@uses_worker_configs([WorkerConfig("simple"), WorkerConfig("simple_async")])
 def test_can_subscribe_for_a_specific_tag(worker):
     tag = "123"
 
@@ -383,7 +383,12 @@ def test_predict_logging(worker, expected_stdout, expected_stderr):
     assert result.stderr == expected_stderr
 
 
-@uses_worker(["sleep", "sleep_async"], setup=False)
+@uses_worker_configs(
+    [
+        WorkerConfig("sleep", setup=False),
+        WorkerConfig("sleep_async", setup=False),
+    ]
+)
 def test_cancel_is_safe(worker):
     """
     Calls to cancel at any time should not result in unexpected things
@@ -417,7 +422,12 @@ def test_cancel_is_safe(worker):
     assert result2.output == "done in 0.1 seconds"
 
 
-@uses_worker(["sleep", "sleep_async"], setup=False)
+@uses_worker_configs(
+    [
+        WorkerConfig("sleep", setup=False),
+        WorkerConfig("sleep_async", setup=False),
+    ]
+)
 def test_cancel_idempotency(worker):
     """
     Multiple calls to cancel within the same prediction, while not necessary or
@@ -449,7 +459,7 @@ def test_cancel_idempotency(worker):
     assert result2.output == "done in 0.1 seconds"
 
 
-@uses_worker(["sleep", "sleep_async"])
+@uses_worker_configs([WorkerConfig("sleep"), WorkerConfig("sleep_async")])
 def test_cancel_multiple_predictions(worker):
     """
     Multiple predictions cancelled in a row shouldn't be a problem. This test
@@ -467,7 +477,7 @@ def test_cancel_multiple_predictions(worker):
     assert not worker.predict({"sleep": 0}).result().canceled
 
 
-@uses_worker(["sleep", "sleep_async"])
+@uses_worker_configs([WorkerConfig("sleep"), WorkerConfig("sleep_async")])
 def test_graceful_shutdown(worker):
     """
     On shutdown, the worker should finish running the current prediction, and

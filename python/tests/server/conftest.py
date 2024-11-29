@@ -2,7 +2,7 @@ import os
 import threading
 import time
 from contextlib import ExitStack
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 from unittest import mock
 
 import pytest
@@ -90,6 +90,13 @@ def uses_worker(name_or_names, setup=True, max_concurrency=1):
                 fixture_name=name_or_names, setup=setup, max_concurrency=max_concurrency
             ),
         )
+
+
+def uses_worker_configs(values: Sequence[WorkerConfig]):
+    """
+    Decorator for tests that require a Worker instance. `configs` can be
+    a sequence of `WorkerConfig` instances.
+    """
     return pytest.mark.parametrize("worker", values, indirect=True)
 
 
