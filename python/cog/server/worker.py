@@ -50,7 +50,7 @@ from .exceptions import (
     FatalWorkerException,
     InvalidStateException,
 )
-from .helpers import AsyncStreamRedirector, StreamRedirector
+from .helpers import SimpleStreamRedirector, StreamRedirector
 from .scope import Scope, scope
 
 if PYDANTIC_V2:
@@ -377,7 +377,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         signal.signal(signal.SIGUSR1, signal.SIG_IGN)
 
         if self._is_async:
-            redirector = AsyncStreamRedirector(
+            redirector = SimpleStreamRedirector(
                 callback=self._stream_write_hook,
                 tee=self._tee_output,
             )
@@ -397,7 +397,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
             predict = get_predict(self._predictor)
             if self._is_async:
-                assert isinstance(redirector, AsyncStreamRedirector)
+                assert isinstance(redirector, SimpleStreamRedirector)
                 self._setup(redirector)
                 asyncio.run(self._aloop(predict, redirector))
             else:
@@ -450,7 +450,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         return None
 
     def _setup(
-        self, redirector: Union[StreamRedirector, AsyncStreamRedirector]
+        self, redirector: Union[StreamRedirector, SimpleStreamRedirector]
     ) -> None:
         done = Done()
         try:
@@ -504,7 +504,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     async def _aloop(
         self,
         predict: Callable[..., Any],
-        redirector: AsyncStreamRedirector,
+        redirector: SimpleStreamRedirector,
     ) -> None:
         # Unwrap and replace the events connection with an async one.
         assert isinstance(self._events, LockedConnection)
@@ -583,7 +583,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         tag: Optional[str],
         payload: Dict[str, Any],
         predict: Callable[..., Any],
-        redirector: AsyncStreamRedirector,
+        redirector: SimpleStreamRedirector,
     ) -> None:
         _tag_var.set(tag)
 
@@ -635,7 +635,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     @contextlib.contextmanager
     def _handle_predict_error(
         self,
-        redirector: Union[AsyncStreamRedirector, StreamRedirector],
+        redirector: Union[SimpleStreamRedirector, StreamRedirector],
         tag: Optional[str],
     ) -> Iterator[None]:
         done = Done()

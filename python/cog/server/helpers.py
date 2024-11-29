@@ -127,19 +127,19 @@ class _StreamWrapper:
 
 if sys.version_info < (3, 9):
 
-    class _AsyncStreamRedirectorBase(contextlib.AbstractContextManager):
+    class _SimpleStreamRedirectorBase(contextlib.AbstractContextManager):
         pass
 else:
 
-    class _AsyncStreamRedirectorBase(
-        contextlib.AbstractContextManager["AsyncStreamRedirector"]
+    class _SimpleStreamRedirectorBase(
+        contextlib.AbstractContextManager["SimpleStreamRedirector"]
     ):
         pass
 
 
-class AsyncStreamRedirector(_AsyncStreamRedirectorBase):
+class SimpleStreamRedirector(_SimpleStreamRedirectorBase):
     """
-    AsyncStreamRedirector is a context manager that redirects I/O streams to a
+    SimpleStreamRedirector is a context manager that redirects I/O streams to a
     callback function. If `tee` is True, it also writes output to the original
     streams.
 
@@ -179,7 +179,7 @@ class AsyncStreamRedirector(_AsyncStreamRedirectorBase):
         self._stderr_ctx.__exit__(exc_type, exc_value, traceback)
 
     def drain(self, timeout: float = 0.0) -> None:
-        # Draining isn't complicated for AsyncStreamRedirector, since we're not
+        # Draining isn't complicated for SimpleStreamRedirector, since we're not
         # moving data between threads. We just need to flush the streams.
         sys.stdout.flush()
         sys.stderr.flush()
