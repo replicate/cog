@@ -397,7 +397,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             # it has sent a error Done event and we're done here.
             if not self._predictor:
                 return
-            self._predictor.log = self._log
+            self._predictor.log = self._log  # type: ignore
 
             predict = get_predict(self._predictor)
             if self._is_async:
