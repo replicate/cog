@@ -3,7 +3,7 @@ import sys
 import threading
 import time
 from contextlib import ExitStack
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Tuple
 from unittest import mock
 
 import pytest
