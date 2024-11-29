@@ -1,7 +1,8 @@
+import inspect
 import os
 import sys
 import uuid
-from typing import Optional, Tuple, Type
+from typing import Any, Callable, Optional, Tuple, Type
 
 import structlog
 import yaml
@@ -16,7 +17,9 @@ from .mode import Mode
 from .predictor import (
     get_input_type,
     get_output_type,
+    get_predict,
     get_predictor,
+    get_train,
     get_training_input_type,
     get_training_output_type,
     load_full_predictor_from_file,
@@ -152,16 +155,29 @@ class Config:
 
     def get_predictor_types(
         self, mode: Mode
-    ) -> Tuple[Type[BaseInput], Type[BaseModel]]:
-        """Find the input and output types of a predictor."""
+    ) -> Tuple[Type[BaseInput], Type[BaseModel], bool]:
+        """
+        Find the input & output types of a predictor/train function as well
+        as determining if the function is an async function.
+        """
         predictor_ref = self.get_predictor_ref(mode=mode)
         predictor = self._load_predictor_for_types(
             predictor_ref, _method_name_from_mode(mode=mode), mode
         )
+
+        def is_async(fn: Callable[[Any], Any]) -> bool:
+            return inspect.iscoroutinefunction(fn) or inspect.isasyncgenfunction(fn)
+
         if mode == Mode.PREDICT:
-            return get_input_type(predictor), get_output_type(predictor)
+            return (
+                get_input_type(predictor),
+                get_output_type(predictor),
+                is_async(get_predict(predictor)),
+            )
         elif mode == Mode.TRAIN:
-            return get_training_input_type(predictor), get_training_output_type(
-                predictor
+            return (
+                get_training_input_type(predictor),
+                get_training_output_type(predictor),
+                is_async(get_train(predictor)),
             )
         raise ValueError(f"Mode {mode} not found for generating input/output types.")

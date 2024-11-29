@@ -50,7 +50,7 @@ from .exceptions import (
     FatalWorkerException,
     InvalidStateException,
 )
-from .helpers import AsyncStreamRedirector, StreamRedirector
+from .helpers import SimpleStreamRedirector, StreamRedirector
 from .scope import Scope, scope
 
 if PYDANTIC_V2:
@@ -348,6 +348,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     def __init__(
         self,
         predictor_ref: str,
+        *,
+        is_async: bool,
         events: Connection,
         tee_output: bool = True,
     ) -> None:
@@ -361,6 +363,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
         # for synchronous predictors only! async predictors use _tag_var instead
         self._sync_tag: Optional[str] = None
+        self._is_async = is_async
 
         super().__init__()
 
@@ -373,32 +376,40 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         # Initially, we ignore SIGUSR1.
         signal.signal(signal.SIGUSR1, signal.SIG_IGN)
 
-        async_redirector = AsyncStreamRedirector(
-            callback=self._stream_write_hook,
-            tee=self._tee_output,
-        )
-
-        with async_redirector:
-            self._setup(async_redirector)
-
-        # If setup didn't set the predictor, we're done here.
-        if not self._predictor:
-            return
-
-        predict = get_predict(self._predictor)
-        if inspect.iscoroutinefunction(predict) or inspect.isasyncgenfunction(predict):
-            asyncio.run(self._aloop(predict, async_redirector))
-        else:
-            # We use SIGUSR1 to signal an interrupt for cancelation.
-            signal.signal(signal.SIGUSR1, self._signal_handler)
-
-            self._loop(
-                predict,
-                StreamRedirector(
-                    callback=self._stream_write_hook,
-                    tee=self._tee_output,
-                ),
+        if self._is_async:
+            redirector = SimpleStreamRedirector(
+                callback=self._stream_write_hook,
+                tee=self._tee_output,
             )
+        else:
+            redirector = StreamRedirector(
+                callback=self._stream_write_hook,
+                tee=self._tee_output,
+            )
+
+        with scope(Scope(record_metric=self.record_metric)), redirector:
+            self._predictor = self._load_predictor()
+
+            # If _load_predictor hasn't returned a predictor instance then
+            # it has sent a error Done event and we're done here.
+            if not self._predictor:
+                return
+
+            predict = get_predict(self._predictor)
+            if self._is_async:
+                assert isinstance(redirector, SimpleStreamRedirector)
+                self._setup(redirector)
+                asyncio.run(self._aloop(predict, redirector))
+            else:
+                # We use SIGUSR1 to signal an interrupt for cancelation.
+                signal.signal(signal.SIGUSR1, self._signal_handler)
+
+                assert isinstance(redirector, StreamRedirector)
+                self._setup(redirector)
+                self._loop(
+                    predict,
+                    redirector,
+                )
 
     def send_cancel(self) -> None:
         if self.is_alive() and self.pid:
@@ -417,11 +428,34 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             return tag
         return self._sync_tag
 
-    def _setup(self, redirector: AsyncStreamRedirector) -> None:
+    def _load_predictor(self) -> Optional[BasePredictor]:
         done = Done()
         wait_for_env()
         try:
-            self._predictor = load_predictor_from_ref(self._predictor_ref)
+            return load_predictor_from_ref(self._predictor_ref)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            traceback.print_exc()
+            done.error = True
+            done.error_detail = str(e)
+            self._events.send(Envelope(event=done))
+        except BaseException as e:
+            # For SystemExit and friends we attempt to add some useful context
+            # to the logs, but reraise to ensure the process dies.
+            traceback.print_exc()
+            done.error = True
+            done.error_detail = str(e)
+            self._events.send(Envelope(event=done))
+            raise
+
+        return None
+
+    def _setup(
+        self, redirector: Union[StreamRedirector, SimpleStreamRedirector]
+    ) -> None:
+        done = Done()
+        try:
+            assert self._predictor
+
             # Could be a function or a class
             if hasattr(self._predictor, "setup"):
                 run_setup(self._predictor)
@@ -456,22 +490,21 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         predict: Callable[..., Any],
         redirector: StreamRedirector,
     ) -> None:
-        with scope(self._loop_scope()), redirector:
-            while True:
-                e = cast(Envelope, self._events.recv())
-                if isinstance(e.event, Cancel):
-                    continue  # Ignored in sync predictors.
-                elif isinstance(e.event, Shutdown):
-                    break
-                elif isinstance(e.event, PredictionInput):
-                    self._predict(e.tag, e.event.payload, predict, redirector)
-                else:
-                    print(f"Got unexpected event: {e.event}", file=sys.stderr)
+        while True:
+            e = cast(Envelope, self._events.recv())
+            if isinstance(e.event, Cancel):
+                continue  # Ignored in sync predictors.
+            elif isinstance(e.event, Shutdown):
+                break
+            elif isinstance(e.event, PredictionInput):
+                self._predict(e.tag, e.event.payload, predict, redirector)
+            else:
+                print(f"Got unexpected event: {e.event}", file=sys.stderr)
 
     async def _aloop(
         self,
         predict: Callable[..., Any],
-        redirector: AsyncStreamRedirector,
+        redirector: SimpleStreamRedirector,
     ) -> None:
         # Unwrap and replace the events connection with an async one.
         assert isinstance(self._events, LockedConnection)
@@ -479,24 +512,20 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
         task = None
 
-        with scope(self._loop_scope()), redirector:
-            while True:
-                e = cast(Envelope, await self._events.recv())
-                if isinstance(e.event, Cancel) and task and self._cancelable:
-                    task.cancel()
-                elif isinstance(e.event, Shutdown):
-                    break
-                elif isinstance(e.event, PredictionInput):
-                    task = asyncio.create_task(
-                        self._apredict(e.tag, e.event.payload, predict, redirector)
-                    )
-                else:
-                    print(f"Got unexpected event: {e.event}", file=sys.stderr)
-            if task:
-                await task
-
-    def _loop_scope(self) -> Scope:
-        return Scope(record_metric=self.record_metric)
+        while True:
+            e = cast(Envelope, await self._events.recv())
+            if isinstance(e.event, Cancel) and task and self._cancelable:
+                task.cancel()
+            elif isinstance(e.event, Shutdown):
+                break
+            elif isinstance(e.event, PredictionInput):
+                task = asyncio.create_task(
+                    self._apredict(e.tag, e.event.payload, predict, redirector)
+                )
+            else:
+                print(f"Got unexpected event: {e.event}", file=sys.stderr)
+        if task:
+            await task
 
     def _predict(
         self,
@@ -554,7 +583,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         tag: Optional[str],
         payload: Dict[str, Any],
         predict: Callable[..., Any],
-        redirector: AsyncStreamRedirector,
+        redirector: SimpleStreamRedirector,
     ) -> None:
         _tag_var.set(tag)
 
@@ -606,7 +635,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     @contextlib.contextmanager
     def _handle_predict_error(
         self,
-        redirector: Union[AsyncStreamRedirector, StreamRedirector],
+        redirector: Union[SimpleStreamRedirector, StreamRedirector],
         tag: Optional[str],
     ) -> Iterator[None]:
         done = Done()
@@ -680,10 +709,16 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
 
 def make_worker(
-    predictor_ref: str, tee_output: bool = True, max_concurrency: int = 1
+    predictor_ref: str,
+    *,
+    is_async: bool,
+    tee_output: bool = True,
+    max_concurrency: int = 1,
 ) -> Worker:
     parent_conn, child_conn = _spawn.Pipe()
-    child = _ChildWorker(predictor_ref, events=child_conn, tee_output=tee_output)
+    child = _ChildWorker(
+        predictor_ref, events=child_conn, tee_output=tee_output, is_async=is_async
+    )
     parent = Worker(child=child, events=parent_conn, max_concurrency=max_concurrency)
     return parent
 
