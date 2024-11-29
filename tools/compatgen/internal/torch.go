@@ -209,7 +209,7 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 	torchaudio := libVersions["torchaudio"]
 
 	// TODO: this could be determined from https://download.pytorch.org/whl/torch/
-	pythons := []string{"3.8", "3.9", "3.10", "3.11", "3.12"}
+	pythons := []string{"3.8", "3.9", "3.10", "3.11", "3.12", "3.13"}
 
 	return &config.TorchCompatibility{
 		Torch:         torch,
