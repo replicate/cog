@@ -2,7 +2,7 @@ import os
 import threading
 import time
 from contextlib import ExitStack
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 from unittest import mock
 
 import pytest
@@ -24,6 +24,7 @@ class AppConfig:
 @define
 class WorkerConfig:
     fixture_name: str
+    is_async: bool = False
     setup: bool = True
     max_concurrency: int = 1
 
@@ -71,7 +72,7 @@ def uses_predictor_with_client_options(name, **options):
     )
 
 
-def uses_worker(name_or_names, setup=True, max_concurrency=1):
+def uses_worker(name_or_names, setup=True, max_concurrency=1, is_async=False):
     """
     Decorator for tests that require a Worker instance. `name_or_names` can be
     a single fixture name, or a sequence (list, tuple) of fixture names. If
@@ -80,16 +81,32 @@ def uses_worker(name_or_names, setup=True, max_concurrency=1):
     If `setup` is True (the default) setup will be run before the test runs.
     """
     if isinstance(name_or_names, (tuple, list)):
-        values = (
-            WorkerConfig(fixture_name=n, setup=setup, max_concurrency=max_concurrency)
-            for n in name_or_names
-        )
-    else:
-        values = (
+        values = [
             WorkerConfig(
-                fixture_name=name_or_names, setup=setup, max_concurrency=max_concurrency
+                fixture_name=n,
+                setup=setup,
+                max_concurrency=max_concurrency,
+                is_async=is_async,
+            )
+            for n in name_or_names
+        ]
+    else:
+        values = [
+            WorkerConfig(
+                fixture_name=name_or_names,
+                setup=setup,
+                max_concurrency=max_concurrency,
+                is_async=is_async,
             ),
-        )
+        ]
+    return uses_worker_configs(values)
+
+
+def uses_worker_configs(values: Sequence[WorkerConfig]):
+    """
+    Decorator for tests that require a Worker instance. `configs` can be
+    a sequence of `WorkerConfig` instances.
+    """
     return pytest.mark.parametrize("worker", values, indirect=True)
 
 
@@ -153,6 +170,7 @@ def worker(request):
     ref = _fixture_path(request.param.fixture_name)
     w = make_worker(
         predictor_ref=ref,
+        is_async=request.param.is_async,
         tee_output=False,
         max_concurrency=request.param.max_concurrency,
     )

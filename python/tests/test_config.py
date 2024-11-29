@@ -141,7 +141,7 @@ class Predictor(BasePredictor):
         return None
 """
     config = Config()
-    input_type, output_type = config.get_predictor_types(Mode.PREDICT)
+    input_type, output_type, is_async = config.get_predictor_types(Mode.PREDICT)
     del os.environ[COG_PREDICT_CODE_STRIP_ENV_VAR]
     del os.environ[COG_PREDICT_TYPE_STUB_ENV_VAR]
     assert (
@@ -150,6 +150,7 @@ class Predictor(BasePredictor):
     assert (
         str(output_type) == "<class 'cog.predictor.get_output_type.<locals>.Output'>"
     ), "Predict output type should be the predictor Output."
+    assert not is_async, "is_async should be False for normal functions"
 
 
 def test_get_predictor_types():
@@ -177,7 +178,7 @@ class Predictor(BasePredictor):
 """)
         predict_ref = f"{predict_python_file}:Predictor"
         config = Config(config={"predict": predict_ref})
-        input_type, output_type = config.get_predictor_types(Mode.PREDICT)
+        input_type, output_type, is_async = config.get_predictor_types(Mode.PREDICT)
         assert (
             str(input_type) == "<class 'cog.predictor.Input'>"
         ), "Predict input type should be the predictor Input."
@@ -185,6 +186,43 @@ class Predictor(BasePredictor):
             str(output_type)
             == "<class 'cog.predictor.get_output_type.<locals>.Output'>"
         ), "Predict output type should be the predictor Output."
+        assert not is_async, "is_async should be False for normal functions"
+
+
+def test_get_predictor_types_with_async():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        predict_python_file = os.path.join(tmpdir, "predict.py")
+        with open(predict_python_file, "w", encoding="utf-8") as handle:
+            handle.write("""
+import io
+
+from cog import BasePredictor, Path
+from typing import Optional
+from pydantic import BaseModel
+
+
+class ModelOutput(BaseModel):
+    success: bool
+    error: Optional[str]
+    segmentedImage: Optional[Path]
+
+
+class Predictor(BasePredictor):
+    # setup code
+    async def predict(self, msg: str) -> ModelOutput:
+       return ModelOutput(success=False, error=msg, segmentedImage=None)
+""")
+        predict_ref = f"{predict_python_file}:Predictor"
+        config = Config(config={"predict": predict_ref})
+        input_type, output_type, is_async = config.get_predictor_types(Mode.PREDICT)
+        assert (
+            str(input_type) == "<class 'cog.predictor.Input'>"
+        ), "Predict input type should be the predictor Input."
+        assert (
+            str(output_type)
+            == "<class 'cog.predictor.get_output_type.<locals>.Output'>"
+        ), "Predict output type should be the predictor Output."
+        assert is_async, "is_async should be True for async functions"
 
 
 def test_get_predictor_types_for_train():
@@ -210,10 +248,44 @@ def train(
 """)
         train_ref = f"{predict_python_file}:train"
         config = Config(config={"train": train_ref})
-        input_type, output_type = config.get_predictor_types(Mode.TRAIN)
+        input_type, output_type, is_async = config.get_predictor_types(Mode.TRAIN)
         assert (
             str(input_type) == "<class 'cog.predictor.TrainingInput'>"
         ), "Predict input type should be the training Input."
         assert str(output_type).endswith(
             "TrainingOutput'>"
         ), "Predict output type should be the training Output."
+        assert not is_async, "is_async should be False for normal functions"
+
+
+def test_get_predictor_types_for_train_with_async():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        predict_python_file = os.path.join(tmpdir, "train.py")
+        with open(predict_python_file, "w", encoding="utf-8") as handle:
+            handle.write("""
+from cog import BaseModel, Input, Path
+
+class TrainingOutput(BaseModel):
+    weights: Path
+
+async def train(
+    n: int,
+) -> TrainingOutput:
+    with open("weights.bin", "w") as fh:
+        for _ in range(n):
+            fh.write("a")
+
+    return TrainingOutput(
+        weights=Path("weights.bin"),
+    )
+""")
+        train_ref = f"{predict_python_file}:train"
+        config = Config(config={"train": train_ref})
+        input_type, output_type, is_async = config.get_predictor_types(Mode.TRAIN)
+        assert (
+            str(input_type) == "<class 'cog.predictor.TrainingInput'>"
+        ), "Predict input type should be the training Input."
+        assert str(output_type).endswith(
+            "TrainingOutput'>"
+        ), "Predict output type should be the training Output."
+        assert is_async, "is_async should be True for async functions"

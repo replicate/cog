@@ -300,7 +300,7 @@ def test_prediction_runner_predict_cancelation_multiple_predictions():
 
 
 def test_prediction_runner_setup_e2e():
-    w = make_worker(predictor_ref=_fixture_path("sleep"))
+    w = make_worker(predictor_ref=_fixture_path("sleep"), is_async=False)
     r = PredictionRunner(worker=w)
 
     try:
@@ -316,7 +316,7 @@ def test_prediction_runner_setup_e2e():
 
 
 def test_prediction_runner_predict_e2e():
-    w = make_worker(predictor_ref=_fixture_path("sleep"))
+    w = make_worker(predictor_ref=_fixture_path("sleep"), is_async=False)
     r = PredictionRunner(worker=w)
 
     try:
