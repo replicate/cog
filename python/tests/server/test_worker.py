@@ -91,7 +91,7 @@ METRICS_FIXTURES = [
         },
     ),
     (
-        WorkerConfig("emit_metric_async", min_python=(3, 11)),
+        WorkerConfig("emit_metric_async", min_python=(3, 11), is_async=True),
         {"name": ST_NAMES},
         {
             "foo": 123,
