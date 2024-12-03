@@ -1,149 +1,179 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
-      - async
-    tags:
-      - "**"
-  pull_request:
-    branches:
-      - main
-      - async
   merge_group:
-    branches:
-      - main
-      - async
-    types:
-      - checks_requested
+  push:
+    branches: [async]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  HYPOTHESIS_PROFILE: ci
+  FORCE_COLOR: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_NO_PYTHON_VERSION_WARNING: "1"
+
+permissions: {}
+
 jobs:
+  build-python:
+    name: Build & verify python package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # needed for setuptools_scm version determination
+      - uses: hynek/build-and-inspect-python-package@v2
+        id: baipp
+    outputs:
+      python-versions: ${{ steps.baipp.outputs.supported_python_classifiers_json_array }}
+
+  lint:
+    name: Lint
+    needs: build-python
+    runs-on: ubuntu-latest-8-cores
+    steps:
+      - name: Download pre-built packages
+        uses: actions/download-artifact@v4
+        with:
+          name: Packages
+          path: dist
+      - name: Set COG_WHEEL
+        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
+      - name: Extract source distribution
+        run: tar xf dist/*.tar.gz --strip-components=1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+      - uses: hynek/setup-cached-uv@v2
+      - name: Prepare tox
+        run: uv pip install --system tox tox-uv
+      - name: Lint
+        run: make lint
+
   test-go:
     name: "Test Go"
+    needs: build-python
     strategy:
       fail-fast: false
       matrix:
         # https://docs.github.com/en/free-pro-team@latest/actions/reference/specifications-for-github-hosted-runners#supported-runners-and-hardware-resources
-        platform: [ubuntu-latest-8-cores, macos-12]
+        platform: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.platform }}
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # needed for goreleaser version determination
+      - name: Download pre-built packages
+        uses: actions/download-artifact@v4
+        with:
+          name: Packages
+          path: dist
+      - name: Set COG_WHEEL
+        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.11
-      - name: Install Python dependencies
-        run: |
-          python -m pip install '.[dev]'
       - name: Build
         run: make cog
-      - name: Lint
-        run: make lint-go
       - name: Test
         run: make test-go
 
   test-python:
-    name: "Test Python ${{ matrix.python-version }}"
+    name: "Test Python ${{ matrix.python-version }} + Pydantic v${{ matrix.pydantic }}"
+    needs: build-python
     runs-on: ubuntu-latest-8-cores
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11"]
-    defaults:
-      run:
-        shell: bash
+        pydantic: ["1", "2"]
+        python-version: ${{ fromJson(needs.build-python.outputs.python-versions) }}
+        exclude:
+          # Pydantic 2 is not supported on Python 3.7
+          - pydantic: "2"
+            python-version: "3.7"
     steps:
-      - uses: actions/checkout@v4
+      - name: Download pre-built packages
+        uses: actions/download-artifact@v4
+        with:
+          name: Packages
+          path: dist
+      - name: Set COG_WHEEL
+        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
+      - name: Extract source distribution
+        run: tar xf dist/*.tar.gz --strip-components=1
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install Python dependencies
+      - uses: hynek/setup-cached-uv@v2
+      - name: Prepare tox
         run: |
-          python -m pip install '.[dev]'
+          echo TOX_PYTHON=py$(echo "${{ matrix.python-version }}" | tr -d .) >>$GITHUB_ENV
+          uv pip install --system tox
+      - run: uv pip install --system tox-uv
+        if: matrix.python-version != '3.7'
+      - name: Remove src to ensure tests run against wheel
+        run: rm -rf python/cog
       - name: Test
-        run: make test-python
-        env:
-          HYPOTHESIS_PROFILE: ci
-
-  typecheck-python:
-    name: "Typecheck and lint Python"
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install Python dependencies
-        run: |
-          python -m pip install '.[dev]'
-      - name: Run typechecking
-        run: |
-          make lint-python
+        run: python -Im tox run --installpkg "$COG_WHEEL" -e ${{ env.TOX_PYTHON }}-pydantic${{ matrix.pydantic }}-tests
 
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-integration:
     name: "Test integration"
-    runs-on: ubuntu-latest-8-cores
+    needs: build-python
+    runs-on: ubuntu-latest-16-cores
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # needed for goreleaser version determination
+      - name: Download pre-built packages
+        uses: actions/download-artifact@v4
+        with:
+          name: Packages
+          path: dist
+      - name: Set COG_WHEEL
+        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - uses: actions/setup-python@v5
         with:
-          python-version: 3.11
-      - name: Install Python dependencies
-        run: |
-          python -m pip install '.[dev]'
+          python-version: 3.12
+      - uses: hynek/setup-cached-uv@v2
+      - name: Prepare tox
+        run: uv pip install --system tox tox-uv
       - name: Test
         run: make test-integration
 
   release:
+    name: "Release"
     needs:
       - test-go
       - test-python
       - test-integration
-    if: startsWith(github.ref, 'refs/tags/v')
-    outputs:
-      cog_version: ${{ steps.build-python-package.outputs.version }}
-    runs-on: ubuntu-latest-8-cores
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # needed for goreleaser version determination
+      - name: Download pre-built packages
+        uses: actions/download-artifact@v4
+        with:
+          name: Packages
+          path: dist
+      - name: Set COG_WHEEL
+        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Build
-        run: make cog
-      - uses: goreleaser/goreleaser-action@v4
+      - uses: goreleaser/goreleaser-action@v6
         with:
-          version: latest
+          version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build Python package
-        id: build-python-package
-        run: |
-          # clean package built for go client
-          rm -rf dist
-          # install build
-          pip install build
-          # build package
-          python -m build --wheel
-          # set output
-          echo "version=$(ls dist/ | cut -d- -f2)" >> $GITHUB_OUTPUT
-      - name: Push Python package
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          user: __token__
-          password: ${{ secrets.PYPI_TOKEN }}
-          packages-dir: dist
