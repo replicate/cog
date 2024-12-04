@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
       matrix:
         # https://docs.github.com/en/free-pro-team@latest/actions/reference/specifications-for-github-hosted-runners#supported-runners-and-hardware-resources
-        platform: [ubuntu-latest-8-cores, macos-12]
+        platform: [ubuntu-latest-8-cores, macos-latest]
     runs-on: ${{ matrix.platform }}
     defaults:
       run:
