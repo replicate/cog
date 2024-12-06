@@ -38,18 +38,23 @@ tick = mock.sentinel.tick
 class FakeWorker:
     def __init__(self):
         self.subscribers = {}
-        self.last_prediction_payload = None
+        self.subscribers_by_tag = {}
 
         self._setup_future = None
-        self._predict_future = None
+        self._predict_futures = {}
+        self.last_prediction_payload = None
 
     def subscribe(self, subscriber, tag=None):
         sid = uuid.uuid4()
-        self.subscribers[sid] = subscriber
+        self.subscribers[sid] = tag
+        if tag not in self.subscribers_by_tag:
+            self.subscribers_by_tag[tag] = {}
+        self.subscribers_by_tag[tag][sid] = subscriber
         return sid
 
     def unsubscribe(self, sid):
-        del self.subscribers[sid]
+        tag = self.subscribers.pop(sid)
+        del self.subscribers_by_tag[tag][sid]
 
     def setup(self):
         assert self._setup_future is None
@@ -61,32 +66,38 @@ class FakeWorker:
             if isinstance(event, Exception):
                 self._setup_future.set_exception(event)
                 return
-            for subscriber in self.subscribers.values():
+            for subscriber in self.subscribers_by_tag.get(None, {}).values():
                 subscriber(event)
             if isinstance(event, Done):
                 self._setup_future.set_result(event)
 
     def predict(self, payload, tag=None):
-        assert self._predict_future is None or self._predict_future.done()
+        assert tag not in self._predict_futures or self._predict_futures[tag].done()
         self.last_prediction_payload = payload
-        self._predict_future = Future()
-        return self._predict_future
+        self._predict_futures[tag] = Future()
+        print(f"setting {tag}, now {self._predict_futures}")
+        return self._predict_futures[tag]
 
-    def run_predict(self, events):
+    def run_predict(self, events, id=None):
+        if id is None:
+            if len(self._predict_futures) != 1:
+                raise ValueError("Could not guess prediction id, please specify")
+            id = next(iter(self._predict_futures))
         for event in events:
             if isinstance(event, Exception):
-                self._predict_future.set_exception(event)
+                self._predict_futures[id].set_exception(event)
                 return
-            for subscriber in self.subscribers.values():
+            for subscriber in self.subscribers_by_tag.get(id, {}).values():
                 subscriber(event)
             if isinstance(event, Done):
-                self._predict_future.set_result(event)
+                print(f"reading {id} from {self._predict_futures}")
+                self._predict_futures[id].set_result(event)
 
     def cancel(self, tag=None):
         done = Done(canceled=True)
-        for subscriber in self.subscribers.values():
+        for subscriber in self.subscribers_by_tag.get(tag, {}).values():
             subscriber(done)
-        self._predict_future.set_result(done)
+        self._predict_futures[tag].set_result(done)
 
 
 def test_prediction_runner_setup_success():
@@ -229,11 +240,11 @@ def test_prediction_runner_predict_after_predict_completes():
     r.setup()
     w.run_setup([Done()])
 
-    r.predict(PredictionRequest(input={"text": "giraffes"}))
-    w.run_predict([Done()])
+    r.predict(PredictionRequest(id="p-1", input={"text": "giraffes"}))
+    w.run_predict([Done()], id="p-1")
 
-    r.predict(PredictionRequest(input={"text": "elephants"}))
-    w.run_predict([Done()])
+    r.predict(PredictionRequest(id="p-2", input={"text": "elephants"}))
+    w.run_predict([Done()], id="p-2")
 
     assert w.last_prediction_payload == {"text": "elephants"}
 
@@ -254,6 +265,31 @@ def test_prediction_runner_is_busy():
     assert r.is_busy()
 
     w.run_predict([Done()])
+    assert not r.is_busy()
+
+
+def test_prediction_runner_is_busy_concurrency():
+    w = FakeWorker()
+    r = PredictionRunner(worker=w, max_concurrency=3)
+
+    assert r.is_busy()
+
+    r.setup()
+    assert r.is_busy()
+
+    w.run_setup([Done()])
+    assert not r.is_busy()
+
+    r.predict(PredictionRequest(id="1", input={"text": "elephants"}))
+    assert not r.is_busy()
+
+    r.predict(PredictionRequest(id="2", input={"text": "elephants"}))
+    assert not r.is_busy()
+
+    r.predict(PredictionRequest(id="3", input={"text": "elephants"}))
+    assert r.is_busy()
+
+    w.run_predict([Done()], id="1")
     assert not r.is_busy()
 
 
@@ -297,6 +333,23 @@ def test_prediction_runner_predict_cancelation_multiple_predictions():
     r.cancel("defg6789")
     assert task1.result.status == Status.SUCCEEDED
     assert task2.result.status == Status.CANCELED
+
+
+def test_prediction_runner_predict_cancelation_concurrent_predictions():
+    w = FakeWorker()
+    r = PredictionRunner(worker=w, max_concurrency=5)
+
+    r.setup()
+    w.run_setup([Done()])
+
+    task1 = r.predict(PredictionRequest(id="abcd1234", input={"text": "giraffes"}))
+
+    task2 = r.predict(PredictionRequest(id="defg6789", input={"text": "elephants"}))
+
+    r.cancel("abcd1234")
+    w.run_predict([Done()], id="defg6789")
+    assert task1.result.status == Status.CANCELED
+    assert task2.result.status == Status.SUCCEEDED
 
 
 def test_prediction_runner_setup_e2e():

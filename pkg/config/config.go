@@ -30,9 +30,10 @@ var (
 // TODO(andreas): suggest valid torchvision versions (e.g. if the user wants to use 0.8.0, suggest 0.8.1)
 
 const (
-	MinimumMajorPythonVersion int = 3
-	MinimumMinorPythonVersion int = 8
-	MinimumMajorCudaVersion   int = 11
+	MinimumMajorPythonVersion               int = 3
+	MinimumMinorPythonVersion               int = 8
+	MinimumMinorPythonVersionForConcurrency int = 11
+	MinimumMajorCudaVersion                 int = 11
 )
 
 type RunItem struct {
@@ -58,16 +59,21 @@ type Build struct {
 	pythonRequirementsContent []string
 }
 
+type Concurrency struct {
+	Max int `json:"max,omitempty" yaml:"max"`
+}
+
 type Example struct {
 	Input  map[string]string `json:"input" yaml:"input"`
 	Output string            `json:"output" yaml:"output"`
 }
 
 type Config struct {
-	Build   *Build `json:"build" yaml:"build"`
-	Image   string `json:"image,omitempty" yaml:"image"`
-	Predict string `json:"predict,omitempty" yaml:"predict"`
-	Train   string `json:"train,omitempty" yaml:"train"`
+	Build       *Build       `json:"build" yaml:"build"`
+	Image       string       `json:"image,omitempty" yaml:"image"`
+	Predict     string       `json:"predict,omitempty" yaml:"predict"`
+	Train       string       `json:"train,omitempty" yaml:"train"`
+	Concurrency *Concurrency `json:"concurrency,omitempty" yaml:"concurrency"`
 }
 
 func DefaultConfig() *Config {
@@ -244,7 +250,9 @@ func splitPythonVersion(version string) (major int, minor int, err error) {
 	return major, minor, nil
 }
 
-func ValidateModelPythonVersion(version string) error {
+func ValidateModelPythonVersion(cfg *Config) error {
+	version := cfg.Build.PythonVersion
+
 	// we check for minimum supported here
 	major, minor, err := splitPythonVersion(version)
 	if err != nil {
@@ -254,6 +262,10 @@ func ValidateModelPythonVersion(version string) error {
 		minor < MinimumMinorPythonVersion) {
 		return fmt.Errorf("minimum supported Python version is %d.%d. requested %s",
 			MinimumMajorPythonVersion, MinimumMinorPythonVersion, version)
+	}
+	if cfg.Concurrency != nil && cfg.Concurrency.Max > 1 && minor < MinimumMinorPythonVersionForConcurrency {
+		return fmt.Errorf("when concurrency.max is set, minimum supported Python version is %d.%d. requested %s",
+			MinimumMajorPythonVersion, MinimumMinorPythonVersionForConcurrency, version)
 	}
 	return nil
 }

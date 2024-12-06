@@ -165,9 +165,11 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         return app
 
     worker = make_worker(
-        predictor_ref=cog_config.get_predictor_ref(mode=mode), is_async=is_async
+        predictor_ref=cog_config.get_predictor_ref(mode=mode),
+        is_async=is_async,
+        max_concurrency=cog_config.max_concurrency,
     )
-    runner = PredictionRunner(worker=worker)
+    runner = PredictionRunner(worker=worker, max_concurrency=cog_config.max_concurrency)
 
     class PredictionRequest(schema.PredictionRequest.with_types(input_type=InputType)):
         pass
@@ -219,7 +221,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                 response_model=TrainingResponse,
                 response_model_exclude_unset=True,
             )
-            def train(
+            async def train(
                 request: TrainingRequest = Body(default=None),
                 prefer: Optional[str] = Header(default=None),
                 traceparent: Optional[str] = Header(
@@ -232,7 +234,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                 respond_async = prefer == "respond-async"
 
                 with trace_context(make_trace_context(traceparent, tracestate)):
-                    return _predict(
+                    return await _predict(
                         request=request,
                         response_type=TrainingResponse,
                         respond_async=respond_async,
@@ -243,7 +245,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                 response_model=TrainingResponse,
                 response_model_exclude_unset=True,
             )
-            def train_idempotent(
+            async def train_idempotent(
                 training_id: str = Path(..., title="Training ID"),
                 request: TrainingRequest = Body(..., title="Training Request"),
                 prefer: Optional[str] = Header(default=None),
@@ -280,7 +282,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                 respond_async = prefer == "respond-async"
 
                 with trace_context(make_trace_context(traceparent, tracestate)):
-                    return _predict(
+                    return await _predict(
                         request=request,
                         response_type=TrainingResponse,
                         respond_async=respond_async,
@@ -359,7 +361,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         respond_async = prefer == "respond-async"
 
         with trace_context(make_trace_context(traceparent, tracestate)):
-            return _predict(
+            return await _predict(
                 request=request,
                 response_type=PredictionResponse,
                 respond_async=respond_async,
@@ -407,13 +409,13 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         respond_async = prefer == "respond-async"
 
         with trace_context(make_trace_context(traceparent, tracestate)):
-            return _predict(
+            return await _predict(
                 request=request,
                 response_type=PredictionResponse,
                 respond_async=respond_async,
             )
 
-    def _predict(
+    async def _predict(
         *,
         request: Optional[PredictionRequest],
         response_type: Type[schema.PredictionResponse],
@@ -455,7 +457,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             )
 
         # Otherwise, wait for the prediction to complete...
-        predict_task.wait()
+        await predict_task.wait_async()
 
         # ...and return the result.
         if PYDANTIC_V2:

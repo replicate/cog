@@ -6,6 +6,7 @@ from .base_predictor import BasePredictor
 from .mimetypes_ext import install_mime_extensions
 from .server.scope import current_scope, emit_metric
 from .types import (
+    AsyncConcatenateIterator,
     ConcatenateIterator,
     ExperimentalFeatureWarning,
     File,
@@ -26,6 +27,7 @@ __all__ = [
     "__version__",
     "current_scope",
     "emit_metric",
+    "AsyncConcatenateIterator",
     "BaseModel",
     "BasePredictor",
     "ConcatenateIterator",

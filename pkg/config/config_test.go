@@ -13,47 +13,68 @@ import (
 
 func TestValidateModelPythonVersion(t *testing.T) {
 	testCases := []struct {
-		name        string
-		input       string
-		expectedErr bool
+		name           string
+		pythonVersion  string
+		concurrencyMax int
+		expectedErr    string
 	}{
 		{
-			name:        "ValidVersion",
-			input:       "3.12",
-			expectedErr: false,
+			name:          "ValidVersion",
+			pythonVersion: "3.12",
 		},
 		{
-			name:        "MinimumVersion",
-			input:       "3.8",
-			expectedErr: false,
+			name:          "MinimumVersion",
+			pythonVersion: "3.8",
 		},
 		{
-			name:        "FullyQualifiedVersion",
-			input:       "3.12.1",
-			expectedErr: false,
+			name:           "MinimumVersionForConcurrency",
+			pythonVersion:  "3.11",
+			concurrencyMax: 5,
 		},
 		{
-			name:        "InvalidFormat",
-			input:       "3-12",
-			expectedErr: true,
+			name:           "TooOldForConcurrency",
+			pythonVersion:  "3.8",
+			concurrencyMax: 5,
+			expectedErr:    "when concurrency.max is set, minimum supported Python version is 3.11. requested 3.8",
 		},
 		{
-			name:        "InvalidMissingMinor",
-			input:       "3",
-			expectedErr: true,
+			name:          "FullyQualifiedVersion",
+			pythonVersion: "3.12.1",
 		},
 		{
-			name:        "LessThanMinimum",
-			input:       "3.7",
-			expectedErr: true,
+			name:          "InvalidFormat",
+			pythonVersion: "3-12",
+			expectedErr:   "invalid Python version format: missing minor version in 3-12",
+		},
+		{
+			name:          "InvalidMissingMinor",
+			pythonVersion: "3",
+			expectedErr:   "invalid Python version format: missing minor version in 3",
+		},
+		{
+			name:          "LessThanMinimum",
+			pythonVersion: "3.7",
+			expectedErr:   "minimum supported Python version is 3.8. requested 3.7",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := ValidateModelPythonVersion(tc.input)
-			if tc.expectedErr {
-				require.Error(t, err)
+			cfg := &Config{
+				Build: &Build{
+					PythonVersion: tc.pythonVersion,
+				},
+			}
+			if tc.concurrencyMax != 0 {
+				// the Concurrency key is optional, only populate it if
+				// concurrencyMax is a non-default value
+				cfg.Concurrency = &Concurrency{
+					Max: tc.concurrencyMax,
+				}
+			}
+			err := ValidateModelPythonVersion(cfg)
+			if tc.expectedErr != "" {
+				require.ErrorContains(t, err, tc.expectedErr)
 			} else {
 				require.NoError(t, err)
 			}
@@ -647,17 +668,6 @@ func TestBlankBuild(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, config.Build)
 	require.Equal(t, false, config.Build.GPU)
-}
-
-func TestModelPythonVersionValidation(t *testing.T) {
-	err := ValidateModelPythonVersion("3.8")
-	require.NoError(t, err)
-	err = ValidateModelPythonVersion("3.8.1")
-	require.NoError(t, err)
-	err = ValidateModelPythonVersion("3.7")
-	require.Equal(t, "minimum supported Python version is 3.8. requested 3.7", err.Error())
-	err = ValidateModelPythonVersion("3.7.1")
-	require.Equal(t, "minimum supported Python version is 3.8. requested 3.7.1", err.Error())
 }
 
 func TestSplitPinnedPythonRequirement(t *testing.T) {

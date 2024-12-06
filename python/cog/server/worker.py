@@ -11,6 +11,7 @@ import threading
 import traceback
 import types
 import uuid
+import warnings
 from concurrent.futures import Future, ThreadPoolExecutor
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
@@ -351,6 +352,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         *,
         is_async: bool,
         events: Connection,
+        max_concurrency: int = 1,
         tee_output: bool = True,
     ) -> None:
         self._predictor_ref = predictor_ref
@@ -360,6 +362,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         )
         self._tee_output = tee_output
         self._cancelable = False
+        self._max_concurrency = max_concurrency
 
         # for synchronous predictors only! async predictors use _tag_var instead
         self._sync_tag: Optional[str] = None
@@ -394,6 +397,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             # it has sent a error Done event and we're done here.
             if not self._predictor:
                 return
+            self._predictor.log = self._log  # type: ignore
 
             predict = get_predict(self._predictor)
             if self._is_async:
@@ -459,6 +463,25 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             # Could be a function or a class
             if hasattr(self._predictor, "setup"):
                 run_setup(self._predictor)
+
+            predict = get_predict(self._predictor)
+
+            is_async_predictor = inspect.iscoroutinefunction(
+                predict
+            ) or inspect.isasyncgenfunction(predict)
+
+            # Async models require python >= 3.11 so we can use asyncio.TaskGroup
+            # We should check for this before getting to this point
+            if is_async_predictor and sys.version_info < (3, 11):
+                raise FatalWorkerException(
+                    "Cog requires Python >=3.11 for `async def predict()` support"
+                )
+
+            if self._max_concurrency > 1 and not is_async_predictor:
+                raise FatalWorkerException(
+                    "max_concurrency > 1 requires an async predict function, e.g. `async def predict()`"
+                )
+
         except Exception as e:  # pylint: disable=broad-exception-caught
             traceback.print_exc()
             done.error = True
@@ -512,20 +535,19 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
         task = None
 
-        while True:
-            e = cast(Envelope, await self._events.recv())
-            if isinstance(e.event, Cancel) and task and self._cancelable:
-                task.cancel()
-            elif isinstance(e.event, Shutdown):
-                break
-            elif isinstance(e.event, PredictionInput):
-                task = asyncio.create_task(
-                    self._apredict(e.tag, e.event.payload, predict, redirector)
-                )
-            else:
-                print(f"Got unexpected event: {e.event}", file=sys.stderr)
-        if task:
-            await task
+        async with asyncio.TaskGroup() as tg:
+            while True:
+                e = cast(Envelope, await self._events.recv())
+                if isinstance(e.event, Cancel) and task and self._cancelable:
+                    task.cancel()
+                elif isinstance(e.event, Shutdown):
+                    break
+                elif isinstance(e.event, PredictionInput):
+                    task = tg.create_task(
+                        self._apredict(e.tag, e.event.payload, predict, redirector)
+                    )
+                else:
+                    print(f"Got unexpected event: {e.event}", file=sys.stderr)
 
     def _predict(
         self,
@@ -707,6 +729,18 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 Envelope(event=Log(data, source="stderr"), tag=self._current_tag)
             )
 
+    def _log(self, *messages: str, source: str = "stderr") -> None:
+        """
+        DEPRECATED: This function will be removed in a future version of cog.
+        """
+        warnings.warn(
+            "log() is deprecated and will be removed in a future version. Use `print` or `logging` module instead",
+            category=DeprecationWarning,
+            stacklevel=1,
+        )
+        file = sys.stdout if source == "stdout" else sys.stderr
+        print(*messages, file=file, end="")
+
 
 def make_worker(
     predictor_ref: str,
@@ -717,7 +751,11 @@ def make_worker(
 ) -> Worker:
     parent_conn, child_conn = _spawn.Pipe()
     child = _ChildWorker(
-        predictor_ref, events=child_conn, tee_output=tee_output, is_async=is_async
+        predictor_ref,
+        is_async=is_async,
+        events=child_conn,
+        tee_output=tee_output,
+        max_concurrency=max_concurrency,
     )
     parent = Worker(child=child, events=parent_conn, max_concurrency=max_concurrency)
     return parent

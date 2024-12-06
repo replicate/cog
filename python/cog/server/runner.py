@@ -1,5 +1,8 @@
+import asyncio
 import io
+import threading
 import traceback
+import uuid
 from abc import ABC, abstractmethod
 from concurrent.futures import Future
 from datetime import datetime, timezone
@@ -60,13 +63,15 @@ class PredictionRunner:
     def __init__(
         self,
         *,
+        max_concurrency: int = 1,
         worker: Worker,
     ) -> None:
         self._worker = worker
+        self._max_concurrency = max_concurrency
 
         self._setup_task: Optional[SetupTask] = None
-        self._predict_task: Optional[PredictTask] = None
-        self._prediction_id = None
+        self._predict_tasks: Dict[str, PredictTask] = {}
+        self._predict_tasks_lock = threading.Lock()
 
     def setup(self) -> "SetupTask":
         assert self._setup_task is None, "do not call setup twice"
@@ -88,8 +93,14 @@ class PredictionRunner:
 
         task_kwargs = task_kwargs or {}
 
-        self._predict_task = PredictTask(prediction, **task_kwargs)
-        self._prediction_id = prediction.id
+        tag = prediction.id
+        if tag is None:
+            tag = uuid.uuid4().hex
+
+        task = PredictTask(prediction, **task_kwargs)
+
+        with self._predict_tasks_lock:
+            self._predict_tasks[tag] = task
 
         if isinstance(prediction.input, BaseInput):
             if PYDANTIC_V2:
@@ -101,18 +112,23 @@ class PredictionRunner:
         else:
             payload = prediction.input.copy()
 
-        sid = self._worker.subscribe(self._predict_task.handle_event)
-        self._predict_task.track(self._worker.predict(payload))
-        self._predict_task.add_done_callback(lambda _: self._worker.unsubscribe(sid))
+        sid = self._worker.subscribe(task.handle_event, tag=tag)
+        task.track(self._worker.predict(payload, tag=tag))
+        task.add_done_callback(self._task_done_callback(tag, sid))
 
-        return self._predict_task
+        return task
+
+    def _task_done_callback(self, tag: str, sid: int) -> Callable[[Any], None]:
+        def _callback(_) -> None:
+            self._worker.unsubscribe(sid)
+            with self._predict_tasks_lock:
+                del self._predict_tasks[tag]
+
+        return _callback
 
     def get_predict_task(self, id: str) -> Optional["PredictTask"]:
-        if not self._predict_task:
-            return None
-        if self._predict_task.result.id != id:
-            return None
-        return self._predict_task
+        with self._predict_tasks_lock:
+            return self._predict_tasks.get(id, None)
 
     def is_busy(self) -> bool:
         try:
@@ -124,9 +140,13 @@ class PredictionRunner:
     def cancel(self, prediction_id: str) -> None:
         if not prediction_id:
             raise ValueError("prediction_id is required")
-        if self._prediction_id != prediction_id:
-            raise UnknownPredictionError("id mismatch")
-        self._worker.cancel()
+        with self._predict_tasks_lock:
+            if (
+                prediction_id not in self._predict_tasks
+                or self._predict_tasks[prediction_id].done()
+            ):
+                raise UnknownPredictionError("unknown prediction id")
+        self._worker.cancel(tag=prediction_id)
 
     def _raise_if_busy(self) -> None:
         if self._setup_task is None:
@@ -135,9 +155,17 @@ class PredictionRunner:
         if not self._setup_task.done():
             # Setup is still running.
             raise RunnerBusyError("setup is not complete")
-        if self._predict_task is not None and not self._predict_task.done():
-            # Prediction is still running.
-            raise RunnerBusyError("prediction running")
+
+        with self._predict_tasks_lock:
+            processing_tasks = [
+                id for id in self._predict_tasks if not self._predict_tasks[id].done()
+            ]
+
+        if len(processing_tasks) >= self._max_concurrency:
+            # We're at max concurrency
+            if self._max_concurrency == 1:
+                raise RunnerBusyError("prediction running")
+            raise RunnerBusyError("max predictions running")
 
 
 T = TypeVar("T")
@@ -316,6 +344,11 @@ class PredictTask(Task[schema.PredictionResponse]):
     def done(self) -> bool:
         assert self._fut, "call track before checking done"
         return self._fut.done()
+
+    async def wait_async(self) -> None:
+        assert self._fut, "call track before waiting"
+        await asyncio.wrap_future(self._fut)
+        return None
 
     def wait(self, timeout: Optional[float] = None) -> None:
         assert self._fut, "call track before waiting"

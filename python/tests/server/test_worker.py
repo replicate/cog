@@ -1,5 +1,6 @@
 import multiprocessing
 import os
+import sys
 import threading
 import time
 import uuid
@@ -76,7 +77,7 @@ METRICS_FIXTURES = [
         },
     ),
     (
-        WorkerConfig("record_metric_async", is_async=True),
+        WorkerConfig("record_metric_async", min_python=(3, 11), is_async=True),
         {"name": ST_NAMES},
         {
             "foo": 123,
@@ -90,7 +91,7 @@ METRICS_FIXTURES = [
         },
     ),
     (
-        WorkerConfig("emit_metric_async", is_async=True),
+        WorkerConfig("emit_metric_async", min_python=(3, 11), is_async=True),
         {"name": ST_NAMES},
         {
             "foo": 123,
@@ -105,7 +106,7 @@ OUTPUT_FIXTURES = [
         lambda x: f"hello, {x['name']}",
     ),
     (
-        WorkerConfig("hello_world_async", is_async=True),
+        WorkerConfig("hello_world_async", min_python=(3, 11), is_async=True),
         {"name": ST_NAMES},
         lambda x: f"hello, {x['name']}",
     ),
@@ -132,7 +133,7 @@ SETUP_LOGS_FIXTURES = [
         "writing to stderr at import time\n",
     ),
     (
-        WorkerConfig("logging_async", is_async=True, setup=False),
+        WorkerConfig("logging_async", setup=False, min_python=(3, 11), is_async=True),
         ("writing to stdout at import time\n" "setting up predictor\n"),
         "writing to stderr at import time\n",
     ),
@@ -145,10 +146,20 @@ PREDICT_LOGS_FIXTURES = [
         ("WARNING:root:writing log message\n" "writing to stderr\n"),
     ),
     (
-        WorkerConfig("logging_async", is_async=True),
+        WorkerConfig("logging_async", min_python=(3, 11), is_async=True),
         ("writing with print\n"),
         ("WARNING:root:writing log message\n" "writing to stderr\n"),
     ),
+]
+
+SLEEP_FIXTURES = [
+    WorkerConfig("sleep"),
+    WorkerConfig("sleep_async", min_python=(3, 11), is_async=True),
+]
+
+SLEEP_NO_SETUP_FIXTURES = [
+    WorkerConfig("sleep", setup=False),
+    WorkerConfig("sleep_async", min_python=(3, 11), setup=False, is_async=True),
 ]
 
 
@@ -255,9 +266,11 @@ def test_no_exceptions_from_recoverable_failures(worker):
         _process(worker, lambda: worker.predict({}))
 
 
-# TODO test this works with errors and cancelations and the like
 @uses_worker_configs(
-    [WorkerConfig("simple"), WorkerConfig("simple_async", is_async=True)]
+    [
+        WorkerConfig("simple"),
+        WorkerConfig("simple_async", min_python=(3, 11), is_async=True),
+    ]
 )
 def test_can_subscribe_for_a_specific_tag(worker):
     tag = "123"
@@ -280,12 +293,12 @@ def test_can_subscribe_for_a_specific_tag(worker):
         worker.unsubscribe(subid)
 
 
-@uses_worker("sleep_async", is_async=True, max_concurrency=5)
+@uses_worker("sleep_async", max_concurrency=5, min_python=(3, 11), is_async=True)
 def test_can_run_predictions_concurrently_on_async_predictor(worker):
     subids = []
 
     try:
-        start = time.time()
+        start = time.perf_counter()
         futures = []
         results = []
         for i in range(5):
@@ -299,7 +312,7 @@ def test_can_run_predictions_concurrently_on_async_predictor(worker):
         for fut in futures:
             fut.result()
 
-        end = time.time()
+        end = time.perf_counter()
 
         duration = end - start
         # we should take at least 0.5 seconds (the time for 1 prediction) but
@@ -317,6 +330,41 @@ def test_can_run_predictions_concurrently_on_async_predictor(worker):
     finally:
         for subid in subids:
             worker.unsubscribe(subid)
+
+
+@pytest.mark.skipif(
+    sys.version_info >= (3, 11), reason="Testing error message on python versions <3.11"
+)
+@uses_worker("simple_async", setup=False)
+def test_async_predictor_on_python_3_10_or_older_raises_error(worker):
+    fut = worker.setup()
+    result = Result()
+    worker.subscribe(result.handle_event)
+
+    with pytest.raises(FatalWorkerException):
+        fut.result()
+    assert result.done
+    assert result.done.error
+    assert (
+        result.done.error_detail
+        == "Cog requires Python >=3.11 for `async def predict()` support"
+    )
+
+
+@uses_worker("simple", max_concurrency=5, setup=False)
+def test_concurrency_with_sync_predictor_raises_error(worker):
+    fut = worker.setup()
+    result = Result()
+    worker.subscribe(result.handle_event)
+
+    with pytest.raises(FatalWorkerException):
+        fut.result()
+    assert result.done
+    assert result.done.error
+    assert (
+        result.done.error_detail
+        == "max_concurrency > 1 requires an async predict function, e.g. `async def predict()`"
+    )
 
 
 @uses_worker("stream_redirector_race_condition")
@@ -403,12 +451,7 @@ def test_predict_logging(worker, expected_stdout, expected_stderr):
     assert result.stderr == expected_stderr
 
 
-@uses_worker_configs(
-    [
-        WorkerConfig("sleep", setup=False),
-        WorkerConfig("sleep_async", is_async=True, setup=False),
-    ]
-)
+@uses_worker_configs(SLEEP_NO_SETUP_FIXTURES)
 def test_cancel_is_safe(worker):
     """
     Calls to cancel at any time should not result in unexpected things
@@ -442,12 +485,7 @@ def test_cancel_is_safe(worker):
     assert result2.output == "done in 0.1 seconds"
 
 
-@uses_worker_configs(
-    [
-        WorkerConfig("sleep", setup=False),
-        WorkerConfig("sleep_async", is_async=True, setup=False),
-    ]
-)
+@uses_worker_configs(SLEEP_NO_SETUP_FIXTURES)
 def test_cancel_idempotency(worker):
     """
     Multiple calls to cancel within the same prediction, while not necessary or
@@ -479,9 +517,7 @@ def test_cancel_idempotency(worker):
     assert result2.output == "done in 0.1 seconds"
 
 
-@uses_worker_configs(
-    [WorkerConfig("sleep"), WorkerConfig("sleep_async", is_async=True)]
-)
+@uses_worker_configs(SLEEP_FIXTURES)
 def test_cancel_multiple_predictions(worker):
     """
     Multiple predictions cancelled in a row shouldn't be a problem. This test
@@ -499,9 +535,7 @@ def test_cancel_multiple_predictions(worker):
     assert not worker.predict({"sleep": 0}).result().canceled
 
 
-@uses_worker_configs(
-    [WorkerConfig("sleep"), WorkerConfig("sleep_async", is_async=True)]
-)
+@uses_worker_configs(SLEEP_FIXTURES)
 def test_graceful_shutdown(worker):
     """
     On shutdown, the worker should finish running the current prediction, and

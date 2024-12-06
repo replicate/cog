@@ -33,7 +33,7 @@ class _SimpleStreamWrapper(io.TextIOWrapper):
         callback: Callable[[str, str], None],
         tee: bool = False,
     ) -> None:
-        super().__init__(buffer, line_buffering=True)
+        super().__init__(buffer)
 
         self._callback = callback
         self._tee = tee
@@ -44,11 +44,10 @@ class _SimpleStreamWrapper(io.TextIOWrapper):
         self._buffer.append(s)
         if self._tee:
             super().write(s)
-        else:
-            # If we're not teeing, we have to handle automatic flush on
-            # newline. When `tee` is true, this is handled by the write method.
-            if "\n" in s or "\r" in s:
-                self.flush()
+
+        if "\n" in s or "\r" in s:
+            self.flush()
+
         return length
 
     def flush(self) -> None:

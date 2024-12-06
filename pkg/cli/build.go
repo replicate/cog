@@ -64,7 +64,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		imageName = config.DockerImageName(projectDir)
 	}
 
-	err = config.ValidateModelPythonVersion(cfg.Build.PythonVersion)
+	err = config.ValidateModelPythonVersion(cfg)
 	if err != nil {
 		return err
 	}
