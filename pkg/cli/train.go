@@ -42,6 +42,7 @@ Otherwise, it will build the model in the current directory and train it.`,
 	addUseCudaBaseImageFlag(cmd)
 	addGpusFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
+	addFastFlag(cmd)
 
 	cmd.Flags().StringArrayVarP(&trainInputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringArrayVarP(&trainEnvFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
@@ -108,7 +109,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		Volumes: volumes,
 		Env:     trainEnvFlags,
 		Args:    []string{"python", "-m", "cog.server.http", "--x-mode", "train"},
-	}, true)
+	}, true, buildFast)
 
 	go func() {
 		captureSignal := make(chan os.Signal, 1)
