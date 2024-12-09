@@ -160,3 +160,19 @@ func TestSubDirMerge(t *testing.T) {
 	require.Empty(t, rootFiles)
 	require.Equal(t, []string{"models"}, dirs)
 }
+
+// Test case for ignoring files within a .git directory
+func TestIgnoreGitFiles(t *testing.T) {
+	mockFileWalker := func(root string, walkFn filepath.WalkFunc) error {
+		sizes := []int64{sizeThreshold, sizeThreshold, 1024}
+		for i, path := range []string{".git/root-large", "root-large", "predict.py"} {
+			walkFn(path, mockFileInfo{size: sizes[i]}, nil)
+		}
+		return nil
+	}
+
+	dirs, rootFiles, err := FindWeights(mockFileWalker)
+	require.NoError(t, err)
+	require.Equal(t, []string{"root-large"}, rootFiles)
+	require.Empty(t, dirs)
+}

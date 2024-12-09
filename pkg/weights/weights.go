@@ -30,6 +30,9 @@ func FindWeights(fw FileWalker) ([]string, []string, error) {
 		if info.IsDir() {
 			return nil
 		}
+		if isGitFile(path) {
+			return nil
+		}
 		if isCodeFile(path) {
 			codeFiles = append(codeFiles, path)
 			return nil
@@ -95,6 +98,10 @@ func sortFilesByLevels(files []string) {
 func isCodeFile(path string) bool {
 	ext := filepath.Ext(path)
 	return ext == ".py" || ext == ".ipynb"
+}
+
+func isGitFile(path string) bool {
+	return strings.Contains(path, ".git")
 }
 
 // filterDirsContainingCode filters out directories that contain code files.
