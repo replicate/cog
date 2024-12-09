@@ -101,7 +101,14 @@ func isCodeFile(path string) bool {
 }
 
 func isGitFile(path string) bool {
-	return strings.Contains(path, ".git")
+	dir, _ := filepath.Split(path)
+	folders := strings.Split(filepath.Clean(dir), string(filepath.Separator))
+	for _, folder := range folders {
+		if folder == ".git" {
+			return true
+		}
+	}
+	return false
 }
 
 // filterDirsContainingCode filters out directories that contain code files.
