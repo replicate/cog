@@ -55,6 +55,7 @@ the prediction on that.`,
 	addDockerfileFlag(cmd)
 	addGpusFlag(cmd)
 	addSetupTimeoutFlag(cmd)
+	addFastFlag(cmd)
 
 	cmd.Flags().StringArrayVarP(&inputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
@@ -126,7 +127,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		Image:   imageName,
 		Volumes: volumes,
 		Env:     envFlags,
-	}, false)
+	}, false, buildFast)
 
 	go func() {
 		captureSignal := make(chan os.Signal, 1)
@@ -152,7 +153,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 				Image:   imageName,
 				Volumes: volumes,
 				Env:     envFlags,
-			}, false)
+			}, false, buildFast)
 
 			if err := predictor.Start(os.Stderr, timeout); err != nil {
 				return err

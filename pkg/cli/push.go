@@ -32,6 +32,7 @@ func newPushCommand() *cobra.Command {
 	addUseCogBaseImageFlag(cmd)
 	addStripFlag(cmd)
 	addPrecompileFlag(cmd)
+	addFastFlag(cmd)
 
 	return cmd
 }
@@ -58,12 +59,15 @@ func push(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast); err != nil {
 
 		return err
 	}
 
 	console.Infof("\nPushing image '%s'...", imageName)
+	if buildFast {
+		console.Info("Fast push enabled.")
+	}
 
 	err = docker.Push(imageName)
 	if err != nil {

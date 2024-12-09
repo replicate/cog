@@ -4,12 +4,13 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
-	"github.com/spf13/cobra"
 )
 
 var (
@@ -32,6 +33,7 @@ Generate and run an HTTP server based on the declared model inputs and outputs.`
 	addUseCudaBaseImageFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
 	addGpusFlag(cmd)
+	addFastFlag(cmd)
 
 	cmd.Flags().IntVarP(&port, "port", "p", port, "Port on which to listen")
 
@@ -47,6 +49,10 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	imageName, err := image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput)
 	if err != nil {
 		return err
+	}
+
+	if buildFast {
+		console.Info("Fast serve enabled.")
 	}
 
 	gpus := ""

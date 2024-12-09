@@ -24,6 +24,7 @@ var buildDockerfileFile string
 var buildUseCogBaseImage bool
 var buildStrip bool
 var buildPrecompile bool
+var buildFast bool
 
 const useCogBaseImageFlagKey = "use-cog-base-image"
 
@@ -46,6 +47,7 @@ func newBuildCommand() *cobra.Command {
 	addBuildTimestampFlag(cmd)
 	addStripFlag(cmd)
 	addPrecompileFlag(cmd)
+	addFastFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
 }
@@ -69,7 +71,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast); err != nil {
 		return err
 	}
 
@@ -134,6 +136,12 @@ func addPrecompileFlag(cmd *cobra.Command) {
 	const precompileFlag = "precompile"
 	cmd.Flags().BoolVar(&buildPrecompile, precompileFlag, false, "Whether to precompile python files for faster load times")
 	_ = cmd.Flags().MarkHidden(precompileFlag)
+}
+
+func addFastFlag(cmd *cobra.Command) {
+	const fastFlag = "x-fast"
+	cmd.Flags().BoolVar(&buildFast, fastFlag, false, "Whether to use the experimental fast features")
+	_ = cmd.Flags().MarkHidden(fastFlag)
 }
 
 func checkMutuallyExclusiveFlags(cmd *cobra.Command, args []string) error {
