@@ -33,8 +33,11 @@ var errGit = errors.New("git error")
 // Build a Cog model from a config
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
-func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string, useCogBaseImage *bool, strip bool, precompile bool) error {
+func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string, useCogBaseImage *bool, strip bool, precompile bool, fastFlag bool) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
+	if fastFlag {
+		console.Info("Fast build enabled.")
+	}
 
 	// remove bundled schema files that may be left from previous builds
 	_ = os.Remove(bundledSchemaFile)
