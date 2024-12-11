@@ -833,3 +833,44 @@ COPY . /src`
 torch==2.3.1
 pandas==2.0.3`, string(requirements))
 }
+
+func TestGenerateWithEnvironment(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	conf, err := config.FromYAML([]byte(`
+build:
+  gpu: false
+  environment:
+    - ENV_VAR_NAME=some_value
+    - SOME_OTHER_VAR=anything_goes
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	gen, err := NewGenerator(conf, tmpDir)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	expected := `#syntax=docker/dockerfile:1.4
+FROM r8.im/replicate/cog-test-weights AS weights
+FROM python:3.12 as deps
+` + testInstallCog(gen.relativeTmpDir, gen.strip, gen.IsUsingCogBaseImage()) + `
+FROM python:3.12-slim
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV ENV_VAR_NAME=some_value
+ENV SOME_OTHER_VAR=anything_goes
+` + testTini() + `COPY --from=deps --link /dep /usr/local/lib/python3.12/site-packages
+RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
+WORKDIR /src
+EXPOSE 5000
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`
+
+	require.Equal(t, expected, actual)
+}

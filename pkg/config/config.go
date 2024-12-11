@@ -52,6 +52,7 @@ type Build struct {
 	PythonPackages     []string  `json:"python_packages,omitempty" yaml:"python_packages"` // Deprecated, but included for backwards compatibility
 	Run                []RunItem `json:"run,omitempty" yaml:"run"`
 	SystemPackages     []string  `json:"system_packages,omitempty" yaml:"system_packages"`
+	Environment        []string  `json:"environment,omitempty" yaml:"environment"`
 	PreInstall         []string  `json:"pre_install,omitempty" yaml:"pre_install"` // Deprecated, but included for backwards compatibility
 	CUDA               string    `json:"cuda,omitempty" yaml:"cuda"`
 	CuDNN              string    `json:"cudnn,omitempty" yaml:"cudnn"`
