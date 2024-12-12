@@ -335,7 +335,7 @@ def test_can_run_predictions_concurrently_on_async_predictor(worker):
 @pytest.mark.skipif(
     sys.version_info >= (3, 11), reason="Testing error message on python versions <3.11"
 )
-@uses_worker("simple_async", setup=False)
+@uses_worker("simple_async", setup=False, is_async=True)
 def test_async_predictor_on_python_3_10_or_older_raises_error(worker):
     fut = worker.setup()
     result = Result()
@@ -348,6 +348,57 @@ def test_async_predictor_on_python_3_10_or_older_raises_error(worker):
     assert (
         result.done.error_detail
         == "Cog requires Python >=3.11 for `async def predict()` support"
+    )
+
+
+@uses_worker(
+    "setup_async", max_concurrency=1, min_python=(3, 11), is_async=True, setup=False
+)
+def test_setup_async(worker: Worker):
+    fut = worker.setup()
+    setup_result = Result()
+    setup_sid = worker.subscribe(setup_result.handle_event)
+
+    # with pytest.raises(FatalWorkerException):
+    fut.result()
+    worker.unsubscribe(setup_sid)
+
+    assert setup_result.stdout_lines == [
+        "setup starting...\n",
+        "download complete!\n",
+        "setup complete!\n",
+    ]
+
+    predict_result = Result()
+    predict_sid = worker.subscribe(predict_result.handle_event, tag="p1")
+    worker.predict({}, tag="p1").result()
+
+    assert predict_result.done
+    assert predict_result.output == "output"
+    assert predict_result.stdout_lines == ["running prediction\n"]
+
+    worker.unsubscribe(predict_sid)
+
+
+@uses_worker(
+    "setup_async_with_sync_predict",
+    max_concurrency=1,
+    min_python=(3, 11),
+    is_async=False,
+    setup=False,
+)
+def test_setup_async_with_sync_predict_raises_error(worker: Worker):
+    fut = worker.setup()
+    result = Result()
+    worker.subscribe(result.handle_event)
+
+    with pytest.raises(FatalWorkerException):
+        fut.result()
+    assert result.done
+    assert result.done.error
+    assert (
+        result.done.error_detail
+        == "Invalid predictor: to use an async setup method you must use an async predict method"
     )
 
 
@@ -553,6 +604,12 @@ def test_graceful_shutdown(worker):
     worker.shutdown(timeout=2)
 
     assert fut.result() == Done()
+
+
+@uses_worker("async_setup_uses_same_loop_as_predict", min_python=(3, 11), is_async=True)
+def test_async_setup_uses_same_loop_as_predict(worker: Worker):
+    result = _process(worker, lambda: worker.predict({}), tag=None)
+    assert result, "Expected worker to return True to assert same event loop"
 
 
 @frozen

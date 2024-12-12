@@ -479,9 +479,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         with self._handle_setup_error(redirector):
             assert self._predictor
 
-            predict = get_predict(self._predictor)
-
-
             # Async models require python >= 3.11 so we can use asyncio.TaskGroup
             # We should check for this before getting to this point
             if self._has_async_predictor and sys.version_info < (3, 11):
