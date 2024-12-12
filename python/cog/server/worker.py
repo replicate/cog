@@ -31,7 +31,12 @@ from attrs import define
 
 from ..base_predictor import BasePredictor
 from ..json import make_encodeable
-from ..predictor import get_predict, load_predictor_from_ref, run_setup
+from ..predictor import (
+    get_predict,
+    load_predictor_from_ref,
+    has_setup_weights,
+    extract_setup_weights,
+)
 from ..types import PYDANTIC_V2, URLPath
 from ..wait import wait_for_env
 from .connection import AsyncConnection, LockedConnection
@@ -462,7 +467,12 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
             # Could be a function or a class
             if hasattr(self._predictor, "setup"):
-                run_setup(self._predictor)
+                if not has_setup_weights(predictor):
+                    predictor.setup()
+                    return
+
+                weights = extract_setup_weights(predictor)
+                predictor.setup(weights=weights)  # type: ignore
 
             predict = get_predict(self._predictor)
 

@@ -41,9 +41,8 @@ from .types import (
 )
 from .types import (
     File as CogFile,
-)
-from .types import (
     Path as CogPath,
+    Weights,
 )
 from .types import Secret as CogSecret
 
@@ -60,15 +59,16 @@ ALLOWED_INPUT_TYPES: List[Type[Any]] = [
 ]
 
 
-def run_setup(predictor: BasePredictor) -> None:
+def has_setup_weights(predictor: BasePredictor) -> bool:
     weights_type = get_weights_type(predictor.setup)
+    return weights_type is not None
 
-    # No weights need to be passed, so just run setup() without any arguments.
-    if weights_type is None:
-        predictor.setup()
-        return
 
-    weights: Union[io.IOBase, Path, str, None]
+def extract_setup_weights(predictor: BasePredictor) -> Optional[Weights]:
+    weights_type = get_weights_type(predictor.setup)
+    assert weights_type
+
+    weights: Optional[Weights]
 
     weights_url = os.environ.get("COG_WEIGHTS")
     weights_path = "weights"
@@ -119,7 +119,7 @@ def run_setup(predictor: BasePredictor) -> None:
     else:
         weights = None
 
-    predictor.setup(weights=weights)  # type: ignore
+    return weights
 
 
 def get_weights_type(setup_function: Callable[[Any], None]) -> Optional[Any]:
