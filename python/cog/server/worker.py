@@ -32,10 +32,10 @@ from attrs import define
 from ..base_predictor import BasePredictor
 from ..json import make_encodeable
 from ..predictor import (
-    get_predict,
-    load_predictor_from_ref,
-    has_setup_weights,
     extract_setup_weights,
+    get_predict,
+    has_setup_weights,
+    load_predictor_from_ref,
 )
 from ..types import PYDANTIC_V2, URLPath
 from ..wait import wait_for_env
@@ -371,7 +371,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
         # for synchronous predictors only! async predictors use _tag_var instead
         self._sync_tag: Optional[str] = None
-        self._is_async = is_async
+        self._has_async_predictor = is_async
 
         super().__init__()
 
@@ -384,7 +384,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         # Initially, we ignore SIGUSR1.
         signal.signal(signal.SIGUSR1, signal.SIG_IGN)
 
-        if self._is_async:
+        if self._has_async_predictor:
             redirector = SimpleStreamRedirector(
                 callback=self._stream_write_hook,
                 tee=self._tee_output,
@@ -402,13 +402,27 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             # it has sent a error Done event and we're done here.
             if not self._predictor:
                 return
-            self._predictor.log = self._log  # type: ignore
 
+            if not self._validate_predictor(redirector):
+                return
+
+            self._predictor.log = self._log  # type: ignore
             predict = get_predict(self._predictor)
-            if self._is_async:
+
+            if self._has_async_predictor:
                 assert isinstance(redirector, SimpleStreamRedirector)
-                self._setup(redirector)
-                asyncio.run(self._aloop(predict, redirector))
+                predictor = self._predictor
+
+                async def _runner() -> None:
+                    if hasattr(predictor, "setup") and inspect.iscoroutinefunction(
+                        predictor.setup
+                    ):
+                        await self._asetup(redirector)
+                    else:
+                        self._setup(redirector)
+                    await self._aloop(predict, redirector)
+
+                asyncio.run(_runner())
             else:
                 # We use SIGUSR1 to signal an interrupt for cancelation.
                 signal.signal(signal.SIGUSR1, self._signal_handler)
@@ -458,65 +472,74 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
         return None
 
-    def _setup(
-        self, redirector: Union[StreamRedirector, SimpleStreamRedirector]
-    ) -> None:
-        done = Done()
-        try:
+    def _validate_predictor(
+        self,
+        redirector: Union[StreamRedirector, SimpleStreamRedirector],
+    ) -> bool:
+        with self._handle_setup_error(redirector):
             assert self._predictor
-
-            # Could be a function or a class
-            if hasattr(self._predictor, "setup"):
-                if not has_setup_weights(predictor):
-                    predictor.setup()
-                    return
-
-                weights = extract_setup_weights(predictor)
-                predictor.setup(weights=weights)  # type: ignore
 
             predict = get_predict(self._predictor)
 
-            is_async_predictor = inspect.iscoroutinefunction(
-                predict
-            ) or inspect.isasyncgenfunction(predict)
 
             # Async models require python >= 3.11 so we can use asyncio.TaskGroup
             # We should check for this before getting to this point
-            if is_async_predictor and sys.version_info < (3, 11):
+            if self._has_async_predictor and sys.version_info < (3, 11):
                 raise FatalWorkerException(
                     "Cog requires Python >=3.11 for `async def predict()` support"
                 )
 
-            if self._max_concurrency > 1 and not is_async_predictor:
+            if self._max_concurrency > 1 and not self._has_async_predictor:
                 raise FatalWorkerException(
                     "max_concurrency > 1 requires an async predict function, e.g. `async def predict()`"
                 )
 
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            traceback.print_exc()
-            done.error = True
-            done.error_detail = str(e)
-        except BaseException as e:
-            # For SystemExit and friends we attempt to add some useful context
-            # to the logs, but reraise to ensure the process dies.
-            traceback.print_exc()
-            done.error = True
-            done.error_detail = str(e)
-            raise
-        finally:
-            try:
-                redirector.drain(timeout=10)
-            except TimeoutError:
-                self._events.send(
-                    Envelope(
-                        event=Log(
-                            "WARNING: logs may be truncated due to excessive volume.",
-                            source="stderr",
-                        )
-                    )
+            if (
+                hasattr(self._predictor, "setup")
+                and inspect.iscoroutinefunction(self._predictor.setup)
+                and not self._has_async_predictor
+            ):
+                raise FatalWorkerException(
+                    "Invalid predictor: to use an async setup method you must use an async predict method"
                 )
-                raise
-            self._events.send(Envelope(event=done))
+
+            return True
+
+        return False
+
+    def _setup(
+        self, redirector: Union[StreamRedirector, SimpleStreamRedirector]
+    ) -> None:
+        with self._handle_setup_error(redirector, ensure_done_event=True):
+            assert self._predictor
+
+            # Could be a function or a class
+            if not hasattr(self._predictor, "setup"):
+                return
+
+            if not has_setup_weights(self._predictor):
+                self._predictor.setup()
+                return
+
+            weights = extract_setup_weights(self._predictor)
+            self._predictor.setup(weights=weights)  # type: ignore
+
+    async def _asetup(
+        self, redirector: Union[StreamRedirector, SimpleStreamRedirector]
+    ) -> None:
+        with self._handle_setup_error(redirector, ensure_done_event=True):
+            assert self._predictor
+
+            # Could be a function or a class
+            if not hasattr(self._predictor, "setup"):
+                return
+
+            if not has_setup_weights(self._predictor):
+                await self._predictor.setup()  # type: ignore
+                return
+
+            weights = extract_setup_weights(self._predictor)
+            await self._predictor.setup(weights=weights)  # type: ignore
 
     def _loop(
         self,
@@ -663,6 +686,44 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                             tag=tag,
                         )
                     )
+
+    @contextlib.contextmanager
+    def _handle_setup_error(
+        self,
+        redirector: Union[SimpleStreamRedirector, StreamRedirector],
+        *,
+        ensure_done_event: bool = False,
+    ) -> Iterator[None]:
+        done = Done()
+        try:
+            yield
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            traceback.print_exc()
+            done.error = True
+            done.error_detail = str(e)
+        except BaseException as e:
+            # For SystemExit and friends we attempt to add some useful context
+            # to the logs, but reraise to ensure the process dies.
+            traceback.print_exc()
+            done.error = True
+            done.error_detail = str(e)
+            raise
+        finally:
+            try:
+                redirector.drain(timeout=10)
+            except TimeoutError:
+                self._events.send(
+                    Envelope(
+                        event=Log(
+                            "WARNING: logs may be truncated due to excessive volume.",
+                            source="stderr",
+                        )
+                    )
+                )
+                raise
+
+            if done.error or ensure_done_event:
+                self._events.send(Envelope(event=done))
 
     @contextlib.contextmanager
     def _handle_predict_error(

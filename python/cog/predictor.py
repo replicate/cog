@@ -2,13 +2,11 @@ import builtins
 import enum
 import importlib.util
 import inspect
-import io
 import os.path
 import sys
 import types
 import uuid
 from collections.abc import Iterable, Iterator
-from pathlib import Path
 from typing import (
     Any,
     Callable,
@@ -38,11 +36,13 @@ from .code_xforms import load_module_from_string, strip_model_source_code
 from .types import (
     PYDANTIC_V2,
     Input,
+    Weights,
 )
 from .types import (
     File as CogFile,
+)
+from .types import (
     Path as CogPath,
-    Weights,
 )
 from .types import Secret as CogSecret
 
