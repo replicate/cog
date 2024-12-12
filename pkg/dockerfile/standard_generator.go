@@ -135,7 +135,7 @@ func (g *StandardGenerator) SetPrecompile(precompile bool) {
 	g.precompile = precompile
 }
 
-func (g *StandardGenerator) generateInitialSteps() (string, error) {
+func (g *StandardGenerator) GenerateInitialSteps() (string, error) {
 	baseImage, err := g.BaseImage()
 	if err != nil {
 		return "", err
@@ -202,7 +202,7 @@ func (g *StandardGenerator) generateInitialSteps() (string, error) {
 }
 
 func (g *StandardGenerator) GenerateModelBase() (string, error) {
-	initialSteps, err := g.generateInitialSteps()
+	initialSteps, err := g.GenerateInitialSteps()
 	if err != nil {
 		return "", err
 	}
@@ -237,7 +237,7 @@ func (g *StandardGenerator) GenerateModelBaseWithSeparateWeights(imageName strin
 	if err != nil {
 		return "", "", "", fmt.Errorf("Failed to generate Dockerfile for model weights files: %w", err)
 	}
-	initialSteps, err := g.generateInitialSteps()
+	initialSteps, err := g.GenerateInitialSteps()
 	if err != nil {
 		return "", "", "", err
 	}

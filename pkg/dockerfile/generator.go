@@ -3,7 +3,7 @@ package dockerfile
 import "github.com/replicate/cog/pkg/weights"
 
 type Generator interface {
-	generateInitialSteps() (string, error)
+	GenerateInitialSteps() (string, error)
 	SetUseCogBaseImage(bool)
 	SetUseCogBaseImagePtr(*bool)
 	GenerateModelBaseWithSeparateWeights(string) (string, string, string, error)
