@@ -521,6 +521,9 @@ class AsyncConcatenateIterator(AsyncIterator[Item]):
             yield cls.validate
 
 
+Weights = Union[File, Path, str]
+
+
 def get_filename_from_urlopen(resp: urllib.response.addinfourl) -> str:
     mime_type = resp.headers.get_content_type()
     extension = mimetypes.guess_extension(mime_type)
