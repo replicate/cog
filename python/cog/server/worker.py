@@ -12,6 +12,7 @@ import traceback
 import types
 import uuid
 import warnings
+import weakref
 from concurrent.futures import Future, ThreadPoolExecutor
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
@@ -95,6 +96,10 @@ class PredictionState:
 
 
 class Worker:
+    @property
+    def uses_concurrency(self) -> bool:
+        return self._max_concurrency > 1
+
     def __init__(
         self, child: "_ChildWorker", events: Connection, max_concurrency: int = 1
     ) -> None:
@@ -289,7 +294,7 @@ class Worker:
                     with self._predictions_lock:
                         predict_state = self._predictions_in_flight.get(ev.tag)
                         if predict_state and not predict_state.cancel_sent:
-                            self._child.send_cancel()
+                            self._child.send_cancel_signal()
                             self._events.send(Envelope(event=Cancel(), tag=ev.tag))
                             predict_state.cancel_sent = True
                 else:
@@ -415,7 +420,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     redirector,
                 )
 
-    def send_cancel(self) -> None:
+    def send_cancel_signal(self) -> None:
         if self.is_alive() and self.pid:
             os.kill(self.pid, signal.SIGUSR1)
 
@@ -516,7 +521,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         while True:
             e = cast(Envelope, self._events.recv())
             if isinstance(e.event, Cancel):
-                continue  # Ignored in sync predictors.
+                # for sync predictors, this is handled via SIGUSR1 signals from
+                # the parent via send_cancel_signal
+                continue
             elif isinstance(e.event, Shutdown):
                 break
             elif isinstance(e.event, PredictionInput):
@@ -533,17 +540,27 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         assert isinstance(self._events, LockedConnection)
         self._events = AsyncConnection(self._events.connection)
 
-        task = None
-
         async with asyncio.TaskGroup() as tg:
+            tasks = weakref.WeakValueDictionary[str | None, asyncio.Task[Any]]()
             while True:
                 e = cast(Envelope, await self._events.recv())
-                if isinstance(e.event, Cancel) and task and self._cancelable:
+                if isinstance(e.event, Cancel):
+                    # NOTE: We don't check the _cancelable flag here, instead we rely
+                    # on the presence of the value in the weakmap to determine if
+                    # a prediction is actively being processed.
+                    task = tasks.get(e.tag)
+                    if not task:
+                        print(
+                            "Got cancel event for unrecognized prediction",
+                            file=sys.stderr,
+                        )
+                        continue
+
                     task.cancel()
                 elif isinstance(e.event, Shutdown):
                     break
                 elif isinstance(e.event, PredictionInput):
-                    task = tg.create_task(
+                    tasks[e.tag] = tg.create_task(
                         self._apredict(e.tag, e.event.payload, predict, redirector)
                     )
                 else:
