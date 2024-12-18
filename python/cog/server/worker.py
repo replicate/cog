@@ -4,6 +4,7 @@ import inspect
 import multiprocessing
 import signal
 import sys
+import threading
 import traceback
 import types
 from collections import defaultdict
@@ -98,6 +99,7 @@ def emit_metric(metric_name: str, metric_value: "float | int") -> None:
 
 
 class _ChildWorker(_spawn.Process):  # type: ignore
+
     def __init__(
         self,
         predictor_ref: str,
@@ -107,12 +109,17 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._predictor_ref = predictor_ref
         self._predictor: Optional[BasePredictor] = None
         self._events = events
+        self._events_async: Optional[AsyncConnection[tuple[str, PublicEventType]]] = (
+            None
+        )
+        self._process_logs_task: Optional[asyncio.Task[None]] = None
         self._tee_output = tee_output
         self._cancelable = False
 
         super().__init__()
 
     def run(self) -> None:
+        self._sync_events_lock = threading.Lock()
         # If we're running at a shell, SIGINT will be sent to every process in
         # the process group. We ignore it in the child process and require that
         # shutdown is coordinated by the parent process.
@@ -139,9 +146,18 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         # </could be moved into StreamRedirector>
 
         self._setup()
-        self._loop()
-        self._stream_redirector.shutdown()
+        self._loop()  # shuts down stream redirector the correct way
         self._events.close()
+
+    async def _async_init(self) -> None:
+        if self._events_async:
+            return
+        # if AsyncConnection is created before switch_to_async, a race condition can cause drain to fail
+        # and write, seemingly, to block
+        # maybe because we're trying to call StreamWriter.write when no event loop is running?
+        await self._stream_redirector.switch_to_async()
+        self._events_async = AsyncConnection(self._events)
+        await self._events_async.async_init()
 
     def _setup(self) -> None:
         with self._handle_setup_error():
@@ -161,6 +177,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             if hasattr(self._predictor, "setup"):
                 if inspect.iscoroutinefunction(self._predictor.setup):
                     # we should probably handle Shutdown during this process?
+                    # possibly we prefer to not stop-start the event loop
+                    # between these calls
+                    self.loop.run_until_complete(self._async_init())
                     self.loop.run_until_complete(run_setup_async(self._predictor))
                 else:
                     run_setup(self._predictor)
@@ -182,8 +201,14 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             done.error_detail = str(e)
             raise
         finally:
-            self._stream_redirector.drain()
-            self._events.send(("SETUP", done))
+            # we can arrive here if there was an error setting up stream_redirector
+            # for example, because drain failed
+            # in this case this drain could block or fail
+            try:
+                self._stream_redirector.drain()
+            except Exception:
+                raise
+            self.send(("SETUP", done))
 
     def _loop_sync(self) -> None:
         while True:
@@ -199,33 +224,34 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 pass
             else:
                 print(f"Got unexpected event: {ev}", file=sys.stderr)
+        self._stream_redirector.shutdown()
 
     async def _loop_async(self) -> None:
-        events: AsyncConnection[tuple[str, PublicEventType]] = AsyncConnection(
-            self._events
-        )
-        with events:
-            tasks: dict[str, asyncio.Task[None]] = {}
-            while True:
-                try:
-                    ev = await events.recv()
-                except asyncio.CancelledError:
-                    return
-                if isinstance(ev, Shutdown):
-                    self._log("got shutdown event [async]")
-                    return
-                if isinstance(ev, PredictionInput):
-                    # keep track of these so they can be cancelled
-                    tasks[ev.id] = asyncio.create_task(self._predict_async(ev))
-                elif isinstance(ev, Cancel):
-                    # in async mode, cancel signals are ignored
-                    # only Cancel events are ignored
-                    if ev.id in tasks:
-                        tasks[ev.id].cancel()
-                    else:
-                        print(f"Got unexpected cancellation: {ev}", file=sys.stderr)
+        await self._async_init()
+        assert self._events_async
+        tasks: dict[str, asyncio.Task[None]] = {}
+        while True:
+            try:
+                ev = await self._events_async.recv()
+            except asyncio.CancelledError:
+                break
+            if isinstance(ev, Shutdown):
+                self._log("got shutdown event [async]")
+                break # should this be return?
+            if isinstance(ev, PredictionInput):
+                # keep track of these so they can be cancelled
+                tasks[ev.id] = asyncio.create_task(self._predict_async(ev))
+            elif isinstance(ev, Cancel):
+                # in async mode, cancel signals are ignored
+                # only Cancel events are ignored
+                if ev.id in tasks:
+                    tasks[ev.id].cancel()
                 else:
-                    print(f"Got unexpected event: {ev}", file=sys.stderr)
+                    print(f"Got unexpected cancellation: {ev}", file=sys.stderr)
+            else:
+                print(f"Got unexpected event: {ev}", file=sys.stderr)
+        await self._stream_redirector.shutdown_async()
+        self._events_async.close()
 
     def _loop(self) -> None:
         if is_async(get_predict(self._predictor)):
@@ -254,17 +280,24 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             self.prediction_id_context.reset(token)
             self._cancelable = False
         self._stream_redirector.drain()
-        self._events.send((id, done))
+        self.send((id, done))
 
     def _emit_metric(self, name: str, value: "int | float") -> None:
         prediction_id = self.prediction_id_context.get(None)
         if prediction_id is None:
             raise Exception("Tried to emit a metric outside a prediction context")
-        self._events.send((prediction_id, PredictionMetric(name, value)))
+        self.send((prediction_id, PredictionMetric(name, value)))
+
+    def send(self, obj: Any) -> None:
+        if self._events_async:
+            self._events_async.send(obj)
+        else:
+            with self._sync_events_lock:
+                self._events.send(obj)
 
     def _mk_send(self, id: str) -> Callable[[PublicEventType], None]:
         def send(event: PublicEventType) -> None:
-            self._events.send((id, event))
+            self.send((id, event))
 
         return send
 
@@ -309,7 +342,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
     def _log(self, *messages: str, source: str = "stderr") -> None:
         id = self.prediction_id_context.get("LOG")
-        self._events.send((id, Log(" ".join(messages), source=source)))
+        self.send((id, Log(" ".join(messages), source=source)))
 
     def _stream_write_hook(
         self, stream_name: str, original_stream: TextIO, data: str
@@ -317,7 +350,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if self._tee_output:
             original_stream.write(data)
             original_stream.flush()
-        # this won't work, this fn gets called from a thread, not the async task
+        # this won't record prediction_id, because
+        # this fn gets called from a thread, not the async task
         self._log(data, source=stream_name)
 
 
