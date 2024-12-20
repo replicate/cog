@@ -27,7 +27,7 @@ ENTRYPOINT ["/sbin/tini", "--"]
 }
 
 func getWheelName() string {
-	files, err := cogEmbed.ReadDir("embed")
+	files, err := CogEmbed.ReadDir("embed")
 	if err != nil {
 		panic(err)
 	}
@@ -329,7 +329,7 @@ build:
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(tmpDir))
 
-	gen, err := NewGenerator(conf, tmpDir)
+	gen, err := NewStandardGenerator(conf, tmpDir)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
@@ -770,7 +770,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
 
-	gen, err := NewGenerator(conf, tmpDir)
+	gen, err := NewStandardGenerator(conf, tmpDir)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")

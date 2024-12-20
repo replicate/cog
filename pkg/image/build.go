@@ -54,7 +54,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 			return fmt.Errorf("Failed to build Docker image: %w", err)
 		}
 	} else {
-		generator, err := dockerfile.NewGenerator(cfg, dir)
+		generator, err := dockerfile.NewGenerator(cfg, dir, fastFlag)
 		if err != nil {
 			return fmt.Errorf("Error creating Dockerfile generator: %w", err)
 		}
@@ -244,7 +244,7 @@ func BuildBase(cfg *config.Config, dir string, useCudaBaseImage string, useCogBa
 	imageName := config.BaseDockerImageName(dir)
 
 	console.Info("Building Docker image from environment in cog.yaml...")
-	generator, err := dockerfile.NewGenerator(cfg, dir)
+	generator, err := dockerfile.NewGenerator(cfg, dir, false)
 	if err != nil {
 		return "", fmt.Errorf("Error creating Dockerfile generator: %w", err)
 	}
