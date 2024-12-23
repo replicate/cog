@@ -152,18 +152,16 @@ func (g *StandardGenerator) GenerateInitialSteps() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	pipInstalls, err := g.pipInstalls()
+	if err != nil {
+		return "", err
+	}
+	installCog, err := g.installCog()
+	if err != nil {
+		return "", err
+	}
 
 	if g.IsUsingCogBaseImage() {
-		pipInstalls, err := g.pipInstalls()
-		if err != nil {
-			return "", err
-		}
-
-		installCog, err := g.installCog()
-		if err != nil {
-			return "", err
-		}
-
 		steps := []string{
 			"#syntax=docker/dockerfile:1.4",
 			"FROM " + baseImage,
@@ -179,19 +177,15 @@ func (g *StandardGenerator) GenerateInitialSteps() (string, error) {
 		return joinStringsWithoutLineSpace(steps), nil
 	}
 
-	pipInstallStage, err := g.pipInstallStage(aptInstalls)
-	if err != nil {
-		return "", err
-	}
-
 	steps := []string{
 		"#syntax=docker/dockerfile:1.4",
-		pipInstallStage,
 		"FROM " + baseImage,
 		g.preamble(),
 		g.installTini(),
+		aptInstalls,
 		installPython,
-		g.copyPipPackagesFromInstallStage(),
+		pipInstalls,
+		installCog,
 	}
 	if g.precompile {
 		steps = append(steps, PrecompilePythonCommand)
@@ -431,9 +425,6 @@ func (g *StandardGenerator) installCog() (string, error) {
 		return "", err
 	}
 	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir"
-	if !g.IsUsingCogBaseImage() {
-		pipInstallLine += " -t /dep"
-	}
 	pipInstallLine += " " + containerPath
 	// Install pydantic<2 for now, installing pydantic>2 wouldn't allow a downgrade later,
 	// but upgrading works fine
@@ -476,6 +467,25 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
+	return strings.Join([]string{
+		copyLine[0],
+		CFlags,
+		pipInstallLine,
+		"ENV CFLAGS=",
+	}, "\n"), nil
+}
+
+func (g *StandardGenerator) pipInstall() (string, error) {
+	copyLine, containerPath, err := g.writeTemp("requirements.txt", []byte(g.pythonRequirementsContents))
+	if err != nil {
+		return "", err
+	}
+
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r " + containerPath
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
+
 	return strings.Join([]string{
 		copyLine[0],
 		CFlags,
