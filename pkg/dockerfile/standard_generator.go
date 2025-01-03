@@ -152,18 +152,16 @@ func (g *StandardGenerator) GenerateInitialSteps() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	pipInstalls, err := g.pipInstalls()
+	if err != nil {
+		return "", err
+	}
+	installCog, err := g.installCog()
+	if err != nil {
+		return "", err
+	}
 
 	if g.IsUsingCogBaseImage() {
-		pipInstalls, err := g.pipInstalls()
-		if err != nil {
-			return "", err
-		}
-
-		installCog, err := g.installCog()
-		if err != nil {
-			return "", err
-		}
-
 		steps := []string{
 			"#syntax=docker/dockerfile:1.4",
 			"FROM " + baseImage,
@@ -179,19 +177,15 @@ func (g *StandardGenerator) GenerateInitialSteps() (string, error) {
 		return joinStringsWithoutLineSpace(steps), nil
 	}
 
-	pipInstallStage, err := g.pipInstallStage(aptInstalls)
-	if err != nil {
-		return "", err
-	}
-
 	steps := []string{
 		"#syntax=docker/dockerfile:1.4",
-		pipInstallStage,
 		"FROM " + baseImage,
 		g.preamble(),
 		g.installTini(),
+		aptInstalls,
 		installPython,
-		g.copyPipPackagesFromInstallStage(),
+		pipInstalls,
+		installCog,
 	}
 	if g.precompile {
 		steps = append(steps, PrecompilePythonCommand)
@@ -431,9 +425,6 @@ func (g *StandardGenerator) installCog() (string, error) {
 		return "", err
 	}
 	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir"
-	if !g.IsUsingCogBaseImage() {
-		pipInstallLine += " -t /dep"
-	}
 	pipInstallLine += " " + containerPath
 	// Install pydantic<2 for now, installing pydantic>2 wouldn't allow a downgrade later,
 	// but upgrading works fine
@@ -482,78 +473,6 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 		pipInstallLine,
 		"ENV CFLAGS=",
 	}, "\n"), nil
-}
-
-func (g *StandardGenerator) pipInstallStage(aptInstalls string) (string, error) {
-	installCog, err := g.installCog()
-	if err != nil {
-		return "", err
-	}
-	g.pythonRequirementsContents, err = g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH, []string{})
-	if err != nil {
-		return "", err
-	}
-
-	pipStageImage := "python:" + g.Config.Build.PythonVersion
-	if strings.Trim(g.pythonRequirementsContents, "") == "" {
-		return `FROM ` + pipStageImage + ` as deps
-` + aptInstalls + `
-` + installCog, nil
-	}
-
-	console.Debugf("Generated requirements.txt:\n%s", g.pythonRequirementsContents)
-	copyLine, containerPath, err := g.writeTemp("requirements.txt", []byte(g.pythonRequirementsContents))
-	if err != nil {
-		return "", err
-	}
-
-	// Not slim, so that we can compile wheels
-	fromLine := `FROM ` + pipStageImage + ` as deps`
-	// Sometimes, in order to run `pip install` successfully, some system packages need to be installed
-	// or some other change needs to happen
-	// this is a bodge to support that
-	// it will be reverted when we add custom dockerfiles
-	buildStageDeps := os.Getenv("COG_EXPERIMENTAL_BUILD_STAGE_DEPS")
-	if buildStageDeps != "" {
-		fromLine = fromLine + "\nRUN " + buildStageDeps
-	}
-
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install -t /dep -r " + containerPath
-	if g.strip {
-		pipInstallLine += " && " + StripDebugSymbolsCommand
-	}
-
-	lines := []string{
-		fromLine,
-		aptInstalls,
-		installCog,
-		copyLine[0],
-		CFlags,
-		pipInstallLine,
-		"ENV CFLAGS=",
-	}
-	return strings.Join(lines, "\n"), nil
-}
-
-// copyPipPackagesFromInstallStage copies the Python dependencies installed in the deps stage into the main image
-func (g *StandardGenerator) copyPipPackagesFromInstallStage() string {
-	// placing packages in workdir makes imports faster but seems to break integration tests
-	// return "COPY --from=deps --link /dep COPY --from=deps /src"
-	// ...except it's actually /root/.pyenv/versions/3.8.17/lib/python3.8/site-packages
-	py := g.Config.Build.PythonVersion
-	if g.Config.Build.GPU && (g.useCudaBaseImage || g.IsUsingCogBaseImage()) {
-		// this requires buildkit!
-		// we should check for buildkit and otherwise revert to symlinks or copying into /src
-		// we mount to avoid copying, which avoids having two copies in this layer
-		return `
-RUN --mount=type=bind,from=deps,source=/dep,target=/dep \
-    cp -rf /dep/* $(pyenv prefix)/lib/python*/site-packages; \
-    cp -rf /dep/bin/* $(pyenv prefix)/bin; \
-    pyenv rehash
-`
-	}
-
-	return "COPY --from=deps --link /dep /usr/local/lib/python" + py + "/site-packages"
 }
 
 func (g *StandardGenerator) runCommands() (string, error) {
