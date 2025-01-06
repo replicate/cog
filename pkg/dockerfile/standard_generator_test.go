@@ -87,6 +87,7 @@ func TestGenerateEmptyCPU(t *testing.T) {
 	conf, err := config.FromYAML([]byte(`
 build:
   gpu: false
+  python_version: "3.12"
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
@@ -121,6 +122,7 @@ func TestGenerateEmptyGPU(t *testing.T) {
 	conf, err := config.FromYAML([]byte(`
 build:
   gpu: true
+  python_version: "3.12"
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
@@ -155,6 +157,7 @@ func TestGenerateFullCPU(t *testing.T) {
 	conf, err := config.FromYAML([]byte(`
 build:
   gpu: false
+  python_version: "3.12"
   system_packages:
     - ffmpeg
     - cowsay
@@ -209,6 +212,7 @@ func TestGenerateFullGPU(t *testing.T) {
 	conf, err := config.FromYAML([]byte(`
 build:
   gpu: true
+  python_version: "3.12"
   system_packages:
     - ffmpeg
     - cowsay
@@ -264,6 +268,7 @@ func TestPreInstall(t *testing.T) {
 
 	conf, err := config.FromYAML([]byte(`
 build:
+  python_version: "3.12"
   system_packages:
     - cowsay
   pre_install:
@@ -303,6 +308,7 @@ func TestPythonRequirements(t *testing.T) {
 	require.NoError(t, err)
 	conf, err := config.FromYAML([]byte(`
 build:
+  python_version: "3.12"
   python_requirements: "my-requirements.txt"
 `))
 	require.NoError(t, err)
@@ -349,6 +355,7 @@ func TestGenerateWithLargeModels(t *testing.T) {
 	conf, err := config.FromYAML([]byte(`
 build:
   gpu: true
+  python_version: "3.12"
   system_packages:
     - ffmpeg
     - cowsay
@@ -454,6 +461,7 @@ func TestGenerateDockerfileWithoutSeparateWeights(t *testing.T) {
 	conf, err := config.FromYAML([]byte(`
 build:
   gpu: false
+  python_version: "3.12"
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
@@ -487,6 +495,7 @@ func TestGenerateEmptyCPUWithCogBaseImage(t *testing.T) {
 	conf, err := config.FromYAML([]byte(`
 build:
   gpu: false
+  python_version: "3.12"
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
@@ -516,10 +525,10 @@ func TestGeneratePythonCPUWithCogBaseImage(t *testing.T) {
 	conf, err := config.FromYAML([]byte(`
 build:
   gpu: false
+  python_version: "3.12"
   system_packages:
     - ffmpeg
     - cowsay
-  python_version: "3.12"
   python_packages:
     - pandas==1.2.0.12
   run:
@@ -624,6 +633,7 @@ func TestGenerateTorchWithStrippedModifiedVersion(t *testing.T) {
 build:
   gpu: true
   cuda: "11.8"
+  python_version: "3.12"
   system_packages:
     - ffmpeg
     - cowsay
@@ -675,6 +685,7 @@ func TestGenerateWithStrip(t *testing.T) {
 build:
   gpu: true
   cuda: "11.8"
+  python_version: "3.12"
   system_packages:
     - ffmpeg
     - cowsay
@@ -727,6 +738,7 @@ func TestGenerateDoesNotContainDangerousCFlags(t *testing.T) {
 build:
   gpu: true
   cuda: "11.8"
+  python_version: "3.12"
   system_packages:
     - ffmpeg
     - cowsay
@@ -758,6 +770,7 @@ func TestGenerateWithPrecompile(t *testing.T) {
 build:
   gpu: true
   cuda: "11.8"
+  python_version: "3.12"
   system_packages:
     - ffmpeg
     - cowsay
