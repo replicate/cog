@@ -189,14 +189,14 @@ def test_stream_redirector_does_not_leak_file_descriptors(tmpfile, request):
         pass
 
     original_limits = resource.getrlimit(resource.RLIMIT_NOFILE)
-    resource.setrlimit(resource.RLIMIT_NOFILE, (128, original_limits[1]))
+    resource.setrlimit(resource.RLIMIT_NOFILE, (256, original_limits[1]))
     request.addfinalizer(
         lambda: resource.setrlimit(resource.RLIMIT_NOFILE, original_limits)
     )
 
     r = StreamRedirector(callback=_write_hook, streams=[stream])
 
-    for _ in range(10 * 128):
+    for _ in range(10 * 256):
         with r:
             stream.write("one\n")
             stream.flush()
