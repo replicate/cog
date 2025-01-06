@@ -1,3 +1,4 @@
+import sys
 import typing
 
 if typing.TYPE_CHECKING:
@@ -18,4 +19,5 @@ def install_mime_extensions(mimetypes: IMimeTypes) -> None:
 
     # This could also be done by loading a mime.types file from disk using
     # mimetypes.read_mime_types().
-    mimetypes.add_type("image/webp", ".webp")
+    if sys.version_info < (3, 13):
+        mimetypes.add_type("image/webp", ".webp")
