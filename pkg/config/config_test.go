@@ -20,7 +20,7 @@ func TestValidateModelPythonVersion(t *testing.T) {
 	}{
 		{
 			name:          "ValidVersion",
-			pythonVersion: "3.12",
+			pythonVersion: "3.13",
 		},
 		{
 			name:          "MinimumVersion",
@@ -39,7 +39,7 @@ func TestValidateModelPythonVersion(t *testing.T) {
 		},
 		{
 			name:          "FullyQualifiedVersion",
-			pythonVersion: "3.12.1",
+			pythonVersion: "3.13.1",
 		},
 		{
 			name:          "InvalidFormat",

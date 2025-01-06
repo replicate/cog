@@ -48,7 +48,7 @@ jobs:
           go-version-file: go.mod
       - uses: actions/setup-python@v5
         with:
-          python-version: 3.12
+          python-version: 3.13
       - uses: hynek/setup-cached-uv@v2
       - name: Prepare tox
         run: uv pip install --system tox tox-uv
@@ -138,7 +138,7 @@ jobs:
           go-version-file: go.mod
       - uses: actions/setup-python@v5
         with:
-          python-version: 3.12
+          python-version: 3.13
       - uses: hynek/setup-cached-uv@v2
       - name: Prepare tox
         run: uv pip install --system tox tox-uv
@@ -171,7 +171,7 @@ jobs:
           go-version-file: go.mod
       - uses: goreleaser/goreleaser-action@v6
         with:
-          version: '~> v2'
+          version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
