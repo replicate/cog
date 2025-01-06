@@ -7,10 +7,10 @@
     "ExtraIndexURL": "https://download.pytorch.org/whl/cpu",
     "CUDA": null,
     "Pythons": [
+      "3.9",
       "3.10",
       "3.11",
-      "3.12",
-      "3.9"
+      "3.12"
     ]
   },
   {
@@ -21,10 +21,10 @@
     "ExtraIndexURL": "https://download.pytorch.org/whl/cu118",
     "CUDA": "11.8",
     "Pythons": [
+      "3.9",
       "3.10",
       "3.11",
-      "3.12",
-      "3.9"
+      "3.12"
     ]
   },
   {
@@ -35,10 +35,10 @@
     "ExtraIndexURL": "https://download.pytorch.org/whl/cu121",
     "CUDA": "12.1",
     "Pythons": [
+      "3.9",
       "3.10",
       "3.11",
-      "3.12",
-      "3.9"
+      "3.12"
     ]
   },
   {
@@ -49,10 +49,10 @@
     "ExtraIndexURL": "https://download.pytorch.org/whl/cu124",
     "CUDA": "12.4",
     "Pythons": [
+      "3.9",
       "3.10",
       "3.11",
-      "3.12",
-      "3.9"
+      "3.12"
     ]
   },
   {
@@ -63,11 +63,11 @@
     "ExtraIndexURL": "https://download.pytorch.org/whl/cpu",
     "CUDA": null,
     "Pythons": [
+      "3.9",
       "3.10",
       "3.11",
       "3.12",
-      "3.13",
-      "3.9"
+      "3.13"
     ]
   },
   {
@@ -78,11 +78,11 @@
     "ExtraIndexURL": "https://download.pytorch.org/whl/cu118",
     "CUDA": "11.8",
     "Pythons": [
+      "3.9",
       "3.10",
       "3.11",
       "3.12",
-      "3.13",
-      "3.9"
+      "3.13"
     ]
   },
   {
@@ -93,12 +93,11 @@
     "ExtraIndexURL": "https://download.pytorch.org/whl/cu121",
     "CUDA": "12.1",
     "Pythons": [
+      "3.9",
       "3.10",
       "3.11",
       "3.12",
-      "3.13",
-      "3.9",
-      "3.10"
+      "3.13"
     ]
   },
   {
@@ -109,11 +108,11 @@
     "ExtraIndexURL": "https://download.pytorch.org/whl/cu124",
     "CUDA": "12.4",
     "Pythons": [
+      "3.9",
       "3.10",
       "3.11",
       "3.12",
-      "3.13",
-      "3.9"
+      "3.13"
     ]
   },
   {
