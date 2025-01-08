@@ -1,0 +1,10 @@
+build:
+  gpu: true
+  python_version: "3.9"
+  python_packages:
+    - "torch==2.0.1+cu118"
+  system_packages:
+    - "git"
+  run:
+    - command: git --version
+predict: "predict.py:Predictor"
