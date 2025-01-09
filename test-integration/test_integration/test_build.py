@@ -401,4 +401,6 @@ def test_cog_installs_apt_packages(docker_image):
         cwd=project_dir,
         capture_output=True,
     )
+    # Test that the build completes successfully.
+    # If the apt-packages weren't installed the run command would fail.
     assert build_process.returncode == 0
