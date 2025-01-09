@@ -2,18 +2,22 @@ package dockerfile
 
 import (
 	"os"
+	"os/user"
 	"path"
 	"path/filepath"
 )
 
 func UserCache() (string, error) {
-	path, err := filepath.Abs("~/.cog/cache")
+	usr, err := user.Current()
 	if err != nil {
 		return "", err
 	}
+
+	path := filepath.Join(usr.HomeDir, ".cog/cache")
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return "", err
 	}
+
 	return path, nil
 }
 

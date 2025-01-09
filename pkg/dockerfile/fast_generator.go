@@ -10,6 +10,8 @@ import (
 	"github.com/replicate/cog/pkg/weights"
 )
 
+const FUSE_RPC_WEIGHTS_PATH = "/srv/r8/fuse-rpc/weights"
+
 type FastGenerator struct {
 	Config *config.Config
 	Dir    string
@@ -74,11 +76,18 @@ func (g *FastGenerator) generate() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	lines := []string{}
 	lines, err = g.generateMonobase(lines, tmpDir)
 	if err != nil {
 		return "", err
 	}
+
+	lines, err = g.copyWeights(lines)
+	if err != nil {
+		return "", err
+	}
+
 	return strings.Join(lines, "\n"), nil
 }
 
@@ -106,36 +115,72 @@ func (g *FastGenerator) copyCog(tmpDir string) (string, error) {
 }
 
 func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]string, error) {
+	lines = append(lines, []string{
+		"FROM monobase:latest",
+	}...)
+
 	cogPath, err := g.copyCog(tmpDir)
 	if err != nil {
 		return nil, err
 	}
+
+	lines = append(lines, []string{
+		"ENV R8_COG_VERSION=\"file:///buildtmp/" + filepath.Base(cogPath) + "\"",
+	}...)
+
 	relativeTmpDir, err := filepath.Rel(g.Dir, tmpDir)
 	if err != nil {
 		return nil, err
 	}
 	skipCudaArg := "--skip-cuda"
-	cudaVersion := "12.4"
-	cudnnVersion := "9"
 	if g.Config.Build.GPU {
 		skipCudaArg = ""
-		cudaVersion = g.Config.Build.CUDA
-		cudnnVersion = g.Config.Build.CuDNN
+		cudaVersion := g.Config.Build.CUDA
+		cudnnVersion := g.Config.Build.CuDNN
+		lines = append(lines, []string{
+			"ENV R8_CUDA_VERSION=" + cudaVersion,
+			"ENV R8_CUDNN_VERSION=" + cudnnVersion,
+			"ENV R8_CUDA_PREFIX=https://monobase.replicate.delivery/cuda",
+			"ENV R8_CUDNN_PREFIX=https://monobase.replicate.delivery/cudnn",
+		}...)
 	}
-	torchVersion, err := g.Config.TorchVersion()
+
+	lines = append(lines, []string{
+		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
+	}...)
+
+	torchVersion, ok := g.Config.TorchVersion()
+	if ok {
+		lines = append(lines, []string{
+			"ENV R8_TORCH_VERSION=" + torchVersion,
+		}...)
+	}
+
+	return append(lines, []string{
+		"RUN --mount=type=bind,source=\"" + relativeTmpDir + "\",target=/buildtmp /opt/r8/monobase/build.sh " + skipCudaArg + " --mini",
+	}...), nil
+}
+
+func (g *FastGenerator) copyWeights(lines []string) ([]string, error) {
+	weights, err := FindWeights(g.Dir)
 	if err != nil {
 		return nil, err
 	}
 
+	if len(weights) == 0 {
+		return lines, nil
+	}
+
+	commands := []string{}
+	for sha256, file := range weights {
+		rel_path, err := filepath.Rel(g.Dir, file)
+		if err != nil {
+			return nil, err
+		}
+		commands = append(commands, "cp /src/"+rel_path+" "+filepath.Join(FUSE_RPC_WEIGHTS_PATH, sha256))
+	}
+
 	return append(lines, []string{
-		"FROM monobase:latest",
-		"ENV R8_COG_VERSION=\"file:///buildtmp/" + filepath.Base(cogPath) + "\"",
-		"ENV R8_CUDA_VERSION=" + cudaVersion,
-		"ENV R8_CUDNN_VERSION=" + cudnnVersion,
-		"ENV R8_CUDA_PREFIX=https://monobase.replicate.delivery/cuda",
-		"ENV R8_CUDNN_PREFIX=https://monobase.replicate.delivery/cudnn",
-		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
-		"ENV R8_TORCH_VERSION=" + torchVersion,
-		"RUN --mount=type=bind,source=\"" + relativeTmpDir + "\",target=/buildtmp /opt/r8/monobase/build.sh " + skipCudaArg + " --mini",
+		"RUN --mount=type=bind,ro,source=.,target=/src mkdir -p " + FUSE_RPC_WEIGHTS_PATH + " && " + strings.Join(commands, " && "),
 	}...), nil
 }
