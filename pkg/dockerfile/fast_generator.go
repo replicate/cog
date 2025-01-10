@@ -1,8 +1,10 @@
 package dockerfile
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -88,6 +90,16 @@ func (g *FastGenerator) generate() (string, error) {
 		return "", err
 	}
 
+	lines, err = g.install(lines)
+	if err != nil {
+		return "", err
+	}
+
+	lines, err = g.entrypoint(lines)
+	if err != nil {
+		return "", err
+	}
+
 	return strings.Join(lines, "\n"), nil
 }
 
@@ -116,7 +128,7 @@ func (g *FastGenerator) copyCog(tmpDir string) (string, error) {
 
 func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]string, error) {
 	lines = append(lines, []string{
-		"FROM monobase:latest",
+		"FROM r8.im/monobase:latest",
 	}...)
 
 	cogPath, err := g.copyCog(tmpDir)
@@ -182,5 +194,68 @@ func (g *FastGenerator) copyWeights(lines []string) ([]string, error) {
 
 	return append(lines, []string{
 		"RUN --mount=type=bind,ro,source=.,target=/src mkdir -p " + FUSE_RPC_WEIGHTS_PATH + " && " + strings.Join(commands, " && "),
+	}...), nil
+}
+
+func (g *FastGenerator) install(lines []string) ([]string, error) {
+	// Copy over source
+	commands := []string{
+		"mkdir /src && cp -r /srctmp /src && rm -rf /src/.cog",
+	}
+	mounts := []string{
+		"--mount=type=bind,ro,source=.,target=/srctmp",
+	}
+
+	// Install apt packages
+	packages := g.Config.Build.SystemPackages
+	if len(packages) > 0 {
+		mounts = append(mounts, "--mount=type=cache,target=/var/cache/apt,id=apt-cache")
+		aptCommand := "apt-get update && apt-get install -qqy "
+		aptCommand += strings.Join(packages, " ")
+		aptCommand += " && rm -rf /var/lib/apt/lists/*"
+		commands = append(commands, aptCommand)
+	}
+
+	// Install python packages
+	packages, err := g.pythonPackages()
+	if err != nil {
+		return nil, err
+	}
+	if len(packages) > 0 {
+		mounts = append(mounts, "--mount=type=cache,target=/root/.cache,id=pip-cache")
+		pipCommand := "uv pip install "
+		pipCommand += strings.Join(packages, " ")
+		commands = append(commands, pipCommand)
+	}
+
+	// Check that we have no run commands
+	if len(g.Config.Build.Run) > 0 {
+		return nil, fmt.Errorf("Use of run commands is disallowed in fast push.")
+	}
+
+	return append(lines, []string{
+		"RUN " + strings.Join(mounts, " ") + " " + strings.Join(commands, " && "),
+	}...), nil
+}
+
+func (g *FastGenerator) pythonPackages() ([]string, error) {
+	packages := g.Config.Build.PythonPackages
+
+	fh, err := os.Open(path.Join(g.Dir, g.Config.Build.PythonRequirements))
+	if err != nil {
+		return nil, err
+	}
+	scanner := bufio.NewScanner(fh)
+	for scanner.Scan() {
+		packages = append(packages, scanner.Text())
+	}
+
+	return packages, nil
+}
+
+func (g *FastGenerator) entrypoint(lines []string) ([]string, error) {
+	return append(lines, []string{
+		"ENTRYPOINT [\"/usr/bin/tini\", \"--\", \"/opt/r8/monobase/exec.sh\", \"bash\", \"-l\"]",
+		"CMD [\"python\", \"-m\", \"cog.server.http\"]",
 	}...), nil
 }
