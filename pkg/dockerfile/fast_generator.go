@@ -13,6 +13,7 @@ import (
 )
 
 const FUSE_RPC_WEIGHTS_PATH = "/srv/r8/fuse-rpc/weights"
+const MONOBASE_CACHE_PATH = "/var/cache/monobase"
 
 type FastGenerator struct {
 	Config *config.Config
@@ -169,7 +170,7 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 	}
 
 	return append(lines, []string{
-		"RUN --mount=type=bind,source=\"" + relativeTmpDir + "\",target=/buildtmp /opt/r8/monobase/build.sh " + skipCudaArg + " --mini",
+		"RUN --mount=type=bind,source=\"" + relativeTmpDir + "\",target=/buildtmp --mount=type=cache,from=usercache,target=\"" + MONOBASE_CACHE_PATH + "\" /opt/r8/monobase/build.sh " + skipCudaArg + " --mini --cache=" + MONOBASE_CACHE_PATH,
 	}...), nil
 }
 
