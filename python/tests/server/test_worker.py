@@ -142,7 +142,7 @@ SETUP_LOGS_FIXTURES = [
 PREDICT_LOGS_FIXTURES = [
     (
         WorkerConfig("logging"),
-        ("writing from C\nwriting with print\n"),
+        "writing from C\nwriting with print\n",
         ("WARNING:root:writing log message\nwriting to stderr\n"),
     ),
     (
