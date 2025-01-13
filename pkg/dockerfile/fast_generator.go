@@ -184,24 +184,37 @@ func (g *FastGenerator) copyWeights(lines []string) ([]string, error) {
 		return lines, nil
 	}
 
-	commands := []string{}
-	for sha256, file := range weights {
-		rel_path, err := filepath.Rel(g.Dir, file)
+	var rsync = "rsync -av --mkpath"
+	for _, file := range weights {
+		relPath, err := filepath.Rel(g.Dir, file)
 		if err != nil {
 			return nil, err
 		}
-		commands = append(commands, "cp /src/"+rel_path+" "+filepath.Join(FUSE_RPC_WEIGHTS_PATH, sha256))
+		rsync += " --include='" + relPath + "'"
+	}
+	rsync += " --exclude='*' srctmp/* src/."
+
+	commands := []string{
+		rsync,
+		"mkdir -p " + FUSE_RPC_WEIGHTS_PATH,
+	}
+	for sha256, file := range weights {
+		relPath, err := filepath.Rel(g.Dir, file)
+		if err != nil {
+			return nil, err
+		}
+		commands = append(commands, "mv \"/src/"+relPath+"\" \""+filepath.Join(FUSE_RPC_WEIGHTS_PATH, sha256)+"\"")
 	}
 
 	return append(lines, []string{
-		"RUN --mount=type=bind,ro,source=.,target=/src mkdir -p " + FUSE_RPC_WEIGHTS_PATH + " && " + strings.Join(commands, " && "),
+		"RUN --mount=type=bind,ro,source=.,target=/srctmp " + strings.Join(commands, " && "),
 	}...), nil
 }
 
 func (g *FastGenerator) install(lines []string) ([]string, error) {
 	// Copy over source
 	commands := []string{
-		"mkdir /src && cp -r /srctmp /src && rm -rf /src/.cog",
+		"mkdir -p /src && cp -r /srctmp /src && rm -rf /src/.cog",
 	}
 	mounts := []string{
 		"--mount=type=bind,ro,source=.,target=/srctmp",
