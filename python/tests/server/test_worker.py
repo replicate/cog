@@ -134,7 +134,7 @@ SETUP_LOGS_FIXTURES = [
     ),
     (
         WorkerConfig("logging_async", setup=False, min_python=(3, 11), is_async=True),
-        ("writing to stdout at import time\nsetting up predictor\n"),
+        "writing to stdout at import time\nsetting up predictor\n",
         "writing to stderr at import time\n",
     ),
 ]
