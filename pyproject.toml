@@ -16,13 +16,14 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
 ]
 requires-python = ">=3.8"
 
 dependencies = [
   # intentionally loose. perhaps these should be vendored to not collide with user code?
   "attrs>=20.1,<24",
-  "fastapi>=0.75.2,<0.111.0",
+  "fastapi>=0.75.2,<0.116.0",
   "pydantic>=1.9,<3",
   "PyYAML",
   "requests>=2,<3",
