@@ -355,12 +355,12 @@ class PredictTask(Task[schema.PredictionResponse]):
         self._fut.result(timeout=timeout)
 
     def set_output_type(self, *, multi: bool) -> None:
-        assert (
-            self._output_type_multi is None
-        ), "Predictor unexpectedly returned multiple output types"
-        assert (
-            self._p.output is None
-        ), "Predictor unexpectedly returned output type after output"
+        assert self._output_type_multi is None, (
+            "Predictor unexpectedly returned multiple output types"
+        )
+        assert self._p.output is None, (
+            "Predictor unexpectedly returned output type after output"
+        )
 
         if multi:
             self._p.output = []
@@ -368,9 +368,9 @@ class PredictTask(Task[schema.PredictionResponse]):
         self._output_type_multi = multi
 
     def append_output(self, output: Any) -> None:
-        assert (
-            self._output_type_multi is not None
-        ), "Predictor unexpectedly returned output before output type"
+        assert self._output_type_multi is not None, (
+            "Predictor unexpectedly returned output before output type"
+        )
 
         uploaded_output = self._upload_files(output)
         if self._output_type_multi:

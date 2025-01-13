@@ -21,9 +21,9 @@ def test_predictor_predict_ref_env_var():
     config = Config()
     config_predict_ref = config.predictor_predict_ref
     del os.environ[COG_PREDICT_TYPE_STUB_ENV_VAR]
-    assert (
-        config_predict_ref == predict_ref
-    ), "Predict Reference should come from the environment variable."
+    assert config_predict_ref == predict_ref, (
+        "Predict Reference should come from the environment variable."
+    )
 
 
 def test_predictor_predict_ref_no_env_var():
@@ -40,9 +40,9 @@ predict: "predict.py:Predictor"
 """)
         config = Config()
         config_predict_ref = config.predictor_predict_ref
-        assert (
-            config_predict_ref == "predict.py:Predictor"
-        ), "Predict Reference should come from the cog config file."
+        assert config_predict_ref == "predict.py:Predictor", (
+            "Predict Reference should come from the cog config file."
+        )
     os.chdir(pwd)
 
 
@@ -59,9 +59,9 @@ def test_config_initial_values():
         del os.environ[COG_PREDICT_TYPE_STUB_ENV_VAR]
     config = Config(config={"predict": "predict.py:Predictor"})
     config_predict_ref = config.predictor_predict_ref
-    assert (
-        config_predict_ref == "predict.py:Predictor"
-    ), "Predict Reference should come from the initial config dictionary."
+    assert config_predict_ref == "predict.py:Predictor", (
+        "Predict Reference should come from the initial config dictionary."
+    )
 
 
 def test_predictor_train_ref_env_var():
@@ -70,9 +70,9 @@ def test_predictor_train_ref_env_var():
     config = Config()
     config_train_ref = config.predictor_train_ref
     del os.environ[COG_TRAIN_TYPE_STUB_ENV_VAR]
-    assert (
-        config_train_ref == train_ref
-    ), "Train Reference should come from the environment variable."
+    assert config_train_ref == train_ref, (
+        "Train Reference should come from the environment variable."
+    )
 
 
 def test_predictor_train_ref_no_env_var():
@@ -81,9 +81,9 @@ def test_predictor_train_ref_no_env_var():
         del os.environ[COG_TRAIN_TYPE_STUB_ENV_VAR]
     config = Config(config={"train": train_ref})
     config_train_ref = config.predictor_train_ref
-    assert (
-        config_train_ref == train_ref
-    ), "Train Reference should come from the initial config dictionary."
+    assert config_train_ref == train_ref, (
+        "Train Reference should come from the initial config dictionary."
+    )
 
 
 def test_requires_gpu_env_var():
@@ -100,27 +100,27 @@ def test_requires_gpu_no_env_var():
         del os.environ[COG_GPU_ENV_VAR]
     config = Config(config={"build": {"gpu": False}})
     config_gpu = config.requires_gpu
-    assert (
-        not config_gpu
-    ), "Requires GPU should come from the initial config dictionary."
+    assert not config_gpu, (
+        "Requires GPU should come from the initial config dictionary."
+    )
 
 
 def test_get_predictor_ref_predict():
     train_ref = "predict.py:Predictor"
     config = Config(config={"train": train_ref})
     config_train_ref = config.get_predictor_ref(Mode.TRAIN)
-    assert (
-        train_ref == config_train_ref
-    ), "The train ref should equal the config train ref."
+    assert train_ref == config_train_ref, (
+        "The train ref should equal the config train ref."
+    )
 
 
 def test_get_predictor_ref_train():
     predict_ref = "predict.py:Predictor"
     config = Config(config={"predict": predict_ref})
     config_predict_ref = config.get_predictor_ref(Mode.PREDICT)
-    assert (
-        predict_ref == config_predict_ref
-    ), "The predict ref should equal the config predict ref."
+    assert predict_ref == config_predict_ref, (
+        "The predict ref should equal the config predict ref."
+    )
 
 
 def test_get_predictor_types_with_env_var():
@@ -144,9 +144,9 @@ class Predictor(BasePredictor):
     input_type, output_type, is_async = config.get_predictor_types(Mode.PREDICT)
     del os.environ[COG_PREDICT_CODE_STRIP_ENV_VAR]
     del os.environ[COG_PREDICT_TYPE_STUB_ENV_VAR]
-    assert (
-        str(input_type) == "<class 'cog.predictor.Input'>"
-    ), "Predict input type should be the predictor Input."
+    assert str(input_type) == "<class 'cog.predictor.Input'>", (
+        "Predict input type should be the predictor Input."
+    )
     assert (
         str(output_type) == "<class 'cog.predictor.get_output_type.<locals>.Output'>"
     ), "Predict output type should be the predictor Output."
@@ -179,9 +179,9 @@ class Predictor(BasePredictor):
         predict_ref = f"{predict_python_file}:Predictor"
         config = Config(config={"predict": predict_ref})
         input_type, output_type, is_async = config.get_predictor_types(Mode.PREDICT)
-        assert (
-            str(input_type) == "<class 'cog.predictor.Input'>"
-        ), "Predict input type should be the predictor Input."
+        assert str(input_type) == "<class 'cog.predictor.Input'>", (
+            "Predict input type should be the predictor Input."
+        )
         assert (
             str(output_type)
             == "<class 'cog.predictor.get_output_type.<locals>.Output'>"
@@ -215,9 +215,9 @@ class Predictor(BasePredictor):
         predict_ref = f"{predict_python_file}:Predictor"
         config = Config(config={"predict": predict_ref})
         input_type, output_type, is_async = config.get_predictor_types(Mode.PREDICT)
-        assert (
-            str(input_type) == "<class 'cog.predictor.Input'>"
-        ), "Predict input type should be the predictor Input."
+        assert str(input_type) == "<class 'cog.predictor.Input'>", (
+            "Predict input type should be the predictor Input."
+        )
         assert (
             str(output_type)
             == "<class 'cog.predictor.get_output_type.<locals>.Output'>"
@@ -249,12 +249,12 @@ def train(
         train_ref = f"{predict_python_file}:train"
         config = Config(config={"train": train_ref})
         input_type, output_type, is_async = config.get_predictor_types(Mode.TRAIN)
-        assert (
-            str(input_type) == "<class 'cog.predictor.TrainingInput'>"
-        ), "Predict input type should be the training Input."
-        assert str(output_type).endswith(
-            "TrainingOutput'>"
-        ), "Predict output type should be the training Output."
+        assert str(input_type) == "<class 'cog.predictor.TrainingInput'>", (
+            "Predict input type should be the training Input."
+        )
+        assert str(output_type).endswith("TrainingOutput'>"), (
+            "Predict output type should be the training Output."
+        )
         assert not is_async, "is_async should be False for normal functions"
 
 
@@ -282,10 +282,10 @@ async def train(
         train_ref = f"{predict_python_file}:train"
         config = Config(config={"train": train_ref})
         input_type, output_type, is_async = config.get_predictor_types(Mode.TRAIN)
-        assert (
-            str(input_type) == "<class 'cog.predictor.TrainingInput'>"
-        ), "Predict input type should be the training Input."
-        assert str(output_type).endswith(
-            "TrainingOutput'>"
-        ), "Predict output type should be the training Output."
+        assert str(input_type) == "<class 'cog.predictor.TrainingInput'>", (
+            "Predict input type should be the training Input."
+        )
+        assert str(output_type).endswith("TrainingOutput'>"), (
+            "Predict output type should be the training Output."
+        )
         assert is_async, "is_async should be True for async functions"

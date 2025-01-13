@@ -1,0 +1,8 @@
+build:
+  gpu: true
+  python_version: "3.9"
+  system_packages:
+    - "git"
+  run:
+    - command: git --version
+predict: "predict.py:Predictor"

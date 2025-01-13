@@ -62,7 +62,7 @@ install: $(COG_BINARIES)
 
 .PHONY: clean
 clean:
-	rm -rf build dist pkg/dockerfile/embed
+	rm -rf .tox build dist pkg/dockerfile/embed
 	rm -f $(COG_BINARIES)
 
 .PHONY: test-go

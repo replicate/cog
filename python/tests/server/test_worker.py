@@ -134,7 +134,7 @@ SETUP_LOGS_FIXTURES = [
     ),
     (
         WorkerConfig("logging_async", setup=False, min_python=(3, 11), is_async=True),
-        ("writing to stdout at import time\n" "setting up predictor\n"),
+        "writing to stdout at import time\nsetting up predictor\n",
         "writing to stderr at import time\n",
     ),
 ]
@@ -142,13 +142,13 @@ SETUP_LOGS_FIXTURES = [
 PREDICT_LOGS_FIXTURES = [
     (
         WorkerConfig("logging"),
-        ("writing from C\n" "writing with print\n"),
-        ("WARNING:root:writing log message\n" "writing to stderr\n"),
+        "writing from C\nwriting with print\n",
+        "WARNING:root:writing log message\nwriting to stderr\n",
     ),
     (
         WorkerConfig("logging_async", min_python=(3, 11), is_async=True),
-        ("writing with print\n"),
-        ("WARNING:root:writing log message\n" "writing to stderr\n"),
+        "writing with print\n",
+        "WARNING:root:writing log message\nwriting to stderr\n",
     ),
 ]
 
@@ -214,14 +214,14 @@ class Result:
             if self.output_type.multi:
                 self.output.append(event.payload)
             else:
-                assert (
-                    self.output is None
-                ), "Should not get multiple outputs for output type single"
+                assert self.output is None, (
+                    "Should not get multiple outputs for output type single"
+                )
                 self.output = event.payload
         elif isinstance(event, PredictionOutputType):
-            assert (
-                self.output_type is None
-            ), "Should not get multiple output type events"
+            assert self.output_type is None, (
+                "Should not get multiple output type events"
+            )
             self.output_type = event
             if self.output_type.multi:
                 self.output = []
@@ -863,7 +863,7 @@ class WorkerStateMachine(RuleBasedStateMachine):
             events.append(PredictionOutputType(multi=True))
             for i in range(steps):
                 events.append(
-                    PredictionOutput(payload=f"NAME={name},STEP={i+1}"),
+                    PredictionOutput(payload=f"NAME={name},STEP={i + 1}"),
                 )
 
         events.append(Done(canceled=state.canceled))
@@ -909,7 +909,7 @@ class WorkerStateMachine(RuleBasedStateMachine):
                 assert state.result.output == f"NAME={name}"
             else:
                 assert state.result.output == [
-                    f"NAME={name},STEP={i+1}" for i in range(steps)
+                    f"NAME={name},STEP={i + 1}" for i in range(steps)
                 ]
 
             assert state.result.done == Done()
