@@ -356,10 +356,7 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 			}
 		}
 
-		packageName, err := PackageName(archPkg)
-		if err != nil {
-			return "", err
-		}
+		packageName, _ := PackageName(archPkg)
 		if packageName != "" {
 			foundIdx := -1
 			for i, includePkg := range includePackageNames {

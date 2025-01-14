@@ -691,7 +691,7 @@ func TestSplitPinnedPythonRequirement(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		name, version, findLinks, extraIndexURLs, err := splitPinnedPythonRequirement(tc.input)
+		name, version, findLinks, extraIndexURLs, err := SplitPinnedPythonRequirement(tc.input)
 
 		if tc.expectedError {
 			require.Error(t, err)
