@@ -389,6 +389,23 @@ def test_pip_freeze(docker_image):
     )
 
 
+def test_cog_installs_apt_packages(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/apt-packages"
+    build_process = subprocess.run(
+        [
+            "cog",
+            "build",
+            "-t",
+            docker_image,
+        ],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    # Test that the build completes successfully.
+    # If the apt-packages weren't installed the run command would fail.
+    assert build_process.returncode == 0
+
+
 def test_fast_build(docker_image):
     project_dir = Path(__file__).parent / "fixtures/fast-build"
     weights_file = os.path.join(project_dir, "weights.h5")
