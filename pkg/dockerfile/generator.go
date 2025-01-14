@@ -16,4 +16,5 @@ type Generator interface {
 	GenerateWeightsManifest() (*weights.Manifest, error)
 	GenerateDockerfileWithoutSeparateWeights() (string, error)
 	GenerateModelBase() (string, error)
+	Name() string
 }

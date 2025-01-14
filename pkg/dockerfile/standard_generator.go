@@ -41,6 +41,7 @@ const LDConfigCacheBuildCommand = "RUN find / -type f -name \"*python*.so\" -pri
 const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
 const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
+const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
 
 type StandardGenerator struct {
 	Config *config.Config
@@ -304,6 +305,10 @@ func (g *StandardGenerator) BaseImage() (string, error) {
 		return g.Config.CUDABaseImageTag()
 	}
 	return "python:" + g.Config.Build.PythonVersion + "-slim", nil
+}
+
+func (g *StandardGenerator) Name() string {
+	return STANDARD_GENERATOR_NAME
 }
 
 func (g *StandardGenerator) preamble() string {

@@ -1,6 +1,7 @@
 package dockerfile
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ const FUSE_RPC_WEIGHTS_PATH = "/srv/r8/fuse-rpc/weights"
 const MONOBASE_CACHE_PATH = "/var/cache/monobase"
 const APT_CACHE_MOUNT = "--mount=type=cache,target=/var/cache/apt,id=apt-cache"
 const PIP_CACHE_MOUNT = "--mount=type=cache,target=/root/.cache,id=pip-cache"
+const FAST_GENERATOR_NAME = "FAST_GENERATOR"
 
 type FastGenerator struct {
 	Config *config.Config
@@ -28,11 +30,11 @@ func NewFastGenerator(config *config.Config, dir string) (*FastGenerator, error)
 }
 
 func (g *FastGenerator) GenerateInitialSteps() (string, error) {
-	return "", nil
+	return "", errors.New("GenerateInitialSteps not supported in FastGenerator")
 }
 
 func (g *FastGenerator) BaseImage() (string, error) {
-	return "", nil
+	return "", errors.New("BaseImage not supported in FastGenerator")
 }
 
 func (g *FastGenerator) Cleanup() error {
@@ -44,15 +46,15 @@ func (g *FastGenerator) GenerateDockerfileWithoutSeparateWeights() (string, erro
 }
 
 func (g *FastGenerator) GenerateModelBase() (string, error) {
-	return "", nil
+	return "", errors.New("GenerateModelBase not supported in FastGenerator")
 }
 
 func (g *FastGenerator) GenerateModelBaseWithSeparateWeights(imageName string) (weightsBase string, dockerfile string, dockerignoreContents string, err error) {
-	return "", "", "", nil
+	return "", "", "", errors.New("GenerateModelBaseWithSeparateWeights not supported in FastGenerator")
 }
 
 func (g *FastGenerator) GenerateWeightsManifest() (*weights.Manifest, error) {
-	return nil, nil
+	return nil, errors.New("GenerateWeightsManifest not supported in FastGenerator")
 }
 
 func (g *FastGenerator) IsUsingCogBaseImage() bool {
@@ -72,6 +74,10 @@ func (g *FastGenerator) SetUseCogBaseImagePtr(useCogBaseImage *bool) {
 }
 
 func (g *FastGenerator) SetUseCudaBaseImage(argumentValue string) {
+}
+
+func (g *FastGenerator) Name() string {
+	return FAST_GENERATOR_NAME
 }
 
 func (g *FastGenerator) generate() (string, error) {
