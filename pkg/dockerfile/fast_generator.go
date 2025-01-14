@@ -80,18 +80,23 @@ func (g *FastGenerator) generate() (string, error) {
 		return "", err
 	}
 
+	weights, err := FindWeights(g.Dir, tmpDir)
+	if err != nil {
+		return "", err
+	}
+
 	lines := []string{}
 	lines, err = g.generateMonobase(lines, tmpDir)
 	if err != nil {
 		return "", err
 	}
 
-	lines, err = g.copyWeights(lines, tmpDir)
+	lines, err = g.copyWeights(lines, weights)
 	if err != nil {
 		return "", err
 	}
 
-	lines, err = g.install(lines)
+	lines, err = g.install(lines, weights)
 	if err != nil {
 		return "", err
 	}
@@ -129,6 +134,7 @@ func (g *FastGenerator) copyCog(tmpDir string) (string, error) {
 
 func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]string, error) {
 	lines = append(lines, []string{
+		"# syntax=docker/dockerfile:1-labs",
 		"FROM r8.im/monobase:latest",
 	}...)
 
@@ -174,40 +180,23 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 	}...), nil
 }
 
-func (g *FastGenerator) copyWeights(lines []string, tmpDir string) ([]string, error) {
-	weights, err := FindWeights(g.Dir, tmpDir)
-	if err != nil {
-		return nil, err
-	}
-
+func (g *FastGenerator) copyWeights(lines []string, weights []Weight) ([]string, error) {
 	if len(weights) == 0 {
 		return lines, nil
 	}
 
 	for _, weight := range weights {
-		lines = append(lines, "COPY --link \""+weight.Path+"\" \""+filepath.Join(FUSE_RPC_WEIGHTS_PATH, weight.Digest+"\""))
+		lines = append(lines, "COPY --link \""+weight.Path+"\" \""+filepath.Join(FUSE_RPC_WEIGHTS_PATH, weight.Digest)+"\"")
 	}
 
 	return lines, nil
 }
 
-func (g *FastGenerator) install(lines []string) ([]string, error) {
-	// Copy over source
-	commands := []string{
-		"mkdir -p /src && cp -r /srctmp /src && rm -rf /src/.cog",
-	}
-	mounts := []string{
-		"--mount=type=bind,ro,source=.,target=/srctmp",
-	}
-
+func (g *FastGenerator) install(lines []string, weights []Weight) ([]string, error) {
 	// Install apt packages
 	packages := g.Config.Build.SystemPackages
 	if len(packages) > 0 {
-		mounts = append(mounts, "--mount=type=cache,target=/var/cache/apt,id=apt-cache")
-		aptCommand := "apt-get update && apt-get install -qqy "
-		aptCommand += strings.Join(packages, " ")
-		aptCommand += " && rm -rf /var/lib/apt/lists/*"
-		commands = append(commands, aptCommand)
+		lines = append(lines, "RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache apt-get update && apt-get install -qqy "+strings.Join(packages, " ")+" && rm -rf /var/lib/apt/lists/*")
 	}
 
 	// Install python packages
@@ -216,20 +205,27 @@ func (g *FastGenerator) install(lines []string) ([]string, error) {
 		return nil, err
 	}
 	if len(packages) > 0 {
-		mounts = append(mounts, "--mount=type=cache,target=/root/.cache,id=pip-cache")
-		pipCommand := "uv pip install "
-		pipCommand += strings.Join(packages, " ")
-		commands = append(commands, pipCommand)
+		lines = append(lines, "RUN --mount=type=cache,target=/root/.cache,id=pip-cache uv pip install "+strings.Join(packages, " "))
 	}
 
-	// Check that we have no run commands
-	if len(g.Config.Build.Run) > 0 {
-		return nil, fmt.Errorf("Use of run commands is disallowed in fast push.")
+	// Copy over source / without weights
+	copyCommand := "COPY --link "
+	for _, weight := range weights {
+		copyCommand += "--exclude='" + weight.Path + "' "
+	}
+	copyCommand += ". /src"
+	lines = append(lines, copyCommand)
+
+	// Link to weights
+	if len(weights) > 0 {
+		linkCommands := []string{}
+		for _, weight := range weights {
+			linkCommands = append(linkCommands, "ln -s \""+filepath.Join(FUSE_RPC_WEIGHTS_PATH, weight.Digest)+"\" \"/src/"+weight.Path+"\"")
+		}
+		lines = append(lines, "RUN "+strings.Join(linkCommands, " && "))
 	}
 
-	return append(lines, []string{
-		"RUN " + strings.Join(mounts, " ") + " " + strings.Join(commands, " && "),
-	}...), nil
+	return lines, nil
 }
 
 func (g *FastGenerator) pythonPackages() ([]string, error) {
