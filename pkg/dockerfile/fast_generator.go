@@ -86,7 +86,7 @@ func (g *FastGenerator) generate() (string, error) {
 		return "", err
 	}
 
-	lines, err = g.copyWeights(lines)
+	lines, err = g.copyWeights(lines, tmpDir)
 	if err != nil {
 		return "", err
 	}
@@ -174,8 +174,8 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 	}...), nil
 }
 
-func (g *FastGenerator) copyWeights(lines []string) ([]string, error) {
-	weights, err := FindWeights(g.Dir)
+func (g *FastGenerator) copyWeights(lines []string, tmpDir string) ([]string, error) {
+	weights, err := FindWeights(g.Dir, tmpDir)
 	if err != nil {
 		return nil, err
 	}
@@ -184,31 +184,11 @@ func (g *FastGenerator) copyWeights(lines []string) ([]string, error) {
 		return lines, nil
 	}
 
-	var rsync = "rsync -av --mkpath"
-	for _, file := range weights {
-		relPath, err := filepath.Rel(g.Dir, file)
-		if err != nil {
-			return nil, err
-		}
-		rsync += " --include='" + relPath + "'"
-	}
-	rsync += " --exclude='*' srctmp/* src/."
-
-	commands := []string{
-		rsync,
-		"mkdir -p " + FUSE_RPC_WEIGHTS_PATH,
-	}
-	for sha256, file := range weights {
-		relPath, err := filepath.Rel(g.Dir, file)
-		if err != nil {
-			return nil, err
-		}
-		commands = append(commands, "mv \"/src/"+relPath+"\" \""+filepath.Join(FUSE_RPC_WEIGHTS_PATH, sha256)+"\"")
+	for _, weight := range weights {
+		lines = append(lines, "COPY --link \""+weight.Path+"\" \""+filepath.Join(FUSE_RPC_WEIGHTS_PATH, weight.Digest+"\""))
 	}
 
-	return append(lines, []string{
-		"RUN --mount=type=bind,ro,source=.,target=/srctmp " + strings.Join(commands, " && "),
-	}...), nil
+	return lines, nil
 }
 
 func (g *FastGenerator) install(lines []string) ([]string, error) {
