@@ -73,7 +73,7 @@ func GenerateRequirements(tmpDir string, config *Config) (string, error) {
 	}
 
 	// Write out a new requirements file
-	err = os.WriteFile(requirementsFile, []byte(requirementsContent), 0644)
+	err = os.WriteFile(requirementsFile, []byte(requirementsContent), 0o644)
 	if err != nil {
 		return "", err
 	}

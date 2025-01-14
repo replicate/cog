@@ -112,7 +112,7 @@ func findFullWeights(folder string, weights []Weight, weightFile string) ([]Weig
 	if err != nil {
 		return nil, err
 	}
-	err = os.WriteFile(weightFile, jsonData, 0644)
+	err = os.WriteFile(weightFile, jsonData, 0o644)
 	if err != nil {
 		return nil, err
 	}
