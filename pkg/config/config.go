@@ -220,7 +220,7 @@ func (c *Config) cudaFromTF() (tfVersion string, tfCUDA string, tfCuDNN string, 
 
 func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 	for _, pkg := range c.Build.pythonRequirementsContent {
-		pkgName, version, _, _, err := splitPinnedPythonRequirement(pkg)
+		pkgName, version, _, _, err := SplitPinnedPythonRequirement(pkg)
 		if err != nil {
 			// package is not in package==version format
 			continue
@@ -331,7 +331,11 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 
 	includePackageNames := []string{}
 	for _, pkg := range includePackages {
-		includePackageNames = append(includePackageNames, packageName(pkg))
+		packageName, err := PackageName(pkg)
+		if err != nil {
+			return "", err
+		}
+		includePackageNames = append(includePackageNames, packageName)
 	}
 
 	// Include all the requirements and remove our include packages if they exist
@@ -352,7 +356,10 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 			}
 		}
 
-		packageName := packageName(archPkg)
+		packageName, err := PackageName(archPkg)
+		if err != nil {
+			return "", err
+		}
 		if packageName != "" {
 			foundIdx := -1
 			for i, includePkg := range includePackageNames {
@@ -390,7 +397,7 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 // pythonPackageForArch takes a package==version line and
 // returns a package==version and index URL resolved to the correct GPU package for the given OS and architecture
 func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage string, findLinksList []string, extraIndexURLs []string, err error) {
-	name, version, findLinksList, extraIndexURLs, err := splitPinnedPythonRequirement(pkg)
+	name, version, findLinksList, extraIndexURLs, err := SplitPinnedPythonRequirement(pkg)
 	if err != nil {
 		// It's not pinned, so just return the line verbatim
 		return pkg, []string{}, []string{}, nil
@@ -562,50 +569,6 @@ Compatible cuDNN version is: %s`, c.Build.CuDNN, tfVersion, tfCuDNN)
 	return nil
 }
 
-// splitPythonPackage returns the name, version, findLinks, and extraIndexURLs from a requirements.txt line
-// in the form name==version [--find-links=<findLink>] [-f <findLink>] [--extra-index-url=<extraIndexURL>]
-func splitPinnedPythonRequirement(requirement string) (name string, version string, findLinks []string, extraIndexURLs []string, err error) {
-	pinnedPackageRe := regexp.MustCompile(`(?:([a-zA-Z0-9\-_]+)==([^ ]+)|--find-links=([^\s]+)|-f\s+([^\s]+)|--extra-index-url=([^\s]+))`)
-
-	matches := pinnedPackageRe.FindAllStringSubmatch(requirement, -1)
-	if matches == nil {
-		return "", "", nil, nil, fmt.Errorf("Package %s is not in the expected format", requirement)
-	}
-
-	nameFound := false
-	versionFound := false
-
-	for _, match := range matches {
-		if match[1] != "" {
-			name = match[1]
-			nameFound = true
-		}
-
-		if match[2] != "" {
-			version = match[2]
-			versionFound = true
-		}
-
-		if match[3] != "" {
-			findLinks = append(findLinks, match[3])
-		}
-
-		if match[4] != "" {
-			findLinks = append(findLinks, match[4])
-		}
-
-		if match[5] != "" {
-			extraIndexURLs = append(extraIndexURLs, match[5])
-		}
-	}
-
-	if !nameFound || !versionFound {
-		return "", "", nil, nil, fmt.Errorf("Package name or version is missing in %s", requirement)
-	}
-
-	return name, version, findLinks, extraIndexURLs, nil
-}
-
 func sliceContains(slice []string, s string) bool {
 	for _, el := range slice {
 		if el == s {
@@ -613,12 +576,4 @@ func sliceContains(slice []string, s string) bool {
 		}
 	}
 	return false
-}
-
-func packageName(pipRequirement string) string {
-	match := PipPackageNameRegex.FindStringSubmatch(pipRequirement)
-	if len(match) <= 1 {
-		return ""
-	}
-	return match[1]
 }

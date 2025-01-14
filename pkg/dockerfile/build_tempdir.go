@@ -6,8 +6,20 @@ import (
 	"time"
 )
 
-func BuildTempDir(dir string) (string, error) {
+func BuildCogTempDir(dir string) (string, error) {
 	rootTmp := path.Join(dir, ".cog/tmp")
+	if err := os.MkdirAll(rootTmp, 0o755); err != nil {
+		return "", err
+	}
+	return rootTmp, nil
+}
+
+func BuildTempDir(dir string) (string, error) {
+	rootTmp, err := BuildCogTempDir(dir)
+	if err != nil {
+		return "", err
+	}
+
 	if err := os.MkdirAll(rootTmp, 0o755); err != nil {
 		return "", err
 	}

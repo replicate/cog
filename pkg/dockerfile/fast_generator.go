@@ -1,10 +1,8 @@
 package dockerfile
 
 import (
-	"bufio"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -14,6 +12,8 @@ import (
 
 const FUSE_RPC_WEIGHTS_PATH = "/srv/r8/fuse-rpc/weights"
 const MONOBASE_CACHE_PATH = "/var/cache/monobase"
+const APT_CACHE_MOUNT = "--mount=type=cache,target=/var/cache/apt,id=apt-cache"
+const PIP_CACHE_MOUNT = "--mount=type=cache,target=/root/.cache,id=pip-cache"
 
 type FastGenerator struct {
 	Config *config.Config
@@ -75,7 +75,7 @@ func (g *FastGenerator) SetUseCudaBaseImage(argumentValue string) {
 }
 
 func (g *FastGenerator) generate() (string, error) {
-	tmpDir, err := BuildTempDir(g.Dir)
+	tmpDir, err := BuildCogTempDir(g.Dir)
 	if err != nil {
 		return "", err
 	}
@@ -96,7 +96,7 @@ func (g *FastGenerator) generate() (string, error) {
 		return "", err
 	}
 
-	lines, err = g.install(lines, weights)
+	lines, err = g.install(lines, weights, tmpDir)
 	if err != nil {
 		return "", err
 	}
@@ -147,10 +147,6 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 		"ENV R8_COG_VERSION=\"file:///buildtmp/" + filepath.Base(cogPath) + "\"",
 	}...)
 
-	relativeTmpDir, err := filepath.Rel(g.Dir, tmpDir)
-	if err != nil {
-		return nil, err
-	}
 	skipCudaArg := "--skip-cuda"
 	if g.Config.Build.GPU {
 		skipCudaArg = ""
@@ -175,8 +171,18 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 		}...)
 	}
 
+	buildTmpMount, err := g.buildTmpMount(tmpDir)
+	if err != nil {
+		return nil, err
+	}
+
 	return append(lines, []string{
-		"RUN --mount=type=bind,source=\"" + relativeTmpDir + "\",target=/buildtmp --mount=type=cache,from=usercache,target=\"" + MONOBASE_CACHE_PATH + "\" /opt/r8/monobase/build.sh " + skipCudaArg + " --mini --cache=" + MONOBASE_CACHE_PATH,
+		"RUN " + strings.Join([]string{
+			buildTmpMount,
+			g.monobaseUsercacheMount(),
+			APT_CACHE_MOUNT,
+			PIP_CACHE_MOUNT,
+		}, " ") + " /opt/r8/monobase/run.sh monobase.build " + skipCudaArg + " --mini --cache=" + MONOBASE_CACHE_PATH,
 	}...), nil
 }
 
@@ -192,20 +198,29 @@ func (g *FastGenerator) copyWeights(lines []string, weights []Weight) ([]string,
 	return lines, nil
 }
 
-func (g *FastGenerator) install(lines []string, weights []Weight) ([]string, error) {
+func (g *FastGenerator) install(lines []string, weights []Weight, tmpDir string) ([]string, error) {
 	// Install apt packages
 	packages := g.Config.Build.SystemPackages
 	if len(packages) > 0 {
-		lines = append(lines, "RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache apt-get update && apt-get install -qqy "+strings.Join(packages, " ")+" && rm -rf /var/lib/apt/lists/*")
+		lines = append(lines, "RUN "+APT_CACHE_MOUNT+" apt-get update && apt-get install -qqy "+strings.Join(packages, " ")+" && rm -rf /var/lib/apt/lists/*")
 	}
 
 	// Install python packages
-	packages, err := g.pythonPackages()
+	requirementsFile, err := g.pythonRequirements(tmpDir)
 	if err != nil {
 		return nil, err
 	}
-	if len(packages) > 0 {
-		lines = append(lines, "RUN --mount=type=cache,target=/root/.cache,id=pip-cache uv pip install "+strings.Join(packages, " "))
+	buildTmpMount, err := g.buildTmpMount(tmpDir)
+	if err != nil {
+		return nil, err
+	}
+	if requirementsFile != "" {
+		lines = append(lines, "RUN "+strings.Join([]string{
+			buildTmpMount,
+			g.monobaseUsercacheMount(),
+			APT_CACHE_MOUNT,
+			PIP_CACHE_MOUNT,
+		}, " ")+" /opt/r8/monobase/run.sh monobase.build --requirements=/buildtmp/requirements.txt --mini --skip-cuda --cache="+MONOBASE_CACHE_PATH)
 	}
 
 	// Copy over source / without weights
@@ -228,19 +243,8 @@ func (g *FastGenerator) install(lines []string, weights []Weight) ([]string, err
 	return lines, nil
 }
 
-func (g *FastGenerator) pythonPackages() ([]string, error) {
-	packages := g.Config.Build.PythonPackages
-
-	fh, err := os.Open(path.Join(g.Dir, g.Config.Build.PythonRequirements))
-	if err != nil {
-		return nil, err
-	}
-	scanner := bufio.NewScanner(fh)
-	for scanner.Scan() {
-		packages = append(packages, scanner.Text())
-	}
-
-	return packages, nil
+func (g *FastGenerator) pythonRequirements(tmpDir string) (string, error) {
+	return config.GenerateRequirements(tmpDir, g.Config)
 }
 
 func (g *FastGenerator) entrypoint(lines []string) ([]string, error) {
@@ -248,4 +252,16 @@ func (g *FastGenerator) entrypoint(lines []string) ([]string, error) {
 		"ENTRYPOINT [\"/usr/bin/tini\", \"--\", \"/opt/r8/monobase/exec.sh\", \"bash\", \"-l\"]",
 		"CMD [\"python\", \"-m\", \"cog.server.http\"]",
 	}...), nil
+}
+
+func (g *FastGenerator) buildTmpMount(tmpDir string) (string, error) {
+	relativeTmpDir, err := filepath.Rel(g.Dir, tmpDir)
+	if err != nil {
+		return "", err
+	}
+	return "--mount=type=bind,ro,source=\"" + relativeTmpDir + "\",target=\"/buildtmp\"", nil
+}
+
+func (g *FastGenerator) monobaseUsercacheMount() string {
+	return "--mount=type=cache,from=usercache,target=\"" + MONOBASE_CACHE_PATH + "\""
 }
