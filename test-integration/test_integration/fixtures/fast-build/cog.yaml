@@ -6,3 +6,4 @@ build:
   system_packages:
     - "git"
 predict: "predict.py:Predictor"
+image: "test"

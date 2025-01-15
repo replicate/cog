@@ -139,6 +139,9 @@ func checkWeights(folder string, weightFile string) ([]Weight, error) {
 	for _, weight := range weights {
 		info, err := os.Stat(weight.Path)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
 			return nil, err
 		}
 
