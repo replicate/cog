@@ -154,9 +154,7 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 		"ENV R8_COG_VERSION=\"file:///buildtmp/" + filepath.Base(cogPath) + "\"",
 	}...)
 
-	skipCudaArg := "--skip-cuda"
 	if g.Config.Build.GPU {
-		skipCudaArg = ""
 		cudaVersion := g.Config.Build.CUDA
 		cudnnVersion := g.Config.Build.CuDNN
 		lines = append(lines, []string{
@@ -189,7 +187,7 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 			g.monobaseUsercacheMount(),
 			APT_CACHE_MOUNT,
 			UV_CACHE_MOUNT,
-		}, " ") + " UV_CACHE_DIR=\"" + UV_CACHE_DIR + "\" /opt/r8/monobase/run.sh monobase.build " + skipCudaArg + " --mini --cache=" + MONOBASE_CACHE_PATH,
+		}, " ") + " UV_CACHE_DIR=\"" + UV_CACHE_DIR + "\" /opt/r8/monobase/run.sh monobase.build --mini --cache=" + MONOBASE_CACHE_PATH,
 	}...), nil
 }
 
