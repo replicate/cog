@@ -76,5 +76,21 @@ func TestGeneratePythonPackages(t *testing.T) {
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
 	dockerfileLines := strings.Split(dockerfile, "\n")
-	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp\",target=\"/buildtmp\" --mount=type=cache,from=usercache,target=\"/var/cache/monobase\" --mount=type=cache,target=/srv/r8/monobase/uv/cache,id=pip-cache UV_CACHE_DIR=\"/srv/r8/monobase/uv/cache\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt --cache=/var/cache/monobase", dockerfileLines[5])
+	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp\",target=\"/buildtmp\" --mount=type=cache,target=/srv/r8/monobase/uv/cache,id=pip-cache UV_CACHE_DIR=\"/srv/r8/monobase/uv/cache\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt", dockerfileLines[5])
+}
+
+func TestGenerateVerboseEnv(t *testing.T) {
+	dir := t.TempDir()
+	build := config.Build{
+		PythonPackages: []string{"torch==2.5.1"},
+	}
+	config := config.Config{
+		Build: &build,
+	}
+	generator, err := NewFastGenerator(&config, dir)
+	require.NoError(t, err)
+	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
+	require.NoError(t, err)
+	dockerfileLines := strings.Split(dockerfile, "\n")
+	require.Equal(t, "ENV VERBOSE=0", dockerfileLines[8])
 }

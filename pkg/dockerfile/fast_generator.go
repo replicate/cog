@@ -222,9 +222,8 @@ func (g *FastGenerator) install(lines []string, weights []Weight, tmpDir string)
 	if requirementsFile != "" {
 		lines = append(lines, "RUN "+strings.Join([]string{
 			buildTmpMount,
-			g.monobaseUsercacheMount(),
 			UV_CACHE_MOUNT,
-		}, " ")+" UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt --cache="+MONOBASE_CACHE_PATH)
+		}, " ")+" UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt")
 	}
 
 	// Copy over source / without weights
@@ -253,7 +252,9 @@ func (g *FastGenerator) pythonRequirements(tmpDir string) (string, error) {
 
 func (g *FastGenerator) entrypoint(lines []string) ([]string, error) {
 	return append(lines, []string{
-		"ENTRYPOINT [\"/usr/bin/tini\", \"--\", \"/opt/r8/monobase/exec.sh\", \"bash\", \"-l\"]",
+		"WORKDIR /src",
+		"ENV VERBOSE=0",
+		"ENTRYPOINT [\"/opt/r8/monobase/exec.sh\", \"/usr/bin/tini\", \"--\"]",
 		"CMD [\"python\", \"-m\", \"cog.server.http\"]",
 	}...), nil
 }
