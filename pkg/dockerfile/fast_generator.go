@@ -187,7 +187,7 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 			g.monobaseUsercacheMount(),
 			APT_CACHE_MOUNT,
 			UV_CACHE_MOUNT,
-		}, " ") + " UV_CACHE_DIR=\"" + UV_CACHE_DIR + "\" /opt/r8/monobase/run.sh monobase.build --mini --cache=" + MONOBASE_CACHE_PATH,
+		}, " ") + " UV_CACHE_DIR=\"" + UV_CACHE_DIR + "\" UV_LINK_MODE=copy /opt/r8/monobase/run.sh monobase.build --mini --cache=" + MONOBASE_CACHE_PATH,
 	}...), nil
 }
 
@@ -224,7 +224,7 @@ func (g *FastGenerator) install(lines []string, weights []Weight, tmpDir string)
 			buildTmpMount,
 			g.monobaseUsercacheMount(),
 			UV_CACHE_MOUNT,
-		}, " ")+" UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" /opt/r8/monobase/run.sh monobase.build --requirements=/buildtmp/requirements.txt --cache="+MONOBASE_CACHE_PATH)
+		}, " ")+" UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" UV_LINK_MODE=copy /opt/r8/monobase/run.sh monobase.build --requirements=/buildtmp/requirements.txt --cache="+MONOBASE_CACHE_PATH)
 	}
 
 	// Copy over source / without weights
