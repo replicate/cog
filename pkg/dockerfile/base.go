@@ -178,7 +178,7 @@ func (g *BaseImageGenerator) GenerateDockerfile() (string, error) {
 		return "", err
 	}
 
-	generator, err := NewGenerator(conf, "")
+	generator, err := NewGenerator(conf, "", false)
 	if err != nil {
 		return "", err
 	}
