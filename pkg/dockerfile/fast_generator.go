@@ -254,7 +254,7 @@ func (g *FastGenerator) entrypoint(lines []string) ([]string, error) {
 	return append(lines, []string{
 		"WORKDIR /src",
 		"ENV VERBOSE=0",
-		"ENTRYPOINT [\"/opt/r8/monobase/exec.sh\", \"/usr/bin/tini\", \"--\"]",
+		"ENTRYPOINT [\"/usr/bin/tini\", \"--\", \"/opt/r8/monobase/exec.sh\"]",
 		"CMD [\"python\", \"-m\", \"cog.server.http\"]",
 	}...), nil
 }
