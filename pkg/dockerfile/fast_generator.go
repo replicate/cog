@@ -224,7 +224,7 @@ func (g *FastGenerator) install(lines []string, weights []Weight, tmpDir string)
 			buildTmpMount,
 			g.monobaseUsercacheMount(),
 			UV_CACHE_MOUNT,
-		}, " ")+" UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" UV_LINK_MODE=copy /opt/r8/monobase/run.sh monobase.build --requirements=/buildtmp/requirements.txt --cache="+MONOBASE_CACHE_PATH)
+		}, " ")+" UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt --cache="+MONOBASE_CACHE_PATH)
 	}
 
 	// Copy over source / without weights
