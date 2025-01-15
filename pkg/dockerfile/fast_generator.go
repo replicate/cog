@@ -14,7 +14,8 @@ import (
 const FUSE_RPC_WEIGHTS_PATH = "/srv/r8/fuse-rpc/weights"
 const MONOBASE_CACHE_PATH = "/var/cache/monobase"
 const APT_CACHE_MOUNT = "--mount=type=cache,target=/var/cache/apt,id=apt-cache"
-const PIP_CACHE_MOUNT = "--mount=type=cache,target=/root/.cache,id=pip-cache"
+const UV_CACHE_DIR = "/srv/r8/monobase/uv/cache"
+const UV_CACHE_MOUNT = "--mount=type=cache,target=" + UV_CACHE_DIR + ",id=pip-cache"
 const FAST_GENERATOR_NAME = "FAST_GENERATOR"
 
 type FastGenerator struct {
@@ -187,8 +188,8 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 			buildTmpMount,
 			g.monobaseUsercacheMount(),
 			APT_CACHE_MOUNT,
-			PIP_CACHE_MOUNT,
-		}, " ") + " /opt/r8/monobase/run.sh monobase.build " + skipCudaArg + " --mini --cache=" + MONOBASE_CACHE_PATH,
+			UV_CACHE_MOUNT,
+		}, " ") + " UV_CACHE_DIR=\"" + UV_CACHE_DIR + "\" /opt/r8/monobase/run.sh monobase.build " + skipCudaArg + " --mini --cache=" + MONOBASE_CACHE_PATH,
 	}...), nil
 }
 
@@ -224,9 +225,8 @@ func (g *FastGenerator) install(lines []string, weights []Weight, tmpDir string)
 		lines = append(lines, "RUN "+strings.Join([]string{
 			buildTmpMount,
 			g.monobaseUsercacheMount(),
-			APT_CACHE_MOUNT,
-			PIP_CACHE_MOUNT,
-		}, " ")+" /opt/r8/monobase/run.sh monobase.build --requirements=/buildtmp/requirements.txt --mini --skip-cuda --cache="+MONOBASE_CACHE_PATH)
+			UV_CACHE_MOUNT,
+		}, " ")+" UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" /opt/r8/monobase/run.sh monobase.build --requirements=/buildtmp/requirements.txt --cache="+MONOBASE_CACHE_PATH)
 	}
 
 	// Copy over source / without weights
