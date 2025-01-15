@@ -421,4 +421,4 @@ def test_fast_build(docker_image):
 
     os.remove(weights_file)
 
-    assert build_process.returncode == 1
+    assert build_process.returncode == 0
