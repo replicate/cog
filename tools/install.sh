@@ -180,7 +180,7 @@ main() {
     esac
   fi
 
-  # Check the users sudo priviledges
+  # Check the users sudo privileges
   if [ -z "${SUDO+set}" ]; then
     SUDO="sudo"
   fi
