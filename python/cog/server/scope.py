@@ -23,6 +23,10 @@ def current_scope() -> Scope:
         category=ExperimentalFeatureWarning,
         stacklevel=1,
     )
+    return _get_current_scope()
+
+
+def _get_current_scope() -> Scope:
     s = _current_scope.get()
     if s is None:
         raise RuntimeError("No scope available")
@@ -40,7 +44,7 @@ def scope(sc: Scope) -> Generator[None, None, None]:
 
 @contextmanager
 def evolve_scope(**kwargs: Any) -> Generator[None, None, None]:
-    new_scope = evolve(current_scope(), **kwargs)
+    new_scope = evolve(_get_current_scope(), **kwargs)
     s = _current_scope.set(new_scope)
     try:
         yield
