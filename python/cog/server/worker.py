@@ -57,7 +57,7 @@ from .exceptions import (
     InvalidStateException,
 )
 from .helpers import SimpleStreamRedirector, StreamRedirector
-from .scope import Scope, current_scope, evolve_scope, scope
+from .scope import Scope, _get_current_scope, evolve_scope, scope
 
 if PYDANTIC_V2:
     from .helpers import unwrap_pydantic_serialization_iterators
@@ -480,7 +480,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     @property
     def _current_tag(self) -> Optional[str]:
         if self._has_async_predictor:
-            return current_scope()._tag
+            return _get_current_scope()._tag
         return self._sync_tag
 
     def _load_predictor(self) -> Optional[BasePredictor]:
