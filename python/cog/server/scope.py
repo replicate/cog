@@ -3,16 +3,14 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Callable, Generator, Optional, Union
 
+from attrs import frozen
+
 from ..types import ExperimentalFeatureWarning
 
 
+@frozen
 class Scope:
-    def __init__(
-        self,
-        *,
-        record_metric: Callable[[str, Union[float, int]], None],
-    ) -> None:
-        self.record_metric = record_metric
+    record_metric: Callable[[str, Union[float, int]], None]
 
 
 _current_scope: ContextVar[Optional[Scope]] = ContextVar("scope", default=None)
