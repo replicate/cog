@@ -1,9 +1,9 @@
 import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Callable, Generator, Optional, Union
+from typing import Any, Callable, Generator, Optional, Union
 
-from attrs import frozen
+from attrs import evolve, frozen
 
 from ..types import ExperimentalFeatureWarning
 
@@ -11,6 +11,7 @@ from ..types import ExperimentalFeatureWarning
 @frozen
 class Scope:
     record_metric: Callable[[str, Union[float, int]], None]
+    _tag: Optional[str] = None
 
 
 _current_scope: ContextVar[Optional[Scope]] = ContextVar("scope", default=None)
@@ -31,6 +32,16 @@ def current_scope() -> Scope:
 @contextmanager
 def scope(sc: Scope) -> Generator[None, None, None]:
     s = _current_scope.set(sc)
+    try:
+        yield
+    finally:
+        _current_scope.reset(s)
+
+
+@contextmanager
+def evolve_scope(**kwargs: Any) -> Generator[None, None, None]:
+    new_scope = evolve(current_scope(), **kwargs)
+    s = _current_scope.set(new_scope)
     try:
         yield
     finally:
