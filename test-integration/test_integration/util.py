@@ -55,9 +55,9 @@ def assert_versions_match(semver_version: str, pep440_version: str):
     )
 
     # Check base release version
-    assert (
-        semver_release == pep440_groups["release"]
-    ), f"Release versions do not match: {semver_release} != {pep440_groups['release']}"
+    assert semver_release == pep440_groups["release"], (
+        f"Release versions do not match: {semver_release} != {pep440_groups['release']}"
+    )
 
     # Check prerelease status
     semver_pre = semver_groups["prerelease"]
@@ -67,35 +67,35 @@ def assert_versions_match(semver_version: str, pep440_version: str):
 
     if semver_pre:
         if semver_pre.startswith("alpha"):
-            assert (
-                pep440_groups["pre_l"] == "a"
-            ), "Alpha pre-release status does not match"
-            assert not pep440_groups[
-                "dev"
-            ], "Semver pre-release cannot also be a PEP440 dev build"
+            assert pep440_groups["pre_l"] == "a", (
+                "Alpha pre-release status does not match"
+            )
+            assert not pep440_groups["dev"], (
+                "Semver pre-release cannot also be a PEP440 dev build"
+            )
 
         if semver_pre.startswith("beta"):
-            assert (
-                pep440_groups["pre_l"] == "b"
-            ), "Beta pre-release status does not match"
-            assert not pep440_groups[
-                "dev"
-            ], "Semver pre-release cannot also be a PEP440 dev build"
+            assert pep440_groups["pre_l"] == "b", (
+                "Beta pre-release status does not match"
+            )
+            assert not pep440_groups["dev"], (
+                "Semver pre-release cannot also be a PEP440 dev build"
+            )
 
         if semver_pre.startswith("rc"):
-            assert (
-                pep440_groups["pre_l"] == "rc"
-            ), "Release candidate pre-release status does not match"
-            assert not pep440_groups[
-                "dev"
-            ], "Semver pre-release cannot also be a PEP440 dev build"
+            assert pep440_groups["pre_l"] == "rc", (
+                "Release candidate pre-release status does not match"
+            )
+            assert not pep440_groups["dev"], (
+                "Semver pre-release cannot also be a PEP440 dev build"
+            )
 
         if semver_pre.startswith("dev"):
             assert pep440_groups["dev_l"] == "dev", "Dev build status does not match"
 
-    assert (
-        semver_groups["buildmetadata"] == pep440_groups["local"]
-    ), f"Local/build metadata component does not match: {semver_groups['buildmetadata']} != {pep440_groups['local']}"
+    assert semver_groups["buildmetadata"] == pep440_groups["local"], (
+        f"Local/build metadata component does not match: {semver_groups['buildmetadata']} != {pep440_groups['local']}"
+    )
 
 
 def random_string(length):
