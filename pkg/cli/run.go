@@ -39,7 +39,7 @@ func newRunCommand() *cobra.Command {
 	addFastFlag(cmd)
 
 	flags := cmd.Flags()
-	// Flags after first argment are considered args and passed to command
+	// Flags after first argument are considered args and passed to command
 
 	// This is called `publish` for consistency with `docker run`
 	cmd.Flags().StringArrayVarP(&runPorts, "publish", "p", []string{}, "Publish a container's port to the host, e.g. -p 8000")
