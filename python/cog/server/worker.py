@@ -1,6 +1,5 @@
 import asyncio
 import contextlib
-import contextvars
 import inspect
 import multiprocessing
 import os
@@ -58,15 +57,12 @@ from .exceptions import (
     InvalidStateException,
 )
 from .helpers import SimpleStreamRedirector, StreamRedirector
-from .scope import Scope, scope
+from .scope import Scope, _get_current_scope, evolve_scope, scope
 
 if PYDANTIC_V2:
     from .helpers import unwrap_pydantic_serialization_iterators
 
 _spawn = multiprocessing.get_context("spawn")
-_tag_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    "tag", default=None
-)
 
 _PublicEventType = Union[Done, Log, PredictionOutput, PredictionOutputType]
 
@@ -407,7 +403,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._cancelable = False
         self._max_concurrency = max_concurrency
 
-        # for synchronous predictors only! async predictors use _tag_var instead
+        # for synchronous predictors only! async predictors use current_scope()._tag instead
         self._sync_tag: Optional[str] = None
         self._has_async_predictor = is_async
 
@@ -483,10 +479,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
     @property
     def _current_tag(self) -> Optional[str]:
-        # if _tag_var is set, use that (only applies within _apredict())
-        tag = _tag_var.get()
-        if tag:
-            return tag
+        if self._has_async_predictor:
+            return _get_current_scope()._tag
         return self._sync_tag
 
     def _load_predictor(self) -> Optional[BasePredictor]:
@@ -687,9 +681,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         predict: Callable[..., Any],
         redirector: SimpleStreamRedirector,
     ) -> None:
-        _tag_var.set(tag)
-
-        with self._handle_predict_error(redirector, tag=tag):
+        with evolve_scope(tag=tag), self._handle_predict_error(redirector, tag=tag):
             future_result = predict(**payload)
 
             if future_result:
