@@ -1,11 +1,8 @@
 package dockerfile
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -54,6 +51,10 @@ func FindWeights(folder string, tmpDir string) ([]Weight, error) {
 	return checkWeights(folder, weightFile)
 }
 
+func ReadWeights(tmpDir string) ([]Weight, error) {
+	return readWeights(filepath.Join(tmpDir, WEIGHT_FILE))
+}
+
 func findFullWeights(folder string, weights []Weight, weightFile string) ([]Weight, error) {
 	err := filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -78,26 +79,14 @@ func findFullWeights(folder string, weights []Weight, weightFile string) ([]Weig
 		}
 
 		if slices.Contains(WEIGHT_FILE_INCLUSIONS, ext) || info.Size() >= WEIGHT_FILE_SIZE_INCLUSION {
-			hash := sha256.New()
-
-			file, err := os.Open(path)
-			if err != nil {
-				return err
-			}
-			defer file.Close()
-
-			if _, err := io.Copy(hash, file); err != nil {
-				return err
-			}
-
-			info, err := os.Stat(relPath)
+			hash, err := SHA256HashFile(path)
 			if err != nil {
 				return err
 			}
 
 			weights = append(weights, Weight{
 				Path:      relPath,
-				Digest:    hex.EncodeToString(hash.Sum(nil)),
+				Digest:    hash,
 				Timestamp: info.ModTime(),
 				Size:      info.Size(),
 			})
@@ -121,16 +110,7 @@ func findFullWeights(folder string, weights []Weight, weightFile string) ([]Weig
 }
 
 func checkWeights(folder string, weightFile string) ([]Weight, error) {
-	var weights []Weight
-
-	file, err := os.Open(weightFile)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	decoder := json.NewDecoder(file)
-	err = decoder.Decode(&weights)
+	weights, err := readWeights(weightFile)
 	if err != nil {
 		return nil, err
 	}
@@ -152,4 +132,26 @@ func checkWeights(folder string, weightFile string) ([]Weight, error) {
 	}
 
 	return findFullWeights(folder, newWeights, weightFile)
+}
+
+func readWeights(weightFile string) ([]Weight, error) {
+	var weights []Weight
+
+	if _, err := os.Stat(weightFile); errors.Is(err, os.ErrNotExist) {
+		return weights, nil
+	}
+
+	file, err := os.Open(weightFile)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&weights)
+	if err != nil {
+		return nil, err
+	}
+
+	return weights, nil
 }

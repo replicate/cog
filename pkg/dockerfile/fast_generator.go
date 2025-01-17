@@ -13,7 +13,7 @@ import (
 
 const FUSE_RPC_WEIGHTS_PATH = "/srv/r8/fuse-rpc/weights"
 const MONOBASE_CACHE_PATH = "/var/cache/monobase"
-const APT_CACHE_MOUNT = "--mount=type=cache,target=/var/cache/apt,id=apt-cache"
+const APT_CACHE_MOUNT = "--mount=type=cache,target=/var/cache/apt,id=apt-cache,sharing=locked"
 const UV_CACHE_DIR = "/srv/r8/monobase/uv/cache"
 const UV_CACHE_MOUNT = "--mount=type=cache,target=" + UV_CACHE_DIR + ",id=pip-cache"
 const FAST_GENERATOR_NAME = "FAST_GENERATOR"
@@ -92,6 +92,11 @@ func (g *FastGenerator) generate() (string, error) {
 		return "", err
 	}
 
+	aptTarFile, err := g.generateAptTarball(tmpDir)
+	if err != nil {
+		return "", err
+	}
+
 	lines := []string{}
 	lines, err = g.generateMonobase(lines, tmpDir)
 	if err != nil {
@@ -103,7 +108,7 @@ func (g *FastGenerator) generate() (string, error) {
 		return "", err
 	}
 
-	lines, err = g.install(lines, weights, tmpDir)
+	lines, err = g.install(lines, weights, tmpDir, aptTarFile)
 	if err != nil {
 		return "", err
 	}
@@ -203,19 +208,18 @@ func (g *FastGenerator) copyWeights(lines []string, weights []Weight) ([]string,
 	return lines, nil
 }
 
-func (g *FastGenerator) install(lines []string, weights []Weight, tmpDir string) ([]string, error) {
+func (g *FastGenerator) install(lines []string, weights []Weight, tmpDir string, aptTarFile string) ([]string, error) {
 	// Install apt packages
-	packages := g.Config.Build.SystemPackages
-	if len(packages) > 0 {
-		lines = append(lines, "RUN "+APT_CACHE_MOUNT+" apt-get update && apt-get install -qqy "+strings.Join(packages, " ")+" && rm -rf /var/lib/apt/lists/*")
+	buildTmpMount, err := g.buildTmpMount(tmpDir)
+	if err != nil {
+		return nil, err
+	}
+	if aptTarFile != "" {
+		lines = append(lines, "RUN "+buildTmpMount+" tar -xf \""+filepath.Join("/buildtmp", aptTarFile)+"\" -C /")
 	}
 
 	// Install python packages
 	requirementsFile, err := g.pythonRequirements(tmpDir)
-	if err != nil {
-		return nil, err
-	}
-	buildTmpMount, err := g.buildTmpMount(tmpDir)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +231,7 @@ func (g *FastGenerator) install(lines []string, weights []Weight, tmpDir string)
 	}
 
 	// Copy over source / without weights
-	copyCommand := "COPY --link "
+	copyCommand := "COPY --link --exclude='.cog' "
 	for _, weight := range weights {
 		copyCommand += "--exclude='" + weight.Path + "' "
 	}
@@ -247,7 +251,7 @@ func (g *FastGenerator) install(lines []string, weights []Weight, tmpDir string)
 }
 
 func (g *FastGenerator) pythonRequirements(tmpDir string) (string, error) {
-	return config.GenerateRequirements(tmpDir, g.Config)
+	return GenerateRequirements(tmpDir, g.Config)
 }
 
 func (g *FastGenerator) entrypoint(lines []string) ([]string, error) {
@@ -269,4 +273,8 @@ func (g *FastGenerator) buildTmpMount(tmpDir string) (string, error) {
 
 func (g *FastGenerator) monobaseUsercacheMount() string {
 	return "--mount=type=cache,from=usercache,target=\"" + MONOBASE_CACHE_PATH + "\""
+}
+
+func (g *FastGenerator) generateAptTarball(tmpDir string) (string, error) {
+	return CreateAptTarball(g.Config, tmpDir)
 }

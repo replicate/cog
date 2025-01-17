@@ -1,19 +1,8 @@
 package docker
 
-import (
-	"os"
-	"os/exec"
-	"strings"
-
-	"github.com/replicate/cog/pkg/util/console"
-)
-
-func Push(image string) error {
-	cmd := exec.Command(
-		"docker", "push", image)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	console.Debug("$ " + strings.Join(cmd.Args, " "))
-	return cmd.Run()
+func Push(image string, fast bool, projectDir string) error {
+	if fast {
+		return FastPush(image, projectDir)
+	}
+	return StandardPush(image)
 }
