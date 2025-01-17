@@ -422,3 +422,15 @@ def test_fast_build(docker_image):
     os.remove(weights_file)
 
     assert build_process.returncode == 0
+
+
+def test_pydantic2(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/pydantic2"
+
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=project_dir,
+        capture_output=True,
+    )
+
+    assert build_process.returncode == 0
