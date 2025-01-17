@@ -40,6 +40,12 @@ func GenerateRequirements(tmpDir string, config *Config) (string, error) {
 		}
 	}
 
+	// Workaround for fastapi in base image not working with pydantic 2
+	// https://github.com/replicate/cog/issues/2112
+	if _, ok := packageNames["fastapi"]; !ok {
+		packageNames["fastapi"] = ">0.100.0,<0.111.0"
+	}
+
 	// If we don't have any packages skip further processing
 	if len(packageNames) == 0 {
 		return "", nil
