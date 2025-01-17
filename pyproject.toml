@@ -30,6 +30,9 @@ dependencies = [
   "structlog>=20,<25",
   "typing_extensions>=4.4.0",
   "uvicorn[standard]>=0.12,<1",
+
+  # TODO(andreas): re-implement replicate functionality in pure python
+  "replicate>=1.0.4",
 ]
 
 dynamic = ["version"]
