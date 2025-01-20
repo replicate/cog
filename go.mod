@@ -7,7 +7,7 @@ toolchain go1.23.2
 require (
 	github.com/anaskhan96/soup v1.2.5
 	github.com/docker/cli v27.2.1+incompatible
-	github.com/docker/docker v27.1.1+incompatible
+	github.com/docker/docker v27.5.0+incompatible
 	github.com/getkin/kin-openapi v0.128.0
 	github.com/golangci/golangci-lint v1.62.2
 	github.com/google/go-containerregistry v0.20.2
