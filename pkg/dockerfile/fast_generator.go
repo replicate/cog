@@ -94,7 +94,7 @@ func (g *FastGenerator) generate() (string, error) {
 
 	aptTarFile, err := g.generateAptTarball(tmpDir)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("generate apt tarball: %w", err)
 	}
 
 	lines := []string{}
