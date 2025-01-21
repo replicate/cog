@@ -1,5 +1,10 @@
 package docker
 
+import (
+	"os"
+	"path/filepath"
+)
+
 var PushError error = nil
 
 type MockCommand struct{}
@@ -14,4 +19,14 @@ func (c *MockCommand) Push(image string) error {
 
 func (c *MockCommand) LoadLoginToken(registryHost string) (string, error) {
 	return "", nil
+}
+
+func (c *MockCommand) CreateTarFile(image string, tmpDir string, tarFile string, folder string) (string, error) {
+	path := filepath.Join(tmpDir, tarFile)
+	d1 := []byte("hello\ngo\n")
+	err := os.WriteFile(path, d1, 0o644)
+	if err != nil {
+		return "", err
+	}
+	return path, nil
 }

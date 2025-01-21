@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -77,7 +76,7 @@ func FastPush(image string, projectDir string, command Command) error {
 	// Upload python packages.
 	if requirementsFile != "" {
 		wg.Add(1)
-		pythonTar, err := createPythonPackagesTarFile(image, tmpDir)
+		pythonTar, err := createPythonPackagesTarFile(image, tmpDir, command)
 		if err != nil {
 			return err
 		}
@@ -101,7 +100,7 @@ func FastPush(image string, projectDir string, command Command) error {
 
 	// Upload user /src.
 	wg.Add(1)
-	srcTar, err := createSrcTarFile(image, tmpDir)
+	srcTar, err := createSrcTarFile(image, tmpDir, command)
 	if err != nil {
 		return fmt.Errorf("create src tarfile: %w", err)
 	}
@@ -187,32 +186,10 @@ func uploadFile(objectType string, digest string, path string, token string, wg 
 	resultChan <- false
 }
 
-func createPythonPackagesTarFile(image string, tmpDir string) (string, error) {
-	return createTarFile(image, tmpDir, REQUIREMENTS_TAR_FILE, "root/.venv")
+func createPythonPackagesTarFile(image string, tmpDir string, command Command) (string, error) {
+	return command.CreateTarFile(image, tmpDir, REQUIREMENTS_TAR_FILE, "root/.venv")
 }
 
-func createSrcTarFile(image string, tmpDir string) (string, error) {
-	return createTarFile(image, tmpDir, "src.tar.zst", "src")
-}
-
-func createTarFile(image string, tmpDir string, tarFile string, folder string) (string, error) {
-	args := []string{
-		"run",
-		"--rm",
-		"--volume",
-		tmpDir + ":/buildtmp",
-		image,
-		"/opt/r8/monobase/tar.sh",
-		"/buildtmp/" + tarFile,
-		"/",
-		folder,
-	}
-	cmd := exec.Command("docker", args...)
-	cmd.Stderr = os.Stderr
-	console.Debug("$ " + strings.Join(cmd.Args, " "))
-	err := cmd.Run()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(tmpDir, tarFile), nil
+func createSrcTarFile(image string, tmpDir string, command Command) (string, error) {
+	return command.CreateTarFile(image, tmpDir, "src.tar.zst", "src")
 }

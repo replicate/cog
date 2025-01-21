@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/docker/cli/cli/config"
@@ -31,6 +32,24 @@ func (c *DockerCommand) LoadLoginToken(registryHost string) (string, error) {
 		return loadAuthFromConfig(conf, registryHost)
 	}
 	return loadAuthFromCredentialsStore(credsStore, registryHost)
+}
+
+func (c *DockerCommand) CreateTarFile(image string, tmpDir string, tarFile string, folder string) (string, error) {
+	args := []string{
+		"--rm",
+		"--volume",
+		tmpDir + ":/buildtmp",
+		image,
+		"/opt/r8/monobase/tar.sh",
+		"/buildtmp/" + tarFile,
+		"/",
+		folder,
+	}
+	err := c.exec("run", args...)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(tmpDir, tarFile), nil
 }
 
 func (c *DockerCommand) exec(name string, args ...string) error {
