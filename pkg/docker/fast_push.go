@@ -17,6 +17,7 @@ import (
 
 const WEIGHTS_OBJECT_TYPE = "weights"
 const FILES_OBJECT_TYPE = "files"
+const REQUIREMENTS_TAR_FILE = "requirements.tar.zst"
 
 func FastPush(image string, projectDir string) error {
 	var wg sync.WaitGroup
@@ -84,6 +85,15 @@ func FastPush(image string, projectDir string) error {
 		}
 
 		go uploadFile(FILES_OBJECT_TYPE, hash, pythonTar, token, &wg, resultChan)
+	} else {
+		requirementsTarFile := filepath.Join(tmpDir, REQUIREMENTS_TAR_FILE)
+		_, err = os.Stat(requirementsTarFile)
+		if !errors.Is(err, os.ErrNotExist) {
+			err = os.Remove(requirementsTarFile)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	// Upload user /src.
@@ -161,8 +171,7 @@ func uploadFile(objectType string, digest string, path string, token string, wg 
 }
 
 func createPythonPackagesTarFile(image string, tmpDir string) (string, error) {
-	const requirementsTarFile = "requirements.tar.zst"
-	return createTarFile(image, tmpDir, requirementsTarFile, "root/.venv")
+	return createTarFile(image, tmpDir, REQUIREMENTS_TAR_FILE, "root/.venv")
 }
 
 func createSrcTarFile(image string, tmpDir string) (string, error) {

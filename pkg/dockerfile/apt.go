@@ -28,6 +28,12 @@ func CreateAptTarball(config *config.Config, tmpDir string) (string, error) {
 		aptTarPath := filepath.Join(tmpDir, aptTarFile)
 
 		if _, err := os.Stat(aptTarPath); errors.Is(err, os.ErrNotExist) {
+			// Remove previous apt tar files.
+			err = removeAptTarballs(tmpDir)
+			if err != nil {
+				return "", err
+			}
+
 			// Create the apt tar file
 			args := []string{
 				"run",
@@ -68,4 +74,23 @@ func CurrentAptTarball(tmpDir string) (string, error) {
 	}
 
 	return "", nil
+}
+
+func removeAptTarballs(tmpDir string) error {
+	files, err := os.ReadDir(tmpDir)
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		fileName := file.Name()
+		if strings.HasPrefix(fileName, APT_TARBALL_PREFIX) && strings.HasSuffix(fileName, APT_TARBALL_SUFFIX) {
+			err = os.Remove(filepath.Join(tmpDir, fileName))
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
