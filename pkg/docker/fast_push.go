@@ -103,7 +103,7 @@ func FastPush(image string, projectDir string, command Command) error {
 	wg.Add(1)
 	srcTar, err := createSrcTarFile(image, tmpDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("create src tarfile: %w", err)
 	}
 	hash, err := dockerfile.SHA256HashFile(srcTar)
 	if err != nil {
