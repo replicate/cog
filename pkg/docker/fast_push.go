@@ -21,6 +21,11 @@ const FILES_OBJECT_TYPE = "files"
 func FastPush(image string, projectDir string) error {
 	var wg sync.WaitGroup
 
+	token, err := LoadLoginToken(dockerfile.BaseImageRegistry)
+	if err != nil {
+		return err
+	}
+
 	tmpDir := filepath.Join(projectDir, ".cog", "tmp")
 	// Setting uploadCount to 1 because we always upload the /src directory.
 	uploadCount := 1
@@ -51,7 +56,7 @@ func FastPush(image string, projectDir string) error {
 	// Upload weights
 	for _, weight := range weights {
 		wg.Add(1)
-		go uploadFile(WEIGHTS_OBJECT_TYPE, weight.Digest, weight.Path, &wg, resultChan)
+		go uploadFile(WEIGHTS_OBJECT_TYPE, weight.Digest, weight.Path, token, &wg, resultChan)
 	}
 
 	// Upload apt tar file
@@ -62,7 +67,7 @@ func FastPush(image string, projectDir string) error {
 			return err
 		}
 
-		go uploadFile(FILES_OBJECT_TYPE, hash, aptTarFile, &wg, resultChan)
+		go uploadFile(FILES_OBJECT_TYPE, hash, aptTarFile, token, &wg, resultChan)
 	}
 
 	// Upload python packages.
@@ -78,7 +83,7 @@ func FastPush(image string, projectDir string) error {
 			return err
 		}
 
-		go uploadFile(FILES_OBJECT_TYPE, hash, pythonTar, &wg, resultChan)
+		go uploadFile(FILES_OBJECT_TYPE, hash, pythonTar, token, &wg, resultChan)
 	}
 
 	// Upload user /src.
@@ -91,7 +96,7 @@ func FastPush(image string, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	go uploadFile(FILES_OBJECT_TYPE, hash, srcTar, &wg, resultChan)
+	go uploadFile(FILES_OBJECT_TYPE, hash, srcTar, token, &wg, resultChan)
 
 	wg.Wait()
 
@@ -118,7 +123,7 @@ func startUploadURL(objectType string, digest string, size int64) url.URL {
 	return url
 }
 
-func uploadFile(objectType string, digest string, path string, wg *sync.WaitGroup, resultChan chan<- bool) {
+func uploadFile(objectType string, digest string, path string, token string, wg *sync.WaitGroup, resultChan chan<- bool) {
 	console.Debug("uploading file: " + path)
 	defer wg.Done()
 
@@ -130,7 +135,10 @@ func uploadFile(objectType string, digest string, path string, wg *sync.WaitGrou
 	}
 
 	url := startUploadURL(objectType, digest, info.Size())
-	resp, err := http.Post(url.String(), "", nil)
+	client := &http.Client{}
+	req, _ := http.NewRequest("POST", url.String(), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := client.Do(req)
 	if err != nil {
 		console.Debug("failed to post file: " + path)
 		resultChan <- false
@@ -149,6 +157,7 @@ func uploadFile(objectType string, digest string, path string, wg *sync.WaitGrou
 	}
 
 	console.Debug("multi-part uploading file: " + path)
+	resultChan <- false
 }
 
 func createPythonPackagesTarFile(image string, tmpDir string) (string, error) {
