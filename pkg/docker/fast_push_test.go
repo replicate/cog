@@ -34,8 +34,11 @@ func TestFastPush(t *testing.T) {
 	err = os.Mkdir(tmpDir, 0o755)
 	require.NoError(t, err)
 
+	// Setup mock command
+	command := NewMockCommand()
+
 	// Run fast push
-	err = FastPush("test", dir)
+	err = FastPush("test", dir, command)
 	require.NoError(t, err)
 
 	// Cleanup env

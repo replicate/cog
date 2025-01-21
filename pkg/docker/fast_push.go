@@ -22,10 +22,10 @@ const REQUIREMENTS_TAR_FILE = "requirements.tar.zst"
 const SCHEME_ENV = "R8_PUSH_SCHEME"
 const HOST_ENV = "R8_PUSH_HOST"
 
-func FastPush(image string, projectDir string) error {
+func FastPush(image string, projectDir string, command Command) error {
 	var wg sync.WaitGroup
 
-	token, err := LoadLoginToken(dockerfile.BaseImageRegistry)
+	token, err := command.LoadLoginToken(dockerfile.BaseImageRegistry)
 	if err != nil {
 		return fmt.Errorf("load login token error: %w", err)
 	}

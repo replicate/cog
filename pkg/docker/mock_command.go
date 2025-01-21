@@ -11,3 +11,7 @@ func NewMockCommand() *MockCommand {
 func (c *MockCommand) Push(image string) error {
 	return PushError
 }
+
+func (c *MockCommand) LoadLoginToken(registryHost string) (string, error) {
+	return "", nil
+}
