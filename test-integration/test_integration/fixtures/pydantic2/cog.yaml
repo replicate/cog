@@ -1,0 +1,6 @@
+build:
+  gpu: false
+  python_version: "3.12"
+  python_packages:
+    - "pydantic>2"
+predict: "predict.py:Predictor"
