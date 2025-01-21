@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -63,7 +64,7 @@ func CreateAptTarball(config *config.Config, tmpDir string) (string, error) {
 func CurrentAptTarball(tmpDir string) (string, error) {
 	files, err := os.ReadDir(tmpDir)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("os read dir error: %w", err)
 	}
 
 	for _, file := range files {

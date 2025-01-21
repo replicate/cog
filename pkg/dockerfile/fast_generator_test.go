@@ -94,3 +94,19 @@ func TestGenerateVerboseEnv(t *testing.T) {
 	dockerfileLines := strings.Split(dockerfile, "\n")
 	require.Equal(t, "ENV VERBOSE=0", dockerfileLines[8])
 }
+
+func TestAptInstall(t *testing.T) {
+	dir := t.TempDir()
+	build := config.Build{
+		SystemPackages: []string{"git"},
+	}
+	config := config.Config{
+		Build: &build,
+	}
+	generator, err := NewFastGenerator(&config, dir)
+	require.NoError(t, err)
+	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
+	require.NoError(t, err)
+	dockerfileLines := strings.Split(dockerfile, "\n")
+	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp\",target=\"/buildtmp\" tar -xf \"/buildtmp/apt.9a881b9b9f23849475296a8cd768ea1965bc3152df7118e60c145975af6aa58a.tar.zst\" -C /", dockerfileLines[5])
+}

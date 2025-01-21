@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFastPush(t *testing.T) {
+func TestPush(t *testing.T) {
 	// Setup mock http server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
@@ -34,8 +34,11 @@ func TestFastPush(t *testing.T) {
 	err = os.Mkdir(tmpDir, 0o755)
 	require.NoError(t, err)
 
+	// Setup mock docker command
+	command := NewMockCommand()
+
 	// Run fast push
-	err = FastPush("test", dir)
+	err = Push("test", true, dir, command)
 	require.NoError(t, err)
 
 	// Cleanup env

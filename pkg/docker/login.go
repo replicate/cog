@@ -114,9 +114,16 @@ func loadAuthFromCredentialsStore(credsStore string, registryHost string) (strin
 	if err != nil {
 		return "", err
 	}
-	err = cmd.Run()
+	err = cmd.Wait()
+	if err != nil {
+		return "", fmt.Errorf("exec wait error: %w", err)
+	}
+
+	var config credentialHelperInput
+	err = json.Unmarshal([]byte(out.String()), &config)
 	if err != nil {
 		return "", err
 	}
-	return out.String(), nil
+
+	return config.Secret, nil
 }

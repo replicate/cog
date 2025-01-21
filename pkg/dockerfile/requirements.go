@@ -86,6 +86,9 @@ func CurrentRequirements(tmpDir string) (string, error) {
 	requirementsFile := filepath.Join(tmpDir, REQUIREMENTS_FILE)
 	_, err := os.Stat(requirementsFile)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
 		return "", err
 	}
 	return requirementsFile, nil

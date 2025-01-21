@@ -2,6 +2,7 @@ package docker
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,13 +19,15 @@ import (
 const WEIGHTS_OBJECT_TYPE = "weights"
 const FILES_OBJECT_TYPE = "files"
 const REQUIREMENTS_TAR_FILE = "requirements.tar.zst"
+const SCHEME_ENV = "R8_PUSH_SCHEME"
+const HOST_ENV = "R8_PUSH_HOST"
 
 func FastPush(image string, projectDir string) error {
 	var wg sync.WaitGroup
 
 	token, err := LoadLoginToken(dockerfile.BaseImageRegistry)
 	if err != nil {
-		return err
+		return fmt.Errorf("load login token error: %w", err)
 	}
 
 	tmpDir := filepath.Join(projectDir, ".cog", "tmp")
@@ -32,13 +35,13 @@ func FastPush(image string, projectDir string) error {
 	uploadCount := 1
 	weights, err := dockerfile.ReadWeights(tmpDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("read weights error: %w", err)
 	}
 	uploadCount += len(weights)
 
 	aptTarFile, err := dockerfile.CurrentAptTarball(tmpDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("current apt tarball error: %w", err)
 	}
 	if aptTarFile != "" {
 		uploadCount += 1
@@ -108,7 +111,12 @@ func FastPush(image string, projectDir string) error {
 	}
 	go uploadFile(FILES_OBJECT_TYPE, hash, srcTar, token, &wg, resultChan)
 
-	wg.Wait()
+	console.Info("WAIT!!!")
+	// Close the result channel after all uploads have finished
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
 
 	for result := range resultChan {
 		if !result {
@@ -120,9 +128,17 @@ func FastPush(image string, projectDir string) error {
 }
 
 func baseURL() url.URL {
+	scheme := os.Getenv(SCHEME_ENV)
+	if scheme == "" {
+		scheme = "https"
+	}
+	host := os.Getenv(HOST_ENV)
+	if host == "" {
+		host = "monobeam.replicate.delivery"
+	}
 	return url.URL{
-		Scheme: "https",
-		Host:   "monobeam.replicate.delivery",
+		Scheme: scheme,
+		Host:   host,
 	}
 }
 
@@ -139,7 +155,7 @@ func uploadFile(objectType string, digest string, path string, token string, wg 
 
 	info, err := os.Stat(path)
 	if err != nil {
-		console.Debug("failed to stat file: " + path)
+		console.Error("failed to stat file: " + path)
 		resultChan <- false
 		return
 	}
@@ -150,10 +166,11 @@ func uploadFile(objectType string, digest string, path string, token string, wg 
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := client.Do(req)
 	if err != nil {
-		console.Debug("failed to post file: " + path)
+		console.Errorf("failed to post file: %s error: %s", path, err)
 		resultChan <- false
 		return
 	}
+	defer resp.Body.Close()
 
 	// A conflict means we have already uploaded this file.
 	if resp.StatusCode == http.StatusConflict {
@@ -161,7 +178,7 @@ func uploadFile(objectType string, digest string, path string, token string, wg 
 		resultChan <- true
 		return
 	} else if resp.StatusCode != http.StatusOK {
-		console.Debug("server error for file: " + path)
+		console.Error("server error for file: " + path)
 		resultChan <- false
 		return
 	}

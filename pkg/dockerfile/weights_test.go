@@ -38,3 +38,10 @@ func TestFindWeightsWithRemovedWeight(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, weights)
 }
+
+func TestReadWeightsNoFile(t *testing.T) {
+	dir := t.TempDir()
+	weights, err := ReadWeights(dir)
+	require.NoError(t, err)
+	require.Empty(t, weights)
+}
