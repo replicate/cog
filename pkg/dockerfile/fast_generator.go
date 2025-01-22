@@ -280,5 +280,5 @@ func (g *FastGenerator) monobaseUsercacheMount() string {
 }
 
 func (g *FastGenerator) generateAptTarball(tmpDir string) (string, error) {
-	return docker.CreateAptTarball(g.Config, tmpDir, g.command)
+	return docker.CreateAptTarball(tmpDir, g.command, g.Config.Build.SystemPackages...)
 }

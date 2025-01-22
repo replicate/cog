@@ -9,15 +9,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/replicate/cog/pkg/config"
 )
 
 const APT_TARBALL_PREFIX = "apt."
 const APT_TARBALL_SUFFIX = ".tar.zst"
 
-func CreateAptTarball(config *config.Config, tmpDir string, command Command) (string, error) {
-	packages := config.Build.SystemPackages
+func CreateAptTarball(tmpDir string, command Command, packages ...string) (string, error) {
 	if len(packages) > 0 {
 		sort.Strings(packages)
 		hash := sha256.New()
