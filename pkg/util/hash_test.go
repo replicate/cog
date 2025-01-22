@@ -1,4 +1,4 @@
-package dockerfile
+package util
 
 import (
 	"os"

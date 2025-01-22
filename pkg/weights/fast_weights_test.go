@@ -1,4 +1,4 @@
-package dockerfile
+package weights
 
 import (
 	"encoding/json"
@@ -10,15 +10,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFindWeights(t *testing.T) {
+func TestFindFastWeights(t *testing.T) {
 	folder := t.TempDir()
 	tmpDir := t.TempDir()
-	weights, err := FindWeights(folder, tmpDir)
+	weights, err := FindFastWeights(folder, tmpDir)
 	require.NoError(t, err)
 	require.Empty(t, weights)
 }
 
-func TestFindWeightsWithRemovedWeight(t *testing.T) {
+func TestFindFastWeightsWithRemovedWeight(t *testing.T) {
 	folder := t.TempDir()
 	tmpDir := t.TempDir()
 	weightFile := filepath.Join(tmpDir, WEIGHT_FILE)
@@ -34,14 +34,14 @@ func TestFindWeightsWithRemovedWeight(t *testing.T) {
 	require.NoError(t, err)
 	err = os.WriteFile(weightFile, jsonData, 0o644)
 	require.NoError(t, err)
-	weights, err = FindWeights(folder, tmpDir)
+	weights, err = FindFastWeights(folder, tmpDir)
 	require.NoError(t, err)
 	require.Empty(t, weights)
 }
 
-func TestReadWeightsNoFile(t *testing.T) {
+func TestReadFastWeightsNoFile(t *testing.T) {
 	dir := t.TempDir()
-	weights, err := ReadWeights(dir)
+	weights, err := ReadFastWeights(dir)
 	require.NoError(t, err)
 	require.Empty(t, weights)
 }

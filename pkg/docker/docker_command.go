@@ -52,6 +52,19 @@ func (c *DockerCommand) CreateTarFile(image string, tmpDir string, tarFile strin
 	return filepath.Join(tmpDir, tarFile), nil
 }
 
+func (c *DockerCommand) CreateAptTarFile(tmpDir string, aptTarFile string, packages ...string) (string, error) {
+	args := []string{
+		"--rm",
+		"--volume",
+		tmpDir + ":/buildtmp",
+		"r8.im/monobase:latest",
+		"/opt/r8/monobase/apt.sh",
+		"/buildtmp/" + aptTarFile,
+	}
+	args = append(args, packages...)
+	return aptTarFile, c.exec("run", args...)
+}
+
 func (c *DockerCommand) exec(name string, args ...string) error {
 	cmdArgs := []string{name}
 	cmdArgs = append(cmdArgs, args...)

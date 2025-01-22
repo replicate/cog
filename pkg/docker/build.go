@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/dockerfile"
 
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
@@ -17,7 +16,7 @@ import (
 func Build(dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string, epoch int64) error {
 	var args []string
 
-	userCache, err := dockerfile.UserCache()
+	userCache, err := UserCache()
 	if err != nil {
 		return err
 	}

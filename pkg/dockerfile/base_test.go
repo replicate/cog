@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/replicate/cog/pkg/docker"
 )
 
 func TestBaseImageName(t *testing.T) {
@@ -32,10 +34,12 @@ func TestBaseImageName(t *testing.T) {
 }
 
 func TestGenerateDockerfile(t *testing.T) {
+	command := docker.NewMockCommand()
 	generator, err := NewBaseImageGenerator(
 		"12.1",
 		"3.8",
 		"2.1.0",
+		command,
 	)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfile()
@@ -71,7 +75,8 @@ func TestIsVersionCompatible(t *testing.T) {
 }
 
 func TestPythonPackages(t *testing.T) {
-	generator, err := NewBaseImageGenerator("12.1", "3.9", "2.1.0")
+	command := docker.NewMockCommand()
+	generator, err := NewBaseImageGenerator("12.1", "3.9", "2.1.0", command)
 	require.NoError(t, err)
 	pkgs := generator.pythonPackages()
 	require.Truef(t, reflect.DeepEqual(pkgs, []string{

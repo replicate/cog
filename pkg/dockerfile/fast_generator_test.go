@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/docker"
 )
 
 func TestGenerate(t *testing.T) {
@@ -17,7 +18,8 @@ func TestGenerate(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	generator, err := NewFastGenerator(&config, dir)
+	command := docker.NewMockCommand()
+	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
@@ -36,7 +38,8 @@ func TestGenerateUVCacheMount(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	generator, err := NewFastGenerator(&config, dir)
+	command := docker.NewMockCommand()
+	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
@@ -53,7 +56,8 @@ func TestGenerateCUDA(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	generator, err := NewFastGenerator(&config, dir)
+	command := docker.NewMockCommand()
+	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
@@ -71,7 +75,8 @@ func TestGeneratePythonPackages(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	generator, err := NewFastGenerator(&config, dir)
+	command := docker.NewMockCommand()
+	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
@@ -87,7 +92,8 @@ func TestGenerateVerboseEnv(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	generator, err := NewFastGenerator(&config, dir)
+	command := docker.NewMockCommand()
+	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
@@ -103,7 +109,8 @@ func TestAptInstall(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	generator, err := NewFastGenerator(&config, dir)
+	command := docker.NewMockCommand()
+	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)

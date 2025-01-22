@@ -1,4 +1,4 @@
-package dockerfile
+package docker
 
 import (
 	"crypto/sha256"
@@ -18,7 +18,7 @@ import (
 const APT_TARBALL_PREFIX = "apt."
 const APT_TARBALL_SUFFIX = ".tar.zst"
 
-func CreateAptTarball(config *config.Config, tmpDir string) (string, error) {
+func CreateAptTarball(config *config.Config, tmpDir string, command Command) (string, error) {
 	packages := config.Build.SystemPackages
 	if len(packages) > 0 {
 		sort.Strings(packages)

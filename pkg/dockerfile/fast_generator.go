@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/weights"
 )
 
@@ -19,14 +21,16 @@ const UV_CACHE_MOUNT = "--mount=type=cache,target=" + UV_CACHE_DIR + ",id=pip-ca
 const FAST_GENERATOR_NAME = "FAST_GENERATOR"
 
 type FastGenerator struct {
-	Config *config.Config
-	Dir    string
+	Config  *config.Config
+	Dir     string
+	command docker.Command
 }
 
-func NewFastGenerator(config *config.Config, dir string) (*FastGenerator, error) {
+func NewFastGenerator(config *config.Config, dir string, command docker.Command) (*FastGenerator, error) {
 	return &FastGenerator{
-		Config: config,
-		Dir:    dir,
+		Config:  config,
+		Dir:     dir,
+		command: command,
 	}, nil
 }
 
@@ -87,7 +91,7 @@ func (g *FastGenerator) generate() (string, error) {
 		return "", err
 	}
 
-	weights, err := FindWeights(g.Dir, tmpDir)
+	weights, err := weights.FindFastWeights(g.Dir, tmpDir)
 	if err != nil {
 		return "", err
 	}
@@ -196,7 +200,7 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 	}...), nil
 }
 
-func (g *FastGenerator) copyWeights(lines []string, weights []Weight) ([]string, error) {
+func (g *FastGenerator) copyWeights(lines []string, weights []weights.Weight) ([]string, error) {
 	if len(weights) == 0 {
 		return lines, nil
 	}
@@ -208,7 +212,7 @@ func (g *FastGenerator) copyWeights(lines []string, weights []Weight) ([]string,
 	return lines, nil
 }
 
-func (g *FastGenerator) install(lines []string, weights []Weight, tmpDir string, aptTarFile string) ([]string, error) {
+func (g *FastGenerator) install(lines []string, weights []weights.Weight, tmpDir string, aptTarFile string) ([]string, error) {
 	// Install apt packages
 	buildTmpMount, err := g.buildTmpMount(tmpDir)
 	if err != nil {
@@ -251,7 +255,7 @@ func (g *FastGenerator) install(lines []string, weights []Weight, tmpDir string,
 }
 
 func (g *FastGenerator) pythonRequirements(tmpDir string) (string, error) {
-	return GenerateRequirements(tmpDir, g.Config)
+	return requirements.GenerateRequirements(tmpDir, g.Config)
 }
 
 func (g *FastGenerator) entrypoint(lines []string) ([]string, error) {
@@ -276,5 +280,5 @@ func (g *FastGenerator) monobaseUsercacheMount() string {
 }
 
 func (g *FastGenerator) generateAptTarball(tmpDir string) (string, error) {
-	return CreateAptTarball(g.Config, tmpDir)
+	return docker.CreateAptTarball(g.Config, tmpDir, g.command)
 }

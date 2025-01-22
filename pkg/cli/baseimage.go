@@ -148,5 +148,6 @@ func baseImageGeneratorFromFlags() (*dockerfile.BaseImageGenerator, error) {
 		baseImageCUDAVersion,
 		baseImagePythonVersion,
 		baseImageTorchVersion,
+		docker.NewDockerCommand(),
 	)
 }

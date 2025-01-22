@@ -11,8 +11,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/replicate/cog/pkg/dockerfile"
+	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/requirements"
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 const WEIGHTS_OBJECT_TYPE = "weights"
@@ -24,7 +27,7 @@ const HOST_ENV = "R8_PUSH_HOST"
 func FastPush(image string, projectDir string, command Command) error {
 	var wg sync.WaitGroup
 
-	token, err := command.LoadLoginToken(dockerfile.BaseImageRegistry)
+	token, err := command.LoadLoginToken(global.ReplicateRegistryHost)
 	if err != nil {
 		return fmt.Errorf("load login token error: %w", err)
 	}
@@ -32,13 +35,13 @@ func FastPush(image string, projectDir string, command Command) error {
 	tmpDir := filepath.Join(projectDir, ".cog", "tmp")
 	// Setting uploadCount to 1 because we always upload the /src directory.
 	uploadCount := 1
-	weights, err := dockerfile.ReadWeights(tmpDir)
+	weights, err := weights.ReadFastWeights(tmpDir)
 	if err != nil {
 		return fmt.Errorf("read weights error: %w", err)
 	}
 	uploadCount += len(weights)
 
-	aptTarFile, err := dockerfile.CurrentAptTarball(tmpDir)
+	aptTarFile, err := CurrentAptTarball(tmpDir)
 	if err != nil {
 		return fmt.Errorf("current apt tarball error: %w", err)
 	}
@@ -46,7 +49,7 @@ func FastPush(image string, projectDir string, command Command) error {
 		uploadCount += 1
 	}
 
-	requirementsFile, err := dockerfile.CurrentRequirements(tmpDir)
+	requirementsFile, err := requirements.CurrentRequirements(tmpDir)
 	if err != nil {
 		return err
 	}
@@ -65,7 +68,7 @@ func FastPush(image string, projectDir string, command Command) error {
 	// Upload apt tar file
 	if aptTarFile != "" {
 		wg.Add(1)
-		hash, err := dockerfile.SHA256HashFile(aptTarFile)
+		hash, err := util.SHA256HashFile(aptTarFile)
 		if err != nil {
 			return err
 		}
@@ -81,7 +84,7 @@ func FastPush(image string, projectDir string, command Command) error {
 			return err
 		}
 
-		hash, err := dockerfile.SHA256HashFile(pythonTar)
+		hash, err := util.SHA256HashFile(pythonTar)
 		if err != nil {
 			return err
 		}
@@ -104,13 +107,12 @@ func FastPush(image string, projectDir string, command Command) error {
 	if err != nil {
 		return fmt.Errorf("create src tarfile: %w", err)
 	}
-	hash, err := dockerfile.SHA256HashFile(srcTar)
+	hash, err := util.SHA256HashFile(srcTar)
 	if err != nil {
 		return err
 	}
 	go uploadFile(FILES_OBJECT_TYPE, hash, srcTar, token, &wg, resultChan)
 
-	console.Info("WAIT!!!")
 	// Close the result channel after all uploads have finished
 	go func() {
 		wg.Wait()

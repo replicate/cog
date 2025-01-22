@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/docker"
 )
 
 func testTini() string {
@@ -92,8 +93,9 @@ predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
+	command := docker.NewMockCommand()
 
-	gen, err := NewStandardGenerator(conf, tmpDir)
+	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
@@ -127,7 +129,8 @@ predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
-	gen, err := NewStandardGenerator(conf, tmpDir)
+	command := docker.NewMockCommand()
+	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
@@ -170,8 +173,8 @@ predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
-
-	gen, err := NewStandardGenerator(conf, tmpDir)
+	command := docker.NewMockCommand()
+	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
@@ -225,8 +228,8 @@ predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
-
-	gen, err := NewStandardGenerator(conf, tmpDir)
+	command := docker.NewMockCommand()
+	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
@@ -276,8 +279,8 @@ build:
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
-
-	gen, err := NewStandardGenerator(conf, tmpDir)
+	command := docker.NewMockCommand()
+	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
@@ -313,8 +316,8 @@ build:
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(tmpDir))
-
-	gen, err := NewStandardGenerator(conf, tmpDir)
+	command := docker.NewMockCommand()
+	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
@@ -368,8 +371,8 @@ predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
-
-	gen, err := NewStandardGenerator(conf, tmpDir)
+	command := docker.NewMockCommand()
+	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 
@@ -466,8 +469,8 @@ predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
-
-	gen, err := NewStandardGenerator(conf, tmpDir)
+	command := docker.NewMockCommand()
+	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	actual, err := gen.GenerateDockerfileWithoutSeparateWeights()
@@ -500,8 +503,8 @@ predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
-
-	gen, err := NewStandardGenerator(conf, tmpDir)
+	command := docker.NewMockCommand()
+	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
@@ -537,8 +540,8 @@ predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
-
-	gen, err := NewStandardGenerator(conf, tmpDir)
+	command := docker.NewMockCommand()
+	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
@@ -588,8 +591,8 @@ predict: predict.py:Predictor
 		conf, err := config.FromYAML([]byte(yaml))
 		require.NoError(t, err)
 		require.NoError(t, conf.ValidateAndComplete(""))
-
-		gen, err := NewStandardGenerator(conf, tmpDir)
+		command := docker.NewMockCommand()
+		gen, err := NewStandardGenerator(conf, tmpDir, command)
 		require.NoError(t, err)
 		gen.SetUseCogBaseImage(true)
 		_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
@@ -647,8 +650,8 @@ predict: predict.py:Predictor
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
-
-	gen, err := NewStandardGenerator(conf, tmpDir)
+	command := docker.NewMockCommand()
+	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
@@ -699,8 +702,8 @@ predict: predict.py:Predictor
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
-
-	gen, err := NewStandardGenerator(conf, tmpDir)
+	command := docker.NewMockCommand()
+	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	gen.SetStrip(true)
@@ -752,8 +755,8 @@ predict: predict.py:Predictor
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
-
-	gen, err := NewStandardGenerator(conf, tmpDir)
+	command := docker.NewMockCommand()
+	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
@@ -784,8 +787,8 @@ predict: predict.py:Predictor
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
-
-	gen, err := NewStandardGenerator(conf, tmpDir)
+	command := docker.NewMockCommand()
+	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	gen.SetStrip(true)

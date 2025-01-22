@@ -1,4 +1,4 @@
-package dockerfile
+package weights
 
 import (
 	"encoding/json"
@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"slices"
 	"time"
+
+	"github.com/replicate/cog/pkg/util"
 )
 
 var WEIGHT_FILE_EXCLUSIONS = []string{
@@ -43,7 +45,7 @@ type Weight struct {
 	Size      int64     `json:"size"`
 }
 
-func FindWeights(folder string, tmpDir string) ([]Weight, error) {
+func FindFastWeights(folder string, tmpDir string) ([]Weight, error) {
 	weightFile := filepath.Join(tmpDir, WEIGHT_FILE)
 	if _, err := os.Stat(weightFile); errors.Is(err, os.ErrNotExist) {
 		return findFullWeights(folder, []Weight{}, weightFile)
@@ -51,7 +53,7 @@ func FindWeights(folder string, tmpDir string) ([]Weight, error) {
 	return checkWeights(folder, weightFile)
 }
 
-func ReadWeights(tmpDir string) ([]Weight, error) {
+func ReadFastWeights(tmpDir string) ([]Weight, error) {
 	return readWeights(filepath.Join(tmpDir, WEIGHT_FILE))
 }
 
@@ -79,7 +81,7 @@ func findFullWeights(folder string, weights []Weight, weightFile string) ([]Weig
 		}
 
 		if slices.Contains(WEIGHT_FILE_INCLUSIONS, ext) || info.Size() >= WEIGHT_FILE_SIZE_INCLUSION {
-			hash, err := SHA256HashFile(path)
+			hash, err := util.SHA256HashFile(path)
 			if err != nil {
 				return err
 			}

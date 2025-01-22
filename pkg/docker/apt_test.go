@@ -1,4 +1,4 @@
-package dockerfile
+package docker
 
 import (
 	"testing"
@@ -14,7 +14,8 @@ func TestCreateAptTarball(t *testing.T) {
 		Build: &build,
 	}
 	dir := t.TempDir()
-	tarball, err := CreateAptTarball(&config, dir)
+	command := NewMockCommand()
+	tarball, err := CreateAptTarball(&config, dir, command)
 	require.NoError(t, err)
 	require.Equal(t, "", tarball)
 }

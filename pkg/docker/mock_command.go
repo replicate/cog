@@ -30,3 +30,13 @@ func (c *MockCommand) CreateTarFile(image string, tmpDir string, tarFile string,
 	}
 	return path, nil
 }
+
+func (c *MockCommand) CreateAptTarFile(tmpDir string, aptTarFile string, packages ...string) (string, error) {
+	path := filepath.Join(tmpDir, aptTarFile)
+	d1 := []byte("hello\ngo\n")
+	err := os.WriteFile(path, d1, 0o644)
+	if err != nil {
+		return "", err
+	}
+	return path, nil
+}

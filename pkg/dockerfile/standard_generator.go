@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/slices"
 	"github.com/replicate/cog/pkg/util/version"
@@ -67,9 +68,10 @@ type StandardGenerator struct {
 	modelFiles []string
 
 	pythonRequirementsContents string
+	command                    docker.Command
 }
 
-func NewStandardGenerator(config *config.Config, dir string) (*StandardGenerator, error) {
+func NewStandardGenerator(config *config.Config, dir string, command docker.Command) (*StandardGenerator, error) {
 	tmpDir, err := BuildTempDir(dir)
 	if err != nil {
 		return nil, err
@@ -92,6 +94,7 @@ func NewStandardGenerator(config *config.Config, dir string) (*StandardGenerator
 		useCogBaseImage:  nil,
 		strip:            false,
 		precompile:       false,
+		command:          command,
 	}, nil
 }
 
@@ -581,7 +584,7 @@ func (g *StandardGenerator) determineBaseImageName() (string, error) {
 	torchVersion, _ := g.Config.TorchVersion()
 
 	// validate that the base image configuration exists
-	imageGenerator, err := NewBaseImageGenerator(cudaVersion, pythonVersion, torchVersion)
+	imageGenerator, err := NewBaseImageGenerator(cudaVersion, pythonVersion, torchVersion, g.command)
 	if err != nil {
 		return "", err
 	}
