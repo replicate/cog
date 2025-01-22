@@ -53,6 +53,10 @@ func (c *DockerCommand) CreateTarFile(image string, tmpDir string, tarFile strin
 }
 
 func (c *DockerCommand) CreateAptTarFile(tmpDir string, aptTarFile string, packages ...string) (string, error) {
+	// This uses a hardcoded monobase image to produce an apt tar file.
+	// The reason being that this apt tar file is created outside the docker file, and it is created by
+	// running the apt.sh script on the monobase with the packages we intend to install, which produces
+	// a tar file that can be untarred into a docker build to achieve the equivalent of an apt-get install.
 	args := []string{
 		"--rm",
 		"--volume",
