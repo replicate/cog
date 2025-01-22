@@ -11,8 +11,8 @@ import (
 	"strings"
 )
 
-const APT_TARBALL_PREFIX = "apt."
-const APT_TARBALL_SUFFIX = ".tar.zst"
+const aptTarballPrefix = "apt."
+const aptTarballSuffix = ".tar.zst"
 
 func CreateAptTarball(tmpDir string, command Command, packages ...string) (string, error) {
 	if len(packages) > 0 {
@@ -20,7 +20,7 @@ func CreateAptTarball(tmpDir string, command Command, packages ...string) (strin
 		hash := sha256.New()
 		hash.Write([]byte(strings.Join(packages, " ")))
 		hexHash := hex.EncodeToString(hash.Sum(nil))
-		aptTarFile := APT_TARBALL_PREFIX + hexHash + APT_TARBALL_SUFFIX
+		aptTarFile := aptTarballPrefix + hexHash + aptTarballSuffix
 		aptTarPath := filepath.Join(tmpDir, aptTarFile)
 
 		if _, err := os.Stat(aptTarPath); errors.Is(err, os.ErrNotExist) {
@@ -50,7 +50,7 @@ func CurrentAptTarball(tmpDir string) (string, error) {
 
 	for _, file := range files {
 		fileName := file.Name()
-		if strings.HasPrefix(fileName, APT_TARBALL_PREFIX) && strings.HasSuffix(fileName, APT_TARBALL_SUFFIX) {
+		if strings.HasPrefix(fileName, aptTarballPrefix) && strings.HasSuffix(fileName, aptTarballSuffix) {
 			return filepath.Join(tmpDir, fileName), nil
 		}
 	}
@@ -66,7 +66,7 @@ func removeAptTarballs(tmpDir string) error {
 
 	for _, file := range files {
 		fileName := file.Name()
-		if strings.HasPrefix(fileName, APT_TARBALL_PREFIX) && strings.HasSuffix(fileName, APT_TARBALL_SUFFIX) {
+		if strings.HasPrefix(fileName, aptTarballPrefix) && strings.HasSuffix(fileName, aptTarballSuffix) {
 			err = os.Remove(filepath.Join(tmpDir, fileName))
 			if err != nil {
 				return err
