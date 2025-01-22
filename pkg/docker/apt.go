@@ -6,13 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/util/console"
 )
 
 const APT_TARBALL_PREFIX = "apt."
@@ -36,21 +34,7 @@ func CreateAptTarball(config *config.Config, tmpDir string, command Command) (st
 			}
 
 			// Create the apt tar file
-			args := []string{
-				"run",
-				"--rm",
-				"--volume",
-				tmpDir + ":/buildtmp",
-				"r8.im/monobase:latest",
-				"/opt/r8/monobase/apt.sh",
-				"/buildtmp/" + aptTarFile,
-			}
-			args = append(args, packages...)
-			cmd := exec.Command("docker", args...)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			console.Debug("$ " + strings.Join(cmd.Args, " "))
-			err = cmd.Run()
+			aptTarFile, err = command.CreateAptTarFile(tmpDir, aptTarFile, packages...)
 			if err != nil {
 				return "", err
 			}
