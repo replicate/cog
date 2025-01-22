@@ -20,9 +20,9 @@ func TestPush(t *testing.T) {
 	defer server.Close()
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	err = os.Setenv(SCHEME_ENV, url.Scheme)
+	err = os.Setenv(schemeEnv, url.Scheme)
 	require.NoError(t, err)
-	err = os.Setenv(HOST_ENV, url.Host)
+	err = os.Setenv(hostEnv, url.Host)
 	require.NoError(t, err)
 
 	// Create directories
@@ -42,8 +42,8 @@ func TestPush(t *testing.T) {
 	require.NoError(t, err)
 
 	// Cleanup env
-	err = os.Unsetenv(SCHEME_ENV)
+	err = os.Unsetenv(schemeEnv)
 	require.NoError(t, err)
-	err = os.Unsetenv(HOST_ENV)
+	err = os.Unsetenv(hostEnv)
 	require.NoError(t, err)
 }

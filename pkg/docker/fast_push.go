@@ -18,11 +18,11 @@ import (
 	"github.com/replicate/cog/pkg/weights"
 )
 
-const WEIGHTS_OBJECT_TYPE = "weights"
-const FILES_OBJECT_TYPE = "files"
-const REQUIREMENTS_TAR_FILE = "requirements.tar.zst"
-const SCHEME_ENV = "R8_PUSH_SCHEME"
-const HOST_ENV = "R8_PUSH_HOST"
+const weightsObjectType = "weights"
+const filesObjectType = "files"
+const requirementsTarFile = "requirements.tar.zst"
+const schemeEnv = "R8_PUSH_SCHEME"
+const hostEnv = "R8_PUSH_HOST"
 
 func FastPush(image string, projectDir string, command Command) error {
 	var wg sync.WaitGroup
@@ -62,7 +62,7 @@ func FastPush(image string, projectDir string, command Command) error {
 	// Upload weights
 	for _, weight := range weights {
 		wg.Add(1)
-		go uploadFile(WEIGHTS_OBJECT_TYPE, weight.Digest, weight.Path, token, &wg, resultChan)
+		go uploadFile(weightsObjectType, weight.Digest, weight.Path, token, &wg, resultChan)
 	}
 
 	// Upload apt tar file
@@ -73,7 +73,7 @@ func FastPush(image string, projectDir string, command Command) error {
 			return err
 		}
 
-		go uploadFile(FILES_OBJECT_TYPE, hash, aptTarFile, token, &wg, resultChan)
+		go uploadFile(filesObjectType, hash, aptTarFile, token, &wg, resultChan)
 	}
 
 	// Upload python packages.
@@ -89,9 +89,9 @@ func FastPush(image string, projectDir string, command Command) error {
 			return err
 		}
 
-		go uploadFile(FILES_OBJECT_TYPE, hash, pythonTar, token, &wg, resultChan)
+		go uploadFile(filesObjectType, hash, pythonTar, token, &wg, resultChan)
 	} else {
-		requirementsTarFile := filepath.Join(tmpDir, REQUIREMENTS_TAR_FILE)
+		requirementsTarFile := filepath.Join(tmpDir, requirementsTarFile)
 		_, err = os.Stat(requirementsTarFile)
 		if !errors.Is(err, os.ErrNotExist) {
 			err = os.Remove(requirementsTarFile)
@@ -111,7 +111,7 @@ func FastPush(image string, projectDir string, command Command) error {
 	if err != nil {
 		return err
 	}
-	go uploadFile(FILES_OBJECT_TYPE, hash, srcTar, token, &wg, resultChan)
+	go uploadFile(filesObjectType, hash, srcTar, token, &wg, resultChan)
 
 	// Close the result channel after all uploads have finished
 	go func() {
@@ -129,11 +129,11 @@ func FastPush(image string, projectDir string, command Command) error {
 }
 
 func baseURL() url.URL {
-	scheme := os.Getenv(SCHEME_ENV)
+	scheme := os.Getenv(schemeEnv)
 	if scheme == "" {
 		scheme = "https"
 	}
-	host := os.Getenv(HOST_ENV)
+	host := os.Getenv(hostEnv)
 	if host == "" {
 		host = "monobeam.replicate.delivery"
 	}
@@ -189,7 +189,7 @@ func uploadFile(objectType string, digest string, path string, token string, wg 
 }
 
 func createPythonPackagesTarFile(image string, tmpDir string, command Command) (string, error) {
-	return command.CreateTarFile(image, tmpDir, REQUIREMENTS_TAR_FILE, "root/.venv")
+	return command.CreateTarFile(image, tmpDir, requirementsTarFile, "root/.venv")
 }
 
 func createSrcTarFile(image string, tmpDir string, command Command) (string, error) {
