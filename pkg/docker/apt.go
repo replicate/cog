@@ -34,7 +34,7 @@ func CreateAptTarball(config *config.Config, tmpDir string, command Command) (st
 			}
 
 			// Create the apt tar file
-			aptTarFile, err = command.CreateAptTarFile(tmpDir, aptTarFile, packages...)
+			aptTarPath, err = command.CreateAptTarFile(tmpDir, aptTarFile, packages...)
 			if err != nil {
 				return "", err
 			}
