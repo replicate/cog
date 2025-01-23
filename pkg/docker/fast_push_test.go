@@ -21,10 +21,8 @@ func TestFastPush(t *testing.T) {
 	defer server.Close()
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	err = os.Setenv(schemeEnv, url.Scheme)
-	require.NoError(t, err)
-	err = os.Setenv(hostEnv, url.Host)
-	require.NoError(t, err)
+	t.Setenv(schemeEnv, url.Scheme)
+	t.Setenv(hostEnv, url.Host)
 
 	// Create directories
 	dir := t.TempDir()
@@ -40,11 +38,5 @@ func TestFastPush(t *testing.T) {
 
 	// Run fast push
 	err = FastPush("test", dir, command, context.Background())
-	require.NoError(t, err)
-
-	// Cleanup env
-	err = os.Unsetenv(schemeEnv)
-	require.NoError(t, err)
-	err = os.Unsetenv(hostEnv)
 	require.NoError(t, err)
 }
