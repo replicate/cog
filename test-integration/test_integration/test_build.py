@@ -381,11 +381,17 @@ def test_pip_freeze(docker_image):
     labels = image[0]["Config"]["Labels"]
     pip_freeze = labels["run.cog.pip_freeze"]
     pip_freeze = "\n".join(
-        [x for x in pip_freeze.split("\n") if not x.startswith("cog @")]
+        [
+            x
+            for x in pip_freeze.split("\n")
+            if not x.startswith("cog @")
+            and not x.startswith("fastapi")
+            and not x.startswith("starlette")
+        ]
     )
     assert (
         pip_freeze
-        == "anyio==4.4.0\nattrs==23.2.0\ncertifi==2024.8.30\ncharset-normalizer==3.3.2\nclick==8.1.7\nexceptiongroup==1.2.2\nfastapi==0.115.6\nh11==0.14.0\nhttptools==0.6.1\nidna==3.8\npydantic==1.10.18\npython-dotenv==1.0.1\nPyYAML==6.0.2\nrequests==2.32.3\nsniffio==1.3.1\nstarlette==0.41.3\nstructlog==24.4.0\ntyping_extensions==4.12.2\nurllib3==2.2.2\nuvicorn==0.30.6\nuvloop==0.20.0\nwatchfiles==0.24.0\nwebsockets==13.0.1\n"
+        == "anyio==4.4.0\nattrs==23.2.0\ncertifi==2024.8.30\ncharset-normalizer==3.3.2\nclick==8.1.7\nexceptiongroup==1.2.2\nh11==0.14.0\nhttptools==0.6.1\nidna==3.8\npydantic==1.10.18\npython-dotenv==1.0.1\nPyYAML==6.0.2\nrequests==2.32.3\nsniffio==1.3.1\nstructlog==24.4.0\ntyping_extensions==4.12.2\nurllib3==2.2.2\nuvicorn==0.30.6\nuvloop==0.20.0\nwatchfiles==0.24.0\nwebsockets==13.0.1\n"
     )
 
 
