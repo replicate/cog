@@ -27,7 +27,7 @@ const schemeEnv = "R8_PUSH_SCHEME"
 const hostEnv = "R8_PUSH_HOST"
 
 func FastPush(image string, projectDir string, command Command, ctx context.Context) error {
-	g, ctx := errgroup.WithContext(ctx)
+	g, _ := errgroup.WithContext(ctx)
 
 	token, err := command.LoadLoginToken(global.ReplicateRegistryHost)
 	if err != nil {
