@@ -122,21 +122,16 @@ func baseURL() url.URL {
 	}
 }
 
-func startUploadURL(objectType string, digest string, size int64) url.URL {
+func startUploadURL(objectType string, digest string) url.URL {
 	uploadUrl := baseURL()
 	uploadUrl.Path = strings.Join([]string{"", "uploads", objectType, "sha256", digest}, "/")
-	uploadUrl.Query().Add("size", strconv.FormatInt(size, 10))
 	return uploadUrl
 }
 
 func uploadFile(objectType string, digest string, path string, token string) error {
 	console.Debug("uploading file: " + path)
-	info, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
 
-	uploadUrl := startUploadURL(objectType, digest, info.Size())
+	uploadUrl := startUploadURL(objectType, digest)
 	client := &http.Client{}
 	req, _ := http.NewRequest("POST", uploadUrl.String(), nil)
 	req.Header.Set("Authorization", "Bearer "+token)
