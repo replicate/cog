@@ -29,6 +29,19 @@ def _find_api_token() -> str:
 
 @dataclass
 class Run:
+    prediction: Prediction
+
+    def wait(self) -> Any:
+        self.prediction.wait()
+
+        if self.prediction.status == "failed":
+            raise ModelError(self.prediction)
+
+        return self.prediction.output
+
+
+@dataclass
+class Function:
     function_ref: str
 
     def _client(self) -> replicate.Client:
@@ -38,18 +51,6 @@ class Run:
         owner, name = self.function_ref.split("/")
         name, version = name.split(":") if ":" in name else (name, None)
         return owner, name, version
-
-    def __call__(self, **inputs: dict[str, Any]):
-        version = self._version()
-        prediction = self._client().predictions.create(version=version, input=inputs)
-        print(f"Running prediction https://replicate.com/p/{prediction.id}")
-
-        prediction.wait()
-
-        if prediction.status == "failed":
-            raise ModelError(prediction)
-
-        return prediction.output
 
     def _model(self) -> Model:
         client = self._client()
@@ -65,10 +66,21 @@ class Run:
         )
         return version
 
+    def __call__(self, **inputs: dict[str, Any]) -> Any:
+        run = self.start(**inputs)
+        return run.wait()
+
+    def start(self, **inputs: dict[str, Any]) -> Run:
+        version = self._version()
+        prediction = self._client().predictions.create(version=version, input=inputs)
+        print(f"Running https://replicate.com/p/{prediction.id}")
+
+        return Run(prediction)
+
     @property
     def default_example(self) -> Prediction | None:
         return self._model().default_example
 
 
-def include(model: str) -> Callable[..., Any]:
-    return Run(model)
+def include(function_ref: str) -> Callable[..., Any]:
+    return Function(function_ref)
