@@ -2,6 +2,11 @@
 
 This guide will walk you through what you can do with Cog by using an example model.
 
+> [!TIP]
+> Using a language model to help you write the code for your new Cog model?
+>
+> Feed it [https://cog.run/llms.txt](https://cog.run/llms.txt), which has all of Cog's documentation bundled into a single file. To learn more about this format, check out [llmstxt.org](https://llmstxt.org).
+
 ## Prerequisites
 
 - **macOS or Linux**. Cog works on macOS and Linux, but does not currently support Windows.

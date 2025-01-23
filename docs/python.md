@@ -2,7 +2,13 @@
 
 This document defines the API of the `cog` Python module, which is used to define the interface for running predictions on your model.
 
-Tip: Run [`cog init`](getting-started-own-model.md#initialization) to generate an annotated `predict.py` file that can be used as a starting point for setting up your model.
+> [!TIP]
+> Run [`cog init`](getting-started-own-model.md#initialization) to generate an annotated `predict.py` file that can be used as a starting point for setting up your model.
+
+> [!TIP]
+> Using a language model to help you write the code for your new Cog model?
+>
+> Feed it [https://cog.run/llms.txt](https://cog.run/llms.txt), which has all of Cog's documentation bundled into a single file. To learn more about this format, check out [llmstxt.org](https://llmstxt.org).
 
 ## Contents
 

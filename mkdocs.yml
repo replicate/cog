@@ -16,6 +16,7 @@ nav:
   - Windows: wsl2/wsl2.md
   - Contributing: CONTRIBUTING.md
   - License: https://github.com/replicate/cog/blob/main/LICENSE
+  - llms.txt: llms.txt
 
 theme:
   name: material
