@@ -1,3 +1,5 @@
+import sys
+import os
 from dataclasses import dataclass
 import inspect
 from typing import Callable, Any
@@ -9,6 +11,11 @@ from replicate.exceptions import ModelError
 
 
 def _find_api_token() -> str:
+    token = os.environ.get("REPLICATE_API_TOKEN")
+    if token:
+        print("Using Replicate API token from environment", file=sys.stderr)
+        return token
+
     frame = inspect.currentframe()
     while frame:
         if "self" in frame.f_locals:
