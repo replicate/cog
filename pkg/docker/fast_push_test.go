@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -38,7 +39,7 @@ func TestFastPush(t *testing.T) {
 	command := NewMockCommand()
 
 	// Run fast push
-	err = FastPush("test", dir, command)
+	err = FastPush("test", dir, command, context.Background())
 	require.NoError(t, err)
 
 	// Cleanup env
