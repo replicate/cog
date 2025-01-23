@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/dockertest"
 )
 
 func TestGeneratorFactory(t *testing.T) {
@@ -17,7 +17,7 @@ func TestGeneratorFactory(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	command := docker.NewMockCommand()
+	command := dockertest.NewMockCommand()
 	generator, err := NewGenerator(&config, dir, true, command)
 	require.NoError(t, err)
 	require.Equal(t, generator.Name(), FAST_GENERATOR_NAME)

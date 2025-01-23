@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/replicate/cog/pkg/docker/dockertest"
 )
 
 func TestPush(t *testing.T) {
@@ -33,7 +35,7 @@ func TestPush(t *testing.T) {
 	require.NoError(t, err)
 
 	// Setup mock docker command
-	command := NewMockCommand()
+	command := dockertest.NewMockCommand()
 
 	// Run fast push
 	err = Push("test", true, dir, command)

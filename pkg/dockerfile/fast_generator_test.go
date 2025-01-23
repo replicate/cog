@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/dockertest"
 )
 
 func TestGenerate(t *testing.T) {
@@ -18,7 +18,7 @@ func TestGenerate(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	command := docker.NewMockCommand()
+	command := dockertest.NewMockCommand()
 	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
@@ -38,7 +38,7 @@ func TestGenerateUVCacheMount(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	command := docker.NewMockCommand()
+	command := dockertest.NewMockCommand()
 	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
@@ -56,7 +56,7 @@ func TestGenerateCUDA(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	command := docker.NewMockCommand()
+	command := dockertest.NewMockCommand()
 	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
@@ -75,7 +75,7 @@ func TestGeneratePythonPackages(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	command := docker.NewMockCommand()
+	command := dockertest.NewMockCommand()
 	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
@@ -92,7 +92,7 @@ func TestGenerateVerboseEnv(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	command := docker.NewMockCommand()
+	command := dockertest.NewMockCommand()
 	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
@@ -109,7 +109,7 @@ func TestAptInstall(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	command := docker.NewMockCommand()
+	command := dockertest.NewMockCommand()
 	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
