@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/docker/dockertest"
 )
 
 func TestGenerate(t *testing.T) {
@@ -17,7 +18,8 @@ func TestGenerate(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	generator, err := NewFastGenerator(&config, dir)
+	command := dockertest.NewMockCommand()
+	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
@@ -36,12 +38,13 @@ func TestGenerateUVCacheMount(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	generator, err := NewFastGenerator(&config, dir)
+	command := dockertest.NewMockCommand()
+	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
 	dockerfileLines := strings.Split(dockerfile, "\n")
-	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp\",target=\"/buildtmp\" --mount=type=cache,from=usercache,target=\"/var/cache/monobase\" --mount=type=cache,target=/var/cache/apt,id=apt-cache --mount=type=cache,target=/srv/r8/monobase/uv/cache,id=pip-cache UV_CACHE_DIR=\"/srv/r8/monobase/uv/cache\" UV_LINK_MODE=copy /opt/r8/monobase/run.sh monobase.build --mini --cache=/var/cache/monobase", dockerfileLines[4])
+	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp\",target=\"/buildtmp\" --mount=type=cache,from=usercache,target=\"/var/cache/monobase\" --mount=type=cache,target=/var/cache/apt,id=apt-cache,sharing=locked --mount=type=cache,target=/srv/r8/monobase/uv/cache,id=pip-cache UV_CACHE_DIR=\"/srv/r8/monobase/uv/cache\" UV_LINK_MODE=copy /opt/r8/monobase/run.sh monobase.build --mini --cache=/var/cache/monobase", dockerfileLines[4])
 }
 
 func TestGenerateCUDA(t *testing.T) {
@@ -53,7 +56,8 @@ func TestGenerateCUDA(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	generator, err := NewFastGenerator(&config, dir)
+	command := dockertest.NewMockCommand()
+	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
@@ -71,7 +75,8 @@ func TestGeneratePythonPackages(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	generator, err := NewFastGenerator(&config, dir)
+	command := dockertest.NewMockCommand()
+	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
@@ -87,10 +92,28 @@ func TestGenerateVerboseEnv(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
-	generator, err := NewFastGenerator(&config, dir)
+	command := dockertest.NewMockCommand()
+	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
 	dockerfileLines := strings.Split(dockerfile, "\n")
 	require.Equal(t, "ENV VERBOSE=0", dockerfileLines[8])
+}
+
+func TestAptInstall(t *testing.T) {
+	dir := t.TempDir()
+	build := config.Build{
+		SystemPackages: []string{"git"},
+	}
+	config := config.Config{
+		Build: &build,
+	}
+	command := dockertest.NewMockCommand()
+	generator, err := NewFastGenerator(&config, dir, command)
+	require.NoError(t, err)
+	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
+	require.NoError(t, err)
+	dockerfileLines := strings.Split(dockerfile, "\n")
+	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp\",target=\"/buildtmp\" tar -xf \"/buildtmp/apt.9a881b9b9f23849475296a8cd768ea1965bc3152df7118e60c145975af6aa58a.tar.zst\" -C /", dockerfileLines[5])
 }

@@ -60,7 +60,6 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast); err != nil {
-
 		return err
 	}
 
@@ -69,7 +68,8 @@ func push(cmd *cobra.Command, args []string) error {
 		console.Info("Fast push enabled.")
 	}
 
-	err = docker.Push(imageName)
+	command := docker.NewDockerCommand()
+	err = docker.Push(imageName, buildFast, projectDir, command)
 	if err != nil {
 		if strings.Contains(err.Error(), "NAME_UNKNOWN") {
 			return fmt.Errorf("Unable to find existing Replicate model for %s. "+

@@ -6,10 +6,11 @@ import (
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/version"
 )
 
-const BaseImageRegistry = "r8.im"
 const MinimumCUDAVersion = "11.6"
 const MinimumPythonVersion = "3.8"
 const MinimumTorchVersion = "1.13.1"
@@ -74,6 +75,7 @@ type BaseImageGenerator struct {
 	cudaVersion   string
 	pythonVersion string
 	torchVersion  string
+	command       docker.Command
 }
 
 func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
@@ -85,7 +87,7 @@ func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
 	}
 
 	rawName := BaseImageName(b.CUDAVersion, b.PythonVersion, b.TorchVersion)
-	rawName = strings.TrimPrefix(rawName, BaseImageRegistry+"/")
+	rawName = strings.TrimPrefix(rawName, global.ReplicateRegistryHost+"/")
 	split := strings.Split(rawName, ":")
 	if len(split) != 2 {
 		return nil, fmt.Errorf("invalid base image name and tag: %s", rawName)
@@ -158,10 +160,10 @@ func BaseImageConfigurations() []BaseImageConfiguration {
 	return configs
 }
 
-func NewBaseImageGenerator(cudaVersion string, pythonVersion string, torchVersion string) (*BaseImageGenerator, error) {
+func NewBaseImageGenerator(cudaVersion string, pythonVersion string, torchVersion string, command docker.Command) (*BaseImageGenerator, error) {
 	valid, cudaVersion, pythonVersion, torchVersion := BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion)
 	if valid {
-		return &BaseImageGenerator{cudaVersion, pythonVersion, torchVersion}, nil
+		return &BaseImageGenerator{cudaVersion, pythonVersion, torchVersion, command}, nil
 	}
 	printNone := func(s string) string {
 		if s == "" {
@@ -178,7 +180,7 @@ func (g *BaseImageGenerator) GenerateDockerfile() (string, error) {
 		return "", err
 	}
 
-	generator, err := NewGenerator(conf, "", false)
+	generator, err := NewGenerator(conf, "", false, g.command)
 	if err != nil {
 		return "", err
 	}
@@ -271,7 +273,7 @@ func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string
 		tag = "latest"
 	}
 
-	return BaseImageRegistry + "/cog-base:" + tag
+	return global.ReplicateRegistryHost + "/cog-base:" + tag
 }
 
 func BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion string) (bool, string, string, string) {
