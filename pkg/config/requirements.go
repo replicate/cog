@@ -1,84 +1,9 @@
 package config
 
 import (
-	"bufio"
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
-	"sort"
 )
-
-func GenerateRequirements(tmpDir string, config *Config) (string, error) {
-	// Deduplicate packages between the requirements.txt and the python packages directive.
-	packageNames := make(map[string]string)
-
-	// Read the python packages configuration.
-	for _, requirement := range config.Build.PythonPackages {
-		packageName, err := PackageName(requirement)
-		if err != nil {
-			return "", err
-		}
-		packageNames[packageName] = requirement
-	}
-
-	// Read the python requirements.
-	if config.Build.PythonRequirements != "" {
-		fh, err := os.Open(config.Build.PythonRequirements)
-		if err != nil {
-			return "", err
-		}
-		scanner := bufio.NewScanner(fh)
-		for scanner.Scan() {
-			requirement := scanner.Text()
-			packageName, err := PackageName(requirement)
-			if err != nil {
-				return "", err
-			}
-			packageNames[packageName] = requirement
-		}
-	}
-
-	// If we don't have any packages skip further processing
-	if len(packageNames) == 0 {
-		return "", nil
-	}
-
-	// Sort the package names by alphabetical order.
-	keys := make([]string, 0, len(packageNames))
-	for k := range packageNames {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	// Render the expected contents
-	requirementsContent := ""
-	for _, k := range keys {
-		requirementsContent += packageNames[k] + "\n"
-	}
-
-	// Check against the old requirements contents
-	requirementsFile := filepath.Join(tmpDir, "requirements.txt")
-	_, err := os.Stat(requirementsFile)
-	if !errors.Is(err, os.ErrNotExist) {
-		bytes, err := os.ReadFile(requirementsFile)
-		if err != nil {
-			return "", err
-		}
-		oldRequirementsContents := string(bytes)
-		if oldRequirementsContents == requirementsFile {
-			return requirementsFile, nil
-		}
-	}
-
-	// Write out a new requirements file
-	err = os.WriteFile(requirementsFile, []byte(requirementsContent), 0o644)
-	if err != nil {
-		return "", err
-	}
-	return requirementsFile, nil
-}
 
 // SplitPinnedPythonRequirement returns the name, version, findLinks, and extraIndexURLs from a requirements.txt line
 // in the form name==version [--find-links=<findLink>] [-f <findLink>] [--extra-index-url=<extraIndexURL>]

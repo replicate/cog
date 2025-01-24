@@ -14,12 +14,6 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-type credentialHelperInput struct {
-	Username  string
-	Secret    string
-	ServerURL string
-}
-
 func SaveLoginToken(registryHost string, username string, token string) error {
 	conf := config.LoadDefaultConfigFile(os.Stderr)
 	credsStore := conf.CredentialsStore
@@ -42,8 +36,8 @@ func saveAuthToConfig(conf *configfile.ConfigFile, registryHost string, username
 }
 
 func saveAuthToCredentialsStore(credsStore string, registryHost string, username string, token string) error {
-	binary := "docker-credential-" + credsStore
-	input := credentialHelperInput{
+	binary := DockerCredentialBinary(credsStore)
+	input := CredentialHelperInput{
 		Username:  username,
 		Secret:    token,
 		ServerURL: registryHost,
