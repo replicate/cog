@@ -440,3 +440,15 @@ def test_pydantic2(docker_image):
     )
 
     assert build_process.returncode == 0
+
+
+def test_ffmpeg_base_image(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/ffmpeg-package"
+
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=project_dir,
+        capture_output=True,
+    )
+
+    assert build_process.returncode == 0
