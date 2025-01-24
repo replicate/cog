@@ -13,13 +13,11 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '22'
-
     - name: Compile llms.txt
-      run: npx --yes sitefetch https://cog.run -o docs/llms.txt --concurrency 10
+      run: |
+        # Concatenate all the markdown docs, minus everything after "## Contributors" in README.md, and write to docs/llms.txt
+        (sed '/## Contributors/q' README.md; for file in docs/*.md; do echo -e "\n\n\n\n\n---\n\n\n\n\n"; cat "$file"; done) > docs/llms.txt
+
 
     - name: Check for changes
       run: |
