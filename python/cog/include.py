@@ -39,6 +39,11 @@ class Run:
 
         return self.prediction.output
 
+    def logs(self) -> str | None:
+        self.prediction.reload()
+
+        return self.prediction.logs
+
 
 @dataclass
 class Function:
@@ -73,7 +78,7 @@ class Function:
     def start(self, **inputs: dict[str, Any]) -> Run:
         version = self._version()
         prediction = self._client().predictions.create(version=version, input=inputs)
-        print(f"Running https://replicate.com/p/{prediction.id}")
+        print(f"Running {self.function_ref}: https://replicate.com/p/{prediction.id}")
 
         return Run(prediction)
 
