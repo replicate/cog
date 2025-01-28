@@ -13,6 +13,7 @@ import (
 func TestGenerate(t *testing.T) {
 	dir := t.TempDir()
 	build := config.Build{
+		PythonVersion:  "3.8",
 		PythonPackages: []string{"torch==2.5.1"},
 	}
 	config := config.Config{
@@ -30,6 +31,7 @@ func TestGenerate(t *testing.T) {
 func TestGenerateUVCacheMount(t *testing.T) {
 	dir := t.TempDir()
 	build := config.Build{
+		PythonVersion: "3.8",
 		PythonPackages: []string{
 			"torch==2.5.1",
 			"catboost==1.2.7",
@@ -50,8 +52,9 @@ func TestGenerateUVCacheMount(t *testing.T) {
 func TestGenerateCUDA(t *testing.T) {
 	dir := t.TempDir()
 	build := config.Build{
-		GPU:  true,
-		CUDA: "12.4",
+		GPU:           true,
+		CUDA:          "12.4",
+		PythonVersion: "3.8",
 	}
 	config := config.Config{
 		Build: &build,
@@ -68,6 +71,7 @@ func TestGenerateCUDA(t *testing.T) {
 func TestGeneratePythonPackages(t *testing.T) {
 	dir := t.TempDir()
 	build := config.Build{
+		PythonVersion: "3.8",
 		PythonPackages: []string{
 			"catboost==1.2.7",
 		},
@@ -87,6 +91,7 @@ func TestGeneratePythonPackages(t *testing.T) {
 func TestGenerateVerboseEnv(t *testing.T) {
 	dir := t.TempDir()
 	build := config.Build{
+		PythonVersion:  "3.8",
 		PythonPackages: []string{"torch==2.5.1"},
 	}
 	config := config.Config{
@@ -104,6 +109,7 @@ func TestGenerateVerboseEnv(t *testing.T) {
 func TestAptInstall(t *testing.T) {
 	dir := t.TempDir()
 	build := config.Build{
+		PythonVersion:  "3.8",
 		SystemPackages: []string{"git"},
 	}
 	config := config.Config{
