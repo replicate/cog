@@ -3,7 +3,6 @@ package dockerfile
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -125,42 +124,15 @@ func (g *FastGenerator) generate() (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-func (g *FastGenerator) copyCog(tmpDir string) (string, error) {
-	files, err := CogEmbed.ReadDir("embed")
-	if err != nil {
-		return "", err
-	}
-	if len(files) != 1 {
-		return "", fmt.Errorf("should only have one cog wheel embedded")
-	}
-	filename := files[0].Name()
-	data, err := CogEmbed.ReadFile("embed/" + filename)
-	if err != nil {
-		return "", err
-	}
-	path := filepath.Join(tmpDir, filename)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return "", fmt.Errorf("Failed to write %s: %w", filename, err)
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return "", fmt.Errorf("Failed to write %s: %w", filename, err)
-	}
-	return path, nil
-}
-
 func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]string, error) {
 	lines = append(lines, []string{
 		"# syntax=docker/dockerfile:1-labs",
 		"FROM r8.im/monobase:latest",
 	}...)
 
-	cogPath, err := g.copyCog(tmpDir)
-	if err != nil {
-		return nil, err
-	}
-
 	lines = append(lines, []string{
-		"ENV R8_COG_VERSION=\"file:///buildtmp/" + filepath.Base(cogPath) + "\"",
+		// This installs latest version of coglet
+		"ENV R8_COG_VERSION=coglet",
 	}...)
 
 	if g.Config.Build.GPU {
