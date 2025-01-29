@@ -39,6 +39,6 @@ func TestFastPush(t *testing.T) {
 	command := dockertest.NewMockCommand()
 
 	// Run fast push
-	err = FastPush("test", dir, command, context.Background())
+	err = FastPush(context.Background(), "test", dir, command)
 	require.NoError(t, err)
 }

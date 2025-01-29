@@ -44,7 +44,7 @@ type S3Config struct {
 	Uuid            string `json:"uuid"`
 }
 
-func FastPush(image string, projectDir string, command Command, ctx context.Context) error {
+func FastPush(ctx context.Context, image string, projectDir string, command Command) error {
 	g, _ := errgroup.WithContext(ctx)
 
 	token, err := command.LoadLoginToken(global.ReplicateRegistryHost)
