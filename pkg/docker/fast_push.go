@@ -17,6 +17,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/replicate/cog/pkg/global"
@@ -206,17 +207,21 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 		Value: aws.Credentials{
 			AccessKeyID:     data.AccessKeyId,
 			SecretAccessKey: data.SecretAccessKey,
-			SessionToken:    data.SecretAccessKey,
+			SessionToken:    data.SessionToken,
 			Expires:         time.Unix(data.Expires, 0),
 		},
 	}
 	s3Client := s3.NewFromConfig(*cfg)
+	uploader := manager.NewUploader(s3Client, func(u *manager.Uploader) {
+		u.PartSize = 64 * 1024 * 1024 // 64MB per part
+	})
+
 	uploadParams := &s3.PutObjectInput{
 		Bucket: aws.String(data.Bucket),
 		Key:    aws.String(data.Key),
 		Body:   file,
 	}
-	_, err = s3Client.PutObject(context.Background(), uploadParams)
+	_, err = uploader.Upload(ctx, uploadParams)
 	if err != nil {
 		return err
 	}
