@@ -1,10 +1,14 @@
 package dockerfile
 
 import (
+	"cmp"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
+	"net/http"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
@@ -24,13 +28,64 @@ type FastGenerator struct {
 	Config  *config.Config
 	Dir     string
 	command docker.Command
+	matrix  MonobaseMatrix
+}
+
+type MonobaseMatrix struct {
+	Id             int            `json:"id"`
+	CudaVersions   []string       `json:"cuda_versions"`
+	CudnnVersions  []string       `json:"cudnn_versions"`
+	PythonVersions []string       `json:"python_versions"`
+	TorchVersions  []string       `json:"torch_versions"`
+	Venvs          []MonobaseVenv `json:"venvs"`
+}
+
+type MonobaseVenv struct {
+	Python string `json:"python"`
+	Torch  string `json:"torch"`
+	Cuda   string `json:"cuda"`
+}
+
+func (m MonobaseMatrix) DefaultCudnnVersion() string {
+	slices.SortFunc(m.CudnnVersions, func(s1, s2 string) int {
+		i1, e1 := strconv.Atoi(s1)
+		i2, e2 := strconv.Atoi(s2)
+		if e1 != nil || e2 != nil {
+			return strings.Compare(s1, s2)
+		}
+		return cmp.Compare(i1, i2)
+	})
+	return m.CudnnVersions[len(m.CudnnVersions)-1]
+}
+
+func (m MonobaseMatrix) IsSupported(python string, torch string, cuda string) bool {
+	if torch == "" {
+		return slices.Contains(m.PythonVersions, python)
+	}
+	if cuda == "" {
+		cuda = "cpu"
+	}
+	return slices.Contains(m.Venvs, MonobaseVenv{Python: python, Torch: torch, Cuda: cuda})
 }
 
 func NewFastGenerator(config *config.Config, dir string, command docker.Command) (*FastGenerator, error) {
+	resp, err := http.DefaultClient.Get("https://raw.githubusercontent.com/replicate/monobase/refs/heads/main/matrix.json")
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("Failed to fetch Monobase support matrix")
+	}
+	var matrix MonobaseMatrix
+	if err := json.NewDecoder(resp.Body).Decode(&matrix); err != nil {
+		return nil, err
+	}
+
 	return &FastGenerator{
 		Config:  config,
 		Dir:     dir,
 		command: command,
+		matrix:  matrix,
 	}, nil
 }
 
@@ -125,47 +180,30 @@ func (g *FastGenerator) generate() (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-func (g *FastGenerator) copyCog(tmpDir string) (string, error) {
-	files, err := CogEmbed.ReadDir("embed")
-	if err != nil {
-		return "", err
-	}
-	if len(files) != 1 {
-		return "", fmt.Errorf("should only have one cog wheel embedded")
-	}
-	filename := files[0].Name()
-	data, err := CogEmbed.ReadFile("embed/" + filename)
-	if err != nil {
-		return "", err
-	}
-	path := filepath.Join(tmpDir, filename)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return "", fmt.Errorf("Failed to write %s: %w", filename, err)
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return "", fmt.Errorf("Failed to write %s: %w", filename, err)
-	}
-	return path, nil
-}
-
 func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]string, error) {
 	lines = append(lines, []string{
 		"# syntax=docker/dockerfile:1-labs",
 		"FROM r8.im/monobase:latest",
 	}...)
 
-	cogPath, err := g.copyCog(tmpDir)
-	if err != nil {
-		return nil, err
-	}
-
 	lines = append(lines, []string{
-		"ENV R8_COG_VERSION=\"file:///buildtmp/" + filepath.Base(cogPath) + "\"",
+		// This installs latest version of coglet
+		"ENV R8_COG_VERSION=coglet",
 	}...)
 
 	if g.Config.Build.GPU {
 		cudaVersion := g.Config.Build.CUDA
 		cudnnVersion := g.Config.Build.CuDNN
+		if cudnnVersion == "" {
+			cudnnVersion = g.matrix.DefaultCudnnVersion()
+		}
+		if !CheckMajorMinorOnly(cudaVersion) {
+			return nil, fmt.Errorf("CUDA version must be <major>.<minor>, supported versions: %s", strings.Join(g.matrix.CudaVersions, ", "))
+		}
+		if !CheckMajorOnly(cudnnVersion) {
+			return nil, fmt.Errorf("CUDNN version must be <major> only, supported versions: %s", strings.Join(g.matrix.CudnnVersions, ", "))
+		}
+
 		lines = append(lines, []string{
 			"ENV R8_CUDA_VERSION=" + cudaVersion,
 			"ENV R8_CUDNN_VERSION=" + cudnnVersion,
@@ -174,15 +212,28 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 		}...)
 	}
 
+	if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
+		return nil, fmt.Errorf(
+			"Python version must be <major>.<minor>, supported versions: %s", strings.Join(g.matrix.PythonVersions, ", "))
+	}
 	lines = append(lines, []string{
 		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
 	}...)
 
 	torchVersion, ok := g.Config.TorchVersion()
 	if ok {
+		if !CheckMajorMinorPatch(torchVersion) {
+			return nil, fmt.Errorf("Torch version must be <major>.<minor>.<patch>: %s", strings.Join(g.matrix.TorchVersions, ", "))
+		}
 		lines = append(lines, []string{
 			"ENV R8_TORCH_VERSION=" + torchVersion,
 		}...)
+	}
+
+	if !g.matrix.IsSupported(g.Config.Build.PythonVersion, torchVersion, g.Config.Build.CUDA) {
+		return nil, fmt.Errorf(
+			"Unsupported version combination: Python=%s, Torch=%s, CUDA=%s",
+			g.Config.Build.PythonVersion, torchVersion, g.Config.Build.CUDA)
 	}
 
 	buildTmpMount, err := g.buildTmpMount(tmpDir)
