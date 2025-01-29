@@ -188,7 +188,7 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 
 	uploadUrl := startUploadURL(objectType, digest)
 	client := &http.Client{}
-	req, err := http.NewRequestWithContext(ctx, "POST", uploadUrl.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadUrl.String(), nil)
 	if err != nil {
 		return err
 	}
@@ -250,7 +250,7 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 
 	// Begin verification
 	verificationUrl := verificationURL(objectType, digest, data.Uuid)
-	req, err = http.NewRequestWithContext(ctx, "POST", verificationUrl.String(), nil)
+	req, err = http.NewRequestWithContext(ctx, http.MethodPost, verificationUrl.String(), nil)
 	if err != nil {
 		return err
 	}
@@ -265,7 +265,7 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 	}
 
 	// Check verification status
-	req, err = http.NewRequestWithContext(ctx, "GET", verificationUrl.String(), nil)
+	req, err = http.NewRequestWithContext(ctx, http.MethodGet, verificationUrl.String(), nil)
 	if err != nil {
 		return err
 	}
