@@ -44,6 +44,11 @@ type S3Config struct {
 	Uuid            string `json:"uuid"`
 }
 
+type VerificationStatus struct {
+	Verified bool `json:"verified"`
+	Complete bool `json:"complete"`
+}
+
 func FastPush(ctx context.Context, image string, projectDir string, command Command) error {
 	g, _ := errgroup.WithContext(ctx)
 
@@ -155,10 +160,27 @@ func verificationURL(objectType string, digest string, uuid string) url.URL {
 func checkVerificationStatus(req *http.Request, client *http.Client) (bool, error) {
 	checkResp, err := client.Do(req)
 	if err != nil {
-		return false, err
+		return true, err
 	}
 	defer checkResp.Body.Close()
-	return checkResp.StatusCode == http.StatusOK, nil
+
+	// Decode the JSON payload
+	decoder := json.NewDecoder(checkResp.Body)
+	var verificationStatus VerificationStatus
+	err = decoder.Decode(&verificationStatus)
+	if err != nil {
+		return true, err
+	}
+
+	// OK status means the server has finished verification.
+	if checkResp.StatusCode == http.StatusOK {
+		if verificationStatus.Verified && verificationStatus.Complete {
+			return true, nil
+		}
+		return true, errors.New("Object failed to verify its hash.")
+	}
+
+	return false, nil
 }
 
 func uploadFile(ctx context.Context, objectType string, digest string, path string, token string) error {
@@ -249,12 +271,9 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	for i := 0; i < 100; i++ {
-		verified, err := checkVerificationStatus(req, client)
-		if err != nil {
+		final, err := checkVerificationStatus(req, client)
+		if final {
 			return err
-		}
-		if verified {
-			break
 		}
 		time.Sleep(time.Second * 5)
 	}
