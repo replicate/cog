@@ -59,7 +59,7 @@ func FastPush(image string, projectDir string, command Command, ctx context.Cont
 	// Upload weights
 	for _, weight := range weights {
 		g.Go(func() error {
-			return uploadFile(weightsObjectType, weight.Digest, weight.Path, token)
+			return uploadFile(ctx, weightsObjectType, weight.Digest, weight.Path, token)
 		})
 	}
 
@@ -74,7 +74,7 @@ func FastPush(image string, projectDir string, command Command, ctx context.Cont
 			return err
 		}
 		g.Go(func() error {
-			return uploadFile(filesObjectType, hash, aptTarFile, token)
+			return uploadFile(ctx, filesObjectType, hash, aptTarFile, token)
 		})
 	}
 
@@ -94,7 +94,7 @@ func FastPush(image string, projectDir string, command Command, ctx context.Cont
 			return err
 		}
 		g.Go(func() error {
-			return uploadFile(filesObjectType, hash, pythonTar, token)
+			return uploadFile(ctx, filesObjectType, hash, pythonTar, token)
 		})
 	} else {
 		requirementsTarFile := filepath.Join(tmpDir, requirementsTarFile)
@@ -117,7 +117,7 @@ func FastPush(image string, projectDir string, command Command, ctx context.Cont
 		return err
 	}
 	g.Go(func() error {
-		return uploadFile(filesObjectType, hash, srcTar, token)
+		return uploadFile(ctx, filesObjectType, hash, srcTar, token)
 	})
 
 	// Wait for uploads
@@ -160,12 +160,12 @@ func checkVerificationStatus(req *http.Request, client *http.Client) (bool, erro
 	return checkResp.StatusCode == http.StatusOK, nil
 }
 
-func uploadFile(objectType string, digest string, path string, token string) error {
+func uploadFile(ctx context.Context, objectType string, digest string, path string, token string) error {
 	console.Debug("uploading file: " + path)
 
 	uploadUrl := startUploadURL(objectType, digest)
 	client := &http.Client{}
-	req, err := http.NewRequest("POST", uploadUrl.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", uploadUrl.String(), nil)
 	if err != nil {
 		return err
 	}
@@ -223,7 +223,7 @@ func uploadFile(objectType string, digest string, path string, token string) err
 
 	// Begin verification
 	verificationUrl := verificationURL(objectType, digest, data.Uuid)
-	req, err = http.NewRequest("POST", verificationUrl.String(), nil)
+	req, err = http.NewRequestWithContext(ctx, "POST", verificationUrl.String(), nil)
 	if err != nil {
 		return err
 	}
@@ -238,7 +238,7 @@ func uploadFile(objectType string, digest string, path string, token string) err
 	}
 
 	// Check verification status
-	req, err = http.NewRequest("GET", verificationUrl.String(), nil)
+	req, err = http.NewRequestWithContext(ctx, "GET", verificationUrl.String(), nil)
 	if err != nil {
 		return err
 	}
