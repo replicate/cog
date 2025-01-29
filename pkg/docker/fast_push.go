@@ -251,6 +251,7 @@ func uploadFile(objectType string, digest string, path string, token string) err
 		if verified {
 			break
 		}
+		time.Sleep(time.Second * 5)
 	}
 
 	return nil
