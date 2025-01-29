@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,8 +11,14 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/sync/errgroup"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/requirements"
@@ -26,7 +33,23 @@ const requirementsTarFile = "requirements.tar.zst"
 const schemeEnv = "R8_PUSH_SCHEME"
 const hostEnv = "R8_PUSH_HOST"
 
-func FastPush(image string, projectDir string, command Command, ctx context.Context) error {
+type S3Config struct {
+	Key             string `json:"key"`
+	Bucket          string `json:"bucket"`
+	Endpoint        string `json:"endpoint"`
+	AccessKeyId     string `json:"access_key_id"`
+	SecretAccessKey string `json:"secret_access_key"`
+	SessionToken    string `json:"session_token"`
+	Expires         int64  `json:"expires"`
+	Uuid            string `json:"uuid"`
+}
+
+type VerificationStatus struct {
+	Verified bool `json:"verified"`
+	Complete bool `json:"complete"`
+}
+
+func FastPush(ctx context.Context, image string, projectDir string, command Command) error {
 	g, _ := errgroup.WithContext(ctx)
 
 	token, err := command.LoadLoginToken(global.ReplicateRegistryHost)
@@ -42,7 +65,7 @@ func FastPush(image string, projectDir string, command Command, ctx context.Cont
 	// Upload weights
 	for _, weight := range weights {
 		g.Go(func() error {
-			return uploadFile(weightsObjectType, weight.Digest, weight.Path, token)
+			return uploadFile(ctx, weightsObjectType, weight.Digest, weight.Path, token)
 		})
 	}
 
@@ -57,7 +80,7 @@ func FastPush(image string, projectDir string, command Command, ctx context.Cont
 			return err
 		}
 		g.Go(func() error {
-			return uploadFile(filesObjectType, hash, aptTarFile, token)
+			return uploadFile(ctx, filesObjectType, hash, aptTarFile, token)
 		})
 	}
 
@@ -77,7 +100,7 @@ func FastPush(image string, projectDir string, command Command, ctx context.Cont
 			return err
 		}
 		g.Go(func() error {
-			return uploadFile(filesObjectType, hash, pythonTar, token)
+			return uploadFile(ctx, filesObjectType, hash, pythonTar, token)
 		})
 	} else {
 		requirementsTarFile := filepath.Join(tmpDir, requirementsTarFile)
@@ -100,7 +123,7 @@ func FastPush(image string, projectDir string, command Command, ctx context.Cont
 		return err
 	}
 	g.Go(func() error {
-		return uploadFile(filesObjectType, hash, srcTar, token)
+		return uploadFile(ctx, filesObjectType, hash, srcTar, token)
 	})
 
 	// Wait for uploads
@@ -128,12 +151,47 @@ func startUploadURL(objectType string, digest string) url.URL {
 	return uploadUrl
 }
 
-func uploadFile(objectType string, digest string, path string, token string) error {
+func verificationURL(objectType string, digest string, uuid string) url.URL {
+	verificationUrl := baseURL()
+	verificationUrl.Path = strings.Join([]string{"", "uploads", objectType, "sha256", digest, uuid, "verification"}, "/")
+	return verificationUrl
+}
+
+func checkVerificationStatus(req *http.Request, client *http.Client) (bool, error) {
+	checkResp, err := client.Do(req)
+	if err != nil {
+		return true, err
+	}
+	defer checkResp.Body.Close()
+
+	// Decode the JSON payload
+	decoder := json.NewDecoder(checkResp.Body)
+	var verificationStatus VerificationStatus
+	err = decoder.Decode(&verificationStatus)
+	if err != nil {
+		return true, err
+	}
+
+	// OK status means the server has finished verification.
+	if checkResp.StatusCode == http.StatusOK {
+		if verificationStatus.Verified && verificationStatus.Complete {
+			return true, nil
+		}
+		return true, errors.New("Object failed to verify its hash.")
+	}
+
+	return false, nil
+}
+
+func uploadFile(ctx context.Context, objectType string, digest string, path string, token string) error {
 	console.Debug("uploading file: " + path)
 
 	uploadUrl := startUploadURL(objectType, digest)
 	client := &http.Client{}
-	req, _ := http.NewRequest("POST", uploadUrl.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadUrl.String(), nil)
+	if err != nil {
+		return err
+	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := client.Do(req)
 	if err != nil {
@@ -148,7 +206,78 @@ func uploadFile(objectType string, digest string, path string, token string) err
 		return errors.New("Bad response: " + strconv.Itoa(resp.StatusCode))
 	}
 
+	// Decode the JSON payload
+	decoder := json.NewDecoder(resp.Body)
+	var data S3Config
+	err = decoder.Decode(&data)
+	if err != nil {
+		return err
+	}
+
+	// Open the file for uploading
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Upload the file using an S3 client
 	console.Debug("multi-part uploading file: " + path)
+	cfg := aws.NewConfig()
+	cfg.BaseEndpoint = &data.Endpoint
+	cfg.Credentials = credentials.StaticCredentialsProvider{
+		Value: aws.Credentials{
+			AccessKeyID:     data.AccessKeyId,
+			SecretAccessKey: data.SecretAccessKey,
+			SessionToken:    data.SessionToken,
+			Expires:         time.Unix(data.Expires, 0),
+		},
+	}
+	s3Client := s3.NewFromConfig(*cfg)
+	uploader := manager.NewUploader(s3Client, func(u *manager.Uploader) {
+		u.PartSize = 64 * 1024 * 1024 // 64MB per part
+	})
+
+	uploadParams := &s3.PutObjectInput{
+		Bucket: aws.String(data.Bucket),
+		Key:    aws.String(data.Key),
+		Body:   file,
+	}
+	_, err = uploader.Upload(ctx, uploadParams)
+	if err != nil {
+		return err
+	}
+
+	// Begin verification
+	verificationUrl := verificationURL(objectType, digest, data.Uuid)
+	req, err = http.NewRequestWithContext(ctx, http.MethodPost, verificationUrl.String(), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	beginResp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer beginResp.Body.Close()
+	if beginResp.StatusCode != http.StatusCreated {
+		return errors.New("Bad response from upload verification: " + strconv.Itoa(resp.StatusCode))
+	}
+
+	// Check verification status
+	req, err = http.NewRequestWithContext(ctx, http.MethodGet, verificationUrl.String(), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	for i := 0; i < 100; i++ {
+		final, err := checkVerificationStatus(req, client)
+		if final {
+			return err
+		}
+		time.Sleep(time.Second * 5)
+	}
+
 	return nil
 }
 
