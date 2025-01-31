@@ -230,6 +230,7 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 	console.Debug("multi-part uploading file: " + path)
 	cfg := aws.NewConfig()
 	cfg.BaseEndpoint = &data.Endpoint
+	cfg.Region = "auto"
 	cfg.Credentials = credentials.StaticCredentialsProvider{
 		Value: aws.Credentials{
 			AccessKeyID:     data.AccessKeyId,
