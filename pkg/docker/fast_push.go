@@ -49,6 +49,10 @@ type VerificationStatus struct {
 	Complete bool `json:"complete"`
 }
 
+func userAgent() string {
+	return fmt.Sprintf("Cog/%s", global.Version)
+}
+
 func FastPush(ctx context.Context, image string, projectDir string, command Command) error {
 	g, _ := errgroup.WithContext(ctx)
 
@@ -193,6 +197,7 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", userAgent())
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -255,6 +260,7 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", userAgent())
 	beginResp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -270,6 +276,7 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", userAgent())
 	for i := 0; i < 100; i++ {
 		final, err := checkVerificationStatus(req, client)
 		if final {
