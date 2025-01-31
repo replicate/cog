@@ -49,6 +49,10 @@ type VerificationStatus struct {
 	Complete bool `json:"complete"`
 }
 
+func userAgent() string {
+	return fmt.Sprintf("Cog/%s", global.Version)
+}
+
 func FastPush(ctx context.Context, image string, projectDir string, command Command) error {
 	g, _ := errgroup.WithContext(ctx)
 
@@ -193,6 +197,7 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", userAgent())
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -202,7 +207,7 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 	// A conflict means we have already uploaded this file.
 	if resp.StatusCode == http.StatusConflict {
 		return nil
-	} else if resp.StatusCode != http.StatusOK {
+	} else if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return errors.New("Bad response: " + strconv.Itoa(resp.StatusCode))
 	}
 
@@ -225,6 +230,7 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 	console.Debug("multi-part uploading file: " + path)
 	cfg := aws.NewConfig()
 	cfg.BaseEndpoint = &data.Endpoint
+	cfg.Region = "auto"
 	cfg.Credentials = credentials.StaticCredentialsProvider{
 		Value: aws.Credentials{
 			AccessKeyID:     data.AccessKeyId,
@@ -255,6 +261,7 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", userAgent())
 	beginResp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -270,6 +277,7 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", userAgent())
 	for i := 0; i < 100; i++ {
 		final, err := checkVerificationStatus(req, client)
 		if final {
