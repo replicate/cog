@@ -202,7 +202,7 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 	// A conflict means we have already uploaded this file.
 	if resp.StatusCode == http.StatusConflict {
 		return nil
-	} else if resp.StatusCode != http.StatusOK {
+	} else if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return errors.New("Bad response: " + strconv.Itoa(resp.StatusCode))
 	}
 
