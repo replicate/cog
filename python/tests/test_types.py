@@ -1,10 +1,12 @@
 import io
 import pickle
+import random
+import string
 
 import pytest
 import responses
 
-from cog.types import Secret, URLFile, get_filename
+from cog.types import Secret, URLFile, URLPath, get_filename
 
 
 def test_urlfile_protocol_validation():
@@ -146,3 +148,22 @@ def test_secret_type():
 
     assert secret.get_secret_value() == secret_value
     assert str(secret) == "**********"
+
+
+def test_truncate_filename_if_long():
+    # Test that a file too long exception is not raised.
+    random_str = "".join(
+        random.SystemRandom().choice(string.ascii_uppercase + string.digits)
+        for _ in range(350)
+    )
+    big_query = "query=" + random_str
+    filename = "waffwyyg~.zip"
+    url = "https://www.amazon.com/" + filename + "?" + big_query
+    fileobj = io.BytesIO()
+    url_path = URLPath(
+        source=url,
+        filename=filename + "?" + big_query,
+        fileobj=fileobj,
+    )
+    assert url_path.filename == "waffwyyg~~.zip"
+    _ = url_path.convert()
