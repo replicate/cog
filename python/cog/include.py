@@ -8,6 +8,7 @@ from replicate.model import Model
 from replicate.version import Version
 from replicate.prediction import Prediction
 from replicate.exceptions import ModelError
+from replicate.run import _has_output_iterator_array_type
 
 
 def _find_api_token() -> str:
@@ -30,12 +31,16 @@ def _find_api_token() -> str:
 @dataclass
 class Run:
     prediction: Prediction
+    version: Version
 
     def wait(self) -> Any:
         self.prediction.wait()
 
         if self.prediction.status == "failed":
             raise ModelError(self.prediction)
+
+        if _has_output_iterator_array_type(self.version):
+            return "".join(self.prediction.output)
 
         return self.prediction.output
 
@@ -80,7 +85,7 @@ class Function:
         prediction = self._client().predictions.create(version=version, input=inputs)
         print(f"Running {self.function_ref}: https://replicate.com/p/{prediction.id}")
 
-        return Run(prediction)
+        return Run(prediction, version)
 
     @property
     def default_example(self) -> Prediction | None:
