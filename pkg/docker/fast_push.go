@@ -58,7 +58,7 @@ func userAgent() string {
 func FastPush(ctx context.Context, image string, projectDir string, command Command) error {
 	g, _ := errgroup.WithContext(ctx)
 	p := mpb.New(
-		mpb.WithRefreshRate(180*time.Millisecond),
+		mpb.WithRefreshRate(180 * time.Millisecond),
 	)
 
 	token, err := command.LoadLoginToken(global.ReplicateRegistryHost)
