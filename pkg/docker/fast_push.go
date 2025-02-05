@@ -58,7 +58,6 @@ func userAgent() string {
 func FastPush(ctx context.Context, image string, projectDir string, command Command) error {
 	g, _ := errgroup.WithContext(ctx)
 	p := mpb.New(
-		mpb.WithWidth(60),
 		mpb.WithRefreshRate(180*time.Millisecond),
 	)
 
