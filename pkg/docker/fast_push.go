@@ -19,6 +19,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/vbauerster/mpb/v8"
+	"github.com/vbauerster/mpb/v8/decor"
 
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/requirements"
@@ -55,6 +57,9 @@ func userAgent() string {
 
 func FastPush(ctx context.Context, image string, projectDir string, command Command) error {
 	g, _ := errgroup.WithContext(ctx)
+	p := mpb.New(
+		mpb.WithRefreshRate(180 * time.Millisecond),
+	)
 
 	token, err := command.LoadLoginToken(global.ReplicateRegistryHost)
 	if err != nil {
@@ -69,7 +74,7 @@ func FastPush(ctx context.Context, image string, projectDir string, command Comm
 	// Upload weights
 	for _, weight := range weights {
 		g.Go(func() error {
-			return uploadFile(ctx, weightsObjectType, weight.Digest, weight.Path, token)
+			return uploadFile(ctx, weightsObjectType, weight.Digest, weight.Path, token, p, "weights - "+filepath.Base(weight.Path))
 		})
 	}
 
@@ -84,7 +89,7 @@ func FastPush(ctx context.Context, image string, projectDir string, command Comm
 			return err
 		}
 		g.Go(func() error {
-			return uploadFile(ctx, filesObjectType, hash, aptTarFile, token)
+			return uploadFile(ctx, filesObjectType, hash, aptTarFile, token, p, "apt")
 		})
 	}
 
@@ -104,7 +109,7 @@ func FastPush(ctx context.Context, image string, projectDir string, command Comm
 			return err
 		}
 		g.Go(func() error {
-			return uploadFile(ctx, filesObjectType, hash, pythonTar, token)
+			return uploadFile(ctx, filesObjectType, hash, pythonTar, token, p, "python-packages")
 		})
 	} else {
 		requirementsTarFile := filepath.Join(tmpDir, requirementsTarFile)
@@ -127,7 +132,7 @@ func FastPush(ctx context.Context, image string, projectDir string, command Comm
 		return err
 	}
 	g.Go(func() error {
-		return uploadFile(ctx, filesObjectType, hash, srcTar, token)
+		return uploadFile(ctx, filesObjectType, hash, srcTar, token, p, "src")
 	})
 
 	// Wait for uploads
@@ -187,9 +192,45 @@ func checkVerificationStatus(req *http.Request, client *http.Client) (bool, erro
 	return false, nil
 }
 
-func uploadFile(ctx context.Context, objectType string, digest string, path string, token string) error {
+func uploadFile(ctx context.Context, objectType string, digest string, path string, token string, p *mpb.Progress, desc string) error {
 	console.Debug("uploading file: " + path)
 
+	// Open the file for uploading
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Find the file size
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return err
+	}
+
+	// Start the progress bar
+	trimDesc := desc
+	if len(trimDesc) > 20 {
+		trimDesc = trimDesc[:20]
+	}
+	if len(trimDesc) < 20 {
+		trimDesc += strings.Repeat(" ", 20-len(trimDesc))
+	}
+	bar := p.New(fileInfo.Size(),
+		mpb.BarStyle().Rbound("|"),
+		mpb.PrependDecorators(
+			decor.Name(trimDesc+" "),
+			decor.Counters(decor.SizeB1024(0), "% .2f / % .2f"),
+		),
+		mpb.AppendDecorators(
+			decor.EwmaETA(decor.ET_STYLE_GO, 30),
+			decor.Name(" ] "),
+			decor.EwmaSpeed(decor.SizeB1024(0), "% .2f", 30),
+		),
+	)
+	defer bar.Abort(false)
+
+	// Declare that we want to upload a file.
 	uploadUrl := startUploadURL(objectType, digest)
 	client := &http.Client{}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadUrl.String(), nil)
@@ -219,13 +260,6 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 		return err
 	}
 
-	// Open the file for uploading
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
 	// Upload the file using an S3 client
 	console.Debug("multi-part uploading file: " + path)
 	cfg := aws.NewConfig()
@@ -244,10 +278,12 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 		u.PartSize = 64 * 1024 * 1024 // 64MB per part
 	})
 
+	proxyReader := bar.ProxyReader(file)
+	defer proxyReader.Close()
 	uploadParams := &s3.PutObjectInput{
 		Bucket: aws.String(data.Bucket),
 		Key:    aws.String(data.Key),
-		Body:   file,
+		Body:   proxyReader,
 	}
 	_, err = uploader.Upload(ctx, uploadParams)
 	if err != nil {
