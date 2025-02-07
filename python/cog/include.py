@@ -1,14 +1,16 @@
-import sys
 import os
+import sys
 from dataclasses import dataclass
-import inspect
-from typing import Callable, Any
+from typing import Any, Callable
+
 import replicate
-from replicate.model import Model
-from replicate.version import Version
-from replicate.prediction import Prediction
 from replicate.exceptions import ModelError
+from replicate.model import Model
+from replicate.prediction import Prediction
 from replicate.run import _has_output_iterator_array_type
+from replicate.version import Version
+
+from cog.server.scope import current_scope
 
 
 def _find_api_token() -> str:
@@ -17,15 +19,12 @@ def _find_api_token() -> str:
         print("Using Replicate API token from environment", file=sys.stderr)
         return token
 
-    frame = inspect.currentframe()
-    while frame:
-        if "self" in frame.f_locals:
-            self = frame.f_locals["self"]
-            if hasattr(self, "_current_run_token"):
-                token = self._current_run_token()
-                return token
-        frame = frame.f_back
-    raise ValueError("No run token found in call stack")
+    token = current_scope()._run_token
+
+    if not token:
+        raise ValueError("No run token found")
+
+    return token
 
 
 @dataclass
