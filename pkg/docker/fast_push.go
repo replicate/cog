@@ -6,18 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/vbauerster/mpb/v8"
-	"github.com/vbauerster/mpb/v8/decor"
 
-	"github.com/replicate/cog/pkg/global"
-  "github.com/replicate/cog/pkg/docker/command"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/monobeam"
 	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/util"
@@ -43,7 +38,7 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 	// Upload weights
 	for _, weight := range weights {
 		g.Go(func() error {
-			return monobeamClient.UploadFile(ctx, weightsObjectType, weight.Digest, weight.Path)
+			return monobeamClient.UploadFile(ctx, weightsObjectType, weight.Digest, weight.Path, p, "weights - "+filepath.Base(weight.Path))
 		})
 	}
 
@@ -66,7 +61,7 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 		}
 		files = append(files, *file)
 		g.Go(func() error {
-			return monobeamClient.UploadFile(ctx, filesObjectType, hash, aptTarFile)
+			return monobeamClient.UploadFile(ctx, filesObjectType, hash, aptTarFile, p, "apt")
 		})
 	}
 
@@ -93,7 +88,7 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 		files = append(files, *file)
 
 		g.Go(func() error {
-			return monobeamClient.UploadFile(ctx, filesObjectType, hash, pythonTar)
+			return monobeamClient.UploadFile(ctx, filesObjectType, hash, pythonTar, p, "python-packages")
 		})
 	} else {
 		requirementsTarFile := filepath.Join(tmpDir, requirementsTarFile)
@@ -121,7 +116,7 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 	}
 	files = append(files, *file)
 	g.Go(func() error {
-		return monobeamClient.UploadFile(ctx, filesObjectType, hash, srcTar)
+		return monobeamClient.UploadFile(ctx, filesObjectType, hash, srcTar, p, "src")
 	})
 
 	// Wait for uploads

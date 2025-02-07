@@ -15,6 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/vbauerster/mpb/v8"
+	"github.com/vbauerster/mpb/v8/decor"
 
 	"github.com/replicate/cog/pkg/env"
 	"github.com/replicate/cog/pkg/util/console"
@@ -46,9 +48,45 @@ func NewClient(client *http.Client) *Client {
 	}
 }
 
-func (c *Client) UploadFile(ctx context.Context, objectType string, digest string, path string) error {
+func (c *Client) UploadFile(ctx context.Context, objectType string, digest string, path string, p *mpb.Progress, desc string) error {
 	console.Debug("uploading file: " + path)
 
+	// Open the file for uploading
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Find the file size
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return err
+	}
+
+	// Start the progress bar
+	trimDesc := desc
+	if len(trimDesc) > 20 {
+		trimDesc = trimDesc[:20]
+	}
+	if len(trimDesc) < 20 {
+		trimDesc += strings.Repeat(" ", 20-len(trimDesc))
+	}
+	bar := p.New(fileInfo.Size(),
+		mpb.BarStyle().Rbound("|"),
+		mpb.PrependDecorators(
+			decor.Name(trimDesc+" "),
+			decor.Counters(decor.SizeB1024(0), "% .2f / % .2f"),
+		),
+		mpb.AppendDecorators(
+			decor.EwmaETA(decor.ET_STYLE_GO, 30),
+			decor.Name(" ] "),
+			decor.EwmaSpeed(decor.SizeB1024(0), "% .2f", 30),
+		),
+	)
+	defer bar.Abort(false)
+
+	// Start upload
 	uploadUrl := startUploadURL(objectType, digest)
 	client := &http.Client{}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadUrl.String(), nil)
@@ -76,13 +114,6 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 		return err
 	}
 
-	// Open the file for uploading
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
 	// Upload the file using an S3 client
 	console.Debug("multi-part uploading file: " + path)
 	cfg := aws.NewConfig()
@@ -101,10 +132,12 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 		u.PartSize = 64 * 1024 * 1024 // 64MB per part
 	})
 
+	proxyReader := bar.ProxyReader(file)
+	defer proxyReader.Close()
 	uploadParams := &s3.PutObjectInput{
 		Bucket: aws.String(data.Bucket),
 		Key:    aws.String(data.Key),
-		Body:   file,
+		Body:   proxyReader,
 	}
 	_, err = uploader.Upload(ctx, uploadParams)
 	if err != nil {
