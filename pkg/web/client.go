@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -93,7 +92,7 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusCreated {
 		return errors.New("Bad response from new version endpoint: " + strconv.Itoa(resp.StatusCode))
 	}
 
@@ -216,7 +215,7 @@ func stripCodeFromStub(cogConfig config.Config, isPredict bool) (string, error) 
 		return "", nil
 	}
 
-	codeFile := filepath.Join("src", stubComponents[0])
+	codeFile := stubComponents[0]
 
 	b, err := os.ReadFile(codeFile)
 	if err != nil {
