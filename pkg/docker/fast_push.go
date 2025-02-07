@@ -17,16 +17,15 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/vbauerster/mpb/v8"
-	"github.com/vbauerster/mpb/v8/decor"
 
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/weights"
+	"github.com/replicate/cog/tools/uploader"
 )
 
 const weightsObjectType = "weights"
@@ -195,41 +194,6 @@ func checkVerificationStatus(req *http.Request, client *http.Client) (bool, erro
 func uploadFile(ctx context.Context, objectType string, digest string, path string, token string, p *mpb.Progress, desc string) error {
 	console.Debug("uploading file: " + path)
 
-	// Open the file for uploading
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	// Find the file size
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return err
-	}
-
-	// Start the progress bar
-	trimDesc := desc
-	if len(trimDesc) > 20 {
-		trimDesc = trimDesc[:20]
-	}
-	if len(trimDesc) < 20 {
-		trimDesc += strings.Repeat(" ", 20-len(trimDesc))
-	}
-	bar := p.New(fileInfo.Size(),
-		mpb.BarStyle().Rbound("|"),
-		mpb.PrependDecorators(
-			decor.Name(trimDesc+" "),
-			decor.Counters(decor.SizeB1024(0), "% .2f / % .2f"),
-		),
-		mpb.AppendDecorators(
-			decor.EwmaETA(decor.ET_STYLE_GO, 30),
-			decor.Name(" ] "),
-			decor.EwmaSpeed(decor.SizeB1024(0), "% .2f", 30),
-		),
-	)
-	defer bar.Abort(false)
-
 	// Declare that we want to upload a file.
 	uploadUrl := startUploadURL(objectType, digest)
 	client := &http.Client{}
@@ -260,7 +224,7 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 		return err
 	}
 
-	// Upload the file using an S3 client
+	// Upload the file using tools/uploader/S3Uploader
 	console.Debug("multi-part uploading file: " + path)
 	cfg := aws.NewConfig()
 	cfg.BaseEndpoint = &data.Endpoint
@@ -274,18 +238,9 @@ func uploadFile(ctx context.Context, objectType string, digest string, path stri
 		},
 	}
 	s3Client := s3.NewFromConfig(*cfg)
-	uploader := manager.NewUploader(s3Client, func(u *manager.Uploader) {
-		u.PartSize = 64 * 1024 * 1024 // 64MB per part
-	})
+	uploadClient := uploader.NewS3Uploader(s3Client, nil)
 
-	proxyReader := bar.ProxyReader(file)
-	defer proxyReader.Close()
-	uploadParams := &s3.PutObjectInput{
-		Bucket: aws.String(data.Bucket),
-		Key:    aws.String(data.Key),
-		Body:   proxyReader,
-	}
-	_, err = uploader.Upload(ctx, uploadParams)
+	err = uploadClient.UploadObject(ctx, path, data.Bucket, data.Key, uploader.NewProgressConfig(p, desc))
 	if err != nil {
 		return err
 	}
