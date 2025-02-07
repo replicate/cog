@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -341,24 +344,65 @@ func writeOutput(outputPath string, output []byte) error {
 }
 
 func writeDataURLOutput(outputString string, outputPath string, addExtension bool) error {
-	dataurlObj, err := dataurl.DecodeString(outputString)
-	if err != nil {
-		return fmt.Errorf("Failed to decode dataurl: %w", err)
+	var output []byte
+	var contentType string
+
+	if httpURL, ok := getHTTPURL(outputString); ok {
+		resp, err := http.Get(httpURL.String())
+		if err != nil {
+			return fmt.Errorf("Failed to fetch URL: %w", err)
+		}
+		defer resp.Body.Close()
+
+		output, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("Failed to read response: %w", err)
+		}
+		contentType = resp.Header.Get("Content-Type")
+		contentType = useExtensionIfUnknownContentType(contentType, output, outputString)
+
+	} else {
+		dataurlObj, err := dataurl.DecodeString(outputString)
+		if err != nil {
+			return fmt.Errorf("Failed to decode dataurl: %w", err)
+		}
+		output = dataurlObj.Data
+		contentType = dataurlObj.ContentType()
 	}
-	output := dataurlObj.Data
 
 	if addExtension {
-		extension := mime.ExtensionByType(dataurlObj.ContentType())
-		if extension != "" {
-			outputPath += extension
+		if ext := mime.ExtensionByType(contentType); ext != "" {
+			outputPath += ext
 		}
 	}
 
-	if err := writeOutput(outputPath, output); err != nil {
-		return err
-	}
+	return writeOutput(outputPath, output)
+}
 
-	return nil
+func getHTTPURL(str string) (*url.URL, bool) {
+	u, err := url.Parse(str)
+	if err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+		return u, true
+	}
+	return nil, false
+}
+
+func useExtensionIfUnknownContentType(contentType string, content []byte, filename string) string {
+	// If contentType is empty or application/octet-string, first attempt to get the
+	// content type from the file extension, and if that fails, try to guess it from
+	// the content itself.
+
+	if contentType == "" || contentType == "application/octet-stream" {
+		if ext := filepath.Ext(filename); ext != "" {
+			if mimeType := mime.TypeByExtension(ext); mimeType != "" {
+				return mimeType
+			}
+		}
+		if detected := http.DetectContentType(content); detected != "" {
+			return detected
+		}
+	}
+	return contentType
 }
 
 func parseInputFlags(inputs []string) (predict.Inputs, error) {
