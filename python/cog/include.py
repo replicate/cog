@@ -1,7 +1,7 @@
 import os
 import sys
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import replicate
 from replicate.exceptions import ModelError
@@ -43,7 +43,7 @@ class Run:
 
         return self.prediction.output
 
-    def logs(self) -> str | None:
+    def logs(self) -> Optional[str]:
         self.prediction.reload()
 
         return self.prediction.logs
@@ -56,7 +56,7 @@ class Function:
     def _client(self) -> replicate.Client:
         return replicate.Client(api_token=_find_api_token())
 
-    def _split_function_ref(self) -> tuple[str, str, str | None]:
+    def _split_function_ref(self) -> Tuple[str, str, Optional[str]]:
         owner, name = self.function_ref.split("/")
         name, version = name.split(":") if ":" in name else (name, None)
         return owner, name, version
@@ -75,11 +75,11 @@ class Function:
         )
         return version
 
-    def __call__(self, **inputs: dict[str, Any]) -> Any:
+    def __call__(self, **inputs: Dict[str, Any]) -> Any:
         run = self.start(**inputs)
         return run.wait()
 
-    def start(self, **inputs: dict[str, Any]) -> Run:
+    def start(self, **inputs: Dict[str, Any]) -> Run:
         version = self._version()
         prediction = self._client().predictions.create(version=version, input=inputs)
         print(f"Running {self.function_ref}: https://replicate.com/p/{prediction.id}")
@@ -87,7 +87,7 @@ class Function:
         return Run(prediction, version)
 
     @property
-    def default_example(self) -> Prediction | None:
+    def default_example(self) -> Optional[Prediction]:
         return self._model().default_example
 
 
