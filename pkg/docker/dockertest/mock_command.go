@@ -3,6 +3,8 @@ package dockertest
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/replicate/cog/pkg/docker/command"
 )
 
 var PushError error = nil
@@ -17,8 +19,12 @@ func (c *MockCommand) Push(image string) error {
 	return PushError
 }
 
-func (c *MockCommand) LoadLoginToken(registryHost string) (string, error) {
-	return "", nil
+func (c *MockCommand) LoadUserInformation(registryHost string) (*command.UserInfo, error) {
+	userInfo := command.UserInfo{
+		Token:    "",
+		Username: "",
+	}
+	return &userInfo, nil
 }
 
 func (c *MockCommand) CreateTarFile(image string, tmpDir string, tarFile string, folder string) (string, error) {
@@ -39,4 +45,24 @@ func (c *MockCommand) CreateAptTarFile(tmpDir string, aptTarFile string, package
 		return "", err
 	}
 	return path, nil
+}
+
+func (c *MockCommand) Inspect(image string) (*command.Manifest, error) {
+	manifest := command.Manifest{
+		Config: command.Config{
+			Labels: map[string]string{
+				command.CogConfigLabelKey:        "{\"build\":{\"python_version\":\"3.12\",\"python_packages\":[\"torch==2.5.0\",\"beautifulsoup4==4.12.3\"],\"system_packages\":[\"git\"]},\"image\":\"test\",\"predict\":\"predict.py:Predictor\"}",
+				command.CogOpenAPISchemaLabelKey: "{}",
+				command.CogVersionLabelKey:       "0.11.3",
+			},
+			Env: []string{
+				command.UvPythonInstallDirEnvVarName + "=/tmp",
+				command.R8TorchVersionEnvVarName + "=2.5.0",
+				command.R8CudaVersionEnvVarName + "=2.4",
+				command.R8CudnnVersionEnvVarName + "=1.0",
+				command.R8PythonVersionEnvVarName + "=3.12",
+			},
+		},
+	}
+	return &manifest, nil
 }

@@ -1,14 +1,9 @@
-package docker
+package command
 
 type Command interface {
 	Push(string) error
-	LoadLoginToken(string) (string, error)
+	LoadUserInformation(string) (*UserInfo, error)
 	CreateTarFile(string, string, string, string) (string, error)
 	CreateAptTarFile(string, string, ...string) (string, error)
-}
-
-type CredentialHelperInput struct {
-	Username  string
-	Secret    string
-	ServerURL string
+	Inspect(string) (*Manifest, error)
 }

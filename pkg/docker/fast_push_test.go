@@ -12,6 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/docker/dockertest"
+	"github.com/replicate/cog/pkg/env"
+	r8HTTP "github.com/replicate/cog/pkg/http"
+	"github.com/replicate/cog/pkg/monobeam"
+	"github.com/replicate/cog/pkg/web"
 )
 
 func TestFastPush(t *testing.T) {
@@ -23,8 +27,8 @@ func TestFastPush(t *testing.T) {
 	defer server.Close()
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	t.Setenv(schemeEnv, url.Scheme)
-	t.Setenv(hostEnv, url.Host)
+	t.Setenv(env.SchemeEnvVarName, url.Scheme)
+	t.Setenv(monobeam.MonobeamHostEnvVarName, url.Host)
 
 	// Create directories
 	dir := t.TempDir()
@@ -37,8 +41,12 @@ func TestFastPush(t *testing.T) {
 
 	// Setup mock command
 	command := dockertest.NewMockCommand()
+	client, err := r8HTTP.ProvideHTTPClient(command)
+	require.NoError(t, err)
+	webClient := web.NewClient(command, client)
+	monobeamClient := monobeam.NewClient(client)
 
 	// Run fast push
-	err = FastPush(context.Background(), "test", dir, command)
+	err = FastPush(context.Background(), "test", dir, command, webClient, monobeamClient)
 	require.NoError(t, err)
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/weights"
 )
@@ -27,7 +28,7 @@ const FAST_GENERATOR_NAME = "FAST_GENERATOR"
 type FastGenerator struct {
 	Config  *config.Config
 	Dir     string
-	command docker.Command
+	command command.Command
 	matrix  MonobaseMatrix
 }
 
@@ -68,7 +69,7 @@ func (m MonobaseMatrix) IsSupported(python string, torch string, cuda string) bo
 	return slices.Contains(m.Venvs, MonobaseVenv{Python: python, Torch: torch, Cuda: cuda})
 }
 
-func NewFastGenerator(config *config.Config, dir string, command docker.Command) (*FastGenerator, error) {
+func NewFastGenerator(config *config.Config, dir string, command command.Command) (*FastGenerator, error) {
 	resp, err := http.DefaultClient.Get("https://raw.githubusercontent.com/replicate/monobase/refs/heads/main/matrix.json")
 	if err != nil {
 		return nil, err

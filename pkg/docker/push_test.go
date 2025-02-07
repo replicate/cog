@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/docker/dockertest"
+	"github.com/replicate/cog/pkg/env"
+	"github.com/replicate/cog/pkg/monobeam"
 )
 
 func TestPush(t *testing.T) {
@@ -22,8 +24,8 @@ func TestPush(t *testing.T) {
 	defer server.Close()
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	t.Setenv(schemeEnv, url.Scheme)
-	t.Setenv(hostEnv, url.Host)
+	t.Setenv(env.SchemeEnvVarName, url.Scheme)
+	t.Setenv(monobeam.MonobeamHostEnvVarName, url.Host)
 
 	// Create directories
 	dir := t.TempDir()

@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,7 +12,9 @@ import (
 
 	"github.com/docker/cli/cli/config"
 	"github.com/docker/cli/cli/config/configfile"
+	"github.com/docker/cli/cli/config/types"
 
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -22,16 +25,31 @@ func NewDockerCommand() *DockerCommand {
 }
 
 func (c *DockerCommand) Push(image string) error {
-	return c.exec("push", image)
+	_, err := c.exec("push", false, image)
+	return err
 }
 
-func (c *DockerCommand) LoadLoginToken(registryHost string) (string, error) {
+func (c *DockerCommand) LoadUserInformation(registryHost string) (*command.UserInfo, error) {
 	conf := config.LoadDefaultConfigFile(os.Stderr)
 	credsStore := conf.CredentialsStore
 	if credsStore == "" {
-		return loadAuthFromConfig(conf, registryHost)
+		authConf, err := loadAuthFromConfig(conf, registryHost)
+		if err != nil {
+			return nil, err
+		}
+		return &command.UserInfo{
+			Token:    authConf.Password,
+			Username: authConf.Username,
+		}, nil
 	}
-	return loadAuthFromCredentialsStore(credsStore, registryHost)
+	credsHelper, err := loadAuthFromCredentialsStore(credsStore, registryHost)
+	if err != nil {
+		return nil, err
+	}
+	return &command.UserInfo{
+		Token:    credsHelper.Secret,
+		Username: credsHelper.Username,
+	}, nil
 }
 
 func (c *DockerCommand) CreateTarFile(image string, tmpDir string, tarFile string, folder string) (string, error) {
@@ -45,7 +63,7 @@ func (c *DockerCommand) CreateTarFile(image string, tmpDir string, tarFile strin
 		"/",
 		folder,
 	}
-	err := c.exec("run", args...)
+	_, err := c.exec("run", false, args...)
 	if err != nil {
 		return "", err
 	}
@@ -66,25 +84,60 @@ func (c *DockerCommand) CreateAptTarFile(tmpDir string, aptTarFile string, packa
 		"/buildtmp/" + aptTarFile,
 	}
 	args = append(args, packages...)
-	return aptTarFile, c.exec("run", args...)
+	_, err := c.exec("run", false, args...)
+	if err != nil {
+		return "", err
+	}
+
+	return aptTarFile, nil
 }
 
-func (c *DockerCommand) exec(name string, args ...string) error {
+func (c *DockerCommand) Inspect(image string) (*command.Manifest, error) {
+	args := []string{
+		"inspect",
+		image,
+	}
+	manifestData, err := c.exec("image", false, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(([]byte(manifestData))))
+	var manifest command.Manifest
+	err = decoder.Decode(&manifest)
+	if err != nil {
+		return nil, err
+	}
+
+	return &manifest, nil
+}
+
+func (c *DockerCommand) exec(name string, capture bool, args ...string) (string, error) {
 	cmdArgs := []string{name}
 	cmdArgs = append(cmdArgs, args...)
 	cmd := exec.Command("docker", cmdArgs...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	var out strings.Builder
+	if !capture {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	} else {
+		cmd.Stdout = &out
+		cmd.Stderr = &out
+	}
 
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
-	return cmd.Run()
+	err := cmd.Run()
+	if err != nil {
+		return "", err
+	}
+	return out.String(), nil
 }
 
-func loadAuthFromConfig(conf *configfile.ConfigFile, registryHost string) (string, error) {
-	return conf.AuthConfigs[registryHost].Password, nil
+func loadAuthFromConfig(conf *configfile.ConfigFile, registryHost string) (types.AuthConfig, error) {
+	return conf.AuthConfigs[registryHost], nil
 }
 
-func loadAuthFromCredentialsStore(credsStore string, registryHost string) (string, error) {
+func loadAuthFromCredentialsStore(credsStore string, registryHost string) (*CredentialHelperInput, error) {
 	var out strings.Builder
 	binary := DockerCredentialBinary(credsStore)
 	cmd := exec.Command(binary, "get")
@@ -93,34 +146,34 @@ func loadAuthFromCredentialsStore(credsStore string, registryHost string) (strin
 	cmd.Stderr = &out
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer stdin.Close()
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
 	err = cmd.Start()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	_, err = io.WriteString(stdin, registryHost)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	err = stdin.Close()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	err = cmd.Wait()
 	if err != nil {
-		return "", fmt.Errorf("exec wait error: %w", err)
+		return nil, fmt.Errorf("exec wait error: %w", err)
 	}
 
 	var config CredentialHelperInput
 	err = json.Unmarshal([]byte(out.String()), &config)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return config.Secret, nil
+	return &config, nil
 }
 
 func DockerCredentialBinary(credsStore string) string {

@@ -20,6 +20,7 @@ func TestGenerate(t *testing.T) {
 		Build: &build,
 	}
 	command := dockertest.NewMockCommand()
+
 	generator, err := NewFastGenerator(&config, dir, command)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()

@@ -9,12 +9,14 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/replicate/cog/pkg/docker/command"
 )
 
 const aptTarballPrefix = "apt."
 const aptTarballSuffix = ".tar.zst"
 
-func CreateAptTarball(tmpDir string, command Command, packages ...string) (string, error) {
+func CreateAptTarball(tmpDir string, command command.Command, packages ...string) (string, error) {
 	if len(packages) > 0 {
 		sort.Strings(packages)
 		hash := sha256.New()
