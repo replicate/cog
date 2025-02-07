@@ -204,7 +204,7 @@ func webBaseURL() url.URL {
 }
 
 func stripCodeFromStub(cogConfig config.Config, isPredict bool) (string, error) {
-	stubComponents := []string{}
+	var stubComponents []string
 	if isPredict {
 		stubComponents = strings.Split(cogConfig.Predict, ":")
 	} else {
@@ -229,7 +229,7 @@ func stripCodeFromStub(cogConfig config.Config, isPredict bool) (string, error) 
 	//   [base_class],
 	//   ['predict', 'train'],
 	// )
-	// Currently the behaviour of the code strip attempts to strip, and if it can't it
+	// Currently the behavior of the code strip attempts to strip, and if it can't it
 	// loads the whole file in. Here we just load the whole file in.
 	// We should figure out a way to call cog python from here to fulfill this.
 	// It could be a good idea to do this in the layer functions where we do pip freeze
