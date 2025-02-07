@@ -39,6 +39,10 @@ BASE_SCHEMA = """
             "title": "Output File Prefix",
             "type": "string"
           },
+          "run_token": {
+            "title": "Run Token",
+            "type": "string"
+          },
           "webhook": {
             "format": "uri",
             "maxLength": 65536,

@@ -113,7 +113,9 @@ class PredictionRunner:
             payload = prediction.input.copy()
 
         sid = self._worker.subscribe(task.handle_event, tag=tag)
-        task.track(self._worker.predict(payload, tag=tag))
+        task.track(
+            self._worker.predict(payload, tag=tag, run_token=prediction.run_token)
+        )
         task.add_done_callback(self._task_done_callback(tag, sid))
 
         return task

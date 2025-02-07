@@ -135,7 +135,10 @@ class Worker:
         return self._setup_result
 
     def predict(
-        self, payload: Dict[str, Any], tag: Optional[str] = None
+        self,
+        payload: Dict[str, Any],
+        tag: Optional[str] = None,
+        run_token: Optional[str] = None,
     ) -> "Future[Done]":
         # TODO: tag is Optional, but it's required when in concurrent mode and
         # basically unnecessary in sequential mode. Should we have a separate
@@ -158,11 +161,17 @@ class Worker:
             result = Future()
             self._predictions_in_flight[tag] = PredictionState(tag, payload, result)
 
-        self._prediction_start_pool.submit(self._start_prediction(tag, payload))
+        self._prediction_start_pool.submit(
+            self._start_prediction(payload=payload, tag=tag, run_token=run_token)
+        )
         return result
 
     def _start_prediction(
-        self, tag: Optional[str], payload: Dict[str, Any]
+        self,
+        *,
+        payload: Dict[str, Any],
+        tag: Optional[str] = None,
+        run_token: Optional[str] = None,
     ) -> Callable[[], None]:
         def start_prediction() -> None:
             try:
@@ -215,6 +224,7 @@ class Worker:
                     Envelope(
                         event=PredictionInput(payload=payload),
                         tag=tag,
+                        run_token=run_token,
                     )
                 )
             except Exception as e:
@@ -403,7 +413,12 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._cancelable = False
         self._max_concurrency = max_concurrency
 
-        # for synchronous predictors only! async predictors use current_scope()._tag instead
+        # For synchronous predictors only! async predictors use
+        # current_scope()._tag instead.
+        #
+        # This is unfortunately necessary because StreamRedirector executes
+        # another thread which doesn't have access to the scope defined in this
+        # thread when it executes the stream_write_hook.
         self._sync_tag: Optional[str] = None
         self._has_async_predictor = is_async
 
@@ -584,7 +599,13 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             elif isinstance(e.event, Shutdown):
                 break
             elif isinstance(e.event, PredictionInput):
-                self._predict(e.tag, e.event.payload, predict, redirector)
+                self._predict(
+                    payload=e.event.payload,
+                    predict=predict,
+                    redirector=redirector,
+                    tag=e.tag,
+                    run_token=e.run_token,
+                )
             else:
                 print(f"Got unexpected event: {e.event}", file=sys.stderr)
 
@@ -618,19 +639,30 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     break
                 elif isinstance(e.event, PredictionInput):
                     tasks[e.tag] = tg.create_task(
-                        self._apredict(e.tag, e.event.payload, predict, redirector)
+                        self._apredict(
+                            payload=e.event.payload,
+                            predict=predict,
+                            redirector=redirector,
+                            tag=e.tag,
+                            run_token=e.run_token,
+                        )
                     )
                 else:
                     print(f"Got unexpected event: {e.event}", file=sys.stderr)
 
     def _predict(
         self,
-        tag: Optional[str],
+        *,
         payload: Dict[str, Any],
         predict: Callable[..., Any],
         redirector: StreamRedirector,
+        tag: Optional[str] = None,
+        run_token: Optional[str] = None,
     ) -> None:
-        with self._handle_predict_error(redirector, tag=tag):
+        with evolve_scope(
+            tag=tag,
+            run_token=run_token,
+        ), self._handle_predict_error(redirector, tag=tag):
             result = predict(**payload)
 
             if result:
@@ -676,12 +708,20 @@ class _ChildWorker(_spawn.Process):  # type: ignore
 
     async def _apredict(
         self,
-        tag: Optional[str],
+        *,
         payload: Dict[str, Any],
         predict: Callable[..., Any],
         redirector: SimpleStreamRedirector,
+        tag: Optional[str] = None,
+        run_token: Optional[str] = None,
     ) -> None:
-        with evolve_scope(tag=tag), self._handle_predict_error(redirector, tag=tag):
+        with evolve_scope(
+            tag=tag,
+            run_token=run_token,
+        ), self._handle_predict_error(
+            redirector,
+            tag=tag,
+        ):
             future_result = predict(**payload)
 
             if future_result:
@@ -768,7 +808,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     def _handle_predict_error(
         self,
         redirector: Union[SimpleStreamRedirector, StreamRedirector],
-        tag: Optional[str],
+        tag: Optional[str] = None,
     ) -> Iterator[None]:
         done = Done()
         send_done = True
