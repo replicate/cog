@@ -115,7 +115,8 @@ func (c *DockerCommand) Inspect(image string) (*command.Manifest, error) {
 func (c *DockerCommand) exec(name string, capture bool, args ...string) (string, error) {
 	cmdArgs := []string{name}
 	cmdArgs = append(cmdArgs, args...)
-	cmd := exec.Command("docker", cmdArgs...)
+	dockerCmd := DockerCommandFromEnvironment()
+	cmd := exec.Command(dockerCmd, cmdArgs...)
 	var out strings.Builder
 	if !capture {
 		cmd.Stdout = os.Stdout

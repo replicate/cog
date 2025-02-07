@@ -21,7 +21,23 @@ func TestGenerate(t *testing.T) {
 	}
 	command := dockertest.NewMockCommand()
 
-	generator, err := NewFastGenerator(&config, dir, command)
+	// Create matrix
+	matrix := MonobaseMatrix{
+		Id:             1,
+		CudaVersions:   []string{"2.4"},
+		CudnnVersions:  []string{"1.0"},
+		PythonVersions: []string{"3.8"},
+		TorchVersions:  []string{"2.5.1"},
+		Venvs: []MonobaseVenv{
+			{
+				Python: "3.8",
+				Torch:  "2.5.1",
+				Cuda:   "2.4",
+			},
+		},
+	}
+
+	generator, err := NewFastGenerator(&config, dir, command, &matrix)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
@@ -41,8 +57,24 @@ func TestGenerateUVCacheMount(t *testing.T) {
 	config := config.Config{
 		Build: &build,
 	}
+	// Create matrix
+	matrix := MonobaseMatrix{
+		Id:             1,
+		CudaVersions:   []string{"2.4"},
+		CudnnVersions:  []string{"1.0"},
+		PythonVersions: []string{"3.8"},
+		TorchVersions:  []string{"2.5.1"},
+		Venvs: []MonobaseVenv{
+			{
+				Python: "3.8",
+				Torch:  "2.5.1",
+				Cuda:   "2.4",
+			},
+		},
+	}
+
 	command := dockertest.NewMockCommand()
-	generator, err := NewFastGenerator(&config, dir, command)
+	generator, err := NewFastGenerator(&config, dir, command, &matrix)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
@@ -61,7 +93,24 @@ func TestGenerateCUDA(t *testing.T) {
 		Build: &build,
 	}
 	command := dockertest.NewMockCommand()
-	generator, err := NewFastGenerator(&config, dir, command)
+
+	// Create matrix
+	matrix := MonobaseMatrix{
+		Id:             1,
+		CudaVersions:   []string{"2.4"},
+		CudnnVersions:  []string{"1"},
+		PythonVersions: []string{"3.8"},
+		TorchVersions:  []string{"2.5.1"},
+		Venvs: []MonobaseVenv{
+			{
+				Python: "3.8",
+				Torch:  "2.5.1",
+				Cuda:   "2.4",
+			},
+		},
+	}
+
+	generator, err := NewFastGenerator(&config, dir, command, &matrix)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
@@ -81,7 +130,24 @@ func TestGeneratePythonPackages(t *testing.T) {
 		Build: &build,
 	}
 	command := dockertest.NewMockCommand()
-	generator, err := NewFastGenerator(&config, dir, command)
+
+	// Create matrix
+	matrix := MonobaseMatrix{
+		Id:             1,
+		CudaVersions:   []string{"2.4"},
+		CudnnVersions:  []string{"1.0"},
+		PythonVersions: []string{"3.8"},
+		TorchVersions:  []string{"2.5.1"},
+		Venvs: []MonobaseVenv{
+			{
+				Python: "3.8",
+				Torch:  "2.5.1",
+				Cuda:   "2.4",
+			},
+		},
+	}
+
+	generator, err := NewFastGenerator(&config, dir, command, &matrix)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
@@ -99,7 +165,24 @@ func TestGenerateVerboseEnv(t *testing.T) {
 		Build: &build,
 	}
 	command := dockertest.NewMockCommand()
-	generator, err := NewFastGenerator(&config, dir, command)
+
+	// Create matrix
+	matrix := MonobaseMatrix{
+		Id:             1,
+		CudaVersions:   []string{"2.4"},
+		CudnnVersions:  []string{"1.0"},
+		PythonVersions: []string{"3.8"},
+		TorchVersions:  []string{"2.5.1"},
+		Venvs: []MonobaseVenv{
+			{
+				Python: "3.8",
+				Torch:  "2.5.1",
+				Cuda:   "2.4",
+			},
+		},
+	}
+
+	generator, err := NewFastGenerator(&config, dir, command, &matrix)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
@@ -117,7 +200,24 @@ func TestAptInstall(t *testing.T) {
 		Build: &build,
 	}
 	command := dockertest.NewMockCommand()
-	generator, err := NewFastGenerator(&config, dir, command)
+
+	// Create matrix
+	matrix := MonobaseMatrix{
+		Id:             1,
+		CudaVersions:   []string{"2.4"},
+		CudnnVersions:  []string{"1.0"},
+		PythonVersions: []string{"3.8"},
+		TorchVersions:  []string{"2.5.1"},
+		Venvs: []MonobaseVenv{
+			{
+				Python: "3.8",
+				Torch:  "2.5.1",
+				Cuda:   "2.4",
+			},
+		},
+	}
+
+	generator, err := NewFastGenerator(&config, dir, command, &matrix)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)

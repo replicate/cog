@@ -7,6 +7,8 @@ import (
 	"github.com/replicate/cog/pkg/global"
 )
 
+const UserAgentHeader = "User-Agent"
+
 func ProvideHTTPClient(command command.Command) (*http.Client, error) {
 	userInfo, err := command.LoadUserInformation(global.ReplicateRegistryHost)
 	if err != nil {
@@ -16,7 +18,7 @@ func ProvideHTTPClient(command command.Command) (*http.Client, error) {
 	client := http.Client{
 		Transport: &Transport{
 			headers: map[string]string{
-				"User-Agent":    UserAgent(),
+				UserAgentHeader: UserAgent(),
 				"Authorization": "Bearer " + userInfo.Token,
 			},
 		},
