@@ -9,7 +9,15 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/replicate/cog/pkg/docker/command"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/vbauerster/mpb/v8"
+	"github.com/vbauerster/mpb/v8/decor"
+
+	"github.com/replicate/cog/pkg/global"
+  "github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/monobeam"
 	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/util"
@@ -23,6 +31,9 @@ const requirementsTarFile = "requirements.tar.zst"
 
 func FastPush(ctx context.Context, image string, projectDir string, command command.Command, webClient *web.Client, monobeamClient *monobeam.Client) error {
 	g, _ := errgroup.WithContext(ctx)
+	p := mpb.New(
+		mpb.WithRefreshRate(180 * time.Millisecond),
+	)
 
 	tmpDir := filepath.Join(projectDir, ".cog", "tmp")
 	weights, err := weights.ReadFastWeights(tmpDir)
