@@ -183,7 +183,9 @@ func (s *s3Uploader) uploadMultipartObjectToS3(ctx context.Context, fInfo upload
 	// Upload the object in parts
 	var completedParts []types.CompletedPart
 
-	expectedParts := int32(fInfo.size / s.MultipartPartSize)
+	// Ignoring linter warning - if we have enough parts to cause an int32 overflow I think we have
+	// bigger problems than an int32 overflow
+	expectedParts := int32(fInfo.size / s.MultipartPartSize) // #nosec G115
 	if fInfo.size%s.MultipartPartSize > 0 {
 		expectedParts++
 	}
