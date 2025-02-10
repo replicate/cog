@@ -18,8 +18,8 @@ import (
 )
 
 type Client struct {
-	command command.Command
-	client  *http.Client
+	dockerCommand command.Command
+	client        *http.Client
 }
 
 type File struct {
@@ -57,15 +57,15 @@ type Version struct {
 	Virtual       bool              `json:"virtual"`
 }
 
-func NewClient(command command.Command, client *http.Client) *Client {
+func NewClient(dockerCommand command.Command, client *http.Client) *Client {
 	return &Client{
-		command: command,
-		client:  client,
+		dockerCommand: dockerCommand,
+		client:        client,
 	}
 }
 
 func (c *Client) PostNewVersion(ctx context.Context, image string, weights []File, files []File) error {
-	userInfo, err := c.command.LoadUserInformation(global.ReplicateRegistryHost)
+	userInfo, err := c.dockerCommand.LoadUserInformation(global.ReplicateRegistryHost)
 	if err != nil {
 		return err
 	}
@@ -100,7 +100,7 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 }
 
 func (c *Client) versionFromManifest(image string, weights []File, files []File) (*Version, error) {
-	manifest, err := c.command.Inspect(image)
+	manifest, err := c.dockerCommand.Inspect(image)
 	if err != nil {
 		return nil, err
 	}

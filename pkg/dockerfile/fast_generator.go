@@ -21,10 +21,10 @@ const UV_CACHE_MOUNT = "--mount=type=cache,target=" + UV_CACHE_DIR + ",id=pip-ca
 const FAST_GENERATOR_NAME = "FAST_GENERATOR"
 
 type FastGenerator struct {
-	Config  *config.Config
-	Dir     string
-	command command.Command
-	matrix  MonobaseMatrix
+	Config        *config.Config
+	Dir           string
+	dockerCommand command.Command
+	matrix        MonobaseMatrix
 }
 
 type MonobaseVenv struct {
@@ -33,12 +33,12 @@ type MonobaseVenv struct {
 	Cuda   string `json:"cuda"`
 }
 
-func NewFastGenerator(config *config.Config, dir string, command command.Command, matrix *MonobaseMatrix) (*FastGenerator, error) {
+func NewFastGenerator(config *config.Config, dir string, dockerCommand command.Command, matrix *MonobaseMatrix) (*FastGenerator, error) {
 	return &FastGenerator{
-		Config:  config,
-		Dir:     dir,
-		command: command,
-		matrix:  *matrix,
+		Config:        config,
+		Dir:           dir,
+		dockerCommand: dockerCommand,
+		matrix:        *matrix,
 	}, nil
 }
 
@@ -284,5 +284,5 @@ func (g *FastGenerator) monobaseUsercacheMount() string {
 }
 
 func (g *FastGenerator) generateAptTarball(tmpDir string) (string, error) {
-	return docker.CreateAptTarball(tmpDir, g.command, g.Config.Build.SystemPackages...)
+	return docker.CreateAptTarball(tmpDir, g.dockerCommand, g.Config.Build.SystemPackages...)
 }

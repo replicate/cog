@@ -9,8 +9,8 @@ import (
 
 const UserAgentHeader = "User-Agent"
 
-func ProvideHTTPClient(command command.Command) (*http.Client, error) {
-	userInfo, err := command.LoadUserInformation(global.ReplicateRegistryHost)
+func ProvideHTTPClient(dockerCommand command.Command) (*http.Client, error) {
+	userInfo, err := dockerCommand.LoadUserInformation(global.ReplicateRegistryHost)
 	if err != nil {
 		return nil, err
 	}
