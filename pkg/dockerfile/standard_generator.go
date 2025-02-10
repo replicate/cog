@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/slices"
 	"github.com/replicate/cog/pkg/util/version"
@@ -68,10 +68,10 @@ type StandardGenerator struct {
 	modelFiles []string
 
 	pythonRequirementsContents string
-	command                    docker.Command
+	command                    command.Command
 }
 
-func NewStandardGenerator(config *config.Config, dir string, command docker.Command) (*StandardGenerator, error) {
+func NewStandardGenerator(config *config.Config, dir string, command command.Command) (*StandardGenerator, error) {
 	tmpDir, err := BuildTempDir(dir)
 	if err != nil {
 		return nil, err

@@ -17,6 +17,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
@@ -177,8 +178,8 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	}
 
 	labels := map[string]string{
-		global.LabelNamespace + "version":        global.Version,
-		global.LabelNamespace + "config":         string(bytes.TrimSpace(configJSON)),
+		command.CogVersionLabelKey:               global.Version,
+		command.CogConfigLabelKey:                string(bytes.TrimSpace(configJSON)),
 		global.LabelNamespace + "openapi_schema": string(schemaJSON),
 		global.LabelNamespace + "pip_freeze":     pipFreeze,
 		// Mark the image as having an appropriate init entrypoint. We can use this
