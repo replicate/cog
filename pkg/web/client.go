@@ -52,7 +52,7 @@ type Version struct {
 	Annotations   map[string]string `json:"annotations"`
 	CogConfig     config.Config     `json:"cog_config"`
 	CogVersion    string            `json:"cog_version"`
-	OpenAPIScheme map[string]any    `json:"openapi_schema"`
+	OpenAPISchema map[string]any    `json:"openapi_schema"`
 	RuntimeConfig RuntimeConfig     `json:"runtime_config"`
 	Virtual       bool              `json:"virtual"`
 }
@@ -111,8 +111,8 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 		return nil, err
 	}
 
-	var openAPIScheme map[string]interface{}
-	err = json.Unmarshal([]byte(manifest.Config.Labels[command.CogOpenAPISchemaLabelKey]), &cogConfig)
+	var openAPISchema map[string]any
+	err = json.Unmarshal([]byte(manifest.Config.Labels[command.CogOpenAPISchemaLabelKey]), &openAPISchema)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +182,7 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 		Annotations:   manifest.Config.Labels,
 		CogConfig:     cogConfig,
 		CogVersion:    manifest.Config.Labels[command.CogVersionLabelKey],
-		OpenAPIScheme: openAPIScheme,
+		OpenAPISchema: openAPISchema,
 		RuntimeConfig: runtimeConfig,
 		Virtual:       true,
 	}

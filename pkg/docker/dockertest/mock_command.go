@@ -9,6 +9,7 @@ import (
 
 var PushError error = nil
 var MockCogConfig string = "{\"build\":{\"python_version\":\"3.12\",\"python_packages\":[\"torch==2.5.0\",\"beautifulsoup4==4.12.3\"],\"system_packages\":[\"git\"]},\"image\":\"test\",\"predict\":\"predict.py:Predictor\"}"
+var MockOpenAPISchema string = "{}"
 
 type MockCommand struct{}
 
@@ -53,7 +54,7 @@ func (c *MockCommand) Inspect(image string) (*command.Manifest, error) {
 		Config: command.Config{
 			Labels: map[string]string{
 				command.CogConfigLabelKey:        MockCogConfig,
-				command.CogOpenAPISchemaLabelKey: "{}",
+				command.CogOpenAPISchemaLabelKey: MockOpenAPISchema,
 				command.CogVersionLabelKey:       "0.11.3",
 			},
 			Env: []string{
