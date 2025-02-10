@@ -91,7 +91,7 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 		},
 	}
 	s3Client := s3.NewFromConfig(*cfg)
-	s3Uploader := uploader.NewS3Uploader(s3Client, nil)
+	s3Uploader := uploader.NewS3Uploader(s3Client)
 	err = s3Uploader.UploadObject(ctx, path, data.Bucket, data.Key, uploader.NewProgressConfig(p, desc))
 	if err != nil {
 		return err

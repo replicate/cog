@@ -7,6 +7,13 @@ import (
 	"github.com/vbauerster/mpb/v8"
 )
 
+const (
+	UPLOADER_MAX_PARTS_UPLOAD_KEY        = "UPLOADER_MAX_PARTS_UPLOAD"
+	UPLOADER_MULTIPART_SIZE_KEY          = "UPLOADER_MULTIPART_SIZE"
+	UPLOADER_MAX_MPU_RETRIES_KEY         = "UPLOADER_MAX_MPU_RETRIES"
+	UPLOADER_MAX_PART_UPLOAD_RETRIES_KEY = "UPLOADER_MAX_PART_UPLOAD_RETRIES"
+)
+
 type Uploader interface {
 	UploadObject(ctx context.Context, objectPath, bucket, key string, p ProgressConfig) error
 }

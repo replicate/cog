@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/vbauerster/mpb/v8/decor"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -34,13 +36,6 @@ type s3Uploader struct {
 	mpuBufferPool sync.Pool
 }
 
-type S3UploaderConfig struct {
-	MaxPartUploads       int32
-	MultipartPartSize    int64
-	MaxPartUploadRetries int32
-	MaxMPURetries        int32
-}
-
 type uploadFileDetails struct {
 	path   string
 	size   int64
@@ -53,22 +48,28 @@ var (
 	ErrSkippedOperation = errors.New("skipped operation")
 )
 
-func NewS3Uploader(client *s3.Client, config *S3UploaderConfig) Uploader {
+func parseInt32(s string) (int32, error) {
+	out, err := strconv.ParseInt(s, 0, 32)
+	return int32(out), err
+}
+
+func parseInt64(s string) (int64, error) {
+	return strconv.ParseInt(s, 0, 64)
+}
+
+func NewS3Uploader(client *s3.Client) Uploader {
 	uploader := &s3Uploader{
 		S3Client: client,
 	}
 
-	if config != nil {
-		uploader.MaxPartUploads = config.MaxPartUploads
-		uploader.MultipartPartSize = config.MultipartPartSize
-		uploader.MaxMPURetries = config.MaxMPURetries
-		uploader.MaxPartUploadRetries = config.MaxPartUploadRetries
-	} else {
-		uploader.MaxPartUploads = 1024 * 4            // 64 GB default limit
-		uploader.MultipartPartSize = 16 * 1024 * 1024 // 16 MB
-		uploader.MaxMPURetries = 3                    // 3 full upload retries
-		uploader.MaxPartUploadRetries = 5             // 5 retries per part
-	}
+	// 64 GB default limit
+	uploader.MaxPartUploads = util.GetEnvOrDefault(UPLOADER_MAX_PARTS_UPLOAD_KEY, 1024*4, parseInt32)
+	// 16 MB part size default
+	uploader.MultipartPartSize = util.GetEnvOrDefault(UPLOADER_MULTIPART_SIZE_KEY, 16*1024*1024, parseInt64)
+	// 3 full upload retries default
+	uploader.MaxMPURetries = util.GetEnvOrDefault(UPLOADER_MAX_MPU_RETRIES_KEY, 3, parseInt32)
+	// 30 retries per part default
+	uploader.MaxPartUploads = util.GetEnvOrDefault(UPLOADER_MAX_PART_UPLOAD_RETRIES_KEY, 30, parseInt32)
 
 	return uploader
 }
