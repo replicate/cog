@@ -137,19 +137,21 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 	pythonVersion := ""
 	pythonPath := ""
 	for _, env := range manifest.Config.Env {
-		envComponents := strings.Split(env, "=")
-		envName := envComponents[0]
+		envName, envValue, found := strings.Cut(env, "=")
+		if !found {
+			continue
+		}
 		switch envName {
 		case command.R8TorchVersionEnvVarName:
-			torchVersion = strings.Join(envComponents[1:], "=")
+			torchVersion = envValue
 		case command.R8CudaVersionEnvVarName:
-			cudaVersion = strings.Join(envComponents[1:], "=")
+			cudaVersion = envValue
 		case command.R8CudnnVersionEnvVarName:
-			cudnnVersion = strings.Join(envComponents[1:], "=")
+			cudnnVersion = envValue
 		case command.R8PythonVersionEnvVarName:
-			pythonVersion = strings.Join(envComponents[1:], "=")
+			pythonVersion = envValue
 		case command.UvPythonInstallDirEnvVarName:
-			pythonPath = strings.Join(envComponents[1:], "=")
+			pythonPath = envValue
 		}
 	}
 
