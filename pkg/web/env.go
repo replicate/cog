@@ -5,9 +5,9 @@ import "os"
 const WebHostEnvVarName = "R8_WEB_HOST"
 
 func HostFromEnvironment() string {
-	scheme := os.Getenv(WebHostEnvVarName)
-	if scheme == "" {
-		scheme = "replicate.com"
+	host := os.Getenv(WebHostEnvVarName)
+	if host == "" {
+		host = "replicate.com"
 	}
-	return scheme
+	return host
 }

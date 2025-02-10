@@ -5,9 +5,9 @@ import "os"
 const DockerCommandEnvVarName = "R8_DOCKER_COMMAND"
 
 func DockerCommandFromEnvironment() string {
-	scheme := os.Getenv(DockerCommandEnvVarName)
-	if scheme == "" {
-		scheme = "docker"
+	command := os.Getenv(DockerCommandEnvVarName)
+	if command == "" {
+		command = "docker"
 	}
-	return scheme
+	return command
 }
