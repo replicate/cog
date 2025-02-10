@@ -90,6 +90,10 @@ class Function:
     def default_example(self) -> Optional[Prediction]:
         return self._model().default_example
 
+    @property
+    def openapi_schema(self) -> dict[Any, Any]:
+        return self._version().openapi_schema
+
 
 def include(function_ref: str) -> Callable[..., Any]:
     return Function(function_ref)
