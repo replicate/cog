@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/version"
 )
@@ -75,7 +75,7 @@ type BaseImageGenerator struct {
 	cudaVersion   string
 	pythonVersion string
 	torchVersion  string
-	command       docker.Command
+	command       command.Command
 }
 
 func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
@@ -160,7 +160,7 @@ func BaseImageConfigurations() []BaseImageConfiguration {
 	return configs
 }
 
-func NewBaseImageGenerator(cudaVersion string, pythonVersion string, torchVersion string, command docker.Command) (*BaseImageGenerator, error) {
+func NewBaseImageGenerator(cudaVersion string, pythonVersion string, torchVersion string, command command.Command) (*BaseImageGenerator, error) {
 	valid, cudaVersion, pythonVersion, torchVersion := BaseImageConfigurationExists(cudaVersion, pythonVersion, torchVersion)
 	if valid {
 		return &BaseImageGenerator{cudaVersion, pythonVersion, torchVersion, command}, nil

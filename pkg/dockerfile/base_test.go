@@ -86,3 +86,9 @@ func TestPythonPackages(t *testing.T) {
 		"torchaudio==2.1.0",
 	}), "expected %v", pkgs)
 }
+
+func TestInvalidBaseImage(t *testing.T) {
+	command := dockertest.NewMockCommand()
+	_, err := NewBaseImageGenerator("12.78", "3.9", "2.1.0", command)
+	require.Error(t, err)
+}
