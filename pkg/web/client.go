@@ -49,12 +49,12 @@ type RuntimeConfig struct {
 }
 
 type Version struct {
-	Annotations   map[string]string      `json:"annotations"`
-	CogConfig     config.Config          `json:"cog_config"`
-	CogVersion    string                 `json:"cog_version"`
-	OpenAPIScheme map[string]interface{} `json:"openapi_schema"`
-	RuntimeConfig RuntimeConfig          `json:"runtime_config"`
-	Virtual       bool                   `json:"virtual"`
+	Annotations   map[string]string `json:"annotations"`
+	CogConfig     config.Config     `json:"cog_config"`
+	CogVersion    string            `json:"cog_version"`
+	OpenAPIScheme map[string]any    `json:"openapi_schema"`
+	RuntimeConfig RuntimeConfig     `json:"runtime_config"`
+	Virtual       bool              `json:"virtual"`
 }
 
 func NewClient(command command.Command, client *http.Client) *Client {
