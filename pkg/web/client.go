@@ -86,7 +86,7 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 	versionUrl := newVersionURL(userInfo.Username, image)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, versionUrl.String(), bytes.NewReader(jsonData))
 	if err != nil {
-		return err
+		return fmt.Errorf("Error hitting %s, image %s: %w", versionUrl.String(), image, err)
 	}
 
 	resp, err := c.client.Do(req)
@@ -200,7 +200,7 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 
 func newVersionURL(username string, image string) url.URL {
 	newVersionUrl := webBaseURL()
-	newVersionUrl.Path = strings.Join([]string{"", username, image, "versions"}, "/")
+	newVersionUrl.Path = strings.Join([]string{"", "_api-r8im", "models", username, image, "versions"}, "/")
 	return newVersionUrl
 }
 
