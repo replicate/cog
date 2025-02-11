@@ -20,6 +20,7 @@ func ProvideHTTPClient(dockerCommand command.Command) (*http.Client, error) {
 			headers: map[string]string{
 				UserAgentHeader: UserAgent(),
 				"Authorization": "Bearer " + userInfo.Token,
+				"Content-Type":  "application/json",
 			},
 		},
 	}

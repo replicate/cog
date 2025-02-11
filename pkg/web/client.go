@@ -94,6 +94,8 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 	}
 	defer resp.Body.Close()
 
+	console.Debug(versionUrl.String())
+
 	bod, _ := io.ReadAll(resp.Body)
 	console.Debug(string(bod))
 
