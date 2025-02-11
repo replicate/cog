@@ -198,7 +198,7 @@ func newVersionURL(image string) (url.URL, error) {
 		return newVersionUrl, errors.New("The image URL must have 3 components in the format of " + global.ReplicateRegistryHost + "/username/modelname")
 	}
 	if imageComponents[0] != global.ReplicateRegistryHost {
-		return newVersionUrl, errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix in fast push.")
+		return newVersionUrl, errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using --x-fast.")
 	}
 	newVersionUrl.Path = strings.Join([]string{"", imageComponents[1], imageComponents[2], "versions"}, "/")
 	return newVersionUrl, nil
