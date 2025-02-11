@@ -86,7 +86,7 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 	versionUrl := newVersionURL(userInfo.Username, image)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, versionUrl.String(), bytes.NewReader(jsonData))
 	if err != nil {
-		return fmt.Errorf("Error hitting %s, image %s: %w", versionUrl.String(), image, err)
+		return err
 	}
 
 	resp, err := c.client.Do(req)
