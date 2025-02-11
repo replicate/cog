@@ -14,6 +14,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/env"
+	"github.com/replicate/cog/pkg/global"
 )
 
 type Client struct {
@@ -193,7 +194,7 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 func newVersionURL(image string) (url.URL, error) {
 	imageComponents := strings.Split(image, "/")
 	newVersionUrl := webBaseURL()
-	if imageComponents[0] != "r8.im" {
+	if imageComponents[0] != global.ReplicateRegistryHost {
 		return newVersionUrl, errors.New("The image name must have the r8.im prefix in fast push.")
 	}
 	newVersionUrl.Path = strings.Join([]string{"", imageComponents[1], imageComponents[2], "versions"}, "/")
