@@ -65,11 +65,6 @@ func NewClient(dockerCommand command.Command, client *http.Client) *Client {
 }
 
 func (c *Client) PostNewVersion(ctx context.Context, image string, weights []File, files []File) error {
-	userInfo, err := c.dockerCommand.LoadUserInformation(global.ReplicateRegistryHost)
-	if err != nil {
-		return err
-	}
-
 	version, err := c.versionFromManifest(image, weights, files)
 	if err != nil {
 		return err
@@ -80,7 +75,11 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 		return err
 	}
 
-	versionUrl := newVersionURL(userInfo.Username, image)
+	versionUrl, err := newVersionURL(image)
+	if err != nil {
+		return err
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, versionUrl.String(), bytes.NewReader(jsonData))
 	if err != nil {
 		return err
@@ -192,10 +191,17 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 	return &version, nil
 }
 
-func newVersionURL(username string, image string) url.URL {
+func newVersionURL(image string) (url.URL, error) {
+	imageComponents := strings.Split(image, "/")
 	newVersionUrl := webBaseURL()
-	newVersionUrl.Path = strings.Join([]string{"", username, image, "versions"}, "/")
-	return newVersionUrl
+	if len(imageComponents) != 3 {
+		return newVersionUrl, errors.New("The image URL must have 3 components in the format of " + global.ReplicateRegistryHost + "/your-username/your-model")
+	}
+	if imageComponents[0] != global.ReplicateRegistryHost {
+		return newVersionUrl, errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using --x-fast.")
+	}
+	newVersionUrl.Path = strings.Join([]string{"", imageComponents[1], imageComponents[2], "versions"}, "/")
+	return newVersionUrl, nil
 }
 
 func webBaseURL() url.URL {
