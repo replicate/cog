@@ -51,12 +51,11 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 
 	// Start upload
 	uploadUrl := startUploadURL(objectType, digest)
-	client := &http.Client{}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadUrl.String(), nil)
 	if err != nil {
 		return err
 	}
-	resp, err := client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -97,13 +96,15 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 		return err
 	}
 
+	console.Info("Waiting to verify the image was received by the server...")
+
 	// Begin verification
 	verificationUrl := verificationURL(objectType, digest, data.Uuid)
 	req, err = http.NewRequestWithContext(ctx, http.MethodPost, verificationUrl.String(), nil)
 	if err != nil {
 		return err
 	}
-	beginResp, err := client.Do(req)
+	beginResp, err := c.client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -118,7 +119,8 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 		return err
 	}
 	for i := 0; i < 100; i++ {
-		final, err := checkVerificationStatus(req, client)
+		// Clone request so we use a fresh copy every loop
+		final, err := checkVerificationStatus(req.Clone(ctx), c.client)
 		if final {
 			return err
 		}

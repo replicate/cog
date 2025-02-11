@@ -119,10 +119,8 @@ func (s *s3Uploader) UploadObject(ctx context.Context, objectPath, bucket, key s
 	}
 	uploadMinSize := s.MultipartPartSize
 	if size <= (uploadMinSize * 3) {
-		console.Debug("File is smaller than multipart size, doing single upload.")
 		return s.uploadObjectToS3(ctx, fInfo)
 	}
-	console.Debugf("multipart uploading file.")
 	return s.uploadMultipartObjectToS3(ctx, fInfo)
 }
 

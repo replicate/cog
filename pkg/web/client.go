@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +17,7 @@ import (
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/env"
 	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 type Client struct {
@@ -72,12 +75,12 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 
 	version, err := c.versionFromManifest(image, weights, files)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to build new version from manifest: %v", err)
 	}
 
 	jsonData, err := json.Marshal(version)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal JSON for new version: %v", err)
 	}
 
 	versionUrl := newVersionURL(userInfo.Username, image)
@@ -92,6 +95,9 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 	}
 	defer resp.Body.Close()
 
+	bod, _ := io.ReadAll(resp.Body)
+	console.Debug(string(bod))
+
 	if resp.StatusCode != http.StatusCreated {
 		return errors.New("Bad response from new version endpoint: " + strconv.Itoa(resp.StatusCode))
 	}
@@ -102,19 +108,19 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 func (c *Client) versionFromManifest(image string, weights []File, files []File) (*Version, error) {
 	manifest, err := c.dockerCommand.Inspect(image)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to inspect docker image: %v", err)
 	}
 
 	var cogConfig config.Config
 	err = json.Unmarshal([]byte(manifest.Config.Labels[command.CogConfigLabelKey]), &cogConfig)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get cog config from docker image: %v", err)
 	}
 
 	var openAPISchema map[string]any
 	err = json.Unmarshal([]byte(manifest.Config.Labels[command.CogOpenAPISchemaLabelKey]), &openAPISchema)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get OpenAPI schema from docker image: %v", err)
 	}
 
 	predictCode, err := stripCodeFromStub(cogConfig, true)
