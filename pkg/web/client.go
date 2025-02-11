@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -108,19 +107,19 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 func (c *Client) versionFromManifest(image string, weights []File, files []File) (*Version, error) {
 	manifest, err := c.dockerCommand.Inspect(image)
 	if err != nil {
-		return nil, fmt.Errorf("failed to inspect docker image: %v", err)
+		return nil, util.WrapError(err, "failed to inspect docker image")
 	}
 
 	var cogConfig config.Config
 	err = json.Unmarshal([]byte(manifest.Config.Labels[command.CogConfigLabelKey]), &cogConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get cog config from docker image: %v", err)
+		return nil, util.WrapError(err, "failed to get cog config from docker image")
 	}
 
 	var openAPISchema map[string]any
 	err = json.Unmarshal([]byte(manifest.Config.Labels[command.CogOpenAPISchemaLabelKey]), &openAPISchema)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get OpenAPI schema from docker image: %v", err)
+		return nil, util.WrapError(err, "failed to get OpenAPI schema from docker image")
 	}
 
 	predictCode, err := stripCodeFromStub(cogConfig, true)
