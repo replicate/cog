@@ -13,13 +13,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vbauerster/mpb/v8"
 
+	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/env"
+	r8HTTP "github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/weights"
 )
 
 func TestUploadFile(t *testing.T) {
 	// Setup mock http server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, r8HTTP.UserAgent(), r.Header.Get(r8HTTP.UserAgentHeader))
 		w.WriteHeader(http.StatusConflict)
 	}))
 	defer server.Close()
@@ -44,7 +47,14 @@ func TestUploadFile(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	client := NewClient(http.DefaultClient)
+	// Setup mock command
+	command := dockertest.NewMockCommand()
+
+	// Setup http client
+	httpClient, err := r8HTTP.ProvideHTTPClient(command)
+	require.NoError(t, err)
+
+	client := NewClient(httpClient)
 	ctx := context.Background()
 	p := mpb.New(
 		mpb.WithRefreshRate(180 * time.Millisecond),

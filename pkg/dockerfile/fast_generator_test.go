@@ -224,3 +224,39 @@ func TestAptInstall(t *testing.T) {
 	dockerfileLines := strings.Split(dockerfile, "\n")
 	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp\",target=\"/buildtmp\" tar -xf \"/buildtmp/apt.9a881b9b9f23849475296a8cd768ea1965bc3152df7118e60c145975af6aa58a.tar.zst\" -C /", dockerfileLines[5])
 }
+
+func TestValidateConfigWithBuildRunItems(t *testing.T) {
+	dir := t.TempDir()
+	build := config.Build{
+		PythonVersion:  "3.8",
+		SystemPackages: []string{"git"},
+		Run: []config.RunItem{
+			{
+				Command: "echo \"I'm alive\"",
+			},
+		},
+	}
+	config := config.Config{
+		Build: &build,
+	}
+	command := dockertest.NewMockCommand()
+	matrix := MonobaseMatrix{
+		Id:             1,
+		CudaVersions:   []string{"2.4"},
+		CudnnVersions:  []string{"1.0"},
+		PythonVersions: []string{"3.8"},
+		TorchVersions:  []string{"2.5.1"},
+		Venvs: []MonobaseVenv{
+			{
+				Python: "3.8",
+				Torch:  "2.5.1",
+				Cuda:   "2.4",
+			},
+		},
+	}
+	generator, err := NewFastGenerator(&config, dir, command, &matrix)
+	require.NoError(t, err)
+
+	err = generator.validateConfig()
+	require.Error(t, err)
+}
