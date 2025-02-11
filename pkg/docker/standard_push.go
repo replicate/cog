@@ -10,7 +10,7 @@ import (
 
 func StandardPush(image string, command command.Command) error {
 	err := command.Push(image)
-	if strings.Contains(err.Error(), "NAME_UNKNOWN") {
+	if err != nil && strings.Contains(err.Error(), "NAME_UNKNOWN") {
 		return errors.Wrap(err, "Bad response from registry: 404")
 	}
 	return err

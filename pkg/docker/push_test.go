@@ -20,7 +20,7 @@ import (
 func TestPush(t *testing.T) {
 	// Setup mock http server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/_api-r8im/models//test/versions" {
+		if r.URL.Path == "/_api-r8im/models/username/modelname/versions" {
 			w.WriteHeader(http.StatusCreated)
 		} else {
 			w.WriteHeader(http.StatusConflict)
@@ -54,14 +54,14 @@ func TestPush(t *testing.T) {
 	command := dockertest.NewMockCommand()
 
 	// Run fast push
-	err = Push("test", true, dir, command)
+	err = Push("r8.im/username/modelname", true, dir, command)
 	require.NoError(t, err)
 }
 
 func TestPushWithWeight(t *testing.T) {
 	// Setup mock http server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/_api-r8im/models//test/versions" {
+		if r.URL.Path == "/_api-r8im/models/username/modelname/versions" {
 			w.WriteHeader(http.StatusCreated)
 		} else {
 			w.WriteHeader(http.StatusConflict)
@@ -108,6 +108,6 @@ func TestPushWithWeight(t *testing.T) {
 	command := dockertest.NewMockCommand()
 
 	// Run fast push
-	err = Push("test", true, dir, command)
+	err = Push("r8.im/username/modelname", true, dir, command)
 	require.NoError(t, err)
 }
