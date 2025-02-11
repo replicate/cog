@@ -22,7 +22,7 @@ import (
 func TestFastPush(t *testing.T) {
 	// Setup mock http server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "//test/versions" {
+		if r.URL.Path == "/username/modelname/versions" {
 			w.WriteHeader(http.StatusCreated)
 		} else {
 			w.WriteHeader(http.StatusConflict)
@@ -60,14 +60,14 @@ func TestFastPush(t *testing.T) {
 	monobeamClient := monobeam.NewClient(client)
 
 	// Run fast push
-	err = FastPush(context.Background(), "test", dir, command, webClient, monobeamClient)
+	err = FastPush(context.Background(), "r8.im/username/modelname", dir, command, webClient, monobeamClient)
 	require.NoError(t, err)
 }
 
 func TestFastPushWithWeight(t *testing.T) {
 	// Setup mock http server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "//test/versions" {
+		if r.URL.Path == "/username/modelname/versions" {
 			w.WriteHeader(http.StatusCreated)
 		} else {
 			w.WriteHeader(http.StatusConflict)
@@ -118,6 +118,6 @@ func TestFastPushWithWeight(t *testing.T) {
 	monobeamClient := monobeam.NewClient(client)
 
 	// Run fast push
-	err = FastPush(context.Background(), "test", dir, command, webClient, monobeamClient)
+	err = FastPush(context.Background(), "r8.im/username/modelname", dir, command, webClient, monobeamClient)
 	require.NoError(t, err)
 }
