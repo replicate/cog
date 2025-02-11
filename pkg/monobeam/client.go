@@ -88,12 +88,11 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 
 	// Start upload
 	uploadUrl := startUploadURL(objectType, digest)
-	client := &http.Client{}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadUrl.String(), nil)
 	if err != nil {
 		return err
 	}
-	resp, err := client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -103,7 +102,7 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 	if resp.StatusCode == http.StatusConflict {
 		return nil
 	} else if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return errors.New("Bad response: " + strconv.Itoa(resp.StatusCode))
+		return errors.New("Bad response from monobeam: " + strconv.Itoa(resp.StatusCode))
 	}
 
 	// Decode the JSON payload
@@ -150,7 +149,7 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 	if err != nil {
 		return err
 	}
-	beginResp, err := client.Do(req)
+	beginResp, err := c.client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -165,7 +164,7 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 		return err
 	}
 	for i := 0; i < 100; i++ {
-		final, err := checkVerificationStatus(req, client)
+		final, err := c.checkVerificationStatus(req)
 		if final {
 			return err
 		}
@@ -175,27 +174,8 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 	return nil
 }
 
-func baseURL() url.URL {
-	return url.URL{
-		Scheme: env.SchemeFromEnvironment(),
-		Host:   HostFromEnvironment(),
-	}
-}
-
-func startUploadURL(objectType string, digest string) url.URL {
-	uploadUrl := baseURL()
-	uploadUrl.Path = strings.Join([]string{"", "uploads", objectType, "sha256", digest}, "/")
-	return uploadUrl
-}
-
-func verificationURL(objectType string, digest string, uuid string) url.URL {
-	verificationUrl := baseURL()
-	verificationUrl.Path = strings.Join([]string{"", "uploads", objectType, "sha256", digest, uuid, "verification"}, "/")
-	return verificationUrl
-}
-
-func checkVerificationStatus(req *http.Request, client *http.Client) (bool, error) {
-	checkResp, err := client.Do(req)
+func (c *Client) checkVerificationStatus(req *http.Request) (bool, error) {
+	checkResp, err := c.client.Do(req)
 	if err != nil {
 		return true, err
 	}
@@ -218,4 +198,23 @@ func checkVerificationStatus(req *http.Request, client *http.Client) (bool, erro
 	}
 
 	return false, nil
+}
+
+func baseURL() url.URL {
+	return url.URL{
+		Scheme: env.SchemeFromEnvironment(),
+		Host:   HostFromEnvironment(),
+	}
+}
+
+func startUploadURL(objectType string, digest string) url.URL {
+	uploadUrl := baseURL()
+	uploadUrl.Path = strings.Join([]string{"", "uploads", objectType, "sha256", digest}, "/")
+	return uploadUrl
+}
+
+func verificationURL(objectType string, digest string, uuid string) url.URL {
+	verificationUrl := baseURL()
+	verificationUrl.Path = strings.Join([]string{"", "uploads", objectType, "sha256", digest, uuid, "verification"}, "/")
+	return verificationUrl
 }
