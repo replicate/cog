@@ -94,6 +94,11 @@ func (g *FastGenerator) Name() string {
 }
 
 func (g *FastGenerator) generate() (string, error) {
+	err := g.validateConfig()
+	if err != nil {
+		return "", err
+	}
+
 	tmpDir, err := BuildCogTempDir(g.Dir)
 	if err != nil {
 		return "", err
@@ -285,4 +290,11 @@ func (g *FastGenerator) monobaseUsercacheMount() string {
 
 func (g *FastGenerator) generateAptTarball(tmpDir string) (string, error) {
 	return docker.CreateAptTarball(tmpDir, g.dockerCommand, g.Config.Build.SystemPackages...)
+}
+
+func (g *FastGenerator) validateConfig() error {
+	if len(g.Config.Build.Run) > 0 {
+		return errors.New("cog builds with --x-fast do not support build run commands.")
+	}
+	return nil
 }
