@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,7 +16,6 @@ import (
 	"github.com/replicate/cog/pkg/env"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util"
-	"github.com/replicate/cog/pkg/util/console"
 )
 
 type Client struct {
@@ -93,11 +91,6 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 		return err
 	}
 	defer resp.Body.Close()
-
-	console.Debug(versionUrl.String())
-
-	bod, _ := io.ReadAll(resp.Body)
-	console.Debug(string(bod))
 
 	if resp.StatusCode != http.StatusCreated {
 		return errors.New("Bad response from new version endpoint: " + strconv.Itoa(resp.StatusCode))
