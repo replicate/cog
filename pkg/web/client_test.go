@@ -81,6 +81,6 @@ func TestVersionURLErrorWithoutR8IMPrefix(t *testing.T) {
 }
 
 func TestVersionURLErrorWithout3Components(t *testing.T) {
-	_, err := newVersionURL("r8.im/username")
+	_, err := newVersionURL("username/test")
 	require.Error(t, err)
 }
