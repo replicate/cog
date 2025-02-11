@@ -14,7 +14,6 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/env"
-	"github.com/replicate/cog/pkg/global"
 )
 
 type Client struct {
@@ -65,11 +64,6 @@ func NewClient(dockerCommand command.Command, client *http.Client) *Client {
 }
 
 func (c *Client) PostNewVersion(ctx context.Context, image string, weights []File, files []File) error {
-	userInfo, err := c.dockerCommand.LoadUserInformation(global.ReplicateRegistryHost)
-	if err != nil {
-		return err
-	}
-
 	version, err := c.versionFromManifest(image, weights, files)
 	if err != nil {
 		return err
@@ -80,7 +74,11 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 		return err
 	}
 
-	versionUrl := newVersionURL(userInfo.Username, image)
+	versionUrl, err := newVersionURL(image)
+	if err != nil {
+		return err
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, versionUrl.String(), bytes.NewReader(jsonData))
 	if err != nil {
 		return err
@@ -192,10 +190,14 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 	return &version, nil
 }
 
-func newVersionURL(username string, image string) url.URL {
+func newVersionURL(image string) (url.URL, error) {
+	imageComponents := strings.Split(image, "/")
 	newVersionUrl := webBaseURL()
-	newVersionUrl.Path = strings.Join([]string{"", username, image, "versions"}, "/")
-	return newVersionUrl
+	if imageComponents[0] != "r8.im" {
+		return newVersionUrl, errors.New("The image name must have the r8.im prefix in fast push.")
+	}
+	newVersionUrl.Path = strings.Join([]string{"", imageComponents[1], imageComponents[2], "versions"}, "/")
+	return newVersionUrl, nil
 }
 
 func webBaseURL() url.URL {

@@ -42,7 +42,7 @@ func TestPostNewVersion(t *testing.T) {
 
 	client := NewClient(command, http.DefaultClient)
 	ctx := context.Background()
-	err = client.PostNewVersion(ctx, "test", []File{}, []File{})
+	err = client.PostNewVersion(ctx, "r8.im/user/test", []File{}, []File{})
 	require.NoError(t, err)
 }
 
@@ -60,7 +60,7 @@ func TestVersionFromManifest(t *testing.T) {
 	dockertest.MockOpenAPISchema = "{\"test\": true}"
 
 	client := NewClient(command, http.DefaultClient)
-	version, err := client.versionFromManifest("test", []File{}, []File{})
+	version, err := client.versionFromManifest("r8.im/user/test", []File{}, []File{})
 	require.NoError(t, err)
 
 	var openAPISchema map[string]any
@@ -73,4 +73,9 @@ func TestVersionFromManifest(t *testing.T) {
 
 	require.Equal(t, openAPISchema, version.OpenAPISchema)
 	require.Equal(t, cogConfig, version.CogConfig)
+}
+
+func TestVersionURLErrorWithoutR8IMPrefix(t *testing.T) {
+	_, err := newVersionURL("docker.com/thing/thing")
+	require.Error(t, err)
 }
