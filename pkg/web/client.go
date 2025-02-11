@@ -15,6 +15,7 @@ import (
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/env"
 	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/util"
 )
 
 type Client struct {
@@ -67,12 +68,12 @@ func NewClient(dockerCommand command.Command, client *http.Client) *Client {
 func (c *Client) PostNewVersion(ctx context.Context, image string, weights []File, files []File) error {
 	version, err := c.versionFromManifest(image, weights, files)
 	if err != nil {
-		return err
+		return util.WrapError(err, "failed to build new version from manifest")
 	}
 
 	jsonData, err := json.Marshal(version)
 	if err != nil {
-		return err
+		return util.WrapError(err, "failed to marshal JSON for new version")
 	}
 
 	versionUrl, err := newVersionURL(image)
@@ -101,19 +102,19 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 func (c *Client) versionFromManifest(image string, weights []File, files []File) (*Version, error) {
 	manifest, err := c.dockerCommand.Inspect(image)
 	if err != nil {
-		return nil, err
+		return nil, util.WrapError(err, "failed to inspect docker image")
 	}
 
 	var cogConfig config.Config
 	err = json.Unmarshal([]byte(manifest.Config.Labels[command.CogConfigLabelKey]), &cogConfig)
 	if err != nil {
-		return nil, err
+		return nil, util.WrapError(err, "failed to get cog config from docker image")
 	}
 
 	var openAPISchema map[string]any
 	err = json.Unmarshal([]byte(manifest.Config.Labels[command.CogOpenAPISchemaLabelKey]), &openAPISchema)
 	if err != nil {
-		return nil, err
+		return nil, util.WrapError(err, "failed to get OpenAPI schema from docker image")
 	}
 
 	predictCode, err := stripCodeFromStub(cogConfig, true)
@@ -200,7 +201,7 @@ func newVersionURL(image string) (url.URL, error) {
 	if imageComponents[0] != global.ReplicateRegistryHost {
 		return newVersionUrl, errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using --x-fast.")
 	}
-	newVersionUrl.Path = strings.Join([]string{"", imageComponents[1], imageComponents[2], "versions"}, "/")
+	newVersionUrl.Path = strings.Join([]string{"", "_api-r8im", "models", imageComponents[1], imageComponents[2], "versions"}, "/")
 	return newVersionUrl, nil
 }
 

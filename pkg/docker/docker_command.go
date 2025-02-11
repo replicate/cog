@@ -3,11 +3,13 @@ package docker
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/docker/cli/cli/config"
@@ -15,7 +17,13 @@ import (
 	"github.com/docker/cli/cli/config/types"
 
 	"github.com/replicate/cog/pkg/docker/command"
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/slices"
+)
+
+var (
+	commandsRequiringPlatform = []string{"build", "run"}
 )
 
 type DockerCommand struct{}
@@ -97,23 +105,29 @@ func (c *DockerCommand) Inspect(image string) (*command.Manifest, error) {
 		"inspect",
 		image,
 	}
-	manifestData, err := c.exec("image", false, args...)
+	manifestData, err := c.exec("image", true, args...)
 	if err != nil {
 		return nil, err
 	}
 
 	decoder := json.NewDecoder(bytes.NewReader(([]byte(manifestData))))
-	var manifest command.Manifest
-	err = decoder.Decode(&manifest)
+	var manifests []command.Manifest
+	err = decoder.Decode(&manifests)
 	if err != nil {
 		return nil, err
 	}
 
-	return &manifest, nil
+	if len(manifests) == 0 {
+		return nil, errors.New("Failed to decode result of docker inspect")
+	}
+	return &manifests[0], nil // Docker inspect returns us a list of manifests
 }
 
 func (c *DockerCommand) exec(name string, capture bool, args ...string) (string, error) {
 	cmdArgs := []string{name}
+	if slices.ContainsString(commandsRequiringPlatform, name) && util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
+		cmdArgs = append(cmdArgs, "--platform", "linux/amd64")
+	}
 	cmdArgs = append(cmdArgs, args...)
 	dockerCmd := DockerCommandFromEnvironment()
 	cmd := exec.Command(dockerCmd, cmdArgs...)
