@@ -62,7 +62,7 @@ func NewS3Uploader(client *s3.Client) Uploader {
 		S3Client: client,
 	}
 
-	// 64 GB default limit
+	// 4096 max parts default - 64 GB default limit (16 MB max part size default * 4096 parts)
 	uploader.MaxPartUploads = util.GetEnvOrDefault(UPLOADER_MAX_PARTS_UPLOAD_KEY, 1024*4, parseInt32)
 	// 16 MB part size default
 	uploader.MultipartPartSize = util.GetEnvOrDefault(UPLOADER_MULTIPART_SIZE_KEY, 16*1024*1024, parseInt64)
@@ -77,7 +77,7 @@ func NewS3Uploader(client *s3.Client) Uploader {
 func (s *s3Uploader) Initialize() {
 	if !s.initialized {
 		s.mpuBufferPool = sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				b := make([]byte, s.MultipartPartSize)
 				return &b
 			},
@@ -156,9 +156,7 @@ func (s *s3Uploader) uploadObjectToS3(ctx context.Context, fInfo uploadFileDetai
 func (s *s3Uploader) uploadMultipartObjectToS3(ctx context.Context, fInfo uploadFileDetails) error {
 
 	// Initialize if we haven't already
-	if !s.initialized {
-		s.Initialize()
-	}
+	s.Initialize()
 
 	// Create a multipart upload
 	createOutput, err := s.S3Client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{

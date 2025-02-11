@@ -3,6 +3,7 @@ package docker
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -116,6 +117,9 @@ func (c *DockerCommand) Inspect(image string) (*command.Manifest, error) {
 		return nil, err
 	}
 
+	if len(manifests) == 0 {
+		return nil, errors.New("Failed to decode result of docker inspect")
+	}
 	return &manifests[0], nil // Docker inspect returns us a list of manifests
 }
 

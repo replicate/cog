@@ -17,6 +17,7 @@ import (
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/env"
 	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -70,12 +71,12 @@ func NewClient(dockerCommand command.Command, client *http.Client) *Client {
 func (c *Client) PostNewVersion(ctx context.Context, image string, weights []File, files []File) error {
 	version, err := c.versionFromManifest(image, weights, files)
 	if err != nil {
-		return fmt.Errorf("failed to build new version from manifest: %v", err)
+		return util.WrapError(err, "failed to build new version from manifest")
 	}
 
 	jsonData, err := json.Marshal(version)
 	if err != nil {
-		return fmt.Errorf("failed to marshal JSON for new version: %v", err)
+		return util.WrapError(err, "failed to marshal JSON for new version")
 	}
 
 	versionUrl, err := newVersionURL(image)
