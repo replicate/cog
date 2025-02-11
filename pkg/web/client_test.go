@@ -79,3 +79,8 @@ func TestVersionURLErrorWithoutR8IMPrefix(t *testing.T) {
 	_, err := newVersionURL("docker.com/thing/thing")
 	require.Error(t, err)
 }
+
+func TestVersionURLErrorWithout3Components(t *testing.T) {
+	_, err := newVersionURL("r8.im/username")
+	require.Error(t, err)
+}

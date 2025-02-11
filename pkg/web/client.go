@@ -194,8 +194,11 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 func newVersionURL(image string) (url.URL, error) {
 	imageComponents := strings.Split(image, "/")
 	newVersionUrl := webBaseURL()
+	if len(imageComponents) != 3 {
+		return newVersionUrl, errors.New("The image URL must have 3 components in the format of " + global.ReplicateRegistryHost + "/username/modelname")
+	}
 	if imageComponents[0] != global.ReplicateRegistryHost {
-		return newVersionUrl, errors.New("The image name must have the r8.im prefix in fast push.")
+		return newVersionUrl, errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix in fast push.")
 	}
 	newVersionUrl.Path = strings.Join([]string{"", imageComponents[1], imageComponents[2], "versions"}, "/")
 	return newVersionUrl, nil
