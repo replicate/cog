@@ -71,7 +71,7 @@ func push(cmd *cobra.Command, args []string) error {
 	command := docker.NewDockerCommand()
 	err = docker.Push(imageName, buildFast, projectDir, command)
 	if err != nil {
-		if strings.Contains(err.Error(), "NAME_UNKNOWN") {
+		if strings.Contains(err.Error(), "404") {
 			return fmt.Errorf("Unable to find existing Replicate model for %s. "+
 				"Go to replicate.com and create a new model before pushing."+
 				"\n\n"+

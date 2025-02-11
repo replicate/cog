@@ -1,7 +1,17 @@
 package docker
 
-import "github.com/replicate/cog/pkg/docker/command"
+import (
+	"strings"
+
+	"github.com/pkg/errors"
+
+	"github.com/replicate/cog/pkg/docker/command"
+)
 
 func StandardPush(image string, command command.Command) error {
-	return command.Push(image)
+	err := command.Push(image)
+	if strings.Contains(err.Error(), "NAME_UNKNOWN") {
+		return errors.Wrap(err, "Bad response from registry: 404")
+	}
+	return err
 }
