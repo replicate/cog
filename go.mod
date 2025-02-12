@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.55
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.74.1
 	github.com/docker/cli v27.2.1+incompatible
-	github.com/docker/docker v27.1.1+incompatible
+	github.com/docker/docker v27.5.1+incompatible
 	github.com/getkin/kin-openapi v0.128.0
 	github.com/golangci/golangci-lint v1.64.2
 	github.com/google/go-containerregistry v0.20.2
