@@ -700,9 +700,10 @@ build:
   run:
   - command: "echo 'Hello, World!'"
 tests:
-  - command: "cog predict -i s=world"
+- inputs:
+    s: world
 `
 	cfg, err := FromYAML([]byte(yamlString))
 	require.NoError(t, err)
-	require.Equal(t, "cog predict -i s=world", cfg.Tests[0].Command)
+	require.Equal(t, map[string]string{"s": "world"}, cfg.Tests[0].Inputs)
 }

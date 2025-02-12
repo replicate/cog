@@ -69,7 +69,7 @@ type Example struct {
 }
 
 type Test struct {
-	Command string `json:"command" yaml:"command"`
+	Inputs map[string]string `json:"inputs" yaml:"inputs"`
 }
 
 type Config struct {

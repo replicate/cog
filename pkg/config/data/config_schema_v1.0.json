@@ -191,24 +191,11 @@
         "array",
         "null"
       ],
-      "description": "A list of tests cog commands to run.",
-      "additionalItems": true,
+      "description": "A list of test cog commands to run.",
+      "additionalItems": false,
       "items": {
-        "$id": "#/properties/build/properties/tests/items",
-        "anyOf": [
-          {
-            "$id": "#/properties/build/properties/tests/items/anyOf/0",
-            "type": "object",
-            "properties": {
-              "command": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "command"
-            ]
-          }
-        ]
+        "type": "object",
+        "additionalItems": true
       }
     }
   },

@@ -20,7 +20,9 @@ func TestGenerate(t *testing.T) {
 		Build: &build,
 		Tests: []config.Test{
 			{
-				Command: "cog predict -i s=world",
+				Inputs: map[string]string{
+					"s": "world",
+				},
 			},
 		},
 	}
@@ -63,7 +65,9 @@ func TestGenerateUVCacheMount(t *testing.T) {
 		Build: &build,
 		Tests: []config.Test{
 			{
-				Command: "cog predict -i s=world",
+				Inputs: map[string]string{
+					"s": "world",
+				},
 			},
 		},
 	}
@@ -103,7 +107,9 @@ func TestGenerateCUDA(t *testing.T) {
 		Build: &build,
 		Tests: []config.Test{
 			{
-				Command: "cog predict -i s=world",
+				Inputs: map[string]string{
+					"s": "world",
+				},
 			},
 		},
 	}
@@ -145,7 +151,9 @@ func TestGeneratePythonPackages(t *testing.T) {
 		Build: &build,
 		Tests: []config.Test{
 			{
-				Command: "cog predict -i s=world",
+				Inputs: map[string]string{
+					"s": "world",
+				},
 			},
 		},
 	}
@@ -185,7 +193,9 @@ func TestGenerateVerboseEnv(t *testing.T) {
 		Build: &build,
 		Tests: []config.Test{
 			{
-				Command: "cog predict -i s=world",
+				Inputs: map[string]string{
+					"s": "world",
+				},
 			},
 		},
 	}
@@ -225,7 +235,9 @@ func TestAptInstall(t *testing.T) {
 		Build: &build,
 		Tests: []config.Test{
 			{
-				Command: "cog predict -i s=world",
+				Inputs: map[string]string{
+					"s": "world",
+				},
 			},
 		},
 	}
