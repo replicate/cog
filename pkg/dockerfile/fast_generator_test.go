@@ -18,6 +18,11 @@ func TestGenerate(t *testing.T) {
 	}
 	config := config.Config{
 		Build: &build,
+		Tests: []config.Test{
+			{
+				Command: "cog predict -i s=world",
+			},
+		},
 	}
 	command := dockertest.NewMockCommand()
 
@@ -56,6 +61,11 @@ func TestGenerateUVCacheMount(t *testing.T) {
 	}
 	config := config.Config{
 		Build: &build,
+		Tests: []config.Test{
+			{
+				Command: "cog predict -i s=world",
+			},
+		},
 	}
 	// Create matrix
 	matrix := MonobaseMatrix{
@@ -91,6 +101,11 @@ func TestGenerateCUDA(t *testing.T) {
 	}
 	config := config.Config{
 		Build: &build,
+		Tests: []config.Test{
+			{
+				Command: "cog predict -i s=world",
+			},
+		},
 	}
 	command := dockertest.NewMockCommand()
 
@@ -128,6 +143,11 @@ func TestGeneratePythonPackages(t *testing.T) {
 	}
 	config := config.Config{
 		Build: &build,
+		Tests: []config.Test{
+			{
+				Command: "cog predict -i s=world",
+			},
+		},
 	}
 	command := dockertest.NewMockCommand()
 
@@ -163,6 +183,11 @@ func TestGenerateVerboseEnv(t *testing.T) {
 	}
 	config := config.Config{
 		Build: &build,
+		Tests: []config.Test{
+			{
+				Command: "cog predict -i s=world",
+			},
+		},
 	}
 	command := dockertest.NewMockCommand()
 
@@ -198,6 +223,11 @@ func TestAptInstall(t *testing.T) {
 	}
 	config := config.Config{
 		Build: &build,
+		Tests: []config.Test{
+			{
+				Command: "cog predict -i s=world",
+			},
+		},
 	}
 	command := dockertest.NewMockCommand()
 
@@ -235,6 +265,37 @@ func TestValidateConfigWithBuildRunItems(t *testing.T) {
 				Command: "echo \"I'm alive\"",
 			},
 		},
+	}
+	config := config.Config{
+		Build: &build,
+	}
+	command := dockertest.NewMockCommand()
+	matrix := MonobaseMatrix{
+		Id:             1,
+		CudaVersions:   []string{"2.4"},
+		CudnnVersions:  []string{"1.0"},
+		PythonVersions: []string{"3.8"},
+		TorchVersions:  []string{"2.5.1"},
+		Venvs: []MonobaseVenv{
+			{
+				Python: "3.8",
+				Torch:  "2.5.1",
+				Cuda:   "2.4",
+			},
+		},
+	}
+	generator, err := NewFastGenerator(&config, dir, command, &matrix)
+	require.NoError(t, err)
+
+	err = generator.validateConfig()
+	require.Error(t, err)
+}
+
+func TestValidateConfigWithNoTests(t *testing.T) {
+	dir := t.TempDir()
+	build := config.Build{
+		PythonVersion:  "3.8",
+		SystemPackages: []string{"git"},
 	}
 	config := config.Config{
 		Build: &build,
