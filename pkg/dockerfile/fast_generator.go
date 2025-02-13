@@ -297,7 +297,7 @@ func (g *FastGenerator) validateConfig() error {
 		return errors.New("cog builds with --x-fast do not support build run commands.")
 	}
 	if len(g.Config.Tests) < 1 {
-		return errors.New("cog builds with --x-fast require 1 test.")
+		return errors.New("cog builds with --x-fast require at least 1 test.")
 	}
 	return nil
 }
