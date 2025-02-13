@@ -430,9 +430,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             )
 
         with scope(Scope(record_metric=self.record_metric)), redirector:
-            self._predictor = self._load_predictor()
+            with self._handle_setup_error(redirector):
+                wait_for_env()
+                self._predictor = load_predictor_from_ref(self._predictor_ref)
 
-            # If _load_predictor hasn't returned a predictor instance then
+            # If load_predictor_from_ref hasn't returned a predictor instance then
             # it has sent a error Done event and we're done here.
             if not self._predictor:
                 return
@@ -482,27 +484,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if self._has_async_predictor:
             return _get_current_scope()._tag
         return self._sync_tag
-
-    def _load_predictor(self) -> Optional[BasePredictor]:
-        done = Done()
-        wait_for_env()
-        try:
-            return load_predictor_from_ref(self._predictor_ref)
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            traceback.print_exc()
-            done.error = True
-            done.error_detail = str(e)
-            self._events.send(Envelope(event=done))
-        except BaseException as e:
-            # For SystemExit and friends we attempt to add some useful context
-            # to the logs, but reraise to ensure the process dies.
-            traceback.print_exc()
-            done.error = True
-            done.error_detail = str(e)
-            self._events.send(Envelope(event=done))
-            raise
-
-        return None
 
     def _validate_predictor(
         self,

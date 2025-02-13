@@ -487,7 +487,7 @@ def test_output(worker, payloads, output_generator, data):
     SETUP_LOGS_FIXTURES,
     indirect=["worker"],
 )
-def test_setup_logging(worker, expected_stdout, expected_stderr):
+def test_setup_logging(worker: Worker, expected_stdout, expected_stderr):
     """
     We should get the logs we expect from predictors that generate logs during
     setup.
@@ -497,6 +497,32 @@ def test_setup_logging(worker, expected_stdout, expected_stderr):
 
     assert result.stdout == expected_stdout
     assert result.stderr == expected_stderr
+
+
+@uses_worker_configs(
+    [
+        WorkerConfig("import_err", setup=False),
+        WorkerConfig("import_err", setup=False, min_python=(3, 11), is_async=True),
+    ]
+)
+def test_predictor_load_error_logging(worker: Worker):
+    """
+    This test ensures that we capture standard output that occurrs when the predictor
+    errors when it is loaded. Before setup or predict are even run.
+    """
+    result = _process(worker, worker.setup, swallow_exceptions=True)
+
+    assert result.done.error
+    assert result.done.error_detail == "No module named 'missing_module'"
+
+    assert result.stdout == "writing to stdout at import time\n"
+    stderr_lines = result.stderr.splitlines(keepends=True)
+    assert stderr_lines[0] == "writing to stderr at import time\n"
+
+    assert "python/tests/server/fixtures/import_err.py" in stderr_lines[-3]
+    assert "line 6" in stderr_lines[-3]
+    assert "import missing_module" in stderr_lines[-2]
+    assert stderr_lines[-1] == "ModuleNotFoundError: No module named 'missing_module'\n"
 
 
 @pytest.mark.parametrize(
