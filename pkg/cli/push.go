@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -59,9 +60,13 @@ func push(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	startBuildTime := time.Now()
+
 	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast); err != nil {
 		return err
 	}
+
+	buildDuration := time.Since(startBuildTime)
 
 	console.Infof("\nPushing image '%s'...", imageName)
 	if buildFast {
@@ -69,7 +74,7 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	command := docker.NewDockerCommand()
-	err = docker.Push(imageName, buildFast, projectDir, command)
+	err = docker.Push(imageName, buildFast, projectDir, command, buildDuration)
 	if err != nil {
 		if strings.Contains(err.Error(), "404") {
 			return fmt.Errorf("Unable to find existing Replicate model for %s. "+

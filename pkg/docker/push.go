@@ -2,22 +2,53 @@ package docker
 
 import (
 	"context"
+	"fmt"
+	"math/rand/v2"
+	"strings"
+	"time"
 
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/monobeam"
+	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/web"
 )
 
-func Push(image string, fast bool, projectDir string, command command.Command) error {
-	if fast {
-		client, err := http.ProvideHTTPClient(command)
+func Push(image string, fast bool, projectDir string, command command.Command, buildTime time.Duration) error {
+	ctx := context.Background()
+	client, err := http.ProvideHTTPClient(command)
+	if err != nil {
+		return err
+	}
+	webClient := web.NewClient(command, client)
+
+	// For the timing flow, on error we will just log and continue since
+	// this is just a loss of push timing information
+	imageID := ""
+	// 256 bit random hash (4x64 bits)
+	for i := 0; i < 4; i++ {
+		imageID = fmt.Sprintf("%s%x", imageID, rand.Int64())
+	}
+	if !fast {
+		imageMeta, err := command.Inspect(image)
 		if err != nil {
-			return err
+			console.Warnf("Failed to inspect image: %v", err)
 		}
-		webClient := web.NewClient(command, client)
+		parts := strings.Split(imageMeta.ID, ":")
+		if len(parts) != 2 {
+			console.Warn("Image ID was not of the form sha:hash")
+		}
+		imageID = parts[1]
+	}
+
+	err = webClient.PostBuildStart(ctx, imageID, buildTime)
+	if err != nil {
+		console.Warnf("Failed to send build timings to server: %v", err)
+	}
+
+	if fast {
 		monobeamClient := monobeam.NewClient(client)
-		return FastPush(context.Background(), image, projectDir, command, webClient, monobeamClient)
+		return FastPush(ctx, image, projectDir, command, webClient, monobeamClient, imageID)
 	}
 	return StandardPush(image, command)
 }

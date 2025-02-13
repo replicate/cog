@@ -9,6 +9,7 @@ type Config struct {
 
 type Manifest struct {
 	Config Config `json:"Config"`
+	ID     string `json:"Id"`
 }
 
 const UvPythonInstallDirEnvVarName = "UV_PYTHON_INSTALL_DIR"
