@@ -186,7 +186,7 @@
       }
     },
     "tests": {
-      "$id": "#/properties/build/properties/run",
+      "$id": "#/properties/build/properties/tests",
       "type": [
         "array",
         "null"
