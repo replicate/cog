@@ -70,7 +70,7 @@ func NewClient(dockerCommand command.Command, client *http.Client) *Client {
 func (c *Client) PostBuildStart(ctx context.Context, imageHash string, buildTime time.Duration) error {
 	jsonBody := map[string]any{
 		"image_hash":      imageHash,
-		"build_time":      buildTime,
+		"build_time":      buildTime / time.Microsecond,
 		"push_start_time": time.Now(),
 	}
 
