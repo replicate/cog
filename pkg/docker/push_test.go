@@ -20,7 +20,7 @@ import (
 func TestPush(t *testing.T) {
 	// Setup mock http server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/_api-r8im/models/username/modelname/versions" {
+		if r.URL.Path == "/api/models/username/modelname/versions" {
 			w.WriteHeader(http.StatusCreated)
 		} else {
 			w.WriteHeader(http.StatusConflict)
@@ -61,7 +61,7 @@ func TestPush(t *testing.T) {
 func TestPushWithWeight(t *testing.T) {
 	// Setup mock http server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/_api-r8im/models/username/modelname/versions" {
+		if r.URL.Path == "/api/models/username/modelname/versions" {
 			w.WriteHeader(http.StatusCreated)
 		} else {
 			w.WriteHeader(http.StatusConflict)

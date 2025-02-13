@@ -201,7 +201,7 @@ func newVersionURL(image string) (url.URL, error) {
 	if imageComponents[0] != global.ReplicateRegistryHost {
 		return newVersionUrl, errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using --x-fast.")
 	}
-	newVersionUrl.Path = strings.Join([]string{"", "_api-r8im", "models", imageComponents[1], imageComponents[2], "versions"}, "/")
+	newVersionUrl.Path = strings.Join([]string{"", "api", "models", imageComponents[1], imageComponents[2], "versions"}, "/")
 	return newVersionUrl, nil
 }
 
