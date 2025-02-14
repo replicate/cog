@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/replicate/go/types"
+
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/env"
@@ -70,7 +72,7 @@ func NewClient(dockerCommand command.Command, client *http.Client) *Client {
 func (c *Client) PostBuildStart(ctx context.Context, imageHash string, buildTime time.Duration) error {
 	jsonBody := map[string]any{
 		"image_hash":      imageHash,
-		"build_time":      buildTime / time.Microsecond,
+		"build_time":      types.Duration(buildTime).String(),
 		"push_start_time": time.Now().UTC(),
 	}
 

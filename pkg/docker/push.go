@@ -30,7 +30,7 @@ func Push(image string, fast bool, projectDir string, command command.Command, b
 		for i := 0; i < 4; i++ {
 			// Ignoring the linter warning about math/rand/v2 not being cryptographically secure
 			// because this just needs to be a "unique enough" ID for a cache between when the
-			// push starts and ends, which should only be a couple minutes max
+			// push starts and ends, which should only be ~a week max.
 			imageID = fmt.Sprintf("%s%x", imageID, rand.Int64()) //nolint:gosec
 		}
 	} else {
