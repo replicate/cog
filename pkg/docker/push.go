@@ -28,7 +28,10 @@ func Push(image string, fast bool, projectDir string, command command.Command, b
 	if fast {
 		// Generate 256 bit random hash (4x64 bits) to use as an upload ID
 		for i := 0; i < 4; i++ {
-			imageID = fmt.Sprintf("%s%x", imageID, rand.Int64())
+			// Ignoring the linter warning about math/rand/v2 not being cryptographically secure
+			// because this just needs to be a "unique enough" ID for a cache between when the
+			// push starts and ends, which should only be a couple minutes max
+			imageID = fmt.Sprintf("%s%x", imageID, rand.Int64()) //nolint:gosec
 		}
 	} else {
 		imageMeta, err := command.Inspect(image)
