@@ -71,7 +71,7 @@ func (c *Client) PostBuildStart(ctx context.Context, imageHash string, buildTime
 	jsonBody := map[string]any{
 		"image_hash":      imageHash,
 		"build_time":      buildTime / time.Microsecond,
-		"push_start_time": time.Now(),
+		"push_start_time": time.Now().UTC(),
 	}
 
 	jsonData, err := json.Marshal(jsonBody)

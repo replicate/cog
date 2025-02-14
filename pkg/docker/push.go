@@ -25,11 +25,12 @@ func Push(image string, fast bool, projectDir string, command command.Command, b
 	// For the timing flow, on error we will just log and continue since
 	// this is just a loss of push timing information
 	imageID := ""
-	// 256 bit random hash (4x64 bits)
-	for i := 0; i < 4; i++ {
-		imageID = fmt.Sprintf("%s%x", imageID, rand.Int64())
-	}
-	if !fast {
+	if fast {
+		// Generate 256 bit random hash (4x64 bits) to use as an upload ID
+		for i := 0; i < 4; i++ {
+			imageID = fmt.Sprintf("%s%x", imageID, rand.Int64())
+		}
+	} else {
 		imageMeta, err := command.Inspect(image)
 		if err != nil {
 			console.Warnf("Failed to inspect image: %v", err)
