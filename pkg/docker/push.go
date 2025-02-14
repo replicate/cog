@@ -41,8 +41,9 @@ func Push(image string, fast bool, projectDir string, command command.Command, b
 		parts := strings.Split(imageMeta.ID, ":")
 		if len(parts) != 2 {
 			console.Warn("Image ID was not of the form sha:hash")
+		} else {
+			imageID = parts[1]
 		}
-		imageID = parts[1]
 	}
 
 	err = webClient.PostBuildStart(ctx, imageID, buildTime)
