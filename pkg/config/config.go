@@ -68,12 +68,17 @@ type Example struct {
 	Output string            `json:"output" yaml:"output"`
 }
 
+type Test struct {
+	Inputs map[string]string `json:"inputs" yaml:"inputs"`
+}
+
 type Config struct {
 	Build       *Build       `json:"build" yaml:"build"`
 	Image       string       `json:"image,omitempty" yaml:"image"`
 	Predict     string       `json:"predict,omitempty" yaml:"predict"`
 	Train       string       `json:"train,omitempty" yaml:"train"`
 	Concurrency *Concurrency `json:"concurrency,omitempty" yaml:"concurrency"`
+	Tests       []Test       `json:"tests,omitempty" yaml:"tests"`
 }
 
 func DefaultConfig() *Config {

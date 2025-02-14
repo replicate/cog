@@ -693,3 +693,17 @@ torch==2.4.0
 torchvision==2.4.0`
 	require.Equal(t, expected, requirements)
 }
+
+func TestParseTests(t *testing.T) {
+	yamlString := `
+build:
+  run:
+  - command: "echo 'Hello, World!'"
+tests:
+- inputs:
+    s: world
+`
+	cfg, err := FromYAML([]byte(yamlString))
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"s": "world"}, cfg.Tests[0].Inputs)
+}
