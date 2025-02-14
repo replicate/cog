@@ -174,9 +174,29 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 		R8TorchVersion:      torchVersion,
 	}
 
+	prefixedFiles := make([]File, len(files))
+
+	for i, file := range files {
+		prefixedFiles[i] = File{
+			Path:   file.Path,
+			Digest: "sha256:" + file.Digest,
+			Size:   file.Size,
+		}
+	}
+
+	prefixedWeights := make([]File, len(weights))
+
+	for i, file := range weights {
+		prefixedWeights[i] = File{
+			Path:   file.Path,
+			Digest: "sha256:" + file.Digest,
+			Size:   file.Size,
+		}
+	}
+
 	runtimeConfig := RuntimeConfig{
-		Weights: weights,
-		Files:   files,
+		Weights: prefixedWeights,
+		Files:   prefixedFiles,
 		Env:     env,
 	}
 
