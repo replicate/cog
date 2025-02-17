@@ -95,7 +95,7 @@ func (c *Client) PostBuildStart(ctx context.Context, imageHash string, buildTime
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != http.StatusOK {
 		return errors.New("Bad response from new version endpoint: " + strconv.Itoa(resp.StatusCode))
 	}
 
