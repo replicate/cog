@@ -38,16 +38,15 @@ func Push(image string, fast bool, projectDir string, command command.Command, b
 		if err != nil {
 			console.Warnf("Failed to inspect image: %v", err)
 		}
-		parts := strings.Split(imageMeta.ID, ":")
-		if len(parts) != 2 {
+		_, hash, ok := strings.Cut(imageMeta.ID, ":")
+		if !ok {
 			console.Warn("Image ID was not of the form sha:hash")
 		} else {
-			imageID = parts[1]
+			imageID = hash
 		}
 	}
 
-	err = webClient.PostBuildStart(ctx, imageID, buildTime)
-	if err != nil {
+	if err := webClient.PostBuildStart(ctx, imageID, buildTime); err != nil {
 		console.Warnf("Failed to send build timings to server: %v", err)
 	}
 

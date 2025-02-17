@@ -21,6 +21,17 @@ import (
 	"github.com/replicate/cog/pkg/util"
 )
 
+const (
+	buildTimingURLPath = "/api/models/build-start"
+)
+
+var (
+	ErrorBadResponseNewVersionEndpoint = errors.New("Bad response from new version endpoint")
+	ErrorBadResponseBuildStartEndpoint = errors.New("Bad response from build start endpoint")
+	ErrorBadRegistryURL                = errors.New("The image URL must have 3 components in the format of " + global.ReplicateRegistryHost + "/your-username/your-model")
+	ErrorBadRegistryHost               = errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using --x-fast.")
+)
+
 type Client struct {
 	dockerCommand command.Command
 	client        *http.Client
@@ -72,7 +83,7 @@ func NewClient(dockerCommand command.Command, client *http.Client) *Client {
 func (c *Client) PostBuildStart(ctx context.Context, imageHash string, buildTime time.Duration) error {
 	jsonBody := map[string]any{
 		"image_hash":      imageHash,
-		"build_time":      types.Duration(buildTime).String(),
+		"build_duration":  types.Duration(buildTime).String(),
 		"push_start_time": time.Now().UTC(),
 	}
 
@@ -82,7 +93,7 @@ func (c *Client) PostBuildStart(ctx context.Context, imageHash string, buildTime
 	}
 
 	url := webBaseURL()
-	url.Path = strings.Join([]string{"", "api", "models", "build-start"}, "/")
+	url.Path = buildTimingURLPath
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url.String(), bytes.NewReader(jsonData))
 	if err != nil {
@@ -96,7 +107,7 @@ func (c *Client) PostBuildStart(ctx context.Context, imageHash string, buildTime
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return errors.New("Bad response from new version endpoint: " + strconv.Itoa(resp.StatusCode))
+		return util.WrapError(ErrorBadResponseBuildStartEndpoint, strconv.Itoa(resp.StatusCode))
 	}
 
 	return nil
@@ -132,7 +143,7 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		return errors.New("Bad response from new version endpoint: " + strconv.Itoa(resp.StatusCode))
+		return util.WrapError(ErrorBadResponseNewVersionEndpoint, strconv.Itoa(resp.StatusCode))
 	}
 
 	return nil
@@ -255,10 +266,10 @@ func newVersionURL(image string) (url.URL, error) {
 	imageComponents := strings.Split(image, "/")
 	newVersionUrl := webBaseURL()
 	if len(imageComponents) != 3 {
-		return newVersionUrl, errors.New("The image URL must have 3 components in the format of " + global.ReplicateRegistryHost + "/your-username/your-model")
+		return newVersionUrl, ErrorBadRegistryURL
 	}
 	if imageComponents[0] != global.ReplicateRegistryHost {
-		return newVersionUrl, errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using --x-fast.")
+		return newVersionUrl, ErrorBadRegistryHost
 	}
 	newVersionUrl.Path = strings.Join([]string{"", "api", "models", imageComponents[1], imageComponents[2], "versions"}, "/")
 	return newVersionUrl, nil
