@@ -165,8 +165,8 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 		lines = append(lines, []string{
 			"ENV R8_CUDA_VERSION=" + cudaVersion,
 			"ENV R8_CUDNN_VERSION=" + cudnnVersion,
-			"ENV R8_CUDA_PREFIX=https://monobase.replicate.delivery/cuda",
-			"ENV R8_CUDNN_PREFIX=https://monobase.replicate.delivery/cudnn",
+			"ENV R8_CUDA_PREFIX=https://monobase-packages.replicate.delivery/cuda",
+			"ENV R8_CUDNN_PREFIX=https://monobase-packages.replicate.delivery/cudnn",
 		}...)
 	}
 
