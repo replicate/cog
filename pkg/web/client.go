@@ -70,7 +70,7 @@ type Version struct {
 	OpenAPISchema map[string]any    `json:"openapi_schema"`
 	RuntimeConfig RuntimeConfig     `json:"runtime_config"`
 	Virtual       bool              `json:"virtual"`
-	UploadID      string            `json:"upload_id"`
+	CogPushID     string            `json:"cog_push_id"`
 }
 
 func NewClient(dockerCommand command.Command, client *http.Client) *Client {
@@ -80,9 +80,9 @@ func NewClient(dockerCommand command.Command, client *http.Client) *Client {
 	}
 }
 
-func (c *Client) PostBuildStart(ctx context.Context, imageHash string, buildTime time.Duration) error {
+func (c *Client) PostPushStart(ctx context.Context, cogPushID string, buildTime time.Duration) error {
 	jsonBody := map[string]any{
-		"image_hash":      imageHash,
+		"cog_push_id":     cogPushID,
 		"build_duration":  types.Duration(buildTime).String(),
 		"push_start_time": time.Now().UTC(),
 	}
@@ -113,13 +113,11 @@ func (c *Client) PostBuildStart(ctx context.Context, imageHash string, buildTime
 	return nil
 }
 
-func (c *Client) PostNewVersion(ctx context.Context, image string, weights []File, files []File, uploadID string) error {
+func (c *Client) PostNewVersion(ctx context.Context, image string, weights []File, files []File) error {
 	version, err := c.versionFromManifest(image, weights, files)
 	if err != nil {
 		return util.WrapError(err, "failed to build new version from manifest")
 	}
-
-	version.UploadID = uploadID
 
 	jsonData, err := json.Marshal(version)
 	if err != nil {
@@ -257,6 +255,10 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 		OpenAPISchema: openAPISchema,
 		RuntimeConfig: runtimeConfig,
 		Virtual:       true,
+	}
+
+	if pushID, ok := manifest.Config.Labels["run.cog.push_id"]; ok {
+		version.CogPushID = pushID
 	}
 
 	return &version, nil

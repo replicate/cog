@@ -42,7 +42,7 @@ func TestPostNewVersion(t *testing.T) {
 
 	client := NewClient(command, http.DefaultClient)
 	ctx := context.Background()
-	err = client.PostNewVersion(ctx, "r8.im/user/test", []File{}, []File{}, "")
+	err = client.PostNewVersion(ctx, "r8.im/user/test", []File{}, []File{})
 	require.NoError(t, err)
 }
 

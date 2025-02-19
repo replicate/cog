@@ -24,7 +24,7 @@ const weightsObjectType = "weights"
 const filesObjectType = "files"
 const requirementsTarFile = "requirements.tar.zst"
 
-func FastPush(ctx context.Context, image string, projectDir string, command command.Command, webClient *web.Client, monobeamClient *monobeam.Client, uploadID string) error {
+func FastPush(ctx context.Context, image string, projectDir string, command command.Command, webClient *web.Client, monobeamClient *monobeam.Client) error {
 	g, _ := errgroup.WithContext(ctx)
 	p := mpb.New(
 		mpb.WithRefreshRate(180 * time.Millisecond),
@@ -126,7 +126,7 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 	}
 
 	// Tell replicate about our new version
-	return webClient.PostNewVersion(ctx, image, createWeightsFilesFromWeightsManifest(weights), files, uploadID)
+	return webClient.PostNewVersion(ctx, image, createWeightsFilesFromWeightsManifest(weights), files)
 }
 
 func createPythonPackagesTarFile(image string, tmpDir string, command command.Command) (string, error) {

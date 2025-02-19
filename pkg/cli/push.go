@@ -7,6 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/replicate/go/uuid"
+
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
@@ -60,9 +62,18 @@ func push(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	annotations := map[string]string{}
+	buildID, err := uuid.NewV7()
+	if err != nil {
+		// Don't insert build ID but continue anyways
+		console.Debugf("Failed to create build ID %v", err)
+	} else {
+		annotations["run.cog.push_id"] = buildID.String()
+	}
+
 	startBuildTime := time.Now()
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, annotations); err != nil {
 		return err
 	}
 
@@ -74,7 +85,10 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	command := docker.NewDockerCommand()
-	err = docker.Push(imageName, buildFast, projectDir, command, buildDuration)
+	err = docker.Push(imageName, buildFast, projectDir, command, docker.BuildInfo{
+		BuildTime: buildDuration,
+		BuildID:   buildID.String(),
+	})
 	if err != nil {
 		if strings.Contains(err.Error(), "404") {
 			return fmt.Errorf("Unable to find existing Replicate model for %s. "+

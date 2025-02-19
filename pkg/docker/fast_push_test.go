@@ -60,7 +60,7 @@ func TestFastPush(t *testing.T) {
 	monobeamClient := monobeam.NewClient(client)
 
 	// Run fast push
-	err = FastPush(context.Background(), "r8.im/username/modelname", dir, command, webClient, monobeamClient, "")
+	err = FastPush(context.Background(), "r8.im/username/modelname", dir, command, webClient, monobeamClient)
 	require.NoError(t, err)
 }
 
@@ -118,6 +118,6 @@ func TestFastPushWithWeight(t *testing.T) {
 	monobeamClient := monobeam.NewClient(client)
 
 	// Run fast push
-	err = FastPush(context.Background(), "r8.im/username/modelname", dir, command, webClient, monobeamClient, "")
+	err = FastPush(context.Background(), "r8.im/username/modelname", dir, command, webClient, monobeamClient)
 	require.NoError(t, err)
 }
