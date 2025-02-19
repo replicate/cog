@@ -1,6 +1,8 @@
 package dockerfile
 
 import (
+	"os"
+	"path"
 	"strings"
 	"testing"
 
@@ -10,11 +12,19 @@ import (
 	"github.com/replicate/cog/pkg/docker/dockertest"
 )
 
+func writeRequirements(t *testing.T, req string) string {
+	srcDir := t.TempDir()
+	reqFile := path.Join(srcDir, "requirements.txt")
+	err := os.WriteFile(reqFile, []byte(req), 0o644)
+	require.NoError(t, err)
+	return reqFile
+}
+
 func TestGenerate(t *testing.T) {
 	dir := t.TempDir()
 	build := config.Build{
-		PythonVersion:  "3.8",
-		PythonPackages: []string{"torch==2.5.1"},
+		PythonVersion:      "3.8",
+		PythonRequirements: writeRequirements(t, "torch==2.5.1"),
 	}
 	config := config.Config{
 		Build: &build,
@@ -55,11 +65,8 @@ func TestGenerate(t *testing.T) {
 func TestGenerateUVCacheMount(t *testing.T) {
 	dir := t.TempDir()
 	build := config.Build{
-		PythonVersion: "3.8",
-		PythonPackages: []string{
-			"torch==2.5.1",
-			"catboost==1.2.7",
-		},
+		PythonVersion:      "3.8",
+		PythonRequirements: writeRequirements(t, "torch==2.5.1\ncatboost==1.2.7"),
 	}
 	config := config.Config{
 		Build: &build,
@@ -142,10 +149,8 @@ func TestGenerateCUDA(t *testing.T) {
 func TestGeneratePythonPackages(t *testing.T) {
 	dir := t.TempDir()
 	build := config.Build{
-		PythonVersion: "3.8",
-		PythonPackages: []string{
-			"catboost==1.2.7",
-		},
+		PythonVersion:      "3.8",
+		PythonRequirements: writeRequirements(t, "catboost==1.2.7"),
 	}
 	config := config.Config{
 		Build: &build,
@@ -186,8 +191,8 @@ func TestGeneratePythonPackages(t *testing.T) {
 func TestGenerateVerboseEnv(t *testing.T) {
 	dir := t.TempDir()
 	build := config.Build{
-		PythonVersion:  "3.8",
-		PythonPackages: []string{"torch==2.5.1"},
+		PythonVersion:      "3.8",
+		PythonRequirements: writeRequirements(t, "torch==2.5.1"),
 	}
 	config := config.Config{
 		Build: &build,
