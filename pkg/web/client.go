@@ -70,7 +70,7 @@ type Version struct {
 	OpenAPISchema map[string]any    `json:"openapi_schema"`
 	RuntimeConfig RuntimeConfig     `json:"runtime_config"`
 	Virtual       bool              `json:"virtual"`
-	CogPushID     string            `json:"cog_push_id"`
+	PushID        string            `json:"push_id"`
 }
 
 func NewClient(dockerCommand command.Command, client *http.Client) *Client {
@@ -80,9 +80,9 @@ func NewClient(dockerCommand command.Command, client *http.Client) *Client {
 	}
 }
 
-func (c *Client) PostPushStart(ctx context.Context, cogPushID string, buildTime time.Duration) error {
+func (c *Client) PostPushStart(ctx context.Context, pushID string, buildTime time.Duration) error {
 	jsonBody := map[string]any{
-		"cog_push_id":     cogPushID,
+		"push_id":         pushID,
 		"build_duration":  types.Duration(buildTime).String(),
 		"push_start_time": time.Now().UTC(),
 	}
@@ -258,7 +258,7 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 	}
 
 	if pushID, ok := manifest.Config.Labels["run.cog.push_id"]; ok {
-		version.CogPushID = pushID
+		version.PushID = pushID
 	}
 
 	return &version, nil
