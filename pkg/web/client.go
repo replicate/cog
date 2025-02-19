@@ -22,12 +22,12 @@ import (
 )
 
 const (
-	buildTimingURLPath = "/api/models/build-start"
+	pushStartURLPath = "/api/models/push-start"
 )
 
 var (
 	ErrorBadResponseNewVersionEndpoint = errors.New("Bad response from new version endpoint")
-	ErrorBadResponseBuildStartEndpoint = errors.New("Bad response from build start endpoint")
+	ErrorBadResponsePushStartEndpoint  = errors.New("Bad response from push start endpoint")
 	ErrorBadRegistryURL                = errors.New("The image URL must have 3 components in the format of " + global.ReplicateRegistryHost + "/your-username/your-model")
 	ErrorBadRegistryHost               = errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using --x-fast.")
 )
@@ -93,7 +93,7 @@ func (c *Client) PostPushStart(ctx context.Context, cogPushID string, buildTime 
 	}
 
 	url := webBaseURL()
-	url.Path = buildTimingURLPath
+	url.Path = pushStartURLPath
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url.String(), bytes.NewReader(jsonData))
 	if err != nil {
@@ -107,7 +107,7 @@ func (c *Client) PostPushStart(ctx context.Context, cogPushID string, buildTime 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return util.WrapError(ErrorBadResponseBuildStartEndpoint, strconv.Itoa(resp.StatusCode))
+		return util.WrapError(ErrorBadResponsePushStartEndpoint, strconv.Itoa(resp.StatusCode))
 	}
 
 	return nil
