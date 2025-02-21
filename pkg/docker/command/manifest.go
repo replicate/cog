@@ -12,6 +12,7 @@ type Manifest struct {
 }
 
 const UvPythonInstallDirEnvVarName = "UV_PYTHON_INSTALL_DIR"
+const R8CogVersionEnvVarName = "R8_COG_VERSION"
 const R8TorchVersionEnvVarName = "R8_TORCH_VERSION"
 const R8CudaVersionEnvVarName = "R8_CUDA_VERSION"
 const R8CudnnVersionEnvVarName = "R8_CUDNN_VERSION"

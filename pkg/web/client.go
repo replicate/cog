@@ -51,6 +51,7 @@ type Env struct {
 	CogTrainCodeStrip   string `json:"COG_TRAIN_CODE_STRIP"`
 	CogPyEnvPath        string `json:"COG_PYENV_PATH"`
 	CogEagerImports     string `json:"COG_EAGER_IMPORTS"`
+	R8CogVersion        string `json:"R8_COG_VERSION"`
 	R8CudaVersion       string `json:"R8_CUDA_VERSION"`
 	R8CudnnVersion      string `json:"R8_CUDNN_VERSION"`
 	R8PythonVersion     string `json:"R8_PYTHON_VERSION"`
@@ -179,6 +180,7 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 		cogGPU = 1
 	}
 
+	cogVersion := ""
 	torchVersion := ""
 	cudaVersion := ""
 	cudnnVersion := ""
@@ -190,6 +192,8 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 			continue
 		}
 		switch envName {
+		case command.R8CogVersionEnvVarName:
+			cogVersion = envValue
 		case command.R8TorchVersionEnvVarName:
 			torchVersion = envValue
 		case command.R8CudaVersionEnvVarName:
@@ -216,6 +220,7 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 		CogTrainCodeStrip:   trainCode,
 		CogPyEnvPath:        pythonPath,
 		CogEagerImports:     eagerImports,
+		R8CogVersion:        cogVersion,
 		R8CudaVersion:       cudaVersion,
 		R8CudnnVersion:      cudnnVersion,
 		R8PythonVersion:     pythonVersion,
