@@ -10,12 +10,26 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/replicate/go/types"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/env"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util"
+)
+
+const (
+	pushStartURLPath = "/api/models/push-start"
+)
+
+var (
+	ErrorBadResponseNewVersionEndpoint = errors.New("Bad response from new version endpoint")
+	ErrorBadResponsePushStartEndpoint  = errors.New("Bad response from push start endpoint")
+	ErrorBadRegistryURL                = errors.New("The image URL must have 3 components in the format of " + global.ReplicateRegistryHost + "/your-username/your-model")
+	ErrorBadRegistryHost               = errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using --x-fast.")
 )
 
 type Client struct {
@@ -56,6 +70,7 @@ type Version struct {
 	OpenAPISchema map[string]any    `json:"openapi_schema"`
 	RuntimeConfig RuntimeConfig     `json:"runtime_config"`
 	Virtual       bool              `json:"virtual"`
+	PushID        string            `json:"push_id"`
 }
 
 func NewClient(dockerCommand command.Command, client *http.Client) *Client {
@@ -63,6 +78,39 @@ func NewClient(dockerCommand command.Command, client *http.Client) *Client {
 		dockerCommand: dockerCommand,
 		client:        client,
 	}
+}
+
+func (c *Client) PostPushStart(ctx context.Context, pushID string, buildTime time.Duration) error {
+	jsonBody := map[string]any{
+		"push_id":         pushID,
+		"build_duration":  types.Duration(buildTime).String(),
+		"push_start_time": time.Now().UTC(),
+	}
+
+	jsonData, err := json.Marshal(jsonBody)
+	if err != nil {
+		return util.WrapError(err, "failed to marshal JSON for build start")
+	}
+
+	url := webBaseURL()
+	url.Path = pushStartURLPath
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url.String(), bytes.NewReader(jsonData))
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return util.WrapError(ErrorBadResponsePushStartEndpoint, strconv.Itoa(resp.StatusCode))
+	}
+
+	return nil
 }
 
 func (c *Client) PostNewVersion(ctx context.Context, image string, weights []File, files []File) error {
@@ -93,7 +141,7 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		return errors.New("Bad response from new version endpoint: " + strconv.Itoa(resp.StatusCode))
+		return util.WrapError(ErrorBadResponseNewVersionEndpoint, strconv.Itoa(resp.StatusCode))
 	}
 
 	return nil
@@ -209,6 +257,10 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 		Virtual:       true,
 	}
 
+	if pushID, ok := manifest.Config.Labels["run.cog.push_id"]; ok {
+		version.PushID = pushID
+	}
+
 	return &version, nil
 }
 
@@ -216,10 +268,10 @@ func newVersionURL(image string) (url.URL, error) {
 	imageComponents := strings.Split(image, "/")
 	newVersionUrl := webBaseURL()
 	if len(imageComponents) != 3 {
-		return newVersionUrl, errors.New("The image URL must have 3 components in the format of " + global.ReplicateRegistryHost + "/your-username/your-model")
+		return newVersionUrl, ErrorBadRegistryURL
 	}
 	if imageComponents[0] != global.ReplicateRegistryHost {
-		return newVersionUrl, errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using --x-fast.")
+		return newVersionUrl, ErrorBadRegistryHost
 	}
 	newVersionUrl.Path = strings.Join([]string{"", "api", "models", imageComponents[1], imageComponents[2], "versions"}, "/")
 	return newVersionUrl, nil
