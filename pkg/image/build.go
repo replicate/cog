@@ -172,7 +172,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		return fmt.Errorf("Failed to convert config to JSON: %w", err)
 	}
 
-	pipFreeze, err := GeneratePipFreeze(imageName)
+	pipFreeze, err := GeneratePipFreeze(imageName, fastFlag)
 	if err != nil {
 		return fmt.Errorf("Failed to generate pip freeze from image: %w", err)
 	}
