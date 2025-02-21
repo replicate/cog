@@ -1,11 +1,10 @@
 package requirements
 
 import (
-	"bufio"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 
 	"github.com/replicate/cog/pkg/config"
 )
@@ -13,73 +12,41 @@ import (
 const REQUIREMENTS_FILE = "requirements.txt"
 
 func GenerateRequirements(tmpDir string, cfg *config.Config) (string, error) {
-	// Deduplicate packages between the requirements.txt and the python packages directive.
-	packageNames := make(map[string]string)
-
-	// Read the python packages configuration.
-	for _, requirement := range cfg.Build.PythonPackages {
-		packageName, err := config.PackageName(requirement)
-		if err != nil {
-			return "", err
-		}
-		packageNames[packageName] = requirement
+	if len(cfg.Build.PythonPackages) > 0 {
+		return "", fmt.Errorf("python_packages is no longer supported, use python_requirements instead")
 	}
 
-	// Read the python requirements.
-	if cfg.Build.PythonRequirements != "" {
-		fh, err := os.Open(cfg.Build.PythonRequirements)
-		if err != nil {
-			return "", err
-		}
-		scanner := bufio.NewScanner(fh)
-		for scanner.Scan() {
-			requirement := scanner.Text()
-			packageName, err := config.PackageName(requirement)
-			if err != nil {
-				return "", err
-			}
-			packageNames[packageName] = requirement
-		}
-	}
-
-	// If we don't have any packages skip further processing
-	if len(packageNames) == 0 {
+	// No Python requirements
+	if cfg.Build.PythonRequirements == "" {
 		return "", nil
 	}
 
-	// Sort the package names by alphabetical order.
-	keys := make([]string, 0, len(packageNames))
-	for k := range packageNames {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	// Render the expected contents
-	requirementsContent := ""
-	for _, k := range keys {
-		requirementsContent += packageNames[k] + "\n"
-	}
-
-	// Check against the old requirements contents
-	requirementsFile := filepath.Join(tmpDir, REQUIREMENTS_FILE)
-	_, err := os.Stat(requirementsFile)
-	if !errors.Is(err, os.ErrNotExist) {
-		bytes, err := os.ReadFile(requirementsFile)
-		if err != nil {
-			return "", err
-		}
-		oldRequirementsContents := string(bytes)
-		if oldRequirementsContents == requirementsFile {
-			return requirementsFile, nil
-		}
-	}
-
-	// Write out a new requirements file
-	err = os.WriteFile(requirementsFile, []byte(requirementsContent), 0o644)
+	bs, err := os.ReadFile(cfg.Build.PythonRequirements)
 	if err != nil {
 		return "", err
 	}
-	return requirementsFile, nil
+	requirements := string(bs)
+
+	// Check against the old requirements
+	requirementsFile := filepath.Join(tmpDir, REQUIREMENTS_FILE)
+	if _, err := os.Stat(requirementsFile); err == nil {
+		bs, err = os.ReadFile(requirementsFile)
+		if err != nil {
+			return "", err
+		}
+		if string(bs) == requirements {
+			return requirementsFile, nil
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+
+	// Write out a new requirements file
+	err = os.WriteFile(requirementsFile, []byte(requirements), 0o644)
+	if err != nil {
+		return "", err
+	}
+	return requirementsFile, err
 }
 
 func CurrentRequirements(tmpDir string) (string, error) {
