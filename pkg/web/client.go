@@ -49,7 +49,6 @@ type Env struct {
 	CogTrainTypeStub    string `json:"COG_TRAIN_TYPE_STUB"`
 	CogPredictCodeStrip string `json:"COG_PREDICT_CODE_STRIP"`
 	CogTrainCodeStrip   string `json:"COG_TRAIN_CODE_STRIP"`
-	CogEagerImports     string `json:"COG_EAGER_IMPORTS"`
 	R8CogVersion        string `json:"R8_COG_VERSION"`
 	R8CudaVersion       string `json:"R8_CUDA_VERSION"`
 	R8CudnnVersion      string `json:"R8_CUDNN_VERSION"`
@@ -203,18 +202,12 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 		}
 	}
 
-	eagerImports := ""
-	if torchVersion != "" {
-		eagerImports = "torch"
-	}
-
 	env := Env{
 		CogGpu:              strconv.Itoa(cogGPU),
 		CogPredictTypeStub:  cogConfig.Predict,
 		CogTrainTypeStub:    cogConfig.Train,
 		CogPredictCodeStrip: predictCode,
 		CogTrainCodeStrip:   trainCode,
-		CogEagerImports:     eagerImports,
 		R8CogVersion:        cogVersion,
 		R8CudaVersion:       cudaVersion,
 		R8CudnnVersion:      cudnnVersion,
