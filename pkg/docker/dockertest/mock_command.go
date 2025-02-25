@@ -58,7 +58,6 @@ func (c *MockCommand) Inspect(image string) (*command.Manifest, error) {
 				command.CogVersionLabelKey:       "0.11.3",
 			},
 			Env: []string{
-				command.UvPythonInstallDirEnvVarName + "=/tmp",
 				command.R8TorchVersionEnvVarName + "=2.5.0",
 				command.R8CudaVersionEnvVarName + "=2.4",
 				command.R8CudnnVersionEnvVarName + "=1.0",
