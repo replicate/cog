@@ -49,7 +49,6 @@ type Env struct {
 	CogTrainTypeStub    string `json:"COG_TRAIN_TYPE_STUB"`
 	CogPredictCodeStrip string `json:"COG_PREDICT_CODE_STRIP"`
 	CogTrainCodeStrip   string `json:"COG_TRAIN_CODE_STRIP"`
-	CogPyEnvPath        string `json:"COG_PYENV_PATH"`
 	CogEagerImports     string `json:"COG_EAGER_IMPORTS"`
 	R8CogVersion        string `json:"R8_COG_VERSION"`
 	R8CudaVersion       string `json:"R8_CUDA_VERSION"`
@@ -185,7 +184,6 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 	cudaVersion := ""
 	cudnnVersion := ""
 	pythonVersion := ""
-	pythonPath := ""
 	for _, env := range manifest.Config.Env {
 		envName, envValue, found := strings.Cut(env, "=")
 		if !found {
@@ -202,8 +200,6 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 			cudnnVersion = envValue
 		case command.R8PythonVersionEnvVarName:
 			pythonVersion = envValue
-		case command.UvPythonInstallDirEnvVarName:
-			pythonPath = envValue
 		}
 	}
 
@@ -218,7 +214,6 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 		CogTrainTypeStub:    cogConfig.Train,
 		CogPredictCodeStrip: predictCode,
 		CogTrainCodeStrip:   trainCode,
-		CogPyEnvPath:        pythonPath,
 		CogEagerImports:     eagerImports,
 		R8CogVersion:        cogVersion,
 		R8CudaVersion:       cudaVersion,
