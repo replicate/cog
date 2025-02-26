@@ -98,7 +98,7 @@ good-names = ["id", "input"]
 ignore-paths = ["python/cog/_version.py", "python/tests"]
 
 [tool.ruff]
-format.exclude = ["python/cog/_version.py"]
+exclude = ["python/cog/_version.py"]
 lint.select = [
   "E",   # pycodestyle error
   "F",   # Pyflakes
