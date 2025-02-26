@@ -35,7 +35,7 @@ dependencies = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
-dev = ["build", "setuptools_scm", "tox", "tox-uv"]
+dev = ["build", "setuptools_scm==8.1.0", "tox", "tox-uv"]
 
 tests = [
   "httpx",
