@@ -35,7 +35,7 @@ dependencies = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
-dev = ["build", "setuptools_scm==8.1.0", "tox", "tox-uv"]
+dev = ["build", "setuptools_scm", "tox", "tox-uv"]
 
 tests = [
   "httpx",
@@ -98,7 +98,7 @@ good-names = ["id", "input"]
 ignore-paths = ["python/cog/_version.py", "python/tests"]
 
 [tool.ruff]
-format.exclude = ["python/cog/_version.py"]
+exclude = ["python/cog/_version.py"]
 lint.select = [
   "E",   # pycodestyle error
   "F",   # Pyflakes
