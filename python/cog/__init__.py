@@ -3,6 +3,7 @@ import mimetypes
 from pydantic import BaseModel
 
 from .base_predictor import BasePredictor
+from .include import include
 from .mimetypes_ext import install_mime_extensions
 from .server.scope import current_scope, emit_metric
 from .types import (
@@ -36,4 +37,5 @@ __all__ = [
     "Input",
     "Path",
     "Secret",
+    "include",
 ]
