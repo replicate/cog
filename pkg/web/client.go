@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/replicate/go/types"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
@@ -22,14 +24,17 @@ import (
 )
 
 const (
-	pushStartURLPath = "/api/models/push-start"
+	pushStartURLPath         = "/api/models/push-start"
+	initiateChallengeURLPath = "/api/initiate-file-challenge"
 )
 
 var (
-	ErrorBadResponseNewVersionEndpoint = errors.New("Bad response from new version endpoint")
-	ErrorBadResponsePushStartEndpoint  = errors.New("Bad response from push start endpoint")
-	ErrorBadRegistryURL                = errors.New("The image URL must have 3 components in the format of " + global.ReplicateRegistryHost + "/your-username/your-model")
-	ErrorBadRegistryHost               = errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using --x-fast.")
+	ErrorBadResponseNewVersionEndpoint        = errors.New("Bad response from new version endpoint")
+	ErrorBadResponsePushStartEndpoint         = errors.New("Bad response from push start endpoint")
+	ErrorBadResponseInitiateChallengeEndpoint = errors.New("Bad response from initate file challenge endpoint")
+	ErrorBadRegistryURL                       = errors.New("The image URL must have 3 components in the format of " + global.ReplicateRegistryHost + "/your-username/your-model")
+	ErrorBadRegistryHost                      = errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using --x-fast.")
+	ErrorNoSuchDigest                         = errors.New("No digest submitted matches the digest requested")
 )
 
 type Client struct {
@@ -70,6 +75,28 @@ type Version struct {
 	RuntimeConfig RuntimeConfig     `json:"runtime_config"`
 	Virtual       bool              `json:"virtual"`
 	PushID        string            `json:"push_id"`
+}
+
+type FileChallenge struct {
+	Salt   string `json:"salt"`
+	Start  int    `json:"byte_start"`
+	End    int    `json:"byte_end"`
+	Digest string `json:"digest"`
+}
+
+type FileChallengeAnswer struct {
+	Digest string `json:"digest"`
+	Hash   string `json:"hash"`
+}
+
+type FileChallengeQuery struct {
+	Challenges []FileChallenge `json:"files"`
+	ID         string          `json:"challenge_id"`
+}
+
+type FileChallengeResponse struct {
+	Challenges []FileChallengeAnswer `json:"answers"`
+	ID         string                `json:"challenge_id"`
 }
 
 func NewClient(dockerCommand command.Command, client *http.Client) *Client {
@@ -310,4 +337,79 @@ func stripCodeFromStub(cogConfig config.Config, isPredict bool) (string, error) 
 	// et al.
 
 	return string(b), nil
+}
+
+func (c *Client) InitiateAndDoFileChallenge(ctx context.Context, runtimeConfig RuntimeConfig) (FileChallengeResponse, error) {
+	var challengeResponse FileChallengeResponse
+	jsonData, err := json.Marshal(runtimeConfig)
+	if err != nil {
+		return challengeResponse, util.WrapError(err, "marshal runtime config JSON")
+	}
+	initiateChallengePath := webBaseURL()
+	initiateChallengePath.Path = initiateChallengeURLPath
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, initiateChallengePath.String(), bytes.NewReader(jsonData))
+	if err != nil {
+		return challengeResponse, util.WrapError(err, "build HTTP request")
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return challengeResponse, util.WrapError(err, "do HTTP request")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return challengeResponse, util.WrapError(ErrorBadResponseInitiateChallengeEndpoint, strconv.Itoa(resp.StatusCode))
+	}
+
+	var query FileChallengeQuery
+	err = json.NewDecoder(resp.Body).Decode(&query)
+	if err != nil {
+		return challengeResponse, util.WrapError(err, "decode response body")
+	}
+
+	return doFileChallenges(query, runtimeConfig)
+}
+
+// doFileChallenges does file challenges when requested by the
+func doFileChallenges(fileChallenges FileChallengeQuery, runtimeConfig RuntimeConfig) (FileChallengeResponse, error) {
+	// Build mapping from file to path
+	digestPathMap := make(map[string]string)
+	for _, file := range runtimeConfig.Files {
+		digestPathMap[file.Digest] = file.Path
+	}
+	for _, file := range runtimeConfig.Weights {
+		digestPathMap[file.Digest] = file.Path
+	}
+
+	var wg errgroup.Group
+	answerMap := make(map[string]string)
+	for _, challenge := range fileChallenges.Challenges {
+		wg.Go(func() error {
+			wrapString := fmt.Sprintf("file challenge for digest %s:", challenge.Digest)
+			file, ok := digestPathMap[challenge.Digest]
+			if !ok {
+				return util.WrapError(ErrorNoSuchDigest, wrapString)
+			}
+			ans, err := util.SHA256HashFileWithSaltAndRange(file, challenge.Start, challenge.End, challenge.Salt)
+			if err != nil {
+				return util.WrapError(err, wrapString)
+			}
+			answerMap[challenge.Digest] = ans
+			return nil
+		})
+	}
+	if err := wg.Wait(); err != nil {
+		return FileChallengeResponse{}, util.WrapError(err, "do file challenges")
+	}
+	response := FileChallengeResponse{
+		ID: fileChallenges.ID,
+	}
+	for digest, answer := range answerMap {
+		response.Challenges = append(response.Challenges, FileChallengeAnswer{
+			Digest: digest,
+			Hash:   answer,
+		})
+	}
+	return response, nil
 }

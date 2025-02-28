@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
@@ -83,4 +84,66 @@ func TestVersionURLErrorWithoutR8IMPrefix(t *testing.T) {
 func TestVersionURLErrorWithout3Components(t *testing.T) {
 	_, err := newVersionURL("username/test")
 	require.Error(t, err)
+}
+
+func TestDoFileChallenge(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.tmp")
+	d1 := []byte("hello\nreplicate\nhello\n")
+	err := os.WriteFile(path, d1, 0o644)
+	require.NoError(t, err)
+
+	path2 := filepath.Join(dir, "test2.tmp")
+	d2 := []byte("hello\nreplicate\nhello\n")
+	err = os.WriteFile(path2, d2, 0o644)
+	require.NoError(t, err)
+
+	config := RuntimeConfig{
+		Files: []File{
+			File{
+				Path:   path,
+				Digest: "abc",
+				Size:   22,
+			},
+		},
+		Weights: []File{
+			File{
+				Path:   path,
+				Digest: "def",
+				Size:   22,
+			},
+		},
+	}
+
+	query := FileChallengeQuery{
+		ID: "abcdef",
+		Challenges: []FileChallenge{
+			{
+				Digest: "abc",
+				Start:  0,
+				End:    6,
+				Salt:   "go\n",
+			},
+			{
+				Digest: "def",
+				Start:  16,
+				End:    22,
+				Salt:   "go\n",
+			},
+		},
+	}
+
+	response, err := doFileChallenges(query, config)
+	require.NoError(t, err)
+	assert.Equal(t, response.ID, query.ID)
+	assert.ElementsMatch(t, response.Challenges, []FileChallengeAnswer{
+		{
+			Digest: "abc",
+			Hash:   "43d250d92b5dbb47f75208de8e9a9a321d23e85eed0dc3d5dfa83bc3cc5aa68c",
+		},
+		{
+			Digest: "def",
+			Hash:   "43d250d92b5dbb47f75208de8e9a9a321d23e85eed0dc3d5dfa83bc3cc5aa68c",
+		},
+	})
 }
