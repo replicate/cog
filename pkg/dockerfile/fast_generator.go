@@ -13,7 +13,7 @@ import (
 	"github.com/replicate/cog/pkg/weights"
 )
 
-const FUSE_RPC_WEIGHTS_PATH = "/srv/r8/fuse-rpc/weights"
+const FUSE_RPC_WEIGHTS_PATH = "/srv/r8/fuse-rpc/weights/sha256"
 const MONOBASE_CACHE_PATH = "/var/cache/monobase"
 const APT_CACHE_MOUNT = "--mount=type=cache,target=/var/cache/apt,id=apt-cache,sharing=locked"
 const UV_CACHE_DIR = "/srv/r8/monobase/uv/cache"

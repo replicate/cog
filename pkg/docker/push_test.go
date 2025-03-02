@@ -54,7 +54,7 @@ func TestPush(t *testing.T) {
 	command := dockertest.NewMockCommand()
 
 	// Run fast push
-	err = Push("r8.im/username/modelname", true, dir, command)
+	err = Push("r8.im/username/modelname", true, dir, command, BuildInfo{})
 	require.NoError(t, err)
 }
 
@@ -108,6 +108,6 @@ func TestPushWithWeight(t *testing.T) {
 	command := dockertest.NewMockCommand()
 
 	// Run fast push
-	err = Push("r8.im/username/modelname", true, dir, command)
+	err = Push("r8.im/username/modelname", true, dir, command, BuildInfo{})
 	require.NoError(t, err)
 }

@@ -6,9 +6,9 @@ import (
 )
 
 // SplitPinnedPythonRequirement returns the name, version, findLinks, and extraIndexURLs from a requirements.txt line
-// in the form name==version [--find-links=<findLink>] [-f <findLink>] [--extra-index-url=<extraIndexURL>]
+// in the form name[extras]==version [--find-links=<findLink>] [-f <findLink>] [--extra-index-url=<extraIndexURL>]
 func SplitPinnedPythonRequirement(requirement string) (name string, version string, findLinks []string, extraIndexURLs []string, err error) {
-	pinnedPackageRe := regexp.MustCompile(`(?:([a-zA-Z0-9\-_]+)==([^ ]+)|--find-links=([^\s]+)|-f\s+([^\s]+)|--extra-index-url=([^\s]+))`)
+	pinnedPackageRe := regexp.MustCompile(`(?:([a-zA-Z0-9\-_]+)(\[[a-zA-Z0-9\-_,]+])?==([^ ]+)|--find-links=([^\s]+)|-f\s+([^\s]+)|--extra-index-url=([^\s]+))`)
 
 	matches := pinnedPackageRe.FindAllStringSubmatch(requirement, -1)
 	if matches == nil {
@@ -24,13 +24,9 @@ func SplitPinnedPythonRequirement(requirement string) (name string, version stri
 			nameFound = true
 		}
 
-		if match[2] != "" {
-			version = match[2]
-			versionFound = true
-		}
-
 		if match[3] != "" {
-			findLinks = append(findLinks, match[3])
+			version = match[3]
+			versionFound = true
 		}
 
 		if match[4] != "" {
@@ -38,7 +34,11 @@ func SplitPinnedPythonRequirement(requirement string) (name string, version stri
 		}
 
 		if match[5] != "" {
-			extraIndexURLs = append(extraIndexURLs, match[5])
+			findLinks = append(findLinks, match[5])
+		}
+
+		if match[6] != "" {
+			extraIndexURLs = append(extraIndexURLs, match[6])
 		}
 	}
 
