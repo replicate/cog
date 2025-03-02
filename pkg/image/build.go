@@ -34,7 +34,7 @@ var errGit = errors.New("git error")
 // Build a Cog model from a config
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
-func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string, useCogBaseImage *bool, strip bool, precompile bool, fastFlag bool) error {
+func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string, useCogBaseImage *bool, strip bool, precompile bool, fastFlag bool, annotations map[string]string) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 	if fastFlag {
 		console.Info("Fast build enabled.")
@@ -172,7 +172,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		return fmt.Errorf("Failed to convert config to JSON: %w", err)
 	}
 
-	pipFreeze, err := GeneratePipFreeze(imageName)
+	pipFreeze, err := GeneratePipFreeze(imageName, fastFlag)
 	if err != nil {
 		return fmt.Errorf("Failed to generate pip freeze from image: %w", err)
 	}
@@ -232,6 +232,10 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		labels["org.opencontainers.image.version"] = tag
 	} else {
 		console.Info("Unable to determine Git tag")
+	}
+
+	for key, val := range annotations {
+		labels[key] = val
 	}
 
 	if err := docker.BuildAddLabelsAndSchemaToImage(imageName, labels, bundledSchemaFile, bundledSchemaPy); err != nil {

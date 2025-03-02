@@ -10,12 +10,26 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/replicate/go/types"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/env"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util"
+)
+
+const (
+	pushStartURLPath = "/api/models/push-start"
+)
+
+var (
+	ErrorBadResponseNewVersionEndpoint = errors.New("Bad response from new version endpoint")
+	ErrorBadResponsePushStartEndpoint  = errors.New("Bad response from push start endpoint")
+	ErrorBadRegistryURL                = errors.New("The image URL must have 3 components in the format of " + global.ReplicateRegistryHost + "/your-username/your-model")
+	ErrorBadRegistryHost               = errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using --x-fast.")
 )
 
 type Client struct {
@@ -35,8 +49,7 @@ type Env struct {
 	CogTrainTypeStub    string `json:"COG_TRAIN_TYPE_STUB"`
 	CogPredictCodeStrip string `json:"COG_PREDICT_CODE_STRIP"`
 	CogTrainCodeStrip   string `json:"COG_TRAIN_CODE_STRIP"`
-	CogPyEnvPath        string `json:"COG_PYENV_PATH"`
-	CogEagerImports     string `json:"COG_EAGER_IMPORTS"`
+	R8CogVersion        string `json:"R8_COG_VERSION"`
 	R8CudaVersion       string `json:"R8_CUDA_VERSION"`
 	R8CudnnVersion      string `json:"R8_CUDNN_VERSION"`
 	R8PythonVersion     string `json:"R8_PYTHON_VERSION"`
@@ -56,6 +69,7 @@ type Version struct {
 	OpenAPISchema map[string]any    `json:"openapi_schema"`
 	RuntimeConfig RuntimeConfig     `json:"runtime_config"`
 	Virtual       bool              `json:"virtual"`
+	PushID        string            `json:"push_id"`
 }
 
 func NewClient(dockerCommand command.Command, client *http.Client) *Client {
@@ -63,6 +77,39 @@ func NewClient(dockerCommand command.Command, client *http.Client) *Client {
 		dockerCommand: dockerCommand,
 		client:        client,
 	}
+}
+
+func (c *Client) PostPushStart(ctx context.Context, pushID string, buildTime time.Duration) error {
+	jsonBody := map[string]any{
+		"push_id":         pushID,
+		"build_duration":  types.Duration(buildTime).String(),
+		"push_start_time": time.Now().UTC(),
+	}
+
+	jsonData, err := json.Marshal(jsonBody)
+	if err != nil {
+		return util.WrapError(err, "failed to marshal JSON for build start")
+	}
+
+	url := webBaseURL()
+	url.Path = pushStartURLPath
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url.String(), bytes.NewReader(jsonData))
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return util.WrapError(ErrorBadResponsePushStartEndpoint, strconv.Itoa(resp.StatusCode))
+	}
+
+	return nil
 }
 
 func (c *Client) PostNewVersion(ctx context.Context, image string, weights []File, files []File) error {
@@ -93,7 +140,7 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		return errors.New("Bad response from new version endpoint: " + strconv.Itoa(resp.StatusCode))
+		return util.WrapError(ErrorBadResponseNewVersionEndpoint, strconv.Itoa(resp.StatusCode))
 	}
 
 	return nil
@@ -131,17 +178,19 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 		cogGPU = 1
 	}
 
+	cogVersion := ""
 	torchVersion := ""
 	cudaVersion := ""
 	cudnnVersion := ""
 	pythonVersion := ""
-	pythonPath := ""
 	for _, env := range manifest.Config.Env {
 		envName, envValue, found := strings.Cut(env, "=")
 		if !found {
 			continue
 		}
 		switch envName {
+		case command.R8CogVersionEnvVarName:
+			cogVersion = envValue
 		case command.R8TorchVersionEnvVarName:
 			torchVersion = envValue
 		case command.R8CudaVersionEnvVarName:
@@ -150,14 +199,7 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 			cudnnVersion = envValue
 		case command.R8PythonVersionEnvVarName:
 			pythonVersion = envValue
-		case command.UvPythonInstallDirEnvVarName:
-			pythonPath = envValue
 		}
-	}
-
-	eagerImports := ""
-	if torchVersion != "" {
-		eagerImports = "torch"
 	}
 
 	env := Env{
@@ -166,8 +208,7 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 		CogTrainTypeStub:    cogConfig.Train,
 		CogPredictCodeStrip: predictCode,
 		CogTrainCodeStrip:   trainCode,
-		CogPyEnvPath:        pythonPath,
-		CogEagerImports:     eagerImports,
+		R8CogVersion:        cogVersion,
 		R8CudaVersion:       cudaVersion,
 		R8CudnnVersion:      cudnnVersion,
 		R8PythonVersion:     pythonVersion,
@@ -209,6 +250,10 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 		Virtual:       true,
 	}
 
+	if pushID, ok := manifest.Config.Labels["run.cog.push_id"]; ok {
+		version.PushID = pushID
+	}
+
 	return &version, nil
 }
 
@@ -216,10 +261,10 @@ func newVersionURL(image string) (url.URL, error) {
 	imageComponents := strings.Split(image, "/")
 	newVersionUrl := webBaseURL()
 	if len(imageComponents) != 3 {
-		return newVersionUrl, errors.New("The image URL must have 3 components in the format of " + global.ReplicateRegistryHost + "/your-username/your-model")
+		return newVersionUrl, ErrorBadRegistryURL
 	}
 	if imageComponents[0] != global.ReplicateRegistryHost {
-		return newVersionUrl, errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using --x-fast.")
+		return newVersionUrl, ErrorBadRegistryHost
 	}
 	newVersionUrl.Path = strings.Join([]string{"", "api", "models", imageComponents[1], imageComponents[2], "versions"}, "/")
 	return newVersionUrl, nil
