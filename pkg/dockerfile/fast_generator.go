@@ -3,6 +3,8 @@ package dockerfile
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -99,23 +101,46 @@ func (g *FastGenerator) generate() (string, error) {
 		return "", err
 	}
 
-	tmpDir, err := BuildCogTempDir(g.Dir)
+	// Temp directories are used as bind mounts in docker build
+	// Separate them so that changes in one layer doesn't invalidate everything else
+
+	// Weights layer
+	// Includes file metadata, triggered by weights file changes
+	tmpWeightsDir, err := BuildCogTempDir(g.Dir, "weights")
+	if err != nil {
+		return "", err
+	}
+	weights, err := weights.FindFastWeights(g.Dir, tmpWeightsDir)
 	if err != nil {
 		return "", err
 	}
 
-	weights, err := weights.FindFastWeights(g.Dir, tmpDir)
+	// APT layer
+	// Includes a tarball extracted from APT packages, triggered by system_packages changes
+	tmpAptDir, err := BuildCogTempDir(g.Dir, "apt")
 	if err != nil {
 		return "", err
 	}
-
-	aptTarFile, err := g.generateAptTarball(tmpDir)
+	aptTarFile, err := g.generateAptTarball(tmpAptDir)
 	if err != nil {
 		return "", fmt.Errorf("generate apt tarball: %w", err)
 	}
 
+	// Monobase layer
+	// Includes an ENV file, triggered by Python, Torch, or CUDA version changes
+	tmpMonobaseDir, err := BuildCogTempDir(g.Dir, "monobase")
+	if err != nil {
+		return "", err
+	}
 	lines := []string{}
-	lines, err = g.generateMonobase(lines, tmpDir)
+	lines, err = g.generateMonobase(lines, tmpMonobaseDir)
+	if err != nil {
+		return "", err
+	}
+
+	// User layer
+	// Includes requirements.txt, triggered by python_requirements changes
+	tmpUserDir, err := BuildCogTempDir(g.Dir, "user")
 	if err != nil {
 		return "", err
 	}
@@ -125,7 +150,17 @@ func (g *FastGenerator) generate() (string, error) {
 		return "", err
 	}
 
-	lines, err = g.install(lines, weights, tmpDir, aptTarFile)
+	lines, err = g.installApt(lines, tmpAptDir, aptTarFile)
+	if err != nil {
+		return "", err
+	}
+
+	lines, err = g.installPython(lines, tmpUserDir)
+	if err != nil {
+		return "", err
+	}
+
+	lines, err = g.installSrc(lines, weights)
 	if err != nil {
 		return "", err
 	}
@@ -139,12 +174,8 @@ func (g *FastGenerator) generate() (string, error) {
 }
 
 func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]string, error) {
-	lines = append(lines, []string{
-		"# syntax=docker/dockerfile:1-labs",
-		"FROM r8.im/monobase:latest",
-	}...)
-
-	lines = append(lines, []string{
+	var envs []string
+	envs = append(envs, []string{
 		// This installs latest version of coglet
 		"ENV R8_COG_VERSION=coglet",
 	}...)
@@ -162,7 +193,7 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 			return nil, fmt.Errorf("CUDNN version must be <major> only, supported versions: %s", strings.Join(g.matrix.CudnnVersions, ", "))
 		}
 
-		lines = append(lines, []string{
+		envs = append(envs, []string{
 			"ENV R8_CUDA_VERSION=" + cudaVersion,
 			"ENV R8_CUDNN_VERSION=" + cudnnVersion,
 			"ENV R8_CUDA_PREFIX=https://monobase-packages.replicate.delivery/cuda",
@@ -174,7 +205,7 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 		return nil, fmt.Errorf(
 			"Python version must be <major>.<minor>, supported versions: %s", strings.Join(g.matrix.PythonVersions, ", "))
 	}
-	lines = append(lines, []string{
+	envs = append(envs, []string{
 		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
 	}...)
 
@@ -183,7 +214,7 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 		if !CheckMajorMinorPatch(torchVersion) {
 			return nil, fmt.Errorf("Torch version must be <major>.<minor>.<patch>: %s", strings.Join(g.matrix.TorchVersions, ", "))
 		}
-		lines = append(lines, []string{
+		envs = append(envs, []string{
 			"ENV R8_TORCH_VERSION=" + torchVersion,
 		}...)
 	}
@@ -194,19 +225,32 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 			g.Config.Build.PythonVersion, torchVersion, g.Config.Build.CUDA)
 	}
 
+	// The only input to monobase.build are these ENV vars
+	// Write them in tmp mount for layer caching
+	err := os.WriteFile(path.Join(tmpDir, "env.txt"), []byte(strings.Join(envs, "\n")), 0o644)
+	if err != nil {
+		return nil, err
+	}
+
 	buildTmpMount, err := g.buildTmpMount(tmpDir)
 	if err != nil {
 		return nil, err
 	}
 
-	return append(lines, []string{
+	lines = append(lines, []string{
+		"# syntax=docker/dockerfile:1-labs",
+		"FROM r8.im/monobase:latest",
+	}...)
+	lines = append(lines, envs...)
+	lines = append(lines, []string{
 		"RUN " + strings.Join([]string{
 			buildTmpMount,
 			g.monobaseUsercacheMount(),
 			APT_CACHE_MOUNT,
 			UV_CACHE_MOUNT,
 		}, " ") + " UV_CACHE_DIR=\"" + UV_CACHE_DIR + "\" UV_LINK_MODE=copy /opt/r8/monobase/run.sh monobase.build --mini --cache=" + MONOBASE_CACHE_PATH,
-	}...), nil
+	}...)
+	return lines, nil
 }
 
 func (g *FastGenerator) copyWeights(lines []string, weights []weights.Weight) ([]string, error) {
@@ -221,7 +265,7 @@ func (g *FastGenerator) copyWeights(lines []string, weights []weights.Weight) ([
 	return lines, nil
 }
 
-func (g *FastGenerator) install(lines []string, weights []weights.Weight, tmpDir string, aptTarFile string) ([]string, error) {
+func (g *FastGenerator) installApt(lines []string, tmpDir string, aptTarFile string) ([]string, error) {
 	// Install apt packages
 	buildTmpMount, err := g.buildTmpMount(tmpDir)
 	if err != nil {
@@ -230,9 +274,16 @@ func (g *FastGenerator) install(lines []string, weights []weights.Weight, tmpDir
 	if aptTarFile != "" {
 		lines = append(lines, "RUN "+buildTmpMount+" tar -xf \""+filepath.Join("/buildtmp", aptTarFile)+"\" -C /")
 	}
+	return lines, nil
+}
 
+func (g *FastGenerator) installPython(lines []string, tmpDir string) ([]string, error) {
 	// Install python packages
-	requirementsFile, err := g.pythonRequirements(tmpDir)
+	buildTmpMount, err := g.buildTmpMount(tmpDir)
+	if err != nil {
+		return nil, err
+	}
+	requirementsFile, err := requirements.GenerateRequirements(tmpDir, g.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -242,6 +293,11 @@ func (g *FastGenerator) install(lines []string, weights []weights.Weight, tmpDir
 			UV_CACHE_MOUNT,
 		}, " ")+" UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt")
 	}
+	return lines, nil
+}
+
+func (g *FastGenerator) installSrc(lines []string, weights []weights.Weight) ([]string, error) {
+	// Install /src
 
 	// Copy over source / without weights
 	copyCommand := "COPY --link --exclude='.cog' "
@@ -261,10 +317,6 @@ func (g *FastGenerator) install(lines []string, weights []weights.Weight, tmpDir
 	}
 
 	return lines, nil
-}
-
-func (g *FastGenerator) pythonRequirements(tmpDir string) (string, error) {
-	return requirements.GenerateRequirements(tmpDir, g.Config)
 }
 
 func (g *FastGenerator) entrypoint(lines []string) ([]string, error) {

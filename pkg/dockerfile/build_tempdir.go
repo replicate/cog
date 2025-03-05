@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-func BuildCogTempDir(dir string) (string, error) {
-	rootTmp := path.Join(dir, ".cog/tmp")
+func BuildCogTempDir(dir string, subDir string) (string, error) {
+	rootTmp := path.Join(dir, ".cog", "tmp", subDir)
 	if err := os.MkdirAll(rootTmp, 0o755); err != nil {
 		return "", err
 	}
@@ -15,19 +15,7 @@ func BuildCogTempDir(dir string) (string, error) {
 }
 
 func BuildTempDir(dir string) (string, error) {
-	rootTmp, err := BuildCogTempDir(dir)
-	if err != nil {
-		return "", err
-	}
-
-	if err := os.MkdirAll(rootTmp, 0o755); err != nil {
-		return "", err
-	}
 	// tmpDir ends up being something like dir/.cog/tmp/build20240620123456.000000
 	now := time.Now().Format("20060102150405.000000")
-	tmpDir, err := os.MkdirTemp(rootTmp, "build"+now)
-	if err != nil {
-		return "", err
-	}
-	return tmpDir, nil
+	return BuildCogTempDir(dir, "build"+now)
 }
