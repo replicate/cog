@@ -2,13 +2,16 @@ import asyncio
 import pathlib
 import shutil
 import subprocess
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import httpx
 import pytest
+import requests
 
-from .util import cog_server_http_run
+from .util import cog_server_http_run, local_network_ip, random_port
 
 DEFAULT_TIMEOUT = 60
 
@@ -369,3 +372,49 @@ async def test_concurrent_predictions():
             for i, task in enumerate(tasks):
                 assert task.result().status_code == 200
                 assert task.result().json()["output"] == f"wake up sleepyhead{i}"
+
+
+def test_async_file_prediction():
+    webhook_payload = None
+
+    class WebhookHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            nonlocal webhook_payload
+            content_length = int(self.headers["Content-Length"])
+            webhook_payload = self.rfile.read(content_length).decode("utf-8")
+
+            # Respond with 200 OK
+            self.send_response(200)
+            self.end_headers()
+
+    local_ip = local_network_ip()
+
+    def start_http_server(port: int):
+        server = HTTPServer((local_ip, port), WebhookHandler)
+        server.serve_forever()
+
+    port = random_port()
+    server_thread = threading.Thread(
+        target=start_http_server, args=(port,), daemon=True
+    )
+    server_thread.start()
+
+    time.sleep(5.0)
+
+    with cog_server_http_run(
+        Path(__file__).parent / "fixtures" / "path-output-project"
+    ) as addr:
+        headers = {"Prefer": "respond-async"}
+        response = requests.post(
+            f"{addr}/predictions",
+            headers=headers,
+            json={
+                "inputs": {},
+                "webhook": f"http://{local_ip}:{port}",
+                "webhook_events_filter": ["start", "completed"],
+            },
+            timeout=3.0,
+        )
+        response.raise_for_status()
+        time.sleep(5.0)
+        assert webhook_payload == {}

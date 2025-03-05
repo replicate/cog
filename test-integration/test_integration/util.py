@@ -125,6 +125,14 @@ def random_port() -> int:
     return port
 
 
+def local_network_ip() -> str:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    ip_address = s.getsockname()[0]
+    s.close()
+    return ip_address
+
+
 @contextlib.contextmanager
 def cog_server_http_run(project_dir: str):
     port = random_port()
