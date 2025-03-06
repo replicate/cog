@@ -24,8 +24,8 @@ import (
 )
 
 const (
-	pushStartURLPath         = "/api/models/push-start"
-	initiateChallengeURLPath = "/api/initiate-file-challenge"
+	pushStartURLPath      = "/api/models/push-start"
+	startChallengeURLPath = "/api/models/file-challenge"
 )
 
 var (
@@ -68,13 +68,19 @@ type RuntimeConfig struct {
 }
 
 type Version struct {
-	Annotations   map[string]string `json:"annotations"`
-	CogConfig     config.Config     `json:"cog_config"`
-	CogVersion    string            `json:"cog_version"`
-	OpenAPISchema map[string]any    `json:"openapi_schema"`
-	RuntimeConfig RuntimeConfig     `json:"runtime_config"`
-	Virtual       bool              `json:"virtual"`
-	PushID        string            `json:"push_id"`
+	Annotations   map[string]string     `json:"annotations"`
+	CogConfig     config.Config         `json:"cog_config"`
+	CogVersion    string                `json:"cog_version"`
+	OpenAPISchema map[string]any        `json:"openapi_schema"`
+	RuntimeConfig RuntimeConfig         `json:"runtime_config"`
+	Virtual       bool                  `json:"virtual"`
+	PushID        string                `json:"push_id"`
+	Challenges    []FileChallengeAnswer `json:"file_challenges"`
+}
+
+type FileChallengeRequest struct {
+	Digest   string `json:"digest"`
+	FileType string `json:"file_type"`
 }
 
 type FileChallenge struct {
@@ -82,21 +88,13 @@ type FileChallenge struct {
 	Start  int    `json:"byte_start"`
 	End    int    `json:"byte_end"`
 	Digest string `json:"digest"`
+	ID     string `json:"challenge_id"`
 }
 
 type FileChallengeAnswer struct {
-	Digest string `json:"digest"`
-	Hash   string `json:"hash"`
-}
-
-type FileChallengeQuery struct {
-	Challenges []FileChallenge `json:"files"`
-	ID         string          `json:"challenge_id"`
-}
-
-type FileChallengeResponse struct {
-	Challenges []FileChallengeAnswer `json:"answers"`
-	ID         string                `json:"challenge_id"`
+	Digest      string `json:"digest"`
+	Hash        string `json:"hash"`
+	ChallengeID string `json:"challenge_id"`
 }
 
 func NewClient(dockerCommand command.Command, client *http.Client) *Client {
@@ -139,8 +137,8 @@ func (c *Client) PostPushStart(ctx context.Context, pushID string, buildTime tim
 	return nil
 }
 
-func (c *Client) PostNewVersion(ctx context.Context, image string, weights []File, files []File) error {
-	version, err := c.versionFromManifest(image, weights, files)
+func (c *Client) PostNewVersion(ctx context.Context, image string, weights []File, files []File, fileChallenges []FileChallengeAnswer) error {
+	version, err := c.versionFromManifest(image, weights, files, fileChallenges)
 	if err != nil {
 		return util.WrapError(err, "failed to build new version from manifest")
 	}
@@ -173,7 +171,7 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 	return nil
 }
 
-func (c *Client) versionFromManifest(image string, weights []File, files []File) (*Version, error) {
+func (c *Client) versionFromManifest(image string, weights []File, files []File, fileChallenges []FileChallengeAnswer) (*Version, error) {
 	manifest, err := c.dockerCommand.Inspect(image)
 	if err != nil {
 		return nil, util.WrapError(err, "failed to inspect docker image")
@@ -339,77 +337,80 @@ func stripCodeFromStub(cogConfig config.Config, isPredict bool) (string, error) 
 	return string(b), nil
 }
 
-func (c *Client) InitiateAndDoFileChallenge(ctx context.Context, runtimeConfig RuntimeConfig) (FileChallengeResponse, error) {
-	var challengeResponse FileChallengeResponse
-	jsonData, err := json.Marshal(runtimeConfig)
-	if err != nil {
-		return challengeResponse, util.WrapError(err, "marshal runtime config JSON")
-	}
-	initiateChallengePath := webBaseURL()
-	initiateChallengePath.Path = initiateChallengeURLPath
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, initiateChallengePath.String(), bytes.NewReader(jsonData))
-	if err != nil {
-		return challengeResponse, util.WrapError(err, "build HTTP request")
-	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return challengeResponse, util.WrapError(err, "do HTTP request")
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return challengeResponse, util.WrapError(ErrorBadResponseInitiateChallengeEndpoint, strconv.Itoa(resp.StatusCode))
-	}
-
-	var query FileChallengeQuery
-	err = json.NewDecoder(resp.Body).Decode(&query)
-	if err != nil {
-		return challengeResponse, util.WrapError(err, "decode response body")
-	}
-
-	return doFileChallenges(query, runtimeConfig)
-}
-
-// doFileChallenges does file challenges when requested by the
-func doFileChallenges(fileChallenges FileChallengeQuery, runtimeConfig RuntimeConfig) (FileChallengeResponse, error) {
-	// Build mapping from file to path
-	digestPathMap := make(map[string]string)
-	for _, file := range runtimeConfig.Files {
-		digestPathMap[file.Digest] = file.Path
-	}
-	for _, file := range runtimeConfig.Weights {
-		digestPathMap[file.Digest] = file.Path
-	}
+func (c *Client) InitiateAndDoFileChallenge(ctx context.Context, runtimeConfig RuntimeConfig) ([]FileChallengeAnswer, error) {
+	var challengeAnswers []FileChallengeAnswer
 
 	var wg errgroup.Group
-	answerMap := make(map[string]string)
-	for _, challenge := range fileChallenges.Challenges {
+	for _, item := range runtimeConfig.Files {
 		wg.Go(func() error {
-			wrapString := fmt.Sprintf("file challenge for digest %s:", challenge.Digest)
-			file, ok := digestPathMap[challenge.Digest]
-			if !ok {
-				return util.WrapError(ErrorNoSuchDigest, wrapString)
-			}
-			ans, err := util.SHA256HashFileWithSaltAndRange(file, challenge.Start, challenge.End, challenge.Salt)
+			answer, err := c.doSingleFileChallenge(ctx, item, "files")
 			if err != nil {
-				return util.WrapError(err, wrapString)
+				return util.WrapError(err, fmt.Sprintf("do file challenge for digest %s:", item.Digest))
 			}
-			answerMap[challenge.Digest] = ans
+			challengeAnswers = append(challengeAnswers, answer)
+			return nil
+		})
+	}
+	for _, item := range runtimeConfig.Weights {
+		wg.Go(func() error {
+			answer, err := c.doSingleFileChallenge(ctx, item, "weights")
+			if err != nil {
+				return util.WrapError(err, fmt.Sprintf("do file challenge for digest %s:", item.Digest))
+			}
+			challengeAnswers = append(challengeAnswers, answer)
 			return nil
 		})
 	}
 	if err := wg.Wait(); err != nil {
-		return FileChallengeResponse{}, util.WrapError(err, "do file challenges")
+		return nil, util.WrapError(err, "do file challenges")
 	}
-	response := FileChallengeResponse{
-		ID: fileChallenges.ID,
+
+	return challengeAnswers, nil
+}
+
+// doSingleFileChallenge does a single file challenge. This is intented to be called in a goroutine.
+func (c *Client) doSingleFileChallenge(ctx context.Context, file File, fileType string) (FileChallengeAnswer, error) {
+	initiateChallengePath := webBaseURL()
+	initiateChallengePath.Path = startChallengeURLPath
+
+	answer := FileChallengeAnswer{}
+
+	jsonData, err := json.Marshal(FileChallengeRequest{
+		Digest:   file.Digest,
+		FileType: fileType,
+	})
+
+	if err != nil {
+		return answer, util.WrapError(err, "encode request JSON")
 	}
-	for digest, answer := range answerMap {
-		response.Challenges = append(response.Challenges, FileChallengeAnswer{
-			Digest: digest,
-			Hash:   answer,
-		})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, initiateChallengePath.String(), bytes.NewReader(jsonData))
+	if err != nil {
+		return answer, util.WrapError(err, "build HTTP request")
 	}
-	return response, nil
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return answer, util.WrapError(err, "do HTTP request")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return answer, util.WrapError(ErrorBadResponseInitiateChallengeEndpoint, strconv.Itoa(resp.StatusCode))
+	}
+
+	var challenge FileChallenge
+	err = json.NewDecoder(resp.Body).Decode(&challenge)
+	if err != nil {
+		return answer, util.WrapError(err, "decode response body")
+	}
+
+	ans, err := util.SHA256HashFileWithSaltAndRange(file.Path, challenge.Start, challenge.End, challenge.Salt)
+	if err != nil {
+		return answer, util.WrapError(err, "hash file")
+	}
+	return FileChallengeAnswer{
+		Digest:      file.Digest,
+		Hash:        ans,
+		ChallengeID: challenge.ID,
+	}, nil
 }

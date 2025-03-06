@@ -16,6 +16,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/env"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 func TestPostNewVersion(t *testing.T) {
@@ -43,7 +44,7 @@ func TestPostNewVersion(t *testing.T) {
 
 	client := NewClient(command, http.DefaultClient)
 	ctx := context.Background()
-	err = client.PostNewVersion(ctx, "r8.im/user/test", []File{}, []File{})
+	err = client.PostNewVersion(ctx, "r8.im/user/test", []File{}, []File{}, nil)
 	require.NoError(t, err)
 }
 
@@ -61,7 +62,7 @@ func TestVersionFromManifest(t *testing.T) {
 	dockertest.MockOpenAPISchema = "{\"test\": true}"
 
 	client := NewClient(command, http.DefaultClient)
-	version, err := client.versionFromManifest("r8.im/user/test", []File{}, []File{})
+	version, err := client.versionFromManifest("r8.im/user/test", []File{}, []File{}, nil)
 	require.NoError(t, err)
 
 	var openAPISchema map[string]any
@@ -100,14 +101,14 @@ func TestDoFileChallenge(t *testing.T) {
 
 	config := RuntimeConfig{
 		Files: []File{
-			File{
+			{
 				Path:   path,
 				Digest: "abc",
 				Size:   22,
 			},
 		},
 		Weights: []File{
-			File{
+			{
 				Path:   path,
 				Digest: "def",
 				Size:   22,
@@ -115,35 +116,66 @@ func TestDoFileChallenge(t *testing.T) {
 		},
 	}
 
-	query := FileChallengeQuery{
-		ID: "abcdef",
-		Challenges: []FileChallenge{
-			{
-				Digest: "abc",
-				Start:  0,
-				End:    6,
-				Salt:   "go\n",
-			},
-			{
-				Digest: "def",
-				Start:  16,
-				End:    22,
-				Salt:   "go\n",
-			},
-		},
+	abcChallenge := FileChallenge{
+		ID:     "abc",
+		Digest: "abc",
+		Start:  0,
+		End:    6,
+		Salt:   "go\n",
 	}
 
-	response, err := doFileChallenges(query, config)
+	defChallenge := FileChallenge{
+		ID:     "def",
+		Digest: "def",
+		Start:  16,
+		End:    22,
+		Salt:   "go\n",
+	}
+
+	// Setup mock http server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		var challengeRequest FileChallengeRequest
+		err = json.NewDecoder(r.Body).Decode(&challengeRequest)
+		if err != nil {
+			console.Error("Incorrectly configured test")
+		}
+		if challengeRequest.Digest == "abc" {
+			body, err := json.Marshal(abcChallenge)
+			if err != nil {
+				console.Error("Incorrectly configured test")
+			}
+			w.Write(body)
+		} else {
+			body, err := json.Marshal(defChallenge)
+			if err != nil {
+				console.Error("Incorrectly configured test")
+			}
+			w.Write(body)
+		}
+	}))
+	defer server.Close()
+	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	assert.Equal(t, response.ID, query.ID)
-	assert.ElementsMatch(t, response.Challenges, []FileChallengeAnswer{
+	t.Setenv(env.SchemeEnvVarName, url.Scheme)
+	t.Setenv(WebHostEnvVarName, url.Host)
+
+	// Setup mock command
+	command := dockertest.NewMockCommand()
+	client := NewClient(command, http.DefaultClient)
+	ctx := context.Background()
+	response, err := client.InitiateAndDoFileChallenge(ctx, config)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, response, []FileChallengeAnswer{
 		{
-			Digest: "abc",
-			Hash:   "43d250d92b5dbb47f75208de8e9a9a321d23e85eed0dc3d5dfa83bc3cc5aa68c",
+			ChallengeID: "abc",
+			Digest:      "abc",
+			Hash:        "43d250d92b5dbb47f75208de8e9a9a321d23e85eed0dc3d5dfa83bc3cc5aa68c",
 		},
 		{
-			Digest: "def",
-			Hash:   "43d250d92b5dbb47f75208de8e9a9a321d23e85eed0dc3d5dfa83bc3cc5aa68c",
+			ChallengeID: "def",
+			Digest:      "def",
+			Hash:        "43d250d92b5dbb47f75208de8e9a9a321d23e85eed0dc3d5dfa83bc3cc5aa68c",
 		},
 	})
 }
