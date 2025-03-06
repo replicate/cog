@@ -28,13 +28,6 @@ func TestGenerate(t *testing.T) {
 	}
 	config := config.Config{
 		Build: &build,
-		Tests: []config.Test{
-			{
-				Inputs: map[string]string{
-					"s": "world",
-				},
-			},
-		},
 	}
 	command := dockertest.NewMockCommand()
 
@@ -70,13 +63,6 @@ func TestGenerateUVCacheMount(t *testing.T) {
 	}
 	config := config.Config{
 		Build: &build,
-		Tests: []config.Test{
-			{
-				Inputs: map[string]string{
-					"s": "world",
-				},
-			},
-		},
 	}
 	// Create matrix
 	matrix := MonobaseMatrix{
@@ -100,7 +86,7 @@ func TestGenerateUVCacheMount(t *testing.T) {
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
 	dockerfileLines := strings.Split(dockerfile, "\n")
-	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp\",target=\"/buildtmp\" --mount=type=cache,from=usercache,target=\"/var/cache/monobase\" --mount=type=cache,target=/var/cache/apt,id=apt-cache,sharing=locked --mount=type=cache,target=/srv/r8/monobase/uv/cache,id=pip-cache UV_CACHE_DIR=\"/srv/r8/monobase/uv/cache\" UV_LINK_MODE=copy /opt/r8/monobase/run.sh monobase.build --mini --cache=/var/cache/monobase", dockerfileLines[4])
+	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp/monobase\",target=\"/buildtmp\" --mount=type=cache,from=usercache,target=\"/var/cache/monobase\" --mount=type=cache,target=/var/cache/apt,id=apt-cache,sharing=locked --mount=type=cache,target=/srv/r8/monobase/uv/cache,id=pip-cache UV_CACHE_DIR=\"/srv/r8/monobase/uv/cache\" UV_LINK_MODE=copy /opt/r8/monobase/run.sh monobase.build --mini --cache=/var/cache/monobase", dockerfileLines[4])
 }
 
 func TestGenerateCUDA(t *testing.T) {
@@ -112,13 +98,6 @@ func TestGenerateCUDA(t *testing.T) {
 	}
 	config := config.Config{
 		Build: &build,
-		Tests: []config.Test{
-			{
-				Inputs: map[string]string{
-					"s": "world",
-				},
-			},
-		},
 	}
 	command := dockertest.NewMockCommand()
 
@@ -154,13 +133,6 @@ func TestGeneratePythonPackages(t *testing.T) {
 	}
 	config := config.Config{
 		Build: &build,
-		Tests: []config.Test{
-			{
-				Inputs: map[string]string{
-					"s": "world",
-				},
-			},
-		},
 	}
 	command := dockertest.NewMockCommand()
 
@@ -185,7 +157,7 @@ func TestGeneratePythonPackages(t *testing.T) {
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
 	dockerfileLines := strings.Split(dockerfile, "\n")
-	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp\",target=\"/buildtmp\" --mount=type=cache,target=/srv/r8/monobase/uv/cache,id=pip-cache UV_CACHE_DIR=\"/srv/r8/monobase/uv/cache\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt", dockerfileLines[5])
+	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp/user\",target=\"/buildtmp\" --mount=type=cache,target=/srv/r8/monobase/uv/cache,id=pip-cache UV_CACHE_DIR=\"/srv/r8/monobase/uv/cache\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt", dockerfileLines[5])
 }
 
 func TestGenerateVerboseEnv(t *testing.T) {
@@ -196,13 +168,6 @@ func TestGenerateVerboseEnv(t *testing.T) {
 	}
 	config := config.Config{
 		Build: &build,
-		Tests: []config.Test{
-			{
-				Inputs: map[string]string{
-					"s": "world",
-				},
-			},
-		},
 	}
 	command := dockertest.NewMockCommand()
 
@@ -238,13 +203,6 @@ func TestAptInstall(t *testing.T) {
 	}
 	config := config.Config{
 		Build: &build,
-		Tests: []config.Test{
-			{
-				Inputs: map[string]string{
-					"s": "world",
-				},
-			},
-		},
 	}
 	command := dockertest.NewMockCommand()
 
@@ -269,7 +227,7 @@ func TestAptInstall(t *testing.T) {
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
 	dockerfileLines := strings.Split(dockerfile, "\n")
-	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp\",target=\"/buildtmp\" tar -xf \"/buildtmp/apt.9a881b9b9f23849475296a8cd768ea1965bc3152df7118e60c145975af6aa58a.tar.zst\" -C /", dockerfileLines[5])
+	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp/apt\",target=\"/buildtmp\" tar -xf \"/buildtmp/apt.9a881b9b9f23849475296a8cd768ea1965bc3152df7118e60c145975af6aa58a.tar.zst\" -C /", dockerfileLines[5])
 }
 
 func TestValidateConfigWithBuildRunItems(t *testing.T) {
@@ -282,37 +240,6 @@ func TestValidateConfigWithBuildRunItems(t *testing.T) {
 				Command: "echo \"I'm alive\"",
 			},
 		},
-	}
-	config := config.Config{
-		Build: &build,
-	}
-	command := dockertest.NewMockCommand()
-	matrix := MonobaseMatrix{
-		Id:             1,
-		CudaVersions:   []string{"2.4"},
-		CudnnVersions:  []string{"1.0"},
-		PythonVersions: []string{"3.8"},
-		TorchVersions:  []string{"2.5.1"},
-		Venvs: []MonobaseVenv{
-			{
-				Python: "3.8",
-				Torch:  "2.5.1",
-				Cuda:   "2.4",
-			},
-		},
-	}
-	generator, err := NewFastGenerator(&config, dir, command, &matrix)
-	require.NoError(t, err)
-
-	err = generator.validateConfig()
-	require.Error(t, err)
-}
-
-func TestValidateConfigWithNoTests(t *testing.T) {
-	dir := t.TempDir()
-	build := config.Build{
-		PythonVersion:  "3.8",
-		SystemPackages: []string{"git"},
 	}
 	config := config.Config{
 		Build: &build,

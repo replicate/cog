@@ -9,7 +9,7 @@ import (
 
 func TestBuildCogTempDir(t *testing.T) {
 	tmpDir := t.TempDir()
-	cogTmpDir, err := BuildCogTempDir(tmpDir)
+	cogTmpDir, err := BuildCogTempDir(tmpDir, "weights")
 	require.NoError(t, err)
-	require.Equal(t, filepath.Join(tmpDir, ".cog/tmp"), cogTmpDir)
+	require.Equal(t, filepath.Join(tmpDir, ".cog/tmp/weights"), cogTmpDir)
 }
