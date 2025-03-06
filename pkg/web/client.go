@@ -273,6 +273,7 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File,
 		OpenAPISchema: openAPISchema,
 		RuntimeConfig: runtimeConfig,
 		Virtual:       true,
+		Challenges:    fileChallenges,
 	}
 
 	if pushID, ok := manifest.Config.Labels["run.cog.push_id"]; ok {
@@ -337,11 +338,11 @@ func stripCodeFromStub(cogConfig config.Config, isPredict bool) (string, error) 
 	return string(b), nil
 }
 
-func (c *Client) InitiateAndDoFileChallenge(ctx context.Context, runtimeConfig RuntimeConfig) ([]FileChallengeAnswer, error) {
+func (c *Client) InitiateAndDoFileChallenge(ctx context.Context, weights []File, files []File) ([]FileChallengeAnswer, error) {
 	var challengeAnswers []FileChallengeAnswer
 
 	var wg errgroup.Group
-	for _, item := range runtimeConfig.Files {
+	for _, item := range files {
 		wg.Go(func() error {
 			answer, err := c.doSingleFileChallenge(ctx, item, "files")
 			if err != nil {
@@ -351,7 +352,7 @@ func (c *Client) InitiateAndDoFileChallenge(ctx context.Context, runtimeConfig R
 			return nil
 		})
 	}
-	for _, item := range runtimeConfig.Weights {
+	for _, item := range weights {
 		wg.Go(func() error {
 			answer, err := c.doSingleFileChallenge(ctx, item, "weights")
 			if err != nil {

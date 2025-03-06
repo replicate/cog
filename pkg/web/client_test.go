@@ -99,20 +99,18 @@ func TestDoFileChallenge(t *testing.T) {
 	err = os.WriteFile(path2, d2, 0o644)
 	require.NoError(t, err)
 
-	config := RuntimeConfig{
-		Files: []File{
-			{
-				Path:   path,
-				Digest: "abc",
-				Size:   22,
-			},
+	files := []File{
+		{
+			Path:   path,
+			Digest: "abc",
+			Size:   22,
 		},
-		Weights: []File{
-			{
-				Path:   path,
-				Digest: "def",
-				Size:   22,
-			},
+	}
+	weights := []File{
+		{
+			Path:   path,
+			Digest: "def",
+			Size:   22,
 		},
 	}
 
@@ -164,7 +162,7 @@ func TestDoFileChallenge(t *testing.T) {
 	command := dockertest.NewMockCommand()
 	client := NewClient(command, http.DefaultClient)
 	ctx := context.Background()
-	response, err := client.InitiateAndDoFileChallenge(ctx, config)
+	response, err := client.InitiateAndDoFileChallenge(ctx, weights, files)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, response, []FileChallengeAnswer{
 		{

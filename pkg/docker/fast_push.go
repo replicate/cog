@@ -125,8 +125,16 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 		return err
 	}
 
+	weightFiles := createWeightsFilesFromWeightsManifest(weights)
+
+	// Initiate and do file challenges for each file in the config
+	challenges, err := webClient.InitiateAndDoFileChallenge(ctx, weightFiles, files)
+	if err != nil {
+		return util.WrapError(err, "initiate and do file challenges")
+	}
+
 	// Tell replicate about our new version
-	return webClient.PostNewVersion(ctx, image, createWeightsFilesFromWeightsManifest(weights), files)
+	return webClient.PostNewVersion(ctx, image, weightFiles, files, challenges)
 }
 
 func createPythonPackagesTarFile(image string, tmpDir string, command command.Command) (string, error) {
