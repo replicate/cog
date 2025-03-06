@@ -64,6 +64,114 @@ class CogConcurrencyConfig(TypedDict, total=False):  # pylint: disable=too-many-
     max: NotRequired[int]
 
 
+class CommonChatSchemaTextContentPart(TypedDict):
+    type: str
+    text: str
+
+
+class CommonChatSchemaImageURL(TypedDict):
+    url: str
+    detail: Optional[str]
+
+
+class CommonChatSchemaImageContentPart(TypedDict):
+    type: str
+    image_url: CommonChatSchemaImageURL
+
+
+class CommonChatSchemaInputAudio(TypedDict):
+    data: str
+    format: str
+
+
+class CommonChatSchemaAudioContentPart(TypedDict):
+    type: str
+    input_audio: CommonChatSchemaInputAudio
+
+
+class CommonChatSchemaRefuslaContentPart(TypedDict):
+    type: str
+    refusal: str
+
+
+class CommonChatSchemaAudio(TypedDict):
+    id: str
+
+
+class CommonChatSchemaFunction(TypedDict):
+    name: str
+    arguments: str
+
+
+class CommonChatSchemaToolCall(TypedDict):
+    id: str
+    type: str
+    function: CommonChatSchemaFunction
+
+
+class CommonChatSchemaDeveloperMessage(TypedDict, total=False):
+    content: Union[str, List[str]]
+    role: str
+    name: Optional[str]
+
+
+class CommonChatSchemaSystemMessage(TypedDict, total=False):
+    content: Union[str, List[str]]
+    role: str
+    name: Optional[str]
+
+
+class CommonChatSchemaUserMessage(TypedDict, total=False):
+    content: Union[
+        str,
+        List[
+            Union[
+                CommonChatSchemaTextContentPart,
+                CommonChatSchemaImageContentPart,
+                CommonChatSchemaAudioContentPart,
+            ]
+        ],
+    ]
+    role: str
+    name: Optional[str]
+
+
+class CommonChatSchemaAssistantMessage(TypedDict, total=False):
+    content: Union[
+        str,
+        List[
+            Union[CommonChatSchemaTextContentPart, CommonChatSchemaRefuslaContentPart]
+        ],
+    ]
+    role: str
+    name: Optional[str]
+    audio: Optional[CommonChatSchemaAudio]
+    tool_calls: Optional[List[CommonChatSchemaToolCall]]
+    function_call: Optional[CommonChatSchemaFunction]
+
+
+class CommonChatSchemaToolMessage(TypedDict):
+    role: str
+    content: Union[str, List[str]]
+    tool_call_id: str
+
+
+class CommonChatSchemaFunctionMessage(TypedDict, total=False):
+    role: str
+    content: Optional[str]
+    name: str
+
+
+CommonChatSchemaChatMessage = Union[
+    CommonChatSchemaDeveloperMessage,
+    CommonChatSchemaSystemMessage,
+    CommonChatSchemaUserMessage,
+    CommonChatSchemaAssistantMessage,
+    CommonChatSchemaToolMessage,
+    CommonChatSchemaFunctionMessage,
+]
+
+
 def Input(  # pylint: disable=invalid-name, too-many-arguments
     default: Any = ...,
     description: Optional[str] = None,

@@ -35,6 +35,7 @@ from .base_predictor import BasePredictor
 from .code_xforms import load_module_from_string, strip_model_source_code
 from .types import (
     PYDANTIC_V2,
+    CommonChatSchemaChatMessage,
     Input,
     Weights,
 )
@@ -56,6 +57,7 @@ ALLOWED_INPUT_TYPES: List[Type[Any]] = [
     CogFile,
     CogPath,
     CogSecret,
+    CommonChatSchemaChatMessage,
 ]
 
 
