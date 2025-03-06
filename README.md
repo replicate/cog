@@ -57,6 +57,8 @@ class Predictor(BasePredictor):
         return postprocess(output)
 ```
 
+In the above we accept a path to the image as an input, and return a path to our transformed image after running it through our model.
+
 Now, you can run predictions on this model:
 
 ```console
