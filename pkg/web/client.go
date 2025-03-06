@@ -31,7 +31,7 @@ const (
 var (
 	ErrorBadResponseNewVersionEndpoint        = errors.New("Bad response from new version endpoint")
 	ErrorBadResponsePushStartEndpoint         = errors.New("Bad response from push start endpoint")
-	ErrorBadResponseInitiateChallengeEndpoint = errors.New("Bad response from initate file challenge endpoint")
+	ErrorBadResponseInitiateChallengeEndpoint = errors.New("Bad response from start file challenge endpoint")
 	ErrorBadRegistryURL                       = errors.New("The image URL must have 3 components in the format of " + global.ReplicateRegistryHost + "/your-username/your-model")
 	ErrorBadRegistryHost                      = errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using --x-fast.")
 	ErrorNoSuchDigest                         = errors.New("No digest submitted matches the digest requested")
