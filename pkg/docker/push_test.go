@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -20,9 +21,20 @@ import (
 func TestPush(t *testing.T) {
 	// Setup mock http server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/models/username/modelname/versions" {
+		switch r.URL.Path {
+		case "/api/models/username/modelname/versions":
 			w.WriteHeader(http.StatusCreated)
-		} else {
+		case "/api/models/file-challenge":
+			w.WriteHeader(http.StatusOK)
+			body, _ := json.Marshal(web.FileChallenge{
+				Salt:   "a",
+				Start:  0,
+				End:    1,
+				Digest: "",
+				ID:     "a",
+			})
+			w.Write(body)
+		default:
 			w.WriteHeader(http.StatusConflict)
 			w.Write([]byte("Hello World"))
 		}
@@ -61,9 +73,20 @@ func TestPush(t *testing.T) {
 func TestPushWithWeight(t *testing.T) {
 	// Setup mock http server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/models/username/modelname/versions" {
+		switch r.URL.Path {
+		case "/api/models/username/modelname/versions":
 			w.WriteHeader(http.StatusCreated)
-		} else {
+		case "/api/models/file-challenge":
+			w.WriteHeader(http.StatusOK)
+			body, _ := json.Marshal(web.FileChallenge{
+				Salt:   "a",
+				Start:  0,
+				End:    1,
+				Digest: "",
+				ID:     "a",
+			})
+			w.Write(body)
+		default:
 			w.WriteHeader(http.StatusConflict)
 			w.Write([]byte("Hello World"))
 		}

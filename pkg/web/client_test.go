@@ -16,7 +16,6 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/env"
-	"github.com/replicate/cog/pkg/util/console"
 )
 
 func TestPostNewVersion(t *testing.T) {
@@ -134,21 +133,13 @@ func TestDoFileChallenge(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		var challengeRequest FileChallengeRequest
-		err = json.NewDecoder(r.Body).Decode(&challengeRequest)
-		if err != nil {
-			console.Error("Incorrectly configured test")
-		}
+		// Ignore errors - make sure the test is set up correctly
+		json.NewDecoder(r.Body).Decode(&challengeRequest)
 		if challengeRequest.Digest == "abc" {
-			body, err := json.Marshal(abcChallenge)
-			if err != nil {
-				console.Error("Incorrectly configured test")
-			}
+			body, _ := json.Marshal(abcChallenge)
 			w.Write(body)
 		} else {
-			body, err := json.Marshal(defChallenge)
-			if err != nil {
-				console.Error("Incorrectly configured test")
-			}
+			body, _ := json.Marshal(defChallenge)
 			w.Write(body)
 		}
 	}))

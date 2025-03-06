@@ -346,7 +346,7 @@ func (c *Client) InitiateAndDoFileChallenge(ctx context.Context, weights []File,
 		wg.Go(func() error {
 			answer, err := c.doSingleFileChallenge(ctx, item, "files")
 			if err != nil {
-				return util.WrapError(err, fmt.Sprintf("do file challenge for digest %s:", item.Digest))
+				return util.WrapError(err, fmt.Sprintf("do file challenge for digest %s", item.Digest))
 			}
 			challengeAnswers = append(challengeAnswers, answer)
 			return nil
@@ -356,7 +356,7 @@ func (c *Client) InitiateAndDoFileChallenge(ctx context.Context, weights []File,
 		wg.Go(func() error {
 			answer, err := c.doSingleFileChallenge(ctx, item, "weights")
 			if err != nil {
-				return util.WrapError(err, fmt.Sprintf("do file challenge for digest %s:", item.Digest))
+				return util.WrapError(err, fmt.Sprintf("do file challenge for digest %s", item.Digest))
 			}
 			challengeAnswers = append(challengeAnswers, answer)
 			return nil
@@ -369,7 +369,7 @@ func (c *Client) InitiateAndDoFileChallenge(ctx context.Context, weights []File,
 	return challengeAnswers, nil
 }
 
-// doSingleFileChallenge does a single file challenge. This is intented to be called in a goroutine.
+// doSingleFileChallenge does a single file challenge. This is expected to be called in a goroutine.
 func (c *Client) doSingleFileChallenge(ctx context.Context, file File, fileType string) (FileChallengeAnswer, error) {
 	initiateChallengePath := webBaseURL()
 	initiateChallengePath.Path = startChallengeURLPath
