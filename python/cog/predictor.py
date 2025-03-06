@@ -49,7 +49,7 @@ from .types import Secret as CogSecret
 
 log = structlog.get_logger("cog.server.predictor")
 
-ALLOWED_INPUT_TYPES: List[Type[Any]] = [
+ALLOWED_INPUT_TYPES: List[Union[Type[Any], Type[CommonChatSchemaChatMessage]]] = [
     str,
     int,
     float,
