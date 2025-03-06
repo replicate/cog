@@ -1,9 +1,12 @@
+import tempfile
+
 import requests
 import responses
 from responses import registries
 
 from cog.schema import PredictionResponse, Status, WebhookEvent
 from cog.server.webhook import webhook_caller, webhook_caller_filtered
+from cog.types import Path
 
 
 @responses.activate
@@ -153,3 +156,28 @@ def test_webhook_caller_connection_errors():
     c = webhook_caller("https://example.com/webhook/123")
     # this should not raise an error
     c(response)
+
+
+@responses.activate
+def test_webhook_caller_converts_files_data_urls():
+    with tempfile.NamedTemporaryFile() as tmpfile:
+        with open(tmpfile.name, "w", encoding="utf8") as handle:
+            handle.write("hello world")
+
+        c = webhook_caller("https://example.com/webhook/123")
+
+        payload = {
+            "status": Status.SUCCEEDED,
+            "output": Path(tmpfile.name),
+            "input": {},
+        }
+        response = PredictionResponse(**payload)
+        payload["output"] = "data:None;base64,aGVsbG8gd29ybGQ="
+
+        responses.post(
+            "https://example.com/webhook/123",
+            json=payload,
+            status=200,
+        )
+
+        c(response)
