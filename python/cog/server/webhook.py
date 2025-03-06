@@ -7,6 +7,8 @@ from fastapi.encoders import jsonable_encoder
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from ..files import upload_file
+from ..json import upload_files
 from ..schema import PredictionResponse, Status, WebhookEvent
 from ..types import PYDANTIC_V2
 from .response_throttler import ResponseThrottler
@@ -52,6 +54,13 @@ def webhook_caller(webhook: str) -> Callable[[Any], None]:
                 )
             else:
                 dict_response = jsonable_encoder(response.dict(exclude_unset=True))
+
+            if "output" in dict_response:
+                dict_response["output"] = upload_files(
+                    dict_response["output"],
+                    upload_file=upload_file,  # type: ignore
+                )
+
             if Status.is_terminal(response.status):
                 # For terminal updates, retry persistently
                 retry_session.post(webhook, json=dict_response)
