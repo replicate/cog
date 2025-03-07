@@ -31,11 +31,11 @@ __all__ = [
     "AsyncConcatenateIterator",
     "BaseModel",
     "BasePredictor",
+    "CommonChatSchemaChatMessage",
     "ConcatenateIterator",
     "ExperimentalFeatureWarning",
     "File",
     "Input",
     "Path",
     "Secret",
-    "CommonChatSchemaChatMessage",
 ]
