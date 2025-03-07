@@ -288,10 +288,12 @@ func (g *FastGenerator) installPython(lines []string, tmpDir string) ([]string, 
 		return nil, err
 	}
 	if requirementsFile != "" {
+		srcMount := "--mount=type=bind,ro,source=.,target=/src"
 		lines = append(lines, "RUN "+strings.Join([]string{
 			tmpMount,
 			UV_CACHE_MOUNT,
-		}, " ")+" UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt")
+			srcMount,
+		}, " ")+" cd /src && ls && UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt")
 	}
 	return lines, nil
 }
