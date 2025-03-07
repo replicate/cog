@@ -293,7 +293,7 @@ func (g *FastGenerator) installPython(lines []string, tmpDir string) ([]string, 
 			tmpMount,
 			UV_CACHE_MOUNT,
 			srcMount,
-		}, " ")+" cd /src && ls && UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt")
+		}, " ")+" cd /src && UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt")
 	}
 	return lines, nil
 }
