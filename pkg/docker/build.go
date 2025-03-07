@@ -16,14 +16,7 @@ import (
 func Build(dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string, epoch int64) error {
 	var args []string
 
-	userCache, err := UserCache()
-	if err != nil {
-		return err
-	}
-
-	args = append(args,
-		"buildx", "build", "--build-context", "usercache="+userCache,
-	)
+	args = append(args, "buildx", "build")
 
 	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
 		// Fixes "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested"
