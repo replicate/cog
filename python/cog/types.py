@@ -162,7 +162,7 @@ class CommonChatSchemaFunctionMessage(TypedDict, total=False):
     name: str
 
 
-CommonChatSchemaChatMessage = Union[
+ChatMessage = Union[
     CommonChatSchemaDeveloperMessage,
     CommonChatSchemaSystemMessage,
     CommonChatSchemaUserMessage,
