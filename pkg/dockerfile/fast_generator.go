@@ -3,10 +3,11 @@ package dockerfile
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/replicate/cog/pkg/util/files"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
@@ -227,7 +228,7 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 
 	// The only input to monobase.build are these ENV vars
 	// Write them in tmp mount for layer caching
-	err := os.WriteFile(path.Join(tmpDir, "env.txt"), []byte(strings.Join(envs, "\n")), 0o644)
+	err := files.WriteIfDifferent(path.Join(tmpDir, "env.txt"), strings.Join(envs, "\n"))
 	if err != nil {
 		return nil, err
 	}
