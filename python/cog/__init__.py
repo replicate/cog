@@ -7,6 +7,7 @@ from .mimetypes_ext import install_mime_extensions
 from .server.scope import current_scope, emit_metric
 from .types import (
     AsyncConcatenateIterator,
+    ChatMessage,
     ConcatenateIterator,
     ExperimentalFeatureWarning,
     File,
@@ -30,6 +31,7 @@ __all__ = [
     "AsyncConcatenateIterator",
     "BaseModel",
     "BasePredictor",
+    "ChatMessage",
     "ConcatenateIterator",
     "ExperimentalFeatureWarning",
     "File",

@@ -35,6 +35,7 @@ from .base_predictor import BasePredictor
 from .code_xforms import load_module_from_string, strip_model_source_code
 from .types import (
     PYDANTIC_V2,
+    ChatMessage,
     Input,
     Weights,
 )
@@ -48,11 +49,12 @@ from .types import Secret as CogSecret
 
 log = structlog.get_logger("cog.server.predictor")
 
-ALLOWED_INPUT_TYPES: List[Type[Any]] = [
+ALLOWED_INPUT_TYPES: List[Union[Type[Any], Type[ChatMessage]]] = [
     str,
     int,
     float,
     bool,
+    ChatMessage,
     CogFile,
     CogPath,
     CogSecret,
