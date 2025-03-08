@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/replicate/cog/pkg/util/files"
+
 	"github.com/replicate/cog/pkg/config"
 )
 
@@ -29,21 +31,7 @@ func GenerateRequirements(tmpDir string, cfg *config.Config) (string, error) {
 
 	// Check against the old requirements
 	requirementsFile := filepath.Join(tmpDir, REQUIREMENTS_FILE)
-	if _, err := os.Stat(requirementsFile); err == nil {
-		bs, err = os.ReadFile(requirementsFile)
-		if err != nil {
-			return "", err
-		}
-		if string(bs) == requirements {
-			return requirementsFile, nil
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", err
-	}
-
-	// Write out a new requirements file
-	err = os.WriteFile(requirementsFile, []byte(requirements), 0o644)
-	if err != nil {
+	if err := files.WriteIfDifferent(requirementsFile, requirements); err != nil {
 		return "", err
 	}
 	return requirementsFile, err

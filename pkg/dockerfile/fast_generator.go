@@ -3,10 +3,11 @@ package dockerfile
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/replicate/cog/pkg/util/files"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
@@ -16,10 +17,10 @@ import (
 )
 
 const FUSE_RPC_WEIGHTS_PATH = "/srv/r8/fuse-rpc/weights/sha256"
-const MONOBASE_CACHE_PATH = "/var/cache/monobase"
-const APT_CACHE_MOUNT = "--mount=type=cache,target=/var/cache/apt,id=apt-cache,sharing=locked"
+const MONOBASE_CACHE_DIR = "/var/cache/monobase"
+const MONOBASE_CACHE_MOUNT = "--mount=type=cache,target=" + MONOBASE_CACHE_DIR + ",id=monobase-cache"
 const UV_CACHE_DIR = "/srv/r8/monobase/uv/cache"
-const UV_CACHE_MOUNT = "--mount=type=cache,target=" + UV_CACHE_DIR + ",id=pip-cache"
+const UV_CACHE_MOUNT = "--mount=type=cache,target=" + UV_CACHE_DIR + ",id=uv-cache"
 const FAST_GENERATOR_NAME = "FAST_GENERATOR"
 
 type FastGenerator struct {
@@ -227,12 +228,12 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 
 	// The only input to monobase.build are these ENV vars
 	// Write them in tmp mount for layer caching
-	err := os.WriteFile(path.Join(tmpDir, "env.txt"), []byte(strings.Join(envs, "\n")), 0o644)
+	err := files.WriteIfDifferent(path.Join(tmpDir, "env.txt"), strings.Join(envs, "\n"))
 	if err != nil {
 		return nil, err
 	}
 
-	buildTmpMount, err := g.buildTmpMount(tmpDir)
+	tmpMount, err := g.buildTmpMount(tmpDir)
 	if err != nil {
 		return nil, err
 	}
@@ -244,11 +245,10 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 	lines = append(lines, envs...)
 	lines = append(lines, []string{
 		"RUN " + strings.Join([]string{
-			buildTmpMount,
-			g.monobaseUsercacheMount(),
-			APT_CACHE_MOUNT,
+			tmpMount,
+			MONOBASE_CACHE_MOUNT,
 			UV_CACHE_MOUNT,
-		}, " ") + " UV_CACHE_DIR=\"" + UV_CACHE_DIR + "\" UV_LINK_MODE=copy /opt/r8/monobase/run.sh monobase.build --mini --cache=" + MONOBASE_CACHE_PATH,
+		}, " ") + " UV_CACHE_DIR=\"" + UV_CACHE_DIR + "\" UV_LINK_MODE=copy /opt/r8/monobase/run.sh monobase.build --mini --cache=" + MONOBASE_CACHE_DIR,
 	}...)
 	return lines, nil
 }
@@ -267,19 +267,19 @@ func (g *FastGenerator) copyWeights(lines []string, weights []weights.Weight) ([
 
 func (g *FastGenerator) installApt(lines []string, tmpDir string, aptTarFile string) ([]string, error) {
 	// Install apt packages
-	buildTmpMount, err := g.buildTmpMount(tmpDir)
+	tmpMount, err := g.buildTmpMount(tmpDir)
 	if err != nil {
 		return nil, err
 	}
 	if aptTarFile != "" {
-		lines = append(lines, "RUN "+buildTmpMount+" tar -xf \""+filepath.Join("/buildtmp", aptTarFile)+"\" -C /")
+		lines = append(lines, "RUN "+tmpMount+" tar -xf \""+filepath.Join("/buildtmp", aptTarFile)+"\" -C /")
 	}
 	return lines, nil
 }
 
 func (g *FastGenerator) installPython(lines []string, tmpDir string) ([]string, error) {
 	// Install python packages
-	buildTmpMount, err := g.buildTmpMount(tmpDir)
+	tmpMount, err := g.buildTmpMount(tmpDir)
 	if err != nil {
 		return nil, err
 	}
@@ -288,10 +288,12 @@ func (g *FastGenerator) installPython(lines []string, tmpDir string) ([]string, 
 		return nil, err
 	}
 	if requirementsFile != "" {
+		srcMount := "--mount=type=bind,ro,source=.,target=/src"
 		lines = append(lines, "RUN "+strings.Join([]string{
-			buildTmpMount,
+			tmpMount,
 			UV_CACHE_MOUNT,
-		}, " ")+" UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt")
+			srcMount,
+		}, " ")+" cd /src && UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt")
 	}
 	return lines, nil
 }
@@ -334,10 +336,6 @@ func (g *FastGenerator) buildTmpMount(tmpDir string) (string, error) {
 		return "", err
 	}
 	return "--mount=type=bind,ro,source=\"" + relativeTmpDir + "\",target=\"/buildtmp\"", nil
-}
-
-func (g *FastGenerator) monobaseUsercacheMount() string {
-	return "--mount=type=cache,from=usercache,target=\"" + MONOBASE_CACHE_PATH + "\""
 }
 
 func (g *FastGenerator) generateAptTarball(tmpDir string) (string, error) {
