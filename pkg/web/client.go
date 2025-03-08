@@ -260,6 +260,16 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File,
 		}
 	}
 
+	// Digests should match whatever digest we are sending in as the
+	// runtime config digests
+	for i, challenge := range fileChallenges {
+		fileChallenges[i] = FileChallengeAnswer{
+			Digest:      fmt.Sprintf("sha256:%s", challenge.Digest),
+			Hash:        challenge.Hash,
+			ChallengeID: challenge.ChallengeID,
+		}
+	}
+
 	runtimeConfig := RuntimeConfig{
 		Weights: prefixedWeights,
 		Files:   prefixedFiles,
