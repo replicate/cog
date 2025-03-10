@@ -1,11 +1,13 @@
 package predict
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/mitchellh/go-homedir"
 	"github.com/vincent-petithory/dataurl"
 
@@ -13,22 +15,69 @@ import (
 )
 
 type Input struct {
-	String *string
-	File   *string
-	Array  *[]any
+	String      *string
+	File        *string
+	Array       *[]any
+	ChatMessage *json.RawMessage
 }
 
 type Inputs map[string]Input
 
-func NewInputs(keyVals map[string][]string) Inputs {
+var jsonSerializableSchemas = map[string]bool{
+	"#/components/schemas/CommonChatSchemaDeveloperMessage": true,
+	"#/components/schemas/CommonChatSchemaSystemMessage":    true,
+	"#/components/schemas/CommonChatSchemaUserMessage":      true,
+	"#/components/schemas/CommonChatSchemaAssistantMessage": true,
+	"#/components/schemas/CommonChatSchemaToolMessage":      true,
+	"#/components/schemas/CommonChatSchemaFunctionMessage":  true,
+}
+
+func NewInputs(keyVals map[string][]string, schema *openapi3.T) (Inputs, error) {
+	var inputComponent *openapi3.SchemaRef
+	for name, component := range schema.Components.Schemas {
+		if name == "Input" {
+			inputComponent = component
+			break
+		}
+	}
+
 	input := Inputs{}
 	for key, vals := range keyVals {
 		if len(vals) == 1 {
 			val := vals[0]
-			if strings.HasPrefix(val, "@") {
+
+			// Check if we should explicitly parse the JSON based on a known schema
+			if inputComponent != nil {
+				properties, err := inputComponent.JSONLookup("properties")
+				if err != nil {
+					return input, err
+				}
+				propertiesSchemas := properties.(openapi3.Schemas)
+				messages, err := propertiesSchemas.JSONLookup("messages")
+				if err != nil {
+					return input, err
+				}
+				messagesSchemas := messages.(*openapi3.Schema)
+				found := false
+				for _, schemaRef := range messagesSchemas.Items.Value.AnyOf {
+					if _, ok := jsonSerializableSchemas[schemaRef.Ref]; ok {
+						found = true
+						message := json.RawMessage(val)
+						input[key] = Input{ChatMessage: &message}
+						break
+					}
+				}
+				if found {
+					continue
+				}
+			}
+
+			switch {
+			case strings.HasPrefix(val, "@"):
 				val = val[1:]
 				input[key] = Input{File: &val}
-			} else {
+
+			default:
 				input[key] = Input{String: &val}
 			}
 		} else if len(vals) > 1 {
@@ -39,7 +88,7 @@ func NewInputs(keyVals map[string][]string) Inputs {
 			input[key] = Input{Array: &anyVals}
 		}
 	}
-	return input
+	return input, nil
 }
 
 func NewInputsWithBaseDir(keyVals map[string]string, baseDir string) Inputs {
@@ -86,6 +135,8 @@ func (inputs *Inputs) toMap() (map[string]any, error) {
 				}
 			}
 			keyVals[key] = dataURLs
+		case input.ChatMessage != nil:
+			keyVals[key] = *input.ChatMessage
 		}
 	}
 	return keyVals, nil
