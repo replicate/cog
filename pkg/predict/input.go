@@ -54,21 +54,21 @@ func NewInputs(keyVals map[string][]string, schema *openapi3.T) (Inputs, error) 
 				}
 				propertiesSchemas := properties.(openapi3.Schemas)
 				messages, err := propertiesSchemas.JSONLookup("messages")
-				if err != nil {
-					return input, err
-				}
-				messagesSchemas := messages.(*openapi3.Schema)
-				found := false
-				for _, schemaRef := range messagesSchemas.Items.Value.AnyOf {
-					if _, ok := jsonSerializableSchemas[schemaRef.Ref]; ok {
-						found = true
-						message := json.RawMessage(val)
-						input[key] = Input{ChatMessage: &message}
-						break
+				// If there is an error it means messages was not found, this is valid for an OpenAPI schema.
+				if err == nil {
+					messagesSchemas := messages.(*openapi3.Schema)
+					found := false
+					for _, schemaRef := range messagesSchemas.Items.Value.AnyOf {
+						if _, ok := jsonSerializableSchemas[schemaRef.Ref]; ok {
+							found = true
+							message := json.RawMessage(val)
+							input[key] = Input{ChatMessage: &message}
+							break
+						}
 					}
-				}
-				if found {
-					continue
+					if found {
+						continue
+					}
 				}
 			}
 
