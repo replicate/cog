@@ -17,6 +17,10 @@ func NewMockCommand() *MockCommand {
 	return &MockCommand{}
 }
 
+func (c *MockCommand) Pull(image string) error {
+	return nil
+}
+
 func (c *MockCommand) Push(image string) error {
 	return PushError
 }

@@ -32,6 +32,11 @@ func NewDockerCommand() *DockerCommand {
 	return &DockerCommand{}
 }
 
+func (c *DockerCommand) Pull(image string) error {
+	_, err := c.exec("pull", false, image)
+	return err
+}
+
 func (c *DockerCommand) Push(image string) error {
 	_, err := c.exec("push", false, image)
 	return err

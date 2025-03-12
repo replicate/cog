@@ -16,6 +16,7 @@ import (
 	"github.com/replicate/cog/pkg/weights"
 )
 
+const MONOBASE_IMAGE = "r8.im/monobase:latest"
 const FUSE_RPC_WEIGHTS_PATH = "/srv/r8/fuse-rpc/weights/sha256"
 const MONOBASE_CACHE_DIR = "/var/cache/monobase"
 const MONOBASE_CACHE_MOUNT = "--mount=type=cache,target=" + MONOBASE_CACHE_DIR + ",id=monobase-cache"
@@ -99,6 +100,11 @@ func (g *FastGenerator) Name() string {
 func (g *FastGenerator) generate() (string, error) {
 	err := g.validateConfig()
 	if err != nil {
+		return "", err
+	}
+
+	// Always pull latest monobase as we rely on it for build logic
+	if err := g.dockerCommand.Pull(MONOBASE_IMAGE); err != nil {
 		return "", err
 	}
 
@@ -240,7 +246,7 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 
 	lines = append(lines, []string{
 		"# syntax=docker/dockerfile:1-labs",
-		"FROM r8.im/monobase:latest",
+		"FROM " + MONOBASE_IMAGE,
 	}...)
 	lines = append(lines, envs...)
 	lines = append(lines, []string{
