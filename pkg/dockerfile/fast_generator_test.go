@@ -157,7 +157,7 @@ func TestGeneratePythonPackages(t *testing.T) {
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
 	dockerfileLines := strings.Split(dockerfile, "\n")
-	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp/user\",target=\"/buildtmp\" --mount=type=cache,target=/srv/r8/monobase/uv/cache,id=uv-cache --mount=type=bind,ro,source=.,target=/src cd /src && UV_CACHE_DIR=\"/srv/r8/monobase/uv/cache\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt", dockerfileLines[5])
+	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp/requirements\",target=\"/buildtmp\" --mount=type=cache,target=/srv/r8/monobase/uv/cache,id=uv-cache --mount=type=bind,ro,source=.,target=/src cd /src && UV_CACHE_DIR=\"/srv/r8/monobase/uv/cache\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt", dockerfileLines[5])
 }
 
 func TestGenerateVerboseEnv(t *testing.T) {

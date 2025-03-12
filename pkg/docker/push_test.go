@@ -51,9 +51,11 @@ func TestPush(t *testing.T) {
 	cogDir := filepath.Join(dir, ".cog")
 	err = os.Mkdir(cogDir, 0o755)
 	require.NoError(t, err)
-	tmpDir := filepath.Join(cogDir, "tmp", "weights")
-	err = os.MkdirAll(tmpDir, 0o755)
-	require.NoError(t, err)
+	for _, d := range []string{"apt", "tarballs", "weights"} {
+		tmpDir := filepath.Join(cogDir, "tmp", d)
+		err = os.MkdirAll(tmpDir, 0o755)
+		require.NoError(t, err)
+	}
 
 	// Create mock predict
 	predictPyPath := filepath.Join(dir, "predict.py")
@@ -103,9 +105,11 @@ func TestPushWithWeight(t *testing.T) {
 	cogDir := filepath.Join(dir, ".cog")
 	err = os.Mkdir(cogDir, 0o755)
 	require.NoError(t, err)
-	tmpDir := filepath.Join(cogDir, "tmp", "weights")
-	err = os.MkdirAll(tmpDir, 0o755)
-	require.NoError(t, err)
+	for _, d := range []string{"apt", "tarballs", "weights"} {
+		tmpDir := filepath.Join(cogDir, "tmp", d)
+		err = os.MkdirAll(tmpDir, 0o755)
+		require.NoError(t, err)
+	}
 
 	// Create mock predict
 	predictPyPath := filepath.Join(dir, "predict.py")

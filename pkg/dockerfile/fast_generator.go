@@ -147,7 +147,7 @@ func (g *FastGenerator) generate() (string, error) {
 
 	// User layer
 	// Includes requirements.txt, triggered by python_requirements changes
-	tmpUserDir, err := BuildCogTempDir(g.Dir, "user")
+	tmpRequirementsDir, err := BuildCogTempDir(g.Dir, "requirements")
 	if err != nil {
 		return "", err
 	}
@@ -162,7 +162,7 @@ func (g *FastGenerator) generate() (string, error) {
 		return "", err
 	}
 
-	lines, err = g.installPython(lines, tmpUserDir)
+	lines, err = g.installPython(lines, tmpRequirementsDir)
 	if err != nil {
 		return "", err
 	}

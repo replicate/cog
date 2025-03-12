@@ -30,8 +30,9 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 		mpb.WithRefreshRate(180 * time.Millisecond),
 	)
 
-	tmpDir := filepath.Join(projectDir, ".cog", "tmp", "weights")
-	weights, err := weights.ReadFastWeights(tmpDir)
+	// Reading weights metadata only
+	tmpWeightsDir := filepath.Join(projectDir, ".cog", "tmp", "weights")
+	weights, err := weights.ReadFastWeights(tmpWeightsDir)
 	if err != nil {
 		return fmt.Errorf("read weights error: %w", err)
 	}
@@ -45,7 +46,8 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 	// Create a list of files to upload.
 	files := []web.File{}
 
-	aptTarFile, err := CurrentAptTarball(tmpDir)
+	tmpAptDir := filepath.Join(projectDir, ".cog", "tmp", "apt")
+	aptTarFile, err := CurrentAptTarball(tmpAptDir)
 	if err != nil {
 		return fmt.Errorf("current apt tarball error: %w", err)
 	}
@@ -65,13 +67,18 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 		})
 	}
 
-	requirementsFile, err := requirements.CurrentRequirements(tmpDir)
+	tmpRequirementsDir := filepath.Join(projectDir, ".cog", "tmp", "requirements")
+	requirementsFile, err := requirements.CurrentRequirements(tmpRequirementsDir)
 	if err != nil {
 		return err
 	}
+
+	// Temp directory for tarballs extracted from the image
+	// Separate from other temp directories so that they don't cause cache invalidation
+	tmpTarballsDir := filepath.Join(projectDir, ".cog", "tmp", "tarballs")
 	// Upload python packages.
 	if requirementsFile != "" {
-		pythonTar, err := createPythonPackagesTarFile(image, tmpDir, command)
+		pythonTar, err := createPythonPackagesTarFile(image, tmpTarballsDir, command)
 		if err != nil {
 			return err
 		}
@@ -91,7 +98,7 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 			return monobeamClient.UploadFile(ctx, filesObjectType, hash, pythonTar, p, "python-packages")
 		})
 	} else {
-		requirementsTarFile := filepath.Join(tmpDir, requirementsTarFile)
+		requirementsTarFile := filepath.Join(tmpTarballsDir, requirementsTarFile)
 		_, err = os.Stat(requirementsTarFile)
 		if !errors.Is(err, os.ErrNotExist) {
 			err = os.Remove(requirementsTarFile)
@@ -102,7 +109,7 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 	}
 
 	// Upload user /src.
-	srcTar, err := createSrcTarFile(image, tmpDir, command)
+	srcTar, err := createSrcTarFile(image, tmpTarballsDir, command)
 	if err != nil {
 		return fmt.Errorf("create src tarfile: %w", err)
 	}
