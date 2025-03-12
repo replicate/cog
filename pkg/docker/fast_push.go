@@ -30,7 +30,7 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 		mpb.WithRefreshRate(180 * time.Millisecond),
 	)
 
-	tmpDir := filepath.Join(projectDir, ".cog", "tmp")
+	tmpDir := filepath.Join(projectDir, ".cog", "tmp", "weights")
 	weights, err := weights.ReadFastWeights(tmpDir)
 	if err != nil {
 		return fmt.Errorf("read weights error: %w", err)
