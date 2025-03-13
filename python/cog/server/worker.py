@@ -9,7 +9,6 @@ import threading
 import traceback
 import types
 import uuid
-import warnings
 import weakref
 from concurrent import futures
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -442,7 +441,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             if not self._validate_predictor(redirector):
                 return
 
-            self._predictor.log = self._log  # type: ignore
             predict = get_predict(self._predictor)
 
             if self._has_async_predictor:
@@ -819,18 +817,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             self._events.send(
                 Envelope(event=Log(data, source="stderr"), tag=self._current_tag)
             )
-
-    def _log(self, *messages: str, source: str = "stderr") -> None:
-        """
-        DEPRECATED: This function will be removed in a future version of cog.
-        """
-        warnings.warn(
-            "log() is deprecated and will be removed in a future version. Use `print` or `logging` module instead",
-            category=DeprecationWarning,
-            stacklevel=1,
-        )
-        file = sys.stdout if source == "stdout" else sys.stderr
-        print(*messages, file=file, end="")
 
 
 def make_worker(
