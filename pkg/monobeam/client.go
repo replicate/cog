@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -96,7 +97,10 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 		return err
 	}
 
-	console.Info("Waiting to verify the image was received by the server...")
+	_, err = p.Write([]byte(fmt.Sprintf("Waiting to verify %s was received by the server...\n", desc)))
+	if err != nil {
+		console.Debugf("failed to write to progress bar: %v", err)
+	}
 
 	// Begin verification
 	verificationUrl := verificationURL(objectType, digest, data.Uuid)
