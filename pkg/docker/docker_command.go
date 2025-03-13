@@ -33,7 +33,7 @@ func NewDockerCommand() *DockerCommand {
 }
 
 func (c *DockerCommand) Pull(image string) error {
-	_, err := c.exec("pull", false, image)
+	_, err := c.exec("pull", false, image, "--platform", "linux/amd64")
 	return err
 }
 
