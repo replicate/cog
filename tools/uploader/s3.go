@@ -106,6 +106,7 @@ func (s *s3Uploader) UploadObject(ctx context.Context, objectPath, bucket, key s
 			decor.Name(" ] "),
 			decor.EwmaSpeed(decor.SizeB1024(0), "% .2f", 30),
 		),
+		mpb.BarRemoveOnComplete(),
 	)
 	defer bar.Abort(false)
 
