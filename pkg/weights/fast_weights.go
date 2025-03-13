@@ -63,6 +63,11 @@ func findFullWeights(folder string, weights []Weight, weightFile string) ([]Weig
 			return err
 		}
 
+		// Skip the .cog directory when looking for weights - this is where we store cog generated files
+		if info.IsDir() && info.Name() == ".cog" {
+			return filepath.SkipDir
+		}
+
 		relPath, err := filepath.Rel(folder, path)
 		if err != nil {
 			return err
