@@ -352,5 +352,8 @@ func (g *FastGenerator) validateConfig() error {
 	if len(g.Config.Build.Run) > 0 {
 		return errors.New("cog builds with --x-fast do not support build run commands.")
 	}
+	if len(g.Config.Tests) == 0 {
+		return errors.New("cog builds with --x-fast require at least 1 test (see tests in cog.yaml).")
+	}
 	return nil
 }

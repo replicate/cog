@@ -26,8 +26,16 @@ func TestGenerate(t *testing.T) {
 		PythonVersion:      "3.8",
 		PythonRequirements: writeRequirements(t, "torch==2.5.1"),
 	}
+	tests := []config.Test{
+		{
+			Inputs: map[string]string{
+				"hello": "there",
+			},
+		},
+	}
 	config := config.Config{
 		Build: &build,
+		Tests: tests,
 	}
 	command := dockertest.NewMockCommand()
 
@@ -61,8 +69,16 @@ func TestGenerateUVCacheMount(t *testing.T) {
 		PythonVersion:      "3.8",
 		PythonRequirements: writeRequirements(t, "torch==2.5.1\ncatboost==1.2.7"),
 	}
+	tests := []config.Test{
+		{
+			Inputs: map[string]string{
+				"hello": "there",
+			},
+		},
+	}
 	config := config.Config{
 		Build: &build,
+		Tests: tests,
 	}
 	// Create matrix
 	matrix := MonobaseMatrix{
@@ -96,8 +112,16 @@ func TestGenerateCUDA(t *testing.T) {
 		CUDA:          "12.4",
 		PythonVersion: "3.8",
 	}
+	tests := []config.Test{
+		{
+			Inputs: map[string]string{
+				"hello": "there",
+			},
+		},
+	}
 	config := config.Config{
 		Build: &build,
+		Tests: tests,
 	}
 	command := dockertest.NewMockCommand()
 
@@ -131,8 +155,16 @@ func TestGeneratePythonPackages(t *testing.T) {
 		PythonVersion:      "3.8",
 		PythonRequirements: writeRequirements(t, "catboost==1.2.7"),
 	}
+	tests := []config.Test{
+		{
+			Inputs: map[string]string{
+				"hello": "there",
+			},
+		},
+	}
 	config := config.Config{
 		Build: &build,
+		Tests: tests,
 	}
 	command := dockertest.NewMockCommand()
 
@@ -166,8 +198,16 @@ func TestGenerateVerboseEnv(t *testing.T) {
 		PythonVersion:      "3.8",
 		PythonRequirements: writeRequirements(t, "torch==2.5.1"),
 	}
+	tests := []config.Test{
+		{
+			Inputs: map[string]string{
+				"hello": "there",
+			},
+		},
+	}
 	config := config.Config{
 		Build: &build,
+		Tests: tests,
 	}
 	command := dockertest.NewMockCommand()
 
@@ -201,8 +241,16 @@ func TestAptInstall(t *testing.T) {
 		PythonVersion:  "3.8",
 		SystemPackages: []string{"git"},
 	}
+	tests := []config.Test{
+		{
+			Inputs: map[string]string{
+				"hello": "there",
+			},
+		},
+	}
 	config := config.Config{
 		Build: &build,
+		Tests: tests,
 	}
 	command := dockertest.NewMockCommand()
 
@@ -241,8 +289,16 @@ func TestValidateConfigWithBuildRunItems(t *testing.T) {
 			},
 		},
 	}
+	tests := []config.Test{
+		{
+			Inputs: map[string]string{
+				"hello": "there",
+			},
+		},
+	}
 	config := config.Config{
 		Build: &build,
+		Tests: tests,
 	}
 	command := dockertest.NewMockCommand()
 	matrix := MonobaseMatrix{
