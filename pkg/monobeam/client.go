@@ -17,8 +17,13 @@ import (
 	"github.com/vbauerster/mpb/v8"
 
 	"github.com/replicate/cog/pkg/env"
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/tools/uploader"
+)
+
+const (
+	preUploadPath = "/pre_upload"
 )
 
 type Client struct {
@@ -45,6 +50,19 @@ func NewClient(client *http.Client) *Client {
 	return &Client{
 		client: client,
 	}
+}
+
+func (c *Client) PostPreUpload(ctx context.Context) error {
+	preUploadUrl := baseURL()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, preUploadUrl.String(), nil)
+	if err != nil {
+		return util.WrapError(err, "create request")
+	}
+	_, err = c.client.Do(req)
+	if err != nil {
+		return util.WrapError(err, "do request")
+	}
+	return nil
 }
 
 func (c *Client) UploadFile(ctx context.Context, objectType string, digest string, path string, p *mpb.Progress, desc string) error {

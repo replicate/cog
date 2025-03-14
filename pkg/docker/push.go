@@ -30,6 +30,10 @@ func Push(image string, fast bool, projectDir string, command command.Command, b
 
 	if fast {
 		monobeamClient := monobeam.NewClient(client)
+		if err := monobeamClient.PostPreUpload(ctx); err != nil {
+			// The pre upload is not required, just helpful. If it fails, log and continue
+			console.Debugf("Failed to POST pre_upload: %v", err)
+		}
 		return FastPush(ctx, image, projectDir, command, webClient, monobeamClient)
 	}
 	return StandardPush(image, command)
