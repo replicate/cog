@@ -7,8 +7,7 @@ It has three keys: [`build`](#build), [`image`](#image), and [`predict`](#predic
 ```yaml
 build:
   python_version: "3.11"
-  python_packages:
-    - pytorch==2.0.1
+  python_requirements: requirements.txt
   system_packages:
     - "ffmpeg"
     - "git"
@@ -48,6 +47,8 @@ build:
 When you use `cog run` or `cog predict`, Cog will automatically pass the `--gpus=all` flag to Docker. When you run a Docker image built with Cog, you'll need to pass this option to `docker run`.
 
 ### `python_packages`
+
+** DEPRECATED **: This will be removed in future versions, please use [python_requirements](#python_requirements) instead.
 
 A list of Python packages to install from the PyPi package index, in the format `package==version`. For example:
 
