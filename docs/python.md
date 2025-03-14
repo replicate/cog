@@ -16,12 +16,13 @@ This document defines the API of the `cog` Python module, which is used to defin
 - [`BasePredictor`](#basepredictor)
   - [`Predictor.setup()`](#predictorsetup)
   - [`Predictor.predict(**kwargs)`](#predictorpredictkwargs)
-    - [Streaming output](#streaming-output)
+- [`async` predictors and concurrency](#async-predictors-and-concurrency)
 - [`Input(**kwargs)`](#inputkwargs)
 - [Output](#output)
   - [Returning an object](#returning-an-object)
   - [Returning a list](#returning-a-list)
   - [Optional properties](#optional-properties)
+  - [Streaming output](#streaming-output)
 - [Input and output types](#input-and-output-types)
 - [`File()`](#file)
 - [`Path()`](#path)
@@ -88,35 +89,25 @@ The `predict()` method takes an arbitrary list of named arguments, where each ar
 
 `predict()` can return strings, numbers, [`cog.Path`](#path) objects representing files on disk, or lists or dicts of those types. You can also define a custom [`Output()`](#outputbasemodel) for more complex return types.
 
-#### Streaming output
+## `async` predictors and concurrency
 
-Cog models can stream output as the `predict()` method is running. For example, a language model can output tokens as they're being generated and an image generation model can output a images they are being generated.
+> Added in cog 0.14.0.
 
-To support streaming output in your Cog model, add `from typing import Iterator` to your predict.py file. The `typing` package is a part of Python's standard library so it doesn't need to be installed. Then add a return type annotation to the `predict()` method in the form `-> Iterator[<type>]` where `<type>` can be one of `str`, `int`, `float`, `bool`, `cog.File`, or `cog.Path`.
-
-```py
-from cog import BasePredictor, Path
-from typing import Iterator
-
-class Predictor(BasePredictor):
-    def predict(self) -> Iterator[Path]:
-        done = False
-        while not done:
-            output_path, done = do_stuff()
-            yield Path(output_path)
-```
-
-If you're streaming text output, you can use `ConcatenateIterator` to hint that the output should be concatenated together into a single string. This is useful on Replicate to display the output as a string instead of a list of strings.
+You may specify your `predict()` method as `async def predict(...)`.  In
+addition, if you have an async `predict()` function you may also have an async
+`setup()` function:
 
 ```py
-from cog import BasePredictor, Path, ConcatenateIterator
-
 class Predictor(BasePredictor):
-    def predict(self) -> ConcatenateIterator[str]:
-        tokens = ["The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"]
-        for token in tokens:
-            yield token + " "
+    async def setup(self) -> None:
+        print("async setup is also supported...")
+
+    async def predict(self) -> str:
+        print("async predict");
+        return "hello world";
 ```
+
+Models that have an async `predict()` function can run predictions concurrently, up to the limit specified by [`concurrency.max`](yaml.md#max) in cog.yaml. Attempting to exceed this limit will return a 409 Conflict response.
 
 ## `Input(**kwargs)`
 
@@ -225,6 +216,61 @@ class Predictor(BasePredictor):
             return Output(score=1.5)
         else:
             return Output(file=io.StringIO("hello"))
+```
+
+### Streaming output
+
+Cog models can stream output as the `predict()` method is running. For example, a language model can output tokens as they're being generated and an image generation model can output a images they are being generated.
+
+To support streaming output in your Cog model, add `from typing import Iterator` to your predict.py file. The `typing` package is a part of Python's standard library so it doesn't need to be installed. Then add a return type annotation to the `predict()` method in the form `-> Iterator[<type>]` where `<type>` can be one of `str`, `int`, `float`, `bool`, `cog.File`, or `cog.Path`.
+
+```py
+from cog import BasePredictor, Path
+from typing import Iterator
+
+class Predictor(BasePredictor):
+    def predict(self) -> Iterator[Path]:
+        done = False
+        while not done:
+            output_path, done = do_stuff()
+            yield Path(output_path)
+```
+
+If you have an [async `predict()` method](#async-predictors-and-concurrency), you must use `cog.AsyncIterator` instead:
+
+```py
+from cog import AsyncIterator, BasePredictor, Path
+
+class Predictor(BasePredictor):
+    async def predict(self) -> AsyncIterator[Path]:
+        done = False
+        while not done:
+            output_path, done = do_stuff()
+            yield Path(output_path)
+```
+
+If you're streaming text output, you can use `ConcatenateIterator` to hint that the output should be concatenated together into a single string. This is useful on Replicate to display the output as a string instead of a list of strings.
+
+```py
+from cog import BasePredictor, Path, ConcatenateIterator
+
+class Predictor(BasePredictor):
+    def predict(self) -> ConcatenateIterator[str]:
+        tokens = ["The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"]
+        for token in tokens:
+            yield token + " "
+```
+
+Or for async `predict()` methods, use `AsyncConcatenateIterator`:
+
+```py
+from cog import BasePredictor, Path, AsyncConcatenateIterator
+
+class Predictor(BasePredictor):
+    async def predict(self) -> AsyncConcatenateIterator[str]:
+        tokens = ["The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"]
+        for token in tokens:
+            yield token + " "
 ```
 
 ## Input and output types
