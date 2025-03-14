@@ -220,9 +220,9 @@ class Predictor(BasePredictor):
 
 ### Streaming output
 
-Cog models can stream output as the `predict()` method is running. For example, a language model can output tokens as they're being generated and an image generation model can output a images they are being generated.
+Cog models can stream output as the `predict()` method is running. For example, a language model can output tokens as they're being generated and an image generation model can output images as they are being generated.
 
-To support streaming output in your Cog model, add `from typing import Iterator` to your predict.py file. The `typing` package is a part of Python's standard library so it doesn't need to be installed. Then add a return type annotation to the `predict()` method in the form `-> Iterator[<type>]` where `<type>` can be one of `str`, `int`, `float`, `bool`, `cog.File`, or `cog.Path`.
+To support streaming output in your Cog model, add `from typing import Iterator` to your predict.py file. The `typing` package is a part of Python's standard library so it doesn't need to be installed. Then add a return type annotation to the `predict()` method in the form `-> Iterator[<type>]` where `<type>` can be one of `str`, `int`, `float`, `bool`, or `cog.Path`.
 
 ```py
 from cog import BasePredictor, Path
