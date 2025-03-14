@@ -54,6 +54,7 @@ func NewClient(client *http.Client) *Client {
 
 func (c *Client) PostPreUpload(ctx context.Context) error {
 	preUploadUrl := baseURL()
+	preUploadUrl.Path = preUploadPath
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, preUploadUrl.String(), nil)
 	if err != nil {
 		return util.WrapError(err, "create request")
