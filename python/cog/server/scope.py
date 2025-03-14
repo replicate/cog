@@ -1,11 +1,8 @@
-import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Callable, Generator, Optional, Union
 
 from attrs import evolve, frozen
-
-from ..types import ExperimentalFeatureWarning
 
 
 @frozen
@@ -18,11 +15,6 @@ _current_scope: ContextVar[Optional[Scope]] = ContextVar("scope", default=None)
 
 
 def current_scope() -> Scope:
-    warnings.warn(
-        "current_scope is an experimental internal function. It may change or be removed without warning.",
-        category=ExperimentalFeatureWarning,
-        stacklevel=1,
-    )
     return _get_current_scope()
 
 
