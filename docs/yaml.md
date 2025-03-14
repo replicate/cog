@@ -46,6 +46,51 @@ build:
 
 When you use `cog run` or `cog predict`, Cog will automatically pass the `--gpus=all` flag to Docker. When you run a Docker image built with Cog, you'll need to pass this option to `docker run`.
 
+### `python_requirements`
+
+A pip requirements file specifying the Python packages to install. For example:
+
+```yaml
+build:
+  python_requirements: requirements.txt
+```
+
+Your `cog.yaml` file can set either `python_packages` or `python_requirements`, but not both. Use `python_requirements` when you need to configure options like `--extra-index-url` or `--trusted-host` to fetch Python package dependencies.
+
+This follows the standard [requirements.txt](https://pip.pypa.io/en/stable/reference/requirements-file-format/) format.
+
+To install Git-hosted Python packages, add `git` to the `system_packages` list, then use the `git+https://` syntax to specify the package name. For example:
+
+`cog.yaml`:
+```yaml
+build:
+  system_packages:
+    - "git"
+  python_requirements: requirements.txt
+```
+
+`requirements.txt`:
+```
+git+https://github.com/huggingface/transformers
+```
+
+You can also pin Python package installations to a specific git commit:
+
+`cog.yaml`:
+```yaml
+build:
+  system_packages:
+    - "git"
+  python_requirements: requirements.txt
+```
+
+`requirements.txt`:
+```
+git+https://github.com/huggingface/transformers@2d1602a
+```
+
+Note that you can use a shortened prefix of the 40-character git commit SHA, but you must use at least six characters, like `2d1602a` above.
+
 ### `python_packages`
 
 **DEPRECATED**: This will be removed in future versions, please use [python_requirements](#python_requirements) instead.
@@ -59,38 +104,7 @@ build:
     - tensorflow==2.5.0
 ```
 
-To install Git-hosted Python packages, add `git` to the `system_packages` list, then use the `git+https://` syntax to specify the package name. For example:
-
-```yaml
-build:
-  system_packages:
-    - "git"
-  python_packages:
-    - "git+https://github.com/huggingface/transformers"
-```
-
-You can also pin Python package installations to a specific git commit:
-
-```yaml
-build:
-  system_packages:
-    - "git"
-  python_packages:
-    - "git+https://github.com/huggingface/transformers@2d1602a"
-```
-
-Note that you can use a shortened prefix of the 40-character git commit SHA, but you must use at least six characters, like `2d1602a` above.
-
-### `python_requirements`
-
-A pip requirements file specifying the Python packages to install. For example:
-
-```yaml
-build:
-  python_requirements: requirements.txt
-```
-
-Your `cog.yaml` file can set either `python_packages` or `python_requirements`, but not both. Use `python_requirements` when you need to configure options like `--extra-index-url` or `--trusted-host` to fetch Python package dependencies.
+Your `cog.yaml` file can set either `python_packages` or `python_requirements`, but not both.
 
 ### `python_version`
 
