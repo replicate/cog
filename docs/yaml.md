@@ -144,6 +144,16 @@ build:
     - "libavcodec-dev"
 ```
 
+## `concurrency`
+
+> Added in cog 0.14.0.
+
+This stanza describes the concurrency capabilities of the model. It has one option:
+
+### `max`
+
+The maximum number of concurrent predictions the model can process.  If this is set, the model must specify an [async `predict()` method](python.md#async-predictors-and-concurrency).
+
 ## `image`
 
 The name given to built Docker images. If you want to push to a registry, this should also include the registry name.
