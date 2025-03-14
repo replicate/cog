@@ -48,7 +48,7 @@ When you use `cog run` or `cog predict`, Cog will automatically pass the `--gpus
 
 ### `python_packages`
 
-** DEPRECATED **: This will be removed in future versions, please use [python_requirements](#python_requirements) instead.
+[b]DEPRECATED[/b]: This will be removed in future versions, please use [python_requirements](#python_requirements) instead.
 
 A list of Python packages to install from the PyPi package index, in the format `package==version`. For example:
 
