@@ -12,7 +12,7 @@ func GetEnvOrDefault[T any](key string, defaultVal T, conversionFunc func(string
 	val, exists := os.LookupEnv(key)
 	if exists {
 		v, err := conversionFunc(val)
-		if err != nil {
+		if err == nil {
 			return v
 		} else {
 			console.Warnf("Failed to convert env var %s to expected type. Continuing with default. Error: %v", key, err)
