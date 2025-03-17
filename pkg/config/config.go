@@ -288,8 +288,15 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 		}
 	}
 
-	if len(c.Build.PythonPackages) > 0 && c.Build.PythonRequirements != "" {
-		errs = append(errs, fmt.Errorf("Only one of python_packages or python_requirements can be set in your cog.yaml, not both"))
+	if len(c.Build.PythonPackages) > 0 {
+		console.Warn("`python_packages` in cog.yaml is deprecated and will be removed in future versions, use `python_requirements` instead.")
+		if c.Build.PythonRequirements != "" {
+			errs = append(errs, fmt.Errorf("Only one of python_packages or python_requirements can be set in your cog.yaml, not both"))
+		}
+	}
+
+	if len(c.Build.PreInstall) > 0 {
+		console.Warn("`pre_install` in cog.yaml is deprecated and will be removed in future versions.")
 	}
 
 	// Load python_requirements into memory to simplify reading it multiple times
