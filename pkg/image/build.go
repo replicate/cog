@@ -49,8 +49,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	_ = os.Remove(bundledSchemaFile)
 	_ = os.Remove(bundledSchemaPy)
 
-	err := checkCompatibleDockerIgnore(dir)
-	if err != nil {
+	if err := checkCompatibleDockerIgnore(dir); err != nil {
 		return err
 	}
 
@@ -156,8 +155,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	}
 
 	// save open_api schema file
-	err = os.WriteFile(bundledSchemaFile, schemaJSON, 0o644)
-	if err != nil {
+	if err := os.WriteFile(bundledSchemaFile, schemaJSON, 0o644); err != nil {
 		return fmt.Errorf("failed to store bundled schema file %s: %w", bundledSchemaFile, err)
 	}
 
