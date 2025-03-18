@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -429,7 +429,7 @@ func readDockerIgnore(dockerIgnorePath string) ([]string, error) {
 }
 
 func checkCompatibleDockerIgnore(dir string) error {
-	dockerIgnorePath := path.Join(dir, ".dockerignore")
+	dockerIgnorePath := filepath.Join(dir, ".dockerignore")
 	dockerIgnoreExists, err := files.Exists(dockerIgnorePath)
 	if err != nil {
 		return err
