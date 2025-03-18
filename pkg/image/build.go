@@ -1,6 +1,7 @@
 package image
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -15,12 +17,15 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
+	ignore "github.com/sabhiram/go-gitignore"
+
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/files"
 	"github.com/replicate/cog/pkg/weights"
 )
 
@@ -43,6 +48,10 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	// remove bundled schema files that may be left from previous builds
 	_ = os.Remove(bundledSchemaFile)
 	_ = os.Remove(bundledSchemaPy)
+
+	if err := checkCompatibleDockerIgnore(dir); err != nil {
+		return err
+	}
 
 	var cogBaseImageName string
 
@@ -146,8 +155,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 	}
 
 	// save open_api schema file
-	err := os.WriteFile(bundledSchemaFile, schemaJSON, 0o644)
-	if err != nil {
+	if err := os.WriteFile(bundledSchemaFile, schemaJSON, 0o644); err != nil {
 		return fmt.Errorf("failed to store bundled schema file %s: %w", bundledSchemaFile, err)
 	}
 
@@ -402,4 +410,42 @@ func restoreDockerignore() error {
 	}
 
 	return os.Rename(dockerignoreBackupPath, ".dockerignore")
+}
+
+func readDockerIgnore(dockerIgnorePath string) ([]string, error) {
+	var patterns []string
+	file, err := os.Open(dockerIgnorePath)
+	if err != nil {
+		return patterns, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		patterns = append(patterns, line)
+	}
+	return patterns, scanner.Err()
+}
+
+func checkCompatibleDockerIgnore(dir string) error {
+	dockerIgnorePath := filepath.Join(dir, ".dockerignore")
+	dockerIgnoreExists, err := files.Exists(dockerIgnorePath)
+	if err != nil {
+		return err
+	}
+	if !dockerIgnoreExists {
+		return nil
+	}
+
+	patterns, err := readDockerIgnore(dockerIgnorePath)
+	if err != nil {
+		return err
+	}
+
+	matcher := ignore.CompileIgnoreLines(patterns...)
+	if matcher.MatchesPath(".cog") {
+		return errors.New("The .cog tmp path cannot be ignored by docker in .dockerignore.")
+	}
+	return nil
 }

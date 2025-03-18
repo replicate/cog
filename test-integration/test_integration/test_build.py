@@ -452,3 +452,19 @@ def test_ffmpeg_base_image(docker_image):
     )
 
     assert build_process.returncode == 0
+
+
+def test_bad_dockerignore(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/bad-dockerignore"
+
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=project_dir,
+        capture_output=True,
+    )
+
+    assert build_process.returncode == 1
+    assert (
+        "The .cog tmp path cannot be ignored by docker in .dockerignore"
+        in build_process.stderr.decode()
+    )
