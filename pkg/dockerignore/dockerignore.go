@@ -2,7 +2,6 @@ package dockerignore
 
 import (
 	"bufio"
-	"errors"
 	"os"
 	"path/filepath"
 
@@ -42,26 +41,4 @@ func readDockerIgnore(dockerIgnorePath string) ([]string, error) {
 		patterns = append(patterns, line)
 	}
 	return patterns, scanner.Err()
-}
-
-func checkCompatibleDockerIgnore(dir string) error {
-	dockerIgnorePath := filepath.Join(dir, ".dockerignore")
-	dockerIgnoreExists, err := files.Exists(dockerIgnorePath)
-	if err != nil {
-		return err
-	}
-	if !dockerIgnoreExists {
-		return nil
-	}
-
-	patterns, err := readDockerIgnore(dockerIgnorePath)
-	if err != nil {
-		return err
-	}
-
-	matcher := ignore.CompileIgnoreLines(patterns...)
-	if matcher.MatchesPath(".cog") {
-		return errors.New("The .cog tmp path cannot be ignored by docker in .dockerignore.")
-	}
-	return nil
 }
