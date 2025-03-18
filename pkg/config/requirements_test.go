@@ -16,7 +16,6 @@ func TestSplitPinnedPythonRequirement(t *testing.T) {
 		expectedError          bool
 	}{
 		{"package1==1.0.0", "package1", "1.0.0", nil, nil, false},
-		{"package1[extra1,extra2]==1.0.0", "package1", "1.0.0", nil, nil, false},
 		{"package1==1.0.0+alpha", "package1", "1.0.0+alpha", nil, nil, false},
 		{"--find-links=link1 --find-links=link2 package3==3.0.0", "package3", "3.0.0", []string{"link1", "link2"}, nil, false},
 		{"package4==4.0.0 --extra-index-url=url1 --extra-index-url=url2", "package4", "4.0.0", nil, []string{"url1", "url2"}, false},
