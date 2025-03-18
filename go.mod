@@ -20,6 +20,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/moby/term v0.5.0
 	github.com/replicate/go v0.0.0-20250205165008-b772d7cd506b
+	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.6
 	github.com/stretchr/testify v1.10.0
