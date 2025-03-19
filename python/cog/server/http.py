@@ -486,8 +486,6 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         """
         Cancel a running prediction
         """
-        if not runner.is_busy():
-            return JSONResponse({}, status_code=404)
         try:
             runner.cancel(prediction_id)
         except UnknownPredictionError:
