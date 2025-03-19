@@ -200,7 +200,7 @@ def validate_input_type(
                     return False
                 if sys.version_info >= (3, 10):
                     return args[1] is NoneType
-                return args[1] is type(None)
+                return args[1] is None.__class__
 
             if is_optional():
                 validate_input_type(args[0], name)
