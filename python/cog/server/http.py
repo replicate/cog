@@ -469,7 +469,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         try:
             _ = response_type(**response_object)
         except ValidationError as e:
-            _log_invalid_output(e)
+            _log_invalid_output(e, mode)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
         response_object["output"] = upload_files(
@@ -520,17 +520,20 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     return app
 
 
-def _log_invalid_output(error: Any) -> None:
+def _log_invalid_output(error: Any, mode: Mode) -> None:
+    function_name = "predict()"
+    if mode == Mode.TRAIN:
+        function_name = "train()"
     log.error(
         textwrap.dedent(
             f"""\
-            The return value of predict() was not valid:
+            The return value of {function_name} was not valid:
 
             {error}
 
             Check that your predict function is in this form, where `output_type` is the same as the type you are returning (e.g. `str`):
 
-                def predict(...) -> output_type:
+                def {function_name} -> output_type:
                     ...
            """
         )
