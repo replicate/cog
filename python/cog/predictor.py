@@ -7,7 +7,9 @@ import sys
 import types
 import uuid
 from collections.abc import Iterable, Iterator
-from types import NoneType
+
+if sys.version_info >= (3, 9):
+    from types import NoneType
 from typing import (
     Any,
     Callable,
@@ -192,7 +194,15 @@ def validate_input_type(
             hasattr(types, "UnionType") and get_origin(type) is types.UnionType
         ):  # noqa: E721
             args = get_args(type)
-            if len(args) == 2 and args[1] is NoneType:
+
+            def is_optional() -> bool:
+                if len(args) != 2:
+                    return False
+                if sys.version_info >= (3, 9):
+                    return args[1] is NoneType
+                return args[1] is type(None)
+
+            if is_optional():
                 validate_input_type(args[0], name)
             else:
                 for t in get_args(type):
