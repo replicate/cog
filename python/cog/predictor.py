@@ -8,7 +8,7 @@ import types
 import uuid
 from collections.abc import Iterable, Iterator
 
-if sys.version_info > (3, 9):
+if sys.version_info >= (3, 10):
     from types import NoneType
 from typing import (
     Any,
@@ -198,7 +198,7 @@ def validate_input_type(
             def is_optional() -> bool:
                 if len(args) != 2:
                     return False
-                if sys.version_info > (3, 9):
+                if sys.version_info >= (3, 10):
                     return args[1] is NoneType
                 return args[1] is type(None)
 
