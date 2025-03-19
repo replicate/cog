@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
 # Added in Python 3.9. Can be from typing if we drop support for <3.9
-from typing_extensions import Annotated, Optional
+from typing_extensions import Annotated
 
 from .base_input import BaseInput
 from .base_predictor import BasePredictor
