@@ -7,6 +7,7 @@ import sys
 import types
 import uuid
 from collections.abc import Iterable, Iterator
+from types import NoneType
 from typing import (
     Any,
     Callable,
@@ -28,7 +29,7 @@ from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
 # Added in Python 3.9. Can be from typing if we drop support for <3.9
-from typing_extensions import Annotated
+from typing_extensions import Annotated, Optional
 
 from .base_input import BaseInput
 from .base_predictor import BasePredictor
@@ -190,8 +191,12 @@ def validate_input_type(
         elif get_origin(type) in (Union, List, list) or (
             hasattr(types, "UnionType") and get_origin(type) is types.UnionType
         ):  # noqa: E721
-            for t in get_args(type):
-                validate_input_type(t, name)
+            args = get_args(type)
+            if len(args) == 2 and args[1] is NoneType:
+                validate_input_type(args[0], name)
+            else:
+                for t in get_args(type):
+                    validate_input_type(t, name)
         else:
             if PYDANTIC_V2:
                 # Cog types are exported as `Annotated[Type, ...]`, but `type` is the inner type
