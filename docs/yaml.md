@@ -169,6 +169,13 @@ This stanza describes the concurrency capabilities of the model. It has one opti
 
 The maximum number of concurrent predictions the model can process.  If this is set, the model must specify an [async `predict()` method](python.md#async-predictors-and-concurrency).
 
+For example:
+
+```yaml
+concurrency:
+  max: 10
+```
+
 ## `image`
 
 The name given to built Docker images. If you want to push to a registry, this should also include the registry name.
