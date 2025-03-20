@@ -7,6 +7,9 @@ import sys
 import types
 import uuid
 from collections.abc import Iterable, Iterator
+
+if sys.version_info >= (3, 10):
+    from types import NoneType
 from typing import (
     Any,
     Callable,
@@ -190,8 +193,20 @@ def validate_input_type(
         elif get_origin(type) in (Union, List, list) or (
             hasattr(types, "UnionType") and get_origin(type) is types.UnionType
         ):  # noqa: E721
-            for t in get_args(type):
-                validate_input_type(t, name)
+            args = get_args(type)
+
+            def is_optional() -> bool:
+                if len(args) != 2 or get_origin(type) is not Union:
+                    return False
+                if sys.version_info >= (3, 10):
+                    return args[1] is NoneType
+                return args[1] is None.__class__
+
+            if is_optional():
+                validate_input_type(args[0], name)
+            else:
+                for t in args:
+                    validate_input_type(t, name)
         else:
             if PYDANTIC_V2:
                 # Cog types are exported as `Annotated[Type, ...]`, but `type` is the inner type
