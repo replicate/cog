@@ -59,7 +59,7 @@ func TestBaseImageConfigurationExists(t *testing.T) {
 }
 
 func TestBaseImageConfigurationExistsNoTorch(t *testing.T) {
-	exists, _, _, _ := BaseImageConfigurationExists("", "3.12", "")
+	exists, _, _, _ := BaseImageConfigurationExists("", "3.13", "")
 	require.True(t, exists)
 }
 
