@@ -203,7 +203,7 @@ Then visit [github.com/replicate/cog/actions](https://github.com/replicate/cog/a
 
 Prereleases are a useful way to give testers a way to try out new versions of Cog without affecting the documented `latest` download URL which people normally use to install Cog.
 
-To publish a prerelease version, append a [SemVer prerelease identifer](https://semver.org/#spec-item-9) like `-alpha` or `-beta` to the git tag name. Goreleaser will detect this and mark it as a prerelease in GitHub Releases.
+To publish a prerelease version, append a [SemVer prerelease identifier](https://semver.org/#spec-item-9) like `-alpha` or `-beta` to the git tag name. Goreleaser will detect this and mark it as a prerelease in GitHub Releases.
 
     git checkout some-prerelease-branch
     git fetch --all --tags
