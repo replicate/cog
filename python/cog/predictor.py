@@ -196,7 +196,7 @@ def validate_input_type(
             args = get_args(type)
 
             def is_optional() -> bool:
-                if len(args) != 2:
+                if len(args) != 2 or get_origin(type) is not Union:
                     return False
                 if sys.version_info >= (3, 10):
                     return args[1] is NoneType
