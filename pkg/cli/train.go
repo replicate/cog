@@ -63,6 +63,9 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
+		if cfg.Build.Fast {
+			buildFast = cfg.Build.Fast
+		}
 
 		if imageName, err = image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
 			return err
@@ -97,6 +100,9 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		}
 		if gpus == "" && conf.Build.GPU {
 			gpus = "all"
+		}
+		if conf.Build.Fast {
+			buildFast = conf.Build.Fast
 		}
 	}
 

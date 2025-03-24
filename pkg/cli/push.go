@@ -45,6 +45,9 @@ func push(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if cfg.Build.Fast {
+		buildFast = cfg.Build.Fast
+	}
 
 	imageName := cfg.Image
 	if len(args) > 0 {
