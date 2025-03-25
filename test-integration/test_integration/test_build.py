@@ -470,7 +470,7 @@ def test_bad_dockerignore(docker_image):
     )
 
 
-def tesy_pydantic1_none(docker_image):
+def test_pydantic1_none(docker_image):
     project_dir = Path(__file__).parent / "fixtures/pydantic1-none"
 
     build_process = subprocess.run(
