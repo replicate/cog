@@ -468,3 +468,15 @@ def test_bad_dockerignore(docker_image):
         "The .cog tmp path cannot be ignored by docker in .dockerignore"
         in build_process.stderr.decode()
     )
+
+
+def tesy_pydantic1_none(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/pydantic1-none"
+
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=project_dir,
+        capture_output=True,
+    )
+
+    assert build_process.returncode == 0
