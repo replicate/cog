@@ -97,6 +97,18 @@ type FileChallengeAnswer struct {
 	ChallengeID string `json:"challenge_id"`
 }
 
+type VersionError struct {
+	Detail  string `json:"detail"`
+	Pointer string `json:"pointer"`
+}
+
+type VersionErrors struct {
+	Detail string         `json:"detail"`
+	Errors []VersionError `json:"errors"`
+	Status int            `json:"status"`
+	Title  string         `json:"title"`
+}
+
 func NewClient(dockerCommand command.Command, client *http.Client) *Client {
 	return &Client{
 		dockerCommand: dockerCommand,
@@ -165,6 +177,15 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
+		if resp.StatusCode == http.StatusBadRequest {
+			decoder := json.NewDecoder(resp.Body)
+			var versionErrors VersionErrors
+			err = decoder.Decode(&versionErrors)
+			if err != nil {
+				return err
+			}
+			return errors.New(versionErrors.Detail)
+		}
 		return util.WrapError(ErrorBadResponseNewVersionEndpoint, strconv.Itoa(resp.StatusCode))
 	}
 
