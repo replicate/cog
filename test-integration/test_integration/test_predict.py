@@ -7,6 +7,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+import requests
 
 from .util import cog_server_http_run
 
@@ -369,3 +370,17 @@ async def test_concurrent_predictions():
             for i, task in enumerate(tasks):
                 assert task.result().status_code == 200
                 assert task.result().json()["output"] == f"wake up sleepyhead{i}"
+
+
+def test_predict_chat_message():
+    with cog_server_http_run(
+        Path(__file__).parent / "fixtures" / "chat-message-project"
+    ) as addr:
+        response = requests.post(
+            addr + "/predictions",
+            json={"input": {"messages": [{"role": "User", "content": "Hello There!"}]}},
+            timeout=3.0,
+        )
+        response.raise_for_status()
+        body = response.json()
+        assert body["output"] == "HELLO User"
