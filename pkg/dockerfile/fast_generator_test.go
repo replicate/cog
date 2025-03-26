@@ -23,7 +23,7 @@ func writeRequirements(t *testing.T, req string) string {
 func TestGenerate(t *testing.T) {
 	dir := t.TempDir()
 	build := config.Build{
-		PythonVersion:      "3.8",
+		PythonVersion:      "3.9",
 		PythonRequirements: writeRequirements(t, "torch==2.5.1"),
 	}
 	config := config.Config{
@@ -36,11 +36,11 @@ func TestGenerate(t *testing.T) {
 		Id:             1,
 		CudaVersions:   []string{"2.4"},
 		CudnnVersions:  []string{"1.0"},
-		PythonVersions: []string{"3.8"},
+		PythonVersions: []string{"3.9"},
 		TorchVersions:  []string{"2.5.1"},
 		Venvs: []MonobaseVenv{
 			{
-				Python: "3.8",
+				Python: "3.9",
 				Torch:  "2.5.1",
 				Cuda:   "2.4",
 			},
@@ -58,7 +58,7 @@ func TestGenerate(t *testing.T) {
 func TestGenerateUVCacheMount(t *testing.T) {
 	dir := t.TempDir()
 	build := config.Build{
-		PythonVersion:      "3.8",
+		PythonVersion:      "3.9",
 		PythonRequirements: writeRequirements(t, "torch==2.5.1\ncatboost==1.2.7"),
 	}
 	config := config.Config{
@@ -69,11 +69,11 @@ func TestGenerateUVCacheMount(t *testing.T) {
 		Id:             1,
 		CudaVersions:   []string{"2.4"},
 		CudnnVersions:  []string{"1.0"},
-		PythonVersions: []string{"3.8"},
+		PythonVersions: []string{"3.9"},
 		TorchVersions:  []string{"2.5.1"},
 		Venvs: []MonobaseVenv{
 			{
-				Python: "3.8",
+				Python: "3.9",
 				Torch:  "2.5.1",
 				Cuda:   "2.4",
 			},
@@ -94,7 +94,7 @@ func TestGenerateCUDA(t *testing.T) {
 	build := config.Build{
 		GPU:           true,
 		CUDA:          "12.4",
-		PythonVersion: "3.8",
+		PythonVersion: "3.9",
 	}
 	config := config.Config{
 		Build: &build,
@@ -106,11 +106,11 @@ func TestGenerateCUDA(t *testing.T) {
 		Id:             1,
 		CudaVersions:   []string{"2.4"},
 		CudnnVersions:  []string{"1"},
-		PythonVersions: []string{"3.8"},
+		PythonVersions: []string{"3.9"},
 		TorchVersions:  []string{"2.5.1"},
 		Venvs: []MonobaseVenv{
 			{
-				Python: "3.8",
+				Python: "3.9",
 				Torch:  "2.5.1",
 				Cuda:   "2.4",
 			},
@@ -128,7 +128,7 @@ func TestGenerateCUDA(t *testing.T) {
 func TestGeneratePythonPackages(t *testing.T) {
 	dir := t.TempDir()
 	build := config.Build{
-		PythonVersion:      "3.8",
+		PythonVersion:      "3.9",
 		PythonRequirements: writeRequirements(t, "catboost==1.2.7"),
 	}
 	config := config.Config{
@@ -141,11 +141,11 @@ func TestGeneratePythonPackages(t *testing.T) {
 		Id:             1,
 		CudaVersions:   []string{"2.4"},
 		CudnnVersions:  []string{"1.0"},
-		PythonVersions: []string{"3.8"},
+		PythonVersions: []string{"3.9"},
 		TorchVersions:  []string{"2.5.1"},
 		Venvs: []MonobaseVenv{
 			{
-				Python: "3.8",
+				Python: "3.9",
 				Torch:  "2.5.1",
 				Cuda:   "2.4",
 			},
@@ -163,7 +163,7 @@ func TestGeneratePythonPackages(t *testing.T) {
 func TestGenerateVerboseEnv(t *testing.T) {
 	dir := t.TempDir()
 	build := config.Build{
-		PythonVersion:      "3.8",
+		PythonVersion:      "3.9",
 		PythonRequirements: writeRequirements(t, "torch==2.5.1"),
 	}
 	config := config.Config{
@@ -176,11 +176,11 @@ func TestGenerateVerboseEnv(t *testing.T) {
 		Id:             1,
 		CudaVersions:   []string{"2.4"},
 		CudnnVersions:  []string{"1.0"},
-		PythonVersions: []string{"3.8"},
+		PythonVersions: []string{"3.9"},
 		TorchVersions:  []string{"2.5.1"},
 		Venvs: []MonobaseVenv{
 			{
-				Python: "3.8",
+				Python: "3.9",
 				Torch:  "2.5.1",
 				Cuda:   "2.4",
 			},
@@ -198,7 +198,7 @@ func TestGenerateVerboseEnv(t *testing.T) {
 func TestAptInstall(t *testing.T) {
 	dir := t.TempDir()
 	build := config.Build{
-		PythonVersion:  "3.8",
+		PythonVersion:  "3.9",
 		SystemPackages: []string{"git"},
 	}
 	config := config.Config{
@@ -211,11 +211,11 @@ func TestAptInstall(t *testing.T) {
 		Id:             1,
 		CudaVersions:   []string{"2.4"},
 		CudnnVersions:  []string{"1.0"},
-		PythonVersions: []string{"3.8"},
+		PythonVersions: []string{"3.9"},
 		TorchVersions:  []string{"2.5.1"},
 		Venvs: []MonobaseVenv{
 			{
-				Python: "3.8",
+				Python: "3.9",
 				Torch:  "2.5.1",
 				Cuda:   "2.4",
 			},
@@ -233,7 +233,7 @@ func TestAptInstall(t *testing.T) {
 func TestValidateConfigWithBuildRunItems(t *testing.T) {
 	dir := t.TempDir()
 	build := config.Build{
-		PythonVersion:  "3.8",
+		PythonVersion:  "3.9",
 		SystemPackages: []string{"git"},
 		Run: []config.RunItem{
 			{
@@ -249,11 +249,11 @@ func TestValidateConfigWithBuildRunItems(t *testing.T) {
 		Id:             1,
 		CudaVersions:   []string{"2.4"},
 		CudnnVersions:  []string{"1.0"},
-		PythonVersions: []string{"3.8"},
+		PythonVersions: []string{"3.9"},
 		TorchVersions:  []string{"2.5.1"},
 		Venvs: []MonobaseVenv{
 			{
-				Python: "3.8",
+				Python: "3.9",
 				Torch:  "2.5.1",
 				Cuda:   "2.4",
 			},
