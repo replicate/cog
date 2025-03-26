@@ -77,6 +77,8 @@ class PredictionRequest(PredictionBaseModel):
         default=WebhookEvent.default_events(),
     )
 
+    run_token: Optional[str] = None
+
     @classmethod
     def with_types(cls, input_type: Type[Any]) -> Any:
         # [compat] Input is implicitly optional -- previous versions of the
