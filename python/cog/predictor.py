@@ -230,7 +230,6 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
 
     for name, parameter in signature.parameters.items():
         InputType = parameter.annotation
-        print(f"INPUT TYPE: {InputType}")
 
         validate_input_type(InputType, name)
 
