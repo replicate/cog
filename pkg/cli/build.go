@@ -57,6 +57,9 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if cfg.Build.Fast {
+		buildFast = cfg.Build.Fast
+	}
 
 	imageName := cfg.Image
 	if buildTag != "" {
