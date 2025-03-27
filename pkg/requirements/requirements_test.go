@@ -46,7 +46,7 @@ func TestReadRequirementsLineContinuations(t *testing.T) {
 func TestReadRequirementsStripComments(t *testing.T) {
 	srcDir := t.TempDir()
 	reqFile := path.Join(srcDir, "requirements.txt")
-	err := os.WriteFile(reqFile, []byte("torch==\\\n2.5.1# Heres my comment\ntorchvision==2.5.1"), 0o644)
+	err := os.WriteFile(reqFile, []byte("torch==\\\n2.5.1# Heres my comment\ntorchvision==2.5.1\n# Heres a beginning of line comment"), 0o644)
 	require.NoError(t, err)
 
 	requirements, err := ReadRequirements(reqFile)
