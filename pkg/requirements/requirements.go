@@ -74,18 +74,24 @@ func scanLinesWithContinuations(data []byte, atEOF bool) (advance int, token []b
 			inHash = true
 		}
 		if data[advance] == '\n' {
-			if len(token) > 0 && token[len(token)-1] == '\\' {
-				if !inHash {
+			shouldAdvance := true
+			if len(token) > 0 {
+				if token[len(token)-1] == '\r' && !inHash {
 					token = token[:len(token)-1]
 				}
-			} else {
+				if token[len(token)-1] == '\\' {
+					if !inHash {
+						token = token[:len(token)-1]
+					}
+					shouldAdvance = false
+				}
+			}
+			if shouldAdvance {
 				advance++
 				break
 			}
-		} else {
-			if !inHash {
-				token = append(token, data[advance])
-			}
+		} else if !inHash {
+			token = append(token, data[advance])
 		}
 		advance++
 		if advance == len(data) {

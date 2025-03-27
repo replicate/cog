@@ -35,12 +35,12 @@ func TestReadRequirements(t *testing.T) {
 func TestReadRequirementsLineContinuations(t *testing.T) {
 	srcDir := t.TempDir()
 	reqFile := path.Join(srcDir, "requirements.txt")
-	err := os.WriteFile(reqFile, []byte("torch==\\\n2.5.1"), 0o644)
+	err := os.WriteFile(reqFile, []byte("torch==\\\n2.5.1\ntorchvision==\\\r\n2.5.1"), 0o644)
 	require.NoError(t, err)
 
 	requirements, err := ReadRequirements(reqFile)
 	require.NoError(t, err)
-	require.Equal(t, []string{"torch==2.5.1"}, requirements)
+	require.Equal(t, []string{"torch==2.5.1", "torchvision==2.5.1"}, requirements)
 }
 
 func TestReadRequirementsStripComments(t *testing.T) {
