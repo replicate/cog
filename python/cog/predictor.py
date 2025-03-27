@@ -182,6 +182,13 @@ def validate_input_type(
     type: Type[Any],  # pylint: disable=redefined-builtin
     name: str,
 ) -> None:
+    def is_union(type: Type[Any]) -> bool:
+        if get_origin(type) is Union:
+            return True
+        if hasattr(types, "UnionType") and get_origin(type) is types.UnionType:
+            return True
+        return False
+
     if type is inspect.Signature.empty:
         raise TypeError(
             f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
@@ -190,13 +197,11 @@ def validate_input_type(
         if get_origin(type) is Literal:
             for t in get_args(type):
                 validate_input_type(builtins.type(t), name)
-        elif get_origin(type) in (Union, List, list) or (
-            hasattr(types, "UnionType") and get_origin(type) is types.UnionType
-        ):  # noqa: E721
+        elif get_origin(type) in (Union, List, list) or is_union(type):  # noqa: E721
             args = get_args(type)
 
             def is_optional() -> bool:
-                if len(args) != 2 or get_origin(type) is not Union:
+                if len(args) != 2 or not is_union(type):
                     return False
                 if sys.version_info >= (3, 10):
                     return args[1] is NoneType

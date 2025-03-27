@@ -369,3 +369,18 @@ async def test_concurrent_predictions():
             for i, task in enumerate(tasks):
                 assert task.result().status_code == 200
                 assert task.result().json()["output"] == f"wake up sleepyhead{i}"
+
+
+def test_predict_new_union_project(tmpdir_factory):
+    project_dir = Path(__file__).parent / "fixtures/new-union-project"
+    result = subprocess.run(
+        ["cog", "predict", "--debug", "-i", "text=world"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    # stdout should be clean without any log messages so it can be piped to other commands
+    assert result.returncode == 0
+    assert result.stdout == "hello world\n"
