@@ -53,3 +53,22 @@ func TestReadRequirementsStripComments(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"torch==2.5.1", "torchvision==2.5.1"}, requirements)
 }
+
+func TestReadRequirementsComplex(t *testing.T) {
+	srcDir := t.TempDir()
+	reqFile := path.Join(srcDir, "requirements.txt")
+	err := os.WriteFile(reqFile, []byte(`foo==1.0.0
+# complex requirements
+fastapi>=0.6,<1
+flask>0.4
+# comments!
+# blank lines!
+
+# arguments
+-f http://example.com`), 0o644)
+	require.NoError(t, err)
+
+	requirements, err := ReadRequirements(reqFile)
+	require.NoError(t, err)
+	require.Equal(t, []string{"foo==1.0.0", "fastapi>=0.6,<1", "flask>0.4", "-f http://example.com"}, requirements)
+}
