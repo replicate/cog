@@ -294,7 +294,7 @@ func (g *FastGenerator) installPython(lines []string, tmpDir string) ([]string, 
 	}
 	// No Python requirements
 	if g.Config.Build.PythonRequirements == "" {
-		return []string{}, nil
+		return lines, nil
 	}
 
 	requirementsFile, err := requirements.GenerateRequirements(tmpDir, g.Config.Build.PythonRequirements)
