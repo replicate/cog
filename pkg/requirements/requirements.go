@@ -49,10 +49,6 @@ func ReadRequirements(path string) ([]string, error) {
 	scanner.Split(scanLinesWithContinuations)
 	requirements := []string{}
 	for scanner.Scan() {
-		requirementsText := strings.TrimSpace(scanner.Text())
-		if len(requirementsText) == 0 {
-			continue
-		}
 		requirements = append(requirements, scanner.Text())
 	}
 	return requirements, nil
@@ -97,6 +93,10 @@ func scanLinesWithContinuations(data []byte, atEOF bool) (advance int, token []b
 		if advance == len(data) {
 			break
 		}
+	}
+	strTok := strings.TrimSpace(string(token))
+	if len(strTok) == 0 {
+		return advance, nil, err
 	}
 	return advance, token, err
 }
