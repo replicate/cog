@@ -289,7 +289,15 @@ func (g *FastGenerator) installPython(lines []string, tmpDir string) ([]string, 
 	if err != nil {
 		return nil, err
 	}
-	requirementsFile, err := requirements.GenerateRequirements(tmpDir, g.Config)
+	if len(g.Config.Build.PythonPackages) > 0 {
+		return nil, fmt.Errorf("python_packages is no longer supported, use python_requirements instead")
+	}
+	// No Python requirements
+	if g.Config.Build.PythonRequirements == "" {
+		return []string{}, nil
+	}
+
+	requirementsFile, err := requirements.GenerateRequirements(tmpDir, g.Config.Build.PythonRequirements)
 	if err != nil {
 		return nil, err
 	}
