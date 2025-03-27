@@ -43,7 +43,7 @@ func TestReadRequirementsLineContinuations(t *testing.T) {
 	require.Equal(t, []string{"torch==2.5.1"}, requirements)
 }
 
-func TestReadRequirementsStripHashes(t *testing.T) {
+func TestReadRequirementsStripComments(t *testing.T) {
 	srcDir := t.TempDir()
 	reqFile := path.Join(srcDir, "requirements.txt")
 	err := os.WriteFile(reqFile, []byte("torch==\\\n2.5.1# Heres my comment\ntorchvision==2.5.1"), 0o644)
