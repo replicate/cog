@@ -1,5 +1,6 @@
 import base64
 import os
+import sys
 import threading
 import time
 
@@ -333,3 +334,14 @@ def test_input_with_unsupported_type():
     assert "TypeError: Unsupported input type input_unsupported_type" in "".join(
         app.state.setup_result.logs
     )
+
+
+@pytest.mark.skipif(sys.version_info < (3, 10), reason="Requires Python 3.10 or newer")
+@uses_predictor("input_path_or_none")
+def test_path_or_none(client, httpserver, match):
+    httpserver.expect_request("/foo.txt").respond_with_data("hello")
+    resp = client.post(
+        "/predictions",
+        json={"input": {"file": httpserver.url_for("/foo.txt")}},
+    )
+    assert resp.json() == match({"output": "hello", "status": "succeeded"})
