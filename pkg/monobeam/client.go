@@ -85,7 +85,7 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 	if resp.StatusCode == http.StatusConflict {
 		return nil
 	} else if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return errors.New("Bad response from monobeam: " + strconv.Itoa(resp.StatusCode))
+		return errors.New("Bad response from monobeam for URL " + uploadUrl.String() + ": " + strconv.Itoa(resp.StatusCode))
 	}
 
 	// Decode the JSON payload
@@ -133,7 +133,7 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 	}
 	defer beginResp.Body.Close()
 	if beginResp.StatusCode != http.StatusCreated {
-		return errors.New("Bad response from upload verification: " + strconv.Itoa(resp.StatusCode))
+		return errors.New("Bad response from upload verification for " + data.Uuid + ": " + strconv.Itoa(resp.StatusCode))
 	}
 
 	// Check verification status
@@ -143,7 +143,7 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 	}
 	for i := 0; i < 100; i++ {
 		// Clone request so we use a fresh copy every loop
-		final, err := c.checkVerificationStatus(req.Clone(ctx))
+		final, err := c.checkVerificationStatus(req.Clone(ctx), data.Uuid)
 		if final {
 			return err
 		}
@@ -153,7 +153,7 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 	return nil
 }
 
-func (c *Client) checkVerificationStatus(req *http.Request) (bool, error) {
+func (c *Client) checkVerificationStatus(req *http.Request, uuid string) (bool, error) {
 	checkResp, err := c.client.Do(req)
 	if err != nil {
 		return true, err
@@ -173,7 +173,7 @@ func (c *Client) checkVerificationStatus(req *http.Request) (bool, error) {
 		if verificationStatus.Verified && verificationStatus.Complete {
 			return true, nil
 		}
-		return true, errors.New("Object failed to verify its hash.")
+		return true, errors.New(fmt.Sprintf("Object %s failed to verify its hash.", uuid))
 	}
 
 	return false, nil
