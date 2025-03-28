@@ -121,8 +121,6 @@ lint.ignore = [
   "ANN001", # Missing type annotation for function argument
   "ANN002", # Missing type annotation for `*args`
   "ANN003", # Missing type annotation for `**kwargs`
-  "ANN101", # Missing type annotation for self in method
-  "ANN102", # Missing type annotation for cls in classmethod
   "ANN401", # Dynamically typed expressions are disallowed
 ]
 extend-exclude = [
