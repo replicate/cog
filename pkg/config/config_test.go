@@ -251,13 +251,8 @@ flask>0.4
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
 	expected := `foo==1.0.0
-# complex requirements
 fastapi>=0.6,<1
 flask>0.4
-# comments!
-# blank lines!
-
-# arguments
 -f http://example.com`
 	require.Equal(t, expected, requirements)
 
