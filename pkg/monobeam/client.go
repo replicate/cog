@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	preUploadPath = "/pre_upload"
+	preUploadPath = "/uploads/pre-upload"
 )
 
 type Client struct {
@@ -59,9 +59,12 @@ func (c *Client) PostPreUpload(ctx context.Context) error {
 	if err != nil {
 		return util.WrapError(err, "create request")
 	}
-	_, err = c.client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return util.WrapError(err, "do request")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return errors.New("Bad response from pre upload: " + strconv.Itoa(resp.StatusCode))
 	}
 	return nil
 }

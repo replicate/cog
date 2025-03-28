@@ -62,3 +62,28 @@ func TestUploadFile(t *testing.T) {
 	err = client.UploadFile(ctx, "weights", "111", weightPath, p, "weights - "+weightPath)
 	require.NoError(t, err)
 }
+
+func TestPreUpload(t *testing.T) {
+	// Setup mock http server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, r8HTTP.UserAgent(), r.Header.Get(r8HTTP.UserAgentHeader))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	url, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	t.Setenv(env.SchemeEnvVarName, url.Scheme)
+	t.Setenv(MonobeamHostEnvVarName, url.Host)
+
+	// Setup mock command
+	command := dockertest.NewMockCommand()
+
+	// Setup http client
+	httpClient, err := r8HTTP.ProvideHTTPClient(command)
+	require.NoError(t, err)
+
+	client := NewClient(httpClient)
+	ctx := context.Background()
+	err = client.PostPreUpload(ctx)
+	require.NoError(t, err)
+}
