@@ -34,21 +34,26 @@ dependencies = [
 
 dynamic = ["version"]
 
-[project.optional-dependencies]
-dev = ["build", "setuptools_scm", "tox", "tox-uv"]
+[dependency-groups]
+dev = [
+    "build>=1.2.2.post1",
+    "setuptools-scm>=8.2.0",
+    "tox>=4.25.0",
+    "tox-uv>=1.13.1",
+]
 
-tests = [
-  "httpx",
-  "hypothesis",
-  "numpy",
-  "pillow",
-  "pytest",
-  "pytest-asyncio",
-  "pytest-httpserver",
-  "pytest-timeout",
-  "pytest-xdist",
-  "pytest-cov",
-  "responses",
+test = [
+    "httpx",
+    "hypothesis",
+    "numpy",
+    "pillow",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-httpserver",
+    "pytest-timeout",
+    "pytest-xdist",
+    "pytest-cov",
+    "responses",
 ]
 
 [tool.setuptools_scm]
