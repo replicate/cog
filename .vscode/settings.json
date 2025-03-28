@@ -37,7 +37,4 @@
   ],
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
-  "ruff.lint.args": [
-    "--config=pyproject.toml"
-  ]
 }
