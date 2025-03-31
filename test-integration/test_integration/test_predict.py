@@ -395,11 +395,16 @@ def test_predict_with_fast_build_with_local_image(docker_image):
         handle.write("\0")
 
     build_process = subprocess.run(
-        ["cog", "predict", "-t", docker_image, "--x-fast", "--x-localimage"],
+        ["cog", "build", "-t", docker_image, "--x-fast", "--x-localimage"],
         cwd=project_dir,
         capture_output=True,
     )
 
+    result = subprocess.run(
+        ["cog", "predict", "-i", "s=world"],
+        cwd=project_dir,
+        capture_output=True,
+    )
     os.remove(weights_file)
-
     assert build_process.returncode == 0
+    assert result.returncode == 0
