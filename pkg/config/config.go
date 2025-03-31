@@ -1,11 +1,9 @@
 package config
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path"
 	"regexp"
 	"strconv"
@@ -13,6 +11,7 @@ import (
 
 	"gopkg.in/yaml.v2"
 
+	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/slices"
 	"github.com/replicate/cog/pkg/util/version"
@@ -302,14 +301,9 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 
 	// Load python_requirements into memory to simplify reading it multiple times
 	if c.Build.PythonRequirements != "" {
-		fh, err := os.Open(path.Join(projectDir, c.Build.PythonRequirements))
+		c.Build.pythonRequirementsContent, err = requirements.ReadRequirements(path.Join(projectDir, c.Build.PythonRequirements))
 		if err != nil {
 			errs = append(errs, fmt.Errorf("Failed to open python_requirements file: %w", err))
-		}
-		// Use scanner to handle CRLF endings
-		scanner := bufio.NewScanner(fh)
-		for scanner.Scan() {
-			c.Build.pythonRequirementsContent = append(c.Build.pythonRequirementsContent, scanner.Text())
 		}
 	}
 

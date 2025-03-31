@@ -7,21 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/replicate/cog/pkg/config"
 )
-
-func TestPythonPackages(t *testing.T) {
-	tmpDir := t.TempDir()
-	build := config.Build{
-		PythonPackages: []string{"torch==2.5.1"},
-	}
-	config := config.Config{
-		Build: &build,
-	}
-	_, err := GenerateRequirements(tmpDir, &config)
-	require.ErrorContains(t, err, "python_packages is no longer supported, use python_requirements instead")
-}
 
 func TestPythonRequirements(t *testing.T) {
 	srcDir := t.TempDir()
@@ -29,14 +15,60 @@ func TestPythonRequirements(t *testing.T) {
 	err := os.WriteFile(reqFile, []byte("torch==2.5.1"), 0o644)
 	require.NoError(t, err)
 
-	build := config.Build{
-		PythonRequirements: reqFile,
-	}
-	config := config.Config{
-		Build: &build,
-	}
 	tmpDir := t.TempDir()
-	requirementsFile, err := GenerateRequirements(tmpDir, &config)
+	requirementsFile, err := GenerateRequirements(tmpDir, reqFile)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(tmpDir, "requirements.txt"), requirementsFile)
+}
+
+func TestReadRequirements(t *testing.T) {
+	srcDir := t.TempDir()
+	reqFile := path.Join(srcDir, "requirements.txt")
+	err := os.WriteFile(reqFile, []byte("torch==2.5.1"), 0o644)
+	require.NoError(t, err)
+
+	requirements, err := ReadRequirements(reqFile)
+	require.NoError(t, err)
+	require.Equal(t, []string{"torch==2.5.1"}, requirements)
+}
+
+func TestReadRequirementsLineContinuations(t *testing.T) {
+	srcDir := t.TempDir()
+	reqFile := path.Join(srcDir, "requirements.txt")
+	err := os.WriteFile(reqFile, []byte("torch==\\\n2.5.1\ntorchvision==\\\r\n2.5.1"), 0o644)
+	require.NoError(t, err)
+
+	requirements, err := ReadRequirements(reqFile)
+	require.NoError(t, err)
+	require.Equal(t, []string{"torch==2.5.1", "torchvision==2.5.1"}, requirements)
+}
+
+func TestReadRequirementsStripComments(t *testing.T) {
+	srcDir := t.TempDir()
+	reqFile := path.Join(srcDir, "requirements.txt")
+	err := os.WriteFile(reqFile, []byte("torch==\\\n2.5.1# Heres my comment\ntorchvision==2.5.1\n# Heres a beginning of line comment"), 0o644)
+	require.NoError(t, err)
+
+	requirements, err := ReadRequirements(reqFile)
+	require.NoError(t, err)
+	require.Equal(t, []string{"torch==2.5.1", "torchvision==2.5.1"}, requirements)
+}
+
+func TestReadRequirementsComplex(t *testing.T) {
+	srcDir := t.TempDir()
+	reqFile := path.Join(srcDir, "requirements.txt")
+	err := os.WriteFile(reqFile, []byte(`foo==1.0.0
+# complex requirements
+fastapi>=0.6,<1
+flask>0.4
+# comments!
+# blank lines!
+
+# arguments
+-f http://example.com`), 0o644)
+	require.NoError(t, err)
+
+	requirements, err := ReadRequirements(reqFile)
+	require.NoError(t, err)
+	require.Equal(t, []string{"foo==1.0.0", "fastapi>=0.6,<1", "flask>0.4", "-f http://example.com"}, requirements)
 }
