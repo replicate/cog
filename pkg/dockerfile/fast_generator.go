@@ -389,12 +389,14 @@ func (g *FastGenerator) installSrc(lines []string, weights []weights.Weight) ([]
 	}
 
 	// Copy over source / without weights
-	copyCommand := "COPY --link --exclude='.cog' "
-	for _, weight := range weights {
-		copyCommand += "--exclude='" + weight.Path + "' "
+	if !g.localImage {
+		copyCommand := "COPY --link --exclude='.cog' "
+		copyCommand += ". /src"
+		lines = append(lines, copyCommand)
+	} else {
+		copyCommand := "COPY --link " + relSrcDir + "/. /src"
+		lines = append(lines, copyCommand)
 	}
-	copyCommand += relSrcDir + "/. /src"
-	lines = append(lines, copyCommand)
 
 	// Link to weights
 	// If it is a local image we do this with a runtime mount instead to make builds faster.
