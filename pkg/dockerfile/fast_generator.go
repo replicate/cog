@@ -382,15 +382,6 @@ func (g *FastGenerator) installSrc(lines []string, weights []weights.Weight) ([]
 		}
 	}
 
-	buildDir, err := g.BuildDir()
-	if err != nil {
-		return nil, err
-	}
-	relSrcDir, err := filepath.Rel(buildDir, srcDir)
-	if err != nil {
-		return nil, err
-	}
-
 	// Copy over source / without weights
 	if !g.localImage {
 		copyCommand := "COPY --link --exclude='.cog' "
@@ -400,6 +391,14 @@ func (g *FastGenerator) installSrc(lines []string, weights []weights.Weight) ([]
 		copyCommand += ". /src"
 		lines = append(lines, copyCommand)
 	} else {
+		buildDir, err := g.BuildDir()
+		if err != nil {
+			return nil, err
+		}
+		relSrcDir, err := filepath.Rel(buildDir, srcDir)
+		if err != nil {
+			return nil, err
+		}
 		copyCommand := "COPY --link " + relSrcDir + "/. /src"
 		lines = append(lines, copyCommand)
 	}
