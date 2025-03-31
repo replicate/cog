@@ -2,14 +2,14 @@ module github.com/replicate/cog
 
 go 1.23.0
 
-toolchain go1.23.2
+toolchain go1.24.1
 
 require (
 	github.com/anaskhan96/soup v1.2.5
 	github.com/aws/aws-sdk-go-v2 v1.34.0
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.55
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.74.1
-	github.com/docker/cli v27.2.1+incompatible
+	github.com/docker/cli v28.0.4+incompatible
 	github.com/docker/docker v27.1.1+incompatible
 	github.com/getkin/kin-openapi v0.128.0
 	github.com/golangci/golangci-lint v1.64.2
