@@ -544,7 +544,7 @@ func ensureFSObjectExists(destination string, src string) error {
 	if !exists {
 		switch {
 		case mode.IsDir():
-			err := os.Mkdir(destination, 0777)
+			err := os.Mkdir(destination, 0o777)
 			if err != nil {
 				return err
 			}
@@ -554,18 +554,16 @@ func ensureFSObjectExists(destination string, src string) error {
 				return err
 			}
 		}
-	} else {
-		if mode.IsRegular() {
-			destInfo, err := os.Stat(destination)
+	} else if mode.IsRegular() {
+		destInfo, err := os.Stat(destination)
+		if err != nil {
+			return err
+		}
+
+		if destInfo.ModTime() != info.ModTime() {
+			err := copyFileWithTimes(destination, src)
 			if err != nil {
 				return err
-			}
-
-			if destInfo.ModTime() != info.ModTime() {
-				err := copyFileWithTimes(destination, src)
-				if err != nil {
-					return err
-				}
 			}
 		}
 	}
