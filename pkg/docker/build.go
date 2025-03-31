@@ -13,7 +13,7 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-func Build(dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string, epoch int64) error {
+func Build(dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string, epoch int64, contextDir string, buildContexts map[string]string) error {
 	var args []string
 
 	args = append(args, "buildx", "build")
@@ -52,11 +52,15 @@ func Build(dir, dockerfileContents, imageName string, secrets []string, noCache 
 		args = append(args, "--cache-to", "type=inline")
 	}
 
+	for name, dir := range buildContexts {
+		args = append(args, "--build-context", name+"="+dir)
+	}
+
 	args = append(args,
 		"--file", "-",
 		"--tag", imageName,
 		"--progress", progressOutput,
-		".",
+		contextDir,
 	)
 
 	cmd := exec.Command("docker", args...)

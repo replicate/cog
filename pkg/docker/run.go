@@ -3,6 +3,7 @@ package docker
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/mattn/go-isatty"
 
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -206,4 +208,28 @@ func GetPort(containerID string, containerPort int) (int, error) {
 
 	return 0, fmt.Errorf("did not find port bound to 0.0.0.0 in `docker port` output")
 
+}
+
+func FillInWeightsManifestVolumes(dockerCommand command.Command, runOptions RunOptions) (RunOptions, error) {
+	// Check if the image has a weights manifest
+	manifest, err := dockerCommand.Inspect(runOptions.Image)
+	if err != nil {
+		return runOptions, err
+	}
+	weightsManifest, ok := manifest.Config.Labels[command.CogWeightsManifestLabelKey]
+	if ok {
+		var weightsPaths []string
+		err = json.Unmarshal([]byte(weightsManifest), &weightsPaths)
+		if err != nil {
+			return runOptions, err
+		}
+		for _, weightPath := range weightsPaths {
+			runOptions.Volumes = append(runOptions.Volumes, Volume{
+				Source:      weightPath,
+				Destination: "/src/" + weightPath,
+			})
+		}
+	}
+
+	return runOptions, nil
 }

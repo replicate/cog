@@ -37,6 +37,7 @@ func newRunCommand() *cobra.Command {
 	addUseCogBaseImageFlag(cmd)
 	addGpusFlag(cmd)
 	addFastFlag(cmd)
+	addLocalImage(cmd)
 
 	flags := cmd.Flags()
 	// Flags after first argument are considered args and passed to command
@@ -67,6 +68,8 @@ func run(cmd *cobra.Command, args []string) error {
 		gpus = "all"
 	}
 
+	dockerCommand := docker.NewDockerCommand()
+
 	runOptions := docker.RunOptions{
 		Args:    args,
 		Env:     envFlags,
@@ -74,6 +77,10 @@ func run(cmd *cobra.Command, args []string) error {
 		Image:   imageName,
 		Volumes: []docker.Volume{{Source: projectDir, Destination: "/src"}},
 		Workdir: "/src",
+	}
+	runOptions, err = docker.FillInWeightsManifestVolumes(dockerCommand, runOptions)
+	if err != nil {
+		return err
 	}
 
 	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {

@@ -17,4 +17,6 @@ type Generator interface {
 	GenerateDockerfileWithoutSeparateWeights() (string, error)
 	GenerateModelBase() (string, error)
 	Name() string
+	BuildDir() (string, error)
+	BuildContexts() (map[string]string, error)
 }

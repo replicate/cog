@@ -12,6 +12,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -50,7 +51,7 @@ type Predictor struct {
 	port        int
 }
 
-func NewPredictor(runOptions docker.RunOptions, isTrain bool, fastFlag bool) Predictor {
+func NewPredictor(runOptions docker.RunOptions, isTrain bool, fastFlag bool, dockerCommand command.Command) (*Predictor, error) {
 	if fastFlag {
 		console.Info("Fast predictor enabled.")
 	}
@@ -60,7 +61,13 @@ func NewPredictor(runOptions docker.RunOptions, isTrain bool, fastFlag bool) Pre
 	} else {
 		runOptions.Env = append(runOptions.Env, "COG_LOG_LEVEL=warning")
 	}
-	return Predictor{runOptions: runOptions, isTrain: isTrain}
+
+	runOptions, err := docker.FillInWeightsManifestVolumes(dockerCommand, runOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Predictor{runOptions: runOptions, isTrain: isTrain}, nil
 }
 
 func (p *Predictor) Start(logsWriter io.Writer, timeout time.Duration) error {

@@ -56,6 +56,7 @@ the prediction on that.`,
 	addGpusFlag(cmd)
 	addSetupTimeoutFlag(cmd)
 	addFastFlag(cmd)
+	addLocalImage(cmd)
 
 	cmd.Flags().StringArrayVarP(&inputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
@@ -127,13 +128,17 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 	console.Info("")
 	console.Infof("Starting Docker image %s and running setup()...", imageName)
+	dockerCommand := docker.NewDockerCommand()
 
-	predictor := predict.NewPredictor(docker.RunOptions{
+	predictor, err := predict.NewPredictor(docker.RunOptions{
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: volumes,
 		Env:     envFlags,
-	}, false, buildFast)
+	}, false, buildFast, dockerCommand)
+	if err != nil {
+		return err
+	}
 
 	go func() {
 		captureSignal := make(chan os.Signal, 1)
@@ -155,11 +160,14 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			console.Info("Missing device driver, re-trying without GPU")
 
 			_ = predictor.Stop()
-			predictor = predict.NewPredictor(docker.RunOptions{
+			predictor, err = predict.NewPredictor(docker.RunOptions{
 				Image:   imageName,
 				Volumes: volumes,
 				Env:     envFlags,
-			}, false, buildFast)
+			}, false, buildFast, dockerCommand)
+			if err != nil {
+				return err
+			}
 
 			if err := predictor.Start(os.Stderr, timeout); err != nil {
 				return err
@@ -177,7 +185,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	return predictIndividualInputs(predictor, inputFlags, outPath, false)
+	return predictIndividualInputs(*predictor, inputFlags, outPath, false)
 }
 
 func isURI(ref *openapi3.Schema) bool {

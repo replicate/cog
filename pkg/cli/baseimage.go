@@ -122,7 +122,7 @@ func newBaseImageBuildCommand() *cobra.Command {
 			}
 			baseImageName := dockerfile.BaseImageName(baseImageCUDAVersion, baseImagePythonVersion, baseImageTorchVersion)
 
-			err = docker.Build(cwd, dockerfileContents, baseImageName, []string{}, buildNoCache, buildProgressOutput, config.BuildSourceEpochTimestamp)
+			err = docker.Build(cwd, dockerfileContents, baseImageName, []string{}, buildNoCache, buildProgressOutput, config.BuildSourceEpochTimestamp, dockerfile.StandardBuildDirectory, nil)
 			if err != nil {
 				return err
 			}

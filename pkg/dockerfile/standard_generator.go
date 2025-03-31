@@ -43,6 +43,7 @@ const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -nam
 const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
+const StandardBuildDirectory = "."
 
 type StandardGenerator struct {
 	Config *config.Config
@@ -312,6 +313,14 @@ func (g *StandardGenerator) BaseImage() (string, error) {
 
 func (g *StandardGenerator) Name() string {
 	return STANDARD_GENERATOR_NAME
+}
+
+func (g *StandardGenerator) BuildDir() (string, error) {
+	return StandardBuildDirectory, nil
+}
+
+func (g *StandardGenerator) BuildContexts() (map[string]string, error) {
+	return map[string]string{}, nil
 }
 
 func (g *StandardGenerator) preamble() string {

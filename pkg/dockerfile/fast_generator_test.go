@@ -47,7 +47,7 @@ func TestGenerate(t *testing.T) {
 		},
 	}
 
-	generator, err := NewFastGenerator(&config, dir, command, &matrix)
+	generator, err := NewFastGenerator(&config, dir, command, &matrix, true)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
@@ -81,12 +81,12 @@ func TestGenerateUVCacheMount(t *testing.T) {
 	}
 
 	command := dockertest.NewMockCommand()
-	generator, err := NewFastGenerator(&config, dir, command, &matrix)
+	generator, err := NewFastGenerator(&config, dir, command, &matrix, true)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
 	dockerfileLines := strings.Split(dockerfile, "\n")
-	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp/monobase\",target=\"/buildtmp\" --mount=type=cache,target=/var/cache/monobase,id=monobase-cache --mount=type=cache,target=/srv/r8/monobase/uv/cache,id=uv-cache UV_CACHE_DIR=\"/srv/r8/monobase/uv/cache\" UV_LINK_MODE=copy /opt/r8/monobase/run.sh monobase.build --mini --cache=/var/cache/monobase", dockerfileLines[4])
+	require.Equal(t, "RUN --mount=from=monobase,target=/buildtmp --mount=type=cache,target=/var/cache/monobase,id=monobase-cache --mount=type=cache,target=/srv/r8/monobase/uv/cache,id=uv-cache UV_CACHE_DIR=\"/srv/r8/monobase/uv/cache\" UV_LINK_MODE=copy /opt/r8/monobase/run.sh monobase.build --mini --cache=/var/cache/monobase", dockerfileLines[4])
 }
 
 func TestGenerateCUDA(t *testing.T) {
@@ -117,7 +117,7 @@ func TestGenerateCUDA(t *testing.T) {
 		},
 	}
 
-	generator, err := NewFastGenerator(&config, dir, command, &matrix)
+	generator, err := NewFastGenerator(&config, dir, command, &matrix, true)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
@@ -152,12 +152,12 @@ func TestGeneratePythonPackages(t *testing.T) {
 		},
 	}
 
-	generator, err := NewFastGenerator(&config, dir, command, &matrix)
+	generator, err := NewFastGenerator(&config, dir, command, &matrix, true)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
 	dockerfileLines := strings.Split(dockerfile, "\n")
-	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp/requirements\",target=\"/buildtmp\" --mount=type=cache,target=/srv/r8/monobase/uv/cache,id=uv-cache --mount=type=bind,ro,source=.,target=/src cd /src && UV_CACHE_DIR=\"/srv/r8/monobase/uv/cache\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt", dockerfileLines[5])
+	require.Equal(t, "RUN --mount=from=requirements,target=/buildtmp --mount=from=src,target=/src --mount=type=cache,target=/srv/r8/monobase/uv/cache,id=uv-cache cd /src && UV_CACHE_DIR=\"/srv/r8/monobase/uv/cache\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt", dockerfileLines[5])
 }
 
 func TestGenerateVerboseEnv(t *testing.T) {
@@ -187,7 +187,7 @@ func TestGenerateVerboseEnv(t *testing.T) {
 		},
 	}
 
-	generator, err := NewFastGenerator(&config, dir, command, &matrix)
+	generator, err := NewFastGenerator(&config, dir, command, &matrix, true)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
@@ -222,12 +222,12 @@ func TestAptInstall(t *testing.T) {
 		},
 	}
 
-	generator, err := NewFastGenerator(&config, dir, command, &matrix)
+	generator, err := NewFastGenerator(&config, dir, command, &matrix, true)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
 	dockerfileLines := strings.Split(dockerfile, "\n")
-	require.Equal(t, "RUN --mount=type=bind,ro,source=\".cog/tmp/apt\",target=\"/buildtmp\" tar -xf \"/buildtmp/apt.9a881b9b9f23849475296a8cd768ea1965bc3152df7118e60c145975af6aa58a.tar.zst\" -C /", dockerfileLines[5])
+	require.Equal(t, "RUN --mount=from=apt,target=/buildtmp tar -xf \"/buildtmp/apt.9a881b9b9f23849475296a8cd768ea1965bc3152df7118e60c145975af6aa58a.tar.zst\" -C /", dockerfileLines[5])
 }
 
 func TestValidateConfigWithBuildRunItems(t *testing.T) {
@@ -259,7 +259,7 @@ func TestValidateConfigWithBuildRunItems(t *testing.T) {
 			},
 		},
 	}
-	generator, err := NewFastGenerator(&config, dir, command, &matrix)
+	generator, err := NewFastGenerator(&config, dir, command, &matrix, true)
 	require.NoError(t, err)
 
 	err = generator.validateConfig()

@@ -480,3 +480,21 @@ def test_pydantic1_none(docker_image):
     )
 
     assert build_process.returncode == 0
+
+
+def test_fast_build_with_local_image(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/fast-build"
+    weights_file = os.path.join(project_dir, "weights.h5")
+    with open(weights_file, "w", encoding="utf8") as handle:
+        handle.seek(256 * 1024 * 1024)
+        handle.write("\0")
+
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image, "--x-fast", "--x-localimage"],
+        cwd=project_dir,
+        capture_output=True,
+    )
+
+    os.remove(weights_file)
+
+    assert build_process.returncode == 0
