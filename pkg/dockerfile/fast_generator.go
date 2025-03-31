@@ -391,6 +391,9 @@ func (g *FastGenerator) installSrc(lines []string, weights []weights.Weight) ([]
 	// Copy over source / without weights
 	if !g.localImage {
 		copyCommand := "COPY --link --exclude='.cog' "
+		for _, weight := range weights {
+			copyCommand += "--exclude='" + weight.Path + "' "
+		}
 		copyCommand += ". /src"
 		lines = append(lines, copyCommand)
 	} else {
