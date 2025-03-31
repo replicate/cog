@@ -13,7 +13,7 @@ try:
 except ImportError:
     np = None
 
-from .types import PYDANTIC_V2, Path
+from .types import PYDANTIC_V2
 
 
 def make_encodeable(obj: Any) -> Any:  # pylint: disable=too-many-return-statements
