@@ -340,7 +340,19 @@ func (g *FastGenerator) installApt(lines []string, aptTarFile string) ([]string,
 
 func (g *FastGenerator) installPython(lines []string, tmpDir string) ([]string, error) {
 	// Install python packages
-	requirementsFile, err := requirements.GenerateRequirements(tmpDir, g.Config)
+	tmpMount, err := g.buildTmpMount(tmpDir)
+	if err != nil {
+		return nil, err
+	}
+	if len(g.Config.Build.PythonPackages) > 0 {
+		return nil, fmt.Errorf("python_packages is no longer supported, use python_requirements instead")
+	}
+	// No Python requirements
+	if g.Config.Build.PythonRequirements == "" {
+		return lines, nil
+	}
+
+	requirementsFile, err := requirements.GenerateRequirements(tmpDir, g.Config.Build.PythonRequirements)
 	if err != nil {
 		return nil, err
 	}

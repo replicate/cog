@@ -104,7 +104,7 @@ func TestGenerateCUDA(t *testing.T) {
 	// Create matrix
 	matrix := MonobaseMatrix{
 		Id:             1,
-		CudaVersions:   []string{"2.4"},
+		CudaVersions:   []string{"12.4"},
 		CudnnVersions:  []string{"1"},
 		PythonVersions: []string{"3.9"},
 		TorchVersions:  []string{"2.5.1"},
@@ -112,7 +112,7 @@ func TestGenerateCUDA(t *testing.T) {
 			{
 				Python: "3.9",
 				Torch:  "2.5.1",
-				Cuda:   "2.4",
+				Cuda:   "12.4",
 			},
 		},
 	}
