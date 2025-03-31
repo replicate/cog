@@ -116,6 +116,9 @@ func (g *FastGenerator) Name() string {
 }
 
 func (g *FastGenerator) BuildDir() (string, error) {
+	if !g.localImage {
+		return StandardBuildDirectory, nil
+	}
 	contextDir, err := BuildCogTempDir(g.Dir, contextBuildDir)
 	if err != nil {
 		return "", err
