@@ -319,7 +319,8 @@ func (g *FastGenerator) copyWeights(lines []string, weights []weights.Weight) ([
 		if err != nil {
 			return lines, err
 		}
-		lines = append(lines, "LABEL "+command.CogWeightsManifestLabelKey+"=\""+string(jsonBytes)+"\"")
+		escapedJSON := strings.ReplaceAll(string(jsonBytes), `"`, `\"`)
+		lines = append(lines, "LABEL "+command.CogWeightsManifestLabelKey+"=\""+escapedJSON+"\"")
 	} else {
 		for _, weight := range weights {
 			lines = append(lines, "COPY --link \""+weight.Path+"\" \""+filepath.Join(FUSE_RPC_WEIGHTS_PATH, weight.Digest)+"\"")
