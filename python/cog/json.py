@@ -61,9 +61,9 @@ def upload_files(obj: Any, upload_file: Callable[[io.IOBase], str]) -> Any:
         return {key: upload_files(value, upload_file) for key, value in obj.items()}
     if isinstance(obj, list):
         return [upload_files(value, upload_file) for value in obj]
-    if isinstance(obj, Path):
-        with obj.open("rb") as f:
-            return upload_file(f)
     if isinstance(obj, io.IOBase):
         return upload_file(obj)
+    if callable(getattr(obj, "open", None)):
+        with obj.open("rb") as f:
+            return upload_file(f)
     return obj
