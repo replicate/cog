@@ -93,11 +93,14 @@ Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the fu
 
 ## Development environment
 
-You'll need to [install Go 1.21](https://golang.org/doc/install). If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
+You'll need the following dependencies installed to build Cog locally:
+- [Go](https://golang.org/doc/install): We're targeting 1.23, but you can install the latest version since Go is backwards compatible. If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
+- [uv](https://docs.astral.sh/uv/): Python versions and dependencies are managed by uv.
+- [Docker](https://docs.docker.com/desktop) or [OrbStack](https://orbstack.dev)
 
 Install the Python dependencies:
 
-    python -m pip install '.[dev]'
+    script/setup
 
 Once you have Go installed, run:
 
@@ -144,25 +147,39 @@ There are a few concepts used throughout Cog that might be helpful to understand
 
 ## Running tests
 
-To run the entire test suite:
+**To run the entire test suite:**
 
 ```sh
 make test
 ```
 
-To run just the Golang tests:
+**To run just the Golang tests:**
 
 ```sh
 make test-go
 ```
 
-To run just the Python tests:
+**To run just the Python tests:**
 
 ```sh
 make test-python
 ```
 
-To stand up a server for one of the integration tests:
+**To run just the integration tests:**
+
+```sh
+make test-integration
+```
+
+**To run a specific Python test:**
+
+```sh
+uv run tox -e py312-pydantic2-tests -- python/tests/server/test_http.py::test_openapi_specification_with_yield
+```
+
+_You can see all the available test environments under `env_list` in the tox.ini file_
+
+**To stand up a server for one of the integration tests:**
 
 ```sh
 make install
