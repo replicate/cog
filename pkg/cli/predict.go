@@ -81,18 +81,22 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			buildFast = cfg.Build.Fast
 		}
 
-		if imageName, err = image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
-			return err
-		}
+		if buildFast {
+			imageName = config.DockerImageName(projectDir)
+		} else {
+			if imageName, err = image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
+				return err
+			}
 
-		// Base image doesn't have /src in it, so mount as volume
-		volumes = append(volumes, docker.Volume{
-			Source:      projectDir,
-			Destination: "/src",
-		})
+			// Base image doesn't have /src in it, so mount as volume
+			volumes = append(volumes, docker.Volume{
+				Source:      projectDir,
+				Destination: "/src",
+			})
 
-		if gpus == "" && cfg.Build.GPU {
-			gpus = "all"
+			if gpus == "" && cfg.Build.GPU {
+				gpus = "all"
+			}
 		}
 
 	} else {
