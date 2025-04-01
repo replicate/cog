@@ -404,7 +404,6 @@ def test_predict_with_fast_build_with_local_image(docker_image):
         [
             "cog",
             "predict",
-            "-t",
             docker_image,
             "--x-fast",
             "--x-localimage",
