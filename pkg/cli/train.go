@@ -56,13 +56,14 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	volumes := []docker.Volume{}
 	gpus := gpusFlag
 
+	cfg, projectDir, err := config.GetConfig(projectDirFlag)
+	if err != nil {
+		return err
+	}
+
 	if len(args) == 0 {
 		// Build image
 
-		cfg, projectDir, err := config.GetConfig(projectDirFlag)
-		if err != nil {
-			return err
-		}
 		if cfg.Build.Fast {
 			buildFast = cfg.Build.Fast
 		}
@@ -116,7 +117,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		Volumes: volumes,
 		Env:     trainEnvFlags,
 		Args:    []string{"python", "-m", "cog.server.http", "--x-mode", "train"},
-	}, true, buildFast, dockerCommand)
+	}, true, buildFast, dockerCommand, projectDir)
 	if err != nil {
 		return err
 	}

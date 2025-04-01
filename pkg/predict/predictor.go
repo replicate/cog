@@ -51,7 +51,7 @@ type Predictor struct {
 	port        int
 }
 
-func NewPredictor(runOptions docker.RunOptions, isTrain bool, fastFlag bool, dockerCommand command.Command) (*Predictor, error) {
+func NewPredictor(runOptions docker.RunOptions, isTrain bool, fastFlag bool, dockerCommand command.Command, projectDir string) (*Predictor, error) {
 	if fastFlag {
 		console.Info("Fast predictor enabled.")
 	}
@@ -62,7 +62,7 @@ func NewPredictor(runOptions docker.RunOptions, isTrain bool, fastFlag bool, doc
 		runOptions.Env = append(runOptions.Env, "COG_LOG_LEVEL=warning")
 	}
 
-	runOptions, err := docker.FillInWeightsManifestVolumes(dockerCommand, runOptions)
+	runOptions, err := docker.FillInWeightsManifestVolumes(dockerCommand, runOptions, projectDir)
 	if err != nil {
 		return nil, err
 	}

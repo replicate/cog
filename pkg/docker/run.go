@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -210,7 +211,7 @@ func GetPort(containerID string, containerPort int) (int, error) {
 
 }
 
-func FillInWeightsManifestVolumes(dockerCommand command.Command, runOptions RunOptions) (RunOptions, error) {
+func FillInWeightsManifestVolumes(dockerCommand command.Command, runOptions RunOptions, projectDir string) (RunOptions, error) {
 	// Check if the image has a weights manifest
 	manifest, err := dockerCommand.Inspect(runOptions.Image)
 	if err != nil {
@@ -225,7 +226,7 @@ func FillInWeightsManifestVolumes(dockerCommand command.Command, runOptions RunO
 		}
 		for _, weightPath := range weightsPaths {
 			runOptions.Volumes = append(runOptions.Volumes, Volume{
-				Source:      weightPath,
+				Source:      filepath.Join(projectDir, weightPath),
 				Destination: "/src/" + weightPath,
 			})
 		}

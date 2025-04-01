@@ -78,7 +78,7 @@ func run(cmd *cobra.Command, args []string) error {
 		Volumes: []docker.Volume{{Source: projectDir, Destination: "/src"}},
 		Workdir: "/src",
 	}
-	runOptions, err = docker.FillInWeightsManifestVolumes(dockerCommand, runOptions)
+	runOptions, err = docker.FillInWeightsManifestVolumes(dockerCommand, runOptions, projectDir)
 	if err != nil {
 		return err
 	}
