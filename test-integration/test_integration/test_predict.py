@@ -401,7 +401,7 @@ def test_predict_with_fast_build_with_local_image(docker_image):
     )
 
     result = subprocess.run(
-        ["cog", "predict", "-i", "s=world"],
+        ["cog", "predict", "--x-fast", "--x-localimage", "-i", "s=world"],
         cwd=project_dir,
         capture_output=True,
     )
