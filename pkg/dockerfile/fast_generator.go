@@ -528,7 +528,20 @@ func (g *FastGenerator) rsyncSrc(srcDir string, weights []weights.Weight) error 
 
 func linkFile(destination string, src string) error {
 	console.Debug("Linking " + destination + " to " + src)
-	err := os.Link(src, destination)
+
+	fileInfo, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+	// If we are a symlink, link to the original target
+	if fileInfo.Mode()&os.ModeSymlink == os.ModeSymlink {
+		destination, err = os.Readlink(src)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = os.Link(src, destination)
 	if err != nil {
 		return err
 	}
