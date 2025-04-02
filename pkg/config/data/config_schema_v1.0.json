@@ -145,6 +145,11 @@
               }
             ]
           }
+        },
+        "fast": {
+          "$id": "#/properties/build/properties/fast",
+          "type": "boolean",
+          "description": "A flag to enable the experimental fast-push feature from a config level."
         }
       },
       "additionalProperties": false
