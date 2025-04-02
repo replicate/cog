@@ -70,13 +70,13 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	volumes := []docker.Volume{}
 	gpus := gpusFlag
 
-	cfg, projectDir, err := config.GetConfig(projectDirFlag)
-	if err != nil {
-		return err
-	}
-
 	if len(args) == 0 {
 		// Build image
+
+		cfg, projectDir, err := config.GetConfig(projectDirFlag)
+		if err != nil {
+			return err
+		}
 
 		if cfg.Build.Fast {
 			buildFast = cfg.Build.Fast
@@ -140,7 +140,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		Image:   imageName,
 		Volumes: volumes,
 		Env:     envFlags,
-	}, false, buildFast, dockerCommand, projectDir)
+	}, false, buildFast, dockerCommand)
 	if err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 				Image:   imageName,
 				Volumes: volumes,
 				Env:     envFlags,
-			}, false, buildFast, dockerCommand, projectDir)
+			}, false, buildFast, dockerCommand)
 			if err != nil {
 				return err
 			}

@@ -308,15 +308,22 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 	return lines, nil
 }
 
-func (g *FastGenerator) copyWeights(lines []string, weights []weights.Weight) ([]string, error) {
-	if len(weights) == 0 {
+func (g *FastGenerator) copyWeights(lines []string, weightsInfo []weights.Weight) ([]string, error) {
+	if len(weightsInfo) == 0 {
 		return lines, nil
 	}
 
 	if g.localImage {
-		weightPaths := []string{}
-		for _, weight := range weights {
-			weightPaths = append(weightPaths, weight.Path)
+		weightPaths := []weights.WeightManifest{}
+		for _, weight := range weightsInfo {
+			weightPathAbs, err := filepath.Abs(weight.Path)
+			if err != nil {
+				return lines, err
+			}
+			weightPaths = append(weightPaths, weights.WeightManifest{
+				Source:      weightPathAbs,
+				Destination: weight.Path,
+			})
 		}
 		jsonBytes, err := json.Marshal(weightPaths)
 		if err != nil {
@@ -325,7 +332,7 @@ func (g *FastGenerator) copyWeights(lines []string, weights []weights.Weight) ([
 		escapedJSON := strings.ReplaceAll(string(jsonBytes), `"`, `\"`)
 		lines = append(lines, "LABEL "+command.CogWeightsManifestLabelKey+"=\""+escapedJSON+"\"")
 	} else {
-		for _, weight := range weights {
+		for _, weight := range weightsInfo {
 			lines = append(lines, "COPY --link \""+weight.Path+"\" \""+filepath.Join(FUSE_RPC_WEIGHTS_PATH, weight.Digest)+"\"")
 		}
 	}

@@ -10,7 +10,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -20,6 +19,7 @@ import (
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 type Port struct {
@@ -211,7 +211,7 @@ func GetPort(containerID string, containerPort int) (int, error) {
 
 }
 
-func FillInWeightsManifestVolumes(dockerCommand command.Command, runOptions RunOptions, projectDir string) (RunOptions, error) {
+func FillInWeightsManifestVolumes(dockerCommand command.Command, runOptions RunOptions) (RunOptions, error) {
 	// Check if the image has a weights manifest
 	manifest, err := dockerCommand.Inspect(runOptions.Image)
 	if err != nil {
@@ -219,15 +219,15 @@ func FillInWeightsManifestVolumes(dockerCommand command.Command, runOptions RunO
 	}
 	weightsManifest, ok := manifest.Config.Labels[command.CogWeightsManifestLabelKey]
 	if ok {
-		var weightsPaths []string
+		var weightsPaths []weights.WeightManifest
 		err = json.Unmarshal([]byte(weightsManifest), &weightsPaths)
 		if err != nil {
 			return runOptions, err
 		}
 		for _, weightPath := range weightsPaths {
 			runOptions.Volumes = append(runOptions.Volumes, Volume{
-				Source:      filepath.Join(projectDir, weightPath),
-				Destination: "/src/" + weightPath,
+				Source:      weightPath.Source,
+				Destination: "/src/" + weightPath.Destination,
 			})
 		}
 	}
