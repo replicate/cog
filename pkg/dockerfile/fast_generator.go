@@ -526,17 +526,9 @@ func (g *FastGenerator) rsyncSrc(srcDir string, weights []weights.Weight) error 
 	return nil
 }
 
-func copyFileWithTimes(destination string, src string) error {
-	console.Debug("Copying " + destination + " to " + src)
-	info, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	err = files.CopyFile(src, destination)
-	if err != nil {
-		return err
-	}
-	err = os.Chtimes(destination, info.ModTime(), info.ModTime())
+func linkFile(destination string, src string) error {
+	console.Debug("Linking " + destination + " to " + src)
+	err := os.Link(src, destination)
 	if err != nil {
 		return err
 	}
@@ -563,19 +555,7 @@ func ensureFSObjectExists(destination string, src string) error {
 				return err
 			}
 		case mode.IsRegular():
-			err := copyFileWithTimes(destination, src)
-			if err != nil {
-				return err
-			}
-		}
-	} else if mode.IsRegular() {
-		destInfo, err := os.Stat(destination)
-		if err != nil {
-			return err
-		}
-
-		if destInfo.ModTime() != info.ModTime() {
-			err := copyFileWithTimes(destination, src)
+			err := linkFile(destination, src)
 			if err != nil {
 				return err
 			}
