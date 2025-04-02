@@ -573,6 +573,18 @@ func ensureFSObjectExists(destination string, src string) error {
 				return err
 			}
 		}
+	} else if mode.IsDir() {
+		destinationInfo, err := os.Stat(destination)
+		if err != nil {
+			return err
+		}
+		destinationMode := destinationInfo.Mode()
+		if destinationMode.Perm() != mode.Perm() {
+			err = os.Chmod(destination, mode.Perm())
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
