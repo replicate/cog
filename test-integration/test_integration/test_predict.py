@@ -170,11 +170,11 @@ def test_predict_runs_an_existing_image(docker_image, tmpdir_factory):
     result = subprocess.run(
         ["cog", "predict", "--debug", docker_image, "-i", "s=world"],
         cwd=another_directory,
-        check=True,
         capture_output=True,
         text=True,
         timeout=DEFAULT_TIMEOUT,
     )
+    assert result.returncode == 0
     assert result.stdout == "hello world\n"
     assert "cannot use fast loader as current Python <3.9" in result.stderr
     assert "falling back to slow loader" in result.stderr
