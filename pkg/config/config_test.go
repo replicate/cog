@@ -698,3 +698,13 @@ build:
 	_, err := FromYAML([]byte(yamlString))
 	require.NoError(t, err)
 }
+
+func TestFastPushConfig(t *testing.T) {
+	yamlString := `
+build:
+  python_version: "3.12"
+  fast: true
+`
+	_, err := FromYAML([]byte(yamlString))
+	require.NoError(t, err)
+}
