@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/dockerignore"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
@@ -27,18 +28,7 @@ const MONOBASE_CACHE_MOUNT = "--mount=type=cache,target=" + MONOBASE_CACHE_DIR +
 const UV_CACHE_DIR = "/srv/r8/monobase/uv/cache"
 const UV_CACHE_MOUNT = "--mount=type=cache,target=" + UV_CACHE_DIR + ",id=uv-cache"
 const FAST_GENERATOR_NAME = "FAST_GENERATOR"
-
-const contextBuildDir = "context"
-const aptBuildContextName = "apt"
-const monobaseBuildContextName = "monobase"
-const requirementsBuildContextName = "requirements"
-const srcBuildContextName = "src"
 const buildTmpDir = "/buildtmp"
-
-var srcBuildDir = filepath.Join(contextBuildDir, "src")
-var aptBuildDir = filepath.Join(contextBuildDir, "apt")
-var monobaseBuildDir = filepath.Join(contextBuildDir, "monobase")
-var requirementsBuildDir = filepath.Join(contextBuildDir, "requirements")
 
 type FastGenerator struct {
 	Config        *config.Config
@@ -117,9 +107,9 @@ func (g *FastGenerator) Name() string {
 
 func (g *FastGenerator) BuildDir() (string, error) {
 	if !g.localImage {
-		return StandardBuildDirectory, nil
+		return dockercontext.StandardBuildDirectory, nil
 	}
-	contextDir, err := BuildCogTempDir(g.Dir, contextBuildDir)
+	contextDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.ContextBuildDir)
 	if err != nil {
 		return "", err
 	}
@@ -127,27 +117,27 @@ func (g *FastGenerator) BuildDir() (string, error) {
 }
 
 func (g *FastGenerator) BuildContexts() (map[string]string, error) {
-	aptDir, err := BuildCogTempDir(g.Dir, aptBuildDir)
+	aptDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.AptBuildDir)
 	if err != nil {
 		return nil, err
 	}
-	monobaseDir, err := BuildCogTempDir(g.Dir, monobaseBuildDir)
+	monobaseDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.MonobaseBuildDir)
 	if err != nil {
 		return nil, err
 	}
-	requirementsDir, err := BuildCogTempDir(g.Dir, requirementsBuildDir)
+	requirementsDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.RequirementsBuildDir)
 	if err != nil {
 		return nil, err
 	}
-	srcDir, err := BuildCogTempDir(g.Dir, srcBuildDir)
+	srcDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.SrcBuildDir)
 	if err != nil {
 		return nil, err
 	}
 	return map[string]string{
-		aptBuildContextName:          aptDir,
-		monobaseBuildContextName:     monobaseDir,
-		requirementsBuildContextName: requirementsDir,
-		srcBuildContextName:          srcDir,
+		dockercontext.AptBuildContextName:          aptDir,
+		dockercontext.MonobaseBuildContextName:     monobaseDir,
+		dockercontext.RequirementsBuildContextName: requirementsDir,
+		dockercontext.SrcBuildContextName:          srcDir,
 	}, nil
 }
 
@@ -167,7 +157,7 @@ func (g *FastGenerator) generate() (string, error) {
 
 	// Weights layer
 	// Includes file metadata, triggered by weights file changes
-	tmpWeightsDir, err := BuildCogTempDir(g.Dir, "weights")
+	tmpWeightsDir, err := dockercontext.BuildCogTempDir(g.Dir, "weights")
 	if err != nil {
 		return "", err
 	}
@@ -178,7 +168,7 @@ func (g *FastGenerator) generate() (string, error) {
 
 	// APT layer
 	// Includes a tarball extracted from APT packages, triggered by system_packages changes
-	tmpAptDir, err := BuildCogTempDir(g.Dir, aptBuildDir)
+	tmpAptDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.AptBuildDir)
 	if err != nil {
 		return "", err
 	}
@@ -189,7 +179,7 @@ func (g *FastGenerator) generate() (string, error) {
 
 	// Monobase layer
 	// Includes an ENV file, triggered by Python, Torch, or CUDA version changes
-	tmpMonobaseDir, err := BuildCogTempDir(g.Dir, monobaseBuildDir)
+	tmpMonobaseDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.MonobaseBuildDir)
 	if err != nil {
 		return "", err
 	}
@@ -201,7 +191,7 @@ func (g *FastGenerator) generate() (string, error) {
 
 	// User layer
 	// Includes requirements.txt, triggered by python_requirements changes
-	tmpRequirementsDir, err := BuildCogTempDir(g.Dir, requirementsBuildDir)
+	tmpRequirementsDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.RequirementsBuildDir)
 	if err != nil {
 		return "", err
 	}
@@ -300,7 +290,7 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 	lines = append(lines, envs...)
 	lines = append(lines, []string{
 		"RUN " + strings.Join([]string{
-			"--mount=from=" + monobaseBuildContextName + ",target=" + buildTmpDir,
+			"--mount=from=" + dockercontext.MonobaseBuildContextName + ",target=" + buildTmpDir,
 			MONOBASE_CACHE_MOUNT,
 			UV_CACHE_MOUNT,
 		}, " ") + " UV_CACHE_DIR=\"" + UV_CACHE_DIR + "\" UV_LINK_MODE=copy /opt/r8/monobase/run.sh monobase.build --mini --cache=" + MONOBASE_CACHE_DIR,
@@ -344,7 +334,7 @@ func (g *FastGenerator) installApt(lines []string, aptTarFile string) ([]string,
 	// Install apt packages
 
 	if aptTarFile != "" {
-		lines = append(lines, "RUN --mount=from="+aptBuildContextName+",target="+buildTmpDir+" tar -xf \""+filepath.Join(buildTmpDir, aptTarFile)+"\" -C /")
+		lines = append(lines, "RUN --mount=from="+dockercontext.AptBuildContextName+",target="+buildTmpDir+" tar -xf \""+filepath.Join(buildTmpDir, aptTarFile)+"\" -C /")
 	}
 	return lines, nil
 }
@@ -365,8 +355,8 @@ func (g *FastGenerator) installPython(lines []string, tmpDir string) ([]string, 
 	}
 	if requirementsFile != "" {
 		lines = append(lines, "RUN "+strings.Join([]string{
-			"--mount=from=" + requirementsBuildContextName + ",target=/buildtmp",
-			"--mount=from=" + srcBuildContextName + ",target=/src",
+			"--mount=from=" + dockercontext.RequirementsBuildContextName + ",target=/buildtmp",
+			"--mount=from=" + dockercontext.SrcBuildContextName + ",target=/src",
 			UV_CACHE_MOUNT,
 		}, " ")+" cd /src && UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt")
 	}
@@ -376,7 +366,7 @@ func (g *FastGenerator) installPython(lines []string, tmpDir string) ([]string, 
 func (g *FastGenerator) installSrc(lines []string, weights []weights.Weight) ([]string, error) {
 	// Install /src
 
-	srcDir, err := BuildCogTempDir(g.Dir, srcBuildDir)
+	srcDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.SrcBuildDir)
 	if err != nil {
 		return nil, err
 	}
@@ -469,7 +459,7 @@ func (g *FastGenerator) rsyncSrc(srcDir string, weights []weights.Weight) error 
 			return nil
 		}
 
-		if info.IsDir() && info.Name() == CogBuildArtifactsFolder {
+		if info.IsDir() && info.Name() == dockercontext.CogBuildArtifactsFolder {
 			return filepath.SkipDir
 		}
 

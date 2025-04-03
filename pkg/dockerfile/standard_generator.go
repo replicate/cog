@@ -10,6 +10,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
+	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/slices"
 	"github.com/replicate/cog/pkg/util/version"
@@ -43,7 +44,6 @@ const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -nam
 const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
-const StandardBuildDirectory = "."
 
 type StandardGenerator struct {
 	Config *config.Config
@@ -73,7 +73,7 @@ type StandardGenerator struct {
 }
 
 func NewStandardGenerator(config *config.Config, dir string, command command.Command) (*StandardGenerator, error) {
-	tmpDir, err := BuildTempDir(dir)
+	tmpDir, err := dockercontext.BuildTempDir(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +316,7 @@ func (g *StandardGenerator) Name() string {
 }
 
 func (g *StandardGenerator) BuildDir() (string, error) {
-	return StandardBuildDirectory, nil
+	return dockercontext.StandardBuildDirectory, nil
 }
 
 func (g *StandardGenerator) BuildContexts() (map[string]string, error) {

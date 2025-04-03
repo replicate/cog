@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/docker/dockertest"
+	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/env"
 	"github.com/replicate/cog/pkg/monobeam"
 	"github.com/replicate/cog/pkg/web"
@@ -48,10 +49,12 @@ func TestPush(t *testing.T) {
 
 	// Create directories
 	dir := t.TempDir()
-	cogDir := filepath.Join(dir, ".cog")
+	cogDir := filepath.Join(dir, dockercontext.CogBuildArtifactsFolder)
 	err = os.Mkdir(cogDir, 0o755)
 	require.NoError(t, err)
-	for _, d := range []string{"apt", "tarballs", "weights"} {
+	err = os.Mkdir(filepath.Join(dir, TarballsDir), 0o755)
+	require.NoError(t, err)
+	for _, d := range []string{dockercontext.AptBuildDir} {
 		tmpDir := filepath.Join(cogDir, "tmp", d)
 		err = os.MkdirAll(tmpDir, 0o755)
 		require.NoError(t, err)
@@ -102,10 +105,12 @@ func TestPushWithWeight(t *testing.T) {
 
 	// Create directories
 	dir := t.TempDir()
-	cogDir := filepath.Join(dir, ".cog")
+	cogDir := filepath.Join(dir, dockercontext.CogBuildArtifactsFolder)
 	err = os.Mkdir(cogDir, 0o755)
 	require.NoError(t, err)
-	for _, d := range []string{"apt", "tarballs", "weights"} {
+	err = os.Mkdir(filepath.Join(dir, TarballsDir), 0o755)
+	require.NoError(t, err)
+	for _, d := range []string{dockercontext.AptBuildDir} {
 		tmpDir := filepath.Join(cogDir, "tmp", d)
 		err = os.MkdirAll(tmpDir, 0o755)
 		require.NoError(t, err)

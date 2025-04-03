@@ -1,4 +1,4 @@
-package dockerfile
+package dockercontext
 
 import (
 	"path/filepath"
