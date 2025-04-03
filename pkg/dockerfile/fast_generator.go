@@ -553,7 +553,7 @@ func ensureFSObjectExists(destination string, src string) error {
 	if !exists {
 		switch {
 		case mode.IsDir():
-			err := os.Mkdir(destination, mode.Perm())
+			err := os.MkdirAll(destination, mode.Perm())
 			if err != nil {
 				return err
 			}
