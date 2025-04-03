@@ -1,4 +1,4 @@
-package dockerfile
+package dockercontext
 
 import (
 	"os"
@@ -6,9 +6,15 @@ import (
 	"time"
 )
 
+const CogBuildArtifactsFolder = ".cog"
+
+func CogTempDir(dir string, contextDir string) string {
+	return path.Join(dir, CogBuildArtifactsFolder, "tmp", contextDir)
+}
+
 func BuildCogTempDir(dir string, subDir string) (string, error) {
-	rootTmp := path.Join(dir, ".cog", "tmp", subDir)
-	if err := os.MkdirAll(rootTmp, 0o755); err != nil {
+	rootTmp := CogTempDir(dir, subDir)
+	if err := os.MkdirAll(rootTmp, 0o777); err != nil {
 		return "", err
 	}
 	return rootTmp, nil

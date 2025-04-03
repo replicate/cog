@@ -56,13 +56,14 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	volumes := []docker.Volume{}
 	gpus := gpusFlag
 
+	cfg, projectDir, err := config.GetConfig(projectDirFlag)
+	if err != nil {
+		return err
+	}
+
 	if len(args) == 0 {
 		// Build image
 
-		cfg, projectDir, err := config.GetConfig(projectDirFlag)
-		if err != nil {
-			return err
-		}
 		if cfg.Build.Fast {
 			buildFast = cfg.Build.Fast
 		}
@@ -108,14 +109,18 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 
 	console.Info("")
 	console.Infof("Starting Docker image %s...", imageName)
+	dockerCommand := docker.NewDockerCommand()
 
-	predictor := predict.NewPredictor(docker.RunOptions{
+	predictor, err := predict.NewPredictor(docker.RunOptions{
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: volumes,
 		Env:     trainEnvFlags,
 		Args:    []string{"python", "-m", "cog.server.http", "--x-mode", "train"},
-	}, true, buildFast)
+	}, true, buildFast, dockerCommand)
+	if err != nil {
+		return err
+	}
 
 	go func() {
 		captureSignal := make(chan os.Signal, 1)
@@ -141,5 +146,5 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	return predictIndividualInputs(predictor, trainInputFlags, trainOutPath, true)
+	return predictIndividualInputs(*predictor, trainInputFlags, trainOutPath, true)
 }

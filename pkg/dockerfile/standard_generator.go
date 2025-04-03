@@ -10,6 +10,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
+	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/slices"
 	"github.com/replicate/cog/pkg/util/version"
@@ -72,7 +73,7 @@ type StandardGenerator struct {
 }
 
 func NewStandardGenerator(config *config.Config, dir string, command command.Command) (*StandardGenerator, error) {
-	tmpDir, err := BuildTempDir(dir)
+	tmpDir, err := dockercontext.BuildTempDir(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -312,6 +313,14 @@ func (g *StandardGenerator) BaseImage() (string, error) {
 
 func (g *StandardGenerator) Name() string {
 	return STANDARD_GENERATOR_NAME
+}
+
+func (g *StandardGenerator) BuildDir() (string, error) {
+	return dockercontext.StandardBuildDirectory, nil
+}
+
+func (g *StandardGenerator) BuildContexts() (map[string]string, error) {
+	return map[string]string{}, nil
 }
 
 func (g *StandardGenerator) preamble() string {

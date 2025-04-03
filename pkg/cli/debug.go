@@ -27,6 +27,8 @@ func newDebugCommand() *cobra.Command {
 	addDockerfileFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
 	addBuildTimestampFlag(cmd)
+	addFastFlag(cmd)
+	addLocalImage(cmd)
 	cmd.Flags().StringVarP(&imageName, "image-name", "", "", "The image name to use for the generated Dockerfile")
 
 	return cmd
@@ -39,7 +41,7 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 	}
 
 	command := docker.NewDockerCommand()
-	generator, err := dockerfile.NewGenerator(cfg, projectDir, false, command)
+	generator, err := dockerfile.NewGenerator(cfg, projectDir, buildFast, command, buildLocalImage)
 	if err != nil {
 		return fmt.Errorf("Error creating Dockerfile generator: %w", err)
 	}

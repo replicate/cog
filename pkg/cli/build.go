@@ -25,6 +25,7 @@ var buildUseCogBaseImage bool
 var buildStrip bool
 var buildPrecompile bool
 var buildFast bool
+var buildLocalImage bool
 
 const useCogBaseImageFlagKey = "use-cog-base-image"
 
@@ -48,6 +49,7 @@ func newBuildCommand() *cobra.Command {
 	addStripFlag(cmd)
 	addPrecompileFlag(cmd)
 	addFastFlag(cmd)
+	addLocalImage(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
 }
@@ -74,7 +76,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, nil); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, nil, buildLocalImage); err != nil {
 		return err
 	}
 
@@ -145,6 +147,12 @@ func addFastFlag(cmd *cobra.Command) {
 	const fastFlag = "x-fast"
 	cmd.Flags().BoolVar(&buildFast, fastFlag, false, "Whether to use the experimental fast features")
 	_ = cmd.Flags().MarkHidden(fastFlag)
+}
+
+func addLocalImage(cmd *cobra.Command) {
+	const localImage = "x-localimage"
+	cmd.Flags().BoolVar(&buildLocalImage, localImage, false, "Whether to use the experimental local image features")
+	_ = cmd.Flags().MarkHidden(localImage)
 }
 
 func checkMutuallyExclusiveFlags(cmd *cobra.Command, args []string) error {

@@ -1,4 +1,5 @@
 import asyncio
+import os
 import pathlib
 import shutil
 import subprocess
@@ -169,11 +170,11 @@ def test_predict_runs_an_existing_image(docker_image, tmpdir_factory):
     result = subprocess.run(
         ["cog", "predict", "--debug", docker_image, "-i", "s=world"],
         cwd=another_directory,
-        check=True,
         capture_output=True,
         text=True,
         timeout=DEFAULT_TIMEOUT,
     )
+    assert result.returncode == 0
     assert result.stdout == "hello world\n"
     assert "cannot use fast loader as current Python <3.9" in result.stderr
     assert "falling back to slow loader" in result.stderr
@@ -384,3 +385,35 @@ def test_predict_new_union_project(tmpdir_factory):
     # stdout should be clean without any log messages so it can be piped to other commands
     assert result.returncode == 0
     assert result.stdout == "hello world\n"
+
+
+def test_predict_with_fast_build_with_local_image(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/fast-build"
+    weights_file = os.path.join(project_dir, "weights.h5")
+    with open(weights_file, "w", encoding="utf8") as handle:
+        handle.seek(256 * 1024 * 1024)
+        handle.write("\0")
+
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image, "--x-fast", "--x-localimage"],
+        cwd=project_dir,
+        capture_output=True,
+    )
+
+    result = subprocess.run(
+        [
+            "cog",
+            "predict",
+            docker_image,
+            "--x-fast",
+            "--x-localimage",
+            "--debug",
+            "-i",
+            "s=world",
+        ],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    os.remove(weights_file)
+    assert build_process.returncode == 0
+    assert result.returncode == 0

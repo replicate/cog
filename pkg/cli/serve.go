@@ -69,6 +69,7 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		"--await-explicit-shutdown", "true",
 	}
 
+	dockerCommand := docker.NewDockerCommand()
 	runOptions := docker.RunOptions{
 		Args:    args,
 		Env:     envFlags,
@@ -76,6 +77,10 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		Image:   imageName,
 		Volumes: []docker.Volume{{Source: projectDir, Destination: "/src"}},
 		Workdir: "/src",
+	}
+	runOptions, err = docker.FillInWeightsManifestVolumes(dockerCommand, runOptions)
+	if err != nil {
+		return err
 	}
 
 	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {

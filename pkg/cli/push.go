@@ -36,6 +36,7 @@ func newPushCommand() *cobra.Command {
 	addStripFlag(cmd)
 	addPrecompileFlag(cmd)
 	addFastFlag(cmd)
+	addLocalImage(cmd)
 
 	return cmd
 }
@@ -63,6 +64,10 @@ func push(cmd *cobra.Command, args []string) error {
 		if err := docker.ManifestInspect(imageName); err != nil && strings.Contains(err.Error(), `"code":"NAME_UNKNOWN"`) {
 			return fmt.Errorf("Unable to find Replicate existing model for %s. Go to replicate.com and create a new model before pushing.", imageName)
 		}
+	} else {
+		if buildLocalImage {
+			return fmt.Errorf("Unable to push a local image model to a non replicate host, please disable the local image flag before pushing to this host.")
+		}
 	}
 
 	annotations := map[string]string{}
@@ -76,7 +81,7 @@ func push(cmd *cobra.Command, args []string) error {
 
 	startBuildTime := time.Now()
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, annotations); err != nil {
+	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, annotations, buildLocalImage); err != nil {
 		return err
 	}
 

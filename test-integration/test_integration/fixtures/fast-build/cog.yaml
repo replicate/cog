@@ -4,4 +4,3 @@ build:
   system_packages:
     - "git"
 predict: "predict.py:Predictor"
-image: "r8.im/<R8_USERNAME>/test"

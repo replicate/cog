@@ -1,12 +1,17 @@
 package dockerfile
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
 
+	"github.com/replicate/cog/pkg/dockercontext"
+	"github.com/replicate/cog/pkg/dockerignore"
+	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
 
 	"github.com/replicate/cog/pkg/config"
@@ -23,12 +28,14 @@ const MONOBASE_CACHE_MOUNT = "--mount=type=cache,target=" + MONOBASE_CACHE_DIR +
 const UV_CACHE_DIR = "/srv/r8/monobase/uv/cache"
 const UV_CACHE_MOUNT = "--mount=type=cache,target=" + UV_CACHE_DIR + ",id=uv-cache"
 const FAST_GENERATOR_NAME = "FAST_GENERATOR"
+const buildTmpDir = "/buildtmp"
 
 type FastGenerator struct {
 	Config        *config.Config
 	Dir           string
 	dockerCommand command.Command
 	matrix        MonobaseMatrix
+	localImage    bool
 }
 
 type MonobaseVenv struct {
@@ -37,12 +44,13 @@ type MonobaseVenv struct {
 	Cuda   string `json:"cuda"`
 }
 
-func NewFastGenerator(config *config.Config, dir string, dockerCommand command.Command, matrix *MonobaseMatrix) (*FastGenerator, error) {
+func NewFastGenerator(config *config.Config, dir string, dockerCommand command.Command, matrix *MonobaseMatrix, localImage bool) (*FastGenerator, error) {
 	return &FastGenerator{
 		Config:        config,
 		Dir:           dir,
 		dockerCommand: dockerCommand,
 		matrix:        *matrix,
+		localImage:    localImage,
 	}, nil
 }
 
@@ -97,6 +105,42 @@ func (g *FastGenerator) Name() string {
 	return FAST_GENERATOR_NAME
 }
 
+func (g *FastGenerator) BuildDir() (string, error) {
+	if !g.localImage {
+		return dockercontext.StandardBuildDirectory, nil
+	}
+	contextDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.ContextBuildDir)
+	if err != nil {
+		return "", err
+	}
+	return contextDir, nil
+}
+
+func (g *FastGenerator) BuildContexts() (map[string]string, error) {
+	aptDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.AptBuildDir)
+	if err != nil {
+		return nil, err
+	}
+	monobaseDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.MonobaseBuildDir)
+	if err != nil {
+		return nil, err
+	}
+	requirementsDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.RequirementsBuildDir)
+	if err != nil {
+		return nil, err
+	}
+	srcDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.SrcBuildDir)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{
+		dockercontext.AptBuildContextName:          aptDir,
+		dockercontext.MonobaseBuildContextName:     monobaseDir,
+		dockercontext.RequirementsBuildContextName: requirementsDir,
+		dockercontext.SrcBuildContextName:          srcDir,
+	}, nil
+}
+
 func (g *FastGenerator) generate() (string, error) {
 	err := g.validateConfig()
 	if err != nil {
@@ -113,7 +157,7 @@ func (g *FastGenerator) generate() (string, error) {
 
 	// Weights layer
 	// Includes file metadata, triggered by weights file changes
-	tmpWeightsDir, err := BuildCogTempDir(g.Dir, "weights")
+	tmpWeightsDir, err := dockercontext.BuildCogTempDir(g.Dir, "weights")
 	if err != nil {
 		return "", err
 	}
@@ -124,7 +168,7 @@ func (g *FastGenerator) generate() (string, error) {
 
 	// APT layer
 	// Includes a tarball extracted from APT packages, triggered by system_packages changes
-	tmpAptDir, err := BuildCogTempDir(g.Dir, "apt")
+	tmpAptDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.AptBuildDir)
 	if err != nil {
 		return "", err
 	}
@@ -135,7 +179,7 @@ func (g *FastGenerator) generate() (string, error) {
 
 	// Monobase layer
 	// Includes an ENV file, triggered by Python, Torch, or CUDA version changes
-	tmpMonobaseDir, err := BuildCogTempDir(g.Dir, "monobase")
+	tmpMonobaseDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.MonobaseBuildDir)
 	if err != nil {
 		return "", err
 	}
@@ -147,7 +191,7 @@ func (g *FastGenerator) generate() (string, error) {
 
 	// User layer
 	// Includes requirements.txt, triggered by python_requirements changes
-	tmpRequirementsDir, err := BuildCogTempDir(g.Dir, "requirements")
+	tmpRequirementsDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.RequirementsBuildDir)
 	if err != nil {
 		return "", err
 	}
@@ -157,7 +201,7 @@ func (g *FastGenerator) generate() (string, error) {
 		return "", err
 	}
 
-	lines, err = g.installApt(lines, tmpAptDir, aptTarFile)
+	lines, err = g.installApt(lines, aptTarFile)
 	if err != nil {
 		return "", err
 	}
@@ -239,11 +283,6 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 		return nil, err
 	}
 
-	tmpMount, err := g.buildTmpMount(tmpDir)
-	if err != nil {
-		return nil, err
-	}
-
 	lines = append(lines, []string{
 		"# syntax=docker/dockerfile:1-labs",
 		"FROM " + MONOBASE_IMAGE,
@@ -251,7 +290,7 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 	lines = append(lines, envs...)
 	lines = append(lines, []string{
 		"RUN " + strings.Join([]string{
-			tmpMount,
+			"--mount=from=" + dockercontext.MonobaseBuildContextName + ",target=" + buildTmpDir,
 			MONOBASE_CACHE_MOUNT,
 			UV_CACHE_MOUNT,
 		}, " ") + " UV_CACHE_DIR=\"" + UV_CACHE_DIR + "\" UV_LINK_MODE=copy /opt/r8/monobase/run.sh monobase.build --mini --cache=" + MONOBASE_CACHE_DIR,
@@ -259,36 +298,49 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 	return lines, nil
 }
 
-func (g *FastGenerator) copyWeights(lines []string, weights []weights.Weight) ([]string, error) {
-	if len(weights) == 0 {
+func (g *FastGenerator) copyWeights(lines []string, weightsInfo []weights.Weight) ([]string, error) {
+	if len(weightsInfo) == 0 {
 		return lines, nil
 	}
 
-	for _, weight := range weights {
-		lines = append(lines, "COPY --link \""+weight.Path+"\" \""+filepath.Join(FUSE_RPC_WEIGHTS_PATH, weight.Digest)+"\"")
+	if g.localImage {
+		weightPaths := []weights.WeightManifest{}
+		for _, weight := range weightsInfo {
+			weightPathAbs, err := filepath.Abs(weight.Path)
+			if err != nil {
+				return lines, err
+			}
+			weightPaths = append(weightPaths, weights.WeightManifest{
+				Source:      weightPathAbs,
+				Destination: weight.Path,
+			})
+		}
+		jsonBytes, err := json.Marshal(weightPaths)
+		if err != nil {
+			return lines, err
+		}
+		escapedJSON := strings.ReplaceAll(string(jsonBytes), `"`, `\"`)
+		lines = append(lines, "LABEL "+command.CogWeightsManifestLabelKey+"=\""+escapedJSON+"\"")
+	} else {
+		for _, weight := range weightsInfo {
+			lines = append(lines, "COPY --link \""+weight.Path+"\" \""+filepath.Join(FUSE_RPC_WEIGHTS_PATH, weight.Digest)+"\"")
+		}
 	}
 
 	return lines, nil
 }
 
-func (g *FastGenerator) installApt(lines []string, tmpDir string, aptTarFile string) ([]string, error) {
+func (g *FastGenerator) installApt(lines []string, aptTarFile string) ([]string, error) {
 	// Install apt packages
-	tmpMount, err := g.buildTmpMount(tmpDir)
-	if err != nil {
-		return nil, err
-	}
+
 	if aptTarFile != "" {
-		lines = append(lines, "RUN "+tmpMount+" tar -xf \""+filepath.Join("/buildtmp", aptTarFile)+"\" -C /")
+		lines = append(lines, "RUN --mount=from="+dockercontext.AptBuildContextName+",target="+buildTmpDir+" tar -xf \""+filepath.Join(buildTmpDir, aptTarFile)+"\" -C /")
 	}
 	return lines, nil
 }
 
 func (g *FastGenerator) installPython(lines []string, tmpDir string) ([]string, error) {
 	// Install python packages
-	tmpMount, err := g.buildTmpMount(tmpDir)
-	if err != nil {
-		return nil, err
-	}
 	if len(g.Config.Build.PythonPackages) > 0 {
 		return nil, fmt.Errorf("python_packages is no longer supported, use python_requirements instead")
 	}
@@ -302,11 +354,10 @@ func (g *FastGenerator) installPython(lines []string, tmpDir string) ([]string, 
 		return nil, err
 	}
 	if requirementsFile != "" {
-		srcMount := "--mount=type=bind,ro,source=.,target=/src"
 		lines = append(lines, "RUN "+strings.Join([]string{
-			tmpMount,
+			"--mount=from=" + dockercontext.RequirementsBuildContextName + ",target=/buildtmp",
+			"--mount=from=" + dockercontext.SrcBuildContextName + ",target=/src",
 			UV_CACHE_MOUNT,
-			srcMount,
 		}, " ")+" cd /src && UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt")
 	}
 	return lines, nil
@@ -315,16 +366,43 @@ func (g *FastGenerator) installPython(lines []string, tmpDir string) ([]string, 
 func (g *FastGenerator) installSrc(lines []string, weights []weights.Weight) ([]string, error) {
 	// Install /src
 
-	// Copy over source / without weights
-	copyCommand := "COPY --link --exclude='.cog' "
-	for _, weight := range weights {
-		copyCommand += "--exclude='" + weight.Path + "' "
+	srcDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.SrcBuildDir)
+	if err != nil {
+		return nil, err
 	}
-	copyCommand += ". /src"
-	lines = append(lines, copyCommand)
+
+	// Rsync local src with our srcdir
+	if g.localImage {
+		err := g.rsyncSrc(srcDir, weights)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Copy over source / without weights
+	if !g.localImage {
+		copyCommand := "COPY --link --exclude='.cog' "
+		for _, weight := range weights {
+			copyCommand += "--exclude='" + weight.Path + "' "
+		}
+		copyCommand += ". /src"
+		lines = append(lines, copyCommand)
+	} else {
+		buildDir, err := g.BuildDir()
+		if err != nil {
+			return nil, err
+		}
+		relSrcDir, err := filepath.Rel(buildDir, srcDir)
+		if err != nil {
+			return nil, err
+		}
+		copyCommand := "COPY --link " + relSrcDir + "/. /src"
+		lines = append(lines, copyCommand)
+	}
 
 	// Link to weights
-	if len(weights) > 0 {
+	// If it is a local image we do this with a runtime mount instead to make builds faster.
+	if len(weights) > 0 && !g.localImage {
 		linkCommands := []string{}
 		for _, weight := range weights {
 			linkCommands = append(linkCommands, "ln -s \""+filepath.Join(FUSE_RPC_WEIGHTS_PATH, weight.Digest)+"\" \"/src/"+weight.Path+"\"")
@@ -344,14 +422,6 @@ func (g *FastGenerator) entrypoint(lines []string) ([]string, error) {
 	}...), nil
 }
 
-func (g *FastGenerator) buildTmpMount(tmpDir string) (string, error) {
-	relativeTmpDir, err := filepath.Rel(g.Dir, tmpDir)
-	if err != nil {
-		return "", err
-	}
-	return "--mount=type=bind,ro,source=\"" + relativeTmpDir + "\",target=\"/buildtmp\"", nil
-}
-
 func (g *FastGenerator) generateAptTarball(tmpDir string) (string, error) {
 	return docker.CreateAptTarball(tmpDir, g.dockerCommand, g.Config.Build.SystemPackages...)
 }
@@ -360,5 +430,157 @@ func (g *FastGenerator) validateConfig() error {
 	if len(g.Config.Build.Run) > 0 {
 		return errors.New("cog builds with --x-fast do not support build run commands.")
 	}
+	return nil
+}
+
+func (g *FastGenerator) rsyncSrc(srcDir string, weights []weights.Weight) error {
+	matcher, err := dockerignore.CreateMatcher(g.Dir)
+	if err != nil {
+		return err
+	}
+
+	relPath, err := filepath.Rel(g.Dir, srcDir)
+	if err != nil {
+		return err
+	}
+
+	// Build weights path set
+	weightPaths := map[string]bool{}
+	for _, weight := range weights {
+		weightPaths[weight.Path] = true
+	}
+
+	// Find files we haven't copied over yet.
+	usedFiles := make(map[string]bool)
+	usedFiles[relPath] = true
+	err = filepath.Walk(g.Dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if matcher != nil && matcher.MatchesPath(path) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if info.IsDir() && info.Name() == dockercontext.CogBuildArtifactsFolder {
+			return filepath.SkipDir
+		}
+
+		relPath, err := filepath.Rel(g.Dir, path)
+		if err != nil {
+			return err
+		}
+
+		// Skip weights, we handle them separately
+		_, ok := weightPaths[relPath]
+		if ok {
+			return nil
+		}
+
+		copyPath := filepath.Join(srcDir, relPath)
+		err = ensureFSObjectExists(copyPath, path)
+		if err != nil {
+			return err
+		}
+		usedFiles[relPath] = true
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Remove files that we no longer need in our tmp dir.
+	err = filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return err
+		}
+
+		_, ok := usedFiles[relPath]
+		if !ok {
+			console.Debug("Deleting " + relPath)
+			err = os.RemoveAll(path)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func linkFile(destination string, src string) error {
+	console.Debug("Linking " + destination + " to " + src)
+
+	fileInfo, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+	// If we are a symlink, link to the original target
+	if fileInfo.Mode()&os.ModeSymlink == os.ModeSymlink {
+		destination, err = os.Readlink(src)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = os.Link(src, destination)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureFSObjectExists(destination string, src string) error {
+	exists, err := files.Exists(destination)
+	if err != nil {
+		return err
+	}
+
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	mode := info.Mode()
+
+	if !exists {
+		switch {
+		case mode.IsDir():
+			err := os.MkdirAll(destination, mode.Perm())
+			if err != nil {
+				return err
+			}
+		case mode.IsRegular():
+			err := linkFile(destination, src)
+			if err != nil {
+				return err
+			}
+		}
+	} else if mode.IsDir() {
+		destinationInfo, err := os.Stat(destination)
+		if err != nil {
+			return err
+		}
+		destinationMode := destinationInfo.Mode()
+		if destinationMode.Perm() != mode.Perm() {
+			err = os.Chmod(destination, mode.Perm())
+			if err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
