@@ -151,9 +151,9 @@ jobs:
       - test-go
       - test-python
       - test-integration
-    if: startsWith(github.ref, 'refs/tags/')
     permissions:
-      contents: write
+      contents: read
+      id-token: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -169,9 +169,27 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: goreleaser/goreleaser-action@v6
+      - id: build
+        uses: goreleaser/goreleaser-action@v6
         with:
           version: '~> v2'
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          args: build --clean --snapshot --id cog
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/1025538909507/locations/global/workloadIdentityPools/github/providers/github-actions'
+          service_account: 'pipelines-beta-publish@replicate-production.iam.gserviceaccount.com'
+      - name: Upload release artifacts
+        uses: google-github-actions/upload-cloud-storage@v2
+        with:
+          path: dist/go
+          destination: replicate-pipelines-beta/releases/${{ fromJSON(steps.build.outputs.metadata).version }}
+          parent: false
+          predefinedAcl: publicRead
+      - name: Upload release artifacts (latest)
+        uses: google-github-actions/upload-cloud-storage@v2
+        with:
+          path: dist/go
+          destination: replicate-pipelines-beta/releases/latest
+          parent: false
+          predefinedAcl: publicRead

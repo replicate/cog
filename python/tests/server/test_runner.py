@@ -71,7 +71,7 @@ class FakeWorker:
             if isinstance(event, Done):
                 self._setup_future.set_result(event)
 
-    def predict(self, payload, tag=None):
+    def predict(self, payload, tag=None, run_token=None):
         assert tag not in self._predict_futures or self._predict_futures[tag].done()
         self.last_prediction_payload = payload
         self._predict_futures[tag] = Future()

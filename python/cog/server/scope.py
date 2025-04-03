@@ -11,6 +11,8 @@ from ..types import ExperimentalFeatureWarning
 @frozen
 class Scope:
     record_metric: Callable[[str, Union[float, int]], None]
+
+    _run_token: Optional[str] = None
     _tag: Optional[str] = None
 
 
