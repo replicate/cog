@@ -444,6 +444,12 @@ func (g *FastGenerator) rsyncSrc(srcDir string, weights []weights.Weight) error 
 		return err
 	}
 
+	// Build weights path set
+	weightPaths := map[string]bool{}
+	for _, weight := range weights {
+		weightPaths[weight.Path] = true
+	}
+
 	// Find files we haven't copied over yet.
 	usedFiles := make(map[string]bool)
 	usedFiles[relPath] = true
@@ -469,10 +475,9 @@ func (g *FastGenerator) rsyncSrc(srcDir string, weights []weights.Weight) error 
 		}
 
 		// Skip weights, we handle them separately
-		for _, weight := range weights {
-			if weight.Path == relPath {
-				return nil
-			}
+		_, ok := weightPaths[relPath]
+		if ok {
+			return nil
 		}
 
 		copyPath := filepath.Join(srcDir, relPath)
