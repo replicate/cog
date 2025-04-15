@@ -150,6 +150,24 @@
           "$id": "#/properties/build/properties/fast",
           "type": "boolean",
           "description": "A flag to enable the experimental fast-push feature from a config level."
+        },
+        "environment": {
+          "$id": "#/properties/build/properties/environment",
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "A list of environment variables to make available at build time, in the format `NAME=value`",
+          "additionalItems": true,
+          "items": {
+            "$id": "#/properties/build/properties/environment/items",
+            "anyOf": [
+              {
+                "$id": "#/properties/build/properties/environment/items/anyOf/0",
+                "type": "string"
+              }
+            ]
+          }
         }
       },
       "additionalProperties": false
@@ -201,6 +219,24 @@
       "items": {
         "type": "object",
         "additionalItems": true
+      }
+    },
+    "environment": {
+      "$id": "#/properties/environment",
+      "type": [
+        "array",
+        "null"
+      ],
+      "description": "A list of environment variables to make available to the image at runtime, in the format `NAME=value`",
+      "additionalItems": true,
+      "items": {
+        "$id": "#/properties/environment/items",
+        "anyOf": [
+          {
+            "$id": "#/properties/environment/items/anyOf/0",
+            "type": "string"
+          }
+        ]
       }
     }
   },
