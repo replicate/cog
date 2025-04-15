@@ -417,3 +417,18 @@ def test_predict_with_fast_build_with_local_image(docker_image):
     os.remove(weights_file)
     assert build_process.returncode == 0
     assert result.returncode == 0
+
+
+def test_predict_optional_project(tmpdir_factory):
+    project_dir = Path(__file__).parent / "fixtures/optional-project"
+    result = subprocess.run(
+        ["cog", "predict", "--debug"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    # stdout should be clean without any log messages so it can be piped to other commands
+    assert result.returncode == 0
+    assert result.stdout == "hello No One\n"
