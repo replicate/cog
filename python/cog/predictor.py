@@ -242,19 +242,22 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
 
         # if no default is specified, create an empty, required input
         if parameter.default is inspect.Signature.empty:
-            # But only if it is not an optional, which explicitly isn't required.
-            if is_optional(InputType):
-                default = Input(default=None)
-            else:
-                default = Input()
+            default = Input()
         else:
             if not isinstance(parameter.default, FieldInfo):
                 default = Input(default=parameter.default)
             else:
                 if is_optional(InputType):
                     # If we are an optional, make sure the default is None
-                    if parameter.default.default is PydanticUndefined:
-                        parameter.default.default = None
+                    if (
+                        parameter.default.default is PydanticUndefined
+                        or parameter.default.default is ...
+                    ):
+                        if PYDANTIC_V2:
+                            parameter.default.default = None
+                        else:
+                            parameter.default.default_factory = None
+                            parameter.default.default = None
                 default = parameter.default
 
         if PYDANTIC_V2:

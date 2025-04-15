@@ -24,6 +24,8 @@ else:
 def is_field_required(field: FieldInfo):
     if hasattr(field, "is_required"):
         return field.is_required()
+    if hasattr(field, "required"):
+        return field.required
     return field.default is PydanticUndefined and field.default_factory is None
 
 
