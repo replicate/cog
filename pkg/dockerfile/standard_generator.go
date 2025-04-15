@@ -142,6 +142,10 @@ func (g *StandardGenerator) GenerateInitialSteps() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	envs, err := g.envVars()
+	if err != nil {
+		return "", err
+	}
 	runCommands, err := g.runCommands()
 	if err != nil {
 		return "", err
@@ -159,6 +163,7 @@ func (g *StandardGenerator) GenerateInitialSteps() (string, error) {
 		steps := []string{
 			"#syntax=docker/dockerfile:1.4",
 			"FROM " + baseImage,
+			envs,
 			aptInstalls,
 			installCog,
 			pipInstalls,
@@ -176,6 +181,7 @@ func (g *StandardGenerator) GenerateInitialSteps() (string, error) {
 		"FROM " + baseImage,
 		g.preamble(),
 		g.installTini(),
+		envs,
 		aptInstalls,
 		installPython,
 		pipInstalls,
@@ -512,6 +518,22 @@ This is the offending line: %s`, command)
 	return strings.Join(lines, "\n"), nil
 }
 
+func (g *StandardGenerator) envVars() (string, error) {
+	if len(g.Config.Environment) == 0 {
+		return "", nil
+	}
+
+	var steps []string
+	for _, input := range g.Config.Environment {
+		name, val, err := parseNameValueString(input, true)
+		if err != nil {
+			return "", err
+		}
+		steps = append(steps, fmt.Sprintf("ENV %s=%q", name, val))
+	}
+	return joinStringsWithoutLineSpace(steps), nil
+}
+
 // writeTemp writes a temporary file that can be used as part of the build process
 // It returns the lines to add to Dockerfile to make it available and the filename it ends up as inside the container
 func (g *StandardGenerator) writeTemp(filename string, contents []byte) ([]string, string, error) {
@@ -613,4 +635,29 @@ func stripPatchVersion(versionString string) (string, bool, error) {
 	changed := strippedVersion != versionString
 
 	return strippedVersion, changed, nil
+}
+
+func parseNameValueString(input string, valFromHostEnv bool) (string, string, error) {
+	if input == "" {
+		return "", "", fmt.Errorf("empty input string")
+	}
+
+	parts := strings.SplitN(input, "=", 2)
+	name := parts[0]
+
+	if name == "" {
+		return "", "", fmt.Errorf("empty name in input")
+	}
+
+	if len(parts) == 2 {
+		// NAME=VAL format
+		return name, parts[1], nil
+	}
+
+	// NAME format
+	if valFromHostEnv {
+		return name, os.Getenv(name), nil
+	}
+
+	return name, "", nil
 }

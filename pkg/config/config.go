@@ -56,6 +56,7 @@ type Build struct {
 	CuDNN              string    `json:"cudnn,omitempty" yaml:"cudnn"`
 	Fast               bool      `json:"fast,omitempty" yaml:"fast"`
 	PythonOverrides    string    `json:"python_overrides,omitempty" yaml:"python_overrides"`
+	Environment        []string  `json:"environment,omitempty" yaml:"environment"`
 
 	pythonRequirementsContent []string
 }
@@ -75,6 +76,7 @@ type Config struct {
 	Predict     string       `json:"predict,omitempty" yaml:"predict"`
 	Train       string       `json:"train,omitempty" yaml:"train"`
 	Concurrency *Concurrency `json:"concurrency,omitempty" yaml:"concurrency"`
+	Environment []string     `json:"environment,omitempty" yaml:"environment"`
 }
 
 func DefaultConfig() *Config {
