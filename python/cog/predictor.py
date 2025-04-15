@@ -49,6 +49,11 @@ from .types import (
 )
 from .types import Secret as CogSecret
 
+if PYDANTIC_V2:
+    from pydantic.fields import PydanticUndefined  # type: ignore
+else:
+    from pydantic.fields import Undefined as PydanticUndefined
+
 log = structlog.get_logger("cog.server.predictor")
 
 ALLOWED_INPUT_TYPES: List[Type[Any]] = [
@@ -178,17 +183,27 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
     return predictor
 
 
+def is_union(type: Type[Any]) -> bool:
+    if get_origin(type) is Union:
+        return True
+    if hasattr(types, "UnionType") and get_origin(type) is types.UnionType:
+        return True
+    return False
+
+
+def is_optional(type: Type[Any]) -> bool:
+    args = get_args(type)
+    if len(args) != 2 or not is_union(type):
+        return False
+    if sys.version_info >= (3, 10):
+        return args[1] is NoneType
+    return args[1] is None.__class__
+
+
 def validate_input_type(
     type: Type[Any],  # pylint: disable=redefined-builtin
     name: str,
 ) -> None:
-    def is_union(type: Type[Any]) -> bool:
-        if get_origin(type) is Union:
-            return True
-        if hasattr(types, "UnionType") and get_origin(type) is types.UnionType:
-            return True
-        return False
-
     if type is inspect.Signature.empty:
         raise TypeError(
             f"No input type provided for parameter `{name}`. Supported input types are: {readable_types_list(ALLOWED_INPUT_TYPES)}, or a Union or List of those types."
@@ -199,15 +214,7 @@ def validate_input_type(
                 validate_input_type(builtins.type(t), name)
         elif get_origin(type) in (Union, List, list) or is_union(type):  # noqa: E721
             args = get_args(type)
-
-            def is_optional() -> bool:
-                if len(args) != 2 or not is_union(type):
-                    return False
-                if sys.version_info >= (3, 10):
-                    return args[1] is NoneType
-                return args[1] is None.__class__
-
-            if is_optional():
+            if is_optional(type):
                 validate_input_type(args[0], name)
             else:
                 for t in args:
@@ -240,6 +247,17 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
             if not isinstance(parameter.default, FieldInfo):
                 default = Input(default=parameter.default)
             else:
+                if is_optional(InputType):
+                    # If we are an optional, make sure the default is None
+                    if (
+                        parameter.default.default is PydanticUndefined
+                        or parameter.default.default is ...
+                    ):
+                        if PYDANTIC_V2:
+                            parameter.default.default = None
+                        else:
+                            parameter.default.default_factory = None
+                            parameter.default.default = None
                 default = parameter.default
 
         if PYDANTIC_V2:
