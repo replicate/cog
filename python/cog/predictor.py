@@ -50,7 +50,7 @@ from .types import (
 from .types import Secret as CogSecret
 
 if PYDANTIC_V2:
-    from pydantic.fields import PydanticUndefined
+    from pydantic.fields import PydanticUndefined  # type: ignore
 else:
     from pydantic.fields import Undefined as PydanticUndefined
 
