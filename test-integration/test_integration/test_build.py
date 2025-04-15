@@ -498,3 +498,15 @@ def test_fast_build_with_local_image(docker_image):
     os.remove(weights_file)
 
     assert build_process.returncode == 0
+
+
+def test_local_whl_install(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/local-whl-install"
+
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=project_dir,
+        capture_output=True,
+    )
+
+    assert build_process.returncode == 0
