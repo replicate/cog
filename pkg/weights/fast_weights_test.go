@@ -24,7 +24,7 @@ func TestFindFastWeightsWithRemovedWeight(t *testing.T) {
 	weightFile := filepath.Join(tmpDir, WEIGHT_FILE)
 	weights := []Weight{
 		{
-			Path:      "nonexistant_weight.h5",
+			Path:      "nonexistent_weight.h5",
 			Digest:    "1",
 			Timestamp: time.Now(),
 			Size:      10,

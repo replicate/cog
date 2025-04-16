@@ -588,7 +588,7 @@ def test_cancel_idempotency(worker: Worker):
 
     fut = worker.predict({"sleep": 0.5}, tag)
     # We call cancel a WHOLE BUNCH to make sure that we don't propagate any
-    # of those cancelations to subsequent predictions, regardless of the
+    # of those cancellations to subsequent predictions, regardless of the
     # internal implementation of exceptions raised inside signal handlers.
     for _ in range(5):
         time.sleep(0.05)
