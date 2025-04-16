@@ -16,7 +16,7 @@ from urllib3.util.retry import Retry
 
 from .. import schema
 from ..base_input import BaseInput
-from ..files import put_file_to_signed_endpoint
+from ..files import put_file_to_signed_endpoint, upload_file
 from ..json import upload_files
 from ..types import PYDANTIC_V2
 from .errors import FileUploadError, RunnerBusyError, UnknownPredictionError
@@ -450,7 +450,7 @@ class PredictTask(Task[schema.PredictionResponse]):
 
     def _upload_files(self, output: Any) -> Any:
         if self._file_uploader is None:
-            return output
+            return upload_file(output)
 
         try:
             # TODO: clean up output files
