@@ -148,7 +148,7 @@ func (c *DockerCommand) exec(name string, capture bool, args ...string) (string,
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
 	err := cmd.Run()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%s: %w", out.String(), err)
 	}
 	return out.String(), nil
 }

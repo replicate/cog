@@ -1,11 +1,13 @@
 package predict
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/mitchellh/go-homedir"
 	"github.com/vincent-petithory/dataurl"
 
@@ -16,11 +18,20 @@ type Input struct {
 	String *string
 	File   *string
 	Array  *[]any
+	Json   *json.RawMessage
 }
 
 type Inputs map[string]Input
 
-func NewInputs(keyVals map[string][]string) Inputs {
+func NewInputs(keyVals map[string][]string, schema *openapi3.T) (Inputs, error) {
+	var inputComponent *openapi3.SchemaRef
+	for name, component := range schema.Components.Schemas {
+		if name == "Input" {
+			inputComponent = component
+			break
+		}
+	}
+
 	input := Inputs{}
 	for key, vals := range keyVals {
 		if len(vals) == 1 {
@@ -29,6 +40,24 @@ func NewInputs(keyVals map[string][]string) Inputs {
 				val = val[1:]
 				input[key] = Input{File: &val}
 			} else {
+				// Check if we should explicitly parse the JSON based on a known schema
+				if inputComponent != nil {
+					properties, err := inputComponent.JSONLookup("properties")
+					if err != nil {
+						return input, err
+					}
+					propertiesSchemas := properties.(openapi3.Schemas)
+					property, err := propertiesSchemas.JSONLookup(key)
+					if err != nil {
+						return input, err
+					}
+					propertySchema := property.(*openapi3.Schema)
+					if !propertySchema.Type.Is("string") {
+						encodedVal := json.RawMessage(val)
+						input[key] = Input{Json: &encodedVal}
+						continue
+					}
+				}
 				input[key] = Input{String: &val}
 			}
 		} else if len(vals) > 1 {
@@ -39,7 +68,7 @@ func NewInputs(keyVals map[string][]string) Inputs {
 			input[key] = Input{Array: &anyVals}
 		}
 	}
-	return input
+	return input, nil
 }
 
 func NewInputsWithBaseDir(keyVals map[string]string, baseDir string) Inputs {
@@ -86,6 +115,8 @@ func (inputs *Inputs) toMap() (map[string]any, error) {
 				}
 			}
 			keyVals[key] = dataURLs
+		case input.Json != nil:
+			keyVals[key] = *input.Json
 		}
 	}
 	return keyVals, nil

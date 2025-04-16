@@ -204,7 +204,7 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 		return err
 	}
 
-	inputs, err := parseInputFlags(inputFlags)
+	inputs, err := parseInputFlags(inputFlags, schema)
 	if err != nil {
 		return err
 	}
@@ -380,7 +380,7 @@ func writeDataURLOutput(outputString string, outputPath string, addExtension boo
 	return nil
 }
 
-func parseInputFlags(inputs []string) (predict.Inputs, error) {
+func parseInputFlags(inputs []string, schema *openapi3.T) (predict.Inputs, error) {
 	keyVals := map[string][]string{}
 	for _, input := range inputs {
 		var name, value string
@@ -402,7 +402,7 @@ func parseInputFlags(inputs []string) (predict.Inputs, error) {
 		keyVals[name] = append(keyVals[name], value)
 	}
 
-	return predict.NewInputs(keyVals), nil
+	return predict.NewInputs(keyVals, schema)
 }
 
 func addSetupTimeoutFlag(cmd *cobra.Command) {
