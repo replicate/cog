@@ -432,3 +432,32 @@ def test_predict_optional_project(tmpdir_factory):
     # stdout should be clean without any log messages so it can be piped to other commands
     assert result.returncode == 0
     assert result.stdout == "hello No One\n"
+
+
+def test_predict_complex_types(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/complex-types"
+
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image, "--x-fast", "--x-localimage"],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode == 0
+    result = subprocess.run(
+        [
+            "cog",
+            "predict",
+            "--debug",
+            docker_image,
+            "-i",
+            'message={"content": "Hi There", "role": "user"}',
+        ],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    # stdout should be clean without any log messages so it can be piped to other commands
+    assert result.returncode == 0
+    assert result.stdout == "hello No One\n"
