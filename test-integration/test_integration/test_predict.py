@@ -460,4 +460,4 @@ def test_predict_complex_types(docker_image):
     )
     # stdout should be clean without any log messages so it can be piped to other commands
     assert result.returncode == 0
-    assert result.stdout == "hello No One\n"
+    assert result.stdout == "Content: Hi There\n"
