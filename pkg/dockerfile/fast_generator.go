@@ -334,7 +334,7 @@ func (g *FastGenerator) installApt(lines []string, aptTarFile string) ([]string,
 	// Install apt packages
 
 	if aptTarFile != "" {
-		lines = append(lines, "RUN --mount=from="+dockercontext.AptBuildContextName+",target="+buildTmpDir+" tar --no-overwrite-dir -xf \""+filepath.Join(buildTmpDir, aptTarFile)+"\" -C /")
+		lines = append(lines, "RUN --mount=from="+dockercontext.AptBuildContextName+",target="+buildTmpDir+" tar --keep-directory-symlink -xf \""+filepath.Join(buildTmpDir, aptTarFile)+"\" -C /")
 	}
 	return lines, nil
 }
