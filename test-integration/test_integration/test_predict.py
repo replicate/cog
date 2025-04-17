@@ -454,4 +454,4 @@ def test_predict_overrides_project(docker_image):
         timeout=DEFAULT_TIMEOUT,
     )
     assert result.returncode == 0
-    assert result.stdout == "1.26.4\n"
+    assert result.stdout == "hello 1.26.4\n"
