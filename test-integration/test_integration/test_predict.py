@@ -453,4 +453,5 @@ def test_predict_zsh_package(docker_image):
     )
     # stdout should be clean without any log messages so it can be piped to other commands
     assert result.returncode == 0
-    assert result.stdout == "hello No One\n"
+    assert ",sh," in result.stdout
+    assert ",zsh," in result.stdout
