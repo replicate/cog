@@ -50,7 +50,7 @@ func NewInputs(keyVals map[string][]string, schema *openapi3.T) (Inputs, error) 
 					property, err := propertiesSchemas.JSONLookup(key)
 					if err == nil {
 						propertySchema := property.(*openapi3.Schema)
-						if !propertySchema.Type.Is("string") {
+						if propertySchema.Type.Is("object") {
 							encodedVal := json.RawMessage(val)
 							input[key] = Input{Json: &encodedVal}
 							continue
