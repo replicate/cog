@@ -349,16 +349,26 @@ func (g *FastGenerator) installPython(lines []string, tmpDir string) ([]string, 
 		return lines, nil
 	}
 
-	requirementsFile, err := requirements.GenerateRequirements(tmpDir, g.Config.Build.PythonRequirements)
+	requirementsFile, err := requirements.GenerateRequirements(tmpDir, g.Config.Build.PythonRequirements, requirements.RequirementsFile)
 	if err != nil {
 		return nil, err
 	}
+
+	overridesFlag := ""
+	if g.Config.Build.PythonOverrides != "" {
+		_, err := requirements.GenerateRequirements(tmpDir, g.Config.Build.PythonOverrides, requirements.OverridesFile)
+		if err != nil {
+			return nil, err
+		}
+		overridesFlag = " --override=/buildtmp/" + requirements.OverridesFile
+	}
+
 	if requirementsFile != "" {
 		lines = append(lines, "RUN "+strings.Join([]string{
 			"--mount=from=" + dockercontext.RequirementsBuildContextName + ",target=/buildtmp",
 			"--mount=type=bind,src=\".\",target=/src",
 			UV_CACHE_MOUNT,
-		}, " ")+" cd /src && UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/requirements.txt")
+		}, " ")+" cd /src && UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/"+requirements.RequirementsFile+overridesFlag)
 	}
 	return lines, nil
 }

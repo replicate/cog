@@ -10,9 +10,10 @@ import (
 	"github.com/replicate/cog/pkg/util/files"
 )
 
-const REQUIREMENTS_FILE = "requirements.txt"
+const RequirementsFile = "requirements.txt"
+const OverridesFile = "overrides.txt"
 
-func GenerateRequirements(tmpDir string, path string) (string, error) {
+func GenerateRequirements(tmpDir string, path string, fileName string) (string, error) {
 	bs, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
@@ -20,7 +21,7 @@ func GenerateRequirements(tmpDir string, path string) (string, error) {
 	requirements := string(bs)
 
 	// Check against the old requirements
-	requirementsFile := filepath.Join(tmpDir, REQUIREMENTS_FILE)
+	requirementsFile := filepath.Join(tmpDir, fileName)
 	if err := files.WriteIfDifferent(requirementsFile, requirements); err != nil {
 		return "", err
 	}
@@ -28,7 +29,7 @@ func GenerateRequirements(tmpDir string, path string) (string, error) {
 }
 
 func CurrentRequirements(tmpDir string) (string, error) {
-	requirementsFile := filepath.Join(tmpDir, REQUIREMENTS_FILE)
+	requirementsFile := filepath.Join(tmpDir, RequirementsFile)
 	_, err := os.Stat(requirementsFile)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
