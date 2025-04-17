@@ -458,6 +458,46 @@ def test_predict_complex_types(docker_image):
         text=True,
         timeout=DEFAULT_TIMEOUT,
     )
-    # stdout should be clean without any log messages so it can be piped to other commands
     assert result.returncode == 0
     assert result.stdout == "Content: Hi There\n"
+
+
+def test_predict_overrides_project(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/overrides-project"
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode == 0
+    result = subprocess.run(
+        ["cog", "predict", "--debug", docker_image],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    assert result.returncode == 0
+    assert result.stdout == "hello 1.26.4\n"
+
+
+def test_predict_zsh_package(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/zsh-package"
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode == 0
+    result = subprocess.run(
+        ["cog", "predict", "--debug", docker_image],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    assert result.returncode == 0
+    assert ",sh," in result.stdout
+    assert ",zsh," in result.stdout
