@@ -227,7 +227,7 @@ func TestAptInstall(t *testing.T) {
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
 	require.NoError(t, err)
 	dockerfileLines := strings.Split(dockerfile, "\n")
-	require.Equal(t, "RUN --mount=from=apt,target=/buildtmp mkdir /tmp/extract && tar -xf \"/buildtmp/apt.9a881b9b9f23849475296a8cd768ea1965bc3152df7118e60c145975af6aa58a.tar.zst\" --no-overwrite-dir -C /tmp/extract && rsync -a --keep-dirlinks /tmp/extract/ / && rm -rf /tmp/extract", dockerfileLines[5])
+	require.Equal(t, "RUN --mount=from=apt,target=/buildtmp tar --keep-directory-symlink -xf \"/buildtmp/apt.9a881b9b9f23849475296a8cd768ea1965bc3152df7118e60c145975af6aa58a.tar.zst\" -C /", dockerfileLines[5])
 }
 
 func TestValidateConfigWithBuildRunItems(t *testing.T) {
