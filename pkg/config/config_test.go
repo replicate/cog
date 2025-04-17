@@ -708,3 +708,14 @@ build:
 	_, err := FromYAML([]byte(yamlString))
 	require.NoError(t, err)
 }
+
+func TestPythonOverridesConfig(t *testing.T) {
+	yamlString := `
+build:
+  python_version: "3.12"
+  fast: true
+  python_overrides: "overrides.txt"
+`
+	_, err := FromYAML([]byte(yamlString))
+	require.NoError(t, err)
+}

@@ -1,0 +1,6 @@
+build:
+  python_version: "3.12"
+  python_requirements: requirements.txt
+  fast: true
+  python_overrides: overrides.txt
+predict: "predict.py:Predictor"

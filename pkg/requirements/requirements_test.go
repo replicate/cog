@@ -16,7 +16,7 @@ func TestPythonRequirements(t *testing.T) {
 	require.NoError(t, err)
 
 	tmpDir := t.TempDir()
-	requirementsFile, err := GenerateRequirements(tmpDir, reqFile)
+	requirementsFile, err := GenerateRequirements(tmpDir, reqFile, RequirementsFile)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(tmpDir, "requirements.txt"), requirementsFile)
 }
