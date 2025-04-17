@@ -510,3 +510,15 @@ def test_local_whl_install(docker_image):
     )
 
     assert build_process.returncode == 0
+
+
+def test_overrides(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/overrides-project"
+
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=project_dir,
+        capture_output=True,
+    )
+
+    assert build_process.returncode == 0
