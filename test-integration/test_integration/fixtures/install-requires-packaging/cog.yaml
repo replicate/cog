@@ -3,5 +3,5 @@ build:
   python_requirements: requirements.txt
   fast: true
   gpu: true
-  cuda: 12.4
+  cuda: "12.4"
 predict: "predict.py:Predictor"
