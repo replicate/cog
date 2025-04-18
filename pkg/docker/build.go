@@ -14,9 +14,11 @@ import (
 )
 
 func Build(dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string, epoch int64, contextDir string, buildContexts map[string]string) error {
-	var args []string
-
-	args = append(args, "buildx", "build")
+	args := []string{
+		"buildx", "build",
+		// disable provenance attestations since we don't want them cluttering the registry
+		"--provenance", "false",
+	}
 
 	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
 		// Fixes "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested"
@@ -74,11 +76,11 @@ func Build(dir, dockerfileContents, imageName string, secrets []string, noCache 
 }
 
 func BuildAddLabelsAndSchemaToImage(image string, labels map[string]string, bundledSchemaFile string, bundledSchemaPy string) error {
-	var args []string
-
-	args = append(args,
+	args := []string{
 		"buildx", "build",
-	)
+		// disable provenance attestations since we don't want them cluttering the registry
+		"--provenance", "false",
+	}
 
 	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
 		// Fixes "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested"
