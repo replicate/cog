@@ -1,0 +1,5 @@
+build:
+  python_version: "3.10"
+  python_requirements: requirements.txt
+  fast: true
+predict: "predict.py:Predictor"

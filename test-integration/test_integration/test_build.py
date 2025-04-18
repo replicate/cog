@@ -522,3 +522,15 @@ def test_overrides(docker_image):
     )
 
     assert build_process.returncode == 0
+
+
+def test_install_requires_packaging(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/install-requires-packaging"
+
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=project_dir,
+        capture_output=True,
+    )
+
+    assert build_process.returncode == 0
