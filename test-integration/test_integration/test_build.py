@@ -532,5 +532,5 @@ def test_install_requires_packaging(docker_image):
         cwd=project_dir,
         capture_output=True,
     )
-
+    print(build_process.stderr.decode())
     assert build_process.returncode == 0
