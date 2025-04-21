@@ -366,7 +366,7 @@ func (g *FastGenerator) installPython(lines []string, tmpDir string) ([]string, 
 	if requirementsFile != "" {
 		lines = append(lines, "RUN "+strings.Join([]string{
 			"--mount=from=" + dockercontext.RequirementsBuildContextName + ",target=/buildtmp",
-			"--mount=type=bind,src=\".\",target=/src",
+			"--mount=type=bind,src=\".\",target=/src,rw",
 			UV_CACHE_MOUNT,
 		}, " ")+" cd /src && UV_CACHE_DIR=\""+UV_CACHE_DIR+"\" UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 /opt/r8/monobase/run.sh monobase.user --requirements=/buildtmp/"+requirements.RequirementsFile+overridesFlag)
 	}
