@@ -520,4 +520,4 @@ def test_predict_string_list(docker_image):
         timeout=DEFAULT_TIMEOUT,
     )
     assert result.returncode == 0
-    assert result.stdout == "hello world"
+    assert result.stdout == "hello world\n"
