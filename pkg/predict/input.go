@@ -54,6 +54,10 @@ func NewInputs(keyVals map[string][]string, schema *openapi3.T) (Inputs, error) 
 							encodedVal := json.RawMessage(val)
 							input[key] = Input{Json: &encodedVal}
 							continue
+						} else if propertySchema.Type.Is("array") {
+							var arr = []any{val}
+							input[key] = Input{Array: &arr}
+							continue
 						}
 					}
 				}
