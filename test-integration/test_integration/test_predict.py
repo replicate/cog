@@ -505,7 +505,7 @@ def test_predict_zsh_package(docker_image):
 
 def test_predict_granite_project(docker_image):
     # We are checking that we are not clobbering pydantic to a <2 version.
-    project_dir = Path(__file__).parent / "fixtures/granite-package"
+    project_dir = Path(__file__).parent / "fixtures/granite-project"
     build_process = subprocess.run(
         ["cog", "build", "-t", docker_image],
         cwd=project_dir,
