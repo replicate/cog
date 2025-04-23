@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"strings"
 	"testing"
 
 	"github.com/hashicorp/go-version"
@@ -850,11 +849,4 @@ func TestEnvironmentParsingInvalid(t *testing.T) {
 			assert.ErrorContains(t, err, "is not in the KEY=VALUE format")
 		})
 	}
-}
-
-// cleanTestYAML prepares an inline test YAML string for parsing
-func cleanTestYAML(val string) []byte {
-	val = strings.ReplaceAll(val, "\t", "  ")
-
-	return []byte(val)
 }
