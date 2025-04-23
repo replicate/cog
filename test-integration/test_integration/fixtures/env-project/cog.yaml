@@ -1,5 +1,5 @@
-build:
-  python_version: "3.8"
 predict: "predict.py:Predictor"
 environment:
-  - NAME=wat
+  - NAME=yo
+  - R8_SOMETHING=abc
+  - A_B_C=123

@@ -579,3 +579,15 @@ func sliceContains(slice []string, s string) bool {
 	}
 	return false
 }
+
+func (c *Config) ParseEnvironment() (map[string]string, error) {
+	env := map[string]string{}
+	for _, input := range c.Environment {
+		parts := strings.SplitN(input, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("environment variable %q is not in the KEY=VALUE format", input)
+		}
+		env[parts[0]] = parts[1]
+	}
+	return env, nil
+}

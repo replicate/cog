@@ -519,19 +519,7 @@ This is the offending line: %s`, command)
 }
 
 func (g *StandardGenerator) envVars() (string, error) {
-	if len(g.Config.Environment) == 0 {
-		return "", nil
-	}
-
-	var steps []string
-	for _, input := range g.Config.Environment {
-		name, val, err := parseNameValueString(input, true)
-		if err != nil {
-			return "", err
-		}
-		steps = append(steps, fmt.Sprintf("ENV %s=%q", name, val))
-	}
-	return joinStringsWithoutLineSpace(steps), nil
+	return envLineFromConfig(g.Config)
 }
 
 // writeTemp writes a temporary file that can be used as part of the build process
@@ -635,29 +623,4 @@ func stripPatchVersion(versionString string) (string, bool, error) {
 	changed := strippedVersion != versionString
 
 	return strippedVersion, changed, nil
-}
-
-func parseNameValueString(input string, valFromHostEnv bool) (string, string, error) {
-	if input == "" {
-		return "", "", fmt.Errorf("empty input string")
-	}
-
-	parts := strings.SplitN(input, "=", 2)
-	name := parts[0]
-
-	if name == "" {
-		return "", "", fmt.Errorf("empty name in input")
-	}
-
-	if len(parts) == 2 {
-		// NAME=VAL format
-		return name, parts[1], nil
-	}
-
-	// NAME format
-	if valFromHostEnv {
-		return name, os.Getenv(name), nil
-	}
-
-	return name, "", nil
 }
