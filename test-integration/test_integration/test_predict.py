@@ -544,16 +544,16 @@ def test_predict_granite_project(docker_image):
     assert result.stdout == "2.11.3\n"
 
 
-def test_predict_env_vars(docker_image):
+def test_predict_env_vars(docker_image, cog_binary):
     project_dir = Path(__file__).parent / "fixtures/env-project"
     build_process = subprocess.run(
-        ["cog", "build", "-t", docker_image],
+        [cog_binary, "build", "-t", docker_image],
         cwd=project_dir,
         capture_output=True,
     )
     assert build_process.returncode == 0
     result = subprocess.run(
-        ["cog", "predict", "--debug", docker_image, "-i", "name=TEST_VAR"],
+        [cog_binary, "predict", "--debug", docker_image, "-i", "name=TEST_VAR"],
         cwd=project_dir,
         check=True,
         capture_output=True,
