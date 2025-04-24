@@ -91,7 +91,7 @@ fsspec==2025.3.2
     #   torch
 gguf==0.10.0
     # via vllm
-h11==0.14.0
+h11==0.16.0
     # via
     #   httpcore
     #   uvicorn
