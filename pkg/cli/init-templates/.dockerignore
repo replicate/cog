@@ -7,6 +7,9 @@
 **/.github
 **/.gitignore
 
+# Exclude Python tooling
+.python-version
+
 # Exclude Python cache files
 __pycache__
 .mypy_cache
