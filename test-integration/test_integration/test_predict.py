@@ -521,3 +521,24 @@ def test_predict_string_list(docker_image):
     )
     assert result.returncode == 0
     assert result.stdout == "hello world\n"
+
+
+def test_predict_granite_project(docker_image):
+    # We are checking that we are not clobbering pydantic to a <2 version.
+    project_dir = Path(__file__).parent / "fixtures/granite-project"
+    build_process = subprocess.run(
+        ["cog", "build", "-t", docker_image],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode == 0
+    result = subprocess.run(
+        ["cog", "predict", "--debug", docker_image],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    assert result.returncode == 0
+    assert result.stdout == "2.11.3\n"

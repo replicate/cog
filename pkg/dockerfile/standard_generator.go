@@ -432,9 +432,7 @@ func (g *StandardGenerator) installCog() (string, error) {
 	}
 	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir"
 	pipInstallLine += " " + containerPath
-	// Install pydantic<2 for now, installing pydantic>2 wouldn't allow a downgrade later,
-	// but upgrading works fine
-	pipInstallLine += " 'pydantic<2'"
+	pipInstallLine += " 'pydantic>=1.9,<3'"
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
