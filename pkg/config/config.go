@@ -56,7 +56,6 @@ type Build struct {
 	CuDNN              string    `json:"cudnn,omitempty" yaml:"cudnn"`
 	Fast               bool      `json:"fast,omitempty" yaml:"fast"`
 	PythonOverrides    string    `json:"python_overrides,omitempty" yaml:"python_overrides"`
-	Environment        []string  `json:"environment,omitempty" yaml:"environment"`
 
 	pythonRequirementsContent []string
 }
