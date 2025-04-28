@@ -8,7 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.55
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.2
 	github.com/docker/cli v27.2.1+incompatible
-	github.com/docker/docker v27.1.1+incompatible
+	github.com/docker/docker v28.1.1+incompatible
 	github.com/getkin/kin-openapi v0.128.0
 	github.com/google/go-containerregistry v0.20.2
 	github.com/hashicorp/go-version v1.7.0
@@ -332,6 +332,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
+	github.com/moby/sys/atomicwriter v0.1.0 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/moricho/tparallel v0.3.2 // indirect
 	github.com/mr-tron/base58 v1.2.0 // indirect
