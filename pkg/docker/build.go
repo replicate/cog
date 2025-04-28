@@ -66,7 +66,7 @@ func Build(ctx context.Context, dir, dockerfileContents, imageName string, secre
 		contextDir,
 	)
 
-	cmd := exec.Command("docker", args...)
+	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = dir
 	cmd.Stdout = os.Stderr // redirect stdout to stderr - build output is all messaging
 	cmd.Stderr = os.Stderr

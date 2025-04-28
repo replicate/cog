@@ -2,6 +2,7 @@ package image
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -14,7 +15,7 @@ import (
 
 // GenerateOpenAPISchema by running the image and executing Cog
 // This will be run as part of the build process then added as a label to the image. It can be retrieved more efficiently with the label by using GetOpenAPISchema
-func GenerateOpenAPISchema(imageName string, enableGPU bool) (map[string]any, error) {
+func GenerateOpenAPISchema(ctx context.Context, imageName string, enableGPU bool) (map[string]any, error) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
@@ -24,7 +25,7 @@ func GenerateOpenAPISchema(imageName string, enableGPU bool) (map[string]any, er
 		gpus = "all"
 	}
 
-	err := docker.RunWithIO(docker.RunOptions{
+	err := docker.RunWithIO(ctx, docker.RunOptions{
 		Image: imageName,
 		Args: []string{
 			"python", "-m", "cog.command.openapi_schema",
@@ -36,7 +37,7 @@ func GenerateOpenAPISchema(imageName string, enableGPU bool) (map[string]any, er
 		console.Debug(stdout.String())
 		console.Debug(stderr.String())
 		console.Debug("Missing device driver, re-trying without GPU")
-		return GenerateOpenAPISchema(imageName, false)
+		return GenerateOpenAPISchema(ctx, imageName, false)
 	}
 
 	if err != nil {
@@ -55,8 +56,8 @@ func GenerateOpenAPISchema(imageName string, enableGPU bool) (map[string]any, er
 	return schema, nil
 }
 
-func GetOpenAPISchema(imageName string) (*openapi3.T, error) {
-	image, err := docker.ImageInspect(imageName)
+func GetOpenAPISchema(ctx context.Context, imageName string) (*openapi3.T, error) {
+	image, err := docker.ImageInspect(ctx, imageName)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to inspect %s: %w", imageName, err)
 	}

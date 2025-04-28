@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"strings"
@@ -8,8 +9,8 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-func Pull(image string) error {
-	cmd := exec.Command("docker", "pull", image)
+func Pull(ctx context.Context, image string) error {
+	cmd := exec.CommandContext(ctx, "docker", "pull", image)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 

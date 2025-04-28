@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -14,8 +15,8 @@ import (
 
 var ErrNoSuchImage = errors.New("No image returned")
 
-func ImageInspect(id string) (*types.ImageInspect, error) {
-	cmd := exec.Command("docker", "image", "inspect", id)
+func ImageInspect(ctx context.Context, id string) (*types.ImageInspect, error) {
+	cmd := exec.CommandContext(ctx, "docker", "image", "inspect", id)
 	cmd.Env = os.Environ()
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
 	out, err := cmd.Output()

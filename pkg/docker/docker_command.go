@@ -56,7 +56,7 @@ func (c *DockerCommand) LoadUserInformation(ctx context.Context, registryHost st
 			Username: authConf.Username,
 		}, nil
 	}
-	credsHelper, err := loadAuthFromCredentialsStore(credsStore, registryHost)
+	credsHelper, err := loadAuthFromCredentialsStore(ctx, credsStore, registryHost)
 	if err != nil {
 		return nil, err
 	}
@@ -158,10 +158,10 @@ func loadAuthFromConfig(conf *configfile.ConfigFile, registryHost string) (types
 	return conf.AuthConfigs[registryHost], nil
 }
 
-func loadAuthFromCredentialsStore(credsStore string, registryHost string) (*CredentialHelperInput, error) {
+func loadAuthFromCredentialsStore(ctx context.Context, credsStore string, registryHost string) (*CredentialHelperInput, error) {
 	var out strings.Builder
 	binary := DockerCredentialBinary(credsStore)
-	cmd := exec.Command(binary, "get")
+	cmd := exec.CommandContext(ctx, binary, "get")
 	cmd.Env = os.Environ()
 	cmd.Stdout = &out
 	cmd.Stderr = &out

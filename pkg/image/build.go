@@ -146,7 +146,7 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 		schemaJSON = data
 	} else {
 		console.Info("Validating model schema...")
-		schema, err := GenerateOpenAPISchema(imageName, cfg.Build.GPU)
+		schema, err := GenerateOpenAPISchema(ctx, imageName, cfg.Build.GPU)
 		if err != nil {
 			return fmt.Errorf("Failed to get type signature: %w", err)
 		}
@@ -185,7 +185,7 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 		return fmt.Errorf("Failed to convert config to JSON: %w", err)
 	}
 
-	pipFreeze, err := GeneratePipFreeze(imageName, fastFlag)
+	pipFreeze, err := GeneratePipFreeze(ctx, imageName, fastFlag)
 	if err != nil {
 		return fmt.Errorf("Failed to generate pip freeze from image: %w", err)
 	}

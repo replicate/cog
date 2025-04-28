@@ -71,24 +71,24 @@ func NewPredictor(ctx context.Context, runOptions docker.RunOptions, isTrain boo
 	return &Predictor{runOptions: runOptions, isTrain: isTrain}, nil
 }
 
-func (p *Predictor) Start(logsWriter io.Writer, timeout time.Duration) error {
+func (p *Predictor) Start(ctx context.Context, logsWriter io.Writer, timeout time.Duration) error {
 	var err error
 	containerPort := 5000
 
 	p.runOptions.Ports = append(p.runOptions.Ports, docker.Port{HostPort: 0, ContainerPort: containerPort})
 
-	p.containerID, err = docker.RunDaemon(p.runOptions, logsWriter)
+	p.containerID, err = docker.RunDaemon(ctx, p.runOptions, logsWriter)
 	if err != nil {
 		return fmt.Errorf("Failed to start container: %w", err)
 	}
 
-	p.port, err = docker.GetPort(p.containerID, containerPort)
+	p.port, err = docker.GetPort(ctx, p.containerID, containerPort)
 	if err != nil {
 		return fmt.Errorf("Failed to determine container port: %w", err)
 	}
 
 	go func() {
-		if err := docker.ContainerLogsFollow(p.containerID, logsWriter); err != nil {
+		if err := docker.ContainerLogsFollow(ctx, p.containerID, logsWriter); err != nil {
 			// if user hits ctrl-c we expect an error signal
 			if !strings.Contains(err.Error(), "signal: interrupt") {
 				console.Warnf("Error getting container logs: %s", err)
@@ -96,10 +96,10 @@ func (p *Predictor) Start(logsWriter io.Writer, timeout time.Duration) error {
 		}
 	}()
 
-	return p.waitForContainerReady(timeout)
+	return p.waitForContainerReady(ctx, timeout)
 }
 
-func (p *Predictor) waitForContainerReady(timeout time.Duration) error {
+func (p *Predictor) waitForContainerReady(ctx context.Context, timeout time.Duration) error {
 	url := fmt.Sprintf("http://localhost:%d/health-check", p.port)
 
 	start := time.Now()
@@ -111,7 +111,7 @@ func (p *Predictor) waitForContainerReady(timeout time.Duration) error {
 
 		time.Sleep(100 * time.Millisecond)
 
-		cont, err := docker.ContainerInspect(p.containerID)
+		cont, err := docker.ContainerInspect(ctx, p.containerID)
 		if err != nil {
 			return fmt.Errorf("Failed to get container status: %w", err)
 		}
@@ -144,8 +144,8 @@ func (p *Predictor) waitForContainerReady(timeout time.Duration) error {
 	}
 }
 
-func (p *Predictor) Stop() error {
-	return docker.Stop(p.containerID)
+func (p *Predictor) Stop(ctx context.Context) error {
+	return docker.Stop(ctx, p.containerID)
 }
 
 func (p *Predictor) Predict(inputs Inputs) (*Response, error) {

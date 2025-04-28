@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,8 +10,8 @@ import (
 	"github.com/docker/docker/api/types"
 )
 
-func ContainerInspect(id string) (*types.ContainerJSON, error) {
-	cmd := exec.Command("docker", "container", "inspect", id)
+func ContainerInspect(ctx context.Context, id string) (*types.ContainerJSON, error) {
+	cmd := exec.CommandContext(ctx, "docker", "container", "inspect", id)
 	cmd.Env = os.Environ()
 
 	out, err := cmd.Output()
