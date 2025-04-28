@@ -1,8 +1,8 @@
 module github.com/replicate/cog
 
-go 1.23.0
+go 1.24.2
 
-toolchain go1.23.2
+toolchain go1.24.2
 
 require (
 	github.com/anaskhan96/soup v1.2.5
