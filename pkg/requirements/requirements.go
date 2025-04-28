@@ -112,7 +112,6 @@ func scanLinesWithContinuations(data []byte, atEOF bool) (advance int, token []b
 			if len(line) > 0 && line[len(line)-1] == '\r' {
 				line = line[:len(line)-1]
 			}
-			return len(data), line, nil
 		}
 		return len(data), line, nil
 	}
