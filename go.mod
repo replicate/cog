@@ -496,6 +496,8 @@ replace (
 )
 
 tool (
+	// TODO[md]: installing golangci-lint as a tool is a temporary hack to upgrade to v2 without changing CI scripts.
+	// instead we should use a binary install. Why? https://golangci-lint.run/welcome/install/#install-from-sources
 	github.com/golangci/golangci-lint/cmd/golangci-lint
 	github.com/goreleaser/goreleaser/v2
 	golang.org/x/tools/cmd/goimports
