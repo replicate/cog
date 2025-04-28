@@ -2,8 +2,6 @@ module github.com/replicate/cog
 
 go 1.24.2
 
-toolchain go1.24.2
-
 require (
 	github.com/anaskhan96/soup v1.2.5
 	github.com/aws/aws-sdk-go-v2 v1.36.3
