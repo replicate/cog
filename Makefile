@@ -67,8 +67,7 @@ clean:
 
 .PHONY: test-go
 test-go: pkg/dockerfile/embed/.wheel
-	$(GO) get gotest.tools/gotestsum
-	$(GO) run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
+	$(GO) tool gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
 
 .PHONY: test-integration
 test-integration: $(COG_BINARIES)
