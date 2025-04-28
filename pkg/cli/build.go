@@ -55,6 +55,8 @@ func newBuildCommand() *cobra.Command {
 }
 
 func buildCommand(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
 	cfg, projectDir, err := config.GetConfig(projectDirFlag)
 	if err != nil {
 		return err
@@ -76,7 +78,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, nil, buildLocalImage); err != nil {
+	if err := image.Build(ctx, cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, nil, buildLocalImage); err != nil {
 		return err
 	}
 

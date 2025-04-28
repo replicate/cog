@@ -1,6 +1,7 @@
 package dockertest
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 
@@ -17,15 +18,15 @@ func NewMockCommand() *MockCommand {
 	return &MockCommand{}
 }
 
-func (c *MockCommand) Pull(image string) error {
+func (c *MockCommand) Pull(ctx context.Context, image string) error {
 	return nil
 }
 
-func (c *MockCommand) Push(image string) error {
+func (c *MockCommand) Push(ctx context.Context, image string) error {
 	return PushError
 }
 
-func (c *MockCommand) LoadUserInformation(registryHost string) (*command.UserInfo, error) {
+func (c *MockCommand) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
 	userInfo := command.UserInfo{
 		Token:    "",
 		Username: "",
@@ -33,7 +34,7 @@ func (c *MockCommand) LoadUserInformation(registryHost string) (*command.UserInf
 	return &userInfo, nil
 }
 
-func (c *MockCommand) CreateTarFile(image string, tmpDir string, tarFile string, folder string) (string, error) {
+func (c *MockCommand) CreateTarFile(ctx context.Context, image string, tmpDir string, tarFile string, folder string) (string, error) {
 	path := filepath.Join(tmpDir, tarFile)
 	d1 := []byte("hello\ngo\n")
 	err := os.WriteFile(path, d1, 0o644)
@@ -43,7 +44,7 @@ func (c *MockCommand) CreateTarFile(image string, tmpDir string, tarFile string,
 	return path, nil
 }
 
-func (c *MockCommand) CreateAptTarFile(tmpDir string, aptTarFile string, packages ...string) (string, error) {
+func (c *MockCommand) CreateAptTarFile(ctx context.Context, tmpDir string, aptTarFile string, packages ...string) (string, error) {
 	path := filepath.Join(tmpDir, aptTarFile)
 	d1 := []byte("hello\ngo\n")
 	err := os.WriteFile(path, d1, 0o644)
@@ -53,7 +54,7 @@ func (c *MockCommand) CreateAptTarFile(tmpDir string, aptTarFile string, package
 	return path, nil
 }
 
-func (c *MockCommand) Inspect(image string) (*command.Manifest, error) {
+func (c *MockCommand) Inspect(ctx context.Context, image string) (*command.Manifest, error) {
 	manifest := command.Manifest{
 		Config: command.Config{
 			Labels: map[string]string{

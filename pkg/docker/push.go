@@ -16,9 +16,8 @@ type BuildInfo struct {
 	BuildID   string
 }
 
-func Push(image string, fast bool, projectDir string, command command.Command, buildInfo BuildInfo) error {
-	ctx := context.Background()
-	client, err := http.ProvideHTTPClient(command)
+func Push(ctx context.Context, image string, fast bool, projectDir string, command command.Command, buildInfo BuildInfo) error {
+	client, err := http.ProvideHTTPClient(ctx, command)
 	if err != nil {
 		return err
 	}
@@ -36,5 +35,5 @@ func Push(image string, fast bool, projectDir string, command command.Command, b
 		}
 		return FastPush(ctx, image, projectDir, command, webClient, monobeamClient)
 	}
-	return StandardPush(image, command)
+	return StandardPush(ctx, image, command)
 }

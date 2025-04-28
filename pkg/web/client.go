@@ -150,7 +150,7 @@ func (c *Client) PostPushStart(ctx context.Context, pushID string, buildTime tim
 }
 
 func (c *Client) PostNewVersion(ctx context.Context, image string, weights []File, files []File, fileChallenges []FileChallengeAnswer) error {
-	version, err := c.versionFromManifest(image, weights, files, fileChallenges)
+	version, err := c.versionFromManifest(ctx, image, weights, files, fileChallenges)
 	if err != nil {
 		return util.WrapError(err, "failed to build new version from manifest")
 	}
@@ -192,8 +192,8 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 	return nil
 }
 
-func (c *Client) versionFromManifest(image string, weights []File, files []File, fileChallenges []FileChallengeAnswer) (*Version, error) {
-	manifest, err := c.dockerCommand.Inspect(image)
+func (c *Client) versionFromManifest(ctx context.Context, image string, weights []File, files []File, fileChallenges []FileChallengeAnswer) (*Version, error) {
+	manifest, err := c.dockerCommand.Inspect(ctx, image)
 	if err != nil {
 		return nil, util.WrapError(err, "failed to inspect docker image")
 	}

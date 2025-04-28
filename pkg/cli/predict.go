@@ -66,6 +66,8 @@ the prediction on that.`,
 }
 
 func cmdPredict(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
 	imageName := ""
 	volumes := []docker.Volume{}
 	gpus := gpusFlag
@@ -85,7 +87,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		if buildFast {
 			imageName = config.DockerImageName(projectDir)
 		} else {
-			if imageName, err = image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
+			if imageName, err = image.BuildBase(ctx, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
 				return err
 			}
 
@@ -135,7 +137,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	console.Infof("Starting Docker image %s and running setup()...", imageName)
 	dockerCommand := docker.NewDockerCommand()
 
-	predictor, err := predict.NewPredictor(docker.RunOptions{
+	predictor, err := predict.NewPredictor(ctx, docker.RunOptions{
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: volumes,
@@ -165,7 +167,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			console.Info("Missing device driver, re-trying without GPU")
 
 			_ = predictor.Stop()
-			predictor, err = predict.NewPredictor(docker.RunOptions{
+			predictor, err = predict.NewPredictor(ctx, docker.RunOptions{
 				Image:   imageName,
 				Volumes: volumes,
 				Env:     envFlags,

@@ -12,7 +12,7 @@ import (
 func TestCreateAptTarball(t *testing.T) {
 	dir := t.TempDir()
 	command := dockertest.NewMockCommand()
-	tarball, err := CreateAptTarball(dir, command, []string{}...)
+	tarball, err := CreateAptTarball(t.Context(), dir, command, []string{}...)
 	require.NoError(t, err)
 	require.Equal(t, "", tarball)
 }
@@ -20,7 +20,7 @@ func TestCreateAptTarball(t *testing.T) {
 func TestCreateAptTarballWithPackages(t *testing.T) {
 	dir := t.TempDir()
 	command := dockertest.NewMockCommand()
-	tarball, err := CreateAptTarball(dir, command, []string{"git"}...)
+	tarball, err := CreateAptTarball(t.Context(), dir, command, []string{"git"}...)
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(tarball, "apt."))
 }

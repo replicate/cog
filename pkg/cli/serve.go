@@ -41,12 +41,14 @@ Generate and run an HTTP server based on the declared model inputs and outputs.`
 }
 
 func cmdServe(cmd *cobra.Command, arg []string) error {
+	ctx := cmd.Context()
+
 	cfg, projectDir, err := config.GetConfig(projectDirFlag)
 	if err != nil {
 		return err
 	}
 
-	imageName, err := image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput)
+	imageName, err := image.BuildBase(ctx, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput)
 	if err != nil {
 		return err
 	}
@@ -78,7 +80,7 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		Volumes: []docker.Volume{{Source: projectDir, Destination: "/src"}},
 		Workdir: "/src",
 	}
-	runOptions, err = docker.FillInWeightsManifestVolumes(dockerCommand, runOptions)
+	runOptions, err = docker.FillInWeightsManifestVolumes(ctx, dockerCommand, runOptions)
 	if err != nil {
 		return err
 	}

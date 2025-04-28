@@ -42,6 +42,8 @@ func newPushCommand() *cobra.Command {
 }
 
 func push(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
 	cfg, projectDir, err := config.GetConfig(projectDirFlag)
 	if err != nil {
 		return err
@@ -81,7 +83,7 @@ func push(cmd *cobra.Command, args []string) error {
 
 	startBuildTime := time.Now()
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, annotations, buildLocalImage); err != nil {
+	if err := image.Build(ctx, cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, annotations, buildLocalImage); err != nil {
 		return err
 	}
 
@@ -93,7 +95,7 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	command := docker.NewDockerCommand()
-	err = docker.Push(imageName, buildFast, projectDir, command, docker.BuildInfo{
+	err = docker.Push(ctx, imageName, buildFast, projectDir, command, docker.BuildInfo{
 		BuildTime: buildDuration,
 		BuildID:   buildID.String(),
 	})

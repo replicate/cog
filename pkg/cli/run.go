@@ -52,11 +52,13 @@ func newRunCommand() *cobra.Command {
 }
 
 func run(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
 	cfg, projectDir, err := config.GetConfig(projectDirFlag)
 	if err != nil {
 		return err
 	}
-	imageName, err := image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput)
+	imageName, err := image.BuildBase(ctx, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput)
 	if err != nil {
 		return err
 	}
@@ -78,7 +80,7 @@ func run(cmd *cobra.Command, args []string) error {
 		Volumes: []docker.Volume{{Source: projectDir, Destination: "/src"}},
 		Workdir: "/src",
 	}
-	runOptions, err = docker.FillInWeightsManifestVolumes(dockerCommand, runOptions)
+	runOptions, err = docker.FillInWeightsManifestVolumes(ctx, dockerCommand, runOptions)
 	if err != nil {
 		return err
 	}

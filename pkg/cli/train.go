@@ -52,6 +52,8 @@ Otherwise, it will build the model in the current directory and train it.`,
 }
 
 func cmdTrain(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
 	imageName := ""
 	volumes := []docker.Volume{}
 	gpus := gpusFlag
@@ -68,7 +70,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 			buildFast = cfg.Build.Fast
 		}
 
-		if imageName, err = image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
+		if imageName, err = image.BuildBase(ctx, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
 			return err
 		}
 
@@ -111,7 +113,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	console.Infof("Starting Docker image %s...", imageName)
 	dockerCommand := docker.NewDockerCommand()
 
-	predictor, err := predict.NewPredictor(docker.RunOptions{
+	predictor, err := predict.NewPredictor(ctx, docker.RunOptions{
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: volumes,

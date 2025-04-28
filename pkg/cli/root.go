@@ -29,7 +29,7 @@ https://github.com/replicate/cog`,
 				console.SetLevel(console.DebugLevel)
 			}
 			cmd.SilenceUsage = true
-			if err := update.DisplayAndCheckForRelease(); err != nil {
+			if err := update.DisplayAndCheckForRelease(cmd.Context()); err != nil {
 				console.Debugf("%s", err)
 			}
 		},

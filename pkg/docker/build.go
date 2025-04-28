@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,7 +14,7 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-func Build(dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string, epoch int64, contextDir string, buildContexts map[string]string) error {
+func Build(ctx context.Context, dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string, epoch int64, contextDir string, buildContexts map[string]string) error {
 	args := []string{
 		"buildx", "build",
 		// disable provenance attestations since we don't want them cluttering the registry
@@ -75,7 +76,7 @@ func Build(dir, dockerfileContents, imageName string, secrets []string, noCache 
 	return cmd.Run()
 }
 
-func BuildAddLabelsAndSchemaToImage(image string, labels map[string]string, bundledSchemaFile string, bundledSchemaPy string) error {
+func BuildAddLabelsAndSchemaToImage(ctx context.Context, image string, labels map[string]string, bundledSchemaFile string, bundledSchemaPy string) error {
 	args := []string{
 		"buildx", "build",
 		// disable provenance attestations since we don't want them cluttering the registry
@@ -98,7 +99,7 @@ func BuildAddLabelsAndSchemaToImage(image string, labels map[string]string, bund
 	}
 	// We're not using context, but Docker requires we pass a context
 	args = append(args, ".")
-	cmd := exec.Command("docker", args...)
+	cmd := exec.CommandContext(ctx, "docker", args...)
 
 	dockerfile := "FROM " + image + "\n"
 	dockerfile += "COPY " + bundledSchemaFile + " .cog\n"

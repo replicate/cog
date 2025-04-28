@@ -3,6 +3,7 @@ package docker
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -211,9 +212,9 @@ func GetPort(containerID string, containerPort int) (int, error) {
 
 }
 
-func FillInWeightsManifestVolumes(dockerCommand command.Command, runOptions RunOptions) (RunOptions, error) {
+func FillInWeightsManifestVolumes(ctx context.Context, dockerCommand command.Command, runOptions RunOptions) (RunOptions, error) {
 	// Check if the image has a weights manifest
-	manifest, err := dockerCommand.Inspect(runOptions.Image)
+	manifest, err := dockerCommand.Inspect(ctx, runOptions.Image)
 	if err != nil {
 		return runOptions, err
 	}

@@ -1,6 +1,7 @@
 package dockerfile
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -174,7 +175,7 @@ func NewBaseImageGenerator(cudaVersion string, pythonVersion string, torchVersio
 	return nil, fmt.Errorf("unsupported base image configuration: CUDA: %s / Python: %s / Torch: %s", printNone(cudaVersion), printNone(pythonVersion), printNone(torchVersion))
 }
 
-func (g *BaseImageGenerator) GenerateDockerfile() (string, error) {
+func (g *BaseImageGenerator) GenerateDockerfile(ctx context.Context) (string, error) {
 	conf, err := g.makeConfig()
 	if err != nil {
 		return "", err
@@ -187,7 +188,7 @@ func (g *BaseImageGenerator) GenerateDockerfile() (string, error) {
 	useCogBaseImage := false
 	generator.SetUseCogBaseImagePtr(&useCogBaseImage)
 
-	dockerfile, err := generator.GenerateInitialSteps()
+	dockerfile, err := generator.GenerateInitialSteps(ctx)
 	if err != nil {
 		return "", err
 	}

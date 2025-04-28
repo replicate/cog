@@ -16,8 +16,8 @@ var hasGit = (func() bool {
 	return err == nil
 })()
 
-func gitRun(argv []string, t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.TODO(), 2*time.Second)
+func gitRun(ctx context.Context, argv []string, t *testing.T) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	t.Cleanup(cancel)
 
 	out, err := exec.CommandContext(ctx, "git", argv...).CombinedOutput()
@@ -27,6 +27,7 @@ func gitRun(argv []string, t *testing.T) {
 }
 
 func setupGitWorkTree(t *testing.T) string {
+	ctx := t.Context()
 	if !hasGit {
 		t.Skip("no git executable available")
 		return ""
@@ -37,27 +38,28 @@ func setupGitWorkTree(t *testing.T) string {
 	tmp := filepath.Join(t.TempDir(), "wd")
 	r.NoError(os.MkdirAll(tmp, 0o755))
 
-	gitRun([]string{"init", tmp}, t)
-	gitRun([]string{"-C", tmp, "config", "user.email", "cog@localhost"}, t)
-	gitRun([]string{"-C", tmp, "config", "user.name", "Cog Tests"}, t)
-	gitRun([]string{"-C", tmp, "commit", "--allow-empty", "-m", "walrus"}, t)
-	gitRun([]string{"-C", tmp, "tag", "-a", "v0.0.1+walrus", "-m", "walrus time"}, t)
+	gitRun(ctx, []string{"init", tmp}, t)
+	gitRun(ctx, []string{"-C", tmp, "config", "user.email", "cog@localhost"}, t)
+	gitRun(ctx, []string{"-C", tmp, "config", "user.name", "Cog Tests"}, t)
+	gitRun(ctx, []string{"-C", tmp, "commit", "--allow-empty", "-m", "walrus"}, t)
+	gitRun(ctx, []string{"-C", tmp, "tag", "-a", "v0.0.1+walrus", "-m", "walrus time"}, t)
 
 	return tmp
 }
 
 func TestIsGitWorkTree(t *testing.T) {
+	ctx := t.Context()
 	r := require.New(t)
 
-	r.False(isGitWorkTree("/dev/null"))
-	r.True(isGitWorkTree(setupGitWorkTree(t)))
+	r.False(isGitWorkTree(ctx, "/dev/null"))
+	r.True(isGitWorkTree(ctx, setupGitWorkTree(t)))
 }
 
 func TestGitHead(t *testing.T) {
 	t.Run("via github env", func(t *testing.T) {
 		t.Setenv("GITHUB_SHA", "fafafaf")
 
-		head, err := gitHead("/dev/null")
+		head, err := gitHead(t.Context(), "/dev/null")
 
 		require.NoError(t, err)
 		require.Equal(t, "fafafaf", head)
@@ -71,7 +73,7 @@ func TestGitHead(t *testing.T) {
 
 		t.Setenv("GITHUB_SHA", "")
 
-		head, err := gitHead(tmp)
+		head, err := gitHead(t.Context(), tmp)
 		require.NoError(t, err)
 		require.NotEqual(t, "", head)
 	})
@@ -79,7 +81,7 @@ func TestGitHead(t *testing.T) {
 	t.Run("unavailable", func(t *testing.T) {
 		t.Setenv("GITHUB_SHA", "")
 
-		head, err := gitHead("/dev/null")
+		head, err := gitHead(t.Context(), "/dev/null")
 		require.Error(t, err)
 		require.Equal(t, "", head)
 	})
@@ -89,7 +91,7 @@ func TestGitTag(t *testing.T) {
 	t.Run("via github env", func(t *testing.T) {
 		t.Setenv("GITHUB_REF_NAME", "v0.0.1+manatee")
 
-		tag, err := gitTag("/dev/null")
+		tag, err := gitTag(t.Context(), "/dev/null")
 		require.NoError(t, err)
 		require.Equal(t, "v0.0.1+manatee", tag)
 	})
@@ -102,7 +104,7 @@ func TestGitTag(t *testing.T) {
 
 		t.Setenv("GITHUB_REF_NAME", "")
 
-		tag, err := gitTag(tmp)
+		tag, err := gitTag(t.Context(), tmp)
 		require.NoError(t, err)
 		require.Equal(t, "v0.0.1+walrus", tag)
 	})
@@ -110,7 +112,7 @@ func TestGitTag(t *testing.T) {
 	t.Run("unavailable", func(t *testing.T) {
 		t.Setenv("GITHUB_REF_NAME", "")
 
-		tag, err := gitTag("/dev/null")
+		tag, err := gitTag(t.Context(), "/dev/null")
 		require.Error(t, err)
 		require.Equal(t, "", tag)
 	})
