@@ -7,9 +7,9 @@ BINDIR = $(PREFIX)/bin
 INSTALL := install -m 0755
 
 GO ?= go
-GORELEASER := $(GO) run github.com/goreleaser/goreleaser/v2@v2.3.2
-GOIMPORTS := $(GO) run golang.org/x/tools/cmd/goimports@latest
-GOLINT := $(GO) run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0
+GORELEASER := $(GO) tool goreleaser
+GOIMPORTS := $(GO) tool goimports
+GOLINT := $(GO) tool golangci-lint
 
 UV ?= uv
 TOX := $(UV) run tox
@@ -67,8 +67,7 @@ clean:
 
 .PHONY: test-go
 test-go: pkg/dockerfile/embed/.wheel
-	$(GO) get gotest.tools/gotestsum
-	$(GO) run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
+	$(GO) tool gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
 
 .PHONY: test-integration
 test-integration: $(COG_BINARIES)
@@ -83,7 +82,7 @@ test: test-go test-python test-integration
 
 .PHONY: fmt
 fmt:
-	$(GO) run golang.org/x/tools/cmd/goimports@latest -w -d .
+	$(GOIMPORTS) -w -d .
 
 .PHONY: generate
 generate:

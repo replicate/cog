@@ -94,7 +94,7 @@ Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the fu
 ## Development environment
 
 You'll need the following dependencies installed to build Cog locally:
-- [Go](https://golang.org/doc/install): We're targeting 1.23, but you can install the latest version since Go is backwards compatible. If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
+- [Go](https://golang.org/doc/install): We're targeting 1.24, but you can install the latest version since Go is backwards compatible. If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
 - [uv](https://docs.astral.sh/uv/): Python versions and dependencies are managed by uv.
 - [Docker](https://docs.docker.com/desktop) or [OrbStack](https://orbstack.dev)
 
