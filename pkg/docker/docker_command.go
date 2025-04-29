@@ -34,13 +34,11 @@ func NewDockerCommand() *DockerCommand {
 }
 
 func (c *DockerCommand) Pull(ctx context.Context, image string) error {
-	_, err := c.exec(ctx, "pull", false, image, "--platform", "linux/amd64")
-	return err
+	return c.exec(ctx, os.Stderr, "pull", image, "--platform", "linux/amd64")
 }
 
 func (c *DockerCommand) Push(ctx context.Context, image string) error {
-	_, err := c.exec(ctx, "push", false, image)
-	return err
+	return c.exec(ctx, os.Stderr, "push", image)
 }
 
 func (c *DockerCommand) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
@@ -68,6 +66,7 @@ func (c *DockerCommand) LoadUserInformation(ctx context.Context, registryHost st
 
 func (c *DockerCommand) CreateTarFile(ctx context.Context, image string, tmpDir string, tarFile string, folder string) (string, error) {
 	args := []string{
+		"run",
 		"--rm",
 		"--volume",
 		tmpDir + ":/buildtmp",
@@ -77,8 +76,7 @@ func (c *DockerCommand) CreateTarFile(ctx context.Context, image string, tmpDir 
 		"/",
 		folder,
 	}
-	_, err := c.exec(ctx, "run", false, args...)
-	if err != nil {
+	if err := c.exec(ctx, os.Stderr, args...); err != nil {
 		return "", err
 	}
 	return filepath.Join(tmpDir, tarFile), nil
@@ -90,6 +88,7 @@ func (c *DockerCommand) CreateAptTarFile(ctx context.Context, tmpDir string, apt
 	// running the apt.sh script on the monobase with the packages we intend to install, which produces
 	// a tar file that can be untarred into a docker build to achieve the equivalent of an apt-get install.
 	args := []string{
+		"run",
 		"--rm",
 		"--volume",
 		tmpDir + ":/buildtmp",
@@ -98,8 +97,7 @@ func (c *DockerCommand) CreateAptTarFile(ctx context.Context, tmpDir string, apt
 		"/buildtmp/" + aptTarFile,
 	}
 	args = append(args, packages...)
-	_, err := c.exec(ctx, "run", false, args...)
-	if err != nil {
+	if err := c.exec(ctx, os.Stderr, args...); err != nil {
 		return "", err
 	}
 
@@ -108,10 +106,11 @@ func (c *DockerCommand) CreateAptTarFile(ctx context.Context, tmpDir string, apt
 
 func (c *DockerCommand) Inspect(ctx context.Context, image string) (*command.Manifest, error) {
 	args := []string{
+		"image",
 		"inspect",
 		image,
 	}
-	manifestData, err := c.exec(ctx, "image", true, args...)
+	manifestData, err := c.execCaptured(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -129,27 +128,34 @@ func (c *DockerCommand) Inspect(ctx context.Context, image string) (*command.Man
 	return &manifests[0], nil // Docker inspect returns us a list of manifests
 }
 
-func (c *DockerCommand) exec(ctx context.Context, name string, capture bool, args ...string) (string, error) {
-	cmdArgs := []string{name}
-	if slices.ContainsString(commandsRequiringPlatform, name) && util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
-		cmdArgs = append(cmdArgs, "--platform", "linux/amd64")
+func (c *DockerCommand) exec(ctx context.Context, w io.Writer, args ...string) error {
+	if slices.ContainsString(commandsRequiringPlatform, args[0]) && util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
+		args = append(args, "--platform", "linux/amd64")
 	}
-	cmdArgs = append(cmdArgs, args...)
 	dockerCmd := DockerCommandFromEnvironment()
-	cmd := exec.CommandContext(ctx, dockerCmd, cmdArgs...)
-	var out strings.Builder
-	if !capture {
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-	} else {
-		cmd.Stdout = &out
-		cmd.Stderr = &out
-	}
+	cmd := exec.CommandContext(ctx, dockerCmd, args...)
+
+	// the ring buffer captures the last N bytes written to `w` so we have some context to return in an error
+	errbuf := util.NewRingBufferWriter(w, 1024)
+	cmd.Stdout = errbuf
+	cmd.Stderr = errbuf
 
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
 	err := cmd.Run()
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", out.String(), err)
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
+		return fmt.Errorf("command failed: %s: %w", errbuf.String(), err)
+	}
+	return nil
+}
+
+func (c *DockerCommand) execCaptured(ctx context.Context, args ...string) (string, error) {
+	var out strings.Builder
+	err := c.exec(ctx, &out, args...)
+	if err != nil {
+		return "", err
 	}
 	return out.String(), nil
 }
