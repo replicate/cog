@@ -41,6 +41,8 @@ func newLoginCommand() *cobra.Command {
 }
 
 func login(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
 	registryHost, err := cmd.Flags().GetString("registry")
 	if err != nil {
 		return err
@@ -73,7 +75,7 @@ func login(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := docker.SaveLoginToken(registryHost, username, token); err != nil {
+	if err := docker.SaveLoginToken(ctx, registryHost, username, token); err != nil {
 		return err
 	}
 

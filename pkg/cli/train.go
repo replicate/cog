@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -52,6 +53,8 @@ Otherwise, it will build the model in the current directory and train it.`,
 }
 
 func cmdTrain(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
 	imageName := ""
 	volumes := []docker.Volume{}
 	gpus := gpusFlag
@@ -68,7 +71,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 			buildFast = cfg.Build.Fast
 		}
 
-		if imageName, err = image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
+		if imageName, err = image.BuildBase(ctx, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
 			return err
 		}
 
@@ -85,17 +88,17 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		// Use existing image
 		imageName = args[0]
 
-		exists, err := docker.ImageExists(imageName)
+		exists, err := docker.ImageExists(ctx, imageName)
 		if err != nil {
 			return fmt.Errorf("Failed to determine if %s exists: %w", imageName, err)
 		}
 		if !exists {
 			console.Infof("Pulling image: %s", imageName)
-			if err := docker.Pull(imageName); err != nil {
+			if err := docker.Pull(ctx, imageName); err != nil {
 				return fmt.Errorf("Failed to pull %s: %w", imageName, err)
 			}
 		}
-		conf, err := image.GetConfig(imageName)
+		conf, err := image.GetConfig(ctx, imageName)
 		if err != nil {
 			return err
 		}
@@ -111,7 +114,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	console.Infof("Starting Docker image %s...", imageName)
 	dockerCommand := docker.NewDockerCommand()
 
-	predictor, err := predict.NewPredictor(docker.RunOptions{
+	predictor, err := predict.NewPredictor(ctx, docker.RunOptions{
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: volumes,
@@ -129,19 +132,20 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		<-captureSignal
 
 		console.Info("Stopping container...")
-		if err := predictor.Stop(); err != nil {
+		if err := predictor.Stop(ctx); err != nil {
 			console.Warnf("Failed to stop container: %s", err)
 		}
 	}()
 
-	if err := predictor.Start(os.Stderr, time.Duration(setupTimeout)*time.Second); err != nil {
+	if err := predictor.Start(ctx, os.Stderr, time.Duration(setupTimeout)*time.Second); err != nil {
 		return err
 	}
 
 	// FIXME: will not run on signal
 	defer func() {
 		console.Debugf("Stopping container...")
-		if err := predictor.Stop(); err != nil {
+		// use background context to ensure stop signal is still sent after root context is canceled
+		if err := predictor.Stop(context.Background()); err != nil {
 			console.Warnf("Failed to stop container: %s", err)
 		}
 	}()

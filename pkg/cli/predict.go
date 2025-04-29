@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,6 +67,8 @@ the prediction on that.`,
 }
 
 func cmdPredict(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
 	imageName := ""
 	volumes := []docker.Volume{}
 	gpus := gpusFlag
@@ -85,7 +88,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		if buildFast {
 			imageName = config.DockerImageName(projectDir)
 		} else {
-			if imageName, err = image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
+			if imageName, err = image.BuildBase(ctx, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
 				return err
 			}
 
@@ -109,17 +112,17 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("Invalid image name '%s'. Did you forget `-i`?", imageName)
 		}
 
-		exists, err := docker.ImageExists(imageName)
+		exists, err := docker.ImageExists(ctx, imageName)
 		if err != nil {
 			return fmt.Errorf("Failed to determine if %s exists: %w", imageName, err)
 		}
 		if !exists {
 			console.Infof("Pulling image: %s", imageName)
-			if err := docker.Pull(imageName); err != nil {
+			if err := docker.Pull(ctx, imageName); err != nil {
 				return fmt.Errorf("Failed to pull %s: %w", imageName, err)
 			}
 		}
-		conf, err := image.GetConfig(imageName)
+		conf, err := image.GetConfig(ctx, imageName)
 		if err != nil {
 			return err
 		}
@@ -135,7 +138,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	console.Infof("Starting Docker image %s and running setup()...", imageName)
 	dockerCommand := docker.NewDockerCommand()
 
-	predictor, err := predict.NewPredictor(docker.RunOptions{
+	predictor, err := predict.NewPredictor(ctx, docker.RunOptions{
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: volumes,
@@ -152,20 +155,20 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		<-captureSignal
 
 		console.Info("Stopping container...")
-		if err := predictor.Stop(); err != nil {
+		if err := predictor.Stop(ctx); err != nil {
 			console.Warnf("Failed to stop container: %s", err)
 		}
 	}()
 
 	timeout := time.Duration(setupTimeout) * time.Second
-	if err := predictor.Start(os.Stderr, timeout); err != nil {
+	if err := predictor.Start(ctx, os.Stderr, timeout); err != nil {
 		// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
 		// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
 		if gpus == "all" && errors.Is(err, docker.ErrMissingDeviceDriver) {
 			console.Info("Missing device driver, re-trying without GPU")
 
-			_ = predictor.Stop()
-			predictor, err = predict.NewPredictor(docker.RunOptions{
+			_ = predictor.Stop(ctx)
+			predictor, err = predict.NewPredictor(ctx, docker.RunOptions{
 				Image:   imageName,
 				Volumes: volumes,
 				Env:     envFlags,
@@ -174,7 +177,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 				return err
 			}
 
-			if err := predictor.Start(os.Stderr, timeout); err != nil {
+			if err := predictor.Start(ctx, os.Stderr, timeout); err != nil {
 				return err
 			}
 		} else {
@@ -185,7 +188,8 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	// FIXME: will not run on signal
 	defer func() {
 		console.Debugf("Stopping container...")
-		if err := predictor.Stop(); err != nil {
+		// use background context to ensure stop signal is still sent after root context is canceled
+		if err := predictor.Stop(context.Background()); err != nil {
 			console.Warnf("Failed to stop container: %s", err)
 		}
 	}()

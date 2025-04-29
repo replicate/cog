@@ -2,6 +2,7 @@ package docker
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,17 +33,17 @@ func NewDockerCommand() *DockerCommand {
 	return &DockerCommand{}
 }
 
-func (c *DockerCommand) Pull(image string) error {
-	_, err := c.exec("pull", false, image, "--platform", "linux/amd64")
+func (c *DockerCommand) Pull(ctx context.Context, image string) error {
+	_, err := c.exec(ctx, "pull", false, image, "--platform", "linux/amd64")
 	return err
 }
 
-func (c *DockerCommand) Push(image string) error {
-	_, err := c.exec("push", false, image)
+func (c *DockerCommand) Push(ctx context.Context, image string) error {
+	_, err := c.exec(ctx, "push", false, image)
 	return err
 }
 
-func (c *DockerCommand) LoadUserInformation(registryHost string) (*command.UserInfo, error) {
+func (c *DockerCommand) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
 	conf := config.LoadDefaultConfigFile(os.Stderr)
 	credsStore := conf.CredentialsStore
 	if credsStore == "" {
@@ -55,7 +56,7 @@ func (c *DockerCommand) LoadUserInformation(registryHost string) (*command.UserI
 			Username: authConf.Username,
 		}, nil
 	}
-	credsHelper, err := loadAuthFromCredentialsStore(credsStore, registryHost)
+	credsHelper, err := loadAuthFromCredentialsStore(ctx, credsStore, registryHost)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +66,7 @@ func (c *DockerCommand) LoadUserInformation(registryHost string) (*command.UserI
 	}, nil
 }
 
-func (c *DockerCommand) CreateTarFile(image string, tmpDir string, tarFile string, folder string) (string, error) {
+func (c *DockerCommand) CreateTarFile(ctx context.Context, image string, tmpDir string, tarFile string, folder string) (string, error) {
 	args := []string{
 		"--rm",
 		"--volume",
@@ -76,14 +77,14 @@ func (c *DockerCommand) CreateTarFile(image string, tmpDir string, tarFile strin
 		"/",
 		folder,
 	}
-	_, err := c.exec("run", false, args...)
+	_, err := c.exec(ctx, "run", false, args...)
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(tmpDir, tarFile), nil
 }
 
-func (c *DockerCommand) CreateAptTarFile(tmpDir string, aptTarFile string, packages ...string) (string, error) {
+func (c *DockerCommand) CreateAptTarFile(ctx context.Context, tmpDir string, aptTarFile string, packages ...string) (string, error) {
 	// This uses a hardcoded monobase image to produce an apt tar file.
 	// The reason being that this apt tar file is created outside the docker file, and it is created by
 	// running the apt.sh script on the monobase with the packages we intend to install, which produces
@@ -97,7 +98,7 @@ func (c *DockerCommand) CreateAptTarFile(tmpDir string, aptTarFile string, packa
 		"/buildtmp/" + aptTarFile,
 	}
 	args = append(args, packages...)
-	_, err := c.exec("run", false, args...)
+	_, err := c.exec(ctx, "run", false, args...)
 	if err != nil {
 		return "", err
 	}
@@ -105,12 +106,12 @@ func (c *DockerCommand) CreateAptTarFile(tmpDir string, aptTarFile string, packa
 	return aptTarFile, nil
 }
 
-func (c *DockerCommand) Inspect(image string) (*command.Manifest, error) {
+func (c *DockerCommand) Inspect(ctx context.Context, image string) (*command.Manifest, error) {
 	args := []string{
 		"inspect",
 		image,
 	}
-	manifestData, err := c.exec("image", true, args...)
+	manifestData, err := c.exec(ctx, "image", true, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -128,14 +129,14 @@ func (c *DockerCommand) Inspect(image string) (*command.Manifest, error) {
 	return &manifests[0], nil // Docker inspect returns us a list of manifests
 }
 
-func (c *DockerCommand) exec(name string, capture bool, args ...string) (string, error) {
+func (c *DockerCommand) exec(ctx context.Context, name string, capture bool, args ...string) (string, error) {
 	cmdArgs := []string{name}
 	if slices.ContainsString(commandsRequiringPlatform, name) && util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
 		cmdArgs = append(cmdArgs, "--platform", "linux/amd64")
 	}
 	cmdArgs = append(cmdArgs, args...)
 	dockerCmd := DockerCommandFromEnvironment()
-	cmd := exec.Command(dockerCmd, cmdArgs...)
+	cmd := exec.CommandContext(ctx, dockerCmd, cmdArgs...)
 	var out strings.Builder
 	if !capture {
 		cmd.Stdout = os.Stdout
@@ -157,10 +158,10 @@ func loadAuthFromConfig(conf *configfile.ConfigFile, registryHost string) (types
 	return conf.AuthConfigs[registryHost], nil
 }
 
-func loadAuthFromCredentialsStore(credsStore string, registryHost string) (*CredentialHelperInput, error) {
+func loadAuthFromCredentialsStore(ctx context.Context, credsStore string, registryHost string) (*CredentialHelperInput, error) {
 	var out strings.Builder
 	binary := DockerCredentialBinary(credsStore)
-	cmd := exec.Command(binary, "get")
+	cmd := exec.CommandContext(ctx, binary, "get")
 	cmd.Env = os.Environ()
 	cmd.Stdout = &out
 	cmd.Stderr = &out

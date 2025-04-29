@@ -20,7 +20,7 @@ func TestClientDecoratesUserAgent(t *testing.T) {
 	defer server.Close()
 
 	command := dockertest.NewMockCommand()
-	client, err := ProvideHTTPClient(command)
+	client, err := ProvideHTTPClient(t.Context(), command)
 	require.NoError(t, err)
 
 	_, err = client.Get(server.URL)

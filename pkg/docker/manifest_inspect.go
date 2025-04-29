@@ -1,14 +1,15 @@
 package docker
 
 import (
+	"context"
 	"os/exec"
 	"strings"
 
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-func ManifestInspect(image string) error {
-	cmd := exec.Command("docker", "manifest", "inspect", image)
+func ManifestInspect(ctx context.Context, image string) error {
+	cmd := exec.CommandContext(ctx, "docker", "manifest", "inspect", image)
 	var out strings.Builder
 	cmd.Stdout = &out
 	cmd.Stderr = &out

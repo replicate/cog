@@ -36,7 +36,7 @@ var errGit = errors.New("git error")
 // Build a Cog model from a config
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
-func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string, useCogBaseImage *bool, strip bool, precompile bool, fastFlag bool, annotations map[string]string, localImage bool) error {
+func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string, useCogBaseImage *bool, strip bool, precompile bool, fastFlag bool, annotations map[string]string, localImage bool) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 	if fastFlag {
 		console.Info("Fast build enabled.")
@@ -57,7 +57,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		if err != nil {
 			return fmt.Errorf("Failed to read Dockerfile at %s: %w", dockerfileFile, err)
 		}
-		if err := docker.Build(dir, string(dockerfileContents), imageName, secrets, noCache, progressOutput, config.BuildSourceEpochTimestamp, dockercontext.StandardBuildDirectory, nil); err != nil {
+		if err := docker.Build(ctx, dir, string(dockerfileContents), imageName, secrets, noCache, progressOutput, config.BuildSourceEpochTimestamp, dockercontext.StandardBuildDirectory, nil); err != nil {
 			return fmt.Errorf("Failed to build Docker image: %w", err)
 		}
 	} else {
@@ -94,7 +94,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		}
 
 		if separateWeights {
-			weightsDockerfile, runnerDockerfile, dockerignore, err := generator.GenerateModelBaseWithSeparateWeights(imageName)
+			weightsDockerfile, runnerDockerfile, dockerignore, err := generator.GenerateModelBaseWithSeparateWeights(ctx, imageName)
 			if err != nil {
 				return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 			}
@@ -103,14 +103,14 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 				return fmt.Errorf("Failed to backup .dockerignore file: %w", err)
 			}
 
-			weightsManifest, err := generator.GenerateWeightsManifest()
+			weightsManifest, err := generator.GenerateWeightsManifest(ctx)
 			if err != nil {
 				return fmt.Errorf("Failed to generate weights manifest: %w", err)
 			}
 			cachedManifest, _ := weights.LoadManifest(weightsManifestPath)
 			changed := cachedManifest == nil || !weightsManifest.Equal(cachedManifest)
 			if changed {
-				if err := buildWeightsImage(dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput, contextDir, buildContexts); err != nil {
+				if err := buildWeightsImage(ctx, dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput, contextDir, buildContexts); err != nil {
 					return fmt.Errorf("Failed to build model weights Docker image: %w", err)
 				}
 				err := weightsManifest.Save(weightsManifestPath)
@@ -121,15 +121,15 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 				console.Info("Weights unchanged, skip rebuilding and use cached image...")
 			}
 
-			if err := buildRunnerImage(dir, runnerDockerfile, dockerignore, imageName, secrets, noCache, progressOutput, contextDir, buildContexts); err != nil {
+			if err := buildRunnerImage(ctx, dir, runnerDockerfile, dockerignore, imageName, secrets, noCache, progressOutput, contextDir, buildContexts); err != nil {
 				return fmt.Errorf("Failed to build runner Docker image: %w", err)
 			}
 		} else {
-			dockerfileContents, err := generator.GenerateDockerfileWithoutSeparateWeights()
+			dockerfileContents, err := generator.GenerateDockerfileWithoutSeparateWeights(ctx)
 			if err != nil {
 				return fmt.Errorf("Failed to generate Dockerfile: %w", err)
 			}
-			if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput, config.BuildSourceEpochTimestamp, contextDir, buildContexts); err != nil {
+			if err := docker.Build(ctx, dir, dockerfileContents, imageName, secrets, noCache, progressOutput, config.BuildSourceEpochTimestamp, contextDir, buildContexts); err != nil {
 				return fmt.Errorf("Failed to build Docker image: %w", err)
 			}
 		}
@@ -146,7 +146,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		schemaJSON = data
 	} else {
 		console.Info("Validating model schema...")
-		schema, err := GenerateOpenAPISchema(imageName, cfg.Build.GPU)
+		schema, err := GenerateOpenAPISchema(ctx, imageName, cfg.Build.GPU)
 		if err != nil {
 			return fmt.Errorf("Failed to get type signature: %w", err)
 		}
@@ -185,7 +185,7 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		return fmt.Errorf("Failed to convert config to JSON: %w", err)
 	}
 
-	pipFreeze, err := GeneratePipFreeze(imageName, fastFlag)
+	pipFreeze, err := GeneratePipFreeze(ctx, imageName, fastFlag)
 	if err != nil {
 		return fmt.Errorf("Failed to generate pip freeze from image: %w", err)
 	}
@@ -235,13 +235,13 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		labels[global.LabelNamespace+"cog-base-image-last-layer-idx"] = fmt.Sprintf("%d", lastLayerIndex)
 	}
 
-	if commit, err := gitHead(dir); commit != "" && err == nil {
+	if commit, err := gitHead(ctx, dir); commit != "" && err == nil {
 		labels["org.opencontainers.image.revision"] = commit
 	} else {
 		console.Info("Unable to determine Git commit")
 	}
 
-	if tag, err := gitTag(dir); tag != "" && err == nil {
+	if tag, err := gitTag(ctx, dir); tag != "" && err == nil {
 		labels["org.opencontainers.image.version"] = tag
 	} else {
 		console.Info("Unable to determine Git tag")
@@ -251,13 +251,13 @@ func Build(cfg *config.Config, dir, imageName string, secrets []string, noCache,
 		labels[key] = val
 	}
 
-	if err := docker.BuildAddLabelsAndSchemaToImage(imageName, labels, bundledSchemaFile, bundledSchemaPy); err != nil {
+	if err := docker.BuildAddLabelsAndSchemaToImage(ctx, imageName, labels, bundledSchemaFile, bundledSchemaPy); err != nil {
 		return fmt.Errorf("Failed to add labels to image: %w", err)
 	}
 	return nil
 }
 
-func BuildBase(cfg *config.Config, dir string, useCudaBaseImage string, useCogBaseImage *bool, progressOutput string) (string, error) {
+func BuildBase(ctx context.Context, cfg *config.Config, dir string, useCudaBaseImage string, useCogBaseImage *bool, progressOutput string) (string, error) {
 	// TODO: better image management so we don't eat up disk space
 	// https://github.com/replicate/cog/issues/80
 	imageName := config.BaseDockerImageName(dir)
@@ -287,18 +287,18 @@ func BuildBase(cfg *config.Config, dir string, useCudaBaseImage string, useCogBa
 		generator.SetUseCogBaseImage(*useCogBaseImage)
 	}
 
-	dockerfileContents, err := generator.GenerateModelBase()
+	dockerfileContents, err := generator.GenerateModelBase(ctx)
 	if err != nil {
 		return "", fmt.Errorf("Failed to generate Dockerfile: %w", err)
 	}
-	if err := docker.Build(dir, dockerfileContents, imageName, []string{}, false, progressOutput, config.BuildSourceEpochTimestamp, contextDir, buildContexts); err != nil {
+	if err := docker.Build(ctx, dir, dockerfileContents, imageName, []string{}, false, progressOutput, config.BuildSourceEpochTimestamp, contextDir, buildContexts); err != nil {
 		return "", fmt.Errorf("Failed to build Docker image: %w", err)
 	}
 	return imageName, nil
 }
 
-func isGitWorkTree(dir string) bool {
-	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
+func isGitWorkTree(ctx context.Context, dir string) bool {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
 	out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--is-inside-work-tree").Output()
@@ -309,13 +309,13 @@ func isGitWorkTree(dir string) bool {
 	return strings.TrimSpace(string(out)) == "true"
 }
 
-func gitHead(dir string) (string, error) {
+func gitHead(ctx context.Context, dir string) (string, error) {
 	if v, ok := os.LookupEnv("GITHUB_SHA"); ok && v != "" {
 		return v, nil
 	}
 
-	if isGitWorkTree(dir) {
-		ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
+	if isGitWorkTree(ctx, dir) {
+		ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
 
 		out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "HEAD").Output()
@@ -329,13 +329,13 @@ func gitHead(dir string) (string, error) {
 	return "", fmt.Errorf("Failed to find HEAD commit: %w", errGit)
 }
 
-func gitTag(dir string) (string, error) {
+func gitTag(ctx context.Context, dir string) (string, error) {
 	if v, ok := os.LookupEnv("GITHUB_REF_NAME"); ok && v != "" {
 		return v, nil
 	}
 
-	if isGitWorkTree(dir) {
-		ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
+	if isGitWorkTree(ctx, dir) {
+		ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
 
 		out, err := exec.CommandContext(ctx, "git", "-C", dir, "describe", "--tags", "--dirty").Output()
@@ -349,21 +349,21 @@ func gitTag(dir string) (string, error) {
 	return "", fmt.Errorf("Failed to find ref name: %w", errGit)
 }
 
-func buildWeightsImage(dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string, contextDir string, buildContexts map[string]string) error {
+func buildWeightsImage(ctx context.Context, dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string, contextDir string, buildContexts map[string]string) error {
 	if err := makeDockerignoreForWeightsImage(); err != nil {
 		return fmt.Errorf("Failed to create .dockerignore file: %w", err)
 	}
-	if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput, config.BuildSourceEpochTimestamp, contextDir, buildContexts); err != nil {
+	if err := docker.Build(ctx, dir, dockerfileContents, imageName, secrets, noCache, progressOutput, config.BuildSourceEpochTimestamp, contextDir, buildContexts); err != nil {
 		return fmt.Errorf("Failed to build Docker image for model weights: %w", err)
 	}
 	return nil
 }
 
-func buildRunnerImage(dir, dockerfileContents, dockerignoreContents, imageName string, secrets []string, noCache bool, progressOutput string, contextDir string, buildContexts map[string]string) error {
+func buildRunnerImage(ctx context.Context, dir, dockerfileContents, dockerignoreContents, imageName string, secrets []string, noCache bool, progressOutput string, contextDir string, buildContexts map[string]string) error {
 	if err := writeDockerignore(dockerignoreContents); err != nil {
 		return fmt.Errorf("Failed to write .dockerignore file with weights included: %w", err)
 	}
-	if err := docker.Build(dir, dockerfileContents, imageName, secrets, noCache, progressOutput, config.BuildSourceEpochTimestamp, contextDir, buildContexts); err != nil {
+	if err := docker.Build(ctx, dir, dockerfileContents, imageName, secrets, noCache, progressOutput, config.BuildSourceEpochTimestamp, contextDir, buildContexts); err != nil {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
 	}
 	if err := restoreDockerignore(); err != nil {

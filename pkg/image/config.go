@@ -1,6 +1,7 @@
 package image
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -9,8 +10,8 @@ import (
 	"github.com/replicate/cog/pkg/docker/command"
 )
 
-func GetConfig(imageName string) (*config.Config, error) {
-	image, err := docker.ImageInspect(imageName)
+func GetConfig(ctx context.Context, imageName string) (*config.Config, error) {
+	image, err := docker.ImageInspect(ctx, imageName)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to inspect %s: %w", imageName, err)
 	}

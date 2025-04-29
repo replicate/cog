@@ -35,6 +35,8 @@ func newDebugCommand() *cobra.Command {
 }
 
 func cmdDockerfile(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
 	cfg, projectDir, err := config.GetConfig(projectDirFlag)
 	if err != nil {
 		return err
@@ -62,7 +64,7 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 			imageName = config.DockerImageName(projectDir)
 		}
 
-		weightsDockerfile, RunnerDockerfile, dockerignore, err := generator.GenerateModelBaseWithSeparateWeights(imageName)
+		weightsDockerfile, RunnerDockerfile, dockerignore, err := generator.GenerateModelBaseWithSeparateWeights(ctx, imageName)
 		if err != nil {
 			return err
 		}
@@ -71,7 +73,7 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 		console.Output(fmt.Sprintf("=== Runner Dockerfile contents:\n%s\n===\n", RunnerDockerfile))
 		console.Output(fmt.Sprintf("=== DockerIgnore contents:\n%s===\n", dockerignore))
 	} else {
-		dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights()
+		dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights(ctx)
 		if err != nil {
 			return err
 		}

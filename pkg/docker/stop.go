@@ -1,12 +1,13 @@
 package docker
 
 import (
+	"context"
 	"os"
 	"os/exec"
 )
 
-func Stop(id string) error {
-	cmd := exec.Command("docker", "container", "stop", "--time", "3", id)
+func Stop(ctx context.Context, id string) error {
+	cmd := exec.CommandContext(ctx, "docker", "container", "stop", "--time", "3", id)
 	cmd.Env = os.Environ()
 	cmd.Stderr = os.Stderr
 
