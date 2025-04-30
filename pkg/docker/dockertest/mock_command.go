@@ -2,8 +2,12 @@ package dockertest
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 
 	"github.com/replicate/cog/pkg/docker/command"
 )
@@ -54,9 +58,9 @@ func (c *MockCommand) CreateAptTarFile(ctx context.Context, tmpDir string, aptTa
 	return path, nil
 }
 
-func (c *MockCommand) Inspect(ctx context.Context, image string) (*command.Manifest, error) {
-	manifest := command.Manifest{
-		Config: command.Config{
+func (c *MockCommand) Inspect(ctx context.Context, ref string) (*image.InspectResponse, error) {
+	resp := &image.InspectResponse{
+		Config: &container.Config{
 			Labels: map[string]string{
 				command.CogConfigLabelKey:        MockCogConfig,
 				command.CogOpenAPISchemaLabelKey: MockOpenAPISchema,
@@ -70,5 +74,18 @@ func (c *MockCommand) Inspect(ctx context.Context, image string) (*command.Manif
 			},
 		},
 	}
-	return &manifest, nil
+
+	return resp, nil
+}
+
+func (c *MockCommand) ImageExists(ctx context.Context, ref string) (bool, error) {
+	panic("not implemented")
+}
+
+func (c *MockCommand) ContainerLogs(ctx context.Context, containerID string, w io.Writer) error {
+	panic("not implemented")
+}
+
+func (c *MockCommand) ContainerInspect(ctx context.Context, id string) (*container.InspectResponse, error) {
+	panic("not implemented")
 }

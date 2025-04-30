@@ -12,6 +12,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/util/console"
@@ -55,6 +56,8 @@ Otherwise, it will build the model in the current directory and train it.`,
 func cmdTrain(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
+	dockerCommand := docker.NewDockerCommand()
+
 	imageName := ""
 	volumes := []docker.Volume{}
 	gpus := gpusFlag
@@ -88,17 +91,17 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		// Use existing image
 		imageName = args[0]
 
-		exists, err := docker.ImageExists(ctx, imageName)
+		manifest, err := dockerCommand.Inspect(ctx, imageName)
 		if err != nil {
-			return fmt.Errorf("Failed to determine if %s exists: %w", imageName, err)
-		}
-		if !exists {
-			console.Infof("Pulling image: %s", imageName)
-			if err := docker.Pull(ctx, imageName); err != nil {
-				return fmt.Errorf("Failed to pull %s: %w", imageName, err)
+			if command.IsNotFoundError(err) {
+				console.Infof("Pulling image: %s", imageName)
+				if err := dockerCommand.Pull(ctx, imageName); err != nil {
+					return fmt.Errorf("Failed to pull %s: %w", imageName, err)
+				}
 			}
+			return fmt.Errorf("Failed to inspect %s: %w", imageName, err)
 		}
-		conf, err := image.GetConfig(ctx, imageName)
+		conf, err := image.CogConfigFromManifest(ctx, manifest)
 		if err != nil {
 			return err
 		}
@@ -112,7 +115,6 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 
 	console.Info("")
 	console.Infof("Starting Docker image %s...", imageName)
-	dockerCommand := docker.NewDockerCommand()
 
 	predictor, err := predict.NewPredictor(ctx, docker.RunOptions{
 		GPUs:    gpus,

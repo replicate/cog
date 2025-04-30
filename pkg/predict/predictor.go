@@ -44,8 +44,9 @@ type ValidationErrorResponse struct {
 }
 
 type Predictor struct {
-	runOptions docker.RunOptions
-	isTrain    bool
+	runOptions   docker.RunOptions
+	isTrain      bool
+	dockerClient command.Command
 
 	// Running state
 	containerID string
@@ -68,7 +69,11 @@ func NewPredictor(ctx context.Context, runOptions docker.RunOptions, isTrain boo
 		return nil, err
 	}
 
-	return &Predictor{runOptions: runOptions, isTrain: isTrain}, nil
+	return &Predictor{
+		runOptions:   runOptions,
+		isTrain:      isTrain,
+		dockerClient: dockerCommand,
+	}, nil
 }
 
 func (p *Predictor) Start(ctx context.Context, logsWriter io.Writer, timeout time.Duration) error {
@@ -88,7 +93,7 @@ func (p *Predictor) Start(ctx context.Context, logsWriter io.Writer, timeout tim
 	}
 
 	go func() {
-		if err := docker.ContainerLogsFollow(ctx, p.containerID, logsWriter); err != nil {
+		if err := p.dockerClient.ContainerLogs(ctx, p.containerID, logsWriter); err != nil {
 			// if user hits ctrl-c we expect an error signal
 			if !strings.Contains(err.Error(), "signal: interrupt") {
 				console.Warnf("Error getting container logs: %s", err)
@@ -111,7 +116,7 @@ func (p *Predictor) waitForContainerReady(ctx context.Context, timeout time.Dura
 
 		time.Sleep(100 * time.Millisecond)
 
-		cont, err := docker.ContainerInspect(ctx, p.containerID)
+		cont, err := p.dockerClient.ContainerInspect(ctx, p.containerID)
 		if err != nil {
 			return fmt.Errorf("Failed to get container status: %w", err)
 		}
