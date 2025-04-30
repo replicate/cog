@@ -59,6 +59,15 @@ func (c *Client) EndBuild(ctx context.Context, err error, logContext BuildLogCon
 		LocalImage: logContext.localImage,
 	}
 
+	disabled, err := DisableFromEnvironment()
+	if err != nil {
+		console.Warn("Failed to read coglog disabled environment variable: " + err.Error())
+		return false
+	}
+	if disabled {
+		return false
+	}
+
 	jsonData, err := json.Marshal(buildLog)
 	if err != nil {
 		console.Warn("Failed to marshal JSON for build log: " + err.Error())

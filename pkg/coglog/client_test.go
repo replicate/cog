@@ -27,3 +27,11 @@ func TestLogBuild(t *testing.T) {
 	success := client.EndBuild(t.Context(), nil, logContext)
 	require.True(t, success)
 }
+
+func TestLogBuildDisabled(t *testing.T) {
+	t.Setenv(CoglogDisableEnvVarName, "true")
+	client := NewClient(http.DefaultClient)
+	logContext := client.StartBuild(false, false)
+	success := client.EndBuild(t.Context(), nil, logContext)
+	require.False(t, success)
+}

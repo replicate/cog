@@ -11,3 +11,10 @@ func TestHostFromEnvironment(t *testing.T) {
 	t.Setenv(CoglogHostEnvVarName, testHost)
 	require.Equal(t, HostFromEnvironment(), testHost)
 }
+
+func TestDisabledFromEnvironment(t *testing.T) {
+	t.Setenv(CoglogDisableEnvVarName, "true")
+	disabled, err := DisableFromEnvironment()
+	require.NoError(t, err)
+	require.True(t, disabled)
+}
