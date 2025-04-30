@@ -131,7 +131,7 @@ func (c *Client) postLog(ctx context.Context, jsonData []byte) error {
 		return err
 	}
 	if disabled {
-		return nil
+		return errors.New("Cog logging disabled")
 	}
 
 	url := buildURL()
