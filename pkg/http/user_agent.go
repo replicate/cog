@@ -8,7 +8,7 @@ import (
 )
 
 func UserAgent() string {
-	platform := "Unknown"
+	var platform string
 	switch runtime.GOOS {
 	case "linux":
 		platform = "Linux"
