@@ -35,3 +35,20 @@ func TestLogBuildDisabled(t *testing.T) {
 	success := client.EndBuild(t.Context(), nil, logContext)
 	require.False(t, success)
 }
+
+func TestLogPush(t *testing.T) {
+	// Setup mock http server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	url, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	t.Setenv(env.SchemeEnvVarName, url.Scheme)
+	t.Setenv(CoglogHostEnvVarName, url.Host)
+
+	client := NewClient(http.DefaultClient)
+	logContext := client.StartPush(false, false)
+	success := client.EndPush(t.Context(), nil, logContext)
+	require.True(t, success)
+}

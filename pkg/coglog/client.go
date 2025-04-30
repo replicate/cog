@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -24,7 +25,20 @@ type BuildLogContext struct {
 	localImage bool
 }
 
+type PushLogContext struct {
+	started    time.Time
+	fast       bool
+	localImage bool
+}
+
 type buildLog struct {
+	DurationMs float32 `json:"length_ms"`
+	BuildError *string `json:"error"`
+	Fast       bool    `json:"fast"`
+	LocalImage bool    `json:"local_image"`
+}
+
+type pushLog struct {
 	DurationMs float32 `json:"length_ms"`
 	BuildError *string `json:"error"`
 	Fast       bool    `json:"fast"`
@@ -59,37 +73,80 @@ func (c *Client) EndBuild(ctx context.Context, err error, logContext BuildLogCon
 		LocalImage: logContext.localImage,
 	}
 
-	disabled, err := DisableFromEnvironment()
-	if err != nil {
-		console.Warn("Failed to read coglog disabled environment variable: " + err.Error())
-		return false
-	}
-	if disabled {
-		return false
-	}
-
 	jsonData, err := json.Marshal(buildLog)
 	if err != nil {
 		console.Warn("Failed to marshal JSON for build log: " + err.Error())
 		return false
 	}
 
+	err = c.postLog(ctx, jsonData)
+	if err != nil {
+		console.Warn(err.Error())
+		return false
+	}
+
+	return true
+}
+
+func (c *Client) StartPush(fast bool, localImage bool) PushLogContext {
+	logContext := PushLogContext{
+		started:    time.Now(),
+		fast:       fast,
+		localImage: localImage,
+	}
+	return logContext
+}
+
+func (c *Client) EndPush(ctx context.Context, err error, logContext PushLogContext) bool {
+	var errorStr *string = nil
+	if err != nil {
+		errStr := err.Error()
+		errorStr = &errStr
+	}
+	pushLog := pushLog{
+		DurationMs: float32(time.Now().Sub(logContext.started).Milliseconds()),
+		BuildError: errorStr,
+		Fast:       logContext.fast,
+		LocalImage: logContext.localImage,
+	}
+
+	jsonData, err := json.Marshal(pushLog)
+	if err != nil {
+		console.Warn("Failed to marshal JSON for build log: " + err.Error())
+		return false
+	}
+
+	err = c.postLog(ctx, jsonData)
+	if err != nil {
+		console.Warn(err.Error())
+		return false
+	}
+
+	return true
+}
+
+func (c *Client) postLog(ctx context.Context, jsonData []byte) error {
+	disabled, err := DisableFromEnvironment()
+	if err != nil {
+		return err
+	}
+	if disabled {
+		return nil
+	}
+
 	url := buildURL()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url.String(), bytes.NewReader(jsonData))
 	if err != nil {
-		console.Warn(err.Error())
-		return false
+		return err
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
-		console.Warn(err.Error())
-		return false
+		return err
 	}
 	if resp.StatusCode != http.StatusOK {
-		console.Warn("Bad response from build log: " + strconv.Itoa(resp.StatusCode))
-		return false
+		return errors.New("Bad response from build log: " + strconv.Itoa(resp.StatusCode))
 	}
-	return true
+	return nil
 }
 
 func baseURL() url.URL {

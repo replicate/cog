@@ -9,9 +9,11 @@ import (
 
 	"github.com/replicate/go/uuid"
 
+	"github.com/replicate/cog/pkg/coglog"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -45,8 +47,16 @@ func push(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	command := docker.NewDockerCommand()
+	client, err := http.ProvideHTTPClient(ctx, command)
+	if err != nil {
+		return err
+	}
+	logClient := coglog.NewClient(client)
+	logCtx := logClient.StartPush(buildFast, buildLocalImage)
+
 	cfg, projectDir, err := config.GetConfig(projectDirFlag)
 	if err != nil {
+		logClient.EndPush(ctx, err, logCtx)
 		return err
 	}
 	if cfg.Build.Fast {
@@ -59,17 +69,23 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	if imageName == "" {
-		return fmt.Errorf("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push r8.im/your-username/hotdog-detector'")
+		err = fmt.Errorf("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push r8.im/your-username/hotdog-detector'")
+		logClient.EndPush(ctx, err, logCtx)
+		return err
 	}
 
 	replicatePrefix := fmt.Sprintf("%s/", global.ReplicateRegistryHost)
 	if strings.HasPrefix(imageName, replicatePrefix) {
 		if err := docker.ManifestInspect(ctx, imageName); err != nil && strings.Contains(err.Error(), `"code":"NAME_UNKNOWN"`) {
-			return fmt.Errorf("Unable to find Replicate existing model for %s. Go to replicate.com and create a new model before pushing.", imageName)
+			err = fmt.Errorf("Unable to find Replicate existing model for %s. Go to replicate.com and create a new model before pushing.", imageName)
+			logClient.EndPush(ctx, err, logCtx)
+			return err
 		}
 	} else {
 		if buildLocalImage {
-			return fmt.Errorf("Unable to push a local image model to a non replicate host, please disable the local image flag before pushing to this host.")
+			err = fmt.Errorf("Unable to push a local image model to a non replicate host, please disable the local image flag before pushing to this host.")
+			logClient.EndPush(ctx, err, logCtx)
+			return err
 		}
 	}
 
@@ -98,10 +114,10 @@ func push(cmd *cobra.Command, args []string) error {
 	err = docker.Push(ctx, imageName, buildFast, projectDir, command, docker.BuildInfo{
 		BuildTime: buildDuration,
 		BuildID:   buildID.String(),
-	})
+	}, client)
 	if err != nil {
 		if strings.Contains(err.Error(), "404") {
-			return fmt.Errorf("Unable to find existing Replicate model for %s. "+
+			err = fmt.Errorf("Unable to find existing Replicate model for %s. "+
 				"Go to replicate.com and create a new model before pushing."+
 				"\n\n"+
 				"If the model already exists, you may be getting this error "+
@@ -110,8 +126,12 @@ func push(cmd *cobra.Command, args []string) error {
 				"or `sudo cog push` instead of `cog push`, "+
 				"which causes Docker to use the wrong Docker credentials.",
 				imageName)
+			logClient.EndPush(ctx, err, logCtx)
+			return err
 		}
-		return fmt.Errorf("Failed to push image: %w", err)
+		err = fmt.Errorf("Failed to push image: %w", err)
+		logClient.EndPush(ctx, err, logCtx)
+		return err
 	}
 
 	console.Infof("Image '%s' pushed", imageName)
@@ -119,6 +139,7 @@ func push(cmd *cobra.Command, args []string) error {
 		replicatePage := fmt.Sprintf("https://%s", strings.Replace(imageName, global.ReplicateRegistryHost, global.ReplicateWebsiteHost, 1))
 		console.Infof("\nRun your model on Replicate:\n    %s", replicatePage)
 	}
+	logClient.EndPush(ctx, nil, logCtx)
 
 	return nil
 }
