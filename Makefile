@@ -7,7 +7,8 @@ BINDIR = $(PREFIX)/bin
 INSTALL := install -m 0755
 
 GO ?= go
-GORELEASER := $(GO) tool goreleaser
+# GORELEASER := $(GO) tool goreleaser
+GORELEASER := $(GO) run github.com/goreleaser/goreleaser/v2@latest
 GOIMPORTS := $(GO) tool goimports
 GOLINT := $(GO) tool golangci-lint
 
