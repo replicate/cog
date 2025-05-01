@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SRC="amd64/alpine:3.14"
+TAG="cog-test-fixture:alpine"
+
 echo "Creating test image fixtures"
 
-docker pull alpine:latest --platform linux/amd64
+docker pull $SRC
 
-docker tag alpine:latest cog-test-fixture:alpine
+docker tag $SRC $TAG
 
-docker save -o alpine.tar cog-test-fixture:alpine
+docker save -o alpine.tar $TAG
 
-docker rmi cog-test-fixture:alpine
+docker rmi $TAG
 
 echo "Test fixtures created"
