@@ -37,7 +37,14 @@ func NewDockerCommand() *DockerCommand {
 func (c *DockerCommand) Pull(ctx context.Context, image string) error {
 	console.Debugf("=== DockerCommand.Pull %s", image)
 
-	return c.exec(ctx, os.Stderr, "pull", image, "--platform", "linux/amd64")
+	err := c.exec(ctx, os.Stderr, "pull", image, "--platform", "linux/amd64")
+	if err != nil {
+		if strings.Contains(err.Error(), "manifest unknown") || strings.Contains(err.Error(), "failed to resolve reference") {
+			return &command.NotFoundError{Object: "manifest", Ref: image}
+		}
+		return err
+	}
+	return nil
 }
 
 func (c *DockerCommand) Push(ctx context.Context, image string) error {

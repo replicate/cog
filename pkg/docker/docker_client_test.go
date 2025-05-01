@@ -167,7 +167,8 @@ func (s *DockerClientSuite) runPullTests(t *testing.T) {
 		// TODO[md]: this might not be the right check. we probably want to wrap the error from the registry
 		// so we handle other failure cases, like failed auth, unknown tag, and unknown repo
 		require.Error(t, err, "Failed to pull image %q", imageRef)
-		assert.ErrorContains(t, err, "failed to resolve reference")
+		assert.ErrorIs(t, err, &command.NotFoundError{Object: "manifest", Ref: imageRef})
+		// assert.ErrorContains(t, err, "failed to resolve reference")
 	})
 
 	t.Run("InvalidAuth", func(t *testing.T) {
