@@ -89,3 +89,7 @@ func (c *MockCommand) ContainerLogs(ctx context.Context, containerID string, w i
 func (c *MockCommand) ContainerInspect(ctx context.Context, id string) (*container.InspectResponse, error) {
 	panic("not implemented")
 }
+
+func (c *MockCommand) ContainerStop(ctx context.Context, containerID string) error {
+	panic("not implemented")
+}

@@ -125,7 +125,7 @@ func (c *DockerCommand) Inspect(ctx context.Context, ref string) (*image.Inspect
 	output, err := c.execCaptured(ctx, args...)
 	if err != nil {
 		if strings.Contains(err.Error(), "No such image") {
-			return nil, &command.NotFoundError{Ref: ref}
+			return nil, &command.NotFoundError{Object: "image", Ref: ref}
 		}
 		return nil, err
 	}
@@ -198,6 +198,19 @@ func (c *DockerCommand) ContainerInspect(ctx context.Context, id string) (*conta
 	}
 
 	return resp[0], nil
+}
+
+func (c *DockerCommand) ContainerStop(ctx context.Context, containerID string) error {
+	console.Debugf("=== DockerCommand.ContainerStop %s", containerID)
+
+	if err := c.exec(ctx, os.Stderr, "container", "stop", "--time", "3", containerID); err != nil {
+		if strings.Contains(err.Error(), "No such container") {
+			err = &command.NotFoundError{Object: "container", Ref: containerID}
+		}
+		return fmt.Errorf("failed to stop container %q: %w", containerID, err)
+	}
+
+	return nil
 }
 
 func (c *DockerCommand) exec(ctx context.Context, w io.Writer, args ...string) error {

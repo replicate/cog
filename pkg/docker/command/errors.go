@@ -18,7 +18,7 @@ func (e *NotFoundError) Error() string {
 	if objType == "" {
 		objType = "object"
 	}
-	return fmt.Sprintf("%s %q not found", objType, e.Ref)
+	return fmt.Sprintf("%s not found: %q", objType, e.Ref)
 }
 
 func (e *NotFoundError) Is(target error) bool {

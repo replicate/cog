@@ -18,4 +18,5 @@ type Command interface {
 	ImageExists(ctx context.Context, ref string) (bool, error)
 	ContainerLogs(ctx context.Context, containerID string, w io.Writer) error
 	ContainerInspect(ctx context.Context, id string) (*container.InspectResponse, error)
+	ContainerStop(ctx context.Context, containerID string) error
 }

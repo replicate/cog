@@ -150,7 +150,7 @@ func (p *Predictor) waitForContainerReady(ctx context.Context, timeout time.Dura
 }
 
 func (p *Predictor) Stop(ctx context.Context) error {
-	return docker.Stop(ctx, p.containerID)
+	return p.dockerClient.ContainerStop(ctx, p.containerID)
 }
 
 func (p *Predictor) Predict(inputs Inputs) (*Response, error) {
