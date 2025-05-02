@@ -149,7 +149,7 @@ func (g *FastGenerator) generate(ctx context.Context) (string, error) {
 	}
 
 	// Always pull latest monobase as we rely on it for build logic
-	if err := g.dockerCommand.Pull(ctx, MONOBASE_IMAGE); err != nil {
+	if _, err := g.dockerCommand.Pull(ctx, MONOBASE_IMAGE, true); err != nil {
 		return "", err
 	}
 

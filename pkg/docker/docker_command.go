@@ -34,17 +34,37 @@ func NewDockerCommand() *DockerCommand {
 	return &DockerCommand{}
 }
 
-func (c *DockerCommand) Pull(ctx context.Context, image string) error {
-	console.Debugf("=== DockerCommand.Pull %s", image)
+func (c *DockerCommand) Pull(ctx context.Context, image string, force bool) (*image.InspectResponse, error) {
+	console.Debugf("=== DockerCommand.Pull %s force:%t", image, force)
+
+	if !force {
+		inspect, err := c.Inspect(ctx, image)
+		if err == nil {
+			return inspect, nil
+		} else if !command.IsNotFoundError(err) {
+			// Log a warning if inspect fails for any reason other than not found.
+			// It's likely that pull will fail as well, but it's better to return that error
+			// so the caller can handle it appropriately than to fail silently here.
+			console.Warnf("failed to inspect image before pulling %q: %s", image, err)
+		}
+	}
 
 	err := c.exec(ctx, os.Stderr, "pull", image, "--platform", "linux/amd64")
 	if err != nil {
+		// A "not found" error message will be different depending on what flavor of engine and
+		// registry version we're hitting. This checks for both docker and OCI lingo.
 		if strings.Contains(err.Error(), "manifest unknown") || strings.Contains(err.Error(), "failed to resolve reference") {
-			return &command.NotFoundError{Object: "manifest", Ref: image}
+			return nil, &command.NotFoundError{Object: "manifest", Ref: image}
 		}
-		return err
+		return nil, fmt.Errorf("failed to pull image %q: %w", image, err)
 	}
-	return nil
+
+	// pull succeeded, inspect the image again and return
+	inspect, err := c.Inspect(ctx, image)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect image after pulling %q: %w", image, err)
+	}
+	return inspect, nil
 }
 
 func (c *DockerCommand) Push(ctx context.Context, image string) error {

@@ -22,8 +22,8 @@ func NewMockCommand() *MockCommand {
 	return &MockCommand{}
 }
 
-func (c *MockCommand) Pull(ctx context.Context, image string) error {
-	return nil
+func (c *MockCommand) Pull(ctx context.Context, image string, force bool) (*image.InspectResponse, error) {
+	return nil, nil
 }
 
 func (c *MockCommand) Push(ctx context.Context, image string) error {

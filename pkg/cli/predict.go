@@ -21,7 +21,6 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/util/console"
@@ -115,18 +114,12 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("Invalid image name '%s'. Did you forget `-i`?", imageName)
 		}
 
-		manifest, err := dockerCommand.Inspect(ctx, imageName)
+		inspectResp, err := dockerCommand.Pull(ctx, imageName, false)
 		if err != nil {
-			if command.IsNotFoundError(err) {
-				console.Infof("Pulling image: %s", imageName)
-				if err := dockerCommand.Pull(ctx, imageName); err != nil {
-					return fmt.Errorf("Failed to pull %s: %w", imageName, err)
-				}
-			}
-			return fmt.Errorf("Failed to inspect %s: %w", imageName, err)
+			return fmt.Errorf("Failed to pull image %q: %w", imageName, err)
 		}
 
-		conf, err := image.CogConfigFromManifest(ctx, manifest)
+		conf, err := image.CogConfigFromManifest(ctx, inspectResp)
 		if err != nil {
 			return err
 		}

@@ -97,7 +97,6 @@ func (s *DockerClientSuite) runImageInspectTests(t *testing.T) {
 }
 
 func (s *DockerClientSuite) runPullTests(t *testing.T) {
-	fmt.Println("runPullTests")
 	registryContainer, err := testregistry.Run(
 		t.Context(),
 		"registry:2",
@@ -115,6 +114,11 @@ func (s *DockerClientSuite) runPullTests(t *testing.T) {
 	defer testcontainers.CleanupContainer(t, registryContainer)
 	require.NoError(t, err, "Failed to start registry container")
 
+	// TODO[md]: add tests for the following permutations:
+	// - remote reference exists/not exists
+	// - local reference exists/not exists
+	// - force pull true/false
+
 	t.Run("RemoteImageExists", func(t *testing.T) {
 		imageRef := dockertest.ImageRefWithRegistry(t, registryContainer.RegistryName, "")
 
@@ -124,11 +128,16 @@ func (s *DockerClientSuite) runPullTests(t *testing.T) {
 
 		s.assertNoImageExists(t, imageRef)
 
-		err = s.dockerClient.Pull(t.Context(), imageRef)
+		resp, err := s.dockerClient.Pull(t.Context(), imageRef, false)
 		require.NoError(t, err, "Failed to pull image %q", imageRef)
 		s.dockerHelper.CleanupImage(t, imageRef)
 
 		s.assertImageExists(t, imageRef)
+		expectedResp := s.dockerHelper.InspectImage(t, imageRef)
+		// TODO[md]: we should check that the responsees are actually equal beyond the IDs. but atm
+		// the CLI and api are slightly different. The CLI leaves the descriptor field nil while the
+		// API response is populated. These should be identical on the new client, so we can change to EqualValues
+		assert.Equal(t, expectedResp.ID, resp.ID, "inspect response should match expected")
 	})
 
 	t.Run("RemoteReferenceNotFound", func(t *testing.T) {
@@ -136,11 +145,12 @@ func (s *DockerClientSuite) runPullTests(t *testing.T) {
 
 		s.assertNoImageExists(t, imageRef)
 
-		err := s.dockerClient.Pull(t.Context(), imageRef)
+		resp, err := s.dockerClient.Pull(t.Context(), imageRef, false)
 		// TODO[md]: this might not be the right check. we probably want to wrap the error from the registry
 		// so we handle other failure cases, like failed auth, unknown tag, and unknown repo
 		require.Error(t, err, "Failed to pull image %q", imageRef)
 		assert.ErrorIs(t, err, &command.NotFoundError{Object: "manifest", Ref: imageRef})
+		assert.Nil(t, resp, "inspect response should be nil")
 	})
 
 	t.Run("InvalidAuth", func(t *testing.T) {
@@ -149,11 +159,12 @@ func (s *DockerClientSuite) runPullTests(t *testing.T) {
 
 		s.assertNoImageExists(t, imageRef)
 
-		err = s.dockerClient.Pull(t.Context(), imageRef)
+		resp, err := s.dockerClient.Pull(t.Context(), imageRef, false)
 		// TODO[md]: this might not be the right check. we probably want to wrap the error from the registry
 		// so we handle other failure cases, like failed auth, unknown tag, and unknown repo
 		require.Error(t, err, "Failed to pull image %q", imageRef)
 		assert.ErrorContains(t, err, "failed to resolve reference")
+		assert.Nil(t, resp, "inspect response should be nil")
 	})
 }
 
