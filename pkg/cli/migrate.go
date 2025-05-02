@@ -41,5 +41,5 @@ func cmdMigrate(cmd *cobra.Command, args []string) error {
 
 func addYesFlag(cmd *cobra.Command) {
 	const acceptFlag = "y"
-	cmd.Flags().BoolVar(&buildPrecompile, acceptFlag, false, "Whether to disable interaction and automatically accept the changes.")
+	cmd.Flags().BoolVar(&migrateAccept, acceptFlag, false, "Whether to disable interaction and automatically accept the changes.")
 }
