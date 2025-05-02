@@ -22,4 +22,19 @@ type Command interface {
 	ContainerLogs(ctx context.Context, containerID string, w io.Writer) error
 	ContainerInspect(ctx context.Context, id string) (*container.InspectResponse, error)
 	ContainerStop(ctx context.Context, containerID string) error
+
+	ImageBuild(ctx context.Context, options ImageBuildOptions) error
+}
+
+type ImageBuildOptions struct {
+	// Platform           string
+	WorkingDir         string
+	DockerfileContents string
+	ImageName          string
+	Secrets            []string
+	NoCache            bool
+	ProgressOutput     string
+	Epoch              int64
+	ContextDir         string
+	BuildContexts      map[string]string
 }

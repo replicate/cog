@@ -9,6 +9,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/global"
@@ -110,6 +111,8 @@ func newBaseImageBuildCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
+			dockerClient := docker.NewDockerCommand()
+
 			generator, err := baseImageGeneratorFromFlags()
 			if err != nil {
 				return err
@@ -125,10 +128,22 @@ func newBaseImageBuildCommand() *cobra.Command {
 			}
 			baseImageName := dockerfile.BaseImageName(baseImageCUDAVersion, baseImagePythonVersion, baseImageTorchVersion)
 
-			err = docker.Build(ctx, cwd, dockerfileContents, baseImageName, []string{}, buildNoCache, buildProgressOutput, config.BuildSourceEpochTimestamp, dockercontext.StandardBuildDirectory, nil)
-			if err != nil {
+			buildOpts := command.ImageBuildOptions{
+				WorkingDir:         cwd,
+				DockerfileContents: dockerfileContents,
+				ImageName:          baseImageName,
+				NoCache:            buildNoCache,
+				ProgressOutput:     buildProgressOutput,
+				Epoch:              config.BuildSourceEpochTimestamp,
+				ContextDir:         dockercontext.StandardBuildDirectory,
+			}
+			if err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 				return err
 			}
+			// err = docker.Build(ctx, cwd, dockerfileContents, baseImageName, []string{}, buildNoCache, buildProgressOutput, config.BuildSourceEpochTimestamp, dockercontext.StandardBuildDirectory, nil)
+			// if err != nil {
+			// 	return err
+			// }
 			fmt.Println("Successfully built image: " + baseImageName)
 			return nil
 		},

@@ -44,12 +44,14 @@ Generate and run an HTTP server based on the declared model inputs and outputs.`
 func cmdServe(cmd *cobra.Command, arg []string) error {
 	ctx := cmd.Context()
 
+	dockerCommand := docker.NewDockerCommand()
+
 	cfg, projectDir, err := config.GetConfig(configFilename)
 	if err != nil {
 		return err
 	}
 
-	imageName, err := image.BuildBase(ctx, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput)
+	imageName, err := image.BuildBase(ctx, dockerCommand, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput)
 	if err != nil {
 		return err
 	}
@@ -72,7 +74,6 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		"--await-explicit-shutdown", "true",
 	}
 
-	dockerCommand := docker.NewDockerCommand()
 	runOptions := docker.RunOptions{
 		Args:    args,
 		Env:     envFlags,

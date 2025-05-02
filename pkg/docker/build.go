@@ -3,78 +3,13 @@ package docker
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 
-	"github.com/replicate/cog/pkg/config"
-
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 )
-
-func Build(ctx context.Context, dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string, epoch int64, contextDir string, buildContexts map[string]string) error {
-	args := []string{
-		"buildx", "build",
-		// disable provenance attestations since we don't want them cluttering the registry
-		"--provenance", "false",
-	}
-
-	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
-		// Fixes "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested"
-		args = append(args, "--platform", "linux/amd64", "--load")
-	}
-
-	for _, secret := range secrets {
-		args = append(args, "--secret", secret)
-	}
-
-	if noCache {
-		args = append(args, "--no-cache")
-	}
-
-	// Base Images are special, we force timestamp rewriting to epoch. This requires some consideration on the output
-	// format. It's generally safe to override to --output type=docker,rewrite-timestamp=true as the use of `--load` is
-	// equivalent to `--output type=docker`
-	if epoch >= 0 {
-		args = append(args,
-			"--build-arg", fmt.Sprintf("SOURCE_DATE_EPOCH=%d", epoch),
-			"--output", "type=docker,rewrite-timestamp=true")
-		console.Infof("Forcing timestamp rewriting to epoch %d", epoch)
-
-	}
-
-	if config.BuildXCachePath != "" {
-		args = append(
-			args,
-			"--cache-from", "type=local,src="+config.BuildXCachePath,
-			"--cache-to", "type=local,dest="+config.BuildXCachePath,
-		)
-	} else {
-		args = append(args, "--cache-to", "type=inline")
-	}
-
-	for name, dir := range buildContexts {
-		args = append(args, "--build-context", name+"="+dir)
-	}
-
-	args = append(args,
-		"--file", "-",
-		"--tag", imageName,
-		"--progress", progressOutput,
-		contextDir,
-	)
-
-	cmd := exec.CommandContext(ctx, "docker", args...)
-	cmd.Dir = dir
-	cmd.Stdout = os.Stderr // redirect stdout to stderr - build output is all messaging
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = strings.NewReader(dockerfileContents)
-
-	console.Debug("$ " + strings.Join(cmd.Args, " "))
-	return cmd.Run()
-}
 
 func BuildAddLabelsAndSchemaToImage(ctx context.Context, image string, labels map[string]string, bundledSchemaFile string, bundledSchemaPy string) error {
 	args := []string{
