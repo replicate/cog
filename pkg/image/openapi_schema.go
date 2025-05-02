@@ -4,12 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
-
-	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -56,19 +52,19 @@ func GenerateOpenAPISchema(ctx context.Context, imageName string, enableGPU bool
 	return schema, nil
 }
 
-// TODO[md]: this is unused, remove it
-func GetOpenAPISchema(ctx context.Context, dockerClient command.Command, imageName string) (*openapi3.T, error) {
-	manifest, err := dockerClient.Inspect(ctx, imageName)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to inspect %s: %w", imageName, err)
-	}
-	schemaString := manifest.Config.Labels[command.CogOpenAPISchemaLabelKey]
-	if schemaString == "" {
-		// Deprecated. Remove for 1.0.
-		schemaString = manifest.Config.Labels["org.cogmodel.openapi_schema"]
-	}
-	if schemaString == "" {
-		return nil, fmt.Errorf("Image %s does not appear to be a Cog model", imageName)
-	}
-	return openapi3.NewLoader().LoadFromData([]byte(schemaString))
-}
+// // TODO[md]: this is unused, remove it
+// func GetOpenAPISchema(ctx context.Context, dockerClient command.Command, imageName string) (*openapi3.T, error) {
+// 	manifest, err := dockerClient.Inspect(ctx, imageName)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("Failed to inspect %s: %w", imageName, err)
+// 	}
+// 	schemaString := manifest.Config.Labels[command.CogOpenAPISchemaLabelKey]
+// 	if schemaString == "" {
+// 		// Deprecated. Remove for 1.0.
+// 		schemaString = manifest.Config.Labels["org.cogmodel.openapi_schema"]
+// 	}
+// 	if schemaString == "" {
+// 		return nil, fmt.Errorf("Image %s does not appear to be a Cog model", imageName)
+// 	}
+// 	return openapi3.NewLoader().LoadFromData([]byte(schemaString))
+// }

@@ -29,7 +29,6 @@ import (
 const dockerignoreBackupPath = ".dockerignore.cog.bak"
 const weightsManifestPath = ".cog/cache/weights_manifest.json"
 const bundledSchemaFile = ".cog/openapi_schema.json"
-const bundledSchemaPy = ".cog/schema.py"
 
 var errGit = errors.New("git error")
 
@@ -44,7 +43,6 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 
 	// remove bundled schema files that may be left from previous builds
 	_ = os.Remove(bundledSchemaFile)
-	_ = os.Remove(bundledSchemaPy)
 
 	if err := checkCompatibleDockerIgnore(dir); err != nil {
 		return err
@@ -281,7 +279,7 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 		labels[key] = val
 	}
 
-	if err := docker.BuildAddLabelsAndSchemaToImage(ctx, imageName, labels, bundledSchemaFile, bundledSchemaPy); err != nil {
+	if err := docker.BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, imageName, labels, bundledSchemaFile); err != nil {
 		return fmt.Errorf("Failed to add labels to image: %w", err)
 	}
 	return nil
