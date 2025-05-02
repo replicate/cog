@@ -45,59 +45,77 @@ func ReadRequirements(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer fh.Close()
+
 	// Use scanner to handle CRLF endings
 	scanner := bufio.NewScanner(fh)
 	scanner.Split(scanLinesWithContinuations)
-	requirements := []string{}
+
+	var requirements []string
+
 	for scanner.Scan() {
-		requirementsText := strings.TrimSpace(scanner.Text())
-		if len(requirementsText) == 0 {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comment lines
+		if strings.HasPrefix(line, "#") {
 			continue
 		}
-		requirements = append(requirements, requirementsText)
+
+		// Remove any trailing comments
+		if idx := strings.Index(line, "#"); idx >= 0 {
+			line = line[:idx]
+		}
+
+		if line != "" {
+			requirements = append(requirements, line)
+		}
 	}
-	return requirements, nil
+
+	return requirements, scanner.Err()
 }
 
+// scanLinesWithContinuations is a modified version of bufio.ScanLines that
+// also handles line continuations (lines ending with a backslash).
 func scanLinesWithContinuations(data []byte, atEOF bool) (advance int, token []byte, err error) {
-	advance = 0
-	token = nil
-	err = nil
-	inHash := false
-	for {
-		if atEOF || len(data) == 0 {
-			break
-		}
-		if token == nil {
-			token = []byte{}
-		}
-		if data[advance] == '#' {
-			inHash = true
-		}
-		if data[advance] == '\n' {
-			shouldAdvance := true
-			if len(token) > 0 {
-				if token[len(token)-1] == '\r' && !inHash {
-					token = token[:len(token)-1]
-				}
-				if token[len(token)-1] == '\\' {
-					if !inHash {
-						token = token[:len(token)-1]
-					}
-					shouldAdvance = false
-				}
+	// If we're at EOF and there's no data, return nil
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+
+	var line []byte
+	start := 0
+	for i := 0; i < len(data); i++ {
+		if data[i] == '\n' {
+			end := i
+			if end > 0 && data[end-1] == '\r' {
+				end--
 			}
-			if shouldAdvance {
-				advance++
-				break
+			// Add this segment to our accumulated line
+			line = append(line, data[start:end]...)
+
+			if len(line) > 0 && line[len(line)-1] == '\\' {
+				// This is a continuation - remove the backslash and continue
+				line = line[:len(line)-1]
+				start = i + 1
+				continue
 			}
-		} else if !inHash {
-			token = append(token, data[advance])
-		}
-		advance++
-		if advance == len(data) {
-			break
+
+			// Not a continuation, return the accumulated line
+			return i + 1, line, nil
 		}
 	}
-	return advance, token, err
+
+	// If we're at EOF, we have a final, non-terminated line
+	if atEOF {
+		if len(data) > start {
+			line = append(line, data[start:]...)
+			if len(line) > 0 && line[len(line)-1] == '\r' {
+				line = line[:len(line)-1]
+			}
+		}
+		return len(data), line, nil
+	}
+
+	// Need more data
+	return 0, nil, nil
 }
