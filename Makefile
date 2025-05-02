@@ -7,7 +7,8 @@ BINDIR = $(PREFIX)/bin
 INSTALL := install -m 0755
 
 GO ?= go
-GORELEASER := $(GO) tool goreleaser
+# GORELEASER := $(GO) tool goreleaser
+GORELEASER := $(GO) run github.com/goreleaser/goreleaser/v2@latest
 GOIMPORTS := $(GO) tool goimports
 GOLINT := $(GO) tool golangci-lint
 
@@ -67,10 +68,11 @@ clean:
 
 .PHONY: test-go
 test-go: pkg/dockerfile/embed/.wheel
-	$(GO) tool gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
+	$(GO) tool gotestsum -- -short -timeout 1200s -parallel 5 ./... $(ARGS)
 
 .PHONY: test-integration
 test-integration: $(COG_BINARIES)
+	$(GO) test ./pkg/docker/...
 	PATH="$(PWD):$(PATH)" $(TOX) -e integration
 
 .PHONY: test-python

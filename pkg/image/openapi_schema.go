@@ -56,15 +56,16 @@ func GenerateOpenAPISchema(ctx context.Context, imageName string, enableGPU bool
 	return schema, nil
 }
 
-func GetOpenAPISchema(ctx context.Context, imageName string) (*openapi3.T, error) {
-	image, err := docker.ImageInspect(ctx, imageName)
+// TODO[md]: this is unused, remove it
+func GetOpenAPISchema(ctx context.Context, dockerClient command.Command, imageName string) (*openapi3.T, error) {
+	manifest, err := dockerClient.Inspect(ctx, imageName)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to inspect %s: %w", imageName, err)
 	}
-	schemaString := image.Config.Labels[command.CogOpenAPISchemaLabelKey]
+	schemaString := manifest.Config.Labels[command.CogOpenAPISchemaLabelKey]
 	if schemaString == "" {
 		// Deprecated. Remove for 1.0.
-		schemaString = image.Config.Labels["org.cogmodel.openapi_schema"]
+		schemaString = manifest.Config.Labels["org.cogmodel.openapi_schema"]
 	}
 	if schemaString == "" {
 		return nil, fmt.Errorf("Image %s does not appear to be a Cog model", imageName)
