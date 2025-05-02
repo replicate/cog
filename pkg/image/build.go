@@ -36,7 +36,7 @@ var errGit = errors.New("git error")
 // Build a Cog model from a config
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
-func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string, useCogBaseImage *bool, strip bool, precompile bool, fastFlag bool, annotations map[string]string, localImage bool) error {
+func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secrets []string, noCache, separateWeights bool, useCudaBaseImage string, progressOutput string, schemaFile string, dockerfileFile string, useCogBaseImage *bool, strip bool, precompile bool, fastFlag bool, annotations map[string]string, localImage bool, dockerCommand command.Command) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 	if fastFlag {
 		console.Info("Fast build enabled.")
@@ -61,8 +61,7 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 			return fmt.Errorf("Failed to build Docker image: %w", err)
 		}
 	} else {
-		command := docker.NewDockerCommand()
-		generator, err := dockerfile.NewGenerator(cfg, dir, fastFlag, command, localImage)
+		generator, err := dockerfile.NewGenerator(cfg, dir, fastFlag, dockerCommand, localImage)
 		if err != nil {
 			return fmt.Errorf("Error creating Dockerfile generator: %w", err)
 		}

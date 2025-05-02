@@ -14,6 +14,7 @@ import (
 	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/env"
+	cogHttp "github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/monobeam"
 	"github.com/replicate/cog/pkg/web"
 	"github.com/replicate/cog/pkg/weights"
@@ -69,9 +70,11 @@ func TestPush(t *testing.T) {
 
 	// Setup mock docker command
 	command := dockertest.NewMockCommand()
+	client, err := cogHttp.ProvideHTTPClient(t.Context(), command)
+	require.NoError(t, err)
 
 	// Run fast push
-	err = Push(t.Context(), "r8.im/username/modelname", true, dir, command, BuildInfo{})
+	err = Push(t.Context(), "r8.im/username/modelname", true, dir, command, BuildInfo{}, client)
 	require.NoError(t, err)
 }
 
@@ -138,8 +141,10 @@ func TestPushWithWeight(t *testing.T) {
 
 	// Setup mock docker command
 	command := dockertest.NewMockCommand()
+	client, err := cogHttp.ProvideHTTPClient(t.Context(), command)
+	require.NoError(t, err)
 
 	// Run fast push
-	err = Push(t.Context(), "r8.im/username/modelname", true, dir, command, BuildInfo{})
+	err = Push(t.Context(), "r8.im/username/modelname", true, dir, command, BuildInfo{}, client)
 	require.NoError(t, err)
 }
