@@ -58,6 +58,7 @@ the prediction on that.`,
 	addSetupTimeoutFlag(cmd)
 	addFastFlag(cmd)
 	addLocalImage(cmd)
+	addConfigFlag(cmd)
 
 	cmd.Flags().StringArrayVarP(&inputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
@@ -78,7 +79,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		// Build image
 
-		cfg, projectDir, err := config.GetConfig()
+		cfg, projectDir, err := config.GetConfig(configFilename)
 		if err != nil {
 			return err
 		}

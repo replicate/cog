@@ -38,6 +38,7 @@ func newRunCommand() *cobra.Command {
 	addGpusFlag(cmd)
 	addFastFlag(cmd)
 	addLocalImage(cmd)
+	addConfigFlag(cmd)
 
 	flags := cmd.Flags()
 	// Flags after first argument are considered args and passed to command
@@ -54,7 +55,7 @@ func newRunCommand() *cobra.Command {
 func run(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	cfg, projectDir, err := config.GetConfig()
+	cfg, projectDir, err := config.GetConfig(configFilename)
 	if err != nil {
 		return err
 	}

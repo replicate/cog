@@ -28,7 +28,7 @@ func TestFindProjectRootDirShouldFindParentDir(t *testing.T) {
 	err = os.MkdirAll(subdir, 0o700)
 	require.NoError(t, err)
 
-	foundDir, err := findProjectRootDir(subdir)
+	foundDir, err := findProjectRootDir(subdir, "cog.yaml")
 	require.NoError(t, err)
 	require.Equal(t, foundDir, projectDir)
 }
@@ -40,6 +40,6 @@ func TestFindProjectRootDirShouldReturnErrIfNoConfig(t *testing.T) {
 	err := os.MkdirAll(subdir, 0o700)
 	require.NoError(t, err)
 
-	_, err = findProjectRootDir(subdir)
+	_, err = findProjectRootDir(subdir, "cog.yaml")
 	require.Error(t, err)
 }

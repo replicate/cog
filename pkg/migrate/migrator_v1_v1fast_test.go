@@ -8,7 +8,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/requirements"
 )
 
@@ -25,7 +24,7 @@ func TestMigrate(t *testing.T) {
 	require.NoError(t, err)
 
 	// Write our test configs/code
-	configFilepath := filepath.Join(dir, global.ConfigFilename)
+	configFilepath := filepath.Join(dir, "cog.yaml")
 	file, err := os.Create(configFilepath)
 	require.NoError(t, err)
 	_, err = file.WriteString(`build:
@@ -56,7 +55,7 @@ class Predictor(BasePredictor):
 
 	// Perform the migration
 	migrator := NewMigratorV1ToV1Fast(false)
-	err = migrator.Migrate(t.Context())
+	err = migrator.Migrate(t.Context(), "cog.yaml")
 	require.NoError(t, err)
 
 	// Check config output

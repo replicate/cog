@@ -29,6 +29,7 @@ var buildStrip bool
 var buildPrecompile bool
 var buildFast bool
 var buildLocalImage bool
+var configFilename string
 
 const useCogBaseImageFlagKey = "use-cog-base-image"
 
@@ -53,6 +54,7 @@ func newBuildCommand() *cobra.Command {
 	addPrecompileFlag(cmd)
 	addFastFlag(cmd)
 	addLocalImage(cmd)
+	addConfigFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
 }
@@ -68,7 +70,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 	logClient := coglog.NewClient(client)
 	logCtx := logClient.StartBuild(buildFast, buildLocalImage)
 
-	cfg, projectDir, err := config.GetConfig()
+	cfg, projectDir, err := config.GetConfig(configFilename)
 	if err != nil {
 		logClient.EndBuild(ctx, err, logCtx)
 		return err
@@ -170,6 +172,11 @@ func addLocalImage(cmd *cobra.Command) {
 	const localImage = "x-localimage"
 	cmd.Flags().BoolVar(&buildLocalImage, localImage, false, "Whether to use the experimental local image features")
 	_ = cmd.Flags().MarkHidden(localImage)
+}
+
+func addConfigFlag(cmd *cobra.Command) {
+	const configFlag = "f"
+	cmd.Flags().StringVar(&configFilename, configFlag, "cog.yaml", "The name of the config file.")
 }
 
 func checkMutuallyExclusiveFlags(cmd *cobra.Command, args []string) error {

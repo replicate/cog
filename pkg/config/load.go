@@ -7,30 +7,30 @@ import (
 	"path/filepath"
 
 	"github.com/replicate/cog/pkg/errors"
-	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/files"
 )
 
 const maxSearchDepth = 100
 
 // Returns the project's root directory, or the directory specified by the --project-dir flag
-func GetProjectDir() (string, error) {
+func GetProjectDir(configFilename string) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-	return findProjectRootDir(cwd)
+	return findProjectRootDir(cwd, configFilename)
 }
 
 // Loads and instantiates a Config object
 // customDir can be specified to override the default - current working directory
-func GetConfig() (*Config, string, error) {
+func GetConfig(configFilename string) (*Config, string, error) {
 	// Find the root project directory
-	rootDir, err := GetProjectDir()
+	rootDir, err := GetProjectDir(configFilename)
+
 	if err != nil {
 		return nil, "", err
 	}
-	configPath := path.Join(rootDir, global.ConfigFilename)
+	configPath := path.Join(rootDir, configFilename)
 
 	// Then try to load the config file from there
 	config, err := loadConfigFromFile(configPath)
@@ -51,7 +51,7 @@ func loadConfigFromFile(file string) (*Config, error) {
 	}
 
 	if !exists {
-		return nil, fmt.Errorf("%s does not exist in %s. Are you in the right directory?", global.ConfigFilename, filepath.Dir(file))
+		return nil, fmt.Errorf("%s does not exist in %s. Are you in the right directory?", filepath.Base(file), filepath.Dir(file))
 	}
 
 	contents, err := os.ReadFile(file)
@@ -69,8 +69,8 @@ func loadConfigFromFile(file string) (*Config, error) {
 }
 
 // Given a directory, find the cog config file in that directory
-func findConfigPathInDirectory(dir string) (configPath string, err error) {
-	filePath := path.Join(dir, global.ConfigFilename)
+func findConfigPathInDirectory(dir string, configFilename string) (configPath string, err error) {
+	filePath := path.Join(dir, configFilename)
 	exists, err := files.Exists(filePath)
 	if err != nil {
 		return "", fmt.Errorf("Failed to scan directory %s for %s: %s", dir, filePath, err)
@@ -78,21 +78,21 @@ func findConfigPathInDirectory(dir string) (configPath string, err error) {
 		return filePath, nil
 	}
 
-	return "", errors.ConfigNotFound(fmt.Sprintf("%s not found in %s", global.ConfigFilename, dir))
+	return "", errors.ConfigNotFound(fmt.Sprintf("%s not found in %s", configFilename, dir))
 }
 
 // Walk up the directory tree to find the root of the project.
 // The project root is defined as the directory housing a `cog.yaml` file.
-func findProjectRootDir(startDir string) (string, error) {
+func findProjectRootDir(startDir string, configFilename string) (string, error) {
 	dir := startDir
 	for i := 0; i < maxSearchDepth; i++ {
-		switch _, err := findConfigPathInDirectory(dir); {
+		switch _, err := findConfigPathInDirectory(dir, configFilename); {
 		case err != nil && !errors.IsConfigNotFound(err):
 			return "", err
 		case err == nil:
 			return dir, nil
 		case dir == "." || dir == "/":
-			return "", errors.ConfigNotFound(fmt.Sprintf("%s not found in %s (or in any parent directories)", global.ConfigFilename, startDir))
+			return "", errors.ConfigNotFound(fmt.Sprintf("%s not found in %s (or in any parent directories)", configFilename, startDir))
 		}
 
 		dir = filepath.Dir(dir)

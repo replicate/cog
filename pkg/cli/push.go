@@ -39,6 +39,7 @@ func newPushCommand() *cobra.Command {
 	addPrecompileFlag(cmd)
 	addFastFlag(cmd)
 	addLocalImage(cmd)
+	addConfigFlag(cmd)
 
 	return cmd
 }
@@ -54,7 +55,7 @@ func push(cmd *cobra.Command, args []string) error {
 	logClient := coglog.NewClient(client)
 	logCtx := logClient.StartPush(buildFast, buildLocalImage)
 
-	cfg, projectDir, err := config.GetConfig()
+	cfg, projectDir, err := config.GetConfig(configFilename)
 	if err != nil {
 		logClient.EndPush(ctx, err, logCtx)
 		return err

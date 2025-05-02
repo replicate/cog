@@ -44,6 +44,7 @@ Otherwise, it will build the model in the current directory and train it.`,
 	addGpusFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
 	addFastFlag(cmd)
+	addConfigFlag(cmd)
 
 	cmd.Flags().StringArrayVarP(&trainInputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringArrayVarP(&trainEnvFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
@@ -61,7 +62,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	volumes := []docker.Volume{}
 	gpus := gpusFlag
 
-	cfg, projectDir, err := config.GetConfig()
+	cfg, projectDir, err := config.GetConfig(configFilename)
 	if err != nil {
 		return err
 	}
