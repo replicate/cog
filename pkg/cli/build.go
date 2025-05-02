@@ -175,7 +175,7 @@ func addLocalImage(cmd *cobra.Command) {
 }
 
 func addConfigFlag(cmd *cobra.Command) {
-	const configFlag = "config"
+	const configFlag = "f"
 	cmd.Flags().StringVar(&configFilename, configFlag, "cog.yaml", "The name of the config file.")
 }
 
