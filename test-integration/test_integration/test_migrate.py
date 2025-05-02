@@ -12,7 +12,11 @@ def test_migrate(tmpdir_factory):
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
     shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
     result = subprocess.run(
-        ["cog", "migrate", "--y"],
+        [
+            "cog",
+            "--y",
+            "migrate",
+        ],
         cwd=out_dir,
         check=True,
         capture_output=True,
