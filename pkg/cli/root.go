@@ -10,8 +10,6 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-var projectDirFlag string
-
 func NewRootCommand() (*cobra.Command, error) {
 	rootCmd := cobra.Command{
 		Use:   "cog",
@@ -47,6 +45,7 @@ https://github.com/replicate/cog`,
 		newRunCommand(),
 		newServeCommand(),
 		newTrainCommand(),
+		newMigrateCommand(),
 	)
 
 	return &rootCmd, nil

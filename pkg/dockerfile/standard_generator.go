@@ -415,15 +415,7 @@ RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /u
 }
 
 func (g *StandardGenerator) installCog() (string, error) {
-	files, err := CogEmbed.ReadDir("embed")
-	if err != nil {
-		return "", err
-	}
-	if len(files) != 1 {
-		return "", fmt.Errorf("should only have one cog wheel embedded")
-	}
-	filename := files[0].Name()
-	data, err := CogEmbed.ReadFile("embed/" + filename)
+	data, filename, err := ReadWheelFile()
 	if err != nil {
 		return "", err
 	}
