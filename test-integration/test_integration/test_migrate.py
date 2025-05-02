@@ -14,8 +14,8 @@ def test_migrate(tmpdir_factory):
     result = subprocess.run(
         [
             "cog",
-            "--y",
             "migrate",
+            "--y",
         ],
         cwd=out_dir,
         check=True,
