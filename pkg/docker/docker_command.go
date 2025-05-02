@@ -283,6 +283,12 @@ func (c *DockerCommand) ImageBuild(ctx context.Context, options command.ImageBui
 		args = append(args, "--no-cache")
 	}
 
+	for k, v := range options.Labels {
+		// Unlike in Dockerfiles, the value here does not need quoting -- Docker merely
+		// splits on the first '=' in the argument and the rest is the label value.
+		args = append(args, "--label", fmt.Sprintf(`%s=%s`, k, v))
+	}
+
 	// Base Images are special, we force timestamp rewriting to epoch. This requires some consideration on the output
 	// format. It's generally safe to override to --output type=docker,rewrite-timestamp=true as the use of `--load` is
 	// equivalent to `--output type=docker`

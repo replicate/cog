@@ -37,4 +37,5 @@ type ImageBuildOptions struct {
 	Epoch              int64
 	ContextDir         string
 	BuildContexts      map[string]string
+	Labels             map[string]string
 }
