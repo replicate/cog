@@ -69,6 +69,8 @@ the prediction on that.`,
 func cmdPredict(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
+	dockerCommand := docker.NewDockerCommand()
+
 	imageName := ""
 	volumes := []docker.Volume{}
 	gpus := gpusFlag
@@ -112,17 +114,12 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("Invalid image name '%s'. Did you forget `-i`?", imageName)
 		}
 
-		exists, err := docker.ImageExists(ctx, imageName)
+		inspectResp, err := dockerCommand.Pull(ctx, imageName, false)
 		if err != nil {
-			return fmt.Errorf("Failed to determine if %s exists: %w", imageName, err)
+			return fmt.Errorf("Failed to pull image %q: %w", imageName, err)
 		}
-		if !exists {
-			console.Infof("Pulling image: %s", imageName)
-			if err := docker.Pull(ctx, imageName); err != nil {
-				return fmt.Errorf("Failed to pull %s: %w", imageName, err)
-			}
-		}
-		conf, err := image.GetConfig(ctx, imageName)
+
+		conf, err := image.CogConfigFromManifest(ctx, inspectResp)
 		if err != nil {
 			return err
 		}
@@ -136,7 +133,6 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 	console.Info("")
 	console.Infof("Starting Docker image %s and running setup()...", imageName)
-	dockerCommand := docker.NewDockerCommand()
 
 	predictor, err := predict.NewPredictor(ctx, docker.RunOptions{
 		GPUs:    gpus,

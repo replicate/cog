@@ -55,6 +55,8 @@ Otherwise, it will build the model in the current directory and train it.`,
 func cmdTrain(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
+	dockerCommand := docker.NewDockerCommand()
+
 	imageName := ""
 	volumes := []docker.Volume{}
 	gpus := gpusFlag
@@ -88,17 +90,12 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		// Use existing image
 		imageName = args[0]
 
-		exists, err := docker.ImageExists(ctx, imageName)
+		inspectResp, err := dockerCommand.Pull(ctx, imageName, false)
 		if err != nil {
-			return fmt.Errorf("Failed to determine if %s exists: %w", imageName, err)
+			return fmt.Errorf("Failed to pull image %q: %w", imageName, err)
 		}
-		if !exists {
-			console.Infof("Pulling image: %s", imageName)
-			if err := docker.Pull(ctx, imageName); err != nil {
-				return fmt.Errorf("Failed to pull %s: %w", imageName, err)
-			}
-		}
-		conf, err := image.GetConfig(ctx, imageName)
+
+		conf, err := image.CogConfigFromManifest(ctx, inspectResp)
 		if err != nil {
 			return err
 		}
@@ -112,7 +109,6 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 
 	console.Info("")
 	console.Infof("Starting Docker image %s...", imageName)
-	dockerCommand := docker.NewDockerCommand()
 
 	predictor, err := predict.NewPredictor(ctx, docker.RunOptions{
 		GPUs:    gpus,
