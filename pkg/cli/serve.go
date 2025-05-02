@@ -44,7 +44,7 @@ Generate and run an HTTP server based on the declared model inputs and outputs.`
 func cmdServe(cmd *cobra.Command, arg []string) error {
 	ctx := cmd.Context()
 
-	cfg, projectDir, err := config.GetConfig(projectDirFlag, configFilename)
+	cfg, projectDir, err := config.GetConfig(configFilename)
 	if err != nil {
 		return err
 	}

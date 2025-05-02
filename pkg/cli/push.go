@@ -55,7 +55,7 @@ func push(cmd *cobra.Command, args []string) error {
 	logClient := coglog.NewClient(client)
 	logCtx := logClient.StartPush(buildFast, buildLocalImage)
 
-	cfg, projectDir, err := config.GetConfig(projectDirFlag, configFilename)
+	cfg, projectDir, err := config.GetConfig(configFilename)
 	if err != nil {
 		logClient.EndPush(ctx, err, logCtx)
 		return err

@@ -70,7 +70,8 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 	logClient := coglog.NewClient(client)
 	logCtx := logClient.StartBuild(buildFast, buildLocalImage)
 
-	cfg, projectDir, err := config.GetConfig(projectDirFlag, configFilename)
+
+	cfg, projectDir, err := config.GetConfig(configFilename)
 	if err != nil {
 		logClient.EndBuild(ctx, err, logCtx)
 		return err
