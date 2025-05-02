@@ -21,6 +21,7 @@ This will attempt to migrate your cog project to be compatible with fast boots.`
 	}
 
 	addYesFlag(cmd)
+	addConfigFlag(cmd)
 
 	return cmd
 }
@@ -31,7 +32,7 @@ func cmdMigrate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	err = migrator.Migrate(ctx)
+	err = migrator.Migrate(ctx, configFilename)
 	if err != nil {
 		return err
 	}

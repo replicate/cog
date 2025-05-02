@@ -16,7 +16,6 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/dockerfile"
-	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
@@ -40,8 +39,8 @@ func NewMigratorV1ToV1Fast(interactive bool) *MigratorV1ToV1Fast {
 	}
 }
 
-func (g *MigratorV1ToV1Fast) Migrate(ctx context.Context) error {
-	cfg, projectDir, err := config.GetConfig()
+func (g *MigratorV1ToV1Fast) Migrate(ctx context.Context, configFilename string) error {
+	cfg, projectDir, err := config.GetConfig(configFilename)
 	if err != nil {
 		return err
 	}
@@ -57,7 +56,7 @@ func (g *MigratorV1ToV1Fast) Migrate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	err = g.flushConfig(cfg, projectDir)
+	err = g.flushConfig(cfg, projectDir, configFilename)
 	return err
 }
 
@@ -167,7 +166,7 @@ func (g *MigratorV1ToV1Fast) checkPythonCode(ctx context.Context, cfg *config.Co
 	return nil
 }
 
-func (g *MigratorV1ToV1Fast) flushConfig(cfg *config.Config, dir string) error {
+func (g *MigratorV1ToV1Fast) flushConfig(cfg *config.Config, dir string, configFilename string) error {
 	if cfg.Build == nil {
 		cfg.Build = config.DefaultConfig().Build
 	}
@@ -182,7 +181,7 @@ func (g *MigratorV1ToV1Fast) flushConfig(cfg *config.Config, dir string) error {
 	}
 	configStr := string(data)
 
-	configFilepath := filepath.Join(dir, global.ConfigFilename)
+	configFilepath := filepath.Join(dir, configFilename)
 	file, err := os.Open(configFilepath)
 	if err != nil {
 		return err
