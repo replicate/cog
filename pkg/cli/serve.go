@@ -34,6 +34,7 @@ Generate and run an HTTP server based on the declared model inputs and outputs.`
 	addUseCogBaseImageFlag(cmd)
 	addGpusFlag(cmd)
 	addFastFlag(cmd)
+	addConfigFlag(cmd)
 
 	cmd.Flags().IntVarP(&port, "port", "p", port, "Port on which to listen")
 
@@ -43,7 +44,7 @@ Generate and run an HTTP server based on the declared model inputs and outputs.`
 func cmdServe(cmd *cobra.Command, arg []string) error {
 	ctx := cmd.Context()
 
-	cfg, projectDir, err := config.GetConfig(projectDirFlag)
+	cfg, projectDir, err := config.GetConfig(projectDirFlag, configFilename)
 	if err != nil {
 		return err
 	}

@@ -21,7 +21,7 @@ predict: "predict.py:SomePredictor"
 func TestGetProjectDirWithFlagSet(t *testing.T) {
 	projectDirFlag := "foo"
 
-	projectDir, err := GetProjectDir(projectDirFlag)
+	projectDir, err := GetProjectDir(projectDirFlag, "cog.yaml")
 	require.NoError(t, err)
 	require.Equal(t, projectDir, projectDirFlag)
 }
@@ -33,7 +33,7 @@ func TestGetConfigShouldLoadFromCustomDir(t *testing.T) {
 	require.NoError(t, err)
 	err = os.WriteFile(path.Join(dir, "requirements.txt"), []byte("torch==1.0.0"), 0o644)
 	require.NoError(t, err)
-	conf, _, err := GetConfig(dir)
+	conf, _, err := GetConfig(dir, "cog.yaml")
 	require.NoError(t, err)
 	require.Equal(t, conf.Predict, "predict.py:SomePredictor")
 	require.Equal(t, conf.Build.PythonVersion, "3.8")
@@ -49,7 +49,7 @@ func TestFindProjectRootDirShouldFindParentDir(t *testing.T) {
 	err = os.MkdirAll(subdir, 0o700)
 	require.NoError(t, err)
 
-	foundDir, err := findProjectRootDir(subdir)
+	foundDir, err := findProjectRootDir(subdir, "cog.yaml")
 	require.NoError(t, err)
 	require.Equal(t, foundDir, projectDir)
 }
@@ -61,6 +61,6 @@ func TestFindProjectRootDirShouldReturnErrIfNoConfig(t *testing.T) {
 	err := os.MkdirAll(subdir, 0o700)
 	require.NoError(t, err)
 
-	_, err = findProjectRootDir(subdir)
+	_, err = findProjectRootDir(subdir, "cog.yaml")
 	require.Error(t, err)
 }

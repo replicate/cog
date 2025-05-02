@@ -8,7 +8,6 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/dockerfile"
-	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -18,7 +17,7 @@ func newDebugCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "debug",
 		Hidden: true,
-		Short:  "Generate a Dockerfile from " + global.ConfigFilename,
+		Short:  "Generate a Dockerfile from cog",
 		RunE:   cmdDockerfile,
 	}
 
@@ -29,6 +28,7 @@ func newDebugCommand() *cobra.Command {
 	addBuildTimestampFlag(cmd)
 	addFastFlag(cmd)
 	addLocalImage(cmd)
+	addConfigFlag(cmd)
 	cmd.Flags().StringVarP(&imageName, "image-name", "", "", "The image name to use for the generated Dockerfile")
 
 	return cmd
@@ -37,7 +37,7 @@ func newDebugCommand() *cobra.Command {
 func cmdDockerfile(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	cfg, projectDir, err := config.GetConfig(projectDirFlag)
+	cfg, projectDir, err := config.GetConfig(projectDirFlag, configFilename)
 	if err != nil {
 		return err
 	}
