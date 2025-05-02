@@ -14,11 +14,7 @@ import (
 const maxSearchDepth = 100
 
 // Returns the project's root directory, or the directory specified by the --project-dir flag
-func GetProjectDir(customDir string) (string, error) {
-	if customDir != "" {
-		return customDir, nil
-	}
-
+func GetProjectDir() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
@@ -28,9 +24,9 @@ func GetProjectDir(customDir string) (string, error) {
 
 // Loads and instantiates a Config object
 // customDir can be specified to override the default - current working directory
-func GetConfig(customDir string) (*Config, string, error) {
+func GetConfig() (*Config, string, error) {
 	// Find the root project directory
-	rootDir, err := GetProjectDir(customDir)
+	rootDir, err := GetProjectDir()
 	if err != nil {
 		return nil, "", err
 	}

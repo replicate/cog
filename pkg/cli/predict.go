@@ -78,7 +78,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		// Build image
 
-		cfg, projectDir, err := config.GetConfig(projectDirFlag)
+		cfg, projectDir, err := config.GetConfig()
 		if err != nil {
 			return err
 		}
