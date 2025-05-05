@@ -262,13 +262,13 @@ func (c *DockerCommand) ImageBuild(ctx context.Context, options command.ImageBui
 		"buildx", "build",
 		// disable provenance attestations since we don't want them cluttering the registry
 		"--provenance", "false",
+		// Fixes "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested"
+		// We do this regardless of the host platform so windows/*. linux/arm64, etc work as well
+		"--platform", "linux/amd64",
 	}
 
 	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
 		args = append(args,
-			// Fixes "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested"
-			// TODO[md]: do this regardless of the host platform so windows/*. linux/arm64, etc work as well
-			"--platform", "linux/amd64",
 			// buildx doesn't load images by default, so we tell it to load here. _however_, the
 			// --output type=docker,rewrite-timestamp=true flag also loads the image, this may not be necessary
 			"--load",
@@ -292,12 +292,11 @@ func (c *DockerCommand) ImageBuild(ctx context.Context, options command.ImageBui
 	// Base Images are special, we force timestamp rewriting to epoch. This requires some consideration on the output
 	// format. It's generally safe to override to --output type=docker,rewrite-timestamp=true as the use of `--load` is
 	// equivalent to `--output type=docker`
-	if options.Epoch >= 0 {
+	if options.Epoch != nil && *options.Epoch >= 0 {
 		args = append(args,
 			"--build-arg", fmt.Sprintf("SOURCE_DATE_EPOCH=%d", options.Epoch),
 			"--output", "type=docker,rewrite-timestamp=true")
 		console.Infof("Forcing timestamp rewriting to epoch %d", options.Epoch)
-
 	}
 
 	if cogconfig.BuildXCachePath != "" {
@@ -314,10 +313,18 @@ func (c *DockerCommand) ImageBuild(ctx context.Context, options command.ImageBui
 		args = append(args, "--build-context", name+"="+dir)
 	}
 
+	if options.ProgressOutput != "" {
+		args = append(args, "--progress", options.ProgressOutput)
+	}
+
+	// default to "." if a context dir is not provided
+	if options.ContextDir == "" {
+		options.ContextDir = "."
+	}
+
 	args = append(args,
 		"--file", "-",
 		"--tag", options.ImageName,
-		"--progress", options.ProgressOutput,
 		options.ContextDir,
 	)
 

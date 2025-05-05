@@ -34,7 +34,7 @@ type ImageBuildOptions struct {
 	Secrets            []string
 	NoCache            bool
 	ProgressOutput     string
-	Epoch              int64
+	Epoch              *int64
 	ContextDir         string
 	BuildContexts      map[string]string
 	Labels             map[string]string

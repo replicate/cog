@@ -63,7 +63,7 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 			Secrets:            secrets,
 			NoCache:            noCache,
 			ProgressOutput:     progressOutput,
-			Epoch:              config.BuildSourceEpochTimestamp,
+			Epoch:              &config.BuildSourceEpochTimestamp,
 			ContextDir:         dockercontext.StandardBuildDirectory,
 		}
 		if err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
@@ -148,7 +148,7 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 				Secrets:            secrets,
 				NoCache:            noCache,
 				ProgressOutput:     progressOutput,
-				Epoch:              config.BuildSourceEpochTimestamp,
+				Epoch:              &config.BuildSourceEpochTimestamp,
 				ContextDir:         contextDir,
 				BuildContexts:      buildContexts,
 			}
@@ -325,7 +325,7 @@ func BuildBase(ctx context.Context, dockerClient command.Command, cfg *config.Co
 		ImageName:          imageName,
 		NoCache:            false,
 		ProgressOutput:     progressOutput,
-		Epoch:              config.BuildSourceEpochTimestamp,
+		Epoch:              &config.BuildSourceEpochTimestamp,
 		ContextDir:         contextDir,
 		BuildContexts:      buildContexts,
 	}
@@ -402,7 +402,7 @@ func buildWeightsImage(ctx context.Context, dockerClient command.Command, dir, d
 		Secrets:            secrets,
 		NoCache:            noCache,
 		ProgressOutput:     progressOutput,
-		Epoch:              config.BuildSourceEpochTimestamp,
+		Epoch:              &config.BuildSourceEpochTimestamp,
 		ContextDir:         contextDir,
 		BuildContexts:      buildContexts,
 	}
@@ -427,7 +427,7 @@ func buildRunnerImage(ctx context.Context, dockerClient command.Command, dir, do
 		Secrets:            secrets,
 		NoCache:            noCache,
 		ProgressOutput:     progressOutput,
-		Epoch:              config.BuildSourceEpochTimestamp,
+		Epoch:              &config.BuildSourceEpochTimestamp,
 		ContextDir:         contextDir,
 		BuildContexts:      buildContexts,
 	}
