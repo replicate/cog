@@ -69,9 +69,6 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 		if err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
 			return fmt.Errorf("Failed to build Docker image: %w", err)
 		}
-		// if err := docker.Build(ctx, dir, string(dockerfileContents), imageName, secrets, noCache, progressOutput, config.BuildSourceEpochTimestamp, dockercontext.StandardBuildDirectory, nil); err != nil {
-		// 	return fmt.Errorf("Failed to build Docker image: %w", err)
-		// }
 	} else {
 		generator, err := dockerfile.NewGenerator(cfg, dir, fastFlag, dockerCommand, localImage)
 		if err != nil {
@@ -143,7 +140,7 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 
 			buildOpts := command.ImageBuildOptions{
 				WorkingDir:         dir,
-				DockerfileContents: string(dockerfileContents),
+				DockerfileContents: dockerfileContents,
 				ImageName:          imageName,
 				Secrets:            secrets,
 				NoCache:            noCache,
@@ -156,10 +153,6 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 			if err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
 				return fmt.Errorf("Failed to build Docker image: %w", err)
 			}
-
-			// if err := docker.Build(ctx, dir, dockerfileContents, imageName, secrets, noCache, progressOutput, config.BuildSourceEpochTimestamp, contextDir, buildContexts); err != nil {
-			// 	return fmt.Errorf("Failed to build Docker image: %w", err)
-			// }
 		}
 	}
 
@@ -321,7 +314,7 @@ func BuildBase(ctx context.Context, dockerClient command.Command, cfg *config.Co
 
 	buildOpts := command.ImageBuildOptions{
 		WorkingDir:         dir,
-		DockerfileContents: string(dockerfileContents),
+		DockerfileContents: dockerfileContents,
 		ImageName:          imageName,
 		NoCache:            false,
 		ProgressOutput:     progressOutput,
@@ -332,10 +325,6 @@ func BuildBase(ctx context.Context, dockerClient command.Command, cfg *config.Co
 	if err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 		return "", fmt.Errorf("Failed to build Docker image: %w", err)
 	}
-
-	// if err := docker.Build(ctx, dir, dockerfileContents, imageName, []string{}, false, progressOutput, config.BuildSourceEpochTimestamp, contextDir, buildContexts); err != nil {
-	// 	return "", fmt.Errorf("Failed to build Docker image: %w", err)
-	// }
 	return imageName, nil
 }
 
@@ -397,7 +386,7 @@ func buildWeightsImage(ctx context.Context, dockerClient command.Command, dir, d
 	}
 	buildOpts := command.ImageBuildOptions{
 		WorkingDir:         dir,
-		DockerfileContents: string(dockerfileContents),
+		DockerfileContents: dockerfileContents,
 		ImageName:          imageName,
 		Secrets:            secrets,
 		NoCache:            noCache,
@@ -409,10 +398,6 @@ func buildWeightsImage(ctx context.Context, dockerClient command.Command, dir, d
 	if err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 		return fmt.Errorf("Failed to build Docker image for model weights: %w", err)
 	}
-
-	// if err := docker.Build(ctx, dir, dockerfileContents, imageName, secrets, noCache, progressOutput, config.BuildSourceEpochTimestamp, contextDir, buildContexts); err != nil {
-	// 	return fmt.Errorf("Failed to build Docker image for model weights: %w", err)
-	// }
 	return nil
 }
 
@@ -422,7 +407,7 @@ func buildRunnerImage(ctx context.Context, dockerClient command.Command, dir, do
 	}
 	buildOpts := command.ImageBuildOptions{
 		WorkingDir:         dir,
-		DockerfileContents: string(dockerfileContents),
+		DockerfileContents: dockerfileContents,
 		ImageName:          imageName,
 		Secrets:            secrets,
 		NoCache:            noCache,
@@ -434,9 +419,6 @@ func buildRunnerImage(ctx context.Context, dockerClient command.Command, dir, do
 	if err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
 	}
-	// if err := docker.Build(ctx, dir, dockerfileContents, imageName, secrets, noCache, progressOutput, config.BuildSourceEpochTimestamp, contextDir, buildContexts); err != nil {
-	// 	return fmt.Errorf("Failed to build Docker image: %w", err)
-	// }
 	if err := restoreDockerignore(); err != nil {
 		return fmt.Errorf("Failed to restore backup .dockerignore file: %w", err)
 	}
