@@ -175,10 +175,6 @@ func (g *MigratorV1ToV1Fast) flushConfig(cfg *config.Config, dir string, configF
 		cfg.Build = config.DefaultConfig().Build
 	}
 	cfg.Build.Fast = true
-	err := cfg.ValidateAndComplete("")
-	if err != nil {
-		return err
-	}
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return err
