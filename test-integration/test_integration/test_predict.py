@@ -547,26 +547,10 @@ def test_predict_granite_project(docker_image):
 def test_predict_fast_build(docker_image):
     project_dir = Path(__file__).parent / "fixtures/fast-build"
 
-    build_process = subprocess.run(
+    result = subprocess.run(
         ["cog", "predict", "--x-fast", "-i", "s=world"],
         cwd=project_dir,
         capture_output=True,
-    )
-    assert build_process.returncode == 0
-    result = subprocess.run(
-        [
-            "cog",
-            "predict",
-            "--debug",
-            docker_image,
-            "-i",
-            'message={"content": "Hi There", "role": "user"}',
-        ],
-        cwd=project_dir,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=DEFAULT_TIMEOUT,
     )
     assert result.returncode == 0
     assert result.stdout == "hello world\n"
