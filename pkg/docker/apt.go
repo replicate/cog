@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -16,7 +17,7 @@ import (
 const aptTarballPrefix = "apt."
 const aptTarballSuffix = ".tar.zst"
 
-func CreateAptTarball(tmpDir string, dockerCommand command.Command, packages ...string) (string, error) {
+func CreateAptTarball(ctx context.Context, tmpDir string, dockerCommand command.Command, packages ...string) (string, error) {
 	if len(packages) > 0 {
 		sort.Strings(packages)
 		hash := sha256.New()
@@ -33,7 +34,7 @@ func CreateAptTarball(tmpDir string, dockerCommand command.Command, packages ...
 			}
 
 			// Create the apt tar file
-			_, err = dockerCommand.CreateAptTarFile(tmpDir, aptTarFile, packages...)
+			_, err = dockerCommand.CreateAptTarFile(ctx, tmpDir, aptTarFile, packages...)
 			if err != nil {
 				return "", err
 			}

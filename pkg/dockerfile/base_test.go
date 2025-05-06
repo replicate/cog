@@ -42,7 +42,7 @@ func TestGenerateDockerfile(t *testing.T) {
 		command,
 	)
 	require.NoError(t, err)
-	dockerfile, err := generator.GenerateDockerfile()
+	dockerfile, err := generator.GenerateDockerfile(t.Context())
 	require.NoError(t, err)
 	require.True(t, strings.Contains(dockerfile, "FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04"))
 }

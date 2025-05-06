@@ -10,8 +10,6 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-var projectDirFlag string
-
 func NewRootCommand() (*cobra.Command, error) {
 	rootCmd := cobra.Command{
 		Use:   "cog",
@@ -29,7 +27,7 @@ https://github.com/replicate/cog`,
 				console.SetLevel(console.DebugLevel)
 			}
 			cmd.SilenceUsage = true
-			if err := update.DisplayAndCheckForRelease(); err != nil {
+			if err := update.DisplayAndCheckForRelease(cmd.Context()); err != nil {
 				console.Debugf("%s", err)
 			}
 		},
@@ -47,6 +45,7 @@ https://github.com/replicate/cog`,
 		newRunCommand(),
 		newServeCommand(),
 		newTrainCommand(),
+		newMigrateCommand(),
 	)
 
 	return &rootCmd, nil

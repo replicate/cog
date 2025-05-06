@@ -10,6 +10,6 @@ func TestDockerPush(t *testing.T) {
 	t.Setenv(DockerCommandEnvVarName, "echo")
 
 	command := NewDockerCommand()
-	err := command.Push("test")
+	err := command.Push(t.Context(), "test")
 	require.NoError(t, err)
 }

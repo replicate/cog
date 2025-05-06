@@ -33,7 +33,7 @@ func NewBaseImageRootCommand() (*cobra.Command, error) {
 				console.SetLevel(console.DebugLevel)
 			}
 			cmd.SilenceUsage = true
-			if err := update.DisplayAndCheckForRelease(); err != nil {
+			if err := update.DisplayAndCheckForRelease(cmd.Context()); err != nil {
 				console.Debugf("%s", err)
 			}
 		},
@@ -87,7 +87,7 @@ func newBaseImageDockerfileCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			dockerfile, err := generator.GenerateDockerfile()
+			dockerfile, err := generator.GenerateDockerfile(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -108,11 +108,13 @@ func newBaseImageBuildCommand() *cobra.Command {
 		Use:   "build",
 		Short: "Build Cog base image",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
 			generator, err := baseImageGeneratorFromFlags()
 			if err != nil {
 				return err
 			}
-			dockerfileContents, err := generator.GenerateDockerfile()
+			dockerfileContents, err := generator.GenerateDockerfile(ctx)
 			if err != nil {
 				return err
 			}
@@ -123,7 +125,7 @@ func newBaseImageBuildCommand() *cobra.Command {
 			}
 			baseImageName := dockerfile.BaseImageName(baseImageCUDAVersion, baseImagePythonVersion, baseImageTorchVersion)
 
-			err = docker.Build(cwd, dockerfileContents, baseImageName, []string{}, buildNoCache, buildProgressOutput, config.BuildSourceEpochTimestamp, dockercontext.StandardBuildDirectory, nil)
+			err = docker.Build(ctx, cwd, dockerfileContents, baseImageName, []string{}, buildNoCache, buildProgressOutput, config.BuildSourceEpochTimestamp, dockercontext.StandardBuildDirectory, nil)
 			if err != nil {
 				return err
 			}

@@ -3,6 +3,7 @@ package docker
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -108,11 +109,11 @@ func generateEnv(options internalRunOptions) []string {
 	return env
 }
 
-func Run(options RunOptions) error {
-	return RunWithIO(options, os.Stdin, os.Stdout, os.Stderr)
+func Run(ctx context.Context, options RunOptions) error {
+	return RunWithIO(ctx, options, os.Stdin, os.Stdout, os.Stderr)
 }
 
-func RunWithIO(options RunOptions, stdin io.Reader, stdout, stderr io.Writer) error {
+func RunWithIO(ctx context.Context, options RunOptions, stdin io.Reader, stdout, stderr io.Writer) error {
 	internalOptions := internalRunOptions{RunOptions: options}
 	if stdin != nil {
 		internalOptions.Interactive = true
@@ -124,7 +125,7 @@ func RunWithIO(options RunOptions, stdin io.Reader, stdout, stderr io.Writer) er
 	stderrMultiWriter := io.MultiWriter(stderr, stderrCopy)
 
 	dockerArgs := generateDockerArgs(internalOptions)
-	cmd := exec.Command("docker", dockerArgs...)
+	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
 	cmd.Env = generateEnv(internalOptions)
 	cmd.Stdout = stdout
 	cmd.Stdin = stdin
@@ -142,7 +143,7 @@ func RunWithIO(options RunOptions, stdin io.Reader, stdout, stderr io.Writer) er
 	return nil
 }
 
-func RunDaemon(options RunOptions, stderr io.Writer) (string, error) {
+func RunDaemon(ctx context.Context, options RunOptions, stderr io.Writer) (string, error) {
 	internalOptions := internalRunOptions{RunOptions: options}
 	internalOptions.Detach = true
 
@@ -150,7 +151,7 @@ func RunDaemon(options RunOptions, stderr io.Writer) (string, error) {
 	stderrMultiWriter := io.MultiWriter(stderr, stderrCopy)
 
 	dockerArgs := generateDockerArgs(internalOptions)
-	cmd := exec.Command("docker", dockerArgs...)
+	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
 	cmd.Env = generateEnv(internalOptions)
 	cmd.Stderr = stderrMultiWriter
 
@@ -170,8 +171,8 @@ func RunDaemon(options RunOptions, stderr io.Writer) (string, error) {
 	return strings.TrimSpace(string(containerID)), nil
 }
 
-func GetPort(containerID string, containerPort int) (int, error) {
-	cmd := exec.Command("docker", "port", containerID, fmt.Sprintf("%d", containerPort)) //#nosec G204
+func GetPort(ctx context.Context, containerID string, containerPort int) (int, error) {
+	cmd := exec.CommandContext(ctx, "docker", "port", containerID, fmt.Sprintf("%d", containerPort)) //#nosec G204
 	cmd.Env = os.Environ()
 	cmd.Stderr = os.Stderr
 
@@ -211,9 +212,9 @@ func GetPort(containerID string, containerPort int) (int, error) {
 
 }
 
-func FillInWeightsManifestVolumes(dockerCommand command.Command, runOptions RunOptions) (RunOptions, error) {
+func FillInWeightsManifestVolumes(ctx context.Context, dockerCommand command.Command, runOptions RunOptions) (RunOptions, error) {
 	// Check if the image has a weights manifest
-	manifest, err := dockerCommand.Inspect(runOptions.Image)
+	manifest, err := dockerCommand.Inspect(ctx, runOptions.Image)
 	if err != nil {
 		return runOptions, err
 	}
