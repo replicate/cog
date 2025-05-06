@@ -27,6 +27,10 @@ const MigrateV1V1FastPythonFile = "migrate_v1_v1fast.py"
 
 var IgnoredRunCommands = map[string]bool{
 	"curl -o /usr/local/bin/pget -L \\\"https://github.com/replicate/pget/releases/latest/download/pget_$(uname -s)_$(uname -m)\\\" && chmod +x /usr/local/bin/pget": true,
+	"curl -o /usr/local/bin/pget -L \"https://github.com/replicate/pget/releases/latest/download/pget_$(uname -s)_$(uname -m)\" && chmod +x /usr/local/bin/pget":     true,
+	"curl -o /usr/local/bin/pget -L \\\"https://github.com/replicate/pget/releases/latest/download/pget_$(uname -s)_$(uname -m)\\\"":                                 true,
+	"curl -o /usr/local/bin/pget -L \"https://github.com/replicate/pget/releases/latest/download/pget_$(uname -s)_$(uname -m)\"":                                     true,
+	"chmod +x /usr/local/bin/pget": true,
 }
 
 type MigratorV1ToV1Fast struct {
