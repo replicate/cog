@@ -551,6 +551,7 @@ def test_predict_fast_build(docker_image):
         ["cog", "predict", "--x-fast", "-i", "s=world"],
         cwd=project_dir,
         capture_output=True,
+        text=True,
     )
     assert result.returncode == 0
     assert result.stdout == "hello world\n"
