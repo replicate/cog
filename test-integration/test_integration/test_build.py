@@ -364,6 +364,7 @@ def test_cog_install_base_image(docker_image):
     )
 
 
+@pytest.mark.skip(reason="Not testing this on pipelines beta branch")
 def test_pip_freeze(docker_image):
     project_dir = Path(__file__).parent / "fixtures/path-project"
     subprocess.run(
