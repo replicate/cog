@@ -275,7 +275,7 @@ func (g *MigratorV1ToV1Fast) runPythonScript(ctx context.Context, file *zip.File
 	if err != nil {
 		return err
 	}
-	newContent := out.String()
+	newContent := strings.TrimSpace(out.String())
 	if newContent == "" {
 		return nil
 	}
