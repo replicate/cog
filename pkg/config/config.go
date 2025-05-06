@@ -76,6 +76,8 @@ type Config struct {
 	Train       string       `json:"train,omitempty" yaml:"train"`
 	Concurrency *Concurrency `json:"concurrency,omitempty" yaml:"concurrency"`
 	Environment []string     `json:"environment,omitempty" yaml:"environment"`
+
+	parsedEnvironment map[string]string
 }
 
 func DefaultConfig() *Config {
@@ -318,6 +320,11 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 		if err := c.validateAndCompleteCUDA(); err != nil {
 			errs = append(errs, err)
 		}
+	}
+
+	// parse and validate environment variables
+	if err := c.loadEnvironment(); err != nil {
+		errs = append(errs, err)
 	}
 
 	if len(errs) > 0 {
@@ -579,14 +586,15 @@ func sliceContains(slice []string, s string) bool {
 	return false
 }
 
-func (c *Config) ParseEnvironment() (map[string]string, error) {
-	env := map[string]string{}
-	for _, input := range c.Environment {
-		parts := strings.SplitN(input, "=", 2)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("environment variable %q is not in the KEY=VALUE format", input)
-		}
-		env[parts[0]] = parts[1]
+func (c *Config) ParsedEnvironment() map[string]string {
+	return c.parsedEnvironment
+}
+
+func (c *Config) loadEnvironment() error {
+	env, err := parseAndValidateEnvironment(c.Environment)
+	if err != nil {
+		return err
 	}
-	return env, nil
+	c.parsedEnvironment = env
+	return nil
 }

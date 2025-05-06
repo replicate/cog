@@ -1,5 +1,4 @@
 predict: "predict.py:Predictor"
 environment:
+  - NAME=michael
   - TEST_VAR=test_value
-  - R8_PREFIX_VAR=hello
-  - A_B_C=123

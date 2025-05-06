@@ -2,13 +2,11 @@ package config
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path"
 	"testing"
 
 	"github.com/hashicorp/go-version"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
@@ -720,133 +718,4 @@ build:
 `
 	_, err := FromYAML([]byte(yamlString))
 	require.NoError(t, err)
-}
-
-func TestEnvironmentConfig(t *testing.T) {
-	t.Run("PatternValidation", func(t *testing.T) {
-		testCases := map[string]bool{
-			"NAME=VALUE":         true,
-			"NAME=VALUE1,VALUE2": true,
-			"random_case=yo":     true,
-			"JUST_A_NAME":        false,
-			"NO_VAL=":            false,
-		}
-
-		for input, isValid := range testCases {
-			yamlString := fmt.Sprintf("environment:\n- %s", input)
-			_, err := FromYAML([]byte(yamlString))
-			fmt.Printf("err: %+v\n", err)
-			if isValid {
-				require.NoError(t, err, "Expected no error for input: %s", input)
-			} else {
-				require.Error(t, err, "Expected error for input: %s", input)
-			}
-		}
-	})
-
-	t.Run("Parsing", func(t *testing.T) {
-
-	})
-}
-
-func TestEnvironmentPattern(t *testing.T) {
-	testCases := map[string]bool{
-		"NAME=VALUE":         true,
-		"NAME=VALUE1,VALUE2": true,
-		"random_case=yo":     true,
-		"JUST_A_NAME":        false,
-		"NO_VAL=":            false,
-	}
-
-	for input, isValid := range testCases {
-		t.Run(input, func(t *testing.T) {
-			yamlString := fmt.Sprintf("environment:\n- %s", input)
-			_, err := FromYAML([]byte(yamlString))
-			fmt.Printf("err: %+v\n", err)
-			if isValid {
-				require.NoError(t, err, "Expected no error for input: %s", input)
-			} else {
-				require.Error(t, err, "Expected error for input: %s", input)
-			}
-		})
-	}
-}
-
-func TestEnvironmentParsing(t *testing.T) {
-	var testCases = []struct {
-		input  string
-		parsed map[string]string
-	}{
-		{
-			input:  "NAME=VALUE",
-			parsed: map[string]string{"NAME": "VALUE"},
-		},
-		{
-			input:  "NAME=VALUE1,VALUE2",
-			parsed: map[string]string{"NAME": "VALUE1,VALUE2"},
-		},
-		{
-			input:  "random_case=yo",
-			parsed: map[string]string{"random_case": "yo"},
-		},
-		{
-			input:  "MULTIPLE=EQUAL=SIGNS",
-			parsed: map[string]string{"MULTIPLE": "EQUAL=SIGNS"},
-		},
-		{
-			input:  "EMPTY_VALUE=",
-			parsed: map[string]string{"EMPTY_VALUE": ""},
-		},
-		{
-			input:  "WITH_SPACES=VALUE WITH SPACES",
-			parsed: map[string]string{"WITH_SPACES": "VALUE WITH SPACES"},
-		},
-		{
-			input:  "WITH_QUOTES=\"VALUE WITH QUOTES\"",
-			parsed: map[string]string{"WITH_QUOTES": "\"VALUE WITH QUOTES\""},
-		},
-		{
-			input:  "WITH_SPACES=VALUE WITH SPACES",
-			parsed: map[string]string{"WITH_SPACES": "VALUE WITH SPACES"},
-		},
-		{
-			input:  "WITH_QUOTES=\"VALUE WITH QUOTES\"",
-			parsed: map[string]string{"WITH_QUOTES": "\"VALUE WITH QUOTES\""},
-		},
-		{
-			input:  "EMPTY_VALUE=",
-			parsed: map[string]string{"EMPTY_VALUE": ""},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.input, func(t *testing.T) {
-			config := &Config{
-				Environment: []string{tc.input},
-			}
-			parsed, err := config.ParseEnvironment()
-			require.NoError(t, err)
-			assert.Equal(t, tc.parsed, parsed)
-		})
-	}
-}
-
-func TestEnvironmentParsingInvalid(t *testing.T) {
-	var testCases = []struct {
-		input string
-	}{
-		{
-			input: "NO_EQUALS",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.input, func(t *testing.T) {
-			config := &Config{
-				Environment: []string{tc.input},
-			}
-			_, err := config.ParseEnvironment()
-			assert.ErrorContains(t, err, "is not in the KEY=VALUE format")
-		})
-	}
 }
