@@ -542,3 +542,16 @@ def test_predict_granite_project(docker_image):
     )
     assert result.returncode == 0
     assert result.stdout == "2.11.3\n"
+
+
+def test_predict_fast_build(docker_image):
+    project_dir = Path(__file__).parent / "fixtures/fast-build"
+
+    result = subprocess.run(
+        ["cog", "predict", "--x-fast", "-i", "s=world"],
+        cwd=project_dir,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert result.stdout == "hello world\n"
