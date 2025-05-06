@@ -1,7 +1,6 @@
 package docker
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -70,13 +69,13 @@ func TestFastPush(t *testing.T) {
 
 	// Setup mock command
 	command := dockertest.NewMockCommand()
-	client, err := r8HTTP.ProvideHTTPClient(command)
+	client, err := r8HTTP.ProvideHTTPClient(t.Context(), command)
 	require.NoError(t, err)
 	webClient := web.NewClient(command, client)
 	monobeamClient := monobeam.NewClient(client)
 
 	// Run fast push
-	err = FastPush(context.Background(), "r8.im/username/modelname", dir, command, webClient, monobeamClient)
+	err = FastPush(t.Context(), "r8.im/username/modelname", dir, command, webClient, monobeamClient)
 	require.NoError(t, err)
 }
 
@@ -143,12 +142,12 @@ func TestFastPushWithWeight(t *testing.T) {
 
 	// Setup mock command
 	command := dockertest.NewMockCommand()
-	client, err := r8HTTP.ProvideHTTPClient(command)
+	client, err := r8HTTP.ProvideHTTPClient(t.Context(), command)
 	require.NoError(t, err)
 	webClient := web.NewClient(command, client)
 	monobeamClient := monobeam.NewClient(client)
 
 	// Run fast push
-	err = FastPush(context.Background(), "r8.im/username/modelname", dir, command, webClient, monobeamClient)
+	err = FastPush(t.Context(), "r8.im/username/modelname", dir, command, webClient, monobeamClient)
 	require.NoError(t, err)
 }

@@ -722,6 +722,18 @@ build:
 	require.NoError(t, err)
 }
 
+func TestConfigMarshal(t *testing.T) {
+	cfg := DefaultConfig()
+	data, err := yaml.Marshal(cfg)
+	require.NoError(t, err)
+	require.Equal(t, `build:
+  python_version: "3.12"
+  python_requirements: ""
+  fast: false
+predict: ""
+`, string(data))
+}
+
 func TestEnvironmentConfig(t *testing.T) {
 	t.Run("PatternValidation", func(t *testing.T) {
 		testCases := map[string]bool{

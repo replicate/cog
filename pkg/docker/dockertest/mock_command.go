@@ -1,8 +1,13 @@
 package dockertest
 
 import (
+	"context"
+	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 
 	"github.com/replicate/cog/pkg/docker/command"
 )
@@ -17,15 +22,15 @@ func NewMockCommand() *MockCommand {
 	return &MockCommand{}
 }
 
-func (c *MockCommand) Pull(image string) error {
-	return nil
+func (c *MockCommand) Pull(ctx context.Context, image string, force bool) (*image.InspectResponse, error) {
+	return nil, nil
 }
 
-func (c *MockCommand) Push(image string) error {
+func (c *MockCommand) Push(ctx context.Context, image string) error {
 	return PushError
 }
 
-func (c *MockCommand) LoadUserInformation(registryHost string) (*command.UserInfo, error) {
+func (c *MockCommand) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
 	userInfo := command.UserInfo{
 		Token:    "",
 		Username: "",
@@ -33,7 +38,7 @@ func (c *MockCommand) LoadUserInformation(registryHost string) (*command.UserInf
 	return &userInfo, nil
 }
 
-func (c *MockCommand) CreateTarFile(image string, tmpDir string, tarFile string, folder string) (string, error) {
+func (c *MockCommand) CreateTarFile(ctx context.Context, image string, tmpDir string, tarFile string, folder string) (string, error) {
 	path := filepath.Join(tmpDir, tarFile)
 	d1 := []byte("hello\ngo\n")
 	err := os.WriteFile(path, d1, 0o644)
@@ -43,7 +48,7 @@ func (c *MockCommand) CreateTarFile(image string, tmpDir string, tarFile string,
 	return path, nil
 }
 
-func (c *MockCommand) CreateAptTarFile(tmpDir string, aptTarFile string, packages ...string) (string, error) {
+func (c *MockCommand) CreateAptTarFile(ctx context.Context, tmpDir string, aptTarFile string, packages ...string) (string, error) {
 	path := filepath.Join(tmpDir, aptTarFile)
 	d1 := []byte("hello\ngo\n")
 	err := os.WriteFile(path, d1, 0o644)
@@ -53,9 +58,9 @@ func (c *MockCommand) CreateAptTarFile(tmpDir string, aptTarFile string, package
 	return path, nil
 }
 
-func (c *MockCommand) Inspect(image string) (*command.Manifest, error) {
-	manifest := command.Manifest{
-		Config: command.Config{
+func (c *MockCommand) Inspect(ctx context.Context, ref string) (*image.InspectResponse, error) {
+	resp := &image.InspectResponse{
+		Config: &container.Config{
 			Labels: map[string]string{
 				command.CogConfigLabelKey:        MockCogConfig,
 				command.CogOpenAPISchemaLabelKey: MockOpenAPISchema,
@@ -69,5 +74,22 @@ func (c *MockCommand) Inspect(image string) (*command.Manifest, error) {
 			},
 		},
 	}
-	return &manifest, nil
+
+	return resp, nil
+}
+
+func (c *MockCommand) ImageExists(ctx context.Context, ref string) (bool, error) {
+	panic("not implemented")
+}
+
+func (c *MockCommand) ContainerLogs(ctx context.Context, containerID string, w io.Writer) error {
+	panic("not implemented")
+}
+
+func (c *MockCommand) ContainerInspect(ctx context.Context, id string) (*container.InspectResponse, error) {
+	panic("not implemented")
+}
+
+func (c *MockCommand) ContainerStop(ctx context.Context, containerID string) error {
+	panic("not implemented")
 }

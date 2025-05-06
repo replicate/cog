@@ -98,7 +98,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -133,7 +133,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -177,7 +177,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -232,7 +232,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -283,7 +283,7 @@ build:
 	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -320,7 +320,7 @@ build:
 	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 	fmt.Println(actual)
 	require.Contains(t, actual, `pip install -r /tmp/requirements.txt`)
@@ -383,7 +383,7 @@ predict: predict.py:Predictor
 		return nil
 	}
 
-	modelDockerfile, runnerDockerfile, dockerignore, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	modelDockerfile, runnerDockerfile, dockerignore, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -473,7 +473,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
-	actual, err := gen.GenerateDockerfileWithoutSeparateWeights()
+	actual, err := gen.GenerateDockerfileWithoutSeparateWeights(t.Context())
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -507,7 +507,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -544,7 +544,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -595,7 +595,7 @@ predict: predict.py:Predictor
 		gen, err := NewStandardGenerator(conf, tmpDir, command)
 		require.NoError(t, err)
 		gen.SetUseCogBaseImage(true)
-		_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+		_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 		require.NoError(t, err)
 
 		// We add the patch version to the expected torch version
@@ -654,7 +654,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -707,7 +707,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	gen.SetStrip(true)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4
@@ -759,7 +759,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, command)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	require.NotContains(t, actual, "-march=native")
@@ -793,7 +793,7 @@ predict: predict.py:Predictor
 	gen.SetUseCogBaseImage(true)
 	gen.SetStrip(true)
 	gen.SetPrecompile(true)
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights("r8.im/replicate/cog-test")
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
 	expected := `#syntax=docker/dockerfile:1.4

@@ -1,7 +1,7 @@
 package docker
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +15,8 @@ import (
 	"github.com/docker/cli/cli/config"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/docker/cli/cli/config/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/util"
@@ -32,17 +34,48 @@ func NewDockerCommand() *DockerCommand {
 	return &DockerCommand{}
 }
 
-func (c *DockerCommand) Pull(image string) error {
-	_, err := c.exec("pull", false, image, "--platform", "linux/amd64")
-	return err
+func (c *DockerCommand) Pull(ctx context.Context, image string, force bool) (*image.InspectResponse, error) {
+	console.Debugf("=== DockerCommand.Pull %s force:%t", image, force)
+
+	if !force {
+		inspect, err := c.Inspect(ctx, image)
+		if err == nil {
+			return inspect, nil
+		} else if !command.IsNotFoundError(err) {
+			// Log a warning if inspect fails for any reason other than not found.
+			// It's likely that pull will fail as well, but it's better to return that error
+			// so the caller can handle it appropriately than to fail silently here.
+			console.Warnf("failed to inspect image before pulling %q: %s", image, err)
+		}
+	}
+
+	err := c.exec(ctx, os.Stderr, "pull", image, "--platform", "linux/amd64")
+	if err != nil {
+		// A "not found" error message will be different depending on what flavor of engine and
+		// registry version we're hitting. This checks for both docker and OCI lingo.
+		if strings.Contains(err.Error(), "manifest unknown") || strings.Contains(err.Error(), "failed to resolve reference") {
+			return nil, &command.NotFoundError{Object: "manifest", Ref: image}
+		}
+		return nil, fmt.Errorf("failed to pull image %q: %w", image, err)
+	}
+
+	// pull succeeded, inspect the image again and return
+	inspect, err := c.Inspect(ctx, image)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect image after pulling %q: %w", image, err)
+	}
+	return inspect, nil
 }
 
-func (c *DockerCommand) Push(image string) error {
-	_, err := c.exec("push", false, image)
-	return err
+func (c *DockerCommand) Push(ctx context.Context, image string) error {
+	console.Debugf("=== DockerCommand.Push %s", image)
+
+	return c.exec(ctx, os.Stderr, "push", image)
 }
 
-func (c *DockerCommand) LoadUserInformation(registryHost string) (*command.UserInfo, error) {
+func (c *DockerCommand) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
+	console.Debugf("=== DockerCommand.LoadUserInformation %s", registryHost)
+
 	conf := config.LoadDefaultConfigFile(os.Stderr)
 	credsStore := conf.CredentialsStore
 	if credsStore == "" {
@@ -55,7 +88,7 @@ func (c *DockerCommand) LoadUserInformation(registryHost string) (*command.UserI
 			Username: authConf.Username,
 		}, nil
 	}
-	credsHelper, err := loadAuthFromCredentialsStore(credsStore, registryHost)
+	credsHelper, err := loadAuthFromCredentialsStore(ctx, credsStore, registryHost)
 	if err != nil {
 		return nil, err
 	}
@@ -65,8 +98,11 @@ func (c *DockerCommand) LoadUserInformation(registryHost string) (*command.UserI
 	}, nil
 }
 
-func (c *DockerCommand) CreateTarFile(image string, tmpDir string, tarFile string, folder string) (string, error) {
+func (c *DockerCommand) CreateTarFile(ctx context.Context, image string, tmpDir string, tarFile string, folder string) (string, error) {
+	console.Debugf("=== DockerCommand.CreateTarFile %s %s %s %s", image, tmpDir, tarFile, folder)
+
 	args := []string{
+		"run",
 		"--rm",
 		"--volume",
 		tmpDir + ":/buildtmp",
@@ -76,19 +112,21 @@ func (c *DockerCommand) CreateTarFile(image string, tmpDir string, tarFile strin
 		"/",
 		folder,
 	}
-	_, err := c.exec("run", false, args...)
-	if err != nil {
+	if err := c.exec(ctx, os.Stderr, args...); err != nil {
 		return "", err
 	}
 	return filepath.Join(tmpDir, tarFile), nil
 }
 
-func (c *DockerCommand) CreateAptTarFile(tmpDir string, aptTarFile string, packages ...string) (string, error) {
+func (c *DockerCommand) CreateAptTarFile(ctx context.Context, tmpDir string, aptTarFile string, packages ...string) (string, error) {
+	console.Debugf("=== DockerCommand.CreateAptTarFile %s %s", aptTarFile, packages)
+
 	// This uses a hardcoded monobase image to produce an apt tar file.
 	// The reason being that this apt tar file is created outside the docker file, and it is created by
 	// running the apt.sh script on the monobase with the packages we intend to install, which produces
 	// a tar file that can be untarred into a docker build to achieve the equivalent of an apt-get install.
 	args := []string{
+		"run",
 		"--rm",
 		"--volume",
 		tmpDir + ":/buildtmp",
@@ -97,58 +135,139 @@ func (c *DockerCommand) CreateAptTarFile(tmpDir string, aptTarFile string, packa
 		"/buildtmp/" + aptTarFile,
 	}
 	args = append(args, packages...)
-	_, err := c.exec("run", false, args...)
-	if err != nil {
+	if err := c.exec(ctx, os.Stderr, args...); err != nil {
 		return "", err
 	}
 
 	return aptTarFile, nil
 }
 
-func (c *DockerCommand) Inspect(image string) (*command.Manifest, error) {
+func (c *DockerCommand) Inspect(ctx context.Context, ref string) (*image.InspectResponse, error) {
+	console.Debugf("=== DockerCommand.Inspect %s", ref)
 	args := []string{
+		"image",
 		"inspect",
-		image,
+		ref,
 	}
-	manifestData, err := c.exec("image", true, args...)
+	output, err := c.execCaptured(ctx, args...)
 	if err != nil {
+		if strings.Contains(err.Error(), "No such image") {
+			return nil, &command.NotFoundError{Object: "image", Ref: ref}
+		}
 		return nil, err
 	}
 
-	decoder := json.NewDecoder(bytes.NewReader(([]byte(manifestData))))
-	var manifests []command.Manifest
-	err = decoder.Decode(&manifests)
-	if err != nil {
-		return nil, err
+	console.Debugf("=== DockerCommand.Inspect %s", output)
+
+	var resp []image.InspectResponse
+	if err := json.Unmarshal([]byte(output), &resp); err != nil {
+		return nil, fmt.Errorf("error unmarshaling inspect response: %w", err)
 	}
 
-	if len(manifests) == 0 {
-		return nil, errors.New("Failed to decode result of docker inspect")
+	// There may be some Docker versions where a missing image
+	// doesn't return exit code 1, but progresses to output an
+	// empty list.
+	if len(resp) == 0 {
+		return nil, &command.NotFoundError{Ref: ref}
 	}
-	return &manifests[0], nil // Docker inspect returns us a list of manifests
+	// inspect returns a list of manifests but we only care about the first
+	return &resp[0], nil
 }
 
-func (c *DockerCommand) exec(name string, capture bool, args ...string) (string, error) {
-	cmdArgs := []string{name}
-	if slices.ContainsString(commandsRequiringPlatform, name) && util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
-		cmdArgs = append(cmdArgs, "--platform", "linux/amd64")
+func (c *DockerCommand) ImageExists(ctx context.Context, ref string) (bool, error) {
+	console.Debugf("=== DockerCommand.ImageExists %s", ref)
+	_, err := c.Inspect(ctx, ref)
+	if err != nil {
+		if command.IsNotFoundError(err) {
+			return false, nil
+		}
+		return false, err
 	}
-	cmdArgs = append(cmdArgs, args...)
+	return true, nil
+}
+
+func (c *DockerCommand) ContainerLogs(ctx context.Context, containerID string, w io.Writer) error {
+	console.Debugf("=== DockerCommand.ContainerLogs %s", containerID)
+
+	args := []string{
+		"container",
+		"logs",
+		containerID,
+		"--follow",
+	}
+
+	return c.exec(ctx, w, args...)
+}
+
+func (c *DockerCommand) ContainerInspect(ctx context.Context, id string) (*container.InspectResponse, error) {
+	console.Debugf("=== DockerCommand.ContainerInspect %s", id)
+
+	args := []string{
+		"container",
+		"inspect",
+		id,
+	}
+
+	output, err := c.execCaptured(ctx, args...)
+	if err != nil {
+		if strings.Contains(err.Error(), "No such container") {
+			return nil, &command.NotFoundError{Object: "container", Ref: id}
+		}
+		return nil, err
+	}
+
+	var resp []*container.InspectResponse
+	if err = json.Unmarshal([]byte(output), &resp); err != nil {
+		return nil, err
+	}
+	if len(resp) == 0 {
+		return nil, &command.NotFoundError{Object: "container", Ref: id}
+	}
+
+	return resp[0], nil
+}
+
+func (c *DockerCommand) ContainerStop(ctx context.Context, containerID string) error {
+	console.Debugf("=== DockerCommand.ContainerStop %s", containerID)
+
+	if err := c.exec(ctx, os.Stderr, "container", "stop", "--time", "3", containerID); err != nil {
+		if strings.Contains(err.Error(), "No such container") {
+			err = &command.NotFoundError{Object: "container", Ref: containerID}
+		}
+		return fmt.Errorf("failed to stop container %q: %w", containerID, err)
+	}
+
+	return nil
+}
+
+func (c *DockerCommand) exec(ctx context.Context, w io.Writer, args ...string) error {
+	if slices.ContainsString(commandsRequiringPlatform, args[0]) && util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
+		args = append(args, "--platform", "linux/amd64")
+	}
 	dockerCmd := DockerCommandFromEnvironment()
-	cmd := exec.Command(dockerCmd, cmdArgs...)
-	var out strings.Builder
-	if !capture {
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-	} else {
-		cmd.Stdout = &out
-		cmd.Stderr = &out
-	}
+	cmd := exec.CommandContext(ctx, dockerCmd, args...)
+
+	// the ring buffer captures the last N bytes written to `w` so we have some context to return in an error
+	errbuf := util.NewRingBufferWriter(w, 1024)
+	cmd.Stdout = errbuf
+	cmd.Stderr = errbuf
 
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
 	err := cmd.Run()
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", out.String(), err)
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
+		return fmt.Errorf("command failed: %s: %w", errbuf.String(), err)
+	}
+	return nil
+}
+
+func (c *DockerCommand) execCaptured(ctx context.Context, args ...string) (string, error) {
+	var out strings.Builder
+	err := c.exec(ctx, &out, args...)
+	if err != nil {
+		return "", err
 	}
 	return out.String(), nil
 }
@@ -157,10 +276,10 @@ func loadAuthFromConfig(conf *configfile.ConfigFile, registryHost string) (types
 	return conf.AuthConfigs[registryHost], nil
 }
 
-func loadAuthFromCredentialsStore(credsStore string, registryHost string) (*CredentialHelperInput, error) {
+func loadAuthFromCredentialsStore(ctx context.Context, credsStore string, registryHost string) (*CredentialHelperInput, error) {
 	var out strings.Builder
 	binary := DockerCredentialBinary(credsStore)
-	cmd := exec.Command(binary, "get")
+	cmd := exec.CommandContext(ctx, binary, "get")
 	cmd.Env = os.Environ()
 	cmd.Stdout = &out
 	cmd.Stderr = &out

@@ -80,7 +80,7 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 	tmpTarballsDir := filepath.Join(projectDir, TarballsDir)
 	// Upload python packages.
 	if requirementsFile != "" {
-		pythonTar, err := createPythonPackagesTarFile(image, tmpTarballsDir, command)
+		pythonTar, err := createPythonPackagesTarFile(ctx, image, tmpTarballsDir, command)
 		if err != nil {
 			return err
 		}
@@ -111,7 +111,7 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 	}
 
 	// Upload user /src.
-	srcTar, err := createSrcTarFile(image, tmpTarballsDir, command)
+	srcTar, err := createSrcTarFile(ctx, image, tmpTarballsDir, command)
 	if err != nil {
 		return fmt.Errorf("create src tarfile: %w", err)
 	}
@@ -146,12 +146,12 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 	return webClient.PostNewVersion(ctx, image, weightFiles, files, challenges)
 }
 
-func createPythonPackagesTarFile(image string, tmpDir string, command command.Command) (string, error) {
-	return command.CreateTarFile(image, tmpDir, requirementsTarFile, "root/.venv")
+func createPythonPackagesTarFile(ctx context.Context, image string, tmpDir string, command command.Command) (string, error) {
+	return command.CreateTarFile(ctx, image, tmpDir, requirementsTarFile, "root/.venv")
 }
 
-func createSrcTarFile(image string, tmpDir string, command command.Command) (string, error) {
-	return command.CreateTarFile(image, tmpDir, "src.tar.zst", "src")
+func createSrcTarFile(ctx context.Context, image string, tmpDir string, command command.Command) (string, error) {
+	return command.CreateTarFile(ctx, image, tmpDir, "src.tar.zst", "src")
 }
 
 func createWeightsFilesFromWeightsManifest(weights []weights.Weight) []web.File {

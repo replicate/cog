@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -43,6 +44,7 @@ Otherwise, it will build the model in the current directory and train it.`,
 	addGpusFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
 	addFastFlag(cmd)
+	addConfigFlag(cmd)
 
 	cmd.Flags().StringArrayVarP(&trainInputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringArrayVarP(&trainEnvFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
@@ -52,11 +54,15 @@ Otherwise, it will build the model in the current directory and train it.`,
 }
 
 func cmdTrain(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
+	dockerCommand := docker.NewDockerCommand()
+
 	imageName := ""
 	volumes := []docker.Volume{}
 	gpus := gpusFlag
 
-	cfg, projectDir, err := config.GetConfig(projectDirFlag)
+	cfg, projectDir, err := config.GetConfig(configFilename)
 	if err != nil {
 		return err
 	}
@@ -68,7 +74,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 			buildFast = cfg.Build.Fast
 		}
 
-		if imageName, err = image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
+		if imageName, err = image.BuildBase(ctx, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
 			return err
 		}
 
@@ -85,17 +91,12 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		// Use existing image
 		imageName = args[0]
 
-		exists, err := docker.ImageExists(imageName)
+		inspectResp, err := dockerCommand.Pull(ctx, imageName, false)
 		if err != nil {
-			return fmt.Errorf("Failed to determine if %s exists: %w", imageName, err)
+			return fmt.Errorf("Failed to pull image %q: %w", imageName, err)
 		}
-		if !exists {
-			console.Infof("Pulling image: %s", imageName)
-			if err := docker.Pull(imageName); err != nil {
-				return fmt.Errorf("Failed to pull %s: %w", imageName, err)
-			}
-		}
-		conf, err := image.GetConfig(imageName)
+
+		conf, err := image.CogConfigFromManifest(ctx, inspectResp)
 		if err != nil {
 			return err
 		}
@@ -109,9 +110,8 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 
 	console.Info("")
 	console.Infof("Starting Docker image %s...", imageName)
-	dockerCommand := docker.NewDockerCommand()
 
-	predictor, err := predict.NewPredictor(docker.RunOptions{
+	predictor, err := predict.NewPredictor(ctx, docker.RunOptions{
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: volumes,
@@ -129,19 +129,20 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		<-captureSignal
 
 		console.Info("Stopping container...")
-		if err := predictor.Stop(); err != nil {
+		if err := predictor.Stop(ctx); err != nil {
 			console.Warnf("Failed to stop container: %s", err)
 		}
 	}()
 
-	if err := predictor.Start(os.Stderr, time.Duration(setupTimeout)*time.Second); err != nil {
+	if err := predictor.Start(ctx, os.Stderr, time.Duration(setupTimeout)*time.Second); err != nil {
 		return err
 	}
 
 	// FIXME: will not run on signal
 	defer func() {
 		console.Debugf("Stopping container...")
-		if err := predictor.Stop(); err != nil {
+		// use background context to ensure stop signal is still sent after root context is canceled
+		if err := predictor.Stop(context.Background()); err != nil {
 			console.Warnf("Failed to stop container: %s", err)
 		}
 	}()

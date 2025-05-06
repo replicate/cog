@@ -1,7 +1,6 @@
 package monobeam
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -51,15 +50,14 @@ func TestUploadFile(t *testing.T) {
 	command := dockertest.NewMockCommand()
 
 	// Setup http client
-	httpClient, err := r8HTTP.ProvideHTTPClient(command)
+	httpClient, err := r8HTTP.ProvideHTTPClient(t.Context(), command)
 	require.NoError(t, err)
 
 	client := NewClient(httpClient)
-	ctx := context.Background()
 	p := mpb.New(
 		mpb.WithRefreshRate(180 * time.Millisecond),
 	)
-	err = client.UploadFile(ctx, "weights", "111", weightPath, p, "weights - "+weightPath)
+	err = client.UploadFile(t.Context(), "weights", "111", weightPath, p, "weights - "+weightPath)
 	require.NoError(t, err)
 }
 
@@ -79,11 +77,10 @@ func TestPreUpload(t *testing.T) {
 	command := dockertest.NewMockCommand()
 
 	// Setup http client
-	httpClient, err := r8HTTP.ProvideHTTPClient(command)
+	httpClient, err := r8HTTP.ProvideHTTPClient(t.Context(), command)
 	require.NoError(t, err)
 
 	client := NewClient(httpClient)
-	ctx := context.Background()
-	err = client.PostPreUpload(ctx)
+	err = client.PostPreUpload(t.Context())
 	require.NoError(t, err)
 }

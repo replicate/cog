@@ -41,21 +41,21 @@ type RunItem struct {
 		Type   string `json:"type,omitempty" yaml:"type"`
 		ID     string `json:"id,omitempty" yaml:"id"`
 		Target string `json:"target,omitempty" yaml:"target"`
-	} `json:"mounts,omitempty" yaml:"mounts"`
+	} `json:"mounts,omitempty" yaml:"mounts,omitempty"`
 }
 
 type Build struct {
-	GPU                bool      `json:"gpu,omitempty" yaml:"gpu"`
+	GPU                bool      `json:"gpu,omitempty" yaml:"gpu,omitempty"`
 	PythonVersion      string    `json:"python_version,omitempty" yaml:"python_version"`
 	PythonRequirements string    `json:"python_requirements,omitempty" yaml:"python_requirements"`
-	PythonPackages     []string  `json:"python_packages,omitempty" yaml:"python_packages"` // Deprecated, but included for backwards compatibility
-	Run                []RunItem `json:"run,omitempty" yaml:"run"`
-	SystemPackages     []string  `json:"system_packages,omitempty" yaml:"system_packages"`
-	PreInstall         []string  `json:"pre_install,omitempty" yaml:"pre_install"` // Deprecated, but included for backwards compatibility
-	CUDA               string    `json:"cuda,omitempty" yaml:"cuda"`
-	CuDNN              string    `json:"cudnn,omitempty" yaml:"cudnn"`
+	PythonPackages     []string  `json:"python_packages,omitempty" yaml:"python_packages,omitempty"` // Deprecated, but included for backwards compatibility
+	Run                []RunItem `json:"run,omitempty" yaml:"run,omitempty"`
+	SystemPackages     []string  `json:"system_packages,omitempty" yaml:"system_packages,omitempty"`
+	PreInstall         []string  `json:"pre_install,omitempty" yaml:"pre_install,omitempty"` // Deprecated, but included for backwards compatibility
+	CUDA               string    `json:"cuda,omitempty" yaml:"cuda,omitempty"`
+	CuDNN              string    `json:"cudnn,omitempty" yaml:"cudnn,omitempty"`
 	Fast               bool      `json:"fast,omitempty" yaml:"fast"`
-	PythonOverrides    string    `json:"python_overrides,omitempty" yaml:"python_overrides"`
+	PythonOverrides    string    `json:"python_overrides,omitempty" yaml:"python_overrides,omitempty"`
 
 	pythonRequirementsContent []string
 }
@@ -71,11 +71,11 @@ type Example struct {
 
 type Config struct {
 	Build       *Build       `json:"build" yaml:"build"`
-	Image       string       `json:"image,omitempty" yaml:"image"`
+	Image       string       `json:"image,omitempty" yaml:"image,omitempty"`
 	Predict     string       `json:"predict,omitempty" yaml:"predict"`
-	Train       string       `json:"train,omitempty" yaml:"train"`
-	Concurrency *Concurrency `json:"concurrency,omitempty" yaml:"concurrency"`
-	Environment []string     `json:"environment,omitempty" yaml:"environment"`
+	Train       string       `json:"train,omitempty" yaml:"train,omitempty"`
+	Concurrency *Concurrency `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
+  Environment []string     `json:"environment,omitempty" yaml:"environment"`
 }
 
 func DefaultConfig() *Config {
