@@ -75,7 +75,7 @@ type Config struct {
 	Predict     string       `json:"predict,omitempty" yaml:"predict"`
 	Train       string       `json:"train,omitempty" yaml:"train,omitempty"`
 	Concurrency *Concurrency `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
-	Environment []string     `json:"environment,omitempty" yaml:"environment"`
+	Environment []string     `json:"environment,omitempty" yaml:"environment,omitempty"`
 
 	parsedEnvironment map[string]string
 }
