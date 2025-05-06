@@ -31,7 +31,7 @@ func TestEnvironmentConfig(t *testing.T) {
 				Expected: map[string]string{"NAME": `"VALUE WITH QUOTES"`},
 			},
 			{
-				Name:     "DelimetedValue",
+				Name:     "DelimitedValue",
 				Input:    []string{"NAME=VALUE1,VALUE2"},
 				Expected: map[string]string{"NAME": "VALUE1,VALUE2"},
 			},
