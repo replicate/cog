@@ -20,7 +20,9 @@ import (
 func TestPostNewVersion(t *testing.T) {
 	// Setup mock http server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		output := "{\"version\":\"user/test:53c740f17ce88a61c3da5b0c20e48fd48e2da537c3a1276dec63ab11fbad6bcb\"}"
 		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(output))
 	}))
 	defer server.Close()
 	url, err := url.Parse(server.URL)

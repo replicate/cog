@@ -21,6 +21,7 @@ import (
 	"github.com/replicate/cog/pkg/env"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 const (
@@ -109,6 +110,10 @@ type VersionErrors struct {
 	Title  string         `json:"title"`
 }
 
+type VersionCreate struct {
+	Version string `json:"version"`
+}
+
 func NewClient(dockerCommand command.Command, client *http.Client) *Client {
 	return &Client{
 		dockerCommand: dockerCommand,
@@ -175,10 +180,10 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 		return err
 	}
 	defer resp.Body.Close()
+	decoder := json.NewDecoder(resp.Body)
 
 	if resp.StatusCode != http.StatusCreated {
 		if resp.StatusCode == http.StatusBadRequest {
-			decoder := json.NewDecoder(resp.Body)
 			var versionErrors VersionErrors
 			err = decoder.Decode(&versionErrors)
 			if err != nil {
@@ -188,6 +193,13 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 		}
 		return util.WrapError(ErrorBadResponseNewVersionEndpoint, strconv.Itoa(resp.StatusCode))
 	}
+
+	var versionCreate VersionCreate
+	err = decoder.Decode(&versionCreate)
+	if err != nil {
+		return err
+	}
+	console.Infof("New Version: %s", versionCreate.Version)
 
 	return nil
 }
