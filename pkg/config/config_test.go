@@ -666,7 +666,7 @@ func TestBlankBuild(t *testing.T) {
 }
 
 // TestPythonRequirementsForArchWithPlatform checks that generated requirements don't lose any metadata that
-// was supplied in the original requirements.txt, such as platform restrictions and hashes.
+// was supplied in the original requirements.txt, such as platform restrictions. We do expect hashes to be dropped.
 func TestPythonRequirementsForArchWithPlatform(t *testing.T) {
 	tmpDir := t.TempDir()
 	err := os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`pywin32==310 ; sys_platform == 'win32' \
