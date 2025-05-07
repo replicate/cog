@@ -110,7 +110,7 @@ func TestPythonRequirementNameAndVersion(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := tc.req.NameAndVersion()
+			result := tc.req.RequirementLine()
 			require.Equal(t, tc.expected, result)
 		})
 	}

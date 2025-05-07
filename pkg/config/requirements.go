@@ -5,6 +5,7 @@ import (
 	"maps"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 )
 
@@ -16,11 +17,13 @@ type PythonRequirement struct {
 	EnvironmentAndHash string
 	FindLinks          []string
 	ExtraIndexURLs     []string
+
+	order int
 }
 
-// NameAndVersion returns a string representation of the Python requirement. Note that find links
+// RequirementLine returns a string representation of the Python requirement. Note that find links
 // and extra index URLs are not included in the string representation.
-func (p PythonRequirement) NameAndVersion() string {
+func (p PythonRequirement) RequirementLine() string {
 	if p.Name == "" {
 		return ""
 	}
@@ -48,10 +51,14 @@ func (p PythonRequirements) RequirementsFileContent() string {
 	lines := make([]string, 0)
 	for _, req := range p {
 		for _, findLink := range req.FindLinks {
-			findLinks[findLink] = struct{}{}
+			if len(findLink) > 0 {
+				findLinks[findLink] = struct{}{}
+			}
 		}
 		for _, extraIndexURL := range req.ExtraIndexURLs {
-			extraIndexURLs[extraIndexURL] = struct{}{}
+			if len(extraIndexURL) > 0 {
+				extraIndexURLs[extraIndexURL] = struct{}{}
+			}
 		}
 	}
 
@@ -67,18 +74,25 @@ func (p PythonRequirements) RequirementsFileContent() string {
 		lines = append(lines, "--extra-index-url "+extraIndexURL)
 	}
 
+	// Sort by the ordering key to preserve the user-supplied order
+	sort.Slice(p, func(i, j int) bool {
+		return p[i].order < p[j].order
+	})
+
 	for _, req := range p {
-		lines = append(lines, req.NameAndVersion())
+		lines = append(lines, req.RequirementLine())
 	}
 	return strings.Join(lines, "\n")
 }
 
-func ParseRequirements(packages []string) (PythonRequirements, error) {
+func ParseRequirements(packages []string, orderStart int) (PythonRequirements, error) {
 	reqs := make(PythonRequirements, 0, len(packages))
-	for _, pkg := range packages {
+	for i, pkg := range packages {
 		if req, err := SplitPinnedPythonRequirement(pkg); err != nil {
 			return nil, fmt.Errorf("failed to parse requirements for %s: %w", pkg, err)
 		} else {
+			// Store an ordering key so that we can preserve order after deduplication
+			req.order = i + orderStart
 			reqs = append(reqs, req)
 		}
 	}

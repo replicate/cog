@@ -329,14 +329,25 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 // taking precendence (version, find-links, etc) if there is a duplicate.
 func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePackages []string) (string, error) {
 	// First, parse all the incoming requirements into PythonRequirements
-	includeRequirements, err := ParseRequirements(includePackages)
+	userRequirements, err := ParseRequirements(c.Build.pythonRequirementsContent, 0)
 	if err != nil {
 		return "", err
 	}
 
-	userRequirements, err := ParseRequirements(c.Build.pythonRequirementsContent)
+	// Do the same for the packages we've been asked to include by default, but set their ordering keys using a
+	// sequence number later than the user requirements. This will ensure that our default requirements come at the
+	// end of the list, and the order is maintained.
+	includeRequirements, err := ParseRequirements(includePackages, len(userRequirements))
 	if err != nil {
 		return "", err
+	}
+
+	// For the user requirements, update them for the given OS and architecture
+	for i, req := range userRequirements {
+		userRequirements[i], err = c.pythonPackageForArch(req, goos, goarch)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	// Next, build a map of requirements keyed on the requirement name. We'll initialise this with the requirements
@@ -361,27 +372,52 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 // pythonPackageForArch takes a PythonRequirement and
 // returns a package==version and index URL resolved to the correct GPU package for the given OS and architecture. If
 // the package is not one of the ones whose version we manage, we return the original requirement.
-func (c *Config) pythonPackageForArch(req PythonRequirement, goos, goarch string) (PythonRequirement, error) {
+func (c *Config) pythonPackageForArch(req PythonRequirement, goos, goarch string) (out PythonRequirement, err error) {
 	switch req.Name {
 	case "tensorflow":
 		if c.Build.GPU {
-			return tfGPUPackage(req.Version, c.Build.CUDA)
+			out, err = tfGPUPackage(req.Version, c.Build.CUDA)
 		}
 		// There is no CPU case for tensorflow because the default package is just the CPU package, so no transformation of version is needed
 	case "torch":
 		if c.Build.GPU {
-			return torchGPUPackage(req.Version, c.Build.CUDA)
+			out, err = torchGPUPackage(req.Version, c.Build.CUDA)
 		} else {
-			return torchCPUPackage(req.Version, goos, goarch)
+			out, err = torchCPUPackage(req.Version, goos, goarch)
 		}
 	case "torchvision":
 		if c.Build.GPU {
-			return torchvisionGPUPackage(req.Version, c.Build.CUDA)
+			out, err = torchvisionGPUPackage(req.Version, c.Build.CUDA)
 		} else {
-			return torchvisionCPUPackage(req.Version, goos, goarch)
+			out, err = torchvisionCPUPackage(req.Version, goos, goarch)
 		}
+	default:
+		out = req
 	}
-	return req, nil
+
+	if err != nil {
+		return PythonRequirement{}, err
+	}
+
+	// Regardless of whether we're using the original or generated requirement, we bring across some user-supplied
+	// attributes if provided.
+	out.order = req.order
+
+	// We treat version slightly differently, because we may have rewritten the field to include the cpu specifier.
+	// Therefore, we will only overwrite the output version if the output version is currently empty.
+	if req.Version != "" && out.Version == "" {
+		out.Version = req.Version
+	}
+	if req.EnvironmentAndHash != "" {
+		out.EnvironmentAndHash = req.EnvironmentAndHash
+	}
+	if len(req.FindLinks) > 0 {
+		out.FindLinks = req.FindLinks
+	}
+	if len(req.ExtraIndexURLs) > 0 {
+		out.ExtraIndexURLs = req.ExtraIndexURLs
+	}
+	return
 }
 
 func ValidateCudaVersion(cudaVersion string) error {
