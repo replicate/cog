@@ -16,9 +16,9 @@ type PythonRequirement struct {
 	ExtraIndexURLs []string
 }
 
-// String returns a string representation of the Python requirement. Note that find links
+// NameAndVersion returns a string representation of the Python requirement. Note that find links
 // and extra index URLs are not included in the string representation.
-func (p PythonRequirement) String() string {
+func (p PythonRequirement) NameAndVersion() string {
 	if p.Name == "" {
 		return ""
 	}
@@ -61,7 +61,7 @@ func (p PythonRequirements) RequirementsFileContent() string {
 	}
 
 	for _, req := range p {
-		lines = append(lines, req.String())
+		lines = append(lines, req.NameAndVersion())
 	}
 	return strings.Join(lines, "\n")
 }
@@ -119,12 +119,4 @@ func SplitPinnedPythonRequirement(requirement string) (req PythonRequirement, er
 		return PythonRequirement{}, fmt.Errorf("Package name or version is missing in %s", requirement)
 	}
 	return
-}
-
-func PackageName(pipRequirement string) (string, error) {
-	if req, err := SplitPinnedPythonRequirement(pipRequirement); err != nil {
-		return "", err
-	} else {
-		return req.Name, nil
-	}
 }

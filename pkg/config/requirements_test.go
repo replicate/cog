@@ -46,7 +46,7 @@ func TestSplitPinnedPythonRequirement(t *testing.T) {
 	}
 }
 
-func TestPythonRequirementString(t *testing.T) {
+func TestPythonRequirementNameAndVersion(t *testing.T) {
 	testCases := []struct {
 		name     string
 		req      PythonRequirement
@@ -88,7 +88,133 @@ func TestPythonRequirementString(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := tc.req.String()
+			result := tc.req.NameAndVersion()
+			require.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestPythonRequirementsRequirementsFileContent(t *testing.T) {
+	testCases := []struct {
+		name     string
+		reqs     PythonRequirements
+		expected string
+	}{
+		{
+			name:     "empty requirements",
+			reqs:     PythonRequirements{},
+			expected: "",
+		},
+		{
+			name: "single package without find links or extra index urls",
+			reqs: PythonRequirements{
+				{
+					Name:    "package1",
+					Version: "1.0.0",
+				},
+			},
+			expected: "package1==1.0.0",
+		},
+		{
+			name: "multiple packages with find links",
+			reqs: PythonRequirements{
+				{
+					Name:      "package1",
+					Version:   "1.0.0",
+					FindLinks: []string{"link1"},
+				},
+				{
+					Name:      "package2",
+					Version:   "2.0.0",
+					FindLinks: []string{"link2"},
+				},
+			},
+			expected: `--find-links link1
+--find-links link2
+package1==1.0.0
+package2==2.0.0`,
+		},
+		{
+			name: "multiple packages with extra index urls",
+			reqs: PythonRequirements{
+				{
+					Name:           "package1",
+					Version:        "1.0.0",
+					ExtraIndexURLs: []string{"url1"},
+				},
+				{
+					Name:           "package2",
+					Version:        "2.0.0",
+					ExtraIndexURLs: []string{"url2"},
+				},
+			},
+			expected: `--extra-index-url url1
+--extra-index-url url2
+package1==1.0.0
+package2==2.0.0`,
+		},
+		{
+			name: "multiple packages with both find links and extra index urls",
+			reqs: PythonRequirements{
+				{
+					Name:           "package1",
+					Version:        "1.0.0",
+					FindLinks:      []string{"link1"},
+					ExtraIndexURLs: []string{"url1"},
+				},
+				{
+					Name:           "package2",
+					Version:        "2.0.0",
+					FindLinks:      []string{"link2"},
+					ExtraIndexURLs: []string{"url2"},
+				},
+			},
+			expected: `--find-links link1
+--find-links link2
+--extra-index-url url1
+--extra-index-url url2
+package1==1.0.0
+package2==2.0.0`,
+		},
+		{
+			name: "duplicate find links and extra index urls",
+			reqs: PythonRequirements{
+				{
+					Name:           "package1",
+					Version:        "1.0.0",
+					FindLinks:      []string{"link1", "link1"},
+					ExtraIndexURLs: []string{"url1", "url1"},
+				},
+				{
+					Name:           "package2",
+					Version:        "2.0.0",
+					FindLinks:      []string{"link1"},
+					ExtraIndexURLs: []string{"url1"},
+				},
+			},
+			expected: `--find-links link1
+--extra-index-url url1
+package1==1.0.0
+package2==2.0.0`,
+		},
+		{
+			name: "packages without versions",
+			reqs: PythonRequirements{
+				{
+					Name: "package1",
+				},
+				{
+					Name: "package2",
+				},
+			},
+			expected: `package1
+package2`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := tc.reqs.RequirementsFileContent()
 			require.Equal(t, tc.expected, result)
 		})
 	}
