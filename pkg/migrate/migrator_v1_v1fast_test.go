@@ -152,10 +152,10 @@ class Predictor(BasePredictor):
 	content, err := io.ReadAll(file)
 	require.NoError(t, err)
 	require.Equal(t, `build:
+  gpu: true
   python_version: "3.11"
   python_requirements: requirements.txt
   fast: true
-  gpu: true
 predict: predict.py:Predictor
 `, string(content))
 	err = file.Close()
