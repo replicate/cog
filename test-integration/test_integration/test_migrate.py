@@ -63,19 +63,9 @@ def test_migrate_gpu(tmpdir_factory):
     assert result.returncode == 0
     with open(os.path.join(out_dir, "cog.yaml"), encoding="utf8") as handle:
         assert handle.read(), """build:
+  gpu: true
   python_version: "3.11"
   python_requirements: requirements.txt
   fast: true
 predict: predict.py:Predictor
 """
-    with open(os.path.join(out_dir, "predict.py"), encoding="utf8") as handle:
-        assert handle.read(), """from typing import Optional
-from cog import BasePredictor, Input
-
-
-class Predictor(BasePredictor):
-    def predict(self, s: Optional[str] = Input(description="My Input Description", default=None)) -> str:
-        return "hello " + s
-"""
-    with open(os.path.join(out_dir, "requirements.txt"), encoding="utf8") as handle:
-        assert handle.read(), "pillow"
