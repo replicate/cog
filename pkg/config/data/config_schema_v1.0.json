@@ -214,7 +214,7 @@
         "array",
         "null"
       ],
-      "description": "A list of environment variables to make available at build time, in the format `NAME=value`",
+      "description": "A list of environment variables to make available during builds and at runtime, in the format `NAME=value`",
       "additionalItems": true,
       "items": {
         "$id": "#/properties/properties/environment/items",
