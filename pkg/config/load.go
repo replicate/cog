@@ -24,6 +24,15 @@ func GetProjectDir(configFilename string) (string, error) {
 // Loads and instantiates a Config object
 // customDir can be specified to override the default - current working directory
 func GetConfig(configFilename string) (*Config, string, error) {
+	config, rootDir, err := GetRawConfig(configFilename)
+	if err != nil {
+		return nil, "", err
+	}
+	err = config.ValidateAndComplete(rootDir)
+	return config, rootDir, err
+}
+
+func GetRawConfig(configFilename string) (*Config, string, error) {
 	// Find the root project directory
 	rootDir, err := GetProjectDir(configFilename)
 
@@ -37,8 +46,6 @@ func GetConfig(configFilename string) (*Config, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-
-	err = config.ValidateAndComplete(rootDir)
 
 	return config, rootDir, err
 }
