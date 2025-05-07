@@ -326,7 +326,7 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 // PythonRequirementsForArch returns a requirements.txt file with all the GPU packages resolved for given OS and architecture.
 // The packages listed in c.Build.pythonRequirementsContent are user-supplied requirements. Packages listed in the
 // `includePackages` parameter are defaults. The two sets are union'd together, with the user's own requirements
-// taking precendence (version, find-links, etc) if there is a duplicate.
+// taking precedence (version, find-links, etc) if there is a duplicate.
 //
 // The method will return the string content of the requirements file, or an error.
 func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePackages []string) (string, error) {
@@ -356,7 +356,7 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 	// add them back in later.
 	unparsed := make([]PythonRequirement, 0)
 
-	// Next, build a map of requirements keyed on the requirement name. We'll initialise this with the requirements
+	// Next, build a map of requirements keyed on the requirement name. We'll init this with the requirements
 	// from `includePackages`, and update it with the user's requirements (which may therefore overwrite the defaults).
 	finalRequirementsMap := make(map[string]PythonRequirement)
 	for _, req := range includeRequirements {
