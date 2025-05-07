@@ -207,6 +207,20 @@
         "type": "object",
         "additionalItems": true
       }
+    },
+    "environment": {
+      "$id": "#/properties/properties/environment",
+      "type": [
+        "array",
+        "null"
+      ],
+      "description": "A list of environment variables to make available during builds and at runtime, in the format `NAME=value`",
+      "additionalItems": true,
+      "items": {
+        "$id": "#/properties/properties/environment/items",
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*=[^\\s]+$"
+      }
     }
   },
   "additionalProperties": false

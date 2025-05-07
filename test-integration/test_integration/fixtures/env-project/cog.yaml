@@ -1,0 +1,4 @@
+predict: "predict.py:Predictor"
+environment:
+  - NAME=michael
+  - TEST_VAR=test_value

@@ -431,6 +431,14 @@ func (g *FastGenerator) installSrc(lines []string, weights []weights.Weight) ([]
 }
 
 func (g *FastGenerator) entrypoint(lines []string) ([]string, error) {
+	line, err := envLineFromConfig(g.Config)
+	if err != nil {
+		return nil, err
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+
 	return append(lines, []string{
 		"WORKDIR /src",
 		"ENV VERBOSE=0",

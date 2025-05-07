@@ -143,6 +143,10 @@ func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, e
 	if err != nil {
 		return "", err
 	}
+	envs, err := g.envVars()
+	if err != nil {
+		return "", err
+	}
 	runCommands, err := g.runCommands()
 	if err != nil {
 		return "", err
@@ -160,6 +164,7 @@ func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, e
 		steps := []string{
 			"#syntax=docker/dockerfile:1.4",
 			"FROM " + baseImage,
+			envs,
 			aptInstalls,
 			installCog,
 			pipInstalls,
@@ -177,6 +182,7 @@ func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, e
 		"FROM " + baseImage,
 		g.preamble(),
 		g.installTini(),
+		envs,
 		aptInstalls,
 		installPython,
 		pipInstalls,
@@ -503,6 +509,10 @@ This is the offending line: %s`, command)
 		}
 	}
 	return strings.Join(lines, "\n"), nil
+}
+
+func (g *StandardGenerator) envVars() (string, error) {
+	return envLineFromConfig(g.Config)
 }
 
 // writeTemp writes a temporary file that can be used as part of the build process
