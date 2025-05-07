@@ -55,11 +55,13 @@ func newRunCommand() *cobra.Command {
 func run(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
+	dockerCommand := docker.NewDockerCommand()
+
 	cfg, projectDir, err := config.GetConfig(configFilename)
 	if err != nil {
 		return err
 	}
-	imageName, err := image.BuildBase(ctx, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput)
+	imageName, err := image.BuildBase(ctx, dockerCommand, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput)
 	if err != nil {
 		return err
 	}
@@ -70,8 +72,6 @@ func run(cmd *cobra.Command, args []string) error {
 	} else if cfg.Build.GPU {
 		gpus = "all"
 	}
-
-	dockerCommand := docker.NewDockerCommand()
 
 	runOptions := docker.RunOptions{
 		Args:    args,
