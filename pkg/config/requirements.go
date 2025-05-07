@@ -8,12 +8,14 @@ import (
 	"strings"
 )
 
-// PythonRequirement represents a single line of a Python requirements.txt-style file.
+// PythonRequirement represents a single line of a Python requirements.txt-style file. It's not meant to power a
+// full-fledged parser - just the bits that we care about when we generate new requirements files.
 type PythonRequirement struct {
-	Name           string
-	Version        string
-	FindLinks      []string
-	ExtraIndexURLs []string
+	Name               string
+	Version            string
+	EnvironmentAndHash string
+	FindLinks          []string
+	ExtraIndexURLs     []string
 }
 
 // NameAndVersion returns a string representation of the Python requirement. Note that find links
@@ -27,6 +29,11 @@ func (p PythonRequirement) NameAndVersion() string {
 	if p.Version != "" {
 		fields = append(fields, "==", p.Version)
 	}
+
+	if p.EnvironmentAndHash != "" {
+		fields = append(fields, " ; ", p.EnvironmentAndHash)
+	}
+
 	return strings.Join(fields, "")
 }
 
@@ -81,11 +88,19 @@ func ParseRequirements(packages []string) (PythonRequirements, error) {
 // SplitPinnedPythonRequirement returns the name, version, findLinks, and extraIndexURLs from a requirements.txt line
 // in the form name==version [--find-links=<findLink>] [-f <findLink>] [--extra-index-url=<extraIndexURL>]
 func SplitPinnedPythonRequirement(requirement string) (req PythonRequirement, err error) {
+	// Split out anything after the semicolon - this can contain things like runtime platform constraints, hashes,
+	// etc. We don't care what is actually in this, but we do need to preserve it.
+	parts := strings.Split(requirement, ";")
+	requirementAndVersion := strings.TrimSpace(parts[0])
+	if len(parts) > 1 {
+		req.EnvironmentAndHash = strings.TrimSpace(parts[1])
+	}
+
 	pinnedPackageRe := regexp.MustCompile(`(?:([a-zA-Z0-9\-_]+)==([^ ]+)|--find-links=([^\s]+)|-f\s+([^\s]+)|--extra-index-url=([^\s]+))`)
 
-	matches := pinnedPackageRe.FindAllStringSubmatch(requirement, -1)
+	matches := pinnedPackageRe.FindAllStringSubmatch(requirementAndVersion, -1)
 	if matches == nil {
-		return req, fmt.Errorf("Package %s is not in the expected format", requirement)
+		return req, fmt.Errorf("Package %s is not in the expected format", requirementAndVersion)
 	}
 
 	nameFound := false
