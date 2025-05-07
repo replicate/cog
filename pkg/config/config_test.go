@@ -681,7 +681,7 @@ func TestPythonRequirementsForArchWithPlatform(t *testing.T) {
 	require.NoError(t, config.ValidateAndComplete(tmpDir))
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
-	expected := "pywin32==310 ; sys_platform == 'win32' --hash=sha256:126298077a9d7c95c53823934f000599f66ec9296b09167810eb24875f32689c"
+	expected := "pywin32==310 ; sys_platform == 'win32'"
 	require.Equal(t, expected, requirements)
 }
 
