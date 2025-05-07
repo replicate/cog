@@ -334,12 +334,12 @@ func torchGPUPackage(ver string, cuda string) (req PythonRequirement, err error)
 	}
 
 	req.Name = "torch"
+	req.ParsedFieldsValid = true
 	// We've already warned user if they're doing something stupid in validateAndCompleteCUDA()
 	if latest != nil {
 		req.Version = version.StripModifier(latest.Torch)
 		req.FindLinks = []string{latest.FindLinks}
 		req.ExtraIndexURLs = []string{latest.ExtraIndexURL}
-		req.ParsedFieldsValid = true
 	}
 
 	return
@@ -347,6 +347,7 @@ func torchGPUPackage(ver string, cuda string) (req PythonRequirement, err error)
 
 func torchvisionCPUPackage(ver, goos, goarch string) (req PythonRequirement, err error) {
 	req.Name = "torchvision"
+	req.ParsedFieldsValid = true
 
 	// Fall back to just installing default version. For older torchvision versions, they don't have any CPU versions.
 	req.Version = ver
@@ -355,7 +356,6 @@ func torchvisionCPUPackage(ver, goos, goarch string) (req PythonRequirement, err
 			req.Version = torchStripCPUSuffixForM1(compat.Torchvision, goos, goarch)
 			req.FindLinks = []string{compat.FindLinks}
 			req.ExtraIndexURLs = []string{compat.ExtraIndexURL}
-			req.ParsedFieldsValid = true
 		}
 	}
 	return
@@ -392,6 +392,7 @@ func torchvisionGPUPackage(ver, cuda string) (req PythonRequirement, err error) 
 	}
 
 	req.Name = "torchvision"
+	req.ParsedFieldsValid = true
 	if latest == nil {
 		// TODO: can we suggest a CUDA version known to be compatible?
 		console.Warnf("Cog doesn't know if CUDA %s is compatible with torchvision %s. This might cause CUDA problems.", cuda, ver)
@@ -400,7 +401,6 @@ func torchvisionGPUPackage(ver, cuda string) (req PythonRequirement, err error) 
 		req.Version = version.StripModifier(latest.Torchvision)
 		req.FindLinks = []string{latest.FindLinks}
 		req.ExtraIndexURLs = []string{latest.ExtraIndexURL}
-		req.ParsedFieldsValid = true
 	}
 
 	return

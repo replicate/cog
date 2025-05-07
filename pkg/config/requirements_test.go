@@ -62,32 +62,36 @@ func TestPythonRequirementNameAndVersion(t *testing.T) {
 		{
 			name: "basic package with version",
 			req: PythonRequirement{
-				Name:    "package1",
-				Version: "1.0.0",
+				Name:              "package1",
+				Version:           "1.0.0",
+				ParsedFieldsValid: true,
 			},
 			expected: "package1==1.0.0",
 		},
 		{
 			name: "package with no version",
 			req: PythonRequirement{
-				Name: "package2",
+				Name:              "package2",
+				ParsedFieldsValid: true,
 			},
 			expected: "package2",
 		},
 		{
 			name: "empty requirement",
 			req: PythonRequirement{
-				Name: "",
+				Name:              "",
+				ParsedFieldsValid: true,
 			},
 			expected: "",
 		},
 		{
 			name: "package with find links and extra index URLs",
 			req: PythonRequirement{
-				Name:           "package3",
-				Version:        "3.0.0",
-				FindLinks:      []string{"link1", "link2"},
-				ExtraIndexURLs: []string{"url1", "url2"},
+				Name:              "package3",
+				Version:           "3.0.0",
+				FindLinks:         []string{"link1", "link2"},
+				ExtraIndexURLs:    []string{"url1", "url2"},
+				ParsedFieldsValid: true,
 			},
 			expected: "package3==3.0.0",
 		},
@@ -97,6 +101,7 @@ func TestPythonRequirementNameAndVersion(t *testing.T) {
 				Name:               "package4",
 				Version:            "4.0.0",
 				EnvironmentAndHash: "python_version >= '3.8'",
+				ParsedFieldsValid:  true,
 			},
 			expected: "package4==4.0.0 ; python_version >= '3.8'",
 		},
@@ -105,8 +110,19 @@ func TestPythonRequirementNameAndVersion(t *testing.T) {
 			req: PythonRequirement{
 				Name:               "package5",
 				EnvironmentAndHash: "sys_platform == 'win32'",
+				ParsedFieldsValid:  true,
 			},
 			expected: "package5 ; sys_platform == 'win32'",
+		},
+		{
+			name: "parsed field not valid",
+			req: PythonRequirement{
+				Name:               "package6",
+				EnvironmentAndHash: "python_version >= '3.8'",
+				ParsedFieldsValid:  false,
+				Literal:            "some-text",
+			},
+			expected: "some-text",
 		},
 	}
 
@@ -133,8 +149,9 @@ func TestPythonRequirementsRequirementsFileContent(t *testing.T) {
 			name: "single package without find links or extra index urls",
 			reqs: PythonRequirements{
 				{
-					Name:    "package1",
-					Version: "1.0.0",
+					Name:              "package1",
+					Version:           "1.0.0",
+					ParsedFieldsValid: true,
 				},
 			},
 			expected: "package1==1.0.0",
@@ -143,14 +160,16 @@ func TestPythonRequirementsRequirementsFileContent(t *testing.T) {
 			name: "multiple packages with find links",
 			reqs: PythonRequirements{
 				{
-					Name:      "package1",
-					Version:   "1.0.0",
-					FindLinks: []string{"link1"},
+					Name:              "package1",
+					Version:           "1.0.0",
+					FindLinks:         []string{"link1"},
+					ParsedFieldsValid: true,
 				},
 				{
-					Name:      "package2",
-					Version:   "2.0.0",
-					FindLinks: []string{"link2"},
+					Name:              "package2",
+					Version:           "2.0.0",
+					FindLinks:         []string{"link2"},
+					ParsedFieldsValid: true,
 				},
 			},
 			expected: `--find-links link1
@@ -162,14 +181,16 @@ package2==2.0.0`,
 			name: "multiple packages with extra index urls",
 			reqs: PythonRequirements{
 				{
-					Name:           "package1",
-					Version:        "1.0.0",
-					ExtraIndexURLs: []string{"url1"},
+					Name:              "package1",
+					Version:           "1.0.0",
+					ExtraIndexURLs:    []string{"url1"},
+					ParsedFieldsValid: true,
 				},
 				{
-					Name:           "package2",
-					Version:        "2.0.0",
-					ExtraIndexURLs: []string{"url2"},
+					Name:              "package2",
+					Version:           "2.0.0",
+					ExtraIndexURLs:    []string{"url2"},
+					ParsedFieldsValid: true,
 				},
 			},
 			expected: `--extra-index-url url1
@@ -181,16 +202,18 @@ package2==2.0.0`,
 			name: "multiple packages with both find links and extra index urls",
 			reqs: PythonRequirements{
 				{
-					Name:           "package1",
-					Version:        "1.0.0",
-					FindLinks:      []string{"link1"},
-					ExtraIndexURLs: []string{"url1"},
+					Name:              "package1",
+					Version:           "1.0.0",
+					FindLinks:         []string{"link1"},
+					ExtraIndexURLs:    []string{"url1"},
+					ParsedFieldsValid: true,
 				},
 				{
-					Name:           "package2",
-					Version:        "2.0.0",
-					FindLinks:      []string{"link2"},
-					ExtraIndexURLs: []string{"url2"},
+					Name:              "package2",
+					Version:           "2.0.0",
+					FindLinks:         []string{"link2"},
+					ExtraIndexURLs:    []string{"url2"},
+					ParsedFieldsValid: true,
 				},
 			},
 			expected: `--find-links link1
@@ -204,16 +227,18 @@ package2==2.0.0`,
 			name: "duplicate find links and extra index urls",
 			reqs: PythonRequirements{
 				{
-					Name:           "package1",
-					Version:        "1.0.0",
-					FindLinks:      []string{"link1", "link1"},
-					ExtraIndexURLs: []string{"url1", "url1"},
+					Name:              "package1",
+					Version:           "1.0.0",
+					FindLinks:         []string{"link1", "link1"},
+					ExtraIndexURLs:    []string{"url1", "url1"},
+					ParsedFieldsValid: true,
 				},
 				{
-					Name:           "package2",
-					Version:        "2.0.0",
-					FindLinks:      []string{"link1"},
-					ExtraIndexURLs: []string{"url1"},
+					Name:              "package2",
+					Version:           "2.0.0",
+					FindLinks:         []string{"link1"},
+					ExtraIndexURLs:    []string{"url1"},
+					ParsedFieldsValid: true,
 				},
 			},
 			expected: `--find-links link1
@@ -225,10 +250,12 @@ package2==2.0.0`,
 			name: "packages without versions",
 			reqs: PythonRequirements{
 				{
-					Name: "package1",
+					Name:              "package1",
+					ParsedFieldsValid: true,
 				},
 				{
-					Name: "package2",
+					Name:              "package2",
+					ParsedFieldsValid: true,
 				},
 			},
 			expected: `package1
@@ -241,15 +268,32 @@ package2`,
 					Name:               "package1",
 					Version:            "1.0.0",
 					EnvironmentAndHash: "python_version >= '3.8'",
+					ParsedFieldsValid:  true,
 				},
 				{
 					Name:               "package2",
 					Version:            "2.0.0",
 					EnvironmentAndHash: "sys_platform == 'win32'",
+					ParsedFieldsValid:  true,
 				},
 			},
 			expected: `package1==1.0.0 ; python_version >= '3.8'
 package2==2.0.0 ; sys_platform == 'win32'`,
+		},
+		{
+			name: "packages that did not parse but have literals",
+			reqs: PythonRequirements{
+				{
+					Literal:           "hello-world",
+					ParsedFieldsValid: false,
+				},
+				{
+					Name:              "package1",
+					ParsedFieldsValid: true,
+				},
+			},
+			expected: `hello-world
+package1`,
 		},
 	}
 
