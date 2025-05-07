@@ -422,8 +422,8 @@ func (c *Config) pythonPackageForArch(req PythonRequirement, goos, goarch string
 	if req.Version != "" && out.Version == "" {
 		out.Version = req.Version
 	}
-	if req.EnvironmentAndHash != "" {
-		out.EnvironmentAndHash = req.EnvironmentAndHash
+	if req.EnvironmentMarkers != "" {
+		out.EnvironmentMarkers = req.EnvironmentMarkers
 	}
 	if len(req.FindLinks) > 0 {
 		out.FindLinks = req.FindLinks

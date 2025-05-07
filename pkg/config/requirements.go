@@ -23,9 +23,10 @@ type PythonRequirement struct {
 	// Version is the version of the python package this requirement is pinned to.
 	Version string
 
-	// EnvironmentAndHash contains any extra information after the ; in the requirements line. Typically this is
-	// any hashes, runtime environment constraints, and so on.
-	EnvironmentAndHash string
+	// EnvironmentMarkers contains any extra information after the ; in the requirements line. Currently, we only
+	// support environment markers here, and discard hashes since their presence triggers strict hash checking
+	// for _all_ dependencies.
+	EnvironmentMarkers string
 
 	// FindLinks is a list of URLs or directories to search for packages when resolving Python dependencies.
 	FindLinks []string
@@ -62,8 +63,8 @@ func (p PythonRequirement) RequirementLine() string {
 		fields = append(fields, "==", p.Version)
 	}
 
-	if p.EnvironmentAndHash != "" {
-		fields = append(fields, " ; ", p.EnvironmentAndHash)
+	if p.EnvironmentMarkers != "" {
+		fields = append(fields, " ; ", p.EnvironmentMarkers)
 	}
 
 	return strings.Join(fields, "")
@@ -149,7 +150,7 @@ func SplitPinnedPythonRequirement(requirement string) (req PythonRequirement) {
 	req.Literal = requirement
 
 	// Split out anything after the semicolon - this can contain things like runtime platform constraints, hashes,
-	// etc. We don't care what is actually in this, but we do need to preserve it.
+	// etc. We will post-process this to remove --hash markers, which we can't support yet.
 	parts := strings.Split(requirement, ";")
 	requirementAndVersion := strings.TrimSpace(parts[0])
 	if len(parts) > 1 {
@@ -164,7 +165,7 @@ func SplitPinnedPythonRequirement(requirement string) (req PythonRequirement) {
 				filteredParts = append(filteredParts, part)
 			}
 		}
-		req.EnvironmentAndHash = strings.TrimSpace(strings.Join(filteredParts, " "))
+		req.EnvironmentMarkers = strings.TrimSpace(strings.Join(filteredParts, " "))
 	}
 
 	matches := pinnedPackageRe.FindAllStringSubmatch(requirementAndVersion, -1)

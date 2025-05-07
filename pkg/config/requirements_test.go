@@ -40,7 +40,7 @@ func TestSplitPinnedPythonRequirement(t *testing.T) {
 				Version:            tc.expectedVersion,
 				FindLinks:          tc.expectedFindLinks,
 				ExtraIndexURLs:     tc.expectedExtraIndexURLs,
-				EnvironmentAndHash: tc.expectedEnvAndHash,
+				EnvironmentMarkers: tc.expectedEnvAndHash,
 				Literal:            tc.input,
 				ParsedFieldsValid:  !tc.expectedError,
 			}
@@ -103,7 +103,7 @@ func TestPythonRequirementNameAndVersion(t *testing.T) {
 			req: PythonRequirement{
 				Name:               "package4",
 				Version:            "4.0.0",
-				EnvironmentAndHash: "python_version >= '3.8'",
+				EnvironmentMarkers: "python_version >= '3.8'",
 				ParsedFieldsValid:  true,
 			},
 			expected: "package4==4.0.0 ; python_version >= '3.8'",
@@ -112,7 +112,7 @@ func TestPythonRequirementNameAndVersion(t *testing.T) {
 			name: "package with environment marker and no version",
 			req: PythonRequirement{
 				Name:               "package5",
-				EnvironmentAndHash: "sys_platform == 'win32'",
+				EnvironmentMarkers: "sys_platform == 'win32'",
 				ParsedFieldsValid:  true,
 			},
 			expected: "package5 ; sys_platform == 'win32'",
@@ -121,7 +121,7 @@ func TestPythonRequirementNameAndVersion(t *testing.T) {
 			name: "parsed field not valid",
 			req: PythonRequirement{
 				Name:               "package6",
-				EnvironmentAndHash: "python_version >= '3.8'",
+				EnvironmentMarkers: "python_version >= '3.8'",
 				ParsedFieldsValid:  false,
 				Literal:            "some-text",
 			},
@@ -270,13 +270,13 @@ package2`,
 				{
 					Name:               "package1",
 					Version:            "1.0.0",
-					EnvironmentAndHash: "python_version >= '3.8'",
+					EnvironmentMarkers: "python_version >= '3.8'",
 					ParsedFieldsValid:  true,
 				},
 				{
 					Name:               "package2",
 					Version:            "2.0.0",
-					EnvironmentAndHash: "sys_platform == 'win32'",
+					EnvironmentMarkers: "sys_platform == 'win32'",
 					ParsedFieldsValid:  true,
 				},
 			},
