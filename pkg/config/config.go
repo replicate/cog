@@ -221,13 +221,10 @@ func (c *Config) cudaFromTF() (tfVersion string, tfCUDA string, tfCuDNN string, 
 
 func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 	for _, pkg := range c.Build.pythonRequirementsContent {
-		pkgName, version, _, _, err := SplitPinnedPythonRequirement(pkg)
-		if err != nil {
-			// package is not in package==version format
-			continue
-		}
-		if pkgName == name {
-			return version, true
+		if req, err := SplitPinnedPythonRequirement(pkg); err != nil {
+			return "", false
+		} else if req.Name == name {
+			return req.Version, true
 		}
 	}
 	return "", false
@@ -327,132 +324,64 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 }
 
 // PythonRequirementsForArch returns a requirements.txt file with all the GPU packages resolved for given OS and architecture.
+// The packages listed in c.Build.pythonRequirementsContent are user-supplied requirements. Packages listed in the
+// `includePackages` parameter are defaults. The two sets are union'd together, with the user's own requirements
+// taking precendence (version, find-links, etc) if there is a duplicate.
 func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePackages []string) (string, error) {
-	packages := []string{}
-	findLinksSet := map[string]bool{}
-	extraIndexURLSet := map[string]bool{}
-
-	includePackageNames := []string{}
-	for _, pkg := range includePackages {
-		packageName, err := PackageName(pkg)
-		if err != nil {
-			return "", err
-		}
-		includePackageNames = append(includePackageNames, packageName)
+	// First, parse all the incoming requirements into PythonRequirements
+	includeRequirements, err := ParseRequirements(includePackages)
+	if err != nil {
+		return "", err
 	}
 
-	// Include all the requirements and remove our include packages if they exist
-	for _, pkg := range c.Build.pythonRequirementsContent {
-		archPkg, findLinksList, extraIndexURLs, err := c.pythonPackageForArch(pkg, goos, goarch)
-		if err != nil {
-			return "", err
-		}
-		packages = append(packages, archPkg)
-		if len(findLinksList) > 0 {
-			for _, fl := range findLinksList {
-				findLinksSet[fl] = true
-			}
-		}
-		if len(extraIndexURLs) > 0 {
-			for _, u := range extraIndexURLs {
-				extraIndexURLSet[u] = true
-			}
-		}
-
-		packageName, _ := PackageName(archPkg)
-		if packageName != "" {
-			foundIdx := -1
-			for i, includePkg := range includePackageNames {
-				if includePkg == packageName {
-					foundIdx = i
-					break
-				}
-			}
-			if foundIdx != -1 {
-				includePackageNames = append(includePackageNames[:foundIdx], includePackageNames[foundIdx+1:]...)
-				includePackages = append(includePackages[:foundIdx], includePackages[foundIdx+1:]...)
-			}
-		}
+	userRequirements, err := ParseRequirements(c.Build.pythonRequirementsContent)
+	if err != nil {
+		return "", err
 	}
 
-	// If we still have some include packages add them in
-	packages = append(packages, includePackages...)
-
-	// Create final requirements.txt output
-	// Put index URLs first
-	lines := []string{}
-	for findLinks := range findLinksSet {
-		lines = append(lines, "--find-links "+findLinks)
-	}
-	for extraIndexURL := range extraIndexURLSet {
-		lines = append(lines, "--extra-index-url "+extraIndexURL)
+	// Next, build a map of requirements keyed on the requirement name. We'll initialise this with the requirements
+	// from `includePackages`, and update it with the user's requirements (which may therefore overwrite the defaults).
+	finalRequirementsMap := make(map[string]PythonRequirement)
+	for _, req := range includeRequirements {
+		finalRequirementsMap[req.Name] = req
 	}
 
-	// Then, everything else
-	lines = append(lines, packages...)
+	for _, req := range userRequirements {
+		finalRequirementsMap[req.Name] = req
+	}
 
-	return strings.Join(lines, "\n"), nil
+	// Now we can build a real PythonRequirements from the values of the finalRequirementsMap
+	finalRequirements := make(PythonRequirements, 0, len(finalRequirementsMap))
+	for _, req := range finalRequirementsMap {
+		finalRequirements = append(finalRequirements, req)
+	}
+	return finalRequirements.RequirementsFileContent(), nil
 }
 
-// pythonPackageForArch takes a package==version line and
-// returns a package==version and index URL resolved to the correct GPU package for the given OS and architecture
-func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage string, findLinksList []string, extraIndexURLs []string, err error) {
-	name, version, findLinksList, extraIndexURLs, err := SplitPinnedPythonRequirement(pkg)
-	if err != nil {
-		// It's not pinned, so just return the line verbatim
-		return pkg, []string{}, []string{}, nil
-	}
-	if len(extraIndexURLs) > 0 {
-		return name + "==" + version, findLinksList, extraIndexURLs, nil
-	}
-
-	extraIndexURL := ""
-	findLinks := ""
-	switch name {
+// pythonPackageForArch takes a PythonRequirement and
+// returns a package==version and index URL resolved to the correct GPU package for the given OS and architecture. If
+// the package is not one of the ones whose version we manage, we return the original requirement.
+func (c *Config) pythonPackageForArch(req PythonRequirement, goos, goarch string) (PythonRequirement, error) {
+	switch req.Name {
 	case "tensorflow":
 		if c.Build.GPU {
-			name, version, err = tfGPUPackage(version, c.Build.CUDA)
-			if err != nil {
-				return "", nil, nil, err
-			}
+			return tfGPUPackage(req.Version, c.Build.CUDA)
 		}
 		// There is no CPU case for tensorflow because the default package is just the CPU package, so no transformation of version is needed
 	case "torch":
 		if c.Build.GPU {
-			name, version, findLinks, extraIndexURL, err = torchGPUPackage(version, c.Build.CUDA)
-			if err != nil {
-				return "", nil, nil, err
-			}
+			return torchGPUPackage(req.Version, c.Build.CUDA)
 		} else {
-			name, version, findLinks, extraIndexURL, err = torchCPUPackage(version, goos, goarch)
-			if err != nil {
-				return "", nil, nil, err
-			}
+			return torchCPUPackage(req.Version, goos, goarch)
 		}
 	case "torchvision":
 		if c.Build.GPU {
-			name, version, findLinks, extraIndexURL, err = torchvisionGPUPackage(version, c.Build.CUDA)
-			if err != nil {
-				return "", nil, nil, err
-			}
+			return torchvisionGPUPackage(req.Version, c.Build.CUDA)
 		} else {
-			name, version, findLinks, extraIndexURL, err = torchvisionCPUPackage(version, goos, goarch)
-			if err != nil {
-				return "", nil, nil, err
-			}
+			return torchvisionCPUPackage(req.Version, goos, goarch)
 		}
 	}
-	pkgWithVersion := name
-	if version != "" {
-		pkgWithVersion += "==" + version
-	}
-	if extraIndexURL != "" {
-		extraIndexURLs = []string{extraIndexURL}
-	}
-	if findLinks != "" {
-		findLinksList = []string{findLinks}
-	}
-	return pkgWithVersion, findLinksList, extraIndexURLs, nil
+	return req, nil
 }
 
 func ValidateCudaVersion(cudaVersion string) error {

@@ -27,16 +27,69 @@ func TestSplitPinnedPythonRequirement(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		name, version, findLinks, extraIndexURLs, err := SplitPinnedPythonRequirement(tc.input)
+		t.Run(tc.input, func(t *testing.T) {
+			expectedReq := PythonRequirement{
+				Name:           tc.expectedName,
+				Version:        tc.expectedVersion,
+				FindLinks:      tc.expectedFindLinks,
+				ExtraIndexURLs: tc.expectedExtraIndexURLs,
+			}
+			req, err := SplitPinnedPythonRequirement(tc.input)
 
-		if tc.expectedError {
-			require.Error(t, err)
-		} else {
-			require.NoError(t, err)
-			require.Equal(t, tc.expectedName, name, "input: "+tc.input)
-			require.Equal(t, tc.expectedVersion, version, "input: "+tc.input)
-			require.Equal(t, tc.expectedFindLinks, findLinks, "input: "+tc.input)
-			require.Equal(t, tc.expectedExtraIndexURLs, extraIndexURLs, "input: "+tc.input)
-		}
+			if tc.expectedError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, expectedReq, req)
+			}
+		})
+	}
+}
+
+func TestPythonRequirementString(t *testing.T) {
+	testCases := []struct {
+		name     string
+		req      PythonRequirement
+		expected string
+	}{
+		{
+			name: "basic package with version",
+			req: PythonRequirement{
+				Name:    "package1",
+				Version: "1.0.0",
+			},
+			expected: "package1==1.0.0",
+		},
+		{
+			name: "package with no version",
+			req: PythonRequirement{
+				Name: "package2",
+			},
+			expected: "package2",
+		},
+		{
+			name: "empty requirement",
+			req: PythonRequirement{
+				Name: "",
+			},
+			expected: "",
+		},
+		{
+			name: "package with find links and extra index URLs",
+			req: PythonRequirement{
+				Name:           "package3",
+				Version:        "3.0.0",
+				FindLinks:      []string{"link1", "link2"},
+				ExtraIndexURLs: []string{"url1", "url2"},
+			},
+			expected: "package3==3.0.0",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := tc.req.String()
+			require.Equal(t, tc.expected, result)
+		})
 	}
 }
