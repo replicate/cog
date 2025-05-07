@@ -2,7 +2,7 @@ import os
 import subprocess
 
 
-def test_config(tmpdir_factory):
+def test_config(tmpdir_factory, cog_binary):
     tmpdir = tmpdir_factory.mktemp("project")
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
@@ -15,7 +15,7 @@ build:
     os.makedirs(subdir)
 
     result = subprocess.run(
-        ["cog", "run", "echo", "hello world"],
+        [cog_binary, "run", "echo", "hello world"],
         cwd=subdir,
         check=True,
         capture_output=True,

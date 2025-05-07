@@ -1,7 +1,7 @@
 import subprocess
 
 
-def test_run(tmpdir_factory):
+def test_run(tmpdir_factory, cog_binary):
     tmpdir = tmpdir_factory.mktemp("project")
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
@@ -11,7 +11,7 @@ build:
         f.write(cog_yaml)
 
     result = subprocess.run(
-        ["cog", "run", "echo", "hello world"],
+        [cog_binary, "run", "echo", "hello world"],
         cwd=tmpdir,
         check=True,
         capture_output=True,
@@ -19,7 +19,7 @@ build:
     assert b"hello world" in result.stdout
 
 
-def test_run_with_secret(tmpdir_factory):
+def test_run_with_secret(tmpdir_factory, cog_binary):
     tmpdir = tmpdir_factory.mktemp("project")
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
@@ -39,7 +39,7 @@ build:
         f.write("🤫")
 
     result = subprocess.run(
-        ["cog", "debug"],
+        [cog_binary, "debug"],
         cwd=tmpdir,
         check=True,
         capture_output=True,
