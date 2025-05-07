@@ -1,12 +1,13 @@
 package config
 
 import (
-	"fmt"
 	"maps"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 // PythonRequirement represents a single line of a Python requirements.txt-style file. It's not meant to power a
@@ -18,12 +19,23 @@ type PythonRequirement struct {
 	FindLinks          []string
 	ExtraIndexURLs     []string
 
+	// Literal is the string value that this PythonRequirement was originally parsed from, if any.
+	Literal string
+
+	// ParsedFieldsValid indicates whether the Name, Version etc. fields are valid and can be read from. If this is
+	// false, then the Literal field should be used.
+	ParsedFieldsValid bool
+
 	order int
 }
 
 // RequirementLine returns a string representation of the Python requirement. Note that find links
 // and extra index URLs are not included in the string representation.
 func (p PythonRequirement) RequirementLine() string {
+	if !p.ParsedFieldsValid {
+		return p.Literal
+	}
+
 	if p.Name == "" {
 		return ""
 	}
@@ -47,9 +59,14 @@ type PythonRequirements []PythonRequirement
 func (p PythonRequirements) RequirementsFileContent() string {
 	findLinks := make(map[string]struct{})
 	extraIndexURLs := make(map[string]struct{})
-
 	lines := make([]string, 0)
+
+	// First, extract any find-links or extra-index-url lines from requirements we were able to parse
 	for _, req := range p {
+		if !req.ParsedFieldsValid {
+			continue
+		}
+
 		for _, findLink := range req.FindLinks {
 			if len(findLink) > 0 {
 				findLinks[findLink] = struct{}{}
@@ -62,13 +79,13 @@ func (p PythonRequirements) RequirementsFileContent() string {
 		}
 	}
 
-	// First, emit the --find-links lines. Sort for stability.
+	// Emit the --find-links lines. Sort for stability.
 	sortedFindLinks := slices.Sorted(maps.Keys(findLinks))
 	for _, findLink := range sortedFindLinks {
 		lines = append(lines, "--find-links "+findLink)
 	}
 
-	// Now, emit the --extra-index-url lines
+	// Emit the --extra-index-url lines
 	sortedExtraIndexURLs := slices.Sorted(maps.Keys(extraIndexURLs))
 	for _, extraIndexURL := range sortedExtraIndexURLs {
 		lines = append(lines, "--extra-index-url "+extraIndexURL)
@@ -85,23 +102,32 @@ func (p PythonRequirements) RequirementsFileContent() string {
 	return strings.Join(lines, "\n")
 }
 
-func ParseRequirements(packages []string, orderStart int) (PythonRequirements, error) {
+// ParseRequirements will attempt to parse all the packages specified in `packages`. Any requirements that can't
+// be parsed will simply be passed through as literals.
+func ParseRequirements(packages []string, orderStart int) PythonRequirements {
 	reqs := make(PythonRequirements, 0, len(packages))
 	for i, pkg := range packages {
-		if req, err := SplitPinnedPythonRequirement(pkg); err != nil {
-			return nil, fmt.Errorf("failed to parse requirements for %s: %w", pkg, err)
-		} else {
-			// Store an ordering key so that we can preserve order after deduplication
-			req.order = i + orderStart
-			reqs = append(reqs, req)
+		// We actually don't care at this point if the requirement parsed OK - we're happy just to pass the literal
+		// through
+		req := SplitPinnedPythonRequirement(pkg)
+		if !req.ParsedFieldsValid {
+			console.Debugf("pass-through unparseable requirement - this is usually ok: %s", pkg)
 		}
+
+		// Store an ordering key so that we can preserve order after deduplication
+		req.order = i + orderStart
+		reqs = append(reqs, req)
 	}
-	return reqs, nil
+	return reqs
 }
 
 // SplitPinnedPythonRequirement returns the name, version, findLinks, and extraIndexURLs from a requirements.txt line
-// in the form name==version [--find-links=<findLink>] [-f <findLink>] [--extra-index-url=<extraIndexURL>]
-func SplitPinnedPythonRequirement(requirement string) (req PythonRequirement, err error) {
+// in the form name==version [--find-links=<findLink>] [-f <findLink>] [--extra-index-url=<extraIndexURL>]. If the
+// requirement could not be parsed, then the returned PythonRequirement will have the `Parsed` field set to false.
+// Either way, the `Literal` field will contain the original line.
+func SplitPinnedPythonRequirement(requirement string) (req PythonRequirement) {
+	req.Literal = requirement
+
 	// Split out anything after the semicolon - this can contain things like runtime platform constraints, hashes,
 	// etc. We don't care what is actually in this, but we do need to preserve it.
 	parts := strings.Split(requirement, ";")
@@ -114,7 +140,7 @@ func SplitPinnedPythonRequirement(requirement string) (req PythonRequirement, er
 
 	matches := pinnedPackageRe.FindAllStringSubmatch(requirementAndVersion, -1)
 	if matches == nil {
-		return req, fmt.Errorf("Package %s is not in the expected format", requirementAndVersion)
+		return
 	}
 
 	nameFound := false
@@ -145,7 +171,9 @@ func SplitPinnedPythonRequirement(requirement string) (req PythonRequirement, er
 	}
 
 	if !nameFound || !versionFound {
-		return PythonRequirement{}, fmt.Errorf("Package name or version is missing in %s", requirement)
+		return
 	}
+
+	req.ParsedFieldsValid = true
 	return
 }

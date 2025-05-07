@@ -38,13 +38,15 @@ func TestSplitPinnedPythonRequirement(t *testing.T) {
 				FindLinks:          tc.expectedFindLinks,
 				ExtraIndexURLs:     tc.expectedExtraIndexURLs,
 				EnvironmentAndHash: tc.expectedEnvAndHash,
+				Literal:            tc.input,
+				ParsedFieldsValid:  !tc.expectedError,
 			}
-			req, err := SplitPinnedPythonRequirement(tc.input)
+			req := SplitPinnedPythonRequirement(tc.input)
 
 			if tc.expectedError {
-				require.Error(t, err)
+				require.False(t, req.ParsedFieldsValid)
 			} else {
-				require.NoError(t, err)
+				require.True(t, req.ParsedFieldsValid)
 				require.Equal(t, expectedReq, req)
 			}
 		})

@@ -219,9 +219,9 @@ func (c *Config) cudaFromTF() (tfVersion string, tfCUDA string, tfCuDNN string, 
 	return "", "", "", nil
 }
 
-func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
+func (c *Config) pythonPackageVersion(name string) (string, bool) {
 	for _, pkg := range c.Build.pythonRequirementsContent {
-		if req, err := SplitPinnedPythonRequirement(pkg); err != nil {
+		if req := SplitPinnedPythonRequirement(pkg); !req.ParsedFieldsValid {
 			return "", false
 		} else if req.Name == name {
 			return req.Version, true
@@ -327,28 +327,34 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 // The packages listed in c.Build.pythonRequirementsContent are user-supplied requirements. Packages listed in the
 // `includePackages` parameter are defaults. The two sets are union'd together, with the user's own requirements
 // taking precendence (version, find-links, etc) if there is a duplicate.
+//
+// The method will return the string content of the requirements file, or an error.
 func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePackages []string) (string, error) {
 	// First, parse all the incoming requirements into PythonRequirements
-	userRequirements, err := ParseRequirements(c.Build.pythonRequirementsContent, 0)
-	if err != nil {
-		return "", err
-	}
+	userRequirements := ParseRequirements(c.Build.pythonRequirementsContent, 0)
 
 	// Do the same for the packages we've been asked to include by default, but set their ordering keys using a
 	// sequence number later than the user requirements. This will ensure that our default requirements come at the
 	// end of the list, and the order is maintained.
-	includeRequirements, err := ParseRequirements(includePackages, len(userRequirements))
-	if err != nil {
-		return "", err
-	}
+	includeRequirements := ParseRequirements(includePackages, len(userRequirements))
 
 	// For the user requirements, update them for the given OS and architecture
+	var err error
 	for i, req := range userRequirements {
+		// We're only interested in requirements that we were actually able to parse
+		if !req.ParsedFieldsValid {
+			continue
+		}
 		userRequirements[i], err = c.pythonPackageForArch(req, goos, goarch)
 		if err != nil {
 			return "", err
 		}
 	}
+
+	// We're about to perform deduplication between the user requirements and the provided defaults. There may
+	// be user requirements that we weren't able to parse though - we will keep a note of those so that we can
+	// add them back in later.
+	unparsed := make([]PythonRequirement, 0)
 
 	// Next, build a map of requirements keyed on the requirement name. We'll initialise this with the requirements
 	// from `includePackages`, and update it with the user's requirements (which may therefore overwrite the defaults).
@@ -358,14 +364,22 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 	}
 
 	for _, req := range userRequirements {
-		finalRequirementsMap[req.Name] = req
+		if req.ParsedFieldsValid {
+			finalRequirementsMap[req.Name] = req
+		} else {
+			unparsed = append(unparsed, req)
+		}
 	}
 
 	// Now we can build a real PythonRequirements from the values of the finalRequirementsMap
-	finalRequirements := make(PythonRequirements, 0, len(finalRequirementsMap))
+	finalRequirements := make(PythonRequirements, 0, len(finalRequirementsMap)+len(unparsed))
 	for _, req := range finalRequirementsMap {
 		finalRequirements = append(finalRequirements, req)
 	}
+
+	// Add the unparsed requirements back in
+	finalRequirements = append(finalRequirements, unparsed...)
+
 	return finalRequirements.RequirementsFileContent(), nil
 }
 

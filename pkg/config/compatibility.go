@@ -276,7 +276,11 @@ func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
 func tfGPUPackage(ver string, cuda string) (PythonRequirement, error) {
 	for _, compat := range TFCompatibilityMatrix {
 		if compat.TF == ver && version.Equal(compat.CUDA, cuda) {
-			return SplitPinnedPythonRequirement(compat.TFGPUPackage)
+			if req := SplitPinnedPythonRequirement(compat.TFGPUPackage); !req.ParsedFieldsValid {
+				return PythonRequirement{}, fmt.Errorf("Invalid Python requirement for %s version %s", ver, cuda)
+			} else {
+				return req, nil
+			}
 		}
 	}
 	// We've already warned user if they're doing something stupid in validateAndCompleteCUDA(), so fail silently
@@ -293,6 +297,7 @@ func torchCPUPackage(ver, goos, goarch string) (req PythonRequirement, err error
 			req.Version = torchStripCPUSuffixForM1(compat.Torch, goos, goarch)
 			req.FindLinks = []string{compat.FindLinks}
 			req.ExtraIndexURLs = []string{compat.ExtraIndexURL}
+			req.ParsedFieldsValid = true
 		}
 	}
 	return
@@ -334,6 +339,7 @@ func torchGPUPackage(ver string, cuda string) (req PythonRequirement, err error)
 		req.Version = version.StripModifier(latest.Torch)
 		req.FindLinks = []string{latest.FindLinks}
 		req.ExtraIndexURLs = []string{latest.ExtraIndexURL}
+		req.ParsedFieldsValid = true
 	}
 
 	return
@@ -349,6 +355,7 @@ func torchvisionCPUPackage(ver, goos, goarch string) (req PythonRequirement, err
 			req.Version = torchStripCPUSuffixForM1(compat.Torchvision, goos, goarch)
 			req.FindLinks = []string{compat.FindLinks}
 			req.ExtraIndexURLs = []string{compat.ExtraIndexURL}
+			req.ParsedFieldsValid = true
 		}
 	}
 	return
@@ -393,6 +400,7 @@ func torchvisionGPUPackage(ver, cuda string) (req PythonRequirement, err error) 
 		req.Version = version.StripModifier(latest.Torchvision)
 		req.FindLinks = []string{latest.FindLinks}
 		req.ExtraIndexURLs = []string{latest.ExtraIndexURL}
+		req.ParsedFieldsValid = true
 	}
 
 	return
