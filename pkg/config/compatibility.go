@@ -290,6 +290,7 @@ func tfGPUPackage(ver string, cuda string) (PythonRequirement, error) {
 func torchCPUPackage(ver, goos, goarch string) (req PythonRequirement, err error) {
 	req.Name = "torch"
 	req.Version = ver
+	req.ParsedFieldsValid = true
 
 	// The default is to just install the default version. For older pytorch versions, they don't have any CPU versions.
 	for _, compat := range TorchCompatibilityMatrix {
@@ -297,7 +298,6 @@ func torchCPUPackage(ver, goos, goarch string) (req PythonRequirement, err error
 			req.Version = torchStripCPUSuffixForM1(compat.Torch, goos, goarch)
 			req.FindLinks = []string{compat.FindLinks}
 			req.ExtraIndexURLs = []string{compat.ExtraIndexURL}
-			req.ParsedFieldsValid = true
 		}
 	}
 	return

@@ -10,22 +10,39 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-// PythonRequirement represents a single line of a Python requirements.txt-style file. It's not meant to power a
-// full-fledged parser - just the bits that we care about when we generate new requirements files.
-type PythonRequirement struct {
-	Name               string
-	Version            string
-	EnvironmentAndHash string
-	FindLinks          []string
-	ExtraIndexURLs     []string
+// pinnedPackageRe is the regular expression used to identify and extract fields from a requirements line.
+var pinnedPackageRe = regexp.MustCompile(`(?:([a-zA-Z0-9\-_]+)==([^ ]+)|--find-links=([^\s]+)|-f\s+([^\s]+)|--extra-index-url=([^\s]+))`)
 
-	// Literal is the string value that this PythonRequirement was originally parsed from, if any.
+// PythonRequirement represents a single line of a Python requirements.txt-style file. It's not meant to power a
+// full-fledged parser - just the bits that we care about when we generate new requirements files. In particular, we
+// actually only parse packages pinned to an exact version with `==`.
+type PythonRequirement struct {
+	// Name is the simple name of the requirement, eg `torch`
+	Name string
+
+	// Version is the version of the python package this requirement is pinned to.
+	Version string
+
+	// EnvironmentAndHash contains any extra information after the ; in the requirements line. Typically this is
+	// any hashes, runtime environment constraints, and so on.
+	EnvironmentAndHash string
+
+	// FindLinks is a list of URLs or directories to search for packages when resolving Python dependencies.
+	FindLinks []string
+
+	// ExtraIndexURLs represents additional package index URLs to use when resolving Python dependencies.
+	ExtraIndexURLs []string
+
+	// Literal is the string value that this PythonRequirement was originally parsed from, if any. This may be
+	// empty.
 	Literal string
 
 	// ParsedFieldsValid indicates whether the Name, Version etc. fields are valid and can be read from. If this is
 	// false, then the Literal field should be used.
 	ParsedFieldsValid bool
 
+	// order is used internally to make sure that requirements files we emit resemble the input as closely as
+	// possible, by maintaining order.
 	order int
 }
 
@@ -52,10 +69,13 @@ func (p PythonRequirement) RequirementLine() string {
 	return strings.Join(fields, "")
 }
 
+// PythonRequirements is a collection of PythonRequirement lines. This alias is a convenience to allow us to write
+// a method RequirementsFileContent to generate an actual requirements file from this collection.
 type PythonRequirements []PythonRequirement
 
 // RequirementsFileContent returns a string representation of all the Python requirements. --find-links and --extra-index-url entries
-// will be prepended to the requirements.
+// will be prepended to the requirements. Note that the ordering of the generated file depends on the `order` attributes
+// of the content, not the actual ordering of the PythonRequirements collection.
 func (p PythonRequirements) RequirementsFileContent() string {
 	findLinks := make(map[string]struct{})
 	extraIndexURLs := make(map[string]struct{})
@@ -135,8 +155,6 @@ func SplitPinnedPythonRequirement(requirement string) (req PythonRequirement) {
 	if len(parts) > 1 {
 		req.EnvironmentAndHash = strings.TrimSpace(parts[1])
 	}
-
-	pinnedPackageRe := regexp.MustCompile(`(?:([a-zA-Z0-9\-_]+)==([^ ]+)|--find-links=([^\s]+)|-f\s+([^\s]+)|--extra-index-url=([^\s]+))`)
 
 	matches := pinnedPackageRe.FindAllStringSubmatch(requirementAndVersion, -1)
 	if matches == nil {
