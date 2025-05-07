@@ -409,6 +409,15 @@
       "contributions": [
         "doc"
       ]
+    },
+    {
+      "login": "danfairs",
+      "name": "Dan Fairs",
+      "avatar_url": "https://avatars.githubusercontent.com/u/24726?v=4",
+      "profile": "https://github.com/danfairs",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
