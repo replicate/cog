@@ -28,6 +28,9 @@ func TestSplitPinnedPythonRequirement(t *testing.T) {
 		{"package9==1.0.0 ; python_version >= '3.8'", "package9", "1.0.0", nil, nil, "python_version >= '3.8'", false},
 		{"package10==2.0.0 ; sys_platform == 'win32' and python_version < '3.9'", "package10", "2.0.0", nil, nil, "sys_platform == 'win32' and python_version < '3.9'", false},
 		{"package11==3.0.0 --find-links=link1 ; extra == 'gpu'", "package11", "3.0.0", []string{"link1"}, nil, "extra == 'gpu'", false},
+		{"package12==4.0.0 ; platform_machine == 'x86_64' --hash=some-hash --hash=some-other-hash", "package12", "4.0.0", nil, nil, "platform_machine == 'x86_64'", false},
+		{"package13==5.0.0 ; --hash=some-hash --hash=some-other-hash", "package13", "5.0.0", nil, nil, "", false},
+		{"package14==6.0.0 ; --hash=some-hash --hash=some-other-hash platform_machine == 'x86_64'", "package14", "6.0.0", nil, nil, "platform_machine == 'x86_64'", false},
 	}
 
 	for _, tc := range testCases {

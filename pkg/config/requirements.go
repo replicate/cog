@@ -153,7 +153,18 @@ func SplitPinnedPythonRequirement(requirement string) (req PythonRequirement) {
 	parts := strings.Split(requirement, ";")
 	requirementAndVersion := strings.TrimSpace(parts[0])
 	if len(parts) > 1 {
-		req.EnvironmentAndHash = strings.TrimSpace(parts[1])
+		// Split the environment and hash section into parts and filter out --hash entries. It's not ideal to omit
+		// the hashes, but we do not yet track the hashes of auto-generated requirements. Since the presence of even
+		// one hash enables `--require-hashes` mode, we remove them to avoid breaking existing builds. In due course,
+		// we may be able to remove this.
+		envParts := strings.Fields(parts[1])
+		var filteredParts []string
+		for _, part := range envParts {
+			if !strings.HasPrefix(part, "--hash=") {
+				filteredParts = append(filteredParts, part)
+			}
+		}
+		req.EnvironmentAndHash = strings.TrimSpace(strings.Join(filteredParts, " "))
 	}
 
 	matches := pinnedPackageRe.FindAllStringSubmatch(requirementAndVersion, -1)
