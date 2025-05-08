@@ -47,7 +47,7 @@ type RunItem struct {
 type Build struct {
 	GPU                bool      `json:"gpu,omitempty" yaml:"gpu,omitempty"`
 	PythonVersion      string    `json:"python_version,omitempty" yaml:"python_version"`
-	PythonRequirements string    `json:"python_requirements,omitempty" yaml:"python_requirements"`
+	PythonRequirements string    `json:"python_requirements,omitempty" yaml:"python_requirements,omitempty"`
 	PythonPackages     []string  `json:"python_packages,omitempty" yaml:"python_packages,omitempty"` // Deprecated, but included for backwards compatibility
 	Run                []RunItem `json:"run,omitempty" yaml:"run,omitempty"`
 	SystemPackages     []string  `json:"system_packages,omitempty" yaml:"system_packages,omitempty"`
