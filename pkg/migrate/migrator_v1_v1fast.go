@@ -240,7 +240,13 @@ func (g *MigratorV1ToV1Fast) flushConfig(cfg *config.Config, dir string, configF
 	}
 	defer file.Close()
 	console.Infof("Writing config changes to %s.", configFilepath)
-	_, err = file.WriteString(configStr)
+
+	mergedCfgData, err := OverwrightYAML(data, content)
+	if err != nil {
+		return err
+	}
+
+	_, err = file.WriteString(string(mergedCfgData))
 	if err != nil {
 		return util.WrapError(err, "Failed to write config changes")
 	}
