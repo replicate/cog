@@ -39,3 +39,27 @@ type ImageBuildOptions struct {
 	BuildContexts      map[string]string
 	Labels             map[string]string
 }
+
+type RunOptions struct {
+	Detach      bool
+	Interactive bool
+	TTY         bool
+	Args        []string
+	Env         []string
+	GPUs        string
+	Image       string
+	Ports       []Port
+	Volumes     []Volume
+	Workdir     string
+	Platform    string
+}
+
+type Port struct {
+	HostPort      int
+	ContainerPort int
+}
+
+type Volume struct {
+	Source      string
+	Destination string
+}
