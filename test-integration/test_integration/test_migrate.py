@@ -7,13 +7,13 @@ from pathlib import Path
 DEFAULT_TIMEOUT = 60
 
 
-def test_migrate(tmpdir_factory):
+def test_migrate(tmpdir_factory, cog_binary):
     project_dir = Path(__file__).parent / "fixtures/migration-project"
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
     shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
     result = subprocess.run(
         [
-            "cog",
+            cog_binary,
             "migrate",
             "--y",
         ],
@@ -44,13 +44,13 @@ class Predictor(BasePredictor):
         assert handle.read(), "pillow"
 
 
-def test_migrate_gpu(tmpdir_factory):
+def test_migrate_gpu(tmpdir_factory, cog_binary):
     project_dir = Path(__file__).parent / "fixtures/migration-gpu-project"
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
     shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
     result = subprocess.run(
         [
-            "cog",
+            cog_binary,
             "migrate",
             "--y",
         ],
