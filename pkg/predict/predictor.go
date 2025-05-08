@@ -44,7 +44,7 @@ type ValidationErrorResponse struct {
 }
 
 type Predictor struct {
-	runOptions   docker.RunOptions
+	runOptions   command.RunOptions
 	isTrain      bool
 	dockerClient command.Command
 
@@ -53,7 +53,7 @@ type Predictor struct {
 	port        int
 }
 
-func NewPredictor(ctx context.Context, runOptions docker.RunOptions, isTrain bool, fastFlag bool, dockerCommand command.Command) (*Predictor, error) {
+func NewPredictor(ctx context.Context, runOptions command.RunOptions, isTrain bool, fastFlag bool, dockerCommand command.Command) (*Predictor, error) {
 	if fastFlag {
 		console.Info("Fast predictor enabled.")
 	}
@@ -80,12 +80,13 @@ func (p *Predictor) Start(ctx context.Context, logsWriter io.Writer, timeout tim
 	var err error
 	containerPort := 5000
 
-	p.runOptions.Ports = append(p.runOptions.Ports, docker.Port{HostPort: 0, ContainerPort: containerPort})
+	p.runOptions.Ports = append(p.runOptions.Ports, command.Port{HostPort: 0, ContainerPort: containerPort})
 
-	p.containerID, err = docker.RunDaemon(ctx, p.runOptions, logsWriter)
+	p.containerID, err = docker.RunDaemon(ctx, p.dockerClient, p.runOptions, logsWriter)
 	if err != nil {
 		return fmt.Errorf("Failed to start container: %w", err)
 	}
+	fmt.Println("======== CONTAINER ID:", p.containerID)
 
 	p.port, err = docker.GetHostPortForContainer(ctx, p.dockerClient, p.containerID, containerPort)
 	if err != nil {

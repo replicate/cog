@@ -12,6 +12,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/util/console"
@@ -59,7 +60,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	dockerCommand := docker.NewDockerCommand()
 
 	imageName := ""
-	volumes := []docker.Volume{}
+	volumes := []command.Volume{}
 	gpus := gpusFlag
 
 	cfg, projectDir, err := config.GetConfig(configFilename)
@@ -79,7 +80,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		}
 
 		// Base image doesn't have /src in it, so mount as volume
-		volumes = append(volumes, docker.Volume{
+		volumes = append(volumes, command.Volume{
 			Source:      projectDir,
 			Destination: "/src",
 		})
@@ -111,7 +112,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	console.Info("")
 	console.Infof("Starting Docker image %s...", imageName)
 
-	predictor, err := predict.NewPredictor(ctx, docker.RunOptions{
+	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: volumes,

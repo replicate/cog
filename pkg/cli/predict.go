@@ -21,6 +21,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/util/console"
@@ -73,7 +74,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	dockerCommand := docker.NewDockerCommand()
 
 	imageName := ""
-	volumes := []docker.Volume{}
+	volumes := []command.Volume{}
 	gpus := gpusFlag
 
 	if len(args) == 0 {
@@ -99,7 +100,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			}
 
 			// Base image doesn't have /src in it, so mount as volume
-			volumes = append(volumes, docker.Volume{
+			volumes = append(volumes, command.Volume{
 				Source:      projectDir,
 				Destination: "/src",
 			})
@@ -138,7 +139,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	console.Info("")
 	console.Infof("Starting Docker image %s and running setup()...", imageName)
 
-	predictor, err := predict.NewPredictor(ctx, docker.RunOptions{
+	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: volumes,
@@ -168,7 +169,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			console.Info("Missing device driver, re-trying without GPU")
 
 			_ = predictor.Stop(ctx)
-			predictor, err = predict.NewPredictor(ctx, docker.RunOptions{
+			predictor, err = predict.NewPredictor(ctx, command.RunOptions{
 				Image:   imageName,
 				Volumes: volumes,
 				Env:     envFlags,

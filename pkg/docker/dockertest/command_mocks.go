@@ -632,3 +632,49 @@ func (_c *MockCommand2_Push_Call) RunAndReturn(run func(ctx context.Context, ref
 	_c.Call.Return(run)
 	return _c
 }
+
+// Run provides a mock function for the type MockCommand2
+func (_mock *MockCommand2) Run(ctx context.Context, options command.RunOptions) error {
+	ret := _mock.Called(ctx, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Run")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, command.RunOptions) error); ok {
+		r0 = returnFunc(ctx, options)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockCommand2_Run_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Run'
+type MockCommand2_Run_Call struct {
+	*mock.Call
+}
+
+// Run is a helper method to define mock.On call
+//   - ctx
+//   - options
+func (_e *MockCommand2_Expecter) Run(ctx interface{}, options interface{}) *MockCommand2_Run_Call {
+	return &MockCommand2_Run_Call{Call: _e.mock.On("Run", ctx, options)}
+}
+
+func (_c *MockCommand2_Run_Call) Run(run func(ctx context.Context, options command.RunOptions)) *MockCommand2_Run_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(command.RunOptions))
+	})
+	return _c
+}
+
+func (_c *MockCommand2_Run_Call) Return(err error) *MockCommand2_Run_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockCommand2_Run_Call) RunAndReturn(run func(ctx context.Context, options command.RunOptions) error) *MockCommand2_Run_Call {
+	_c.Call.Return(run)
+	return _c
+}
