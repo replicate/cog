@@ -14,6 +14,7 @@ import (
 
 	"gopkg.in/yaml.v2"
 
+	"github.com/replicate/cog/pkg/coglog"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/requirements"
@@ -25,6 +26,13 @@ import (
 const CogRequirementsFile = "cog_requirements.txt"
 const MigrateV1V1FastPythonFile = "migrate_v1_v1fast.py"
 
+type PredictorType int
+
+const (
+	PredictorTypePredict PredictorType = iota
+	PredictorTypeTrain
+)
+
 var IgnoredRunCommands = map[string]bool{
 	"curl -o /usr/local/bin/pget -L \\\"https://github.com/replicate/pget/releases/latest/download/pget_$(uname -s)_$(uname -m)\\\" && chmod +x /usr/local/bin/pget": true,
 	"curl -o /usr/local/bin/pget -L \"https://github.com/replicate/pget/releases/latest/download/pget_$(uname -s)_$(uname -m)\" && chmod +x /usr/local/bin/pget":     true,
@@ -35,11 +43,13 @@ var IgnoredRunCommands = map[string]bool{
 
 type MigratorV1ToV1Fast struct {
 	Interactive bool
+	logCtx      *coglog.MigrateLogContext
 }
 
-func NewMigratorV1ToV1Fast(interactive bool) *MigratorV1ToV1Fast {
+func NewMigratorV1ToV1Fast(interactive bool, logCtx *coglog.MigrateLogContext) *MigratorV1ToV1Fast {
 	return &MigratorV1ToV1Fast{
 		Interactive: interactive,
+		logCtx:      logCtx,
 	}
 }
 
@@ -66,9 +76,11 @@ func (g *MigratorV1ToV1Fast) Migrate(ctx context.Context, configFilename string)
 
 func (g *MigratorV1ToV1Fast) checkPythonRequirements(cfg *config.Config, dir string) error {
 	if cfg.Build == nil {
+		g.logCtx.PythonPackageStatus = coglog.StatusPassed
 		return nil
 	}
 	if len(cfg.Build.PythonPackages) == 0 {
+		g.logCtx.PythonPackageStatus = coglog.StatusPassed
 		return nil
 	}
 	console.Info("You have python_packages in your configuration, this is now deprecated and replaced with python_requirements.")
@@ -86,6 +98,7 @@ func (g *MigratorV1ToV1Fast) checkPythonRequirements(cfg *config.Config, dir str
 		accept = iAccept
 	}
 	if !accept {
+		g.logCtx.PythonPackageStatus = coglog.StatusDeclined
 		console.Error("Skipping python_packages to python_requirements migration, this will cause issues on builds for fast boots.")
 		return nil
 	}
@@ -111,14 +124,17 @@ func (g *MigratorV1ToV1Fast) checkPythonRequirements(cfg *config.Config, dir str
 	}
 	cfg.Build.PythonPackages = []string{}
 	cfg.Build.PythonRequirements = filepath.Base(requirementsFile)
+	g.logCtx.PythonPackageStatus = coglog.StatusAccepted
 	return nil
 }
 
 func (g *MigratorV1ToV1Fast) checkRunCommands(cfg *config.Config) error {
 	if cfg.Build == nil {
+		g.logCtx.RunStatus = coglog.StatusPassed
 		return nil
 	}
 	if len(cfg.Build.Run) == 0 {
+		g.logCtx.RunStatus = coglog.StatusPassed
 		return nil
 	}
 	// Filter run commands we can safely remove
@@ -134,6 +150,7 @@ func (g *MigratorV1ToV1Fast) checkRunCommands(cfg *config.Config) error {
 	if safelyRemove {
 		console.Info("Safely removing run commands.")
 		cfg.Build.Run = []config.RunItem{}
+		g.logCtx.RunStatus = coglog.StatusAccepted
 		return nil
 	}
 	accept := true
@@ -150,20 +167,22 @@ func (g *MigratorV1ToV1Fast) checkRunCommands(cfg *config.Config) error {
 		accept = iAccept
 	}
 	if !accept {
+		g.logCtx.RunStatus = coglog.StatusDeclined
 		console.Error("Skipping removing run commands, this will cause issues on builds for fast boots.")
 	} else {
 		console.Info("Removing run commands.")
 		cfg.Build.Run = []config.RunItem{}
+		g.logCtx.RunStatus = coglog.StatusAccepted
 	}
 	return nil
 }
 
 func (g *MigratorV1ToV1Fast) checkPythonCode(ctx context.Context, cfg *config.Config, dir string) error {
-	err := g.checkPredictor(ctx, cfg.Predict, dir)
+	err := g.checkPredictor(ctx, cfg.Predict, dir, PredictorTypePredict)
 	if err != nil {
 		return err
 	}
-	err = g.checkPredictor(ctx, cfg.Train, dir)
+	err = g.checkPredictor(ctx, cfg.Train, dir, PredictorTypeTrain)
 	if err != nil {
 		return err
 	}
@@ -229,7 +248,7 @@ func (g *MigratorV1ToV1Fast) flushConfig(cfg *config.Config, dir string, configF
 	return nil
 }
 
-func (g *MigratorV1ToV1Fast) checkPredictor(ctx context.Context, predictor string, dir string) error {
+func (g *MigratorV1ToV1Fast) checkPredictor(ctx context.Context, predictor string, dir string, predictorType PredictorType) error {
 	if predictor == "" {
 		return nil
 	}
@@ -246,13 +265,13 @@ func (g *MigratorV1ToV1Fast) checkPredictor(ctx context.Context, predictor strin
 		if filepath.Base(file.Name) != MigrateV1V1FastPythonFile {
 			continue
 		}
-		return g.runPythonScript(ctx, file, predictor, dir)
+		return g.runPythonScript(ctx, file, predictor, dir, predictorType)
 	}
 
 	return errors.New("Could not find " + MigrateV1V1FastPythonFile)
 }
 
-func (g *MigratorV1ToV1Fast) runPythonScript(ctx context.Context, file *zip.File, predictor string, dir string) error {
+func (g *MigratorV1ToV1Fast) runPythonScript(ctx context.Context, file *zip.File, predictor string, dir string, predictorType PredictorType) error {
 	splitPredictor := strings.Split(predictor, ":")
 	pythonFilename := splitPredictor[0]
 	pythonPredictor := splitPredictor[1]
@@ -277,6 +296,11 @@ func (g *MigratorV1ToV1Fast) runPythonScript(ctx context.Context, file *zip.File
 	}
 	newContent := out.String()
 	if strings.TrimSpace(newContent) == "" {
+		if predictorType == PredictorTypePredict {
+			g.logCtx.PythonPredictStatus = coglog.StatusPassed
+		} else {
+			g.logCtx.PythonTrainStatus = coglog.StatusPassed
+		}
 		return nil
 	}
 	accept := true
@@ -293,8 +317,18 @@ func (g *MigratorV1ToV1Fast) runPythonScript(ctx context.Context, file *zip.File
 		accept = iAccept
 	}
 	if !accept {
+		if predictorType == PredictorTypePredict {
+			g.logCtx.PythonPredictStatus = coglog.StatusDeclined
+		} else {
+			g.logCtx.PythonTrainStatus = coglog.StatusDeclined
+		}
 		console.Error("Skipping code changes, this will cause issues on builds for fast boots.")
 		return nil
+	}
+	if predictorType == PredictorTypePredict {
+		g.logCtx.PythonPredictStatus = coglog.StatusAccepted
+	} else {
+		g.logCtx.PythonTrainStatus = coglog.StatusAccepted
 	}
 	pythonFilepath := filepath.Join(dir, pythonFilename)
 	pythonFile, err := os.Create(pythonFilepath)

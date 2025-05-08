@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/replicate/cog/pkg/coglog"
 	"github.com/replicate/cog/pkg/requirements"
 )
 
@@ -54,7 +55,8 @@ class Predictor(BasePredictor):
 	require.NoError(t, err)
 
 	// Perform the migration
-	migrator := NewMigratorV1ToV1Fast(false)
+	logCtx := coglog.NewMigrateLogContext(true)
+	migrator := NewMigratorV1ToV1Fast(false, logCtx)
 	err = migrator.Migrate(t.Context(), "cog.yaml")
 	require.NoError(t, err)
 
@@ -142,7 +144,8 @@ class Predictor(BasePredictor):
 	require.NoError(t, err)
 
 	// Perform the migration
-	migrator := NewMigratorV1ToV1Fast(false)
+	logCtx := coglog.NewMigrateLogContext(true)
+	migrator := NewMigratorV1ToV1Fast(false, logCtx)
 	err = migrator.Migrate(t.Context(), "cog.yaml")
 	require.NoError(t, err)
 
