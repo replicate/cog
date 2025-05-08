@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/creack/pty"
 	"github.com/docker/cli/cli/config"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/docker/cli/cli/config/types"
@@ -337,14 +339,26 @@ func (c *DockerCommand) exec(ctx context.Context, in io.Reader, out io.Writer, d
 	dockerCmd := DockerCommandFromEnvironment()
 	cmd := exec.CommandContext(ctx, dockerCmd, args...)
 
+	pty, tty, _ := pty.Open()
+	defer pty.Close()
+	defer tty.Close()
+	cmd.Stderr = tty
+
 	if out == nil {
 		out = os.Stderr
 	}
 
+	var teeBuf bytes.Buffer
 	// the ring buffer captures the last N bytes written to `w` so we have some context to return in an error
-	errbuf := util.NewRingBufferWriter(out, 1024)
+	errbuf := util.NewRingBufferWriter(&teeBuf, 1024)
+	go func() {
+		io.Copy(io.MultiWriter(out, errbuf), pty)
+	}()
 	cmd.Stdout = errbuf
-	cmd.Stderr = errbuf
+
+	// errbuf := util.NewRingBufferWriter(out, 1024)
+	// cmd.Stdout = errbuf
+	// cmd.Stderr = errbuf
 
 	if in != nil {
 		cmd.Stdin = in
