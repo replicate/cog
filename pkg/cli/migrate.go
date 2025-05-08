@@ -3,6 +3,9 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/replicate/cog/pkg/coglog"
+	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/migrate"
 )
 
@@ -28,14 +31,26 @@ This will attempt to migrate your cog project to be compatible with fast boots.`
 
 func cmdMigrate(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	migrator, err := migrate.NewMigrator(migrate.MigrationV1, migrate.MigrationV1Fast, !migrateAccept)
+
+	command := docker.NewDockerCommand()
+	client, err := http.ProvideHTTPClient(ctx, command)
 	if err != nil {
+		return err
+	}
+	logClient := coglog.NewClient(client)
+	logCtx := logClient.StartMigrate(migrateAccept)
+
+	migrator, err := migrate.NewMigrator(migrate.MigrationV1, migrate.MigrationV1Fast, !migrateAccept, logCtx)
+	if err != nil {
+		logClient.EndMigrate(ctx, err, logCtx)
 		return err
 	}
 	err = migrator.Migrate(ctx, configFilename)
 	if err != nil {
+		logClient.EndMigrate(ctx, err, logCtx)
 		return err
 	}
+	logClient.EndMigrate(ctx, nil, logCtx)
 
 	return nil
 }

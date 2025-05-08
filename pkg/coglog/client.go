@@ -19,18 +19,6 @@ type Client struct {
 	client *http.Client
 }
 
-type BuildLogContext struct {
-	started    time.Time
-	fast       bool
-	localImage bool
-}
-
-type PushLogContext struct {
-	started    time.Time
-	fast       bool
-	localImage bool
-}
-
 type buildLog struct {
 	DurationMs float32 `json:"length_ms"`
 	BuildError *string `json:"error"`
@@ -43,6 +31,12 @@ type pushLog struct {
 	BuildError *string `json:"error"`
 	Fast       bool    `json:"fast"`
 	LocalImage bool    `json:"local_image"`
+}
+
+type migrateLog struct {
+	DurationMs float32 `json:"length_ms"`
+	BuildError *string `json:"error"`
+	Accept     bool    `json:"accept"`
 }
 
 func NewClient(client *http.Client) *Client {
@@ -79,7 +73,7 @@ func (c *Client) EndBuild(ctx context.Context, err error, logContext BuildLogCon
 		return false
 	}
 
-	err = c.postLog(ctx, jsonData)
+	err = c.postLog(ctx, jsonData, "build")
 	if err != nil {
 		console.Warn(err.Error())
 		return false
@@ -116,7 +110,7 @@ func (c *Client) EndPush(ctx context.Context, err error, logContext PushLogConte
 		return false
 	}
 
-	err = c.postLog(ctx, jsonData)
+	err = c.postLog(ctx, jsonData, "push")
 	if err != nil {
 		console.Warn(err.Error())
 		return false
@@ -125,7 +119,39 @@ func (c *Client) EndPush(ctx context.Context, err error, logContext PushLogConte
 	return true
 }
 
-func (c *Client) postLog(ctx context.Context, jsonData []byte) error {
+func (c *Client) StartMigrate(accept bool) *MigrateLogContext {
+	logContext := NewMigrateLogContext(accept)
+	return logContext
+}
+
+func (c *Client) EndMigrate(ctx context.Context, err error, logContext *MigrateLogContext) bool {
+	var errorStr *string = nil
+	if err != nil {
+		errStr := err.Error()
+		errorStr = &errStr
+	}
+	migrateLog := migrateLog{
+		DurationMs: float32(time.Now().Sub(logContext.started).Milliseconds()),
+		BuildError: errorStr,
+		Accept:     logContext.accept,
+	}
+
+	jsonData, err := json.Marshal(migrateLog)
+	if err != nil {
+		console.Warn("Failed to marshal JSON for build log: " + err.Error())
+		return false
+	}
+
+	err = c.postLog(ctx, jsonData, "migrate")
+	if err != nil {
+		console.Warn(err.Error())
+		return false
+	}
+
+	return true
+}
+
+func (c *Client) postLog(ctx context.Context, jsonData []byte, action string) error {
 	disabled, err := DisableFromEnvironment()
 	if err != nil {
 		return err
@@ -134,7 +160,7 @@ func (c *Client) postLog(ctx context.Context, jsonData []byte) error {
 		return errors.New("Cog logging disabled")
 	}
 
-	url := buildURL()
+	url := actionURL(action)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url.String(), bytes.NewReader(jsonData))
 	if err != nil {
 		return err
@@ -156,8 +182,8 @@ func baseURL() url.URL {
 	}
 }
 
-func buildURL() url.URL {
+func actionURL(action string) url.URL {
 	url := baseURL()
-	url.Path = strings.Join([]string{"", "v1", "build"}, "/")
+	url.Path = strings.Join([]string{"", "v1", action}, "/")
 	return url
 }

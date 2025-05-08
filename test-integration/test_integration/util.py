@@ -126,7 +126,7 @@ def random_port() -> int:
 
 
 @contextlib.contextmanager
-def cog_server_http_run(project_dir: str):
+def cog_server_http_run(project_dir: str, cog_binary: str):
     port = random_port()
     addr = f"http://127.0.0.1:{port}"
 
@@ -135,7 +135,7 @@ def cog_server_http_run(project_dir: str):
     try:
         server = subprocess.Popen(
             [
-                "cog",
+                cog_binary,
                 "serve",
                 "-p",
                 str(port),

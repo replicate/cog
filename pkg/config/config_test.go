@@ -726,7 +726,6 @@ func TestConfigMarshal(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, `build:
   python_version: "3.12"
-  python_requirements: ""
   fast: false
 predict: ""
 `, string(data))
