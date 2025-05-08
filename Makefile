@@ -110,3 +110,7 @@ run-docs-server:
 	sed 's/docs\///g' README.md > ./docs/README.md
 	cp CONTRIBUTING.md ./docs/
 	mkdocs serve
+
+.PHONY: gen-mocks
+gen-mocks:
+	mockery
