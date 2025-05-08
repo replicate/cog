@@ -19,23 +19,6 @@ type Client struct {
 	client *http.Client
 }
 
-type BuildLogContext struct {
-	started    time.Time
-	fast       bool
-	localImage bool
-}
-
-type PushLogContext struct {
-	started    time.Time
-	fast       bool
-	localImage bool
-}
-
-type MigrateLogContext struct {
-	started time.Time
-	accept  bool
-}
-
 type buildLog struct {
 	DurationMs float32 `json:"length_ms"`
 	BuildError *string `json:"error"`
@@ -136,15 +119,12 @@ func (c *Client) EndPush(ctx context.Context, err error, logContext PushLogConte
 	return true
 }
 
-func (c *Client) StartMigrate(accept bool) MigrateLogContext {
-	logContext := MigrateLogContext{
-		started: time.Now(),
-		accept:  accept,
-	}
+func (c *Client) StartMigrate(accept bool) *MigrateLogContext {
+	logContext := NewMigrateLogContext(accept)
 	return logContext
 }
 
-func (c *Client) EndMigrate(ctx context.Context, err error, logContext MigrateLogContext) bool {
+func (c *Client) EndMigrate(ctx context.Context, err error, logContext *MigrateLogContext) bool {
 	var errorStr *string = nil
 	if err != nil {
 		errStr := err.Error()

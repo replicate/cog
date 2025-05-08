@@ -40,7 +40,7 @@ func cmdMigrate(cmd *cobra.Command, args []string) error {
 	logClient := coglog.NewClient(client)
 	logCtx := logClient.StartMigrate(migrateAccept)
 
-	migrator, err := migrate.NewMigrator(migrate.MigrationV1, migrate.MigrationV1Fast, !migrateAccept)
+	migrator, err := migrate.NewMigrator(migrate.MigrationV1, migrate.MigrationV1Fast, !migrateAccept, logCtx)
 	if err != nil {
 		logClient.EndMigrate(ctx, err, logCtx)
 		return err
