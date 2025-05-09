@@ -227,15 +227,9 @@ func (g *FastGenerator) generate(ctx context.Context) (string, error) {
 
 func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]string, error) {
 	var envs []string
-	// Install the latest version of coglet
-	cogletVersion := "coglet"
-	// Unless if we're in replicate/cog repo CI, e.g. integration tests
-	// Then pin version to avoid GH API rate limit
-	if os.Getenv("CI") == "true" && os.Getenv("GITHUB_REPOSITORY") == "replicate/cog" {
-		cogletVersion = "coglet==0.1.0-alpha17"
-	}
+
 	envs = append(envs, []string{
-		"ENV R8_COG_VERSION=" + cogletVersion,
+		"ENV R8_COG_VERSION=" + CogletVersionFromEnvironment(),
 	}...)
 
 	if g.Config.Build.GPU {
