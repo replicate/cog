@@ -97,3 +97,11 @@ func (c *MockCommand) ContainerStop(ctx context.Context, containerID string) err
 func (c *MockCommand) ImageBuild(ctx context.Context, options command.ImageBuildOptions) error {
 	panic("not implemented")
 }
+
+func (c *MockCommand) Run(ctx context.Context, options command.RunOptions) error {
+	panic("not implemented")
+}
+
+func (c *MockCommand) ContainerStart(ctx context.Context, options command.RunOptions) (string, error) {
+	panic("not implemented")
+}

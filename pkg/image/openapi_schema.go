@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
 // GenerateOpenAPISchema by running the image and executing Cog
 // This will be run as part of the build process then added as a label to the image. It can be retrieved more efficiently with the label by using GetOpenAPISchema
-func GenerateOpenAPISchema(ctx context.Context, imageName string, enableGPU bool) (map[string]any, error) {
+func GenerateOpenAPISchema(ctx context.Context, dockerClient command.Command, imageName string, enableGPU bool) (map[string]any, error) {
+	console.Debugf("=== image.GenerateOpenAPISchema %s", imageName)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
@@ -21,7 +23,7 @@ func GenerateOpenAPISchema(ctx context.Context, imageName string, enableGPU bool
 		gpus = "all"
 	}
 
-	err := docker.RunWithIO(ctx, docker.RunOptions{
+	err := docker.RunWithIO(ctx, dockerClient, command.RunOptions{
 		Image: imageName,
 		Args: []string{
 			"python", "-m", "cog.command.openapi_schema",
@@ -33,7 +35,7 @@ func GenerateOpenAPISchema(ctx context.Context, imageName string, enableGPU bool
 		console.Debug(stdout.String())
 		console.Debug(stderr.String())
 		console.Debug("Missing device driver, re-trying without GPU")
-		return GenerateOpenAPISchema(ctx, imageName, false)
+		return GenerateOpenAPISchema(ctx, dockerClient, imageName, false)
 	}
 
 	if err != nil {
