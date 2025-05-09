@@ -78,50 +78,103 @@ def test_openapi_specification(client):
             },
         }
     }
-    assert schema["paths"]["/predictions"] == {
-        "post": {
-            "summary": "Predict",
-            "description": "Run a single prediction on the model",
-            "operationId": "predict_predictions_post",
-            "parameters": [
-                {
-                    "in": "header",
-                    "name": "prefer",
-                    "required": False,
-                    "schema": {"title": "Prefer", "type": "string"},
-                }
-            ],
-            "requestBody": {
-                "content": {
-                    "application/json": {
-                        "schema": {"$ref": "#/components/schemas/PredictionRequest"}
+    if PYDANTIC_V2:
+        assert schema["paths"]["/predictions"] == {
+            "post": {
+                "summary": "Predict",
+                "description": "Run a single prediction on the model",
+                "operationId": "predict_predictions_post",
+                "parameters": [
+                    {
+                        "in": "header",
+                        "name": "prefer",
+                        "required": False,
+                        "schema": {
+                            "nullable": True,
+                            "title": "Prefer",
+                            "type": "string",
+                        },
                     }
-                }
-            },
-            "responses": {
-                "200": {
-                    "description": "Successful Response",
+                ],
+                "requestBody": {
                     "content": {
                         "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/PredictionResponse"
-                            }
+                            "schema": {"$ref": "#/components/schemas/PredictionRequest"}
                         }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PredictionResponse"
+                                }
+                            }
+                        },
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        },
                     },
                 },
-                "422": {
-                    "description": "Validation Error",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/HTTPValidationError"
-                            }
-                        }
-                    },
-                },
-            },
+            }
         }
-    }
+    else:
+        assert schema["paths"]["/predictions"] == {
+            "post": {
+                "summary": "Predict",
+                "description": "Run a single prediction on the model",
+                "operationId": "predict_predictions_post",
+                "parameters": [
+                    {
+                        "in": "header",
+                        "name": "prefer",
+                        "required": False,
+                        "schema": {
+                            "title": "Prefer",
+                            "type": "string",
+                        },
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/PredictionRequest"}
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PredictionResponse"
+                                }
+                            }
+                        },
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        },
+                    },
+                },
+            }
+        }
     assert schema["paths"]["/predictions/{prediction_id}/cancel"] == {
         "post": {
             "summary": "Cancel",
@@ -153,58 +206,139 @@ def test_openapi_specification(client):
             },
         }
     }
-    assert schema["components"]["schemas"]["Input"] == {
-        "title": "Input",
-        "required": [
-            "no_default",
-            "path",
-            "image",
-            "choices",
-            "int_choices",
-        ],
-        "type": "object",
-        "properties": {
-            "no_default": {
-                "title": "No Default",
-                "type": "string",
-                "x-order": 0,
+    if PYDANTIC_V2:
+        assert schema["components"]["schemas"]["Input"] == {
+            "title": "Input",
+            "required": [
+                "no_default",
+                "path",
+                "image",
+                "choices",
+                "int_choices",
+            ],
+            "type": "object",
+            "properties": {
+                "choices": {
+                    "allOf": [
+                        {
+                            "$ref": "#/components/schemas/choices",
+                        }
+                    ],
+                    "x-order": 5,
+                },
+                "default_without_input": {
+                    "title": "Default Without Input",
+                    "type": "string",
+                    "default": "default",
+                    "x-order": 1,
+                },
+                "image": {
+                    "title": "Image",
+                    "description": "Some path",
+                    "type": "string",
+                    "format": "uri",
+                    "x-order": 4,
+                },
+                "input_with_default": {
+                    "title": "Input With Default",
+                    "type": "integer",
+                    "default": -10,
+                    "x-order": 2,
+                },
+                "int_choices": {
+                    "allOf": [
+                        {
+                            "$ref": "#/components/schemas/int_choices",
+                        }
+                    ],
+                    "x-order": 6,
+                },
+                "no_default": {
+                    "title": "No Default",
+                    "type": "string",
+                    "x-order": 0,
+                },
+                "optional_str": {
+                    "nullable": True,
+                    "title": "Optional Str",
+                    "type": "string",
+                    "x-order": 7,
+                },
+                "path": {
+                    "title": "Path",
+                    "description": "Some path",
+                    "type": "string",
+                    "format": "uri",
+                    "x-order": 3,
+                },
             },
-            "default_without_input": {
-                "title": "Default Without Input",
-                "type": "string",
-                "default": "default",
-                "x-order": 1,
+        }
+    else:
+        assert schema["components"]["schemas"]["Input"] == {
+            "title": "Input",
+            "required": [
+                "no_default",
+                "path",
+                "image",
+                "choices",
+                "int_choices",
+            ],
+            "type": "object",
+            "properties": {
+                "choices": {
+                    "allOf": [
+                        {
+                            "$ref": "#/components/schemas/choices",
+                        }
+                    ],
+                    "x-order": 5,
+                },
+                "default_without_input": {
+                    "title": "Default Without Input",
+                    "type": "string",
+                    "default": "default",
+                    "x-order": 1,
+                },
+                "image": {
+                    "title": "Image",
+                    "description": "Some path",
+                    "type": "string",
+                    "format": "uri",
+                    "x-order": 4,
+                },
+                "input_with_default": {
+                    "title": "Input With Default",
+                    "type": "integer",
+                    "default": -10,
+                    "x-order": 2,
+                },
+                "int_choices": {
+                    "allOf": [
+                        {
+                            "$ref": "#/components/schemas/int_choices",
+                        }
+                    ],
+                    "x-order": 6,
+                },
+                "no_default": {
+                    "title": "No Default",
+                    "type": "string",
+                    "x-order": 0,
+                },
+                "optional_str": {
+                    "title": "Optional Str",
+                    "type": "string",
+                    "x-order": 7,
+                },
+                "path": {
+                    "title": "Path",
+                    "description": "Some path",
+                    "type": "string",
+                    "format": "uri",
+                    "x-order": 3,
+                },
             },
-            "input_with_default": {
-                "title": "Input With Default",
-                "type": "integer",
-                "default": -10,
-                "x-order": 2,
-            },
-            "path": {
-                "title": "Path",
-                "description": "Some path",
-                "type": "string",
-                "format": "uri",
-                "x-order": 3,
-            },
-            "image": {
-                "title": "Image",
-                "description": "Some path",
-                "type": "string",
-                "format": "uri",
-                "x-order": 4,
-            },
-            "choices": {
-                "allOf": [{"$ref": "#/components/schemas/choices"}],
-                "x-order": 5,
-            },
-            "int_choices": {
-                "allOf": [{"$ref": "#/components/schemas/int_choices"}],
-                "x-order": 6,
-            },
-        },
-    }
+        }
     assert schema["components"]["schemas"]["Output"] == {
         "title": "Output",
         "type": "string",
@@ -253,6 +387,47 @@ def test_openapi_specification_with_custom_user_defined_output_type(
     }
 
 
+@pytest.mark.skipif(
+    not PYDANTIC_V2,
+    reason="Support for nullable schemas for optional fields was added in Pydantic V2.",
+)
+@uses_predictor("openapi_optional_output_type")
+def test_openapi_specification_with_optional_output_type(
+    client,
+):
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+    schema = resp.json()
+    assert schema["components"]["schemas"]["Output"] == {
+        "anyOf": [
+            {
+                "$ref": "#/components/schemas/ModelOutput",
+            },
+            {
+                "type": "string",
+            },
+        ],
+        "nullable": True,
+        "title": "Output",
+    }
+    assert schema["components"]["schemas"]["ModelOutput"] == {
+        "properties": {
+            "foo_number": {
+                "default": "42",
+                "title": "Foo Number",
+                "type": "integer",
+            },
+            "foo_string": {
+                "title": "Foo String",
+                "type": "string",
+                "nullable": True,
+            },
+        },
+        "type": "object",
+        "title": "ModelOutput",
+    }
+
+
 @uses_predictor("openapi_output_type")
 def test_openapi_specification_with_custom_user_defined_output_type_called_output(
     client,
@@ -260,7 +435,7 @@ def test_openapi_specification_with_custom_user_defined_output_type_called_outpu
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
     schema = resp.json()
-    assert resp.json()["components"]["schemas"]["Output"] == {
+    assert schema["components"]["schemas"]["Output"] == {
         "properties": {
             "foo_number": {"default": "42", "title": "Foo Number", "type": "integer"},
             "foo_string": {

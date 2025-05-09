@@ -366,7 +366,7 @@ def update_openapi_schema_for_pydantic_2(
     openapi_schema: Dict[str, Any],
 ) -> None:
     _remove_webhook_events_filter_title(openapi_schema)
-    _remove_empty_or_nullable_anyof(openapi_schema)
+    _update_nullable_anyof(openapi_schema)
     _flatten_selected_allof_refs(openapi_schema)
     _extract_enum_properties(openapi_schema)
     _set_default_enumeration_description(openapi_schema)
@@ -384,27 +384,32 @@ def _remove_webhook_events_filter_title(
         pass
 
 
-def _remove_empty_or_nullable_anyof(
+def _update_nullable_anyof(
     openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
 ) -> None:
+    # Version 3.0.X of OpenAPI doesn't support a `null` type, expecting
+    # `nullable` to be set instead.
     if isinstance(openapi_schema, dict):
         for key, value in list(openapi_schema.items()):
-            if key == "anyOf" and isinstance(value, list):
-                non_null_types = [item for item in value if item.get("type") != "null"]
-                if len(non_null_types) == 0:
-                    del openapi_schema[key]
-                elif len(non_null_types) == 1:
-                    openapi_schema.update(non_null_types[0])
-                    del openapi_schema[key]
+            if key != "anyOf" or not isinstance(value, list):
+                _update_nullable_anyof(value)
+                continue
 
-                    # FIXME: Update tests to expect nullable
-                    # openapi_schema["nullable"] = True
-
+            non_null_items = [item for item in value if item.get("type") != "null"]
+            if len(non_null_items) == 0:
+                del openapi_schema[key]
+            elif len(non_null_items) == 1:
+                openapi_schema.update(non_null_items[0])
+                del openapi_schema[key]
             else:
-                _remove_empty_or_nullable_anyof(value)
-    elif isinstance(openapi_schema, list):  # pyright: ignore
+                openapi_schema[key] = non_null_items
+
+            if len(non_null_items) < len(value):
+                openapi_schema["nullable"] = True
+
+    elif isinstance(openapi_schema, list):
         for item in openapi_schema:
-            _remove_empty_or_nullable_anyof(item)
+            _update_nullable_anyof(item)
 
 
 def _flatten_selected_allof_refs(
