@@ -111,6 +111,9 @@ func Run(ctx context.Context, dockerClient command.Command, options command.RunO
 }
 
 func RunWithIO(ctx context.Context, dockerClient command.Command, options command.RunOptions, stdin io.Reader, stdout, stderr io.Writer) error {
+	options.Stdin = stdin
+	options.Stdout = stdout
+	options.Stderr = stderr
 	return dockerClient.Run(ctx, options)
 	// internalOptions := internalRunOptions{RunOptions: options}
 	// if stdin != nil {
