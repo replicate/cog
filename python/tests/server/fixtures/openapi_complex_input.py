@@ -1,5 +1,6 @@
-from cog import BasePredictor, File, Input, Path
+from typing import Optional
 
+from cog import BaseModel, BasePredictor, File, Input, Path
 
 class Predictor(BasePredictor):
     def predict(
@@ -11,5 +12,6 @@ class Predictor(BasePredictor):
         image: File = Input(description="Some path"),
         choices: str = Input(choices=["foo", "bar"]),
         int_choices: int = Input(choices=[3, 4, 5]),
+        optional_str: Optional[str] = Input(),
     ) -> str:
         pass
