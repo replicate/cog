@@ -63,12 +63,12 @@ func NewInputs(keyVals map[string][]string, schema *openapi3.T) (Inputs, error) 
 								if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
 									encodedVal := json.RawMessage(val)
 									input[key] = Input{Json: &encodedVal}
-								} else {
-									var arr = []any{val}
-									input[key] = Input{Array: &arr}
+									continue
 								}
-								continue
 							}
+							var arr = []any{val}
+							input[key] = Input{Array: &arr}
+							continue
 						}
 					}
 				}
