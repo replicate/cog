@@ -69,3 +69,23 @@ def test_migrate_gpu(tmpdir_factory, cog_binary):
   fast: true
 predict: predict.py:Predictor
 """
+
+
+def test_migrate_no_python_changes_project(tmpdir_factory, cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/migration-no-python-changes-project"
+    out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
+    shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
+    result = subprocess.run(
+        [
+            cog_binary,
+            "migrate",
+            "--y",
+        ],
+        cwd=out_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    assert result.returncode == 0
+    assert "Do you want to apply the above code changes?" not in str(result.stdout)
