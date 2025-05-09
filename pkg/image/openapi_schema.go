@@ -13,6 +13,7 @@ import (
 // GenerateOpenAPISchema by running the image and executing Cog
 // This will be run as part of the build process then added as a label to the image. It can be retrieved more efficiently with the label by using GetOpenAPISchema
 func GenerateOpenAPISchema(ctx context.Context, dockerClient command.Command, imageName string, enableGPU bool) (map[string]any, error) {
+	console.Debugf("=== image.GenerateOpenAPISchema %s", imageName)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
