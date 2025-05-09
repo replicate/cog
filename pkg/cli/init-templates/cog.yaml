@@ -16,6 +16,9 @@ build:
   # path to a Python requirements.txt file
   python_requirements: requirements.txt
 
+  # enable fast boots
+  fast: true
+
   # commands run after the environment is setup
   # run:
   #   - "echo env is ready!"
