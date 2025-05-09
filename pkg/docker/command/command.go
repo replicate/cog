@@ -25,6 +25,7 @@ type Command interface {
 
 	ImageBuild(ctx context.Context, options ImageBuildOptions) error
 	Run(ctx context.Context, options RunOptions) error
+	ContainerStart(ctx context.Context, options RunOptions) (string, error)
 }
 
 type ImageBuildOptions struct {
@@ -42,20 +43,20 @@ type ImageBuildOptions struct {
 }
 
 type RunOptions struct {
-	Detach      bool
-	Interactive bool
-	TTY         bool
-	Args        []string
-	Env         []string
-	GPUs        string
-	Image       string
-	Ports       []Port
-	Volumes     []Volume
-	Workdir     string
-	Platform    string
-	Stdin       io.Reader
-	Stdout      io.Writer
-	Stderr      io.Writer
+	// Detach      bool
+	// Interactive bool
+	// TTY         bool
+	Args     []string
+	Env      []string
+	GPUs     string
+	Image    string
+	Ports    []Port
+	Volumes  []Volume
+	Workdir  string
+	Platform string
+	Stdin    io.Reader
+	Stdout   io.Writer
+	Stderr   io.Writer
 }
 
 type Port struct {

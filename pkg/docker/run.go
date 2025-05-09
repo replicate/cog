@@ -1,7 +1,6 @@
 package docker
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,7 +9,6 @@ import (
 	"os"
 	"runtime"
 	"strconv"
-	"strings"
 
 	"github.com/docker/go-connections/nat"
 
@@ -145,17 +143,19 @@ func RunWithIO(ctx context.Context, dockerClient command.Command, options comman
 }
 
 func RunDaemon(ctx context.Context, dockerClient command.Command, options command.RunOptions, stderr io.Writer) (string, error) {
-	options.Detach = true
-	var stdout bytes.Buffer
-	options.Stdout = &stdout
+	options.Stderr = stderr
+	return dockerClient.ContainerStart(ctx, options)
+	// options.Detach = true
+	// var stdout bytes.Buffer
+	// options.Stdout = &stdout
 
-	if err := dockerClient.Run(ctx, options); err != nil {
-		return "", fmt.Errorf("failed to run container: %w", err)
-	}
+	// if err := dockerClient.Run(ctx, options); err != nil {
+	// 	return "", fmt.Errorf("failed to run container: %w", err)
+	// }
 
-	containerID := strings.TrimSpace(stdout.String())
+	// // containerID := strings.TrimSpace(stdout.String())
 
-	return containerID, nil
+	// // return containerID, nil
 
 	// internalOptions := internalRunOptions{RunOptions: options}
 	// internalOptions.Detach = true
