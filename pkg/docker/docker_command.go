@@ -349,25 +349,32 @@ func (c *DockerCommand) exec(ctx context.Context, in io.Reader, outw, errw io.Wr
 		cmd.Dir = dir
 	}
 
-	// setup pty for stderr output
-	stderrpty, stderrtty, err := pty.Open()
-	if err != nil {
-		return fmt.Errorf("failed to open stderr pty: %w", err)
-	}
-
-	cmd.Stderr = stderrtty
-
 	// setup stderr buffer & writer to errw and buffer
 	var stderrBuf bytes.Buffer
-	go func() {
-		defer stderrpty.Close()
-		defer stderrtty.Close()
 
-		io.Copy(io.MultiWriter(
-			errw,
-			util.NewRingBufferWriter(&stderrBuf, 1024),
-		), stderrpty)
-	}()
+	// if errw is a TTY, use a pty for stderr output so that the child process will properly detect an interactive console
+	if f, ok := errw.(*os.File); ok && console.IsTTY(f) {
+		stderrpty, stderrtty, err := pty.Open()
+		if err != nil {
+			return fmt.Errorf("failed to open stderr pty: %w", err)
+		}
+		cmd.Stderr = stderrtty
+
+		go func() {
+			defer stderrpty.Close()
+			defer stderrtty.Close()
+
+			_, err = io.Copy(io.MultiWriter(
+				errw,
+				util.NewRingBufferWriter(&stderrBuf, 1024),
+			), stderrpty)
+			if err != nil {
+				console.Errorf("failed to copy stderr pty to errw: %s", err)
+			}
+		}()
+	} else {
+		cmd.Stderr = io.MultiWriter(errw, util.NewRingBufferWriter(&stderrBuf, 1024))
+	}
 
 	// setup stdout pipe
 	outpipe, err := cmd.StdoutPipe()
@@ -378,7 +385,10 @@ func (c *DockerCommand) exec(ctx context.Context, in io.Reader, outw, errw io.Wr
 	go func() {
 		defer outpipe.Close()
 
-		io.Copy(outw, outpipe)
+		_, err = io.Copy(outw, outpipe)
+		if err != nil {
+			console.Errorf("failed to copy stdout to outw: %s", err)
+		}
 	}()
 
 	if in != nil {
