@@ -34,9 +34,13 @@ type pushLog struct {
 }
 
 type migrateLog struct {
-	DurationMs float32 `json:"length_ms"`
-	BuildError *string `json:"error"`
-	Accept     bool    `json:"accept"`
+	DurationMs          float32 `json:"length_ms"`
+	BuildError          *string `json:"error"`
+	Accept              bool    `json:"accept"`
+	PythonPackageStatus string  `json:"python_package_status"`
+	RunStatus           string  `json:"run_status"`
+	PythonPredictStatus string  `json:"python_predict_status"`
+	PythonTrainStatus   string  `json:"python_train_status"`
 }
 
 func NewClient(client *http.Client) *Client {
@@ -131,9 +135,13 @@ func (c *Client) EndMigrate(ctx context.Context, err error, logContext *MigrateL
 		errorStr = &errStr
 	}
 	migrateLog := migrateLog{
-		DurationMs: float32(time.Now().Sub(logContext.started).Milliseconds()),
-		BuildError: errorStr,
-		Accept:     logContext.accept,
+		DurationMs:          float32(time.Now().Sub(logContext.started).Milliseconds()),
+		BuildError:          errorStr,
+		Accept:              logContext.accept,
+		PythonPackageStatus: logContext.PythonPackageStatus,
+		RunStatus:           logContext.RunStatus,
+		PythonPredictStatus: logContext.PythonPredictStatus,
+		PythonTrainStatus:   logContext.PythonTrainStatus,
 	}
 
 	jsonData, err := json.Marshal(migrateLog)
