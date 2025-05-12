@@ -43,9 +43,7 @@ type ImageBuildOptions struct {
 }
 
 type RunOptions struct {
-	// Detach      bool
-	// Interactive bool
-	// TTY         bool
+	Detach   bool
 	Args     []string
 	Env      []string
 	GPUs     string

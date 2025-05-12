@@ -341,12 +341,9 @@ func (c *DockerCommand) ContainerStart(ctx context.Context, options command.RunO
 
 	var out bytes.Buffer
 	options.Stdout = &out
-	internalRunOptions := internalRunOptions{
-		RunOptions: options,
-		Detach:     true,
-	}
+	options.Detach = true
 
-	if err := c.containerRun(ctx, internalRunOptions); err != nil {
+	if err := c.containerRun(ctx, options); err != nil {
 		return "", err
 	}
 
@@ -362,10 +359,10 @@ func (c *DockerCommand) Run(ctx context.Context, options command.RunOptions) err
 		options.Stderr = os.Stderr
 	}
 
-	return c.containerRun(ctx, internalRunOptions{RunOptions: options})
+	return c.containerRun(ctx, options)
 }
 
-func (c *DockerCommand) containerRun(ctx context.Context, options internalRunOptions) error {
+func (c *DockerCommand) containerRun(ctx context.Context, options command.RunOptions) error {
 	console.Debugf("=== DockerCommand.containerRun %s", options.Image)
 
 	var isInteractive, isTTY bool
