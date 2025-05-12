@@ -86,7 +86,6 @@ func (p *Predictor) Start(ctx context.Context, logsWriter io.Writer, timeout tim
 	if err != nil {
 		return fmt.Errorf("Failed to start container: %w", err)
 	}
-	fmt.Println("======== CONTAINER ID:", p.containerID)
 
 	p.port, err = docker.GetHostPortForContainer(ctx, p.dockerClient, p.containerID, containerPort)
 	if err != nil {
