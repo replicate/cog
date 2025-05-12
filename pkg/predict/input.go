@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -55,6 +56,16 @@ func NewInputs(keyVals map[string][]string, schema *openapi3.T) (Inputs, error) 
 							input[key] = Input{Json: &encodedVal}
 							continue
 						} else if propertySchema.Type.Is("array") {
+							var parsed any
+							err := json.Unmarshal([]byte(val), &parsed)
+							if err == nil {
+								t := reflect.TypeOf(parsed)
+								if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+									encodedVal := json.RawMessage(val)
+									input[key] = Input{Json: &encodedVal}
+									continue
+								}
+							}
 							var arr = []any{val}
 							input[key] = Input{Array: &arr}
 							continue

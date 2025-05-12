@@ -240,7 +240,13 @@ func (g *MigratorV1ToV1Fast) flushConfig(cfg *config.Config, dir string, configF
 	}
 	defer file.Close()
 	console.Infof("Writing config changes to %s.", configFilepath)
-	_, err = file.WriteString(configStr)
+
+	mergedCfgData, err := OverwrightYAML(data, content)
+	if err != nil {
+		return err
+	}
+
+	_, err = file.WriteString(string(mergedCfgData))
 	if err != nil {
 		return util.WrapError(err, "Failed to write config changes")
 	}
@@ -295,6 +301,27 @@ func (g *MigratorV1ToV1Fast) runPythonScript(ctx context.Context, file *zip.File
 		return err
 	}
 	newContent := out.String()
+
+	pythonFilepath := filepath.Join(dir, pythonFilename)
+	pythonFile, err := os.Open(pythonFilepath)
+	if err != nil {
+		return err
+	}
+	content, err := io.ReadAll(pythonFile)
+	pythonFile.Close()
+	if err != nil {
+		return err
+	}
+
+	if newContent == string(content) {
+		if predictorType == PredictorTypePredict {
+			g.logCtx.PythonPredictStatus = coglog.StatusPassed
+		} else {
+			g.logCtx.PythonTrainStatus = coglog.StatusPassed
+		}
+		return nil
+	}
+
 	if strings.TrimSpace(newContent) == "" {
 		if predictorType == PredictorTypePredict {
 			g.logCtx.PythonPredictStatus = coglog.StatusPassed
@@ -330,8 +357,8 @@ func (g *MigratorV1ToV1Fast) runPythonScript(ctx context.Context, file *zip.File
 	} else {
 		g.logCtx.PythonTrainStatus = coglog.StatusAccepted
 	}
-	pythonFilepath := filepath.Join(dir, pythonFilename)
-	pythonFile, err := os.Create(pythonFilepath)
+
+	pythonFile, err = os.Create(pythonFilepath)
 	if err != nil {
 		return util.WrapError(err, "Could not open python predictor file")
 	}

@@ -577,3 +577,24 @@ def test_predict_env_vars(docker_image, cog_binary):
     )
     assert result.returncode == 0
     assert result.stdout == "ENV[TEST_VAR]=test_value\n"
+
+
+def test_predict_complex_types_list(docker_image, cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/complex-types-list-project"
+
+    result = subprocess.run(
+        [
+            cog_binary,
+            "predict",
+            "--debug",
+            "-i",
+            'messages=[{"content": "Hi There", "role": "user"}, {"content": "I am a test", "role": "user"}]',
+        ],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    assert result.returncode == 0
+    assert result.stdout == "Content: Hi There-I am a test\n"
