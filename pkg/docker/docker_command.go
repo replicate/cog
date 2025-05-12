@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/creack/pty"
 	"github.com/docker/cli/cli/config"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/docker/cli/cli/config/types"
@@ -53,7 +55,7 @@ func (c *DockerCommand) Pull(ctx context.Context, image string, force bool) (*im
 		"--platform", "linux/amd64",
 	}
 
-	err := c.exec(ctx, nil, nil, "", args)
+	err := c.exec(ctx, nil, nil, nil, "", args)
 	if err != nil {
 		// A "not found" error message will be different depending on what flavor of engine and
 		// registry version we're hitting. This checks for both docker and OCI lingo.
@@ -74,7 +76,7 @@ func (c *DockerCommand) Pull(ctx context.Context, image string, force bool) (*im
 func (c *DockerCommand) Push(ctx context.Context, image string) error {
 	console.Debugf("=== DockerCommand.Push %s", image)
 
-	return c.exec(ctx, nil, nil, "", []string{"push", image})
+	return c.exec(ctx, nil, nil, nil, "", []string{"push", image})
 }
 
 func (c *DockerCommand) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
@@ -118,7 +120,7 @@ func (c *DockerCommand) CreateTarFile(ctx context.Context, image string, tmpDir 
 		"/",
 		folder,
 	}
-	if err := c.exec(ctx, nil, nil, "", args); err != nil {
+	if err := c.exec(ctx, nil, nil, nil, "", args); err != nil {
 		return "", err
 	}
 	return filepath.Join(tmpDir, tarFile), nil
@@ -143,7 +145,7 @@ func (c *DockerCommand) CreateAptTarFile(ctx context.Context, tmpDir string, apt
 		"/buildtmp/" + aptTarFile,
 	}
 	args = append(args, packages...)
-	if err := c.exec(ctx, nil, nil, "", args); err != nil {
+	if err := c.exec(ctx, nil, nil, nil, "", args); err != nil {
 		return "", err
 	}
 
@@ -204,7 +206,7 @@ func (c *DockerCommand) ContainerLogs(ctx context.Context, containerID string, w
 		"--follow",
 	}
 
-	return c.exec(ctx, nil, w, "", args)
+	return c.exec(ctx, nil, w, nil, "", args)
 }
 
 func (c *DockerCommand) ContainerInspect(ctx context.Context, id string) (*container.InspectResponse, error) {
@@ -241,11 +243,11 @@ func (c *DockerCommand) ContainerStop(ctx context.Context, containerID string) e
 	args := []string{
 		"container",
 		"stop",
-		"--time", "3",
+		"--timeout", "3",
 		containerID,
 	}
 
-	if err := c.exec(ctx, nil, nil, "", args); err != nil {
+	if err := c.exec(ctx, nil, nil, nil, "", args); err != nil {
 		if strings.Contains(err.Error(), "No such container") {
 			err = &command.NotFoundError{Object: "container", Ref: containerID}
 		}
@@ -330,44 +332,82 @@ func (c *DockerCommand) ImageBuild(ctx context.Context, options command.ImageBui
 
 	in := strings.NewReader(options.DockerfileContents)
 
-	return c.exec(ctx, in, nil, options.WorkingDir, args)
+	return c.exec(ctx, in, nil, nil, options.WorkingDir, args)
 }
 
-func (c *DockerCommand) exec(ctx context.Context, in io.Reader, out io.Writer, dir string, args []string) error {
-	dockerCmd := DockerCommandFromEnvironment()
-	cmd := exec.CommandContext(ctx, dockerCmd, args...)
-
-	if out == nil {
-		out = os.Stderr
+func (c *DockerCommand) exec(ctx context.Context, in io.Reader, outw, errw io.Writer, dir string, args []string) error {
+	if outw == nil {
+		outw = os.Stderr
+	}
+	if errw == nil {
+		errw = os.Stderr
 	}
 
-	// the ring buffer captures the last N bytes written to `w` so we have some context to return in an error
-	errbuf := util.NewRingBufferWriter(out, 1024)
-	cmd.Stdout = errbuf
-	cmd.Stderr = errbuf
+	dockerCmd := DockerCommandFromEnvironment()
+	cmd := exec.CommandContext(ctx, dockerCmd, args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+
+	// setup stderr buffer & writer to errw and buffer
+	var stderrBuf bytes.Buffer
+
+	// if errw is a TTY, use a pty for stderr output so that the child process will properly detect an interactive console
+	if f, ok := errw.(*os.File); ok && console.IsTTY(f) {
+		stderrpty, stderrtty, err := pty.Open()
+		if err != nil {
+			return fmt.Errorf("failed to open stderr pty: %w", err)
+		}
+		cmd.Stderr = stderrtty
+
+		go func() {
+			defer stderrpty.Close()
+			defer stderrtty.Close()
+
+			_, err = io.Copy(io.MultiWriter(
+				errw,
+				util.NewRingBufferWriter(&stderrBuf, 1024),
+			), stderrpty)
+			if err != nil {
+				console.Errorf("failed to copy stderr pty to errw: %s", err)
+			}
+		}()
+	} else {
+		cmd.Stderr = io.MultiWriter(errw, util.NewRingBufferWriter(&stderrBuf, 1024))
+	}
+
+	// setup stdout pipe
+	outpipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+	// copy stdout to outw
+	go func() {
+		defer outpipe.Close()
+
+		_, err = io.Copy(outw, outpipe)
+		if err != nil {
+			console.Errorf("failed to copy stdout to outw: %s", err)
+		}
+	}()
 
 	if in != nil {
 		cmd.Stdin = in
 	}
 
-	if dir != "" {
-		cmd.Dir = dir
-	}
-
 	console.Debug("$ " + strings.Join(cmd.Args, " "))
-	err := cmd.Run()
-	if err != nil {
+	if err := cmd.Run(); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return err
 		}
-		return fmt.Errorf("command failed: %s: %w", errbuf.String(), err)
+		return fmt.Errorf("command failed: %s: %w", stderrBuf.String(), err)
 	}
 	return nil
 }
 
 func (c *DockerCommand) execCaptured(ctx context.Context, in io.Reader, dir string, args []string) (string, error) {
 	var out strings.Builder
-	err := c.exec(ctx, in, &out, dir, args)
+	err := c.exec(ctx, in, &out, nil, dir, args)
 	if err != nil {
 		return "", err
 	}
