@@ -421,34 +421,6 @@ func (c *DockerCommand) containerRun(ctx context.Context, options internalRunOpt
 	args = append(args, options.Image)
 	args = append(args, options.Args...)
 
-	// internalOptions := internalRunOptions{RunOptions: options}
-	// if stdin != nil {
-	// 	internalOptions.Interactive = true
-	// 	if f, ok := stdin.(*os.File); ok {
-	// 		internalOptions.TTY = isatty.IsTerminal(f.Fd())
-	// 	}
-	// }
-	// stderrCopy := new(bytes.Buffer)
-	// stderrMultiWriter := io.MultiWriter(stderr, stderrCopy)
-
-	// dockerArgs := generateDockerArgs(internalOptions)
-	// cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
-	// cmd.Env = generateEnv(internalOptions)
-	// cmd.Stdout = stdout
-	// cmd.Stdin = stdin
-	// cmd.Stderr = stderrMultiWriter
-	// console.Debug("$ " + strings.Join(cmd.Args, " "))
-
-	// err := cmd.Run()
-	// if err != nil {
-	// 	stderrString := stderrCopy.String()
-	// 	if strings.Contains(stderrString, "could not select device driver") || strings.Contains(stderrString, "nvidia-container-cli: initialization error") {
-	// 		return ErrMissingDeviceDriver
-	// 	}
-	// 	return err
-	// }
-	// return nil
-
 	err := c.exec(ctx, options.Stdin, options.Stdout, options.Stderr, "", args)
 	if err != nil {
 		if strings.Contains(err.Error(), "could not select device driver") || strings.Contains(err.Error(), "nvidia-container-cli: initialization error") {
