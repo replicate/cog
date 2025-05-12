@@ -7,7 +7,6 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.36.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.67
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.3
-	github.com/creack/pty v1.1.24
 	github.com/docker/cli v28.1.1+incompatible
 	github.com/docker/docker v28.1.1+incompatible
 	github.com/docker/go-connections v0.5.0
@@ -93,6 +92,7 @@ require (
 	github.com/containerd/platforms v0.2.1 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.16.3 // indirect
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
+	github.com/creack/pty v1.1.24 // indirect
 	github.com/curioswitch/go-reassign v0.3.0 // indirect
 	github.com/daixiang0/gci v0.13.5 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
