@@ -26,6 +26,8 @@ func RunWithIO(ctx context.Context, dockerClient command.Command, options comman
 	options.Stdin = stdin
 	options.Stdout = stdout
 	options.Stderr = stderr
+	// TODO[md]: we're gonna stop passing the entire host env to the container by default, if users indeed rely on that behavior we can uncomment this line:
+	// options.Env = append(os.Environ(), options.Env...)
 	return dockerClient.Run(ctx, options)
 }
 
