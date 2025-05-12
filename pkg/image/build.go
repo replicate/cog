@@ -274,6 +274,13 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 	if err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, imageName, labels, bundledSchemaFile); err != nil {
 		return fmt.Errorf("Failed to add labels to image: %w", err)
 	}
+
+	if !fastFlag {
+		console.Info(`You can make your model boot faster with just a few changes.
+
+Follow this migration guide: https://replicate.com/docs/guides/fast-boots-migration`)
+	}
+
 	return nil
 }
 
