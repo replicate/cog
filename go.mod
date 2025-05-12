@@ -7,6 +7,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.36.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.67
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.3
+	github.com/creack/pty v1.1.24
 	github.com/docker/cli v28.1.1+incompatible
 	github.com/docker/docker v28.1.1+incompatible
 	github.com/docker/go-connections v0.5.0
@@ -33,6 +34,7 @@ require (
 	golang.org/x/sys v0.32.0
 	golang.org/x/term v0.31.0
 	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v3 v3.0.1
 	sigs.k8s.io/yaml v1.4.0
 )
 
@@ -279,7 +281,6 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20250218202821-56aae31c358a // indirect
 	google.golang.org/grpc v1.71.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gotest.tools/gotestsum v1.12.2 // indirect
 	honnef.co/go/tools v0.6.1 // indirect
 	mvdan.cc/gofumpt v0.7.0 // indirect
