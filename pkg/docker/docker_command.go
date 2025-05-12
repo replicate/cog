@@ -19,6 +19,7 @@ import (
 	"github.com/docker/cli/cli/config/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/mattn/go-isatty"
 
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/util"
@@ -335,15 +336,45 @@ func (c *DockerCommand) ImageBuild(ctx context.Context, options command.ImageBui
 	return c.exec(ctx, in, nil, nil, options.WorkingDir, args)
 }
 
+func (c *DockerCommand) ContainerStart(ctx context.Context, options command.RunOptions) (string, error) {
+	console.Debugf("=== DockerCommand.ContainerStart %s %v", options.Image, options.Args)
+
+	var out bytes.Buffer
+	options.Stdout = &out
+	internalRunOptions := internalRunOptions{
+		RunOptions: options,
+		Detach:     true,
+	}
+
+	if err := c.containerRun(ctx, internalRunOptions); err != nil {
+		return "", err
+	}
+
+	return out.String(), nil
+}
+
 func (c *DockerCommand) Run(ctx context.Context, options command.RunOptions) error {
-	console.Debugf("=== DockerCommand.Run %s", options.Image)
+	console.Debugf("=== DockerCommand.Run %s %v", options.Image, options.Args)
+	if options.Stdout == nil {
+		options.Stdout = os.Stdout
+	}
+	if options.Stderr == nil {
+		options.Stderr = os.Stderr
+	}
 
-	// Detach      bool
-	// Interactive bool
-	// TTY         bool
+	return c.containerRun(ctx, internalRunOptions{RunOptions: options})
+}
 
-	// if options.Stdin != nil {
-	//
+func (c *DockerCommand) containerRun(ctx context.Context, options internalRunOptions) error {
+	console.Debugf("=== DockerCommand.containerRun %s", options.Image)
+
+	var isInteractive, isTTY bool
+	if options.Stdin != nil {
+		isInteractive = true
+		if f, ok := options.Stdin.(*os.File); ok {
+			isTTY = isatty.IsTerminal(f.Fd())
+		}
+	}
 
 	args := []string{
 		"run",
@@ -364,13 +395,13 @@ func (c *DockerCommand) Run(ctx context.Context, options command.RunOptions) err
 	if options.GPUs != "" {
 		args = append(args, "--gpus", options.GPUs)
 	}
-	if options.Interactive {
+	if isInteractive {
 		args = append(args, "--interactive")
 	}
 	for _, port := range options.Ports {
 		args = append(args, "--publish", fmt.Sprintf("%d:%d", port.HostPort, port.ContainerPort))
 	}
-	if options.TTY {
+	if isTTY {
 		args = append(args, "--tty")
 	}
 	for _, volume := range options.Volumes {
@@ -418,7 +449,14 @@ func (c *DockerCommand) Run(ctx context.Context, options command.RunOptions) err
 	// }
 	// return nil
 
-	return c.exec(ctx, options.Stdin, options.Stdout, options.Stderr, options.Workdir, args)
+	err := c.exec(ctx, options.Stdin, options.Stdout, options.Stderr, "", args)
+	if err != nil {
+		if strings.Contains(err.Error(), "could not select device driver") || strings.Contains(err.Error(), "nvidia-container-cli: initialization error") {
+			return ErrMissingDeviceDriver
+		}
+		return err
+	}
+	return nil
 }
 
 func (c *DockerCommand) exec(ctx context.Context, in io.Reader, outw, errw io.Writer, dir string, args []string) error {

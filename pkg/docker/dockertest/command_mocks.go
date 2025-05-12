@@ -145,6 +145,61 @@ func (_c *MockCommand2_ContainerLogs_Call) RunAndReturn(run func(ctx context.Con
 	return _c
 }
 
+// ContainerStart provides a mock function for the type MockCommand2
+func (_mock *MockCommand2) ContainerStart(ctx context.Context, options command.RunOptions) (string, error) {
+	ret := _mock.Called(ctx, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ContainerStart")
+	}
+
+	var r0 string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, command.RunOptions) (string, error)); ok {
+		return returnFunc(ctx, options)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, command.RunOptions) string); ok {
+		r0 = returnFunc(ctx, options)
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, command.RunOptions) error); ok {
+		r1 = returnFunc(ctx, options)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockCommand2_ContainerStart_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ContainerStart'
+type MockCommand2_ContainerStart_Call struct {
+	*mock.Call
+}
+
+// ContainerStart is a helper method to define mock.On call
+//   - ctx
+//   - options
+func (_e *MockCommand2_Expecter) ContainerStart(ctx interface{}, options interface{}) *MockCommand2_ContainerStart_Call {
+	return &MockCommand2_ContainerStart_Call{Call: _e.mock.On("ContainerStart", ctx, options)}
+}
+
+func (_c *MockCommand2_ContainerStart_Call) Run(run func(ctx context.Context, options command.RunOptions)) *MockCommand2_ContainerStart_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(command.RunOptions))
+	})
+	return _c
+}
+
+func (_c *MockCommand2_ContainerStart_Call) Return(s string, err error) *MockCommand2_ContainerStart_Call {
+	_c.Call.Return(s, err)
+	return _c
+}
+
+func (_c *MockCommand2_ContainerStart_Call) RunAndReturn(run func(ctx context.Context, options command.RunOptions) (string, error)) *MockCommand2_ContainerStart_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ContainerStop provides a mock function for the type MockCommand2
 func (_mock *MockCommand2) ContainerStop(ctx context.Context, containerID string) error {
 	ret := _mock.Called(ctx, containerID)
