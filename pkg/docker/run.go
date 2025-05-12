@@ -8,13 +8,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/docker/go-connections/nat"
-	"github.com/mattn/go-isatty"
 
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/util"
@@ -22,30 +20,30 @@ import (
 	"github.com/replicate/cog/pkg/weights"
 )
 
-type Port struct {
-	HostPort      int
-	ContainerPort int
-}
+// type Port struct {
+// 	HostPort      int
+// 	ContainerPort int
+// }
 
-type Volume struct {
-	Source      string
-	Destination string
-}
+// type Volume struct {
+// 	Source      string
+// 	Destination string
+// }
 
-type RunOptions struct {
-	Args     []string
-	Env      []string
-	GPUs     string
-	Image    string
-	Ports    []Port
-	Volumes  []Volume
-	Workdir  string
-	Platform string
-}
+// type RunOptions struct {
+// 	Args     []string
+// 	Env      []string
+// 	GPUs     string
+// 	Image    string
+// 	Ports    []Port
+// 	Volumes  []Volume
+// 	Workdir  string
+// 	Platform string
+// }
 
 // used for generating arguments, with a few options not exposed by public API
 type internalRunOptions struct {
-	RunOptions
+	command.RunOptions
 	Detach      bool
 	Interactive bool
 	TTY         bool
@@ -108,66 +106,79 @@ func generateEnv(options internalRunOptions) []string {
 	return env
 }
 
-func Run(ctx context.Context, options RunOptions) error {
-	return RunWithIO(ctx, options, os.Stdin, os.Stdout, os.Stderr)
+func Run(ctx context.Context, dockerClient command.Command, options command.RunOptions) error {
+	return RunWithIO(ctx, dockerClient, options, os.Stdin, os.Stdout, os.Stderr)
 }
 
-func RunWithIO(ctx context.Context, options RunOptions, stdin io.Reader, stdout, stderr io.Writer) error {
-	internalOptions := internalRunOptions{RunOptions: options}
-	if stdin != nil {
-		internalOptions.Interactive = true
-		if f, ok := stdin.(*os.File); ok {
-			internalOptions.TTY = isatty.IsTerminal(f.Fd())
-		}
-	}
-	stderrCopy := new(bytes.Buffer)
-	stderrMultiWriter := io.MultiWriter(stderr, stderrCopy)
+func RunWithIO(ctx context.Context, dockerClient command.Command, options command.RunOptions, stdin io.Reader, stdout, stderr io.Writer) error {
+	return dockerClient.Run(ctx, options)
+	// internalOptions := internalRunOptions{RunOptions: options}
+	// if stdin != nil {
+	// 	internalOptions.Interactive = true
+	// 	if f, ok := stdin.(*os.File); ok {
+	// 		internalOptions.TTY = isatty.IsTerminal(f.Fd())
+	// 	}
+	// }
+	// stderrCopy := new(bytes.Buffer)
+	// stderrMultiWriter := io.MultiWriter(stderr, stderrCopy)
 
-	dockerArgs := generateDockerArgs(internalOptions)
-	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
-	cmd.Env = generateEnv(internalOptions)
-	cmd.Stdout = stdout
-	cmd.Stdin = stdin
-	cmd.Stderr = stderrMultiWriter
-	console.Debug("$ " + strings.Join(cmd.Args, " "))
+	// dockerArgs := generateDockerArgs(internalOptions)
+	// cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
+	// cmd.Env = generateEnv(internalOptions)
+	// cmd.Stdout = stdout
+	// cmd.Stdin = stdin
+	// cmd.Stderr = stderrMultiWriter
+	// console.Debug("$ " + strings.Join(cmd.Args, " "))
 
-	err := cmd.Run()
-	if err != nil {
-		stderrString := stderrCopy.String()
-		if strings.Contains(stderrString, "could not select device driver") || strings.Contains(stderrString, "nvidia-container-cli: initialization error") {
-			return ErrMissingDeviceDriver
-		}
-		return err
-	}
-	return nil
+	// err := cmd.Run()
+	// if err != nil {
+	// 	stderrString := stderrCopy.String()
+	// 	if strings.Contains(stderrString, "could not select device driver") || strings.Contains(stderrString, "nvidia-container-cli: initialization error") {
+	// 		return ErrMissingDeviceDriver
+	// 	}
+	// 	return err
+	// }
+	// return nil
 }
 
-func RunDaemon(ctx context.Context, options RunOptions, stderr io.Writer) (string, error) {
-	internalOptions := internalRunOptions{RunOptions: options}
-	internalOptions.Detach = true
+func RunDaemon(ctx context.Context, dockerClient command.Command, options command.RunOptions, stderr io.Writer) (string, error) {
+	options.Detach = true
+	var stdout bytes.Buffer
+	options.Stdout = &stdout
 
-	stderrCopy := new(bytes.Buffer)
-	stderrMultiWriter := io.MultiWriter(stderr, stderrCopy)
-
-	dockerArgs := generateDockerArgs(internalOptions)
-	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
-	cmd.Env = generateEnv(internalOptions)
-	cmd.Stderr = stderrMultiWriter
-
-	console.Debug("$ " + strings.Join(cmd.Args, " "))
-
-	containerID, err := cmd.Output()
-
-	stderrString := stderrCopy.String()
-	if strings.Contains(stderrString, "could not select device driver") || strings.Contains(stderrString, "nvidia-container-cli: initialization error") {
-		return "", ErrMissingDeviceDriver
+	if err := dockerClient.Run(ctx, options); err != nil {
+		return "", fmt.Errorf("failed to run container: %w", err)
 	}
 
-	if err != nil {
-		return "", err
-	}
+	containerID := strings.TrimSpace(stdout.String())
 
-	return strings.TrimSpace(string(containerID)), nil
+	return containerID, nil
+
+	// internalOptions := internalRunOptions{RunOptions: options}
+	// internalOptions.Detach = true
+
+	// stderrCopy := new(bytes.Buffer)
+	// stderrMultiWriter := io.MultiWriter(stderr, stderrCopy)
+
+	// dockerArgs := generateDockerArgs(internalOptions)
+	// cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
+	// cmd.Env = generateEnv(internalOptions)
+	// cmd.Stderr = stderrMultiWriter
+
+	// console.Debug("$ " + strings.Join(cmd.Args, " "))
+
+	// containerID, err := cmd.Output()
+
+	// stderrString := stderrCopy.String()
+	// if strings.Contains(stderrString, "could not select device driver") || strings.Contains(stderrString, "nvidia-container-cli: initialization error") {
+	// 	return "", ErrMissingDeviceDriver
+	// }
+
+	// if err != nil {
+	// 	return "", err
+	// }
+
+	// return strings.TrimSpace(string(containerID)), nil
 }
 
 func GetHostPortForContainer(ctx context.Context, dockerCommand command.Command, containerID string, containerPort int) (int, error) {
@@ -206,7 +217,7 @@ func GetHostPortForContainer(ctx context.Context, dockerCommand command.Command,
 	return 0, fmt.Errorf("container %s does not have a port bound to 0.0.0.0", containerID)
 }
 
-func FillInWeightsManifestVolumes(ctx context.Context, dockerCommand command.Command, runOptions RunOptions) (RunOptions, error) {
+func FillInWeightsManifestVolumes(ctx context.Context, dockerCommand command.Command, runOptions command.RunOptions) (command.RunOptions, error) {
 	// Check if the image has a weights manifest
 	manifest, err := dockerCommand.Inspect(ctx, runOptions.Image)
 	if err != nil {
@@ -220,7 +231,7 @@ func FillInWeightsManifestVolumes(ctx context.Context, dockerCommand command.Com
 			return runOptions, err
 		}
 		for _, weightPath := range weightsPaths {
-			runOptions.Volumes = append(runOptions.Volumes, Volume{
+			runOptions.Volumes = append(runOptions.Volumes, command.Volume{
 				Source:      weightPath.Source,
 				Destination: "/src/" + weightPath.Destination,
 			})

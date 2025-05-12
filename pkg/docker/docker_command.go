@@ -335,6 +335,92 @@ func (c *DockerCommand) ImageBuild(ctx context.Context, options command.ImageBui
 	return c.exec(ctx, in, nil, nil, options.WorkingDir, args)
 }
 
+func (c *DockerCommand) Run(ctx context.Context, options command.RunOptions) error {
+	console.Debugf("=== DockerCommand.Run %s", options.Image)
+
+	// Detach      bool
+	// Interactive bool
+	// TTY         bool
+
+	// if options.Stdin != nil {
+	//
+
+	args := []string{
+		"run",
+		"--rm",
+		// https://github.com/pytorch/pytorch/issues/2244
+		// https://github.com/replicate/cog/issues/1293
+		"--shm-size", "6G",
+	}
+
+	for _, env := range options.Env {
+		args = append(args, "--env", env)
+	}
+
+	if options.Detach {
+		args = append(args, "--detach")
+	}
+
+	if options.GPUs != "" {
+		args = append(args, "--gpus", options.GPUs)
+	}
+	if options.Interactive {
+		args = append(args, "--interactive")
+	}
+	for _, port := range options.Ports {
+		args = append(args, "--publish", fmt.Sprintf("%d:%d", port.HostPort, port.ContainerPort))
+	}
+	if options.TTY {
+		args = append(args, "--tty")
+	}
+	for _, volume := range options.Volumes {
+		// This needs escaping if we want to support commas in filenames
+		// https://github.com/moby/moby/issues/8604
+		args = append(args, "--mount", "type=bind,source="+volume.Source+",destination="+volume.Destination)
+	}
+	if options.Workdir != "" {
+		args = append(args, "--workdir", options.Workdir)
+	}
+
+	// force platform to linux/amd64
+	args = append(args, "--platform", "linux/amd64")
+	// if options.Platform != "" {
+	// 	args = append(args, "--platform", options.Platform)
+	// }
+	args = append(args, options.Image)
+	args = append(args, options.Args...)
+
+	// internalOptions := internalRunOptions{RunOptions: options}
+	// if stdin != nil {
+	// 	internalOptions.Interactive = true
+	// 	if f, ok := stdin.(*os.File); ok {
+	// 		internalOptions.TTY = isatty.IsTerminal(f.Fd())
+	// 	}
+	// }
+	// stderrCopy := new(bytes.Buffer)
+	// stderrMultiWriter := io.MultiWriter(stderr, stderrCopy)
+
+	// dockerArgs := generateDockerArgs(internalOptions)
+	// cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
+	// cmd.Env = generateEnv(internalOptions)
+	// cmd.Stdout = stdout
+	// cmd.Stdin = stdin
+	// cmd.Stderr = stderrMultiWriter
+	// console.Debug("$ " + strings.Join(cmd.Args, " "))
+
+	// err := cmd.Run()
+	// if err != nil {
+	// 	stderrString := stderrCopy.String()
+	// 	if strings.Contains(stderrString, "could not select device driver") || strings.Contains(stderrString, "nvidia-container-cli: initialization error") {
+	// 		return ErrMissingDeviceDriver
+	// 	}
+	// 	return err
+	// }
+	// return nil
+
+	return c.exec(ctx, options.Stdin, options.Stdout, options.Stderr, options.Workdir, args)
+}
+
 func (c *DockerCommand) exec(ctx context.Context, in io.Reader, outw, errw io.Writer, dir string, args []string) error {
 	if outw == nil {
 		outw = os.Stderr

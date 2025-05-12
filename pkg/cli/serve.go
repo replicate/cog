@@ -8,6 +8,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
@@ -74,12 +75,12 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		"--await-explicit-shutdown", "true",
 	}
 
-	runOptions := docker.RunOptions{
+	runOptions := command.RunOptions{
 		Args:    args,
 		Env:     envFlags,
 		GPUs:    gpus,
 		Image:   imageName,
-		Volumes: []docker.Volume{{Source: projectDir, Destination: "/src"}},
+		Volumes: []command.Volume{{Source: projectDir, Destination: "/src"}},
 		Workdir: "/src",
 	}
 	runOptions, err = docker.FillInWeightsManifestVolumes(ctx, dockerCommand, runOptions)
@@ -91,7 +92,7 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		runOptions.Platform = "linux/amd64"
 	}
 
-	runOptions.Ports = append(runOptions.Ports, docker.Port{HostPort: port, ContainerPort: 5000})
+	runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: 5000})
 
 	console.Info("")
 	console.Infof("Running '%[1]s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
@@ -99,14 +100,14 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	console.Infof("Serving at http://127.0.0.1:%[1]v", port)
 	console.Info("")
 
-	err = docker.Run(ctx, runOptions)
+	err = docker.Run(ctx, dockerCommand, runOptions)
 	// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
 	// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
 	if runOptions.GPUs == "all" && err == docker.ErrMissingDeviceDriver {
 		console.Info("Missing device driver, re-trying without GPU")
 
 		runOptions.GPUs = ""
-		err = docker.Run(ctx, runOptions)
+		err = docker.Run(ctx, dockerCommand, runOptions)
 	}
 
 	return err
