@@ -144,6 +144,8 @@ jobs:
         run: uv pip install --system tox tox-uv
       - name: Test
         run: make test-integration
+        env:
+          R8_COGLET_VERSION: coglet==0.1.0-alpha17
 
   release:
     name: "Release"
