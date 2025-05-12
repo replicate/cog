@@ -379,6 +379,8 @@ func (c *DockerCommand) containerRun(ctx context.Context, options command.RunOpt
 		// https://github.com/pytorch/pytorch/issues/2244
 		// https://github.com/replicate/cog/issues/1293
 		"--shm-size", "6G",
+		// force platform to linux/amd64
+		"--platform", "linux/amd64",
 	}
 
 	for _, env := range options.Env {
@@ -410,11 +412,6 @@ func (c *DockerCommand) containerRun(ctx context.Context, options command.RunOpt
 		args = append(args, "--workdir", options.Workdir)
 	}
 
-	// force platform to linux/amd64
-	args = append(args, "--platform", "linux/amd64")
-	// if options.Platform != "" {
-	// 	args = append(args, "--platform", options.Platform)
-	// }
 	args = append(args, options.Image)
 	args = append(args, options.Args...)
 

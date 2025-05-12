@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -10,7 +9,6 @@ import (
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/image"
-	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -86,10 +84,6 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	runOptions, err = docker.FillInWeightsManifestVolumes(ctx, dockerCommand, runOptions)
 	if err != nil {
 		return err
-	}
-
-	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
-		runOptions.Platform = "linux/amd64"
 	}
 
 	runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: 5000})
