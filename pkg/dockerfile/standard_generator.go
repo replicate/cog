@@ -451,6 +451,9 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 	if torchaudioVersion, ok := g.Config.TorchaudioVersion(); ok {
 		includePackages = append(includePackages, "torchaudio=="+torchaudioVersion)
 	}
+	if tensorflowVersion, ok := g.Config.TensorFlowVersion(); ok {
+		includePackages = append(includePackages, "tensorflow=="+tensorflowVersion)
+	}
 	g.pythonRequirementsContents, err = g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH, includePackages)
 	if err != nil {
 		return "", err

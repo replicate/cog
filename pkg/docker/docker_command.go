@@ -347,7 +347,7 @@ func (c *DockerCommand) ContainerStart(ctx context.Context, options command.RunO
 		return "", err
 	}
 
-	return out.String(), nil
+	return strings.TrimSpace(out.String()), nil
 }
 
 func (c *DockerCommand) Run(ctx context.Context, options command.RunOptions) error {
