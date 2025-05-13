@@ -19,6 +19,7 @@ import (
 	"github.com/docker/cli/cli/config/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/mattn/go-isatty"
 
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/util"
@@ -333,6 +334,95 @@ func (c *DockerCommand) ImageBuild(ctx context.Context, options command.ImageBui
 	in := strings.NewReader(options.DockerfileContents)
 
 	return c.exec(ctx, in, nil, nil, options.WorkingDir, args)
+}
+
+func (c *DockerCommand) ContainerStart(ctx context.Context, options command.RunOptions) (string, error) {
+	console.Debugf("=== DockerCommand.ContainerStart %s %v", options.Image, options.Args)
+
+	var out bytes.Buffer
+	options.Stdout = &out
+	options.Detach = true
+
+	if err := c.containerRun(ctx, options); err != nil {
+		return "", err
+	}
+
+	return out.String(), nil
+}
+
+func (c *DockerCommand) Run(ctx context.Context, options command.RunOptions) error {
+	console.Debugf("=== DockerCommand.Run %s %v", options.Image, options.Args)
+	if options.Stdout == nil {
+		options.Stdout = os.Stdout
+	}
+	if options.Stderr == nil {
+		options.Stderr = os.Stderr
+	}
+
+	return c.containerRun(ctx, options)
+}
+
+func (c *DockerCommand) containerRun(ctx context.Context, options command.RunOptions) error {
+	console.Debugf("=== DockerCommand.containerRun %s", options.Image)
+
+	var isInteractive, isTTY bool
+	if options.Stdin != nil {
+		isInteractive = true
+		if f, ok := options.Stdin.(*os.File); ok {
+			isTTY = isatty.IsTerminal(f.Fd())
+		}
+	}
+
+	args := []string{
+		"run",
+		"--rm",
+		// https://github.com/pytorch/pytorch/issues/2244
+		// https://github.com/replicate/cog/issues/1293
+		"--shm-size", "6G",
+		// force platform to linux/amd64
+		"--platform", "linux/amd64",
+	}
+
+	for _, env := range options.Env {
+		args = append(args, "--env", env)
+	}
+
+	if options.Detach {
+		args = append(args, "--detach")
+	}
+
+	if options.GPUs != "" {
+		args = append(args, "--gpus", options.GPUs)
+	}
+	if isInteractive {
+		args = append(args, "--interactive")
+	}
+	for _, port := range options.Ports {
+		args = append(args, "--publish", fmt.Sprintf("%d:%d", port.HostPort, port.ContainerPort))
+	}
+	if isTTY {
+		args = append(args, "--tty")
+	}
+	for _, volume := range options.Volumes {
+		// This needs escaping if we want to support commas in filenames
+		// https://github.com/moby/moby/issues/8604
+		args = append(args, "--mount", "type=bind,source="+volume.Source+",destination="+volume.Destination)
+	}
+	if options.Workdir != "" {
+		args = append(args, "--workdir", options.Workdir)
+	}
+
+	args = append(args, options.Image)
+	args = append(args, options.Args...)
+
+	err := c.exec(ctx, options.Stdin, options.Stdout, options.Stderr, "", args)
+	if err != nil {
+		if strings.Contains(err.Error(), "could not select device driver") || strings.Contains(err.Error(), "nvidia-container-cli: initialization error") {
+			return ErrMissingDeviceDriver
+		}
+		return err
+	}
+	return nil
 }
 
 func (c *DockerCommand) exec(ctx context.Context, in io.Reader, outw, errw io.Writer, dir string, args []string) error {
