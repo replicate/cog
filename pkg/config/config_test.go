@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path"
+	"path/filepath"
 	"testing"
 
 	"github.com/hashicorp/go-version"
@@ -729,4 +730,23 @@ func TestConfigMarshal(t *testing.T) {
   fast: false
 predict: ""
 `, string(data))
+}
+
+func TestAbsolutePathInPythonRequirements(t *testing.T) {
+	dir := t.TempDir()
+	requirementsFilePath := filepath.Join(dir, "requirements.txt")
+	err := os.WriteFile(requirementsFilePath, []byte("torch==2.5.0"), 0o644)
+	require.NoError(t, err)
+	config := &Config{
+		Build: &Build{
+			GPU:                true,
+			PythonVersion:      "3.8",
+			PythonRequirements: requirementsFilePath,
+		},
+	}
+	err = config.ValidateAndComplete(dir)
+	require.NoError(t, err)
+	torchVersion, ok := config.TorchVersion()
+	require.Equal(t, torchVersion, "2.5.0")
+	require.True(t, ok)
 }

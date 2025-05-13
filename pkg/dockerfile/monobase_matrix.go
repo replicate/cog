@@ -11,16 +11,17 @@ import (
 )
 
 type MonobaseMatrix struct {
-	Id             int            `json:"id"`
-	CudaVersions   []string       `json:"cuda_versions"`
-	CudnnVersions  []string       `json:"cudnn_versions"`
-	PythonVersions []string       `json:"python_versions"`
-	TorchVersions  []string       `json:"torch_versions"`
-	Venvs          []MonobaseVenv `json:"venvs"`
+	Id             int                 `json:"id"`
+	CudaVersions   []string            `json:"cuda_versions"`
+	CudnnVersions  []string            `json:"cudnn_versions"`
+	PythonVersions []string            `json:"python_versions"`
+	TorchVersions  []string            `json:"torch_versions"`
+	Venvs          []MonobaseVenv      `json:"venvs"`
+	TorchCUDAs     map[string][]string `json:"torch_cudas"`
 }
 
 func NewMonobaseMatrix(client *http.Client) (*MonobaseMatrix, error) {
-	resp, err := client.Get("https://raw.githubusercontent.com/replicate/monobase/refs/heads/main/matrix.json")
+	resp, err := client.Get(MonobaseMatrixSchemeFromEnvironment() + "://" + MonobaseMatrixHostFromEnvironment() + "/replicate/monobase/refs/heads/main/matrix.json")
 	if err != nil {
 		return nil, err
 	}
@@ -59,4 +60,9 @@ func (m MonobaseMatrix) IsSupported(python string, torch string, cuda string) bo
 		cuda = "cpu"
 	}
 	return slices.Contains(m.Venvs, MonobaseVenv{Python: python, Torch: torch, Cuda: cuda})
+}
+
+func (m MonobaseMatrix) DefaultCUDAVersion(torch string) string {
+	cudas := m.TorchCUDAs[torch]
+	return cudas[len(cudas)-1]
 }
