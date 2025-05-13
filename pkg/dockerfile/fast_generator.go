@@ -232,8 +232,24 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 		"ENV R8_COG_VERSION=" + CogletVersionFromEnvironment(),
 	}...)
 
+	torchVersion, ok := g.Config.TorchVersion()
+	if ok {
+		if !CheckMajorMinorPatch(torchVersion) {
+			return nil, fmt.Errorf("Torch version must be <major>.<minor>.<patch>: %s", strings.Join(g.matrix.TorchVersions, ", "))
+		}
+		envs = append(envs, []string{
+			"ENV R8_TORCH_VERSION=" + torchVersion,
+		}...)
+	}
+
+	console.Infof("OK: %v", ok)
+	console.Infof("Torch Version: %s", torchVersion)
+
 	if g.Config.Build.GPU {
 		cudaVersion := g.Config.Build.CUDA
+		if cudaVersion == "" && ok {
+			cudaVersion = g.matrix.DefaultCUDAVersion(torchVersion)
+		}
 		cudnnVersion := g.Config.Build.CuDNN
 		if cudnnVersion == "" {
 			cudnnVersion = g.matrix.DefaultCudnnVersion()
@@ -260,16 +276,6 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 	envs = append(envs, []string{
 		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
 	}...)
-
-	torchVersion, ok := g.Config.TorchVersion()
-	if ok {
-		if !CheckMajorMinorPatch(torchVersion) {
-			return nil, fmt.Errorf("Torch version must be <major>.<minor>.<patch>: %s", strings.Join(g.matrix.TorchVersions, ", "))
-		}
-		envs = append(envs, []string{
-			"ENV R8_TORCH_VERSION=" + torchVersion,
-		}...)
-	}
 
 	if !g.matrix.IsSupported(g.Config.Build.PythonVersion, torchVersion, g.Config.Build.CUDA) {
 		return nil, fmt.Errorf(

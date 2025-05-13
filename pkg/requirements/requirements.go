@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
 )
 
@@ -41,6 +42,7 @@ func CurrentRequirements(tmpDir string) (string, error) {
 }
 
 func ReadRequirements(path string) ([]string, error) {
+	console.Infof("path %s", path)
 	fh, err := os.Open(path)
 	if err != nil {
 		return nil, err
