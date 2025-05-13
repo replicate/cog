@@ -10,6 +10,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/dockertest"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 func writeRequirements(t *testing.T, req string) string {
@@ -264,4 +265,46 @@ func TestValidateConfigWithBuildRunItems(t *testing.T) {
 
 	err = generator.validateConfig()
 	require.Error(t, err)
+}
+
+func TestTorchVersionDefaultCUDA(t *testing.T) {
+	dir := t.TempDir()
+	build := config.Build{
+		PythonVersion:      "3.10",
+		PythonRequirements: writeRequirements(t, "torch==2.5.0"),
+		GPU:                true,
+	}
+	config := config.Config{
+		Build: &build,
+	}
+	err := config.ValidateAndComplete(dir)
+	require.NoError(t, err)
+	command := dockertest.NewMockCommand()
+
+	// Create matrix
+	matrix := MonobaseMatrix{
+		Id:             1,
+		CudaVersions:   []string{"12.4"},
+		CudnnVersions:  []string{"1.0"},
+		PythonVersions: []string{"3.10"},
+		TorchVersions:  []string{"2.5.0"},
+		Venvs: []MonobaseVenv{
+			{
+				Python: "3.10",
+				Torch:  "2.5.0",
+				Cuda:   "12.4",
+			},
+		},
+		TorchCUDAs: map[string][]string{
+			"2.5.0": {"12.4"},
+		},
+	}
+
+	generator, err := NewFastGenerator(&config, dir, command, &matrix, true)
+	require.NoError(t, err)
+	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights(t.Context())
+	require.NoError(t, err)
+	console.Info(dockerfile)
+	dockerfileLines := strings.Split(dockerfile, "\n")
+	require.Equal(t, "ENV R8_CUDA_VERSION=12.4", dockerfileLines[4])
 }
