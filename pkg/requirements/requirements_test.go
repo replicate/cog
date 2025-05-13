@@ -318,6 +318,76 @@ iopath`), 0o644)
 	}, requirements)
 }
 
+func TestTensorflowRequirements(t *testing.T) {
+	srcDir := t.TempDir()
+	reqFile := path.Join(srcDir, "requirements.txt")
+	err := os.WriteFile(reqFile, []byte(`compel==2.0.3
+diffusers>=0.27.1
+gputil==1.4.0
+loguru==0.7.2
+opencv-python>=4.9.0.80
+pillow>=10.2.0
+psutil==6.1.1
+replicate>=1.0.4
+sentry-sdk[fastapi,loguru]>=2.16.0
+antialiased_cnns==0.3
+beautifulsoup4==4.13.4
+imageio==2.37.0
+ipdb==0.13.13
+kornia==0.8.1
+matplotlib==3.10.3
+numpy==1.23.5
+opencv_python==4.11.0.86
+Pillow==11.2.1
+pytorch_lightning==2.3.3
+PyYAML==6.0.2
+Requests==2.32.3
+scipy==1.15.3
+scikit-image==0.24.0
+tensorflow==2.10.0
+tensorlayer==2.2.5
+tf_slim==1.1.0
+timm==1.0.15
+torch==2.0.1
+torchvision==0.15.2
+tqdm==4.67.1`), 0o644)
+	require.NoError(t, err)
+	requirements, err := ReadRequirements(reqFile)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"compel==2.0.3",
+		"diffusers>=0.27.1",
+		"gputil==1.4.0",
+		"loguru==0.7.2",
+		"opencv-python>=4.9.0.80",
+		"pillow>=10.2.0",
+		"psutil==6.1.1",
+		"replicate>=1.0.4",
+		"sentry-sdk[fastapi,loguru]>=2.16.0",
+		"antialiased_cnns==0.3",
+		"beautifulsoup4==4.13.4",
+		"imageio==2.37.0",
+		"ipdb==0.13.13",
+		"kornia==0.8.1",
+		"matplotlib==3.10.3",
+		"numpy==1.23.5",
+		"opencv_python==4.11.0.86",
+		"Pillow==11.2.1",
+		"pytorch_lightning==2.3.3",
+		"PyYAML==6.0.2",
+		"Requests==2.32.3",
+		"scipy==1.15.3",
+		"scikit-image==0.24.0",
+		"tensorflow==2.10.0",
+		"tensorlayer==2.2.5",
+		"tf_slim==1.1.0",
+		"timm==1.0.15",
+		"torch==2.0.1",
+		"torchvision==0.15.2",
+		"tqdm==4.67.1",
+	}, requirements)
+}
+
 func checkRequirements(t *testing.T, expected []string, actual []string) {
 	t.Helper()
 	for n, expectLine := range expected {
