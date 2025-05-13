@@ -230,6 +230,11 @@ func latestCuDNNForCUDA(cuda string) (string, error) {
 		}
 	}
 	sort.Slice(cuDNNs, func(i, j int) bool {
+		if cuDNNs[i] == "" {
+			// Later versions of NVIDIA CUDA base images
+			// don't specify CuDNN version
+			return true
+		}
 		return version.Greater(cuDNNs[i], cuDNNs[j])
 	})
 	if len(cuDNNs) == 0 {

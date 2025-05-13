@@ -53,9 +53,11 @@ type Build struct {
 	SystemPackages     []string  `json:"system_packages,omitempty" yaml:"system_packages,omitempty"`
 	PreInstall         []string  `json:"pre_install,omitempty" yaml:"pre_install,omitempty"` // Deprecated, but included for backwards compatibility
 	CUDA               string    `json:"cuda,omitempty" yaml:"cuda,omitempty"`
-	CuDNN              string    `json:"cudnn,omitempty" yaml:"cudnn,omitempty"`
-	Fast               bool      `json:"fast,omitempty" yaml:"fast"`
-	PythonOverrides    string    `json:"python_overrides,omitempty" yaml:"python_overrides,omitempty"`
+	// TODO: deprecate `cudnn` since it NVIDIA no longer publishes
+	// CuDNN-specific base images.
+	CuDNN           string `json:"cudnn,omitempty" yaml:"cudnn,omitempty"`
+	Fast            bool   `json:"fast,omitempty" yaml:"fast"`
+	PythonOverrides string `json:"python_overrides,omitempty" yaml:"python_overrides,omitempty"`
 
 	pythonRequirementsContent []string
 }
