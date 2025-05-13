@@ -320,7 +320,7 @@ iopath`), 0o644)
 
 func TestTensorflowRequirements(t *testing.T) {
 	srcDir := t.TempDir()
-	reqFile := path.Join(srcDir, "requirements.txt")
+	reqFile := path.Join(srcDir, ".requirements.txt")
 	err := os.WriteFile(reqFile, []byte(`compel==2.0.3
 diffusers>=0.27.1
 gputil==1.4.0
