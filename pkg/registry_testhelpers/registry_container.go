@@ -12,6 +12,7 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/go-connections/nat"
+	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/registry"
@@ -74,4 +75,17 @@ func (c *RegistryContainer) ImageRefForTest(t *testing.T, label string) string {
 	}
 	repo := strings.ToLower(t.Name())
 	return c.ImageRef(fmt.Sprintf("%s:%s", repo, label))
+}
+
+func (c *RegistryContainer) CloneRepo(t *testing.T, existingRepo, newRepo string) string {
+	existingRepo = c.ImageRef(existingRepo)
+	newRepo = c.ImageRef(newRepo)
+
+	err := crane.CopyRepository(existingRepo, newRepo)
+	require.NoError(t, err, "Failed to clone repo %q to %q", existingRepo, newRepo)
+	return newRepo
+}
+
+func (c *RegistryContainer) CloneRepoForTest(t *testing.T, repo string) string {
+	return c.CloneRepo(t, repo, strings.ToLower(t.Name()))
 }
