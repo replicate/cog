@@ -1,20 +1,16 @@
 package docker
 
 import (
-	"strconv"
 	"testing"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/testcontainers/testcontainers-go"
-	testregistry "github.com/testcontainers/testcontainers-go/modules/registry"
 
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/docker/dockertest"
-	"github.com/replicate/cog/pkg/util"
+	"github.com/replicate/cog/pkg/registry_testhelpers"
 )
 
 func TestDockerClient(t *testing.T) {
@@ -74,22 +70,7 @@ func (s *DockerClientSuite) runImageInspectTests(t *testing.T) {
 }
 
 func (s *DockerClientSuite) runPullTests(t *testing.T) {
-	registryContainer, err := testregistry.Run(
-		t.Context(),
-		"registry:2",
-		testcontainers.WithHostConfigModifier(func(hostConfig *container.HostConfig) {
-			// docker only considers localhost:1 through localhost:9999 as insecure. testcontainers
-			// picks higher ports by default, so we need to pick one ourselves to allow insecure access
-			// without modifying the daemon config.
-			port, err := util.PickFreePort(1024, 9999)
-			require.NoError(t, err, "Failed to pick free port")
-			hostConfig.PortBindings = map[nat.Port][]nat.PortBinding{
-				nat.Port("5000/tcp"): {{HostIP: "0.0.0.0", HostPort: strconv.Itoa(port)}},
-			}
-		}),
-	)
-	defer testcontainers.CleanupContainer(t, registryContainer)
-	require.NoError(t, err, "Failed to start registry container")
+	testRegistry := registry_testhelpers.StartTestRegistry(t)
 
 	// TODO[md]: add tests for the following permutations:
 	// - remote reference exists/not exists
@@ -97,7 +78,7 @@ func (s *DockerClientSuite) runPullTests(t *testing.T) {
 	// - force pull true/false
 
 	t.Run("RemoteImageExists", func(t *testing.T) {
-		imageRef := dockertest.ImageRefWithRegistry(t, registryContainer.RegistryName, "")
+		imageRef := testRegistry.ImageRefForTest(t, "")
 
 		s.dockerHelper.LoadImageFixture(t, "alpine", imageRef)
 		s.dockerHelper.MustPushImage(t, imageRef)
@@ -118,7 +99,7 @@ func (s *DockerClientSuite) runPullTests(t *testing.T) {
 	})
 
 	t.Run("RemoteReferenceNotFound", func(t *testing.T) {
-		imageRef := dockertest.ImageRefWithRegistry(t, registryContainer.RegistryName, "")
+		imageRef := testRegistry.ImageRefForTest(t, "")
 
 		s.assertNoImageExists(t, imageRef)
 
@@ -132,7 +113,7 @@ func (s *DockerClientSuite) runPullTests(t *testing.T) {
 
 	t.Run("InvalidAuth", func(t *testing.T) {
 		t.Skip("skip auth tests until we're using the docker engine since we can't set auth on the host without side effects")
-		imageRef := dockertest.ImageRefWithRegistry(t, registryContainer.RegistryName, "")
+		imageRef := testRegistry.ImageRefForTest(t, "")
 
 		s.assertNoImageExists(t, imageRef)
 
