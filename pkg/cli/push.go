@@ -78,8 +78,6 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	replicatePrefix := fmt.Sprintf("%s/", global.ReplicateRegistryHost)
-	fmt.Println("imageName", imageName)
-	fmt.Println("replicatePrefix", replicatePrefix)
 	if strings.HasPrefix(imageName, replicatePrefix) {
 		if _, err := registry.NewClient().Inspect(ctx, imageName, nil); err != nil {
 			if errors.Is(err, registry.NotFoundError) {

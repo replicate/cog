@@ -81,7 +81,6 @@ func (c *defaultClient) Inspect(ctx context.Context, imageRef string, platform *
 	if platform == nil {
 		switch mediaType {
 		case types.OCIImageIndex, types.DockerManifestList:
-			fmt.Println("loading image index")
 			idx, err := desc.ImageIndex()
 			if err != nil {
 				return nil, fmt.Errorf("loading image index: %w", err)
