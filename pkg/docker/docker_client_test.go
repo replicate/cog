@@ -1,23 +1,16 @@
 package docker
 
 import (
-	"fmt"
-	"math/rand"
-	"net"
-	"strconv"
 	"testing"
-	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/testcontainers/testcontainers-go"
-	testregistry "github.com/testcontainers/testcontainers-go/modules/registry"
 
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/docker/dockertest"
+	"github.com/replicate/cog/pkg/registry_testhelpers"
 )
 
 func TestDockerClient(t *testing.T) {
@@ -52,26 +45,6 @@ func (s *DockerClientSuite) assertNoImageExists(t *testing.T, imageRef string) {
 	assert.Nil(t, inspect, "Image should not exist")
 }
 
-// pickFreePort returns a TCP port in [min,max] that's free *right now*.
-// There's still a small race between closing the listener and Docker grabbing
-// the port, but it's good enough for test code.
-func pickFreePort(minPort, maxPort int) (int, error) {
-	if minPort < 1024 || maxPort > 99999 || minPort > maxPort {
-		return 0, fmt.Errorf("invalid port range")
-	}
-
-	rng := rand.New(rand.NewSource(time.Now().UnixNano())) // #nosec G404 - using math/rand is fine for test port selection
-	for tries := 0; tries < 20; tries++ {                  // avoid infinite loops
-		p := rng.Intn(maxPort-minPort+1) + minPort
-		l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
-		if err == nil {
-			l.Close()
-			return p, nil // looks free
-		}
-	}
-	return 0, fmt.Errorf("could not find free port in range %d-%d", minPort, maxPort)
-}
-
 func (s *DockerClientSuite) runImageInspectTests(t *testing.T) {
 	t.Run("ExistingLocalImage", func(t *testing.T) {
 		t.Parallel()
@@ -97,22 +70,7 @@ func (s *DockerClientSuite) runImageInspectTests(t *testing.T) {
 }
 
 func (s *DockerClientSuite) runPullTests(t *testing.T) {
-	registryContainer, err := testregistry.Run(
-		t.Context(),
-		"registry:2",
-		testcontainers.WithHostConfigModifier(func(hostConfig *container.HostConfig) {
-			// docker only considers localhost:1 through localhost:9999 as insecure. testcontainers
-			// picks higher ports by default, so we need to pick one ourselves to allow insecure access
-			// without modifying the daemon config.
-			port, err := pickFreePort(1024, 9999)
-			require.NoError(t, err, "Failed to pick free port")
-			hostConfig.PortBindings = map[nat.Port][]nat.PortBinding{
-				nat.Port("5000/tcp"): {{HostIP: "0.0.0.0", HostPort: strconv.Itoa(port)}},
-			}
-		}),
-	)
-	defer testcontainers.CleanupContainer(t, registryContainer)
-	require.NoError(t, err, "Failed to start registry container")
+	testRegistry := registry_testhelpers.StartTestRegistry(t)
 
 	// TODO[md]: add tests for the following permutations:
 	// - remote reference exists/not exists
@@ -120,7 +78,7 @@ func (s *DockerClientSuite) runPullTests(t *testing.T) {
 	// - force pull true/false
 
 	t.Run("RemoteImageExists", func(t *testing.T) {
-		imageRef := dockertest.ImageRefWithRegistry(t, registryContainer.RegistryName, "")
+		imageRef := testRegistry.ImageRefForTest(t, "")
 
 		s.dockerHelper.LoadImageFixture(t, "alpine", imageRef)
 		s.dockerHelper.MustPushImage(t, imageRef)
@@ -141,7 +99,7 @@ func (s *DockerClientSuite) runPullTests(t *testing.T) {
 	})
 
 	t.Run("RemoteReferenceNotFound", func(t *testing.T) {
-		imageRef := dockertest.ImageRefWithRegistry(t, registryContainer.RegistryName, "")
+		imageRef := testRegistry.ImageRefForTest(t, "")
 
 		s.assertNoImageExists(t, imageRef)
 
@@ -155,7 +113,7 @@ func (s *DockerClientSuite) runPullTests(t *testing.T) {
 
 	t.Run("InvalidAuth", func(t *testing.T) {
 		t.Skip("skip auth tests until we're using the docker engine since we can't set auth on the host without side effects")
-		imageRef := dockertest.ImageRefWithRegistry(t, registryContainer.RegistryName, "")
+		imageRef := testRegistry.ImageRefForTest(t, "")
 
 		s.assertNoImageExists(t, imageRef)
 
