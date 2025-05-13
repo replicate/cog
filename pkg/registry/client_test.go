@@ -12,6 +12,13 @@ import (
 )
 
 func TestInspect(t *testing.T) {
+	if testing.Short() {
+		// TODO[md]: this is a hack to skip the test in GitHub Actions because
+		// because macos runners don't have rootless docker. this should get added back
+		// and be part of a normal integration suite we run on all target platforms
+		t.Skip("skipping integration tests")
+	}
+
 	registry := registry_testhelpers.StartTestRegistry(t)
 
 	t.Run("it returns an index for multi-platform images when a platform isn't provided", func(t *testing.T) {
