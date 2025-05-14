@@ -22,6 +22,9 @@ import (
 func NewAPIClient(ctx context.Context) (*apiClient, error) {
 	// clicfg := cliconfig.FromContext(ctx)
 
+	// TODO[md]: we create a client at the top of each cli invocation, the sdk client hits an api which
+	// adds (a tiny biy of) overead. swap this with a handle that'll lazily initialize a client and ping for health.
+	// ditto for fetching registry credentials.
 	client, err := dc.NewClientWithOpts(dc.FromEnv, dc.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("error creating docker client: %w", err)
