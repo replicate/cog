@@ -13,6 +13,7 @@ class Cancel:
 @define
 class PredictionInput:
     payload: Dict[str, Any]
+    context: Dict[str, str] = {}
 
 
 @define
