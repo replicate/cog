@@ -1,7 +1,7 @@
 import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Callable, Generator, Optional, Union
+from typing import Any, Callable, Dict, Generator, Optional, Union
 
 from attrs import evolve, frozen
 
@@ -11,7 +11,7 @@ from ..types import ExperimentalFeatureWarning
 @frozen
 class Scope:
     record_metric: Callable[[str, Union[float, int]], None]
-    context: dict[str, str] = {}
+    context: Dict[str, str] = {}
     _tag: Optional[str] = None
 
 

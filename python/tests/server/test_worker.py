@@ -692,6 +692,34 @@ def test_async_setup_uses_same_loop_as_predict(worker: Worker):
     assert result, "Expected worker to return True to assert same event loop"
 
 
+@uses_worker("with_context")
+def test_context(worker: Worker):
+    result = _process(
+        worker,
+        lambda: worker.predict({"name": "context"}, context={"prefix": "hello"}),
+        tag=None,
+    )
+    assert result.done
+    assert not result.done.error
+    assert result.output == "hello context!"
+
+
+@uses_worker("with_context_async", min_python=(3, 11), is_async=True)
+def test_context_async(worker: Worker):
+    result = _process(
+        worker,
+        lambda: worker.predict(
+            {"name": "context"}, tag="t1", context={"prefix": "hello"}
+        ),
+        tag=None,
+    )
+
+    print("\n".join(result.stderr_lines))
+    assert result.done
+    assert not result.done.error, result.done.error_detail
+    assert result.output == "hello context!"
+
+
 @frozen
 class SetupState:
     fut: "Future[Done]"
