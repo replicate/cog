@@ -2,12 +2,13 @@ package docker
 
 import (
 	"bytes"
-	"fmt"
+	"context"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -50,12 +51,12 @@ func runDockerClientTests(t *testing.T, dockerClient command.Command) {
 		t.Run("ExistingLocalImage", func(t *testing.T) {
 			t.Parallel()
 
-			imageRef := imageRefForTest(t)
-			dockerHelper.LoadImageFixture(t, "alpine", imageRef)
+			ref := dockertest.NewRef(t)
+			dockerHelper.ImageFixture(t, "alpine", ref.String())
 
-			expectedImage := dockerHelper.InspectImage(t, imageRef)
-			resp, err := dockerClient.Inspect(t.Context(), imageRef)
-			require.NoError(t, err, "Failed to inspect image %q", imageRef)
+			expectedImage := dockerHelper.InspectImage(t, ref.String())
+			resp, err := dockerClient.Inspect(t.Context(), ref.String())
+			require.NoError(t, err, "Failed to inspect image %q", ref.String())
 			assert.Equal(t, expectedImage.ID, resp.ID)
 		})
 
@@ -297,20 +298,127 @@ func runDockerClientTests(t *testing.T, dockerClient command.Command) {
 			require.ErrorIs(t, err, &command.NotFoundError{})
 		})
 	})
-}
 
-func imageRefForTest(t *testing.T) string {
-	return fmt.Sprintf("%s:test-%d", strings.ToLower(t.Name()), time.Now().Unix())
+	t.Run("Push", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("valid image, valid registry", func(t *testing.T) {
+			t.Parallel()
+
+			ref := dockertest.NewRef(t).WithRegistry(testRegistry.RegistryHost())
+
+			dockerHelper.ImageFixture(t, "alpine", ref.String())
+
+			err := dockerClient.Push(t.Context(), ref.String())
+			require.NoError(t, err)
+			assert.NoError(t, testRegistry.ImageExists(t, ref.String()))
+		})
+
+		t.Run("non-existent registry", func(t *testing.T) {
+			t.Parallel()
+
+			ref := dockertest.NewRef(t).WithRegistry("localhost:1234")
+			dockerHelper.ImageFixture(t, "alpine", ref.String())
+			// should timeout trying to connect to a bogus registry
+			ctx, cancel := context.WithTimeout(t.Context(), 1*time.Second)
+			defer cancel()
+			err := dockerClient.Push(ctx, ref.String())
+			require.ErrorIs(t, err, context.DeadlineExceeded, "should timeout trying to connect to a bogus registry")
+		})
+
+		t.Run("missing image", func(t *testing.T) {
+			t.Parallel()
+
+			ref := dockertest.NewRef(t).WithRegistry(testRegistry.RegistryHost())
+
+			err := dockerClient.Push(t.Context(), ref.String())
+			assertNotFoundError(t, err, ref.String(), "tag")
+		})
+
+		t.Run("registry with authentication", func(t *testing.T) {
+			t.Parallel()
+
+			if _, ok := dockerClient.(*DockerCommand); ok {
+				t.Skip("skipping auth tests for docker command client since we can't set auth on the host without side effects")
+			}
+
+			authReg := registry_testhelpers.StartTestRegistry(t, registry_testhelpers.WithAuth("testuser", "testpass"))
+
+			t.Run("correct credentials", func(t *testing.T) {
+				t.Parallel()
+
+				ref := dockertest.NewRef(t).WithRegistry(authReg.RegistryHost())
+				dockerHelper.ImageFixture(t, "alpine", ref.String())
+
+				// create a new client with the correct auth config
+				authClient, err := NewAPIClient(t.Context(), WithAuthConfig(registry.AuthConfig{
+					Username:      "testuser",
+					Password:      "testpass",
+					ServerAddress: authReg.RegistryHost(),
+				}))
+				require.NoError(t, err)
+
+				err = authClient.Push(t.Context(), ref.String())
+				require.NoError(t, err, "Failed to push image to auth registry")
+				assert.NoError(t, authReg.ImageExists(t, ref.String()))
+			})
+
+			t.Run("missing auth", func(t *testing.T) {
+				t.Parallel()
+
+				ref := dockertest.NewRef(t).WithRegistry(authReg.RegistryHost())
+				dockerHelper.ImageFixture(t, "alpine", ref.String())
+
+				// use root client which doesn't have auth setup
+				err := dockerClient.Push(t.Context(), ref.String())
+				require.ErrorIs(t, err, command.ErrAuthorizationFailed)
+			})
+
+			t.Run("incorrect auth", func(t *testing.T) {
+				t.Parallel()
+
+				ref := dockertest.NewRef(t).WithRegistry(authReg.RegistryHost())
+				dockerHelper.ImageFixture(t, "alpine", ref.String())
+
+				authClient, err := NewAPIClient(t.Context(), WithAuthConfig(registry.AuthConfig{
+					Username:      "testuser",
+					Password:      "wrongpass",
+					ServerAddress: authReg.RegistryHost(),
+				}))
+				require.NoError(t, err)
+
+				err = authClient.Push(t.Context(), ref.String())
+				require.ErrorIs(t, err, command.ErrAuthorizationFailed)
+			})
+
+			t.Run("correct credentials, not authorized", func(t *testing.T) {
+				t.Skip("skipping until the registry supports repo authorizations")
+			})
+		})
+	})
 }
 
 func assertImageExists(t *testing.T, dockerClient command.Command, imageRef string) {
+	t.Helper()
+
 	inspect, err := dockerClient.Inspect(t.Context(), imageRef)
 	assert.NoError(t, err, "Failed to inspect image %q", imageRef)
 	assert.NotNil(t, inspect, "Image should exist")
 }
 
 func assertNoImageExists(t *testing.T, dockerClient command.Command, imageRef string) {
+	t.Helper()
+
 	inspect, err := dockerClient.Inspect(t.Context(), imageRef)
 	assert.ErrorIs(t, err, &command.NotFoundError{}, "Image should not exist")
 	assert.Nil(t, inspect, "Image should not exist")
+}
+
+func assertNotFoundError(t *testing.T, err error, ref string, object string) {
+	t.Helper()
+
+	var notFoundErr *command.NotFoundError
+	require.ErrorAs(t, err, &notFoundErr, "should be a not found error")
+	require.Equal(t, ref, notFoundErr.Ref, "ref should match")
+	require.Equal(t, object, notFoundErr.Object, "object should match")
 }

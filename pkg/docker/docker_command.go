@@ -77,7 +77,15 @@ func (c *DockerCommand) Pull(ctx context.Context, image string, force bool) (*im
 func (c *DockerCommand) Push(ctx context.Context, image string) error {
 	console.Debugf("=== DockerCommand.Push %s", image)
 
-	return c.exec(ctx, nil, nil, nil, "", []string{"push", image})
+	err := c.exec(ctx, nil, nil, nil, "", []string{"push", image})
+	if err != nil {
+		if strings.Contains(err.Error(), "tag does not exist") {
+			return &command.NotFoundError{Ref: image, Object: "tag"}
+		}
+		return err
+	}
+
+	return nil
 }
 
 func (c *DockerCommand) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
@@ -496,6 +504,12 @@ func (c *DockerCommand) exec(ctx context.Context, in io.Reader, outw, errw io.Wr
 	if err := cmd.Run(); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return err
+		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			if !exitErr.Exited() && strings.Contains(exitErr.Error(), "signal: killed") {
+				return context.DeadlineExceeded
+			}
 		}
 		return fmt.Errorf("command failed: %s: %w", stderrBuf.String(), err)
 	}
