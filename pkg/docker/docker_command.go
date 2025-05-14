@@ -10,7 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/creack/pty"
@@ -261,6 +261,15 @@ func (c *DockerCommand) ContainerStop(ctx context.Context, containerID string) e
 func (c *DockerCommand) ImageBuild(ctx context.Context, options command.ImageBuildOptions) error {
 	console.Debugf("=== DockerCommand.ImageBuild %s", options.ImageName)
 
+	args := c.imageBuildArgs(options)
+
+	in := strings.NewReader(options.DockerfileContents)
+
+	return c.exec(ctx, in, nil, nil, options.WorkingDir, args)
+}
+
+// imageBuildArgs builds a string slice of arguments that will be provided to the `docker` command.
+func (c *DockerCommand) imageBuildArgs(options command.ImageBuildOptions) []string {
 	args := []string{
 		"buildx", "build",
 		// disable provenance attestations since we don't want them cluttering the registry
@@ -268,14 +277,10 @@ func (c *DockerCommand) ImageBuild(ctx context.Context, options command.ImageBui
 		// Fixes "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested"
 		// We do this regardless of the host platform so windows/*. linux/arm64, etc work as well
 		"--platform", "linux/amd64",
-	}
-
-	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
-		args = append(args,
-			// buildx doesn't load images by default, so we tell it to load here. _however_, the
-			// --output type=docker,rewrite-timestamp=true flag also loads the image, this may not be necessary
-			"--load",
-		)
+		// Use the docker-container driver to fully support all buildx options, cache export, etc.
+		"--builder", "docker-container",
+		// Ensure that the resultant image is loaded into docker
+		"--load",
 	}
 
 	for _, secret := range options.Secrets {
@@ -286,7 +291,14 @@ func (c *DockerCommand) ImageBuild(ctx context.Context, options command.ImageBui
 		args = append(args, "--no-cache")
 	}
 
-	for k, v := range options.Labels {
+	// Sort label keys for deterministic order
+	labelKeys := make([]string, 0, len(options.Labels))
+	for k := range options.Labels {
+		labelKeys = append(labelKeys, k)
+	}
+	sort.Strings(labelKeys)
+	for _, k := range labelKeys {
+		v := options.Labels[k]
 		// Unlike in Dockerfiles, the value here does not need quoting -- Docker merely
 		// splits on the first '=' in the argument and the rest is the label value.
 		args = append(args, "--label", fmt.Sprintf(`%s=%s`, k, v))
@@ -297,9 +309,9 @@ func (c *DockerCommand) ImageBuild(ctx context.Context, options command.ImageBui
 	// equivalent to `--output type=docker`
 	if options.Epoch != nil && *options.Epoch >= 0 {
 		args = append(args,
-			"--build-arg", fmt.Sprintf("SOURCE_DATE_EPOCH=%d", options.Epoch),
+			"--build-arg", fmt.Sprintf("SOURCE_DATE_EPOCH=%d", *options.Epoch),
 			"--output", "type=docker,rewrite-timestamp=true")
-		console.Infof("Forcing timestamp rewriting to epoch %d", options.Epoch)
+		console.Infof("Forcing timestamp rewriting to epoch %d", *options.Epoch)
 	}
 
 	if cogconfig.BuildXCachePath != "" {
@@ -312,8 +324,15 @@ func (c *DockerCommand) ImageBuild(ctx context.Context, options command.ImageBui
 		args = append(args, "--cache-to", "type=inline")
 	}
 
-	for name, dir := range options.BuildContexts {
-		args = append(args, "--build-context", name+"="+dir)
+	// Sort build context keys for deterministic order
+	contextKeys := make([]string, 0, len(options.BuildContexts))
+	for k := range options.BuildContexts {
+		contextKeys = append(contextKeys, k)
+	}
+	sort.Strings(contextKeys)
+	for _, k := range contextKeys {
+		dir := options.BuildContexts[k]
+		args = append(args, "--build-context", k+"="+dir)
 	}
 
 	if options.ProgressOutput != "" {
@@ -330,10 +349,7 @@ func (c *DockerCommand) ImageBuild(ctx context.Context, options command.ImageBui
 		"--tag", options.ImageName,
 		options.ContextDir,
 	)
-
-	in := strings.NewReader(options.DockerfileContents)
-
-	return c.exec(ctx, in, nil, nil, options.WorkingDir, args)
+	return args
 }
 
 func (c *DockerCommand) ContainerStart(ctx context.Context, options command.RunOptions) (string, error) {
