@@ -613,7 +613,7 @@ def test_predict_tensorflow_project(docker_image, cog_binary):
         check=True,
         capture_output=True,
         text=True,
-        timeout=DEFAULT_TIMEOUT,
+        timeout=120.0,
     )
     assert result.returncode == 0
     assert result.stdout == "2.10.0\n"
