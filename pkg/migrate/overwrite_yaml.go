@@ -58,7 +58,8 @@ func traverseAndCompare(sourceNode, destinationNode *yaml.Node, path string) err
 			sourceKVNodeChild, ok1 := map1[key]
 			destinationKVNodeChild, ok2 := map2[key]
 
-			if !ok1 {
+			switch {
+			case !ok1:
 				// We need to remove this node
 				NewContent := []*yaml.Node{}
 				for _, node := range destinationNode.Content {
@@ -68,11 +69,10 @@ func traverseAndCompare(sourceNode, destinationNode *yaml.Node, path string) err
 					NewContent = append(NewContent, node)
 				}
 				destinationNode.Content = NewContent
-			} else if !ok2 {
+			case !ok2:
 				// We need to add this node
 				destinationNode.Content = append(destinationNode.Content, sourceKVNodeChild...)
-			} else {
-				// Continuen regular traversal
+			default:
 				err := traverseAndCompare(sourceKVNodeChild[1], destinationKVNodeChild[1], childPath)
 				if err != nil {
 					return err
