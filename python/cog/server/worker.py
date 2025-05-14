@@ -609,7 +609,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         predict: Callable[..., Any],
         redirector: StreamRedirector,
     ) -> None:
-        with self._handle_predict_error(redirector, tag=tag):
+        # TODO: Update context with data from PredictionRequest.
+        with evolve_scope(context={}), self._handle_predict_error(redirector, tag=tag):
             result = predict(**payload)
 
             if result:
@@ -660,7 +661,10 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         predict: Callable[..., Any],
         redirector: SimpleStreamRedirector,
     ) -> None:
-        with evolve_scope(tag=tag), self._handle_predict_error(redirector, tag=tag):
+        # TODO: Update context with data from PredictionRequest.
+        with evolve_scope(context={}, tag=tag), self._handle_predict_error(
+            redirector, tag=tag
+        ):
             future_result = predict(**payload)
 
             if future_result:
