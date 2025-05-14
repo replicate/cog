@@ -207,7 +207,14 @@ func (c *DockerCommand) ContainerLogs(ctx context.Context, containerID string, w
 		"--follow",
 	}
 
-	return c.exec(ctx, nil, w, nil, "", args)
+	err := c.exec(ctx, nil, w, nil, "", args)
+	if err != nil {
+		if strings.Contains(err.Error(), "No such container") {
+			return &command.NotFoundError{Ref: containerID, Object: "container"}
+		}
+		return err
+	}
+	return err
 }
 
 func (c *DockerCommand) ContainerInspect(ctx context.Context, id string) (*container.InspectResponse, error) {
