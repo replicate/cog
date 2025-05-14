@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -184,8 +183,6 @@ func (c *apiClient) Push(ctx context.Context, imageRef string) error {
 	var authConfig registry.AuthConfig
 	if auth, ok := c.authConfig[parsedName.Context().RegistryStr()]; ok {
 		authConfig = auth
-	} else {
-		console.Warnf("no auth config found for registry %s", parsedName.Context().RegistryStr())
 	}
 
 	var opts image.PushOptions
@@ -206,13 +203,10 @@ func (c *apiClient) Push(ctx context.Context, imageRef string) error {
 	if err := jsonmessage.DisplayJSONMessagesStream(output, os.Stderr, os.Stderr.Fd(), isTTY, nil); err != nil {
 		var streamErr *jsonmessage.JSONError
 		if errors.As(err, &streamErr) {
-			if strings.Contains(streamErr.Message, "tag does not exist") {
+			if isTagNotFoundError(err) {
 				return &command.NotFoundError{Ref: imageRef, Object: "tag"}
 			}
-			if strings.Contains(streamErr.Message, "authorization failed") {
-				return command.ErrAuthorizationFailed
-			}
-			if strings.Contains(streamErr.Message, "401 Unauthorized") {
+			if isAuthorizationFailedError(err) {
 				return command.ErrAuthorizationFailed
 			}
 		}

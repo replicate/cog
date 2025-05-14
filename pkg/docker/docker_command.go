@@ -79,8 +79,11 @@ func (c *DockerCommand) Push(ctx context.Context, image string) error {
 
 	err := c.exec(ctx, nil, nil, nil, "", []string{"push", image})
 	if err != nil {
-		if strings.Contains(err.Error(), "tag does not exist") {
+		if isTagNotFoundError(err) {
 			return &command.NotFoundError{Ref: image, Object: "tag"}
+		}
+		if isAuthorizationFailedError(err) {
+			return command.ErrAuthorizationFailed
 		}
 		return err
 	}
@@ -170,7 +173,7 @@ func (c *DockerCommand) Inspect(ctx context.Context, ref string) (*image.Inspect
 	}
 	output, err := c.execCaptured(ctx, nil, "", args)
 	if err != nil {
-		if strings.Contains(err.Error(), "No such image") {
+		if isImageNotFoundError(err) {
 			return nil, &command.NotFoundError{Object: "image", Ref: ref}
 		}
 		return nil, err
@@ -217,7 +220,7 @@ func (c *DockerCommand) ContainerLogs(ctx context.Context, containerID string, w
 
 	err := c.exec(ctx, nil, w, nil, "", args)
 	if err != nil {
-		if strings.Contains(err.Error(), "No such container") {
+		if isContainerNotFoundError(err) {
 			return &command.NotFoundError{Ref: containerID, Object: "container"}
 		}
 		return err
@@ -236,7 +239,7 @@ func (c *DockerCommand) ContainerInspect(ctx context.Context, id string) (*conta
 
 	output, err := c.execCaptured(ctx, nil, "", args)
 	if err != nil {
-		if strings.Contains(err.Error(), "No such container") {
+		if isContainerNotFoundError(err) {
 			return nil, &command.NotFoundError{Object: "container", Ref: id}
 		}
 		return nil, err
@@ -264,7 +267,7 @@ func (c *DockerCommand) ContainerStop(ctx context.Context, containerID string) e
 	}
 
 	if err := c.exec(ctx, nil, nil, nil, "", args); err != nil {
-		if strings.Contains(err.Error(), "No such container") {
+		if isContainerNotFoundError(err) {
 			err = &command.NotFoundError{Object: "container", Ref: containerID}
 		}
 		return fmt.Errorf("failed to stop container %q: %w", containerID, err)
@@ -432,7 +435,7 @@ func (c *DockerCommand) containerRun(ctx context.Context, options command.RunOpt
 
 	err := c.exec(ctx, options.Stdin, options.Stdout, options.Stderr, "", args)
 	if err != nil {
-		if strings.Contains(err.Error(), "could not select device driver") || strings.Contains(err.Error(), "nvidia-container-cli: initialization error") {
+		if isMissingDeviceDriverError(err) {
 			return ErrMissingDeviceDriver
 		}
 		return err
