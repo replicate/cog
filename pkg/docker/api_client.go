@@ -1,7 +1,6 @@
 package docker
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -12,6 +11,7 @@ import (
 	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/client"
 	dc "github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 
 	"github.com/replicate/go/types/ptr"
 
@@ -119,6 +119,12 @@ func (c *apiClient) ContainerInspect(ctx context.Context, containerID string) (*
 func (c *apiClient) ContainerLogs(ctx context.Context, containerID string, w io.Writer) error {
 	console.Debugf("=== APIClient.ContainerLogs %s", containerID)
 
+	// First inspect the container to check if it has TTY enabled
+	inspect, err := c.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return err
+	}
+
 	logs, err := c.client.ContainerLogs(ctx, containerID, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
@@ -131,27 +137,16 @@ func (c *apiClient) ContainerLogs(ctx context.Context, containerID string, w io.
 		return fmt.Errorf("failed to get container logs for %q: %w", containerID, err)
 	}
 	defer logs.Close()
-	// Docker adds a header to each log line. The header is 8 bytes:
-	// - First byte is the stream type (1 for stdout, 2 for stderr)
-	// - Next 3 bytes are reserved
-	// - Last 4 bytes are the size of the message
-	// We want to strip the header and prefix each line with the stream type. Maybe...
-	// the CLI doesn't do any of this, so we might not need to do anything fancy. /shrug
-	scanner := bufio.NewScanner(logs)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if len(line) < 8 {
-			continue
-		}
-		stream := line[0]
-		switch stream {
-		case '\x01':
-			fmt.Fprintln(w, "[stdout]", line[8:])
-		case '\x02':
-			fmt.Fprintln(w, "[stderr]", line[8:])
-		}
+
+	// If TTY is enabled, we can just copy the logs directly
+	if inspect.Config.Tty {
+		_, err = io.Copy(w, logs)
+		return err
 	}
-	return nil
+
+	// For non-TTY containers, use StdCopy to demultiplex stdout and stderr
+	_, err = stdcopy.StdCopy(w, w, logs)
+	return err
 }
 
 func (c *apiClient) Push(ctx context.Context, ref string) error {

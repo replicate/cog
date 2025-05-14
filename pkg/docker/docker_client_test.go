@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -220,7 +221,10 @@ func runDockerClientTests(t *testing.T, dockerClient command.Command) {
 				t.Context(),
 				testRegistry.ImageRef("alpine:latest"),
 				// print "line $i" N times then exit, where $i is the line number
-				testcontainers.WithCmd("sh", "-c", "for i in $(seq 1 5); do echo \"line $i\"; sleep 1; done"),
+				testcontainers.WithCmd("sh", "-c", "for i in $(seq 1 5); do echo \"$i\"; sleep 1; done"),
+				// testcontainers.WithConfigModifier(func(config *container.Config) {
+				// 	config.Tty = true
+				// }),
 			)
 			require.NoError(t, err, "Failed to run container")
 			defer testcontainers.CleanupContainer(t, container)
@@ -229,7 +233,7 @@ func runDockerClientTests(t *testing.T, dockerClient command.Command) {
 			err = dockerClient.ContainerLogs(t.Context(), container.ID, &buf)
 			require.NoError(t, err, "Failed to get container logs")
 
-			assert.Equal(t, "[stdout] line 1\n[stdout] line 2\n[stdout] line 3\n[stdout] line 4\n[stdout] line 5\n", buf.String())
+			assert.Equal(t, "1\n2\n3\n4\n5\n", buf.String())
 		})
 
 		t.Run("ContainerAlreadyStopped", func(t *testing.T) {
@@ -238,7 +242,7 @@ func runDockerClientTests(t *testing.T, dockerClient command.Command) {
 			container, err := testcontainers.Run(
 				t.Context(),
 				testRegistry.ImageRef("alpine:latest"),
-				testcontainers.WithCmd("sh", "-c", "for i in $(seq 1 3); do echo \"line $i\"; sleep 0.1; done"),
+				testcontainers.WithCmd("sh", "-c", "for i in $(seq 1 3); do echo \"$i\"; sleep 0.1; done"),
 				testcontainers.WithWaitStrategy(wait.ForExit()),
 			)
 			require.NoError(t, err, "Failed to run container")
@@ -252,7 +256,38 @@ func runDockerClientTests(t *testing.T, dockerClient command.Command) {
 			err = dockerClient.ContainerLogs(t.Context(), container.ID, &buf)
 			require.NoError(t, err, "Failed to get container logs")
 
-			assert.Equal(t, "[stdout] line 1\n[stdout] line 2\n[stdout] line 3\n", buf.String())
+			assert.Equal(t, "1\n2\n3\n", buf.String())
+		})
+
+		t.Run("TTY and non-TTY streams match", func(t *testing.T) {
+			t.Parallel()
+
+			runContainer := func(tty bool) string {
+				container, err := testcontainers.Run(
+					t.Context(),
+					testRegistry.ImageRef("alpine:latest"),
+					// print "line $i" N times then exit, where $i is the line number
+					testcontainers.WithCmd("sh", "-c", "for i in $(seq 1 5); do echo \"$i\"; sleep 0.1; done"),
+					testcontainers.WithConfigModifier(func(config *container.Config) {
+						config.Tty = tty
+					}),
+				)
+				require.NoError(t, err, "Failed to run container")
+				defer testcontainers.CleanupContainer(t, container)
+
+				var buf bytes.Buffer
+				err = dockerClient.ContainerLogs(t.Context(), container.ID, &buf)
+				require.NoError(t, err, "Failed to get container logs")
+				return buf.String()
+			}
+
+			ttyOutput := runContainer(true)
+			nonTtyOutput := runContainer(false)
+
+			// TTY uses CRLF for line endings, non-TTY uses LF. replace \r\n with \n so they match
+			ttyOutput = strings.ReplaceAll(ttyOutput, "\r\n", "\n")
+
+			assert.Equal(t, ttyOutput, nonTtyOutput, "TTY and non-TTY streams should match after normalizing line endings")
 		})
 
 		t.Run("ContainerDoesNotExist", func(t *testing.T) {

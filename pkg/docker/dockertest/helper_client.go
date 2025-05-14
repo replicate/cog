@@ -210,10 +210,13 @@ func (c *HelperClient) CleanupImage(t testing.TB, imageRef string) {
 	t.Helper()
 
 	t.Cleanup(func() {
-		_, _ = c.Client.ImageRemove(context.Background(), imageRef, image.RemoveOptions{
+		_, err := c.Client.ImageRemove(context.Background(), imageRef, image.RemoveOptions{
 			Force:         true,
 			PruneChildren: true,
 		})
+		if err != nil {
+			t.Logf("Warning: Failed to remove image %q: %v", imageRef, err)
+		}
 	})
 }
 
