@@ -68,6 +68,7 @@ else:
 class PredictionRequest(PredictionBaseModel):
     id: Optional[str] = None
     created_at: Optional[datetime] = None
+    context: Optional[dict[str, str]] = None
 
     # TODO: deprecate this
     output_file_prefix: Optional[str] = None
