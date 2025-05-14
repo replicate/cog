@@ -176,8 +176,10 @@ Content-Type: application/json; charset=utf-8
 When the model produces a file output,
 the server sends the following request to upload the file to the configured URL:
 
+> The file upload server (_output_file_prefix_) need to have a `PUT /upload/{filename}` endpoint for receiving `multipart/form-data` requests, and a `GET /upload/{filename}` endpoint for retrieving uploaded files.
+
 ```http
-PUT /upload HTTP/1.1
+PUT /upload/image.png HTTP/1.1
 Host: example.com
 Content-Type: multipart/form-data
 
