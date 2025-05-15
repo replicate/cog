@@ -277,8 +277,6 @@ func (c *DockerCommand) imageBuildArgs(options command.ImageBuildOptions) []stri
 		// Fixes "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested"
 		// We do this regardless of the host platform so windows/*. linux/arm64, etc work as well
 		"--platform", "linux/amd64",
-		// Use the docker-container driver to fully support all buildx options, cache export, etc.
-		"--builder", "docker-container",
 		// Ensure that the resultant image is loaded into docker
 		"--load",
 	}
