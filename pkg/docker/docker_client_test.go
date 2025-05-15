@@ -2,10 +2,10 @@ package docker
 
 import (
 	"bytes"
-	"context"
+	"net"
+	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/registry"
@@ -18,6 +18,7 @@ import (
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/registry_testhelpers"
+	"github.com/replicate/cog/pkg/util"
 )
 
 func TestDockerClient(t *testing.T) {
@@ -317,13 +318,32 @@ func runDockerClientTests(t *testing.T, dockerClient command.Command) {
 		t.Run("non-existent registry", func(t *testing.T) {
 			t.Parallel()
 
-			ref := dockertest.NewRef(t).WithRegistry("localhost:1234")
+			// start a local tcp server that immediately closes connections
+			port, err := util.PickFreePort(2000, 9999)
+			require.NoError(t, err, "Failed to pick free tcp port")
+			addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+			listener, err := net.Listen("tcp", addr)
+			require.NoError(t, err)
+			defer listener.Close()
+
+			go func() {
+				for {
+					conn, err := listener.Accept()
+					if err != nil {
+						return
+					}
+					conn.Close()
+				}
+			}()
+
+			// Create a reference to the mock registry
+			ref := dockertest.NewRef(t).WithRegistry(addr)
 			dockerHelper.ImageFixture(t, "alpine", ref.String())
-			// should timeout trying to connect to a bogus registry
-			ctx, cancel := context.WithTimeout(t.Context(), 1*time.Second)
-			defer cancel()
-			err := dockerClient.Push(ctx, ref.String())
-			require.ErrorIs(t, err, context.DeadlineExceeded, "should timeout trying to connect to a bogus registry")
+
+			// Try to push to the mock registry
+			err = dockerClient.Push(t.Context(), ref.String())
+			require.Error(t, err, "Push should fail with unreachable registry")
+			assert.ErrorContains(t, err, "connection refused", "Error should indicate registry is unreachable")
 		})
 
 		t.Run("missing image", func(t *testing.T) {
