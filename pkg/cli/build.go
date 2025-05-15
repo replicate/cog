@@ -62,8 +62,12 @@ func newBuildCommand() *cobra.Command {
 func buildCommand(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	command := docker.NewDockerCommand()
-	client, err := http.ProvideHTTPClient(ctx, command)
+	dockerClient, err := docker.NewClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	client, err := http.ProvideHTTPClient(ctx, dockerClient)
 	if err != nil {
 		return err
 	}
@@ -93,7 +97,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := image.Build(ctx, cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, nil, buildLocalImage, command); err != nil {
+	if err := image.Build(ctx, cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, nil, buildLocalImage, dockerClient); err != nil {
 		logClient.EndBuild(ctx, err, logCtx)
 		return err
 	}

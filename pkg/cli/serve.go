@@ -43,14 +43,17 @@ Generate and run an HTTP server based on the declared model inputs and outputs.`
 func cmdServe(cmd *cobra.Command, arg []string) error {
 	ctx := cmd.Context()
 
-	dockerCommand := docker.NewDockerCommand()
+	dockerClient, err := docker.NewClient(ctx)
+	if err != nil {
+		return err
+	}
 
 	cfg, projectDir, err := config.GetConfig(configFilename)
 	if err != nil {
 		return err
 	}
 
-	imageName, err := image.BuildBase(ctx, dockerCommand, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput)
+	imageName, err := image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput)
 	if err != nil {
 		return err
 	}
@@ -81,7 +84,7 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		Volumes: []command.Volume{{Source: projectDir, Destination: "/src"}},
 		Workdir: "/src",
 	}
-	runOptions, err = docker.FillInWeightsManifestVolumes(ctx, dockerCommand, runOptions)
+	runOptions, err = docker.FillInWeightsManifestVolumes(ctx, dockerClient, runOptions)
 	if err != nil {
 		return err
 	}
@@ -94,14 +97,14 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	console.Infof("Serving at http://127.0.0.1:%[1]v", port)
 	console.Info("")
 
-	err = docker.Run(ctx, dockerCommand, runOptions)
+	err = docker.Run(ctx, dockerClient, runOptions)
 	// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
 	// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
 	if runOptions.GPUs == "all" && err == docker.ErrMissingDeviceDriver {
 		console.Info("Missing device driver, re-trying without GPU")
 
 		runOptions.GPUs = ""
-		err = docker.Run(ctx, dockerCommand, runOptions)
+		err = docker.Run(ctx, dockerClient, runOptions)
 	}
 
 	return err

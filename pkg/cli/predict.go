@@ -71,7 +71,10 @@ the prediction on that.`,
 func cmdPredict(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	dockerCommand := docker.NewDockerCommand()
+	dockerClient, err := docker.NewClient(ctx)
+	if err != nil {
+		return err
+	}
 
 	imageName := ""
 	volumes := []command.Volume{}
@@ -91,11 +94,11 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 		if buildFast {
 			imageName = config.DockerImageName(projectDir)
-			if err := image.Build(ctx, cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, nil, buildLocalImage, dockerCommand); err != nil {
+			if err := image.Build(ctx, cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, nil, buildLocalImage, dockerClient); err != nil {
 				return err
 			}
 		} else {
-			if imageName, err = image.BuildBase(ctx, dockerCommand, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
+			if imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
 				return err
 			}
 
@@ -119,7 +122,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("Invalid image name '%s'. Did you forget `-i`?", imageName)
 		}
 
-		inspectResp, err := dockerCommand.Pull(ctx, imageName, false)
+		inspectResp, err := dockerClient.Pull(ctx, imageName, false)
 		if err != nil {
 			return fmt.Errorf("Failed to pull image %q: %w", imageName, err)
 		}
@@ -144,7 +147,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		Image:   imageName,
 		Volumes: volumes,
 		Env:     envFlags,
-	}, false, buildFast, dockerCommand)
+	}, false, buildFast, dockerClient)
 	if err != nil {
 		return err
 	}
@@ -173,7 +176,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 				Image:   imageName,
 				Volumes: volumes,
 				Env:     envFlags,
-			}, false, buildFast, dockerCommand)
+			}, false, buildFast, dockerClient)
 			if err != nil {
 				return err
 			}
