@@ -83,7 +83,7 @@ func removeAptTarballs(tmpDir string) error {
 }
 
 func CreateTarFile(ctx context.Context, dockerClient command.Command, image string, tmpDir string, tarFile string, folder string) (string, error) {
-	console.Debugf("=== DockerCommand.CreateTarFile %s %s %s %s", image, tmpDir, tarFile, folder)
+	console.Debugf("=== CreateTarFile %s %s %s %s", image, tmpDir, tarFile, folder)
 
 	opts := command.RunOptions{
 		Image: image,
@@ -109,7 +109,7 @@ func CreateTarFile(ctx context.Context, dockerClient command.Command, image stri
 }
 
 func CreateAptTarFile(ctx context.Context, dockerClient command.Command, tmpDir string, aptTarFile string, packages ...string) (string, error) {
-	console.Debugf("=== DockerCommand.CreateAptTarFile %s %s", aptTarFile, packages)
+	console.Debugf("=== CreateAptTarFile %s %s", aptTarFile, packages)
 
 	// This uses a hardcoded monobase image to produce an apt tar file.
 	// The reason being that this apt tar file is created outside the docker file, and it is created by
@@ -119,7 +119,7 @@ func CreateAptTarFile(ctx context.Context, dockerClient command.Command, tmpDir 
 	opts := command.RunOptions{
 		Image: "r8.im/monobase:latest",
 		Args: []string{
-			"/opt/r8/monobase/apt.sh", "/buildtmp/" + aptTarFile,
+			"/opt/r8/monobase/apt.sh", path.Join("/buildtmp", aptTarFile),
 		},
 		Volumes: []command.Volume{
 			{
