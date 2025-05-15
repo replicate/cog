@@ -28,6 +28,13 @@ BASE_SCHEMA = """
       },
       "PredictionRequest": {
         "properties": {
+          "context": {
+            "title": "Context",
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
