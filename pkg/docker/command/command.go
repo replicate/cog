@@ -27,7 +27,6 @@ type Command interface {
 }
 
 type ImageBuildOptions struct {
-	// Platform           string
 	WorkingDir         string
 	DockerfileContents string
 	ImageName          string

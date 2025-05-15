@@ -158,5 +158,4 @@ func generateHtpasswd(username, password string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%s:%s", username, string(hash)), nil
-	// return fmt.Sprintf("%s:$2y$05$%s", username, base64.StdEncoding.EncodeToString([]byte(password)))
 }
