@@ -118,9 +118,13 @@ func CreateAptTarFile(ctx context.Context, dockerClient command.Command, tmpDir 
 
 	opts := command.RunOptions{
 		Image: "r8.im/monobase:latest",
-		Args: []string{
-			"/opt/r8/monobase/apt.sh", path.Join("/buildtmp", aptTarFile),
-		},
+		Args: append(
+			[]string{
+				"/opt/r8/monobase/apt.sh",
+				path.Join("/buildtmp", aptTarFile),
+			},
+			packages...,
+		),
 		Volumes: []command.Volume{
 			{
 				Source:      tmpDir,
