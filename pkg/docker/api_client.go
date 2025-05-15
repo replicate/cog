@@ -216,9 +216,9 @@ func (c *apiClient) Push(ctx context.Context, imageRef string) error {
 	return nil
 }
 
+// TODO[md]: this doesn't need to be on the interface, move to auth handler
 func (c *apiClient) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
 	console.Debugf("=== APIClient.LoadUserInformation %s", registryHost)
-	panic("not implemented")
 }
 
 func (c *apiClient) CreateTarFile(ctx context.Context, ref string, tmpDir string, tarFile string, folder string) (string, error) {
@@ -227,6 +227,7 @@ func (c *apiClient) CreateTarFile(ctx context.Context, ref string, tmpDir string
 
 func (c *apiClient) CreateAptTarFile(ctx context.Context, tmpDir string, aptTarFile string, packages ...string) (string, error) {
 	panic("not implemented")
+	return loadUserInformation(ctx, registryHost)
 }
 
 func (c *apiClient) Inspect(ctx context.Context, ref string) (*image.InspectResponse, error) {

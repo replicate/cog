@@ -91,77 +91,20 @@ func (c *DockerCommand) Push(ctx context.Context, image string) error {
 	return nil
 }
 
+// TODO[md]: this doesn't need to be on the interface, move to auth handler
 func (c *DockerCommand) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
 	console.Debugf("=== DockerCommand.LoadUserInformation %s", registryHost)
 
 	conf := config.LoadDefaultConfigFile(os.Stderr)
-	credsStore := conf.CredentialsStore
-	if credsStore == "" {
-		authConf, err := loadAuthFromConfig(conf, registryHost)
-		if err != nil {
-			return nil, err
-		}
-		return &command.UserInfo{
-			Token:    authConf.Password,
-			Username: authConf.Username,
-		}, nil
-	}
-	credsHelper, err := loadAuthFromCredentialsStore(ctx, credsStore, registryHost)
-	if err != nil {
-		return nil, err
-	}
-	return &command.UserInfo{
-		Token:    credsHelper.Secret,
-		Username: credsHelper.Username,
-	}, nil
-}
-
 func (c *DockerCommand) CreateTarFile(ctx context.Context, image string, tmpDir string, tarFile string, folder string) (string, error) {
 	console.Debugf("=== DockerCommand.CreateTarFile %s %s %s %s", image, tmpDir, tarFile, folder)
 
 	args := []string{
 		"run",
 		"--rm",
-		// force platform to linux/amd64 so darwin/arm64 outputs work in prod
-		"--platform", "linux/amd64",
-		"--volume",
-		tmpDir + ":/buildtmp",
-		image,
-		"/opt/r8/monobase/tar.sh",
-		"/buildtmp/" + tarFile,
-		"/",
-		folder,
-	}
-	if err := c.exec(ctx, nil, nil, nil, "", args); err != nil {
-		return "", err
-	}
-	return filepath.Join(tmpDir, tarFile), nil
-}
-
-func (c *DockerCommand) CreateAptTarFile(ctx context.Context, tmpDir string, aptTarFile string, packages ...string) (string, error) {
-	console.Debugf("=== DockerCommand.CreateAptTarFile %s %s", aptTarFile, packages)
-
-	// This uses a hardcoded monobase image to produce an apt tar file.
-	// The reason being that this apt tar file is created outside the docker file, and it is created by
-	// running the apt.sh script on the monobase with the packages we intend to install, which produces
-	// a tar file that can be untarred into a docker build to achieve the equivalent of an apt-get install.
-	args := []string{
-		"run",
-		"--rm",
-		// force platform to linux/amd64 so darwin/arm64 outputs work in prod
-		"--platform", "linux/amd64",
-		"--volume",
 		tmpDir + ":/buildtmp",
 		"r8.im/monobase:latest",
-		"/opt/r8/monobase/apt.sh",
-		"/buildtmp/" + aptTarFile,
-	}
-	args = append(args, packages...)
-	if err := c.exec(ctx, nil, nil, nil, "", args); err != nil {
-		return "", err
-	}
-
-	return aptTarFile, nil
+	return loadUserInformation(ctx, registryHost)
 }
 
 func (c *DockerCommand) Inspect(ctx context.Context, ref string) (*image.InspectResponse, error) {
@@ -526,51 +469,4 @@ func (c *DockerCommand) execCaptured(ctx context.Context, in io.Reader, dir stri
 		return "", err
 	}
 	return out.String(), nil
-}
-
-func loadAuthFromConfig(conf *configfile.ConfigFile, registryHost string) (types.AuthConfig, error) {
-	return conf.AuthConfigs[registryHost], nil
-}
-
-func loadAuthFromCredentialsStore(ctx context.Context, credsStore string, registryHost string) (*CredentialHelperInput, error) {
-	var out strings.Builder
-	binary := DockerCredentialBinary(credsStore)
-	cmd := exec.CommandContext(ctx, binary, "get")
-	cmd.Env = os.Environ()
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, err
-	}
-	defer stdin.Close()
-	console.Debug("$ " + strings.Join(cmd.Args, " "))
-	err = cmd.Start()
-	if err != nil {
-		return nil, err
-	}
-	_, err = io.WriteString(stdin, registryHost)
-	if err != nil {
-		return nil, err
-	}
-	err = stdin.Close()
-	if err != nil {
-		return nil, err
-	}
-	err = cmd.Wait()
-	if err != nil {
-		return nil, fmt.Errorf("exec wait error: %w", err)
-	}
-
-	var config CredentialHelperInput
-	err = json.Unmarshal([]byte(out.String()), &config)
-	if err != nil {
-		return nil, err
-	}
-
-	return &config, nil
-}
-
-func DockerCredentialBinary(credsStore string) string {
-	return "docker-credential-" + credsStore
 }
