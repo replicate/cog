@@ -10,8 +10,8 @@ class IncludeAnalyzer(ast.NodeVisitor):
     def __init__(self, file_path: Path) -> None:
         self.file_path = file_path
         self.includes: List[str] = []
-        self.errors: List[str] = []
         self.imports: dict[str, str] = {}
+        self.scope_stack: List[str] = []
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
@@ -25,17 +25,45 @@ class IncludeAnalyzer(ast.NodeVisitor):
             self.imports[alias.asname or alias.name] = full_name
         self.generic_visit(node)
 
+    # Scope tracking
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self.scope_stack.append("function")
+        self.generic_visit(node)
+        self.scope_stack.pop()
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self.scope_stack.append("function")
+        self.generic_visit(node)
+        self.scope_stack.pop()
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self.scope_stack.append("class")
+        self.generic_visit(node)
+        self.scope_stack.pop()
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        self.scope_stack.append("lambda")
+        self.generic_visit(node)
+        self.scope_stack.pop()
+
     def visit_Call(self, node: ast.Call) -> None:
         target = None
 
         if isinstance(node.func, ast.Attribute):
+            # Handles replicate.include
             if isinstance(node.func.value, ast.Name):
                 target = f"{self.imports.get(node.func.value.id, node.func.value.id)}.{node.func.attr}"
         elif isinstance(node.func, ast.Name):
+            # Handles `from replicate import include` then `include(...)`
             target = self.imports.get(node.func.id, node.func.id)
 
         if target == "cog.ext.pipelines.include":
-            if node.args:
+            # Check scope
+            if self.scope_stack:
+                raise ValueError(
+                    f"[{self.file_path}] Invalid scope at line {node.lineno}: `cog.ext.pipelines.include(...)` must be in global scope"
+                )
+            elif node.args:
                 arg = node.args[0]
                 if isinstance(arg, ast.Str):
                     self.includes.append(arg.s)
