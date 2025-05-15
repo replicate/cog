@@ -57,7 +57,10 @@ Otherwise, it will build the model in the current directory and train it.`,
 func cmdTrain(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	dockerCommand := docker.NewDockerCommand()
+	dockerClient, err := docker.NewClient(ctx)
+	if err != nil {
+		return err
+	}
 
 	imageName := ""
 	volumes := []command.Volume{}
@@ -75,7 +78,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 			buildFast = cfg.Build.Fast
 		}
 
-		if imageName, err = image.BuildBase(ctx, dockerCommand, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
+		if imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
 			return err
 		}
 
@@ -92,7 +95,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		// Use existing image
 		imageName = args[0]
 
-		inspectResp, err := dockerCommand.Pull(ctx, imageName, false)
+		inspectResp, err := dockerClient.Pull(ctx, imageName, false)
 		if err != nil {
 			return fmt.Errorf("Failed to pull image %q: %w", imageName, err)
 		}
@@ -118,7 +121,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		Volumes: volumes,
 		Env:     trainEnvFlags,
 		Args:    []string{"python", "-m", "cog.server.http", "--x-mode", "train"},
-	}, true, buildFast, dockerCommand)
+	}, true, buildFast, dockerClient)
 	if err != nil {
 		return err
 	}

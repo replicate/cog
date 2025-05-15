@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -84,11 +85,13 @@ func newBaseImageDockerfileCommand() *cobra.Command {
 		Use:   "dockerfile",
 		Short: "Display Cog base image Dockerfile",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			generator, err := baseImageGeneratorFromFlags()
+			ctx := cmd.Context()
+
+			generator, err := baseImageGeneratorFromFlags(ctx)
 			if err != nil {
 				return err
 			}
-			dockerfile, err := generator.GenerateDockerfile(cmd.Context())
+			dockerfile, err := generator.GenerateDockerfile(ctx)
 			if err != nil {
 				return err
 			}
@@ -111,9 +114,12 @@ func newBaseImageBuildCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			dockerClient := docker.NewDockerCommand()
+			dockerClient, err := docker.NewClient(ctx)
+			if err != nil {
+				return err
+			}
 
-			generator, err := baseImageGeneratorFromFlags()
+			generator, err := baseImageGeneratorFromFlags(ctx)
 			if err != nil {
 				return err
 			}
@@ -157,11 +163,16 @@ func addBaseImageFlags(cmd *cobra.Command) {
 	addBuildTimestampFlag(cmd)
 }
 
-func baseImageGeneratorFromFlags() (*dockerfile.BaseImageGenerator, error) {
+func baseImageGeneratorFromFlags(ctx context.Context) (*dockerfile.BaseImageGenerator, error) {
+	dockerClient, err := docker.NewClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return dockerfile.NewBaseImageGenerator(
 		baseImageCUDAVersion,
 		baseImagePythonVersion,
 		baseImageTorchVersion,
-		docker.NewDockerCommand(),
+		dockerClient,
 	)
 }

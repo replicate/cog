@@ -47,8 +47,12 @@ func newPushCommand() *cobra.Command {
 func push(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	command := docker.NewDockerCommand()
-	client, err := http.ProvideHTTPClient(ctx, command)
+	dockerClient, err := docker.NewClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	client, err := http.ProvideHTTPClient(ctx, dockerClient)
 	if err != nil {
 		return err
 	}
@@ -93,7 +97,7 @@ func push(cmd *cobra.Command, args []string) error {
 
 	startBuildTime := time.Now()
 
-	if err := image.Build(ctx, cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, annotations, buildLocalImage, command); err != nil {
+	if err := image.Build(ctx, cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, annotations, buildLocalImage, dockerClient); err != nil {
 		return err
 	}
 
@@ -104,7 +108,7 @@ func push(cmd *cobra.Command, args []string) error {
 		console.Info("Fast push enabled.")
 	}
 
-	err = docker.Push(ctx, imageName, buildFast, projectDir, command, docker.BuildInfo{
+	err = docker.Push(ctx, imageName, buildFast, projectDir, dockerClient, docker.BuildInfo{
 		BuildTime: buildDuration,
 		BuildID:   buildID.String(),
 	}, client)
