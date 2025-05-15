@@ -343,7 +343,12 @@ func runDockerClientTests(t *testing.T, dockerClient command.Command) {
 			// Try to push to the mock registry
 			err = dockerClient.Push(t.Context(), ref.String())
 			require.Error(t, err, "Push should fail with unreachable registry")
-			assert.ErrorContains(t, err, "connection refused", "Error should indicate registry is unreachable")
+
+			// error message varies between dev and CI host environments, cover them all...
+			assert.Condition(t, func() bool {
+				msg := err.Error()
+				return strings.Contains(msg, "connection refused") || strings.Contains(msg, "EOF")
+			}, "Error should indicate registry is unreachable")
 		})
 
 		t.Run("missing image", func(t *testing.T) {
