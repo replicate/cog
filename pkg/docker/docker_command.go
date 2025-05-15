@@ -9,14 +9,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/creack/pty"
-	"github.com/docker/cli/cli/config"
-	"github.com/docker/cli/cli/config/configfile"
-	"github.com/docker/cli/cli/config/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/mattn/go-isatty"
@@ -95,15 +91,6 @@ func (c *DockerCommand) Push(ctx context.Context, image string) error {
 func (c *DockerCommand) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
 	console.Debugf("=== DockerCommand.LoadUserInformation %s", registryHost)
 
-	conf := config.LoadDefaultConfigFile(os.Stderr)
-func (c *DockerCommand) CreateTarFile(ctx context.Context, image string, tmpDir string, tarFile string, folder string) (string, error) {
-	console.Debugf("=== DockerCommand.CreateTarFile %s %s %s %s", image, tmpDir, tarFile, folder)
-
-	args := []string{
-		"run",
-		"--rm",
-		tmpDir + ":/buildtmp",
-		"r8.im/monobase:latest",
 	return loadUserInformation(ctx, registryHost)
 }
 
