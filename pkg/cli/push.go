@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -16,7 +15,6 @@ import (
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/image"
-	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -78,23 +76,10 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	replicatePrefix := fmt.Sprintf("%s/", global.ReplicateRegistryHost)
-	if strings.HasPrefix(imageName, replicatePrefix) {
-		if !buildFast {
-			if _, err := registry.NewClient().Inspect(ctx, imageName, nil); err != nil {
-				if errors.Is(err, registry.NotFoundError) {
-					// TODO[md]: can we create a new model on the fly?
-					err = fmt.Errorf("Unable to find Replicate existing model for %s. Go to replicate.com and create a new model before pushing.", imageName)
-					logClient.EndPush(ctx, err, logCtx)
-					return err
-				}
-			}
-		}
-	} else {
-		if buildLocalImage {
-			err = fmt.Errorf("Unable to push a local image model to a non replicate host, please disable the local image flag before pushing to this host.")
-			logClient.EndPush(ctx, err, logCtx)
-			return err
-		}
+	if !strings.HasPrefix(imageName, replicatePrefix) && buildLocalImage {
+		err = fmt.Errorf("Unable to push a local image model to a non replicate host, please disable the local image flag before pushing to this host.")
+		logClient.EndPush(ctx, err, logCtx)
+		return err
 	}
 
 	annotations := map[string]string{}
