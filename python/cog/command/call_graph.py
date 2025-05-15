@@ -13,19 +13,19 @@ class IncludeAnalyzer(ast.NodeVisitor):
         self.errors: List[str] = []
         self.imports: dict[str, str] = {}
 
-    def visit_Import(self, node: ast.Import):
+    def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
             self.imports[alias.asname or alias.name] = alias.name
         self.generic_visit(node)
 
-    def visit_ImportFrom(self, node: ast.ImportFrom):
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = node.module or ""
         for alias in node.names:
             full_name = f"{module}.{alias.name}" if module else alias.name
             self.imports[alias.asname or alias.name] = full_name
         self.generic_visit(node)
 
-    def visit_Call(self, node: ast.Call):
+    def visit_Call(self, node: ast.Call) -> None:
         target = None
 
         if isinstance(node.func, ast.Attribute):
