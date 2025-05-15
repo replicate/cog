@@ -13,8 +13,7 @@ func NewClient(ctx context.Context, opts ...Option) (command.Command, error) {
 	enabled, _ := strconv.ParseBool(os.Getenv("COG_DOCKER_SDK_CLIENT"))
 	if enabled {
 		console.Debugf("Docker client: sdk")
-		panic("not implemented yet")
-		// return NewAPIClient(ctx, opts...)
+		panic("not implemented in this branch :sad-panda:")
 	}
 
 	console.Debugf("Docker client: cli")
