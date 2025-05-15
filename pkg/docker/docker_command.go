@@ -244,7 +244,7 @@ func (c *DockerCommand) ContainerStop(ctx context.Context, containerID string) e
 	args := []string{
 		"container",
 		"stop",
-		"--timeout", "3",
+		"-t", "3",
 		containerID,
 	}
 
