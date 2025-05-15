@@ -29,14 +29,19 @@ type Command interface {
 type ImageBuildOptions struct {
 	WorkingDir         string
 	DockerfileContents string
-	ImageName          string
-	Secrets            []string
-	NoCache            bool
-	ProgressOutput     string
-	Epoch              *int64
-	ContextDir         string
-	BuildContexts      map[string]string
-	Labels             map[string]string
+	// TODO[md]: ImageName should be renamed to Tag
+	ImageName      string
+	Secrets        []string
+	NoCache        bool
+	ProgressOutput string
+	Epoch          *int64
+	ContextDir     string
+	BuildContexts  map[string]string
+	Labels         map[string]string
+
+	// only supported on buildkit client, not cli client
+	BuildSecrets map[string]string
+	BuildArgs    map[string]*string
 }
 
 type RunOptions struct {

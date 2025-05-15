@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 
 	"github.com/docker/docker/api/types/container"
@@ -15,6 +16,9 @@ import (
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/google/go-containerregistry/pkg/name"
+	buildkitclient "github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/exporter/containerimage/exptypes"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/replicate/go/types/ptr"
 
@@ -255,7 +259,55 @@ func (c *apiClient) ImageExists(ctx context.Context, ref string) (bool, error) {
 }
 
 func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOptions) error {
-	panic("not implemented")
+	buildDir, err := os.MkdirTemp("", "cog-build")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(buildDir)
+
+	bc, err := buildkitclient.New(ctx, "",
+		// Connect to Docker Engine's embedded Buildkit.
+		buildkitclient.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return c.client.DialHijack(ctx, "/grpc", "h2c", map[string][]string{})
+		}),
+	)
+	if err != nil {
+		return err
+	}
+
+	statusCh := make(chan *buildkitclient.SolveStatus)
+	var res *buildkitclient.SolveResponse
+
+	// Build the image.
+	eg, ctx := errgroup.WithContext(ctx)
+
+	// run the display in a goroutine
+	eg.Go(newDisplay(statusCh))
+
+	// run the build in a goroutine
+	eg.Go(func() error {
+		options, err := solveOptFromImageOptions(buildDir, options)
+		if err != nil {
+			return err
+		}
+
+		res, err = bc.Solve(ctx, nil, options, statusCh)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	err = eg.Wait()
+
+	if err != nil {
+		return err
+	}
+
+	console.Debugf("image digest %s", res.ExporterResponse[exptypes.ExporterImageDigestKey])
+
+	// TODO[md]: return the image id on success
+	// return res.ExporterResponse[exptypes.ExporterImageDigestKey], nil
+	return nil
 }
 
 func (c *apiClient) Run(ctx context.Context, options command.RunOptions) error {
@@ -263,9 +315,5 @@ func (c *apiClient) Run(ctx context.Context, options command.RunOptions) error {
 }
 
 func (c *apiClient) ContainerStart(ctx context.Context, options command.RunOptions) (string, error) {
-	panic("not implemented")
-}
-
-func (c *apiClient) ContainerRemove(ctx context.Context, containerID string) error {
 	panic("not implemented")
 }
