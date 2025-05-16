@@ -9,14 +9,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/creack/pty"
-	"github.com/docker/cli/cli/config"
-	"github.com/docker/cli/cli/config/configfile"
-	"github.com/docker/cli/cli/config/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/mattn/go-isatty"
@@ -84,54 +80,6 @@ func (c *DockerCommand) Push(ctx context.Context, image string) error {
 func (c *DockerCommand) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
 	console.Debugf("=== DockerCommand.LoadUserInformation %s", registryHost)
 
-}
-
-func (c *DockerCommand) CreateTarFile(ctx context.Context, image string, tmpDir string, tarFile string, folder string) (string, error) {
-	console.Debugf("=== DockerCommand.CreateTarFile %s %s %s %s", image, tmpDir, tarFile, folder)
-
-	args := []string{
-		"run",
-		"--rm",
-		// force platform to linux/amd64 so darwin/arm64 outputs work in prod
-		"--platform", "linux/amd64",
-		"--volume",
-		tmpDir + ":/buildtmp",
-		image,
-		"/opt/r8/monobase/tar.sh",
-		"/buildtmp/" + tarFile,
-		"/",
-		folder,
-	}
-	if err := c.exec(ctx, nil, nil, nil, "", args); err != nil {
-		return "", err
-	}
-	return filepath.Join(tmpDir, tarFile), nil
-}
-
-func (c *DockerCommand) CreateAptTarFile(ctx context.Context, tmpDir string, aptTarFile string, packages ...string) (string, error) {
-	console.Debugf("=== DockerCommand.CreateAptTarFile %s %s", aptTarFile, packages)
-
-	// This uses a hardcoded monobase image to produce an apt tar file.
-	// The reason being that this apt tar file is created outside the docker file, and it is created by
-	// running the apt.sh script on the monobase with the packages we intend to install, which produces
-	// a tar file that can be untarred into a docker build to achieve the equivalent of an apt-get install.
-	args := []string{
-		"run",
-		"--rm",
-		// force platform to linux/amd64 so darwin/arm64 outputs work in prod
-		"--platform", "linux/amd64",
-		"--volume",
-		tmpDir + ":/buildtmp",
-		"r8.im/monobase:latest",
-		"/opt/r8/monobase/apt.sh",
-		"/buildtmp/" + aptTarFile,
-	}
-	args = append(args, packages...)
-	if err := c.exec(ctx, nil, nil, nil, "", args); err != nil {
-		return "", err
-	}
-
-	return aptTarFile, nil
 	return loadUserInformation(ctx, registryHost)
 }
 
