@@ -17,7 +17,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	cogconfig "github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 func prepareDockerfileDir(buildDir string, dockerfileContents string) (string, error) {
@@ -34,6 +36,10 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 	if err != nil {
 		return buildkitclient.SolveOpt{}, err
 	}
+
+	fmt.Printf("workingdir %q\ncontextdir %q\n", opts.WorkingDir, opts.ContextDir)
+
+	// Secrets        []string
 
 	// first, configure the frontend, in this case, dockerfile.v0
 	frontendAttrs := map[string]string{
@@ -64,19 +70,45 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 		frontendAttrs["build-arg:"+k] = *v
 	}
 
+	// Add SOURCE_DATE_EPOCH if Epoch is set
+	if opts.Epoch != nil && *opts.Epoch >= 0 {
+		frontendAttrs["build-arg:SOURCE_DATE_EPOCH"] = fmt.Sprintf("%d", *opts.Epoch)
+	}
+
+	localDirs := map[string]string{
+		"dockerfile": filepath.Dir(dockerfilePath),
+		"context":    opts.ContextDir,
+	}
+
+	// Add user-supplied build contexts, but don't overwrite 'dockerfile' or 'context'
+	for name, dir := range opts.BuildContexts {
+		if name == "dockerfile" || name == "context" {
+			console.Warnf("build context name collision: %q", name)
+			continue
+		}
+		localDirs[name] = dir
+	}
+
+	// Set exporter attributes
+	exporterAttrs := map[string]string{
+		"name": opts.ImageName,
+	}
+
+	// if SOURCE_DATE_EPOCH is present in the build args, tell the frontend to rewrite timestamps
+	if _, ok := frontendAttrs["build-arg:SOURCE_DATE_EPOCH"]; ok {
+		exporterAttrs["rewrite-timestamp"] = "true"
+	}
+
 	solveOpts := buildkitclient.SolveOpt{
 		Frontend:      "dockerfile.v0",
 		FrontendAttrs: frontendAttrs,
-		LocalDirs: map[string]string{
-			"dockerfile": filepath.Dir(dockerfilePath),
-			"context":    opts.WorkingDir,
-		},
+		LocalDirs:     localDirs,
 		// Docker Engine's worker only supports three exporters.
 		// "moby" exporter works best for cog, since we want to keep images in
 		// Docker Engine's image store. The others are exporting images to somewhere else.
 		// https://github.com/moby/moby/blob/v20.10.24/builder/builder-next/worker/worker.go#L221
 		Exports: []buildkitclient.ExportEntry{
-			{Type: "moby", Attrs: map[string]string{"name": opts.ImageName}},
+			{Type: "moby", Attrs: exporterAttrs},
 		},
 	}
 
@@ -99,14 +131,29 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 		)
 	}
 
+	// Set cache imports/exports to match DockerCommand logic
+	// If cogconfig.BuildXCachePath is set, use local cache; otherwise, use inline
+	if cogconfig.BuildXCachePath != "" {
+		solveOpts.CacheImports = []buildkitclient.CacheOptionsEntry{
+			{Type: "local", Attrs: map[string]string{"src": cogconfig.BuildXCachePath}},
+		}
+		solveOpts.CacheExports = []buildkitclient.CacheOptionsEntry{
+			{Type: "local", Attrs: map[string]string{"dest": cogconfig.BuildXCachePath}},
+		}
+	} else {
+		solveOpts.CacheExports = []buildkitclient.CacheOptionsEntry{
+			{Type: "inline"},
+		}
+	}
+
 	return solveOpts, nil
 }
 
-func newDisplay(statusCh chan *buildkitclient.SolveStatus) func() error {
+func newDisplay(statusCh chan *buildkitclient.SolveStatus, displayMode string) func() error {
 	return func() error {
 		display, err := progressui.NewDisplay(
 			os.Stderr,
-			progressui.DisplayMode(os.Getenv("BUILDKIT_PROGRESS")),
+			progressui.DisplayMode(displayMode),
 			// progressui.WithPhase("BUILDINGGGGG"),
 			// progressui.WithDesc("SOMETEXT", "SOMECONSOLE"),
 		)
@@ -121,7 +168,6 @@ func newDisplay(statusCh chan *buildkitclient.SolveStatus) func() error {
 		// See https://github.com/superfly/flyctl/pull/2682 for the context.
 		_, err = display.UpdateFrom(context.Background(), statusCh)
 		return err
-
 	}
 }
 

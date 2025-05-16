@@ -287,11 +287,20 @@ func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOp
 	statusCh := make(chan *buildkitclient.SolveStatus)
 	var res *buildkitclient.SolveResponse
 
+	// Determine display mode: options.ProgressOutput > env > 'auto'
+	displayMode := options.ProgressOutput
+	if displayMode == "" {
+		displayMode = os.Getenv("BUILDKIT_PROGRESS")
+	}
+	if displayMode == "" {
+		displayMode = "auto"
+	}
+
 	// Build the image.
 	eg, ctx := errgroup.WithContext(ctx)
 
 	// run the display in a goroutine
-	eg.Go(newDisplay(statusCh))
+	eg.Go(newDisplay(statusCh, displayMode))
 
 	// run the build in a goroutine
 	eg.Go(func() error {
@@ -494,9 +503,7 @@ func (c *apiClient) ContainerStart(ctx context.Context, options command.RunOptio
 	console.Debugf("=== APIClient.ContainerStart %s", options.Image)
 
 	options.Detach = true
-	fmt.Println("container run")
 	id, err := c.containerRun(ctx, options)
-	fmt.Println("container run AFTER", id, err)
 	return id, err
 }
 
