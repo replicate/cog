@@ -73,7 +73,18 @@ func (c *DockerCommand) Pull(ctx context.Context, image string, force bool) (*im
 func (c *DockerCommand) Push(ctx context.Context, image string) error {
 	console.Debugf("=== DockerCommand.Push %s", image)
 
-	return c.exec(ctx, nil, nil, nil, "", []string{"push", image})
+	err := c.exec(ctx, nil, nil, nil, "", []string{"push", image})
+	if err != nil {
+		if isTagNotFoundError(err) {
+			return &command.NotFoundError{Ref: image, Object: "tag"}
+		}
+		if isAuthorizationFailedError(err) {
+			return command.ErrAuthorizationFailed
+		}
+		return err
+	}
+
+	return nil
 }
 
 // TODO[md]: this doesn't need to be on the interface, move to auth handler
@@ -92,7 +103,7 @@ func (c *DockerCommand) Inspect(ctx context.Context, ref string) (*image.Inspect
 	}
 	output, err := c.execCaptured(ctx, nil, "", args)
 	if err != nil {
-		if strings.Contains(err.Error(), "No such image") {
+		if isImageNotFoundError(err) {
 			return nil, &command.NotFoundError{Object: "image", Ref: ref}
 		}
 		return nil, err
@@ -137,7 +148,14 @@ func (c *DockerCommand) ContainerLogs(ctx context.Context, containerID string, w
 		"--follow",
 	}
 
-	return c.exec(ctx, nil, w, nil, "", args)
+	err := c.exec(ctx, nil, w, nil, "", args)
+	if err != nil {
+		if isContainerNotFoundError(err) {
+			return &command.NotFoundError{Ref: containerID, Object: "container"}
+		}
+		return err
+	}
+	return err
 }
 
 func (c *DockerCommand) ContainerInspect(ctx context.Context, id string) (*container.InspectResponse, error) {
@@ -151,7 +169,7 @@ func (c *DockerCommand) ContainerInspect(ctx context.Context, id string) (*conta
 
 	output, err := c.execCaptured(ctx, nil, "", args)
 	if err != nil {
-		if strings.Contains(err.Error(), "No such container") {
+		if isContainerNotFoundError(err) {
 			return nil, &command.NotFoundError{Object: "container", Ref: id}
 		}
 		return nil, err
@@ -179,7 +197,7 @@ func (c *DockerCommand) ContainerStop(ctx context.Context, containerID string) e
 	}
 
 	if err := c.exec(ctx, nil, io.Discard, nil, "", args); err != nil {
-		if strings.Contains(err.Error(), "No such container") {
+		if isContainerNotFoundError(err) {
 			err = &command.NotFoundError{Object: "container", Ref: containerID}
 		}
 		return fmt.Errorf("failed to stop container %q: %w", containerID, err)
@@ -347,7 +365,7 @@ func (c *DockerCommand) containerRun(ctx context.Context, options command.RunOpt
 
 	err := c.exec(ctx, options.Stdin, options.Stdout, options.Stderr, "", args)
 	if err != nil {
-		if strings.Contains(err.Error(), "could not select device driver") || strings.Contains(err.Error(), "nvidia-container-cli: initialization error") {
+		if isMissingDeviceDriverError(err) {
 			return ErrMissingDeviceDriver
 		}
 		return err
@@ -419,6 +437,12 @@ func (c *DockerCommand) exec(ctx context.Context, in io.Reader, outw, errw io.Wr
 	if err := cmd.Run(); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return err
+		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			if !exitErr.Exited() && strings.Contains(exitErr.Error(), "signal: killed") {
+				return context.DeadlineExceeded
+			}
 		}
 		return fmt.Errorf("command failed: %s: %w", stderrBuf.String(), err)
 	}
