@@ -37,10 +37,6 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 		return buildkitclient.SolveOpt{}, err
 	}
 
-	fmt.Printf("workingdir %q\ncontextdir %q\n", opts.WorkingDir, opts.ContextDir)
-
-	// Secrets        []string
-
 	// first, configure the frontend, in this case, dockerfile.v0
 	frontendAttrs := map[string]string{
 		// filename is the path to the Dockerfile within the "dockerfile" LocalDir context

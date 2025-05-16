@@ -85,8 +85,6 @@ func loadRegistryAuths(ctx context.Context, registryHosts ...string) (map[string
 		}
 
 		console.Debugf("=== loadRegistryAuths %s: no auth config found", host)
-
-		// TODO[md]: should we error here!? probably not...
 	}
 
 	return out, nil

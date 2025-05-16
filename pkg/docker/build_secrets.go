@@ -19,18 +19,10 @@ func ParseSecretsFromHost(workingDir string, secrets []string) (secrets.SecretSt
 		if err != nil {
 			return nil, err
 		}
-		fmt.Println("src", src)
 		sources = append(sources, *src)
 	}
 
-	fmt.Println("sources", sources)
-	store, err := secretsprovider.NewStore(sources)
-	if err != nil {
-		return nil, err
-	}
-	fmt.Println("store", store)
-
-	return store, nil
+	return secretsprovider.NewStore(sources)
 }
 
 func parseSecretFromHost(workingDir, secret string) (*secretsprovider.Source, error) {
