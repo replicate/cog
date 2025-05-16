@@ -128,7 +128,7 @@ jobs:
       fail-fast: false
       matrix:
         new_docker_api_client: [true, false]
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:

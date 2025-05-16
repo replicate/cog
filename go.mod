@@ -35,7 +35,7 @@ require (
 	github.com/xeonx/timeago v1.0.0-rc5
 	golang.org/x/crypto v0.37.0
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0
-	golang.org/x/sync v0.13.0
+	golang.org/x/sync v0.14.0
 	golang.org/x/sys v0.33.0
 	golang.org/x/term v0.31.0
 	google.golang.org/grpc v1.71.0
