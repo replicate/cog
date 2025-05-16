@@ -10,8 +10,10 @@ import (
 	"github.com/replicate/cog/pkg/util/files"
 )
 
+const DockerIgnoreFilename = ".dockerignore"
+
 func CreateMatcher(dir string) (*ignore.GitIgnore, error) {
-	dockerIgnorePath := filepath.Join(dir, ".dockerignore")
+	dockerIgnorePath := filepath.Join(dir, DockerIgnoreFilename)
 	dockerIgnoreExists, err := files.Exists(dockerIgnorePath)
 	if err != nil {
 		return nil, err
@@ -25,6 +27,32 @@ func CreateMatcher(dir string) (*ignore.GitIgnore, error) {
 		return nil, err
 	}
 	return ignore.CompileIgnoreLines(patterns...), nil
+}
+
+func Walk(root string, ignoreMatcher *ignore.GitIgnore, fn filepath.WalkFunc) error {
+	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// We ignore files ignored by .dockerignore
+		if ignoreMatcher != nil && ignoreMatcher.MatchesPath(path) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if info.IsDir() && info.Name() == ".cog" {
+			return filepath.SkipDir
+		}
+
+		if info.Name() == DockerIgnoreFilename {
+			return nil
+		}
+
+		return fn(path, info, err)
+	})
 }
 
 func readDockerIgnore(dockerIgnorePath string) ([]string, error) {
