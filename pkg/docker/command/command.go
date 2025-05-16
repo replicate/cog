@@ -40,7 +40,6 @@ type ImageBuildOptions struct {
 	Labels         map[string]string
 
 	// only supported on buildkit client, not cli client
-	BuildSecrets map[string]string
 	BuildArgs    map[string]*string
 }
 

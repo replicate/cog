@@ -119,16 +119,13 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 	)
 
 	// add secrets to the session
-	if len(opts.BuildSecrets) > 0 {
-		secrets := make(map[string][]byte)
-		for k, v := range opts.BuildSecrets {
-			secrets[k] = []byte(v)
+	if len(opts.Secrets) > 0 {
+		// TODO[md]: support secrets direct from input in addition to env+file
+		store, err := ParseSecretsFromHost(opts.WorkingDir, opts.Secrets)
+		if err != nil {
+			return buildkitclient.SolveOpt{}, fmt.Errorf("failed to parse secrets: %w", err)
 		}
-
-		solveOpts.Session = append(
-			solveOpts.Session,
-			secretsprovider.FromMap(secrets),
-		)
+		solveOpts.Session = append(solveOpts.Session, secretsprovider.NewSecretProvider(store))
 	}
 
 	// Set cache imports/exports to match DockerCommand logic
