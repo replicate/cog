@@ -3,7 +3,6 @@ package docker
 import (
 	"bytes"
 	"net"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -18,7 +17,6 @@ import (
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/registry_testhelpers"
-	"github.com/replicate/cog/pkg/util"
 )
 
 func TestDockerClient(t *testing.T) {
@@ -319,10 +317,7 @@ func runDockerClientTests(t *testing.T, dockerClient command.Command) {
 			t.Parallel()
 
 			// start a local tcp server that immediately closes connections
-			port, err := util.PickFreePort(2000, 9999)
-			require.NoError(t, err, "Failed to pick free tcp port")
-			addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
-			listener, err := net.Listen("tcp", addr)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
 			require.NoError(t, err)
 			defer listener.Close()
 
@@ -337,7 +332,7 @@ func runDockerClientTests(t *testing.T, dockerClient command.Command) {
 			}()
 
 			// Create a reference to the mock registry
-			ref := dockertest.NewRef(t).WithRegistry(addr)
+			ref := dockertest.NewRef(t).WithRegistry(listener.Addr().String())
 			dockerHelper.ImageFixture(t, "alpine", ref.String())
 
 			// Try to push to the mock registry
