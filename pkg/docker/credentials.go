@@ -92,20 +92,6 @@ func loadRegistryAuths(ctx context.Context, registryHosts ...string) (map[string
 	return out, nil
 }
 
-// func loadRegistryAuths(conf *configfile.ConfigFile, registryHosts ...string) (map[string]types.AuthConfig, error) {
-// 	out := make(map[string]types.AuthConfig)
-// 	for _, host := range registryHosts {
-// 		auth, ok := conf.AuthConfigs[host]
-// 		if !ok {
-// 			// TODO[md]: should we return an error here or just carry on?
-// 			return nil, fmt.Errorf("no auth config found for registry host %s", host)
-// 		}
-// 		out[host] = auth
-// 	}
-
-// 	return out, nil
-// }
-
 func loadAuthFromCredentialsStore(ctx context.Context, credsStore string, registryHost string) (*CredentialHelperInput, error) {
 	var out strings.Builder
 	binary := dockerCredentialBinary(credsStore)

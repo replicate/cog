@@ -331,7 +331,7 @@ func runDockerClientTests(t *testing.T, dockerClient command.Command) {
 				}
 			}()
 
-			// Create a reference to the mock registry
+      // Create a reference to the mock registry
 			ref := dockertest.NewRef(t).WithRegistry(listener.Addr().String())
 			dockerHelper.ImageFixture(t, "alpine", ref.String())
 
@@ -371,7 +371,7 @@ func runDockerClientTests(t *testing.T, dockerClient command.Command) {
 				dockerHelper.ImageFixture(t, "alpine", ref.String())
 
 				// create a new client with the correct auth config
-				authClient, err := NewAPIClient(t.Context(), WithAuthConfig(registry.AuthConfig{
+				authClient, err := NewClient(t.Context(), WithAuthConfig(registry.AuthConfig{
 					Username:      "testuser",
 					Password:      "testpass",
 					ServerAddress: authReg.RegistryHost(),
@@ -400,7 +400,7 @@ func runDockerClientTests(t *testing.T, dockerClient command.Command) {
 				ref := dockertest.NewRef(t).WithRegistry(authReg.RegistryHost())
 				dockerHelper.ImageFixture(t, "alpine", ref.String())
 
-				authClient, err := NewAPIClient(t.Context(), WithAuthConfig(registry.AuthConfig{
+				authClient, err := NewClient(t.Context(), WithAuthConfig(registry.AuthConfig{
 					Username:      "testuser",
 					Password:      "wrongpass",
 					ServerAddress: authReg.RegistryHost(),
