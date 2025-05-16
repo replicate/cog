@@ -32,3 +32,17 @@ def test_train_pydantic2(tmpdir_factory, cog_binary):
         capture_output=True,
     )
     assert result.returncode == 0
+
+
+def test_training_setup_project(tmpdir_factory, cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/training-setup-project"
+    out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
+    shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
+    result = subprocess.run(
+        [cog_binary, "train", "--debug", "-i", "s=world"],
+        cwd=out_dir,
+        check=False,
+        capture_output=True,
+    )
+    assert result.returncode == 0
+    assert result.stdout == "Trainer is setting up.\n"
