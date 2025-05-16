@@ -331,7 +331,7 @@ func runDockerClientTests(t *testing.T, dockerClient command.Command) {
 				}
 			}()
 
-      // Create a reference to the mock registry
+			// Create a reference to the mock registry
 			ref := dockertest.NewRef(t).WithRegistry(listener.Addr().String())
 			dockerHelper.ImageFixture(t, "alpine", ref.String())
 
