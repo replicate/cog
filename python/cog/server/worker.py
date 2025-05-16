@@ -33,6 +33,7 @@ from ..json import make_encodeable
 from ..predictor import (
     extract_setup_weights,
     get_predict,
+    get_train,
     has_setup_weights,
     load_predictor_from_ref,
 )
@@ -399,6 +400,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         predictor_ref: str,
         *,
         is_async: bool,
+        is_train: bool,
         events: Connection,
         max_concurrency: int = 1,
         tee_output: bool = True,
@@ -415,6 +417,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         # for synchronous predictors only! async predictors use current_scope()._tag instead
         self._sync_tag: Optional[str] = None
         self._has_async_predictor = is_async
+        self._is_train = is_train
 
         super().__init__()
 
@@ -451,7 +454,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             if not self._validate_predictor(redirector):
                 return
 
-            predict = get_predict(self._predictor)
+            predict = (
+                get_predict(self._predictor)
+                if not self._is_train
+                else get_train(self._predictor)
+            )
 
             if self._has_async_predictor:
                 assert isinstance(redirector, SimpleStreamRedirector)
@@ -853,6 +860,7 @@ def make_worker(
     predictor_ref: str,
     *,
     is_async: bool,
+    is_train: bool,
     tee_output: bool = True,
     max_concurrency: int = 1,
 ) -> Worker:
@@ -860,6 +868,7 @@ def make_worker(
     child = _ChildWorker(
         predictor_ref,
         is_async=is_async,
+        is_train=is_train,
         events=child_conn,
         tee_output=tee_output,
         max_concurrency=max_concurrency,

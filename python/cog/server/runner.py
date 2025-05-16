@@ -87,6 +87,7 @@ class PredictionRunner:
     def predict(
         self,
         prediction: schema.PredictionRequest,
+        is_train: bool,
         task_kwargs: Optional[Dict[str, Any]] = None,
     ) -> "PredictTask":
         self._raise_if_busy()
@@ -97,7 +98,7 @@ class PredictionRunner:
         if tag is None:
             tag = uuid.uuid4().hex
 
-        task = PredictTask(prediction, **task_kwargs)
+        task = PredictTask(prediction, is_train, **task_kwargs)
 
         with self._predict_tasks_lock:
             self._predict_tasks[tag] = task
@@ -281,11 +282,13 @@ class PredictTask(Task[schema.PredictionResponse]):
     def __init__(
         self,
         prediction_request: schema.PredictionRequest,
+        is_train: bool,
         upload_url: Optional[str] = None,
     ) -> None:
+        self._is_train = is_train
         self._log = log.bind(prediction_id=prediction_request.id)
 
-        self._log.info("starting prediction")
+        self._log.info("starting " + ("prediction" if not is_train else "train"))
 
         self._fut: "Optional[Future[Done]]" = None
 
@@ -324,7 +327,7 @@ class PredictTask(Task[schema.PredictionResponse]):
         return self._p
 
     def track(self, fut: "Future[Done]") -> None:
-        self._log.info("started prediction")
+        self._log.info("started " + ("prediction" if not self._is_train else "train"))
 
         # HACK: don't send an initial webhook if we're trying to optimize for
         # latency (this guarantees that the first output webhook won't be
@@ -393,7 +396,7 @@ class PredictTask(Task[schema.PredictionResponse]):
         self._p.metrics[key] = value
 
     def succeeded(self) -> None:
-        self._log.info("prediction succeeded")
+        self._log.info(("prediction" if not self._is_train else "train") + " succeeded")
         self._p.status = schema.Status.SUCCEEDED
         self._set_completed_at()
         # These have been set already: this is to convince the typechecker of

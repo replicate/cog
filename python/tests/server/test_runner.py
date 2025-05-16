@@ -155,7 +155,7 @@ def test_prediction_runner_predict_success():
     r.setup()
     w.run_setup([Done()])
 
-    task = r.predict(PredictionRequest(input={"text": "giraffes"}))
+    task = r.predict(PredictionRequest(input={"text": "giraffes"}), is_train=False)
     assert w.last_prediction_payload == {"text": "giraffes"}
     assert task.result.input == {"text": "giraffes"}
     assert task.result.status == Status.PROCESSING
@@ -174,7 +174,7 @@ def test_prediction_runner_predict_failure():
     r.setup()
     w.run_setup([Done()])
 
-    task = r.predict(PredictionRequest(input={"text": "giraffes"}))
+    task = r.predict(PredictionRequest(input={"text": "giraffes"}), is_train=False)
     assert w.last_prediction_payload == {"text": "giraffes"}
     assert task.result.input == {"text": "giraffes"}
     assert task.result.status == Status.PROCESSING
@@ -191,7 +191,7 @@ def test_prediction_runner_predict_exception():
     r.setup()
     w.run_setup([Done()])
 
-    task = r.predict(PredictionRequest(input={"text": "giraffes"}))
+    task = r.predict(PredictionRequest(input={"text": "giraffes"}), is_train=False)
     assert w.last_prediction_payload == {"text": "giraffes"}
     assert task.result.input == {"text": "giraffes"}
     assert task.result.status == Status.PROCESSING
@@ -216,7 +216,7 @@ def test_prediction_runner_predict_before_setup():
     r = PredictionRunner(worker=w)
 
     with pytest.raises(RunnerBusyError):
-        r.predict(PredictionRequest(input={"text": "giraffes"}))
+        r.predict(PredictionRequest(input={"text": "giraffes"}), is_train=False)
 
 
 def test_prediction_runner_predict_before_setup_completes():
@@ -226,7 +226,7 @@ def test_prediction_runner_predict_before_setup_completes():
     r.setup()
 
     with pytest.raises(RunnerBusyError):
-        r.predict(PredictionRequest(input={"text": "giraffes"}))
+        r.predict(PredictionRequest(input={"text": "giraffes"}), is_train=False)
 
 
 def test_prediction_runner_predict_before_predict_completes():
@@ -236,10 +236,10 @@ def test_prediction_runner_predict_before_predict_completes():
     r.setup()
     w.run_setup([Done()])
 
-    r.predict(PredictionRequest(input={"text": "giraffes"}))
+    r.predict(PredictionRequest(input={"text": "giraffes"}), is_train=False)
 
     with pytest.raises(RunnerBusyError):
-        r.predict(PredictionRequest(input={"text": "giraffes"}))
+        r.predict(PredictionRequest(input={"text": "giraffes"}), is_train=False)
 
 
 def test_prediction_runner_predict_after_predict_completes():
@@ -249,10 +249,10 @@ def test_prediction_runner_predict_after_predict_completes():
     r.setup()
     w.run_setup([Done()])
 
-    r.predict(PredictionRequest(id="p-1", input={"text": "giraffes"}))
+    r.predict(PredictionRequest(id="p-1", input={"text": "giraffes"}), is_train=False)
     w.run_predict([Done()], id="p-1")
 
-    r.predict(PredictionRequest(id="p-2", input={"text": "elephants"}))
+    r.predict(PredictionRequest(id="p-2", input={"text": "elephants"}), is_train=False)
     w.run_predict([Done()], id="p-2")
 
     assert w.last_prediction_payload == {"text": "elephants"}
@@ -270,7 +270,7 @@ def test_prediction_runner_is_busy():
     w.run_setup([Done()])
     assert not r.is_busy()
 
-    r.predict(PredictionRequest(input={"text": "elephants"}))
+    r.predict(PredictionRequest(input={"text": "elephants"}), is_train=False)
     assert r.is_busy()
 
     w.run_predict([Done()])
@@ -289,13 +289,13 @@ def test_prediction_runner_is_busy_concurrency():
     w.run_setup([Done()])
     assert not r.is_busy()
 
-    r.predict(PredictionRequest(id="1", input={"text": "elephants"}))
+    r.predict(PredictionRequest(id="1", input={"text": "elephants"}), is_train=False)
     assert not r.is_busy()
 
-    r.predict(PredictionRequest(id="2", input={"text": "elephants"}))
+    r.predict(PredictionRequest(id="2", input={"text": "elephants"}), is_train=False)
     assert not r.is_busy()
 
-    r.predict(PredictionRequest(id="3", input={"text": "elephants"}))
+    r.predict(PredictionRequest(id="3", input={"text": "elephants"}), is_train=False)
     assert r.is_busy()
 
     w.run_predict([Done()], id="1")
@@ -309,7 +309,9 @@ def test_prediction_runner_predict_cancelation():
     r.setup()
     w.run_setup([Done()])
 
-    task = r.predict(PredictionRequest(id="abcd1234", input={"text": "giraffes"}))
+    task = r.predict(
+        PredictionRequest(id="abcd1234", input={"text": "giraffes"}), is_train=False
+    )
 
     with pytest.raises(ValueError):
         r.cancel(None)
@@ -332,10 +334,14 @@ def test_prediction_runner_predict_cancelation_multiple_predictions():
     r.setup()
     w.run_setup([Done()])
 
-    task1 = r.predict(PredictionRequest(id="abcd1234", input={"text": "giraffes"}))
+    task1 = r.predict(
+        PredictionRequest(id="abcd1234", input={"text": "giraffes"}), is_train=False
+    )
     w.run_predict([Done()])
 
-    task2 = r.predict(PredictionRequest(id="defg6789", input={"text": "elephants"}))
+    task2 = r.predict(
+        PredictionRequest(id="defg6789", input={"text": "elephants"}), is_train=False
+    )
     with pytest.raises(UnknownPredictionError):
         r.cancel("abcd1234")
 
@@ -351,9 +357,13 @@ def test_prediction_runner_predict_cancelation_concurrent_predictions():
     r.setup()
     w.run_setup([Done()])
 
-    task1 = r.predict(PredictionRequest(id="abcd1234", input={"text": "giraffes"}))
+    task1 = r.predict(
+        PredictionRequest(id="abcd1234", input={"text": "giraffes"}), is_train=False
+    )
 
-    task2 = r.predict(PredictionRequest(id="defg6789", input={"text": "elephants"}))
+    task2 = r.predict(
+        PredictionRequest(id="defg6789", input={"text": "elephants"}), is_train=False
+    )
 
     r.cancel("abcd1234")
     w.run_predict([Done()], id="defg6789")
@@ -362,7 +372,9 @@ def test_prediction_runner_predict_cancelation_concurrent_predictions():
 
 
 def test_prediction_runner_setup_e2e():
-    w = make_worker(predictor_ref=_fixture_path("sleep"), is_async=False)
+    w = make_worker(
+        predictor_ref=_fixture_path("sleep"), is_async=False, is_train=False
+    )
     r = PredictionRunner(worker=w)
 
     try:
@@ -378,12 +390,14 @@ def test_prediction_runner_setup_e2e():
 
 
 def test_prediction_runner_predict_e2e():
-    w = make_worker(predictor_ref=_fixture_path("sleep"), is_async=False)
+    w = make_worker(
+        predictor_ref=_fixture_path("sleep"), is_async=False, is_train=False
+    )
     r = PredictionRunner(worker=w)
 
     try:
         r.setup().wait(timeout=5)
-        task = r.predict(PredictionRequest(input={"sleep": 0.1}))
+        task = r.predict(PredictionRequest(input={"sleep": 0.1}), is_train=False)
         task.wait(timeout=1)
     finally:
         w.shutdown()
@@ -456,7 +470,7 @@ def test_predict_task():
         output_file_prefix=None,
         webhook=None,
     )
-    t = PredictTask(p)
+    t = PredictTask(p, False)
 
     assert t.result.status == Status.PROCESSING
     assert t.result.output is None
@@ -476,7 +490,7 @@ def test_predict_task_multi():
         output_file_prefix=None,
         webhook=None,
     )
-    t = PredictTask(p)
+    t = PredictTask(p, False)
 
     assert t.result.status == Status.PROCESSING
     assert t.result.output is None
@@ -514,7 +528,7 @@ def test_predict_task_webhook_sender():
         output_file_prefix=None,
         webhook="https://a.url.honest",
     )
-    t = PredictTask(p)
+    t = PredictTask(p, False)
     t._webhook_sender = mock.Mock()
     t.track(Future())
 
@@ -552,7 +566,7 @@ def test_predict_task_webhook_sender_intermediate():
         output_file_prefix=None,
         webhook="https://a.url.honest",
     )
-    t = PredictTask(p)
+    t = PredictTask(p, False)
     t._webhook_sender = mock.Mock()
     t.track(Future())
 
@@ -574,7 +588,7 @@ def test_predict_task_webhook_sender_intermediate_multi():
         output_file_prefix=None,
         webhook="https://a.url.honest",
     )
-    t = PredictTask(p)
+    t = PredictTask(p, False)
     t._webhook_sender = mock.Mock()
     t.track(Future())
 
@@ -643,7 +657,7 @@ def test_predict_task_file_uploads():
         output_file_prefix=None,
         webhook=None,
     )
-    t = PredictTask(p, upload_url="https://a.url.honest")
+    t = PredictTask(p, False, upload_url="https://a.url.honest")
     t._file_uploader = mock.Mock()
 
     # in reality this would be a Path object, but in this test we just care it
@@ -665,7 +679,7 @@ def test_predict_task_file_uploads_multi():
         output_file_prefix=None,
         webhook=None,
     )
-    t = PredictTask(p, upload_url="https://a.url.honest")
+    t = PredictTask(p, False, upload_url="https://a.url.honest")
     t._file_uploader = mock.Mock()
 
     t._file_uploader.return_value = []

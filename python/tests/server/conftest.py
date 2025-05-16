@@ -185,6 +185,7 @@ def worker(request):
     w = make_worker(
         predictor_ref=ref,
         is_async=request.param.is_async,
+        is_train=False,
         tee_output=False,
         max_concurrency=request.param.max_concurrency,
     )
