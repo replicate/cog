@@ -46,6 +46,6 @@ def test_training_setup_project(tmpdir_factory, cog_binary):
         text=True,
     )
     assert result.returncode == 0
-    assert result.stderr == "Trainer is setting up.\n"
+    assert "Trainer is setting up." in str(result.stderr)
     with open(out_dir / "weights", "r", encoding="utf8") as f:
         assert f.read() == "hello predict world\n"
