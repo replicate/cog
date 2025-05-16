@@ -170,14 +170,13 @@ func newBuildkitAuthProvider(registryHosts ...string) session.Attachable {
 		registryHosts: sync.OnceValues(func() (map[string]registry.AuthConfig, error) {
 			return loadRegistryAuths(context.Background(), registryHosts...)
 		}),
+		// TODO[md]: here's where we'd set the token from config rather than fetching from the credentials helper
 		// token: token,
 	}
 }
 
 type buildkitAuthProvider struct {
 	registryHosts func() (map[string]registry.AuthConfig, error)
-	// auths         map[string]registry.AuthConfig
-	// token string
 }
 
 func (ap *buildkitAuthProvider) Register(server *grpc.Server) {
