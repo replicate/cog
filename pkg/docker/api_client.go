@@ -354,7 +354,7 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 
 	hostCfg := &container.HostConfig{
 		// always remove container after it exits
-		// AutoRemove: true,
+		AutoRemove: true,
 		// https://github.com/pytorch/pytorch/issues/2244
 		// https://github.com/replicate/cog/issues/1293
 		ShmSize:   6 * 1024 * 1024 * 1024, // 6GB
