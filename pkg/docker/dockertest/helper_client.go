@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/docker/docker/api/types/container"
@@ -41,17 +42,33 @@ func NewHelperClient(t testing.TB) *HelperClient {
 		t.Skip("Docker daemon is not running")
 	}
 
+	helper := &HelperClient{
+		Client:   cli,
+		fixtures: make(map[string]*imageFixture),
+		mu:       &sync.Mutex{},
+	}
+
 	t.Cleanup(func() {
+		for _, img := range helper.fixtures {
+			_, err := helper.Client.ImageRemove(context.Background(), img.imageID, image.RemoveOptions{Force: true, PruneChildren: true})
+			if err != nil {
+				t.Logf("Warning: Failed to remove image %q: %v", img.imageID, err)
+			}
+		}
+
 		if err := cli.Close(); err != nil {
 			t.Fatalf("Failed to close Docker client: %v", err)
 		}
 	})
 
-	return &HelperClient{Client: cli}
+	return helper
 }
 
 type HelperClient struct {
 	Client *client.Client
+
+	mu       *sync.Mutex
+	fixtures map[string]*imageFixture
 }
 
 func (c *HelperClient) Close() error {
@@ -210,10 +227,13 @@ func (c *HelperClient) CleanupImage(t testing.TB, imageRef string) {
 	t.Helper()
 
 	t.Cleanup(func() {
-		_, _ = c.Client.ImageRemove(context.Background(), imageRef, image.RemoveOptions{
+		_, err := c.Client.ImageRemove(context.Background(), imageRef, image.RemoveOptions{
 			Force:         true,
 			PruneChildren: true,
 		})
+		if err != nil {
+			t.Logf("Warning: Failed to remove image %q: %v", imageRef, err)
+		}
 	})
 }
 
@@ -255,8 +275,31 @@ func (c *HelperClient) InspectContainer(t testing.TB, containerID string) *conta
 	return &inspect
 }
 
-func (c *HelperClient) LoadImageFixture(t testing.TB, name string, tag string) {
+func (c *HelperClient) ImageFixture(t testing.TB, name string, tag string) {
 	t.Helper()
+	fixture := c.loadImageFixture(t, name)
+
+	t.Logf("Tagging image fixture %q with %q", fixture.ref, tag)
+	if err := c.Client.ImageTag(t.Context(), fixture.imageID, tag); err != nil {
+		require.NoError(t, err, "Failed to tag image %q with %q: %v", fixture.ref, tag, err)
+	}
+	// remove the image when the test is done
+	t.Cleanup(func() {
+		_, _ = c.Client.ImageRemove(context.Background(), tag, image.RemoveOptions{Force: true})
+	})
+}
+
+func (c *HelperClient) loadImageFixture(t testing.TB, name string) *imageFixture {
+	t.Helper()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	ref := fmt.Sprintf("cog-test-fixture:%s", name)
+
+	if fixture, ok := c.fixtures[ref]; ok {
+		return fixture
+	}
 
 	// Get the path of the current file
 	_, filename, _, ok := runtime.Caller(0)
@@ -270,7 +313,6 @@ func (c *HelperClient) LoadImageFixture(t testing.TB, name string, tag string) {
 	// Construct the path to the fixture
 	fixturePath := filepath.Join(dir, "testdata", name+".tar")
 
-	ref := fmt.Sprintf("cog-test-fixture:%s", name)
 	t.Logf("Loading image fixture %q from %s", ref, fixturePath)
 
 	f, err := os.Open(fixturePath)
@@ -280,22 +322,23 @@ func (c *HelperClient) LoadImageFixture(t testing.TB, name string, tag string) {
 	l, err := c.Client.ImageLoad(t.Context(), f)
 	require.NoError(t, err, "Failed to load fixture %q", name)
 	defer l.Body.Close()
-	_, err = io.Copy(os.Stdout, l.Body)
+	_, err = io.Copy(os.Stderr, l.Body)
 	require.NoError(t, err, "Failed to copy fixture %q", name)
 
-	// remove the image when the test is done
-	t.Cleanup(func() {
-		_, _ = c.Client.ImageRemove(context.Background(), ref, image.RemoveOptions{})
-	})
+	inspect, err := c.Client.ImageInspect(t.Context(), ref)
+	require.NoError(t, err, "Failed to inspect image %q", ref)
 
-	if tag != "" {
-		t.Logf("Tagging image fixture %q with %q", ref, tag)
-		if err := c.Client.ImageTag(t.Context(), ref, tag); err != nil {
-			require.NoError(t, err, "Failed to tag image %q with %q: %v", ref, tag, err)
-		}
-		// remove the image when the test is done
-		t.Cleanup(func() {
-			_, _ = c.Client.ImageRemove(context.Background(), tag, image.RemoveOptions{})
-		})
+	fixture := &imageFixture{
+		ref:     ref,
+		imageID: inspect.ID,
 	}
+
+	c.fixtures[ref] = fixture
+
+	return fixture
+}
+
+type imageFixture struct {
+	imageID string
+	ref     string
 }

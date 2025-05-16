@@ -37,7 +37,7 @@ func saveAuthToConfig(conf *configfile.ConfigFile, registryHost string, username
 }
 
 func saveAuthToCredentialsStore(ctx context.Context, credsStore string, registryHost string, username string, token string) error {
-	binary := DockerCredentialBinary(credsStore)
+	binary := dockerCredentialBinary(credsStore)
 	input := CredentialHelperInput{
 		Username:  username,
 		Secret:    token,
