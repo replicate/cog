@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/docker/docker/api/types/image"
 	"github.com/replicate/go/types"
 	"golang.org/x/sync/errgroup"
 
@@ -204,16 +207,66 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 	return nil
 }
 
+func (c *Client) PostNewPipeline(ctx context.Context, image string, tarball *bytes.Buffer) error {
+	// Fetch manifest
+	manifest, err := c.dockerCommand.Inspect(ctx, image)
+	if err != nil {
+		return util.WrapError(err, "failed to inspect docker image")
+	}
+
+	// Create form data body
+	body := new(bytes.Buffer)
+	mp := multipart.NewWriter(body)
+	defer mp.Close()
+	err = mp.WriteField("openapi_schema", manifest.Config.Labels[command.CogOpenAPISchemaLabelKey])
+	if err != nil {
+		return err
+	}
+	part, err := mp.CreateFormFile("source_archive", "source.tar")
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(part, bytes.NewReader(tarball.Bytes()))
+	if err != nil {
+		return err
+	}
+
+	// Create version URL
+	versionUrl, err := newVersionURL(image)
+	if err != nil {
+		return err
+	}
+
+	// Create a new request
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, versionUrl.String(), bytes.NewReader(body.Bytes()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", mp.FormDataContentType())
+
+	// Make the request
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return util.WrapError(ErrorBadResponseNewVersionEndpoint, strconv.Itoa(resp.StatusCode))
+	}
+
+	return nil
+}
+
 func (c *Client) versionFromManifest(ctx context.Context, image string, weights []File, files []File, fileChallenges []FileChallengeAnswer) (*Version, error) {
 	manifest, err := c.dockerCommand.Inspect(ctx, image)
 	if err != nil {
 		return nil, util.WrapError(err, "failed to inspect docker image")
 	}
 
-	var cogConfig config.Config
-	err = json.Unmarshal([]byte(manifest.Config.Labels[command.CogConfigLabelKey]), &cogConfig)
+	cogConfig, err := readCogConfig(manifest)
 	if err != nil {
-		return nil, util.WrapError(err, "failed to get cog config from docker image")
+		return nil, err
 	}
 
 	var openAPISchema map[string]any
@@ -311,7 +364,7 @@ func (c *Client) versionFromManifest(ctx context.Context, image string, weights 
 
 	version := Version{
 		Annotations:   manifest.Config.Labels,
-		CogConfig:     cogConfig,
+		CogConfig:     *cogConfig,
 		CogVersion:    manifest.Config.Labels[command.CogVersionLabelKey],
 		OpenAPISchema: openAPISchema,
 		RuntimeConfig: runtimeConfig,
@@ -324,61 +377,6 @@ func (c *Client) versionFromManifest(ctx context.Context, image string, weights 
 	}
 
 	return &version, nil
-}
-
-func newVersionURL(image string) (url.URL, error) {
-	imageComponents := strings.Split(image, "/")
-	newVersionUrl := webBaseURL()
-	if len(imageComponents) != 3 {
-		return newVersionUrl, ErrorBadRegistryURL
-	}
-	if imageComponents[0] != global.ReplicateRegistryHost {
-		return newVersionUrl, ErrorBadRegistryHost
-	}
-	newVersionUrl.Path = strings.Join([]string{"", "api", "models", imageComponents[1], imageComponents[2], "versions"}, "/")
-	return newVersionUrl, nil
-}
-
-func webBaseURL() url.URL {
-	return url.URL{
-		Scheme: env.SchemeFromEnvironment(),
-		Host:   HostFromEnvironment(),
-	}
-}
-
-func stripCodeFromStub(cogConfig config.Config, isPredict bool) (string, error) {
-	var stubComponents []string
-	if isPredict {
-		stubComponents = strings.Split(cogConfig.Predict, ":")
-	} else {
-		stubComponents = strings.Split(cogConfig.Train, ":")
-	}
-
-	if len(stubComponents) < 2 {
-		return "", nil
-	}
-
-	codeFile := stubComponents[0]
-
-	b, err := os.ReadFile(codeFile)
-	if err != nil {
-		return "", err
-	}
-
-	// TODO: We should attempt to strip the code here, in python this is done like so:
-	// from cog.code_xforms import strip_model_source_code
-	// code = strip_model_source_code(
-	//   util.read_file(os.path.join(fs, 'src', base_file)),
-	//   [base_class],
-	//   ['predict', 'train'],
-	// )
-	// Currently the behavior of the code strip attempts to strip, and if it can't it
-	// loads the whole file in. Here we just load the whole file in.
-	// We should figure out a way to call cog python from here to fulfill this.
-	// It could be a good idea to do this in the layer functions where we do pip freeze
-	// et al.
-
-	return string(b), nil
 }
 
 func (c *Client) InitiateAndDoFileChallenge(ctx context.Context, weights []File, files []File) ([]FileChallengeAnswer, error) {
@@ -457,4 +455,90 @@ func (c *Client) doSingleFileChallenge(ctx context.Context, file File, fileType 
 		Hash:        ans,
 		ChallengeID: challenge.ID,
 	}, nil
+}
+
+func newVersionURL(image string) (url.URL, error) {
+	imageComponents := strings.Split(image, "/")
+	newVersionUrl := webBaseURL()
+	if len(imageComponents) != 3 {
+		return newVersionUrl, ErrorBadRegistryURL
+	}
+	if imageComponents[0] != global.ReplicateRegistryHost {
+		return newVersionUrl, ErrorBadRegistryHost
+	}
+	newVersionUrl.Path = strings.Join([]string{"", "api", "models", imageComponents[1], imageComponents[2], "versions"}, "/")
+	return newVersionUrl, nil
+}
+
+func webBaseURL() url.URL {
+	return url.URL{
+		Scheme: env.SchemeFromEnvironment(),
+		Host:   HostFromEnvironment(),
+	}
+}
+
+func codeFileName(cogConfig *config.Config, isPredict bool) (string, error) {
+	var stubComponents []string
+	if isPredict {
+		if cogConfig.Predict == "" {
+			return "", nil
+		}
+		stubComponents = strings.Split(cogConfig.Predict, ":")
+	} else {
+		if cogConfig.Train == "" {
+			return "", nil
+		}
+		stubComponents = strings.Split(cogConfig.Train, ":")
+	}
+
+	if len(stubComponents) < 2 {
+		return "", errors.New("Code stub components has less than 2 entries.")
+	}
+
+	return stubComponents[0], nil
+}
+
+func readCode(cogConfig *config.Config, isPredict bool) (string, string, error) {
+	codeFile, err := codeFileName(cogConfig, isPredict)
+	if err != nil {
+		return "", codeFile, err
+	}
+	if codeFile == "" {
+		return "", "", nil
+	}
+
+	b, err := os.ReadFile(codeFile)
+	if err != nil {
+		return "", codeFile, err
+	}
+
+	return string(b), codeFile, nil
+}
+
+func stripCodeFromStub(cogConfig *config.Config, isPredict bool) (string, error) {
+	// TODO: We should attempt to strip the code here, in python this is done like so:
+	// from cog.code_xforms import strip_model_source_code
+	// code = strip_model_source_code(
+	//   util.read_file(os.path.join(fs, 'src', base_file)),
+	//   [base_class],
+	//   ['predict', 'train'],
+	// )
+	// Currently the behavior of the code strip attempts to strip, and if it can't it
+	// loads the whole file in. Here we just load the whole file in.
+	// We should figure out a way to call cog python from here to fulfill this.
+	// It could be a good idea to do this in the layer functions where we do pip freeze
+	// et al.
+
+	code, _, err := readCode(cogConfig, isPredict)
+	return code, err
+}
+
+func readCogConfig(manifest *image.InspectResponse) (*config.Config, error) {
+	var cogConfig config.Config
+	err := json.Unmarshal([]byte(manifest.Config.Labels[command.CogConfigLabelKey]), &cogConfig)
+	if err != nil {
+		return nil, util.WrapError(err, "failed to get cog config from docker image")
+	}
+
+	return &cogConfig, nil
 }
