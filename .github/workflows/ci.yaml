@@ -125,6 +125,7 @@ jobs:
     needs: build-python
     runs-on: ubuntu-latest-16-cores
     strategy:
+      fail-fast: false
       matrix:
         new_docker_api_client: [true, false]
     timeout-minutes: 20
