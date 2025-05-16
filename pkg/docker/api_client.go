@@ -299,15 +299,15 @@ func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOp
 	// Build the image.
 	eg, ctx := errgroup.WithContext(ctx)
 
-	// run the display in a goroutine
-	eg.Go(newDisplay(statusCh, displayMode))
-
 	// run the build in a goroutine
 	eg.Go(func() error {
 		options, err := solveOptFromImageOptions(buildDir, options)
 		if err != nil {
 			return err
 		}
+
+		// run the display in a goroutine _after_ we've built SolveOpt
+		eg.Go(newDisplay(statusCh, displayMode))
 
 		res, err = bc.Solve(ctx, nil, options, statusCh)
 		if err != nil {
