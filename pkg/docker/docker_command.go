@@ -196,7 +196,6 @@ func (c *DockerCommand) ContainerStop(ctx context.Context, containerID string) e
 		containerID,
 	}
 
-
 	if err := c.exec(ctx, nil, io.Discard, nil, "", args); err != nil {
 		if isContainerNotFoundError(err) {
 			err = &command.NotFoundError{Object: "container", Ref: containerID}
