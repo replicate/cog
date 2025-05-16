@@ -45,4 +45,4 @@ def test_training_setup_project(tmpdir_factory, cog_binary):
         capture_output=True,
     )
     assert result.returncode == 0
-    assert result.stdout == "Trainer is setting up.\nhello predict world\n"
+    assert result.stdout == "Trainer is setting up.\n"
