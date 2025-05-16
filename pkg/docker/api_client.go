@@ -238,7 +238,7 @@ func (c *apiClient) Inspect(ctx context.Context, ref string) (*image.InspectResp
 	console.Debugf("=== APIClient.Inspect %s", ref)
 
 	// TODO[md]: platform requires engine 1.49+, and it's not widly available as of 2025-05.
-	// platform := ocispec.Platform{OS: "linux", Architecture: "amd64"}
+	// 	platform := ocispec.Platform{OS: "linux", Architecture: "amd64"}
 	//  client.ImageInspectWithPlatform(&platform),
 	inspect, err := c.client.ImageInspect(ctx, ref)
 
@@ -315,7 +315,6 @@ func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOp
 	console.Debugf("image digest %s", res.ExporterResponse[exptypes.ExporterImageDigestKey])
 
 	// TODO[md]: return the image id on success
-	// return res.ExporterResponse[exptypes.ExporterImageDigestKey], nil
 	return nil
 }
 
@@ -384,9 +383,7 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 	}
 
 	networkingCfg := &network.NetworkingConfig{
-		EndpointsConfig: map[string]*network.EndpointSettings{
-			// "bridge": {},
-		},
+		EndpointsConfig: map[string]*network.EndpointSettings{},
 	}
 
 	platform := &ocispec.Platform{
@@ -404,16 +401,7 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 	if err != nil {
 		return "", fmt.Errorf("failed to create container: %w", err)
 	}
-	// make sure the container is removed if it fails to start
-	// defer func() {
-	// 	if err := c.client.ContainerRemove(ctx, runContainer.ID, container.RemoveOptions{
-	// 		RemoveVolumes: true,
-	// 		RemoveLinks:   false,
-	// 		Force:         true,
-	// 	}); err != nil {
-	// 		console.Warnf("failed to remove container: %s", err)
-	// 	}
-	// }()
+	// TODO[md]: ensure the container is removed if start & auto-remove fails
 
 	console.Debugf("container id: %s", runContainer.ID)
 
@@ -464,16 +452,6 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 
 	// If detached, wait for container to be running before returning
 	if options.Detach {
-		// // Wait for container to be running
-		// statusCh, errCh := c.client.ContainerWait(ctx, runContainer.ID, container.WaitConditionNextExit)
-		// select {
-		// case err := <-errCh:
-		// 	return "", fmt.Errorf("error waiting for container to start: %w", err)
-		// case status := <-statusCh:
-		// 	if status.StatusCode != 0 {
-		// 		return "", fmt.Errorf("container failed to start with status %d", status.StatusCode)
-		// 	}
-		// }
 		return runContainer.ID, nil
 	}
 
