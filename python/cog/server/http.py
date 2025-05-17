@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+from contextlib import asynccontextmanager
 import functools
 import logging
 import os
@@ -118,8 +119,29 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     is_build: bool = False,
     await_explicit_shutdown: bool = False,  # pylint: disable=redefined-outer-name
 ) -> MyFastAPI:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> Any:
+        # Startup
+        # check for early setup failures
+        if (
+            app.state.setup_result
+            and app.state.setup_result.status == schema.Status.FAILED
+        ):
+            # signal shutdown if interactive run
+            if shutdown_event and not await_explicit_shutdown:
+                shutdown_event.set()
+        else:
+            setup_task = runner.setup()
+            setup_task.add_done_callback(_handle_setup_done)
+
+        yield
+
+        # Shutdown
+        worker.terminate()
+
     app = MyFastAPI(  # pylint: disable=redefined-outer-name
         title="Cog",  # TODO: mention model name?
+        lifespan=lifespan,
         # version=None # TODO
     )
 
@@ -310,24 +332,6 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                 msg = "Error while loading trainer:\n\n" + traceback.format_exc()
                 add_setup_failed_routes(app, started_at, msg)
                 return app
-
-    @app.on_event("startup")
-    def startup() -> None:
-        # check for early setup failures
-        if (
-            app.state.setup_result
-            and app.state.setup_result.status == schema.Status.FAILED
-        ):
-            # signal shutdown if interactive run
-            if shutdown_event and not await_explicit_shutdown:
-                shutdown_event.set()
-        else:
-            setup_task = runner.setup()
-            setup_task.add_done_callback(_handle_setup_done)
-
-    @app.on_event("shutdown")
-    def shutdown() -> None:
-        worker.terminate()
 
     @app.get("/")
     async def root() -> Any:
