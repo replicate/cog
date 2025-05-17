@@ -32,8 +32,12 @@ This will attempt to migrate your cog project to be compatible with fast boots.`
 func cmdMigrate(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	command := docker.NewDockerCommand()
-	client, err := http.ProvideHTTPClient(ctx, command)
+	dockerClient, err := docker.NewClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	client, err := http.ProvideHTTPClient(ctx, dockerClient)
 	if err != nil {
 		return err
 	}

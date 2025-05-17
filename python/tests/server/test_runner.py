@@ -2,6 +2,7 @@ import os
 import uuid
 from concurrent.futures import Future
 from datetime import datetime
+from typing import Any, Dict, Optional
 from unittest import mock
 
 import pytest
@@ -43,6 +44,7 @@ class FakeWorker:
         self._setup_future = None
         self._predict_futures = {}
         self.last_prediction_payload = None
+        self.last_prediction_context = None
 
     def subscribe(self, subscriber, tag=None):
         sid = uuid.uuid4()
@@ -71,9 +73,16 @@ class FakeWorker:
             if isinstance(event, Done):
                 self._setup_future.set_result(event)
 
-    def predict(self, payload, tag=None):
+    def predict(
+        self,
+        payload: Dict[str, Any],
+        tag: Optional[str] = None,
+        *,
+        context: Optional[Dict[str, str]] = None,
+    ):
         assert tag not in self._predict_futures or self._predict_futures[tag].done()
         self.last_prediction_payload = payload
+        self.last_prediction_context = context
         self._predict_futures[tag] = Future()
         print(f"setting {tag}, now {self._predict_futures}")
         return self._predict_futures[tag]

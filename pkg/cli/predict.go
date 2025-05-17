@@ -21,6 +21,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/util/console"
@@ -70,10 +71,13 @@ the prediction on that.`,
 func cmdPredict(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	dockerCommand := docker.NewDockerCommand()
+	dockerClient, err := docker.NewClient(ctx)
+	if err != nil {
+		return err
+	}
 
 	imageName := ""
-	volumes := []docker.Volume{}
+	volumes := []command.Volume{}
 	gpus := gpusFlag
 
 	if len(args) == 0 {
@@ -90,16 +94,16 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 		if buildFast {
 			imageName = config.DockerImageName(projectDir)
-			if err := image.Build(ctx, cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, nil, buildLocalImage, dockerCommand); err != nil {
+			if err := image.Build(ctx, cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, nil, buildLocalImage, dockerClient); err != nil {
 				return err
 			}
 		} else {
-			if imageName, err = image.BuildBase(ctx, dockerCommand, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
+			if imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
 				return err
 			}
 
 			// Base image doesn't have /src in it, so mount as volume
-			volumes = append(volumes, docker.Volume{
+			volumes = append(volumes, command.Volume{
 				Source:      projectDir,
 				Destination: "/src",
 			})
@@ -118,7 +122,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("Invalid image name '%s'. Did you forget `-i`?", imageName)
 		}
 
-		inspectResp, err := dockerCommand.Pull(ctx, imageName, false)
+		inspectResp, err := dockerClient.Pull(ctx, imageName, false)
 		if err != nil {
 			return fmt.Errorf("Failed to pull image %q: %w", imageName, err)
 		}
@@ -138,12 +142,12 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	console.Info("")
 	console.Infof("Starting Docker image %s and running setup()...", imageName)
 
-	predictor, err := predict.NewPredictor(ctx, docker.RunOptions{
+	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: volumes,
 		Env:     envFlags,
-	}, false, buildFast, dockerCommand)
+	}, false, buildFast, dockerClient)
 	if err != nil {
 		return err
 	}
@@ -168,11 +172,11 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			console.Info("Missing device driver, re-trying without GPU")
 
 			_ = predictor.Stop(ctx)
-			predictor, err = predict.NewPredictor(ctx, docker.RunOptions{
+			predictor, err = predict.NewPredictor(ctx, command.RunOptions{
 				Image:   imageName,
 				Volumes: volumes,
 				Env:     envFlags,
-			}, false, buildFast, dockerCommand)
+			}, false, buildFast, dockerClient)
 			if err != nil {
 				return err
 			}
@@ -202,7 +206,12 @@ func isURI(ref *openapi3.Schema) bool {
 }
 
 func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, outputPath string, isTrain bool) error {
-	console.Info("Running prediction...")
+	if isTrain {
+		console.Info("Running training...")
+	} else {
+		console.Info("Running prediction...")
+	}
+
 	schema, err := predictor.GetSchema()
 	if err != nil {
 		return err

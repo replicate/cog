@@ -31,6 +31,9 @@ func traverseAndCompare(sourceNode, destinationNode *yaml.Node, path string) err
 	if sourceNode.Kind != destinationNode.Kind {
 		return fmt.Errorf("Type mismatch at %s: %s vs %s\n", path, nodeKindToString(sourceNode.Kind), nodeKindToString(destinationNode.Kind))
 	}
+	sourceNode.LineComment = destinationNode.LineComment
+	sourceNode.HeadComment = destinationNode.HeadComment
+	sourceNode.FootComment = destinationNode.FootComment
 
 	switch sourceNode.Kind {
 	case yaml.ScalarNode:
@@ -52,13 +55,25 @@ func traverseAndCompare(sourceNode, destinationNode *yaml.Node, path string) err
 				childPath = path + "." + key
 			}
 
-			sourceNodeChild, ok1 := map1[key]
-			destinationNodeChild, ok2 := map2[key]
+			sourceKVNodeChild, ok1 := map1[key]
+			destinationKVNodeChild, ok2 := map2[key]
 
-			if !ok1 || !ok2 {
-				destinationNode.Content = sourceNode.Content
-			} else {
-				err := traverseAndCompare(sourceNodeChild, destinationNodeChild, childPath)
+			switch {
+			case !ok1:
+				// We need to remove this node
+				NewContent := []*yaml.Node{}
+				for _, node := range destinationNode.Content {
+					if node == destinationKVNodeChild[0] || node == destinationKVNodeChild[1] {
+						continue
+					}
+					NewContent = append(NewContent, node)
+				}
+				destinationNode.Content = NewContent
+			case !ok2:
+				// We need to add this node
+				destinationNode.Content = append(destinationNode.Content, sourceKVNodeChild...)
+			default:
+				err := traverseAndCompare(sourceKVNodeChild[1], destinationKVNodeChild[1], childPath)
 				if err != nil {
 					return err
 				}
@@ -90,23 +105,23 @@ func traverseAndCompare(sourceNode, destinationNode *yaml.Node, path string) err
 	return nil
 }
 
-func mapNodeToMap(node *yaml.Node) map[string]*yaml.Node {
-	result := make(map[string]*yaml.Node)
+func mapNodeToMap(node *yaml.Node) map[string][]*yaml.Node {
+	result := make(map[string][]*yaml.Node)
 	for i := 0; i < len(node.Content); i += 2 {
 		keyNode := node.Content[i]
 		valueNode := node.Content[i+1]
-		result[keyNode.Value] = valueNode
+		result[keyNode.Value] = []*yaml.Node{keyNode, valueNode}
 	}
 	return result
 }
 
-func getAllKeys(map1, map2 map[string]*yaml.Node) []string {
-	keys := make(map[string]struct{})
+func getAllKeys(map1, map2 map[string][]*yaml.Node) []string {
+	keys := make(map[string]bool)
 	for key := range map1 {
-		keys[key] = struct{}{}
+		keys[key] = true
 	}
 	for key := range map2 {
-		keys[key] = struct{}{}
+		keys[key] = true
 	}
 
 	var keyList []string

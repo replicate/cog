@@ -24,6 +24,8 @@ type Command interface {
 	ContainerStop(ctx context.Context, containerID string) error
 
 	ImageBuild(ctx context.Context, options ImageBuildOptions) error
+	Run(ctx context.Context, options RunOptions) error
+	ContainerStart(ctx context.Context, options RunOptions) (string, error)
 }
 
 type ImageBuildOptions struct {
@@ -38,4 +40,28 @@ type ImageBuildOptions struct {
 	ContextDir         string
 	BuildContexts      map[string]string
 	Labels             map[string]string
+}
+
+type RunOptions struct {
+	Detach  bool
+	Args    []string
+	Env     []string
+	GPUs    string
+	Image   string
+	Ports   []Port
+	Volumes []Volume
+	Workdir string
+	Stdin   io.Reader
+	Stdout  io.Writer
+	Stderr  io.Writer
+}
+
+type Port struct {
+	HostPort      int
+	ContainerPort int
+}
+
+type Volume struct {
+	Source      string
+	Destination string
 }
