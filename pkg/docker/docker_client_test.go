@@ -24,6 +24,8 @@ func TestDockerClient(t *testing.T) {
 		t.Skip("skipping docker client tests in short mode")
 	}
 
+	t.Setenv("COG_DOCKER_SDK_CLIENT", "0")
+
 	client := NewDockerCommand()
 	runDockerClientTests(t, client)
 }
@@ -32,6 +34,8 @@ func TestDockerAPIClient(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping docker client tests in short mode")
 	}
+
+	t.Setenv("COG_DOCKER_SDK_CLIENT", "1")
 
 	apiClient, err := NewAPIClient(t.Context())
 	require.NoError(t, err, "Failed to create docker api client")
