@@ -206,7 +206,12 @@ func isURI(ref *openapi3.Schema) bool {
 }
 
 func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, outputPath string, isTrain bool) error {
-	console.Info("Running prediction...")
+	if isTrain {
+		console.Info("Running training...")
+	} else {
+		console.Info("Running prediction...")
+	}
+
 	schema, err := predictor.GetSchema()
 	if err != nil {
 		return err
