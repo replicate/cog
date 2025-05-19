@@ -231,7 +231,7 @@ def validate_input_type(
 
 
 def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any]:
-    create_model_kwargs = {}
+    create_model_kwargs: Dict[str, Any] = {"__config__": None}
 
     order = 0
 
@@ -239,6 +239,20 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
         InputType = parameter.annotation
 
         validate_input_type(InputType, name)
+
+        match parameter.kind:
+            case (
+                inspect.Parameter.POSITIONAL_ONLY
+                | inspect.Parameter.POSITIONAL_OR_KEYWORD
+                | inspect.Parameter.KEYWORD_ONLY
+            ):
+                pass
+            case inspect.Parameter.VAR_POSITIONAL:
+                raise TypeError(f"Unsupported varargs parameter *{name}.")
+            case inspect.Parameter.VAR_KEYWORD:
+                create_model_kwargs["__config__"] = {"extra": "allow"}
+                name = "__pydantic_extra__"
+                InputType = Dict[str, InputType]
 
         # if no default is specified, create an empty, required input
         if parameter.default is inspect.Signature.empty:
@@ -325,7 +339,6 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
 
     return create_model(
         "Input",
-        __config__=None,
         __base__=BaseInput,
         __module__=__name__,
         __validators__=None,
@@ -431,7 +444,6 @@ def get_training_input_type(predictor: BasePredictor) -> Type[BaseInput]:
 
     return create_model(
         "TrainingInput",
-        __config__=None,
         __base__=BaseInput,
         __module__=__name__,
         __validators__=None,
