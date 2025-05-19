@@ -1,0 +1,24 @@
+build:
+  run:
+    # assert that the file secret of file-secret.txt on the host is written to the target file and has the expected value
+    - command: >-
+        ID="file-secret";
+        EXPECTED_VALUE="file_secret_value";
+        EXPECTED_PATH="/etc/file_secret.txt";
+        [ "$(cat "$EXPECTED_PATH")" = "$EXPECTED_VALUE" ] || ( echo "Assertion failed \"$EXPECTED_PATH\" \"$(cat $EXPECTED_PATH)\"  != \"$EXPECTED_VALUE\""; exit 1; )
+      mounts:
+        - type: secret
+          id: file-secret
+          target: /etc/file_secret.txt
+    # assert that the env secret of $ENV_SECRET on the host is written to the target file and has the expected value
+    - command: >-
+        ID="env-secret";
+        EXPECTED_VALUE="env_secret_value";
+        EXPECTED_PATH="/var/env-secret.txt";
+        [ "$(cat "$EXPECTED_PATH")" = "$EXPECTED_VALUE" ] || ( echo "Assertion failed \"$EXPECTED_PATH\" \"$(cat $EXPECTED_PATH)\"  != \"$EXPECTED_VALUE\""; exit 1; )
+      mounts:
+        - type: secret
+          id: env-secret
+          target: /var/env-secret.txt
+
+predict: "predict.py:Predictor"
