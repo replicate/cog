@@ -14,10 +14,15 @@ import (
 type BuildInfo struct {
 	BuildTime time.Duration
 	BuildID   string
+	Pipeline  bool
 }
 
 func Push(ctx context.Context, image string, fast bool, projectDir string, command command.Command, buildInfo BuildInfo, client *http.Client) error {
 	webClient := web.NewClient(command, client)
+
+	if buildInfo.Pipeline {
+		return PipelinePush(ctx, image, projectDir, webClient)
+	}
 
 	if err := webClient.PostPushStart(ctx, buildInfo.BuildID, buildInfo.BuildTime); err != nil {
 		console.Warnf("Failed to send build timings to server: %v", err)
