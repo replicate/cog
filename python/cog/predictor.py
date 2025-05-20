@@ -231,7 +231,10 @@ def validate_input_type(
 
 
 def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any]:
-    create_model_kwargs: Dict[str, Any] = {}
+    create_model_kwargs: Dict[str, Any] = {
+        "__base__": BaseInput,
+        "__config__": None,
+    }
 
     order = 0
 
@@ -243,8 +246,22 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
         if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
             raise TypeError(f"Unsupported varargs parameter *{name}.")
         if parameter.kind == inspect.Parameter.VAR_KEYWORD:
-            create_model_kwargs["__config__"] = {"extra": "allow"}
-            create_model_kwargs["__base__"] = None
+            # create_model_kwargs["__config__"] = {"extra": "allow"}
+
+            class ExtraKeywordInput(BaseInput):
+                if PYDANTIC_V2:
+                    model_config = pydantic.ConfigDict(
+                        extra="allow", use_enum_values=True
+                    )  # type: ignore
+                else:
+
+                    class Config:
+                        # When using `choices`, the type is converted into an enum to validate
+                        # But, after validation, we want to pass the actual value to predict(), not the enum object
+                        use_enum_values = True
+                        extra = "allow"
+
+            create_model_kwargs["__base__"] = ExtraKeywordInput
             name = "__pydantic_extra__"
             InputType = Dict[str, InputType]
 
@@ -333,8 +350,6 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
 
     return create_model(
         "Input",
-        __base__=BaseInput,
-        __config__=None,
         __module__=__name__,
         __validators__=None,
         **get_input_create_model_kwargs(signature),
@@ -439,7 +454,6 @@ def get_training_input_type(predictor: BasePredictor) -> Type[BaseInput]:
 
     return create_model(
         "TrainingInput",
-        __base__=BaseInput,
         __module__=__name__,
         __validators__=None,
         **get_input_create_model_kwargs(signature),
