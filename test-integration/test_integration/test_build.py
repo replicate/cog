@@ -534,3 +534,24 @@ def test_install_requires_packaging(docker_image, cog_binary):
     )
     print(build_process.stderr.decode())
     assert build_process.returncode == 0
+
+
+def test_secrets(tmpdir_factory, docker_image, cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/secrets-project"
+
+    build_process = subprocess.run(
+        [
+            cog_binary,
+            "build",
+            "-t",
+            docker_image,
+            "--secret",
+            "id=file-secret,src=file-secret.txt",
+            "--secret",
+            "id=env-secret,env=ENV_SECRET",
+        ],
+        cwd=project_dir,
+        capture_output=True,
+        env={**os.environ, "ENV_SECRET": "env_secret_value"},
+    )
+    assert build_process.returncode == 0

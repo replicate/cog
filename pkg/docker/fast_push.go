@@ -147,11 +147,11 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 }
 
 func createPythonPackagesTarFile(ctx context.Context, image string, tmpDir string, command command.Command) (string, error) {
-	return command.CreateTarFile(ctx, image, tmpDir, requirementsTarFile, "root/.venv")
+	return CreateTarFile(ctx, command, image, tmpDir, requirementsTarFile, "root/.venv")
 }
 
 func createSrcTarFile(ctx context.Context, image string, tmpDir string, command command.Command) (string, error) {
-	return command.CreateTarFile(ctx, image, tmpDir, "src.tar.zst", "src")
+	return CreateTarFile(ctx, command, image, tmpDir, "src.tar.zst", "src")
 }
 
 func createWeightsFilesFromWeightsManifest(weights []weights.Weight) []web.File {
