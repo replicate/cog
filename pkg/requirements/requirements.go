@@ -100,6 +100,10 @@ func scanLinesWithContinuations(data []byte, atEOF bool) (advance int, token []b
 				continue
 			}
 
+			if len(line) == 0 {
+				continue
+			}
+
 			// Not a continuation, return the accumulated line
 			return i + 1, line, nil
 		}

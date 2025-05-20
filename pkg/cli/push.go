@@ -18,6 +18,8 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
+var pushPipeline bool
+
 func newPushCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "push [IMAGE]",
@@ -40,6 +42,7 @@ func newPushCommand() *cobra.Command {
 	addFastFlag(cmd)
 	addLocalImage(cmd)
 	addConfigFlag(cmd)
+	addPipelineImage(cmd)
 
 	return cmd
 }
@@ -47,8 +50,12 @@ func newPushCommand() *cobra.Command {
 func push(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	command := docker.NewDockerCommand()
-	client, err := http.ProvideHTTPClient(ctx, command)
+	dockerClient, err := docker.NewClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	client, err := http.ProvideHTTPClient(ctx, dockerClient)
 	if err != nil {
 		return err
 	}
@@ -76,18 +83,10 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	replicatePrefix := fmt.Sprintf("%s/", global.ReplicateRegistryHost)
-	if strings.HasPrefix(imageName, replicatePrefix) {
-		if err := docker.ManifestInspect(ctx, imageName); err != nil && strings.Contains(err.Error(), `"code":"NAME_UNKNOWN"`) {
-			err = fmt.Errorf("Unable to find Replicate existing model for %s. Go to replicate.com and create a new model before pushing.", imageName)
-			logClient.EndPush(ctx, err, logCtx)
-			return err
-		}
-	} else {
-		if buildLocalImage {
-			err = fmt.Errorf("Unable to push a local image model to a non replicate host, please disable the local image flag before pushing to this host.")
-			logClient.EndPush(ctx, err, logCtx)
-			return err
-		}
+	if !strings.HasPrefix(imageName, replicatePrefix) && buildLocalImage {
+		err = fmt.Errorf("Unable to push a local image model to a non replicate host, please disable the local image flag before pushing to this host.")
+		logClient.EndPush(ctx, err, logCtx)
+		return err
 	}
 
 	annotations := map[string]string{}
@@ -101,7 +100,7 @@ func push(cmd *cobra.Command, args []string) error {
 
 	startBuildTime := time.Now()
 
-	if err := image.Build(ctx, cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, annotations, buildLocalImage, command); err != nil {
+	if err := image.Build(ctx, cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, annotations, buildLocalImage, dockerClient); err != nil {
 		return err
 	}
 
@@ -112,9 +111,10 @@ func push(cmd *cobra.Command, args []string) error {
 		console.Info("Fast push enabled.")
 	}
 
-	err = docker.Push(ctx, imageName, buildFast, projectDir, command, docker.BuildInfo{
+	err = docker.Push(ctx, imageName, buildFast, projectDir, dockerClient, docker.BuildInfo{
 		BuildTime: buildDuration,
 		BuildID:   buildID.String(),
+		Pipeline:  pushPipeline,
 	}, client)
 	if err != nil {
 		if strings.Contains(err.Error(), "404") {
@@ -143,4 +143,10 @@ func push(cmd *cobra.Command, args []string) error {
 	logClient.EndPush(ctx, nil, logCtx)
 
 	return nil
+}
+
+func addPipelineImage(cmd *cobra.Command) {
+	const pipeline = "x-pipeline"
+	cmd.Flags().BoolVar(&pushPipeline, pipeline, false, "Whether to use the experimental pipeline push feature")
+	_ = cmd.Flags().MarkHidden(pipeline)
 }

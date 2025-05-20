@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -9,8 +8,8 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/image"
-	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -55,13 +54,16 @@ func newRunCommand() *cobra.Command {
 func run(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	dockerCommand := docker.NewDockerCommand()
+	dockerClient, err := docker.NewClient(ctx)
+	if err != nil {
+		return err
+	}
 
 	cfg, projectDir, err := config.GetConfig(configFilename)
 	if err != nil {
 		return err
 	}
-	imageName, err := image.BuildBase(ctx, dockerCommand, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput)
+	imageName, err := image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput)
 	if err != nil {
 		return err
 	}
@@ -73,21 +75,17 @@ func run(cmd *cobra.Command, args []string) error {
 		gpus = "all"
 	}
 
-	runOptions := docker.RunOptions{
+	runOptions := command.RunOptions{
 		Args:    args,
 		Env:     envFlags,
 		GPUs:    gpus,
 		Image:   imageName,
-		Volumes: []docker.Volume{{Source: projectDir, Destination: "/src"}},
+		Volumes: []command.Volume{{Source: projectDir, Destination: "/src"}},
 		Workdir: "/src",
 	}
-	runOptions, err = docker.FillInWeightsManifestVolumes(ctx, dockerCommand, runOptions)
+	runOptions, err = docker.FillInWeightsManifestVolumes(ctx, dockerClient, runOptions)
 	if err != nil {
 		return err
-	}
-
-	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
-		runOptions.Platform = "linux/amd64"
 	}
 
 	for _, portString := range runPorts {
@@ -96,7 +94,7 @@ func run(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		runOptions.Ports = append(runOptions.Ports, docker.Port{HostPort: port, ContainerPort: port})
+		runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: port})
 	}
 
 	console.Info("")
@@ -106,14 +104,14 @@ func run(cmd *cobra.Command, args []string) error {
 		console.Info("Fast run enabled.")
 	}
 
-	err = docker.Run(ctx, runOptions)
+	err = docker.Run(ctx, dockerClient, runOptions)
 	// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
 	// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
 	if runOptions.GPUs == "all" && err == docker.ErrMissingDeviceDriver {
 		console.Info("Missing device driver, re-trying without GPU")
 
 		runOptions.GPUs = ""
-		err = docker.Run(ctx, runOptions)
+		err = docker.Run(ctx, dockerClient, runOptions)
 	}
 
 	return err

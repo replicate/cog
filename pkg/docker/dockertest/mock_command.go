@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -95,5 +96,22 @@ func (c *MockCommand) ContainerStop(ctx context.Context, containerID string) err
 }
 
 func (c *MockCommand) ImageBuild(ctx context.Context, options command.ImageBuildOptions) error {
+	panic("not implemented")
+}
+
+func (c *MockCommand) Run(ctx context.Context, options command.RunOptions) error {
+	// hack to handle generating tar files for monobase
+	if options.Args[0] == "/opt/r8/monobase/tar.sh" || options.Args[0] == "/opt/r8/monobase/apt.sh" {
+		tmpDir := options.Volumes[0].Source
+		tarfile := strings.TrimPrefix(options.Args[1], "/buildtmp/")
+
+		outPath := filepath.Join(tmpDir, tarfile)
+		return os.WriteFile(outPath, []byte("hello\ngo\n"), 0o644)
+	}
+
+	panic("not implemented")
+}
+
+func (c *MockCommand) ContainerStart(ctx context.Context, options command.RunOptions) (string, error) {
 	panic("not implemented")
 }

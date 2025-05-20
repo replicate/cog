@@ -19,6 +19,17 @@ func Exists(path string) (bool, error) {
 	}
 }
 
+func IsEmpty(path string) (bool, error) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		return false, err
+	}
+	return len(entries) == 0, nil
+}
+
 func IsDir(path string) (bool, error) {
 	file, err := os.Stat(path)
 	if err != nil {

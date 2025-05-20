@@ -166,7 +166,7 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 		schemaJSON = data
 	} else {
 		console.Info("Validating model schema...")
-		schema, err := GenerateOpenAPISchema(ctx, imageName, cfg.Build.GPU)
+		schema, err := GenerateOpenAPISchema(ctx, dockerCommand, imageName, cfg.Build.GPU)
 		if err != nil {
 			return fmt.Errorf("Failed to get type signature: %w", err)
 		}
@@ -205,7 +205,7 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 		return fmt.Errorf("Failed to convert config to JSON: %w", err)
 	}
 
-	pipFreeze, err := GeneratePipFreeze(ctx, imageName, fastFlag)
+	pipFreeze, err := GeneratePipFreeze(ctx, dockerCommand, imageName, fastFlag)
 	if err != nil {
 		return fmt.Errorf("Failed to generate pip freeze from image: %w", err)
 	}
@@ -271,7 +271,7 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 		labels[key] = val
 	}
 
-	if err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, imageName, labels, bundledSchemaFile); err != nil {
+	if err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, imageName, labels, bundledSchemaFile, progressOutput); err != nil {
 		return fmt.Errorf("Failed to add labels to image: %w", err)
 	}
 	return nil
@@ -280,7 +280,7 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 // BuildAddLabelsAndSchemaToImage builds a cog model with labels and schema.
 //
 // The new image is based on the provided image with the labels and schema file appended to it.
-func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Command, image string, labels map[string]string, bundledSchemaFile string) error {
+func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Command, image string, labels map[string]string, bundledSchemaFile string, progressOutput string) error {
 	dockerfile := "FROM " + image + "\n"
 	dockerfile += "COPY " + bundledSchemaFile + " .cog\n"
 
@@ -288,6 +288,7 @@ func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Co
 		DockerfileContents: dockerfile,
 		ImageName:          image,
 		Labels:             labels,
+		ProgressOutput:     progressOutput,
 	}
 
 	if err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {

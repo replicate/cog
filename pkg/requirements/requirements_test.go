@@ -142,6 +142,252 @@ cycler==0.12.1 \
 	}, requirements)
 }
 
+func TestComfyUIRequirements(t *testing.T) {
+	srcDir := t.TempDir()
+	reqFile := path.Join(srcDir, "requirements.txt")
+	err := os.WriteFile(reqFile, []byte(`torch
+torchvision
+torchaudio
+torchsde
+einops
+transformers>=4.49.0
+tokenizers>=0.13.3
+sentencepiece
+safetensors>=0.3.0
+aiohttp
+accelerate>=1.1.1
+pyyaml
+Pillow
+scipy
+tqdm
+psutil
+spandrel
+soundfile
+kornia>=0.7.1
+websocket-client==1.6.3
+diffusers>=0.31.0
+av>=14.1.0
+comfyui-frontend-package==1.17.11
+comfyui-workflow-templates==0.1.3
+
+# ComfyUI-AdvancedLivePortrait
+dill
+
+# Inspire
+webcolors
+
+# fix for pydantic issues in cog
+# https://github.com/replicate/cog/issues/1623
+albumentations==1.4.3
+
+# was-node-suite-comfyui
+# https://github.com/WASasquatch/was-node-suite-comfyui/blob/main/requirements.txt
+cmake
+imageio
+joblib
+matplotlib
+pilgram
+scikit-learn
+rembg
+
+# ComfyUI_essentials
+numba
+
+# ComfyUI_FizzNodes
+pandas
+numexpr
+
+# comfyui-reactor-node
+insightface
+onnx
+
+# ComfyUI-Impact-Pack
+segment-anything
+piexif
+
+# ComfyUI-Impact-Subpack
+ultralytics!=8.0.177
+
+# comfyui_segment_anything
+timm
+
+# comfyui_controlnet_aux
+# https://github.com/Fannovel16/comfyui_controlnet_aux/blob/main/requirements.txt
+importlib_metadata
+opencv-python-headless>=4.0.1.24
+filelock
+numpy
+scikit-image
+python-dateutil
+mediapipe
+svglib
+fvcore
+yapf
+omegaconf
+ftfy
+addict
+yacs
+trimesh[easy]
+
+# ComfyUI-KJNodes
+librosa
+color-matcher
+
+# PuLID
+facexlib
+
+# SUPIR
+open-clip-torch>=2.24.0
+pytorch-lightning>=2.2.1
+
+# For train.py and custom loras
+huggingface_hub[hf-transfer]
+
+# ComfyUI-segment-anything-2
+iopath`), 0o644)
+	require.NoError(t, err)
+
+	requirements, err := ReadRequirements(reqFile)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"torch",
+		"torchvision",
+		"torchaudio",
+		"torchsde",
+		"einops",
+		"transformers>=4.49.0",
+		"tokenizers>=0.13.3",
+		"sentencepiece",
+		"safetensors>=0.3.0",
+		"aiohttp",
+		"accelerate>=1.1.1",
+		"pyyaml",
+		"Pillow",
+		"scipy",
+		"tqdm",
+		"psutil",
+		"spandrel",
+		"soundfile",
+		"kornia>=0.7.1",
+		"websocket-client==1.6.3",
+		"diffusers>=0.31.0",
+		"av>=14.1.0",
+		"comfyui-frontend-package==1.17.11",
+		"comfyui-workflow-templates==0.1.3",
+		"dill",
+		"webcolors",
+		"albumentations==1.4.3",
+		"cmake",
+		"imageio",
+		"joblib",
+		"matplotlib",
+		"pilgram",
+		"scikit-learn",
+		"rembg",
+		"numba",
+		"pandas",
+		"numexpr",
+		"insightface",
+		"onnx",
+		"segment-anything",
+		"piexif",
+		"ultralytics!=8.0.177",
+		"timm",
+		"importlib_metadata",
+		"opencv-python-headless>=4.0.1.24",
+		"filelock",
+		"numpy",
+		"scikit-image",
+		"python-dateutil",
+		"mediapipe",
+		"svglib",
+		"fvcore",
+		"yapf",
+		"omegaconf",
+		"ftfy",
+		"addict",
+		"yacs",
+		"trimesh[easy]",
+		"librosa",
+		"color-matcher",
+		"facexlib",
+		"open-clip-torch>=2.24.0",
+		"pytorch-lightning>=2.2.1",
+		"huggingface_hub[hf-transfer]",
+		"iopath",
+	}, requirements)
+}
+
+func TestTensorflowRequirements(t *testing.T) {
+	srcDir := t.TempDir()
+	reqFile := path.Join(srcDir, ".requirements.txt")
+	err := os.WriteFile(reqFile, []byte(`compel==2.0.3
+diffusers>=0.27.1
+gputil==1.4.0
+loguru==0.7.2
+opencv-python>=4.9.0.80
+pillow>=10.2.0
+psutil==6.1.1
+replicate>=1.0.4
+sentry-sdk[fastapi,loguru]>=2.16.0
+antialiased_cnns==0.3
+beautifulsoup4==4.13.4
+imageio==2.37.0
+ipdb==0.13.13
+kornia==0.8.1
+matplotlib==3.10.3
+numpy==1.23.5
+opencv_python==4.11.0.86
+Pillow==11.2.1
+pytorch_lightning==2.3.3
+PyYAML==6.0.2
+Requests==2.32.3
+scipy==1.15.3
+scikit-image==0.24.0
+tensorflow==2.10.0
+tensorlayer==2.2.5
+tf_slim==1.1.0
+timm==1.0.15
+torch==2.0.1
+torchvision==0.15.2
+tqdm==4.67.1`), 0o644)
+	require.NoError(t, err)
+	requirements, err := ReadRequirements(reqFile)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"compel==2.0.3",
+		"diffusers>=0.27.1",
+		"gputil==1.4.0",
+		"loguru==0.7.2",
+		"opencv-python>=4.9.0.80",
+		"pillow>=10.2.0",
+		"psutil==6.1.1",
+		"replicate>=1.0.4",
+		"sentry-sdk[fastapi,loguru]>=2.16.0",
+		"antialiased_cnns==0.3",
+		"beautifulsoup4==4.13.4",
+		"imageio==2.37.0",
+		"ipdb==0.13.13",
+		"kornia==0.8.1",
+		"matplotlib==3.10.3",
+		"numpy==1.23.5",
+		"opencv_python==4.11.0.86",
+		"Pillow==11.2.1",
+		"pytorch_lightning==2.3.3",
+		"PyYAML==6.0.2",
+		"Requests==2.32.3",
+		"scipy==1.15.3",
+		"scikit-image==0.24.0",
+		"tensorflow==2.10.0",
+		"tensorlayer==2.2.5",
+		"tf_slim==1.1.0",
+		"timm==1.0.15",
+		"torch==2.0.1",
+		"torchvision==0.15.2",
+		"tqdm==4.67.1",
+	}, requirements)
+}
+
 func checkRequirements(t *testing.T, expected []string, actual []string) {
 	t.Helper()
 	for n, expectLine := range expected {

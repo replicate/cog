@@ -12,6 +12,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/util/console"
@@ -56,10 +57,13 @@ Otherwise, it will build the model in the current directory and train it.`,
 func cmdTrain(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	dockerCommand := docker.NewDockerCommand()
+	dockerClient, err := docker.NewClient(ctx)
+	if err != nil {
+		return err
+	}
 
 	imageName := ""
-	volumes := []docker.Volume{}
+	volumes := []command.Volume{}
 	gpus := gpusFlag
 
 	cfg, projectDir, err := config.GetConfig(configFilename)
@@ -74,12 +78,12 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 			buildFast = cfg.Build.Fast
 		}
 
-		if imageName, err = image.BuildBase(ctx, dockerCommand, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
+		if imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
 			return err
 		}
 
 		// Base image doesn't have /src in it, so mount as volume
-		volumes = append(volumes, docker.Volume{
+		volumes = append(volumes, command.Volume{
 			Source:      projectDir,
 			Destination: "/src",
 		})
@@ -91,7 +95,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		// Use existing image
 		imageName = args[0]
 
-		inspectResp, err := dockerCommand.Pull(ctx, imageName, false)
+		inspectResp, err := dockerClient.Pull(ctx, imageName, false)
 		if err != nil {
 			return fmt.Errorf("Failed to pull image %q: %w", imageName, err)
 		}
@@ -111,13 +115,13 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	console.Info("")
 	console.Infof("Starting Docker image %s...", imageName)
 
-	predictor, err := predict.NewPredictor(ctx, docker.RunOptions{
+	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: volumes,
 		Env:     trainEnvFlags,
 		Args:    []string{"python", "-m", "cog.server.http", "--x-mode", "train"},
-	}, true, buildFast, dockerCommand)
+	}, true, buildFast, dockerClient)
 	if err != nil {
 		return err
 	}

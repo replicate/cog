@@ -305,7 +305,11 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 
 	// Load python_requirements into memory to simplify reading it multiple times
 	if c.Build.PythonRequirements != "" {
-		c.Build.pythonRequirementsContent, err = requirements.ReadRequirements(path.Join(projectDir, c.Build.PythonRequirements))
+		requirementsFilePath := c.Build.PythonRequirements
+		if !strings.HasPrefix(requirementsFilePath, "/") {
+			requirementsFilePath = path.Join(projectDir, c.Build.PythonRequirements)
+		}
+		c.Build.pythonRequirementsContent, err = requirements.ReadRequirements(requirementsFilePath)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("Failed to open python_requirements file: %w", err))
 		}
