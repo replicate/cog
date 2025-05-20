@@ -381,7 +381,7 @@ if PYDANTIC_V2:
 else:
 
     def update_nullable_optional(openapi_schema: Dict[str, Any], app: FastAPI) -> None:
-        def patch_nullable_parameters(openapi_schema: Dict[str, Any]):
+        def patch_nullable_parameters(openapi_schema: Dict[str, Any]) -> None:
             for _, methods in openapi_schema.get("paths", {}).items():
                 for _, operation in methods.items():
                     for param in operation.get("parameters", []):
@@ -391,7 +391,7 @@ else:
                             if "nullable" not in schema:
                                 schema["nullable"] = True
 
-        def patch_nullable_union_outputs(openapi_schema: Dict[str, Any]):
+        def patch_nullable_union_outputs(openapi_schema: Dict[str, Any]) -> None:
             for _, schema in (
                 openapi_schema.get("components", {}).get("schemas", {}).items()
             ):
@@ -448,7 +448,7 @@ else:
             schema: Dict[str, Any],
             openapi_schema: Dict[str, Any],
             is_output: bool = False,
-        ):
+        ) -> None:
             nullable_fields = extract_nullable_fields_recursive(
                 model, is_output=is_output
             )
