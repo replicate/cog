@@ -116,6 +116,21 @@
     ]
   },
   {
+    "Torch": "2.5.0+cu124",
+    "Torchvision": "0.20.0",
+    "Torchaudio": "2.5.0",
+    "FindLinks": "",
+    "ExtraIndexURL": "https://download.pytorch.org/whl/cu124",
+    "CUDA": "12.4.1",
+    "Pythons": [
+      "3.9",
+      "3.10",
+      "3.11",
+      "3.12",
+      "3.13"
+    ]
+  },
+  {
     "Torch": "2.4.1",
     "Torchvision": "0.19.1",
     "Torchaudio": "2.4.1",
