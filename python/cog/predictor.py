@@ -241,29 +241,29 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
     for name, parameter in signature.parameters.items():
         InputType = parameter.annotation
 
-        validate_input_type(InputType, name)
-
         if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
-            raise TypeError(f"Unsupported varargs parameter *{name}.")
+            raise TypeError(f"Unsupported positional parameter *{name}.")
+
         if parameter.kind == inspect.Parameter.VAR_KEYWORD:
-            # create_model_kwargs["__config__"] = {"extra": "allow"}
+            if order != 0:
+                raise TypeError(f"Unsupported keyword parameter **{name}")
 
             class ExtraKeywordInput(BaseInput):
                 if PYDANTIC_V2:
-                    model_config = pydantic.ConfigDict(
-                        extra="allow", use_enum_values=True
-                    )  # type: ignore
+                    model_config = pydantic.ConfigDict(extra="allow")
                 else:
 
                     class Config:
-                        # When using `choices`, the type is converted into an enum to validate
-                        # But, after validation, we want to pass the actual value to predict(), not the enum object
-                        use_enum_values = True
                         extra = "allow"
 
             create_model_kwargs["__base__"] = ExtraKeywordInput
             name = "__pydantic_extra__"
-            InputType = Dict[str, InputType]
+            InputType = Dict[str, Any]
+
+            create_model_kwargs[name] = (InputType, Input())
+            continue
+
+        validate_input_type(InputType, name)
 
         # if no default is specified, create an empty, required input
         if parameter.default is inspect.Signature.empty:
