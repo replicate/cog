@@ -1,5 +1,4 @@
 import base64
-import json
 import os
 import sys
 import threading
@@ -48,7 +47,7 @@ def test_kwargs_input(client, match):
     assert resp.json() == match({"status": "succeeded"})
     assert resp.status_code == 200
 
-    result = json.loads(resp.json()["output"])
+    result = resp.json()["output"]
     assert result == input
 
 

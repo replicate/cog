@@ -1,8 +1,8 @@
-import json
+from typing import Union, Dict
 
 from cog import BasePredictor
 
 
 class Predictor(BasePredictor):
-    def predict(self, **kwargs: str | int) -> str:
-        return json.dumps(kwargs)
+    def predict(self, **kwargs: Union[str, int]) -> Dict:
+        return kwargs
