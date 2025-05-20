@@ -41,6 +41,8 @@ if PYDANTIC_V2:
         unwrap_pydantic_serialization_iterators,
         update_openapi_schema_for_pydantic_2,
     )
+else:
+    from .helpers import update_nullable_optional
 
 from .probes import ProbeHelper
 from .runner import (
@@ -136,6 +138,8 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             # See: https://github.com/tiangolo/fastapi/pull/9873#issuecomment-1997105091
             if PYDANTIC_V2:
                 update_openapi_schema_for_pydantic_2(openapi_schema)
+            else:
+                update_nullable_optional(openapi_schema, app)
 
             app.openapi_schema = openapi_schema
 

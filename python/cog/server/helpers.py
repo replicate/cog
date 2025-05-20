@@ -10,11 +10,25 @@ import sys
 import threading
 import uuid
 from types import TracebackType
-from typing import Any, BinaryIO, Callable, Dict, List, Sequence, TextIO, Union
+from typing import (
+    Any,
+    BinaryIO,
+    Callable,
+    Dict,
+    List,
+    Sequence,
+    TextIO,
+    Union,
+    get_args,
+)
 
 import pydantic
+from fastapi import FastAPI
+from fastapi.routing import APIRoute
+from pydantic import BaseModel
 from typing_extensions import Self  # added to typing in python 3.11
 
+from ..predictor import is_optional
 from ..types import PYDANTIC_V2
 from .errors import CogRuntimeError, CogTimeoutError
 
@@ -360,6 +374,118 @@ if PYDANTIC_V2:
         if isinstance(obj, list):
             return [unwrap_pydantic_serialization_iterators(value) for value in obj]
         return obj
+
+else:
+
+    def update_nullable_optional(openapi_schema: Dict[str, Any], app: FastAPI) -> None:
+        def patch_nullable_parameters(openapi_schema: Dict[str, Any]):
+            for _, methods in openapi_schema.get("paths", {}).items():
+                for _, operation in methods.items():
+                    for param in operation.get("parameters", []):
+                        # If the parameter is optional (required: false), make it nullable
+                        if not param.get("required", True):
+                            schema = param.get("schema", {})
+                            if "nullable" not in schema:
+                                schema["nullable"] = True
+
+        def extract_nullable_fields_recursive(
+            model: BaseModel, prefix: str = ""
+        ) -> Dict[str, bool]:
+            nullable_map = {}
+            for field_name, field in model.__fields__.items():
+                full_field_name = f"{prefix}.{field_name}" if prefix else field_name
+                print("full_field_name:")
+                print(full_field_name)
+                type_hint = field.annotation
+
+                if is_optional(type_hint) and full_field_name.startswith("input."):
+                    nullable_map[full_field_name] = True
+
+                inner_type = (
+                    get_args(type_hint)[0] if is_optional(type_hint) else type_hint
+                )
+                if isinstance(inner_type, type) and issubclass(inner_type, BaseModel):
+                    nested = extract_nullable_fields_recursive(
+                        inner_type, prefix=full_field_name
+                    )
+                    nullable_map.update(nested)
+            return nullable_map
+
+        def resolve_schema_ref(
+            ref: str, openapi_schema: Dict[str, Any]
+        ) -> Dict[str, Any]:
+            parts = ref.lstrip("#/").split("/")
+            node = openapi_schema
+            for part in parts:
+                node = node.get(part, {})
+            return node
+
+        def patch_nullable_fields_for_model(
+            model: BaseModel, schema: Dict[str, Any], openapi_schema: Dict[str, Any]
+        ):
+            nullable_fields = extract_nullable_fields_recursive(model)
+
+            for field_path in nullable_fields:
+                parts = field_path.split(".")
+                node = schema
+
+                for i, part in enumerate(parts):
+                    if "properties" not in node:
+                        break
+
+                    prop = node["properties"].get(part)
+                    if prop is None:
+                        break
+
+                    # Handle nested $ref
+                    if "$ref" in prop:
+                        node = resolve_schema_ref(prop["$ref"], openapi_schema)
+                    else:
+                        node = prop
+
+                    if i == len(parts) - 1:
+                        node["nullable"] = True
+
+        for route in app.routes:
+            if not isinstance(route, APIRoute):
+                continue
+
+            for method in route.methods:
+                method = method.lower()
+                operation = openapi_schema["paths"].get(route.path, {}).get(method, {})
+                if not operation:
+                    continue
+
+                request_body = (
+                    operation.get("requestBody", {})
+                    .get("content", {})
+                    .get("application/json", {})
+                )
+                schema = request_body.get("schema", {})
+
+                for dep in route.dependant.body_params:
+                    model = getattr(dep, "type_", None)
+                    if not model or not issubclass(model, BaseModel):
+                        continue
+
+                    # Resolve schema node for this model
+                    if "$ref" in schema:
+                        schema_node = resolve_schema_ref(schema["$ref"], openapi_schema)
+                    elif "allOf" in schema:
+                        for item in schema["allOf"]:
+                            if "$ref" in item:
+                                schema_node = resolve_schema_ref(
+                                    item["$ref"], openapi_schema
+                                )
+                                break
+                        else:
+                            schema_node = schema
+                    else:
+                        schema_node = schema
+
+                    patch_nullable_fields_for_model(model, schema_node, openapi_schema)
+
+        patch_nullable_parameters(openapi_schema)
 
 
 def update_openapi_schema_for_pydantic_2(
