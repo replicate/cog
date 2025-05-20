@@ -17,9 +17,12 @@ from typing import (
     Dict,
     List,
     Sequence,
+    Set,
     TextIO,
+    Type,
     Union,
     get_args,
+    get_origin,
 )
 
 import pydantic
@@ -388,25 +391,45 @@ else:
                             if "nullable" not in schema:
                                 schema["nullable"] = True
 
+        def patch_nullable_union_outputs(openapi_schema: Dict[str, Any]):
+            for _, schema in (
+                openapi_schema.get("components", {}).get("schemas", {}).items()
+            ):
+                # Look for anyOf with more than one entry
+                if (
+                    "anyOf" in schema
+                    and isinstance(schema["anyOf"], list)
+                    and len(schema["anyOf"]) > 1
+                ):
+                    # If it's missing nullable, and it's meant to represent an Optional/Union output
+                    if "nullable" not in schema:
+                        schema["nullable"] = True
+
+        def is_pydantic_model_type(tp) -> bool:
+            try:
+                return isinstance(tp, type) and issubclass(tp, BaseModel)
+            except TypeError:
+                return False
+
         def extract_nullable_fields_recursive(
-            model: BaseModel, prefix: str = ""
+            model: BaseModel, prefix: str = "", is_output: bool = False
         ) -> Dict[str, bool]:
             nullable_map = {}
             for field_name, field in model.__fields__.items():
                 full_field_name = f"{prefix}.{field_name}" if prefix else field_name
-                print("full_field_name:")
-                print(full_field_name)
                 type_hint = field.annotation
 
-                if is_optional(type_hint) and full_field_name.startswith("input."):
+                if is_optional(type_hint) and (
+                    full_field_name.startswith("input.") or is_output
+                ):
                     nullable_map[full_field_name] = True
 
                 inner_type = (
                     get_args(type_hint)[0] if is_optional(type_hint) else type_hint
                 )
-                if isinstance(inner_type, type) and issubclass(inner_type, BaseModel):
+                if is_pydantic_model_type(inner_type):
                     nested = extract_nullable_fields_recursive(
-                        inner_type, prefix=full_field_name
+                        inner_type, prefix=full_field_name, is_output=is_output
                     )
                     nullable_map.update(nested)
             return nullable_map
@@ -421,9 +444,14 @@ else:
             return node
 
         def patch_nullable_fields_for_model(
-            model: BaseModel, schema: Dict[str, Any], openapi_schema: Dict[str, Any]
+            model: BaseModel,
+            schema: Dict[str, Any],
+            openapi_schema: Dict[str, Any],
+            is_output: bool = False,
         ):
-            nullable_fields = extract_nullable_fields_recursive(model)
+            nullable_fields = extract_nullable_fields_recursive(
+                model, is_output=is_output
+            )
 
             for field_path in nullable_fields:
                 parts = field_path.split(".")
@@ -446,6 +474,50 @@ else:
                     if i == len(parts) - 1:
                         node["nullable"] = True
 
+        def extract_pydantic_models_from_type(tp) -> Set[Type[BaseModel]]:
+            """Recursively extract all Pydantic models from a response_model type."""
+            models = set()
+
+            origin = get_origin(tp)
+            args = get_args(tp)
+
+            if origin is Union or origin is list or origin is List:
+                for arg in args:
+                    models.update(extract_pydantic_models_from_type(arg))
+            elif isinstance(tp, type) and issubclass(tp, BaseModel):
+                models.add(tp)
+
+            return models
+
+        def collect_nested_models_from_pydantic_model(
+            model: Type[BaseModel], visited=None
+        ) -> Set[Type[BaseModel]]:
+            """Recursively collect all nested Pydantic models inside a given model."""
+            if visited is None:
+                visited = set()
+
+            if model in visited:
+                return set()
+            visited.add(model)
+
+            models = {model}
+            for field in model.__fields__.values():
+                field_type = field.annotation
+                origin = get_origin(field_type)
+
+                if origin is Union:
+                    args = get_args(field_type)
+                else:
+                    args = [field_type]
+
+                for arg in args:
+                    if is_pydantic_model_type(arg):
+                        models.update(
+                            collect_nested_models_from_pydantic_model(arg, visited)
+                        )
+
+            return models
+
         for route in app.routes:
             if not isinstance(route, APIRoute):
                 continue
@@ -455,6 +527,80 @@ else:
                 operation = openapi_schema["paths"].get(route.path, {}).get(method, {})
                 if not operation:
                     continue
+
+                response_model = getattr(route, "response_model", None)
+                if response_model:
+                    for model in extract_pydantic_models_from_type(response_model):
+                        ref_name = model.__name__
+                        schema_node = (
+                            openapi_schema.get("components", {})
+                            .get("schemas", {})
+                            .get(ref_name)
+                        )
+                        if schema_node:
+                            patch_nullable_fields_for_model(
+                                model,
+                                schema_node,
+                                openapi_schema,
+                            )
+                            # Also patch any properties that reference other models
+                            properties = schema_node.get("properties", {})
+
+                            all_models = collect_nested_models_from_pydantic_model(
+                                model
+                            )
+
+                            for field_schema in properties.values():
+                                if "$ref" in field_schema:
+                                    ref = field_schema["$ref"]
+                                    nested_model_name = ref.split("/")[-1]
+                                    nested_model = next(
+                                        (
+                                            m
+                                            for m in all_models
+                                            if m.__name__ == nested_model_name
+                                        ),
+                                        None,
+                                    )
+                                    if nested_model:
+                                        nested_schema_node = resolve_schema_ref(
+                                            ref, openapi_schema
+                                        )
+                                        if "anyOf" in nested_schema_node:
+                                            for item in nested_schema_node["anyOf"]:
+                                                if "$ref" in item:
+                                                    inner_ref = item["$ref"]
+                                                    inner_model_name = inner_ref.split(
+                                                        "/"
+                                                    )[-1]
+
+                                                    inner_model = next(
+                                                        (
+                                                            m
+                                                            for m in all_models
+                                                            if m.__name__
+                                                            == inner_model_name
+                                                        ),
+                                                        None,
+                                                    )
+                                                    if inner_model:
+                                                        actual_schema = (
+                                                            resolve_schema_ref(
+                                                                inner_ref,
+                                                                openapi_schema,
+                                                            )
+                                                        )
+                                                        patch_nullable_fields_for_model(
+                                                            inner_model,
+                                                            actual_schema,
+                                                            openapi_schema,
+                                                            is_output=True,
+                                                        )
+                                        patch_nullable_fields_for_model(
+                                            nested_model,
+                                            nested_schema_node,
+                                            openapi_schema,
+                                        )
 
                 request_body = (
                     operation.get("requestBody", {})
@@ -486,6 +632,7 @@ else:
                     patch_nullable_fields_for_model(model, schema_node, openapi_schema)
 
         patch_nullable_parameters(openapi_schema)
+        patch_nullable_union_outputs(openapi_schema)
 
 
 def update_openapi_schema_for_pydantic_2(

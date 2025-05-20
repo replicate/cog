@@ -271,10 +271,6 @@ def test_openapi_specification_with_custom_user_defined_output_type(
     }
 
 
-@pytest.mark.skipif(
-    not PYDANTIC_V2,
-    reason="Support for nullable schemas for optional fields was added in Pydantic V2.",
-)
 @uses_predictor("openapi_optional_output_type")
 def test_openapi_specification_with_optional_output_type(
     client,
