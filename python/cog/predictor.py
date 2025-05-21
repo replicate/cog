@@ -242,7 +242,7 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
         InputType = parameter.annotation
 
         if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
-            raise TypeError(f"Unsupported positional parameter *{name}.")
+            raise TypeError(f"Unsupported variadic positional parameter *{name}.")
 
         if parameter.kind == inspect.Parameter.VAR_KEYWORD:
             if order != 0:
