@@ -439,7 +439,7 @@ def test_predict_complex_types(docker_image, cog_binary):
     project_dir = Path(__file__).parent / "fixtures/complex-types"
 
     build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image, "--x-localimage"],
+        [cog_binary, "build", "-t", docker_image, "--x-fast", "--x-localimage"],
         cwd=project_dir,
         capture_output=True,
     )
