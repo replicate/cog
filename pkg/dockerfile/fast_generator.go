@@ -453,7 +453,7 @@ func (g *FastGenerator) generateAptTarball(ctx context.Context, tmpDir string) (
 
 func (g *FastGenerator) validateConfig() error {
 	if len(g.Config.Build.Run) > 0 {
-		return errors.New("cog builds with --x-fast do not support build run commands.")
+		return errors.New("cog builds with fast boots do not support build run commands.")
 	}
 	return nil
 }
