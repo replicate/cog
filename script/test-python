@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Runs python test suite for current python version and passes
+# any additional arguments along to pytest command.
+#
+# Usage:
+#    ./script/test-python --no-cov python/tests/cog/test_files.py -k test_put_file_to_signed_endpoint_with_location
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+IFS=. read -r major minor _ <".python-version"
+PYVERSION="py${major}${minor}"
+
+exec uv run tox -e "$PYVERSION-pydantic1-tests,$PYVERSION-pydantic2-tests" -- "$@"

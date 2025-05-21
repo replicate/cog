@@ -93,6 +93,8 @@ Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the fu
 
 ## Development environment
 
+We use the ["scripts to rule them all"](https://github.blog/engineering/engineering-principles/scripts-to-rule-them-all/) philosophy to manage common tasks across the project. These are mostly backed by a Makefile that contains the implementation.
+
 You'll need the following dependencies installed to build Cog locally:
 - [Go](https://golang.org/doc/install): We're targeting 1.24, but you can install the latest version since Go is backwards compatible. If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
 - [uv](https://docs.astral.sh/uv/): Python versions and dependencies are managed by uv.
@@ -102,19 +104,31 @@ Install the Python dependencies:
 
     script/setup
 
-Once you have Go installed, run:
+Once you have Go installed you can install the cog binary by running:
 
     make install PREFIX=$(go env GOPATH)
 
 This installs the `cog` binary to `$GOPATH/bin/cog`.
 
-To run the tests:
+To run ALL the tests:
 
-    make test
+    script/test-all
 
-The project is formatted by goimports. To format the source code, run:
+To run per-language tests (forwards arguments to test runner):
 
-    make fmt
+    script/test-python --no-cov python/tests/cog/test_files.py -k test_put_file_to_signed_endpoint_with_location
+
+    script/test-go ./pkg/config
+
+The project is formatted by goimports and ruff. To format the source code, run:
+
+    script/format
+
+To run code linting across all files:
+
+    script/lint
+
+For more information check the Makefile targets for more specific commands.
 
 If you encounter any errors, see the troubleshooting section below?
 
@@ -150,20 +164,23 @@ There are a few concepts used throughout Cog that might be helpful to understand
 **To run the entire test suite:**
 
 ```sh
-make test
+script/test # see also: make test
 ```
 
 **To run just the Golang tests:**
 
 ```sh
-make test-go
+script/test-go # see also: make test-go
 ```
 
 **To run just the Python tests:**
 
 ```sh
-make test-python
+script/test-python # see also: make test-python
 ```
+
+> [!INFO]
+> Note that this will run the Python test suite using only the current version of Python defined in .python-version. To run a more comprehensive Python test suite then use `make test-python`.
 
 **To run just the integration tests:**
 
@@ -172,6 +189,12 @@ make test-integration
 ```
 
 **To run a specific Python test:**
+
+```sh
+script/test-python python/tests/server/test_http.py::test_openapi_specification_with_yield
+```
+
+**To run a specific Python test under a specific environment**
 
 ```sh
 uv run tox -e py312-pydantic2-tests -- python/tests/server/test_http.py::test_openapi_specification_with_yield

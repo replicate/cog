@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Runs go test suite for current python version and passes
+# any additional arguments along to pytest command.
+#
+# Usage:
+#    ./script/test-go ./pkg/config
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+exec go tool gotestsum -- -short -timeout 1200s -parallel 5 "${@:-"./..."}"
