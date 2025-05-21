@@ -89,7 +89,6 @@ def test_openapi_specification(client):
                     "name": "prefer",
                     "required": False,
                     "schema": {
-                        "nullable": True,
                         "title": "Prefer",
                         "type": "string",
                     },

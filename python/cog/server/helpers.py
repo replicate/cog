@@ -17,12 +17,10 @@ from typing import (
     Dict,
     List,
     Sequence,
-    Set,
     TextIO,
-    Type,
     Union,
     get_args,
-    get_origin,
+    get_type_hints,
 )
 
 import pydantic
@@ -31,7 +29,7 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel
 from typing_extensions import Self  # added to typing in python 3.11
 
-from ..predictor import is_optional
+from ..predictor import is_none, is_optional
 from ..types import PYDANTIC_V2
 from .errors import CogRuntimeError, CogTimeoutError
 
@@ -380,259 +378,78 @@ if PYDANTIC_V2:
 
 else:
 
+    def get_annotations(tp) -> dict[str, Any]:
+        if sys.version_info >= (3, 10):
+            return get_type_hints(tp)
+        return tp.__annotations__
+
+    def is_pydantic_model_type(tp) -> bool:
+        try:
+            return isinstance(tp, type) and issubclass(tp, BaseModel)
+        except TypeError:
+            return False
+
     def update_nullable_optional(openapi_schema: Dict[str, Any], app: FastAPI) -> None:
-        def patch_nullable_parameters(openapi_schema: Dict[str, Any]) -> None:
-            for _, methods in openapi_schema.get("paths", {}).items():
-                for _, operation in methods.items():
-                    for param in operation.get("parameters", []):
-                        # If the parameter is optional (required: false), make it nullable
-                        if not param.get("required", True):
-                            schema = param.get("schema", {})
-                            if "nullable" not in schema:
-                                schema["nullable"] = True
-
-        def patch_nullable_union_outputs(openapi_schema: Dict[str, Any]) -> None:
-            for _, schema in (
-                openapi_schema.get("components", {}).get("schemas", {}).items()
-            ):
-                # Look for anyOf with more than one entry
-                if (
-                    "anyOf" in schema
-                    and isinstance(schema["anyOf"], list)
-                    and len(schema["anyOf"]) > 1
-                ):
-                    # If it's missing nullable, and it's meant to represent an Optional/Union output
-                    if "nullable" not in schema:
-                        schema["nullable"] = True
-
-        def is_pydantic_model_type(tp) -> bool:
-            try:
-                return isinstance(tp, type) and issubclass(tp, BaseModel)
-            except TypeError:
-                return False
-
-        def extract_nullable_fields_recursive(
-            model: BaseModel, prefix: str = "", is_output: bool = False
-        ) -> Dict[str, bool]:
-            nullable_map = {}
-            for field_name, field in model.__fields__.items():
-                full_field_name = f"{prefix}.{field_name}" if prefix else field_name
-                type_hint = field.annotation
-
-                if is_optional(type_hint) and (
-                    full_field_name.startswith("input.") or is_output
-                ):
-                    nullable_map[full_field_name] = True
-
-                inner_type = (
-                    get_args(type_hint)[0] if is_optional(type_hint) else type_hint
-                )
-                if is_pydantic_model_type(inner_type):
-                    nested = extract_nullable_fields_recursive(
-                        inner_type, prefix=full_field_name, is_output=is_output
-                    )
-                    nullable_map.update(nested)
-            return nullable_map
-
-        def resolve_schema_ref(
-            ref: str, openapi_schema: Dict[str, Any]
-        ) -> Dict[str, Any]:
-            parts = ref.lstrip("#/").split("/")
-            node = openapi_schema
-            for part in parts:
-                node = node.get(part, {})
-            return node
-
-        def patch_nullable_fields_for_model(
-            model: BaseModel,
-            schema: Dict[str, Any],
-            openapi_schema: Dict[str, Any],
-            is_output: bool = False,
-        ) -> None:
-            nullable_fields = extract_nullable_fields_recursive(
-                model, is_output=is_output
-            )
-
-            for field_path in nullable_fields:
-                parts = field_path.split(".")
-                node = schema
-
-                for i, part in enumerate(parts):
-                    if "properties" not in node:
-                        break
-
-                    prop = node["properties"].get(part)
-                    if prop is None:
-                        break
-
-                    # Handle nested $ref
-                    if "$ref" in prop:
-                        node = resolve_schema_ref(prop["$ref"], openapi_schema)
-                    else:
-                        node = prop
-
-                    if i == len(parts) - 1:
-                        node["nullable"] = True
-
-        def extract_pydantic_models_from_type(tp) -> Set[Type[BaseModel]]:
-            """Recursively extract all Pydantic models from a response_model type."""
-            models = set()
-
-            origin = get_origin(tp)
-            args = get_args(tp)
-
-            if origin is Union or origin is list or origin is List:
-                for arg in args:
-                    models.update(extract_pydantic_models_from_type(arg))
-            elif isinstance(tp, type) and issubclass(tp, BaseModel):
-                models.add(tp)
-
-            return models
-
-        def collect_nested_models_from_pydantic_model(
-            model: Type[BaseModel], visited=None
-        ) -> Set[Type[BaseModel]]:
-            """Recursively collect all nested Pydantic models inside a given model."""
-            if visited is None:
-                visited = set()
-
-            if model in visited:
-                return set()
-            visited.add(model)
-
-            models = {model}
-            for field in model.__fields__.values():
-                field_type = field.annotation
-                origin = get_origin(field_type)
-
-                if origin is Union:
-                    args = get_args(field_type)
-                else:
-                    args = [field_type]
-
-                for arg in args:
-                    if is_pydantic_model_type(arg):
-                        models.update(
-                            collect_nested_models_from_pydantic_model(arg, visited)
-                        )
-
-            return models
+        def fetch_referenced_schema(schema: Dict[str, Any], ref: str) -> Dict[str, Any]:
+            input_path = ref.replace("#/", "").split("/")
+            referenced_schema = schema
+            while input_path:
+                referenced_schema = referenced_schema[input_path[0]]
+                input_path = input_path[1:]
+            return referenced_schema
 
         for route in app.routes:
             if not isinstance(route, APIRoute):
                 continue
 
-            for method in route.methods:
-                method = method.lower()
-                operation = openapi_schema["paths"].get(route.path, {}).get(method, {})
-                if not operation:
+            for dep in route.dependant.body_params:
+                model = getattr(dep, "type_", None)
+                if not is_pydantic_model_type(model):
                     continue
-
-                response_model = getattr(route, "response_model", None)
-                if response_model:
-                    for model in extract_pydantic_models_from_type(response_model):
-                        ref_name = model.__name__
-                        schema_node = (
-                            openapi_schema.get("components", {})
-                            .get("schemas", {})
-                            .get(ref_name)
-                        )
-                        if schema_node:
-                            patch_nullable_fields_for_model(
-                                model,
-                                schema_node,
-                                openapi_schema,
-                            )
-                            # Also patch any properties that reference other models
-                            properties = schema_node.get("properties", {})
-
-                            all_models = collect_nested_models_from_pydantic_model(
-                                model
-                            )
-
-                            for field_schema in properties.values():
-                                if "$ref" in field_schema:
-                                    ref = field_schema["$ref"]
-                                    nested_model_name = ref.split("/")[-1]
-                                    nested_model = next(
-                                        (
-                                            m
-                                            for m in all_models
-                                            if m.__name__ == nested_model_name
-                                        ),
-                                        None,
-                                    )
-                                    if nested_model:
-                                        nested_schema_node = resolve_schema_ref(
-                                            ref, openapi_schema
-                                        )
-                                        if "anyOf" in nested_schema_node:
-                                            for item in nested_schema_node["anyOf"]:
-                                                if "$ref" in item:
-                                                    inner_ref = item["$ref"]
-                                                    inner_model_name = inner_ref.split(
-                                                        "/"
-                                                    )[-1]
-
-                                                    inner_model = next(
-                                                        (
-                                                            m
-                                                            for m in all_models
-                                                            if m.__name__
-                                                            == inner_model_name
-                                                        ),
-                                                        None,
-                                                    )
-                                                    if inner_model:
-                                                        actual_schema = (
-                                                            resolve_schema_ref(
-                                                                inner_ref,
-                                                                openapi_schema,
-                                                            )
-                                                        )
-                                                        patch_nullable_fields_for_model(
-                                                            inner_model,
-                                                            actual_schema,
-                                                            openapi_schema,
-                                                            is_output=True,
-                                                        )
-                                        patch_nullable_fields_for_model(
-                                            nested_model,
-                                            nested_schema_node,
-                                            openapi_schema,
-                                        )
-
-                request_body = (
-                    operation.get("requestBody", {})
-                    .get("content", {})
-                    .get("application/json", {})
+                input_model_union = get_annotations(model).get("input")
+                if input_model_union is None:
+                    continue
+                input_model = get_args(input_model_union)[0]
+                schema_node = openapi_schema["components"]["schemas"].get(
+                    model.__name__
                 )
-                schema = request_body.get("schema", {})
+                referenced_schema = fetch_referenced_schema(
+                    openapi_schema, schema_node["properties"]["input"]["$ref"]
+                )
+                for k, v in referenced_schema["properties"].items():
+                    annotated_type = get_annotations(input_model)[k]
+                    if is_optional(annotated_type):
+                        v["nullable"] = True
 
-                for dep in route.dependant.body_params:
-                    model = getattr(dep, "type_", None)
-                    if not model or not issubclass(model, BaseModel):
+            response_model = getattr(route, "response_model", None)
+            if is_pydantic_model_type(response_model):
+                output_model_union = get_annotations(response_model).get("output")
+                if output_model_union is None:
+                    continue
+                output_model = get_args(output_model_union)[0]
+                schema_node = openapi_schema["components"]["schemas"].get(
+                    output_model.__name__
+                )
+                root = get_annotations(output_model).get("__root__")
+                for type_arg in get_args(root):
+                    if not is_none(type_arg):
                         continue
+                    schema_node["nullable"] = True
+                    break
+                for count, type_node in enumerate(schema_node.get("anyOf", [])):
+                    ref_node = type_node.get("$ref")
+                    if ref_node is None:
+                        continue
+                    referenced_schema = fetch_referenced_schema(
+                        openapi_schema, ref_node
+                    )
+                    output_model = get_args(root)[count]
+                    for k, v in referenced_schema["properties"].items():
+                        annotated_type = get_annotations(output_model)[k]
+                        if is_optional(annotated_type):
+                            v["nullable"] = True
 
-                    # Resolve schema node for this model
-                    if "$ref" in schema:
-                        schema_node = resolve_schema_ref(schema["$ref"], openapi_schema)
-                    elif "allOf" in schema:
-                        for item in schema["allOf"]:
-                            if "$ref" in item:
-                                schema_node = resolve_schema_ref(
-                                    item["$ref"], openapi_schema
-                                )
-                                break
-                        else:
-                            schema_node = schema
-                    else:
-                        schema_node = schema
-
-                    patch_nullable_fields_for_model(model, schema_node, openapi_schema)
-
-        patch_nullable_parameters(openapi_schema)
-        patch_nullable_union_outputs(openapi_schema)
+        return None
 
 
 def update_openapi_schema_for_pydantic_2(
@@ -659,13 +476,17 @@ def _remove_webhook_events_filter_title(
 
 def _update_nullable_anyof(
     openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
+    in_header: Union[bool, None] = None,
 ) -> None:
     # Version 3.0.X of OpenAPI doesn't support a `null` type, expecting
     # `nullable` to be set instead.
     if isinstance(openapi_schema, dict):
+        if in_header is None:
+            if "in" in openapi_schema:
+                in_header = openapi_schema.get("in") == "header"
         for key, value in list(openapi_schema.items()):
             if key != "anyOf" or not isinstance(value, list):
-                _update_nullable_anyof(value)
+                _update_nullable_anyof(value, in_header=in_header)
                 continue
 
             non_null_items = [item for item in value if item.get("type") != "null"]
@@ -677,12 +498,12 @@ def _update_nullable_anyof(
             else:
                 openapi_schema[key] = non_null_items
 
-            if len(non_null_items) < len(value):
+            if len(non_null_items) < len(value) and not in_header:
                 openapi_schema["nullable"] = True
 
     elif isinstance(openapi_schema, list):
         for item in openapi_schema:
-            _update_nullable_anyof(item)
+            _update_nullable_anyof(item, in_header=in_header)
 
 
 def _flatten_selected_allof_refs(
