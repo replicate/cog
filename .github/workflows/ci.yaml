@@ -119,9 +119,19 @@ jobs:
       - name: Test
         run: python -Im tox run --installpkg "$COG_WHEEL" -e ${{ env.TOX_PYTHON }}-pydantic${{ matrix.pydantic }}-tests
 
+  # TODO[md]: This is a gross hack, remove once this is sorted out: https://github.com/replicate/cog/pull/2353
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-integration:
     name: "Test integration"
+    needs: test-integration-matrix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check test status
+        run: echo "All tests passed successfully!"
+
+  # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
+  test-integration-matrix:
+    name: "Test integration Matrix"
     needs: build-python
     runs-on: ubuntu-latest-16-cores
     strategy:
