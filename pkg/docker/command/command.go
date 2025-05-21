@@ -27,17 +27,22 @@ type Command interface {
 }
 
 type ImageBuildOptions struct {
-	// Platform           string
 	WorkingDir         string
 	DockerfileContents string
-	ImageName          string
-	Secrets            []string
-	NoCache            bool
-	ProgressOutput     string
-	Epoch              *int64
-	ContextDir         string
-	BuildContexts      map[string]string
-	Labels             map[string]string
+	// TODO[md]: ImageName should be renamed to Tag
+	ImageName string
+	// Secrets in the format of "id=foo,src=/path/to/file" or "id=kube,env=KUBECONFIG"
+	// docs: https://docs.docker.com/build/building/secrets/#use-secrets-in-dockerfile
+	Secrets        []string
+	NoCache        bool
+	ProgressOutput string
+	Epoch          *int64
+	ContextDir     string
+	BuildContexts  map[string]string
+	Labels         map[string]string
+
+	// only supported on buildkit client, not cli client
+	BuildArgs map[string]*string
 }
 
 type RunOptions struct {

@@ -235,12 +235,37 @@ def validate_input_type(
 
 
 def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any]:
-    create_model_kwargs = {}
+    create_model_kwargs: Dict[str, Any] = {
+        "__base__": BaseInput,
+        "__config__": None,
+    }
 
     order = 0
 
     for name, parameter in signature.parameters.items():
         InputType = parameter.annotation
+
+        if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
+            raise TypeError(f"Unsupported variadic positional parameter *{name}.")
+
+        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+            if order != 0:
+                raise TypeError(f"Unsupported variadic keyword parameter **{name}")
+
+            class ExtraKeywordInput(BaseInput):
+                if PYDANTIC_V2:
+                    model_config = pydantic.ConfigDict(extra="allow")
+                else:
+
+                    class Config:
+                        extra = "allow"
+
+            create_model_kwargs["__base__"] = ExtraKeywordInput
+            name = "__pydantic_extra__"
+            InputType = Dict[str, Any]
+
+            create_model_kwargs[name] = (InputType, Input())
+            continue
 
         validate_input_type(InputType, name)
 
@@ -329,8 +354,6 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
 
     return create_model(
         "Input",
-        __config__=None,
-        __base__=BaseInput,
         __module__=__name__,
         __validators__=None,
         **get_input_create_model_kwargs(signature),
@@ -435,8 +458,6 @@ def get_training_input_type(predictor: BasePredictor) -> Type[BaseInput]:
 
     return create_model(
         "TrainingInput",
-        __config__=None,
-        __base__=BaseInput,
         __module__=__name__,
         __validators__=None,
         **get_input_create_model_kwargs(signature),

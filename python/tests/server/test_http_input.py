@@ -39,6 +39,18 @@ def test_empty_input(client, match):
     assert resp.json() == match({"status": "succeeded", "output": "foobar"})
 
 
+@uses_predictor("input_kwargs")
+def test_kwargs_input(client, match):
+    """Check we support kwargs input fields"""
+    input = {"animal": "giraffe", "no": 5}
+    resp = client.post("/predictions", json={"input": input})
+    assert resp.json() == match({"status": "succeeded"})
+    assert resp.status_code == 200
+
+    result = resp.json()["output"]
+    assert result == input
+
+
 @uses_predictor("input_integer")
 def test_good_int_input(client, match):
     resp = client.post("/predictions", json={"input": {"num": 3}})
