@@ -183,6 +183,12 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
     return predictor
 
 
+def is_none(type_arg: Any) -> bool:
+    if sys.version_info >= (3, 10):
+        return type_arg is NoneType
+    return type_arg is None.__class__
+
+
 def is_union(type: Type[Any]) -> bool:
     if get_origin(type) is Union:
         return True
@@ -195,9 +201,7 @@ def is_optional(type: Type[Any]) -> bool:
     args = get_args(type)
     if len(args) != 2 or not is_union(type):
         return False
-    if sys.version_info >= (3, 10):
-        return args[1] is NoneType
-    return args[1] is None.__class__
+    return is_none(args[1])
 
 
 def validate_input_type(
