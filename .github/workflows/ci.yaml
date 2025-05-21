@@ -55,6 +55,17 @@ jobs:
       - name: Lint
         run: make lint
 
+  test:
+    name: "Test Results"
+    needs:
+      - test-go
+      - test-python
+      - test-integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check test status
+        run: echo "All tests passed successfully!"
+
   test-go:
     name: "Test Go"
     needs: build-python
