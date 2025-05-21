@@ -3,4 +3,5 @@ build:
   python_requirements: requirements.txt
   system_packages:
     - "git"
+  fast: true
 predict: "predict.py:Predictor"

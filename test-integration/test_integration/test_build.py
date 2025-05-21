@@ -420,7 +420,7 @@ def test_fast_build(docker_image, cog_binary):
         handle.write("\0")
 
     build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image, "--x-fast"],
+        [cog_binary, "build", "-t", docker_image],
         cwd=project_dir,
         capture_output=True,
     )
@@ -490,7 +490,7 @@ def test_fast_build_with_local_image(docker_image, cog_binary):
         handle.write("\0")
 
     build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image, "--x-fast", "--x-localimage"],
+        [cog_binary, "build", "-t", docker_image, "--x-localimage"],
         cwd=project_dir,
         capture_output=True,
     )
