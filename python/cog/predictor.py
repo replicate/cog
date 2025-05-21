@@ -246,7 +246,7 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
 
         if parameter.kind == inspect.Parameter.VAR_KEYWORD:
             if order != 0:
-                raise TypeError(f"Unsupported keyword parameter **{name}")
+                raise TypeError(f"Unsupported variadic keyword parameter **{name}")
 
             class ExtraKeywordInput(BaseInput):
                 if PYDANTIC_V2:
