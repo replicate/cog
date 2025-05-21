@@ -88,7 +88,10 @@ def test_openapi_specification(client):
                     "in": "header",
                     "name": "prefer",
                     "required": False,
-                    "schema": {"title": "Prefer", "type": "string"},
+                    "schema": {
+                        "title": "Prefer",
+                        "type": "string",
+                    },
                 }
             ],
             "requestBody": {
@@ -164,29 +167,19 @@ def test_openapi_specification(client):
         ],
         "type": "object",
         "properties": {
-            "no_default": {
-                "title": "No Default",
-                "type": "string",
-                "x-order": 0,
+            "choices": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/choices",
+                    }
+                ],
+                "x-order": 5,
             },
             "default_without_input": {
                 "title": "Default Without Input",
                 "type": "string",
                 "default": "default",
                 "x-order": 1,
-            },
-            "input_with_default": {
-                "title": "Input With Default",
-                "type": "integer",
-                "default": -10,
-                "x-order": 2,
-            },
-            "path": {
-                "title": "Path",
-                "description": "Some path",
-                "type": "string",
-                "format": "uri",
-                "x-order": 3,
             },
             "image": {
                 "title": "Image",
@@ -195,13 +188,37 @@ def test_openapi_specification(client):
                 "format": "uri",
                 "x-order": 4,
             },
-            "choices": {
-                "allOf": [{"$ref": "#/components/schemas/choices"}],
-                "x-order": 5,
+            "input_with_default": {
+                "title": "Input With Default",
+                "type": "integer",
+                "default": -10,
+                "x-order": 2,
             },
             "int_choices": {
-                "allOf": [{"$ref": "#/components/schemas/int_choices"}],
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/int_choices",
+                    }
+                ],
                 "x-order": 6,
+            },
+            "no_default": {
+                "title": "No Default",
+                "type": "string",
+                "x-order": 0,
+            },
+            "optional_str": {
+                "nullable": True,
+                "title": "Optional Str",
+                "type": "string",
+                "x-order": 7,
+            },
+            "path": {
+                "title": "Path",
+                "description": "Some path",
+                "type": "string",
+                "format": "uri",
+                "x-order": 3,
             },
         },
     }
@@ -253,6 +270,43 @@ def test_openapi_specification_with_custom_user_defined_output_type(
     }
 
 
+@uses_predictor("openapi_optional_output_type")
+def test_openapi_specification_with_optional_output_type(
+    client,
+):
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+    schema = resp.json()
+    assert schema["components"]["schemas"]["Output"] == {
+        "anyOf": [
+            {
+                "$ref": "#/components/schemas/ModelOutput",
+            },
+            {
+                "type": "string",
+            },
+        ],
+        "nullable": True,
+        "title": "Output",
+    }
+    assert schema["components"]["schemas"]["ModelOutput"] == {
+        "properties": {
+            "foo_number": {
+                "default": "42",
+                "title": "Foo Number",
+                "type": "integer",
+            },
+            "foo_string": {
+                "title": "Foo String",
+                "type": "string",
+                "nullable": True,
+            },
+        },
+        "type": "object",
+        "title": "ModelOutput",
+    }
+
+
 @uses_predictor("openapi_output_type")
 def test_openapi_specification_with_custom_user_defined_output_type_called_output(
     client,
@@ -260,7 +314,7 @@ def test_openapi_specification_with_custom_user_defined_output_type_called_outpu
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
     schema = resp.json()
-    assert resp.json()["components"]["schemas"]["Output"] == {
+    assert schema["components"]["schemas"]["Output"] == {
         "properties": {
             "foo_number": {"default": "42", "title": "Foo Number", "type": "integer"},
             "foo_string": {

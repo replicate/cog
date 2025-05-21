@@ -397,7 +397,7 @@ def test_predict_with_fast_build_with_local_image(docker_image, cog_binary):
         handle.write("\0")
 
     build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image, "--x-fast", "--x-localimage"],
+        [cog_binary, "build", "-t", docker_image, "--x-localimage"],
         cwd=project_dir,
         capture_output=True,
     )
@@ -407,7 +407,6 @@ def test_predict_with_fast_build_with_local_image(docker_image, cog_binary):
             cog_binary,
             "predict",
             docker_image,
-            "--x-fast",
             "--x-localimage",
             "--debug",
             "-i",
@@ -550,7 +549,7 @@ def test_predict_fast_build(docker_image, cog_binary):
     project_dir = Path(__file__).parent / "fixtures/fast-build"
 
     result = subprocess.run(
-        [cog_binary, "predict", "--x-fast", "-i", "s=world"],
+        [cog_binary, "predict", "-i", "s=world"],
         cwd=project_dir,
         capture_output=True,
         text=True,

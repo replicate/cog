@@ -37,7 +37,7 @@ var (
 	ErrorBadResponsePushStartEndpoint         = errors.New("Bad response from push start endpoint")
 	ErrorBadResponseInitiateChallengeEndpoint = errors.New("Bad response from start file challenge endpoint")
 	ErrorBadRegistryURL                       = errors.New("The image URL must have 3 components in the format of " + global.ReplicateRegistryHost + "/your-username/your-model")
-	ErrorBadRegistryHost                      = errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using --x-fast.")
+	ErrorBadRegistryHost                      = errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using fast: true in cog.yaml.")
 	ErrorNoSuchDigest                         = errors.New("No digest submitted matches the digest requested")
 )
 

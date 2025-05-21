@@ -19,7 +19,6 @@ import (
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/requirements"
-	"github.com/replicate/cog/pkg/util/version"
 	"github.com/replicate/cog/pkg/weights"
 )
 
@@ -246,8 +245,8 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 	console.Infof("OK: %v", ok)
 	console.Infof("Torch Version: %s", torchVersion)
 
-	cudaVersion := g.Config.Build.CUDA
 	if g.Config.Build.GPU {
+		cudaVersion := g.Config.Build.CUDA
 		if cudaVersion == "" && ok {
 			cudaVersion = g.matrix.DefaultCUDAVersion(torchVersion)
 		}
@@ -256,7 +255,7 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 			cudnnVersion = g.matrix.DefaultCudnnVersion()
 		}
 		if !CheckMajorMinorOnly(cudaVersion) {
-			cudaVersion = version.StripPatch(cudaVersion)
+			return nil, fmt.Errorf("CUDA version must be <major>.<minor>, supported versions: %s", strings.Join(g.matrix.CudaVersions, ", "))
 		}
 		if !CheckMajorOnly(cudnnVersion) {
 			return nil, fmt.Errorf("CUDNN version must be <major> only, supported versions: %s", strings.Join(g.matrix.CudnnVersions, ", "))
@@ -278,10 +277,10 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
 	}...)
 
-	if !g.matrix.IsSupported(g.Config.Build.PythonVersion, torchVersion, cudaVersion) {
+	if !g.matrix.IsSupported(g.Config.Build.PythonVersion, torchVersion, g.Config.Build.CUDA) {
 		return nil, fmt.Errorf(
 			"Unsupported version combination: Python=%s, Torch=%s, CUDA=%s",
-			g.Config.Build.PythonVersion, torchVersion, cudaVersion)
+			g.Config.Build.PythonVersion, torchVersion, g.Config.Build.CUDA)
 	}
 
 	// The only input to monobase.build are these ENV vars
@@ -454,7 +453,7 @@ func (g *FastGenerator) generateAptTarball(ctx context.Context, tmpDir string) (
 
 func (g *FastGenerator) validateConfig() error {
 	if len(g.Config.Build.Run) > 0 {
-		return errors.New("cog builds with --x-fast do not support build run commands.")
+		return errors.New("cog builds with fast: true in the cog.yaml do not support build run commands.")
 	}
 	return nil
 }
