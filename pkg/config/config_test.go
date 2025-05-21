@@ -666,6 +666,26 @@ func TestBlankBuild(t *testing.T) {
 	require.Equal(t, false, config.Build.GPU)
 }
 
+// TestPythonRequirementsForArchWithPlatform checks that generated requirements don't lose any metadata that
+// was supplied in the original requirements.txt, such as platform restrictions. We do expect hashes to be dropped.
+func TestPythonRequirementsForArchWithPlatform(t *testing.T) {
+	tmpDir := t.TempDir()
+	err := os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`pywin32==310 ; sys_platform == 'win32' \
+--hash=sha256:126298077a9d7c95c53823934f000599f66ec9296b09167810eb24875f32689c`), 0o644)
+	require.NoError(t, err)
+	config := &Config{
+		Build: &Build{
+			PythonVersion:      "3.8",
+			PythonRequirements: "requirements.txt",
+		},
+	}
+	require.NoError(t, config.ValidateAndComplete(tmpDir))
+	requirements, err := config.PythonRequirementsForArch("", "", []string{})
+	require.NoError(t, err)
+	expected := "pywin32==310 ; sys_platform == 'win32'"
+	require.Equal(t, expected, requirements)
+}
+
 func TestPythonRequirementsForArchWithAddedPackage(t *testing.T) {
 	config := &Config{
 		Build: &Build{
