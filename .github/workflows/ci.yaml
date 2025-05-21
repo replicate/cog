@@ -151,6 +151,7 @@ jobs:
         run: uv pip install --system tox tox-uv
       - name: Test
         run: make test-integration
+        env:
           COG_DOCKER_SDK_CLIENT: ${{ matrix.new_docker_api_client }}
 
   release:
