@@ -407,7 +407,7 @@ func (c *DockerCommand) exec(ctx context.Context, in io.Reader, outw, errw io.Wr
 				util.NewRingBufferWriter(&stderrBuf, 1024),
 			), stderrpty)
 			if err != nil {
-				console.Errorf("failed to copy stderr pty to errw: %s", err)
+				console.Debugf("failed to copy stderr pty to errw: %s", err)
 			}
 		}()
 	} else {
@@ -425,7 +425,7 @@ func (c *DockerCommand) exec(ctx context.Context, in io.Reader, outw, errw io.Wr
 
 		_, err = io.Copy(outw, outpipe)
 		if err != nil {
-			console.Errorf("failed to copy stdout to outw: %s", err)
+			console.Debugf("failed to copy stdout to outw: %s", err)
 		}
 	}()
 
