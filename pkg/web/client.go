@@ -222,6 +222,10 @@ func (c *Client) PostNewPipeline(ctx context.Context, image string, tarball *byt
 	if err != nil {
 		return err
 	}
+	err = mp.WriteField("dependencies", manifest.Config.Labels[command.CogModelDependenciesLabelKey])
+	if err != nil {
+		return err
+	}
 	part, err := mp.CreateFormFile("source_archive", "source.tar")
 	if err != nil {
 		return err
