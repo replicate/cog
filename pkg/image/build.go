@@ -210,14 +210,20 @@ func Build(ctx context.Context, cfg *config.Config, dir, imageName string, secre
 		return fmt.Errorf("Failed to generate pip freeze from image: %w", err)
 	}
 
+	modelDependencies, err := GenerateModelDependencies(ctx, dockerCommand, imageName, cfg)
+	if err != nil {
+		return fmt.Errorf("Failed to generate model dependencies from image: %w", err)
+	}
+
 	labels := map[string]string{
-		command.CogVersionLabelKey:               global.Version,
-		command.CogConfigLabelKey:                string(bytes.TrimSpace(configJSON)),
-		global.LabelNamespace + "openapi_schema": string(schemaJSON),
-		global.LabelNamespace + "pip_freeze":     pipFreeze,
+		command.CogVersionLabelKey:           global.Version,
+		command.CogConfigLabelKey:            string(bytes.TrimSpace(configJSON)),
+		command.CogOpenAPISchemaLabelKey:     string(schemaJSON),
+		global.LabelNamespace + "pip_freeze": pipFreeze,
 		// Mark the image as having an appropriate init entrypoint. We can use this
 		// to decide how/if to shim the image.
-		global.LabelNamespace + "has_init": "true",
+		global.LabelNamespace + "has_init":   "true",
+		command.CogModelDependenciesLabelKey: modelDependencies,
 	}
 
 	if cogBaseImageName != "" {
