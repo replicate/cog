@@ -37,7 +37,7 @@ $ cat weights
 hello train
 ```
 
-You can also use classes if you want to run many model trainings and save on setup time, this works the same way as the [Predictor](./python.md) class with the only difference being the `train` method.
+You can also use classes if you want to run many model trainings and save on setup time. This works the same way as the [Predictor](./python.md) class with the only difference being the `train` method.
 
 `cog.yaml`:
 
