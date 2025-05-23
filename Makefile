@@ -85,6 +85,7 @@ test: test-go test-python test-integration
 .PHONY: fmt
 fmt:
 	$(GOIMPORTS) -w -d .
+	uv run ruff format
 
 .PHONY: generate
 generate:
