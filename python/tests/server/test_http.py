@@ -1,4 +1,5 @@
 import base64
+import http
 import io
 import time
 import unittest.mock as mock
@@ -729,3 +730,20 @@ def test_weights_are_read_from_environment_variables(client, match):
     resp = client.post("/predictions")
     assert resp.status_code == 200
     assert resp.json() == match({"status": "succeeded", "output": "hello"})
+
+
+@uses_predictor("input_deprecated")
+def test_openapi_specification_with_deprecated(client, static_schema):
+    resp = client.get("/openapi.json")
+    assert resp.status_code == http.HTTPStatus.OK
+
+    schema = resp.json()
+    schemas = schema["components"]["schemas"]
+
+    assert schemas["Input"]["properties"]["text"] == {
+        "x-order": 0,
+        "deprecated": True,
+        "type": "string",
+        "title": "Text",
+        "description": "Some deprecated text",
+    }
