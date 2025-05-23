@@ -30,7 +30,7 @@ func GenerateModelDependencies(ctx context.Context, dockerClient command.Command
 		console.Info(stderr.String())
 		return "", err
 	}
-	dependencies := strings.Split(stdout.String(), ",")
+	dependencies := strings.Split(strings.TrimSpace(stdout.String()), ",")
 	jsonBytes, err := json.Marshal(dependencies)
 	if err != nil {
 		return "", err
