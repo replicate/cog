@@ -73,6 +73,7 @@ def Input(  # pylint: disable=invalid-name, too-many-arguments
     max_length: Optional[int] = None,
     regex: Optional[str] = None,
     choices: Optional[List[Union[str, int]]] = None,
+    deprecated: Optional[bool] = None,
 ) -> Any:
     """Input is similar to pydantic.Field, but doesn't require a default value to be the first argument."""
     field_kwargs = {
@@ -94,6 +95,10 @@ def Input(  # pylint: disable=invalid-name, too-many-arguments
     else:
         field_kwargs["regex"] = regex
         field_kwargs["enum"] = choices
+
+    if deprecated is not None:
+        field_kwargs["deprecated"] = deprecated
+
     return pydantic.Field(**field_kwargs)
 
 
