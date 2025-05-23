@@ -573,4 +573,4 @@ def test_model_dependencies(docker_image, cog_binary):
     )
     labels = image[0]["Config"]["Labels"]
     model_dependencies = labels["run.cog.r8_model_dependencies"]
-    assert model_dependencies == "pipelines-beta/upcase\n"
+    assert model_dependencies == '["pipelines-beta/upcase"]\n'

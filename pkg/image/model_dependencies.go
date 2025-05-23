@@ -3,6 +3,7 @@ package image
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 
@@ -29,6 +30,11 @@ func GenerateModelDependencies(ctx context.Context, dockerClient command.Command
 		console.Info(stderr.String())
 		return "", err
 	}
+	dependencies := strings.Split(stdout.String(), ",")
+	jsonBytes, err := json.Marshal(dependencies)
+	if err != nil {
+		return "", err
+	}
 
-	return stdout.String(), nil
+	return string(jsonBytes), nil
 }
