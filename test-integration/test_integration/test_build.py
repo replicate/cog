@@ -555,3 +555,22 @@ def test_secrets(tmpdir_factory, docker_image, cog_binary):
         env={**os.environ, "ENV_SECRET": "env_secret_value"},
     )
     assert build_process.returncode == 0
+
+
+def test_model_dependencies(docker_image, cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/pipeline-project"
+    subprocess.run(
+        [cog_binary, "build", "-t", docker_image],
+        cwd=project_dir,
+        check=True,
+    )
+    image = json.loads(
+        subprocess.run(
+            ["docker", "image", "inspect", docker_image],
+            capture_output=True,
+            check=True,
+        ).stdout
+    )
+    labels = image[0]["Config"]["Labels"]
+    model_dependencies = labels["run.cog.r8_model_dependencies"]
+    assert model_dependencies == '["pipelines-beta/upcase"]'
