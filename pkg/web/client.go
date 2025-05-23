@@ -168,7 +168,7 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 		return util.WrapError(err, "failed to marshal JSON for new version")
 	}
 
-	versionUrl, err := newVersionURL(image)
+	versionUrl, err := newVersionURL(image, false)
 	if err != nil {
 		return err
 	}
@@ -236,13 +236,14 @@ func (c *Client) PostNewPipeline(ctx context.Context, image string, tarball *byt
 	}
 
 	// Create version URL
-	versionUrl, err := newVersionURL(image)
+	versionUrl, err := newVersionURL(image, true)
 	if err != nil {
 		return err
 	}
 
 	// Create a new request
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, versionUrl.String(), bytes.NewReader(body.Bytes()))
+	versionURLString := versionUrl.String()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, versionURLString, bytes.NewReader(body.Bytes()))
 	if err != nil {
 		return err
 	}
@@ -461,7 +462,7 @@ func (c *Client) doSingleFileChallenge(ctx context.Context, file File, fileType 
 	}, nil
 }
 
-func newVersionURL(image string) (url.URL, error) {
+func newVersionURL(image string, isProcedure bool) (url.URL, error) {
 	imageComponents := strings.Split(image, "/")
 	newVersionUrl := webBaseURL()
 	if len(imageComponents) != 3 {
@@ -471,6 +472,11 @@ func newVersionURL(image string) (url.URL, error) {
 		return newVersionUrl, ErrorBadRegistryHost
 	}
 	newVersionUrl.Path = strings.Join([]string{"", "api", "models", imageComponents[1], imageComponents[2], "versions"}, "/")
+	if isProcedure {
+		query := newVersionUrl.Query()
+		query.Add("type", "procedure")
+		newVersionUrl.RawQuery = query.Encode()
+	}
 	return newVersionUrl, nil
 }
 
