@@ -222,15 +222,12 @@ func (c *Config) cudaFromTF() (tfVersion string, tfCUDA string, tfCuDNN string, 
 	return "", "", "", nil
 }
 
-func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
+func (c *Config) pythonPackageVersion(name string) (string, bool) {
 	for _, pkg := range c.Build.pythonRequirementsContent {
-		pkgName, version, _, _, err := SplitPinnedPythonRequirement(pkg)
-		if err != nil {
-			// package is not in package==version format
-			continue
-		}
-		if pkgName == name {
-			return version, true
+		if req := SplitPinnedPythonRequirement(pkg); !req.ParsedFieldsValid {
+			return "", false
+		} else if req.Name == name {
+			return req.Version, true
 		}
 	}
 	return "", false
@@ -339,132 +336,114 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 }
 
 // PythonRequirementsForArch returns a requirements.txt file with all the GPU packages resolved for given OS and architecture.
+// The packages listed in c.Build.pythonRequirementsContent are user-supplied requirements. Packages listed in the
+// `includePackages` parameter are defaults. The two sets are union'd together, with the user's own requirements
+// taking precedence (version, find-links, etc) if there is a duplicate.
+//
+// The method will return the string content of the requirements file, or an error.
 func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePackages []string) (string, error) {
-	packages := []string{}
-	findLinksSet := map[string]bool{}
-	extraIndexURLSet := map[string]bool{}
+	// First, parse all the incoming requirements into PythonRequirements
+	userRequirements := ParseRequirements(c.Build.pythonRequirementsContent, 0)
 
-	includePackageNames := []string{}
-	for _, pkg := range includePackages {
-		packageName, err := PackageName(pkg)
+	// Do the same for the packages we've been asked to include by default, but set their ordering keys using a
+	// sequence number later than the user requirements. This will ensure that our default requirements come at the
+	// end of the list, and the order is maintained.
+	includeRequirements := ParseRequirements(includePackages, len(userRequirements))
+
+	// For the user requirements, update them for the given OS and architecture
+	var err error
+	for i, req := range userRequirements {
+		// We're only interested in requirements that we were actually able to parse
+		if !req.ParsedFieldsValid {
+			continue
+		}
+		userRequirements[i], err = c.pythonPackageForArch(req, goos, goarch)
 		if err != nil {
 			return "", err
 		}
-		includePackageNames = append(includePackageNames, packageName)
 	}
 
-	// Include all the requirements and remove our include packages if they exist
-	for _, pkg := range c.Build.pythonRequirementsContent {
-		archPkg, findLinksList, extraIndexURLs, err := c.pythonPackageForArch(pkg, goos, goarch)
-		if err != nil {
-			return "", err
-		}
-		packages = append(packages, archPkg)
-		if len(findLinksList) > 0 {
-			for _, fl := range findLinksList {
-				findLinksSet[fl] = true
-			}
-		}
-		if len(extraIndexURLs) > 0 {
-			for _, u := range extraIndexURLs {
-				extraIndexURLSet[u] = true
-			}
-		}
+	// We're about to perform deduplication between the user requirements and the provided defaults. There may
+	// be user requirements that we weren't able to parse though - we will keep a note of those so that we can
+	// add them back in later.
+	unparsed := make([]PythonRequirement, 0)
 
-		packageName, _ := PackageName(archPkg)
-		if packageName != "" {
-			foundIdx := -1
-			for i, includePkg := range includePackageNames {
-				if includePkg == packageName {
-					foundIdx = i
-					break
-				}
-			}
-			if foundIdx != -1 {
-				includePackageNames = append(includePackageNames[:foundIdx], includePackageNames[foundIdx+1:]...)
-				includePackages = append(includePackages[:foundIdx], includePackages[foundIdx+1:]...)
-			}
+	// Next, build a map of requirements keyed on the requirement name. We'll init this with the requirements
+	// from `includePackages`, and update it with the user's requirements (which may therefore overwrite the defaults).
+	finalRequirementsMap := make(map[string]PythonRequirement)
+	for _, req := range includeRequirements {
+		finalRequirementsMap[req.Name] = req
+	}
+
+	for _, req := range userRequirements {
+		if req.ParsedFieldsValid {
+			finalRequirementsMap[req.Name] = req
+		} else {
+			unparsed = append(unparsed, req)
 		}
 	}
 
-	// If we still have some include packages add them in
-	packages = append(packages, includePackages...)
-
-	// Create final requirements.txt output
-	// Put index URLs first
-	lines := []string{}
-	for findLinks := range findLinksSet {
-		lines = append(lines, "--find-links "+findLinks)
-	}
-	for extraIndexURL := range extraIndexURLSet {
-		lines = append(lines, "--extra-index-url "+extraIndexURL)
+	// Now we can build a real PythonRequirements from the values of the finalRequirementsMap
+	finalRequirements := make(PythonRequirements, 0, len(finalRequirementsMap)+len(unparsed))
+	for _, req := range finalRequirementsMap {
+		finalRequirements = append(finalRequirements, req)
 	}
 
-	// Then, everything else
-	lines = append(lines, packages...)
+	// Add the unparsed requirements back in
+	finalRequirements = append(finalRequirements, unparsed...)
 
-	return strings.Join(lines, "\n"), nil
+	return finalRequirements.RequirementsFileContent(), nil
 }
 
-// pythonPackageForArch takes a package==version line and
-// returns a package==version and index URL resolved to the correct GPU package for the given OS and architecture
-func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage string, findLinksList []string, extraIndexURLs []string, err error) {
-	name, version, findLinksList, extraIndexURLs, err := SplitPinnedPythonRequirement(pkg)
-	if err != nil {
-		// It's not pinned, so just return the line verbatim
-		return pkg, []string{}, []string{}, nil
-	}
-	if len(extraIndexURLs) > 0 {
-		return name + "==" + version, findLinksList, extraIndexURLs, nil
-	}
-
-	extraIndexURL := ""
-	findLinks := ""
-	switch name {
+// pythonPackageForArch takes a PythonRequirement and
+// returns a package==version and index URL resolved to the correct GPU package for the given OS and architecture. If
+// the package is not one of the ones whose version we manage, we return the original requirement.
+func (c *Config) pythonPackageForArch(req PythonRequirement, goos, goarch string) (out PythonRequirement, err error) {
+	switch req.Name {
 	case "tensorflow":
 		if c.Build.GPU {
-			name, version, err = tfGPUPackage(version, c.Build.CUDA)
-			if err != nil {
-				return "", nil, nil, err
-			}
+			out, err = tfGPUPackage(req.Version, c.Build.CUDA)
 		}
 		// There is no CPU case for tensorflow because the default package is just the CPU package, so no transformation of version is needed
 	case "torch":
 		if c.Build.GPU {
-			name, version, findLinks, extraIndexURL, err = torchGPUPackage(version, c.Build.CUDA)
-			if err != nil {
-				return "", nil, nil, err
-			}
+			out, err = torchGPUPackage(req.Version, c.Build.CUDA)
 		} else {
-			name, version, findLinks, extraIndexURL, err = torchCPUPackage(version, goos, goarch)
-			if err != nil {
-				return "", nil, nil, err
-			}
+			out, err = torchCPUPackage(req.Version, goos, goarch)
 		}
 	case "torchvision":
 		if c.Build.GPU {
-			name, version, findLinks, extraIndexURL, err = torchvisionGPUPackage(version, c.Build.CUDA)
-			if err != nil {
-				return "", nil, nil, err
-			}
+			out, err = torchvisionGPUPackage(req.Version, c.Build.CUDA)
 		} else {
-			name, version, findLinks, extraIndexURL, err = torchvisionCPUPackage(version, goos, goarch)
-			if err != nil {
-				return "", nil, nil, err
-			}
+			out, err = torchvisionCPUPackage(req.Version, goos, goarch)
 		}
+	default:
+		out = req
 	}
-	pkgWithVersion := name
-	if version != "" {
-		pkgWithVersion += "==" + version
+
+	if err != nil {
+		return PythonRequirement{}, err
 	}
-	if extraIndexURL != "" {
-		extraIndexURLs = []string{extraIndexURL}
+
+	// Regardless of whether we're using the original or generated requirement, we bring across some user-supplied
+	// attributes if provided.
+	out.order = req.order
+
+	// We treat version slightly differently, because we may have rewritten the field to include the cpu specifier.
+	// Therefore, we will only overwrite the output version if the output version is currently empty.
+	if req.Version != "" && out.Version == "" {
+		out.Version = req.Version
 	}
-	if findLinks != "" {
-		findLinksList = []string{findLinks}
+	if req.EnvironmentMarkers != "" {
+		out.EnvironmentMarkers = req.EnvironmentMarkers
 	}
-	return pkgWithVersion, findLinksList, extraIndexURLs, nil
+	if len(req.FindLinks) > 0 {
+		out.FindLinks = req.FindLinks
+	}
+	if len(req.ExtraIndexURLs) > 0 {
+		out.ExtraIndexURLs = req.ExtraIndexURLs
+	}
+	return
 }
 
 func ValidateCudaVersion(cudaVersion string) error {
