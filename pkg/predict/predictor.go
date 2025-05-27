@@ -24,9 +24,14 @@ type HealthcheckResponse struct {
 	Status string `json:"status"`
 }
 
+type RequestContext struct {
+	ReplicateAPIToken string `json:"replicate_api_token,omitempty"`
+}
+
 type Request struct {
 	// TODO: could this be Inputs?
-	Input map[string]interface{} `json:"input"`
+	Input   map[string]interface{} `json:"input"`
+	Context RequestContext         `json:"context"`
 }
 
 type Response struct {
@@ -153,12 +158,16 @@ func (p *Predictor) Stop(ctx context.Context) error {
 	return p.dockerClient.ContainerStop(ctx, p.containerID)
 }
 
-func (p *Predictor) Predict(inputs Inputs) (*Response, error) {
+func (p *Predictor) Predict(inputs Inputs, context RequestContext) (*Response, error) {
 	inputMap, err := inputs.toMap()
 	if err != nil {
 		return nil, err
 	}
-	request := Request{Input: inputMap}
+
+	request := Request{
+		Input:   inputMap,
+		Context: context,
+	}
 	requestBody, err := json.Marshal(request)
 	if err != nil {
 		return nil, err
