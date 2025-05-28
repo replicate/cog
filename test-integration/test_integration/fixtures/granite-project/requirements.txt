@@ -361,7 +361,7 @@ tokenizers==0.21.1
     # via
     #   transformers
     #   vllm
-torch==2.6.0
+torch==2.5.0 # TODO: Change back once new base images are built
     # via
     #   compressed-tensors
     #   outlines
