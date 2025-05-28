@@ -98,7 +98,7 @@ func newBaseImageGenerateMatrix() *cobra.Command {
 
 				if len(validTorchVersions) > 0 {
 					found = false
-					for _, validTorchVersion := range validPythonVersions {
+					for _, validTorchVersion := range validTorchVersions {
 						if config.TorchVersion == validTorchVersion {
 							found = true
 						}
