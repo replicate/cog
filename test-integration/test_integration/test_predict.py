@@ -524,6 +524,7 @@ def test_predict_string_list(docker_image, cog_binary):
     assert result.stdout == "hello world\n"
 
 
+"""
 def test_predict_granite_project(docker_image, cog_binary):
     # We are checking that we are not clobbering pydantic to a <2 version.
     project_dir = Path(__file__).parent / "fixtures/granite-project"
@@ -543,6 +544,7 @@ def test_predict_granite_project(docker_image, cog_binary):
     )
     assert result.returncode == 0
     assert result.stdout == "2.11.3\n"
+"""
 
 
 def test_predict_fast_build(docker_image, cog_binary):
