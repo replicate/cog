@@ -42,6 +42,8 @@ if PYDANTIC_V2:
         unwrap_pydantic_serialization_iterators,
         update_openapi_schema_for_pydantic_2,
     )
+else:
+    from .helpers import update_nullable_optional
 
 from .probes import ProbeHelper
 from .runner import (
@@ -158,6 +160,8 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             # See: https://github.com/tiangolo/fastapi/pull/9873#issuecomment-1997105091
             if PYDANTIC_V2:
                 update_openapi_schema_for_pydantic_2(openapi_schema)
+            else:
+                update_nullable_optional(openapi_schema, app)
 
             app.openapi_schema = openapi_schema
 
@@ -189,6 +193,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     worker = make_worker(
         predictor_ref=cog_config.get_predictor_ref(mode=mode),
         is_async=is_async,
+        is_train=False if mode == Mode.PREDICT else True,
         max_concurrency=cog_config.max_concurrency,
     )
     runner = PredictionRunner(worker=worker, max_concurrency=cog_config.max_concurrency)
@@ -260,6 +265,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                         request=request,
                         response_type=TrainingResponse,
                         respond_async=respond_async,
+                        is_train=True,
                     )
 
             @app.put(
@@ -308,6 +314,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                         request=request,
                         response_type=TrainingResponse,
                         respond_async=respond_async,
+                        is_train=True,
                     )
 
             @app.post("/trainings/{training_id}/cancel")
@@ -424,6 +431,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         request: Optional[PredictionRequest],
         response_type: Type[schema.PredictionResponse],
         respond_async: bool = False,
+        is_train: bool = False,
     ) -> Response:
         # [compat] If no body is supplied, assume that this model can be run
         # with empty input. This will throw a ValidationError if that's not
@@ -443,7 +451,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             task_kwargs["upload_url"] = upload_url
 
         try:
-            predict_task = runner.predict(request, task_kwargs=task_kwargs)
+            predict_task = runner.predict(request, is_train, task_kwargs=task_kwargs)
         except RunnerBusyError:
             return JSONResponse(
                 {"detail": "Already running a prediction"}, status_code=409

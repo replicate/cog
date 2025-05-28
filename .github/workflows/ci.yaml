@@ -55,6 +55,17 @@ jobs:
       - name: Lint
         run: make lint
 
+  test:
+    name: "Test Results"
+    needs:
+      - test-go
+      - test-python
+      - test-integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check test status
+        run: echo "All tests passed successfully!"
+
   test-go:
     name: "Test Go"
     needs: build-python
@@ -63,6 +74,7 @@ jobs:
       matrix:
         # https://docs.github.com/en/free-pro-team@latest/actions/reference/specifications-for-github-hosted-runners#supported-runners-and-hardware-resources
         platform: [ubuntu-latest, macos-latest]
+        new_docker_api_client: [true, false]
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -82,6 +94,8 @@ jobs:
         run: make cog
       - name: Test
         run: make test-go
+        env:
+          COG_DOCKER_SDK_CLIENT: ${{ matrix.new_docker_api_client }}
 
   test-python:
     name: "Test Python ${{ matrix.python-version }} + Pydantic v${{ matrix.pydantic }}"
@@ -116,11 +130,25 @@ jobs:
       - name: Test
         run: python -Im tox run --installpkg "$COG_WHEEL" -e ${{ env.TOX_PYTHON }}-pydantic${{ matrix.pydantic }}-tests
 
+  # TODO[md]: This is a gross hack, remove once this is sorted out: https://github.com/replicate/cog/pull/2353
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-integration:
     name: "Test integration"
+    needs: test-integration-matrix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check test status
+        run: echo "All tests passed successfully!"
+
+  # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
+  test-integration-matrix:
+    name: "Test integration Matrix"
     needs: build-python
     runs-on: ubuntu-latest-16-cores
+    strategy:
+      fail-fast: false
+      matrix:
+        new_docker_api_client: [true, false]
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -145,7 +173,7 @@ jobs:
       - name: Test
         run: make test-integration
         env:
-          R8_COGLET_VERSION: coglet==0.1.0-alpha17
+          COG_DOCKER_SDK_CLIENT: ${{ matrix.new_docker_api_client }}
 
   release:
     name: "Release"

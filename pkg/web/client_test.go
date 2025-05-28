@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -77,12 +78,12 @@ func TestVersionFromManifest(t *testing.T) {
 }
 
 func TestVersionURLErrorWithoutR8IMPrefix(t *testing.T) {
-	_, err := newVersionURL("docker.com/thing/thing")
+	_, err := newVersionURL("docker.com/thing/thing", false)
 	require.Error(t, err)
 }
 
 func TestVersionURLErrorWithout3Components(t *testing.T) {
-	_, err := newVersionURL("username/test")
+	_, err := newVersionURL("username/test", false)
 	require.Error(t, err)
 }
 
@@ -166,4 +167,34 @@ func TestDoFileChallenge(t *testing.T) {
 			Hash:        "43d250d92b5dbb47f75208de8e9a9a321d23e85eed0dc3d5dfa83bc3cc5aa68c",
 		},
 	})
+}
+
+func TestPostPipeline(t *testing.T) {
+	// Setup mock http server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		output := "{\"version\":\"user/test:53c740f17ce88a61c3da5b0c20e48fd48e2da537c3a1276dec63ab11fbad6bcb\"}"
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(output))
+	}))
+	defer server.Close()
+	url, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	t.Setenv(env.SchemeEnvVarName, url.Scheme)
+	t.Setenv(WebHostEnvVarName, url.Host)
+
+	dir := t.TempDir()
+
+	// Create mock predict
+	predictPyPath := filepath.Join(dir, "predict.py")
+	handle, err := os.Create(predictPyPath)
+	require.NoError(t, err)
+	handle.WriteString("import cog")
+	dockertest.MockCogConfig = "{\"build\":{\"python_version\":\"3.12\",\"python_packages\":[\"torch==2.5.0\",\"beautifulsoup4==4.12.3\"],\"system_packages\":[\"git\"]},\"image\":\"test\",\"predict\":\"" + predictPyPath + ":Predictor\"}"
+
+	// Setup mock command
+	command := dockertest.NewMockCommand()
+
+	client := NewClient(command, http.DefaultClient)
+	err = client.PostNewPipeline(t.Context(), "r8.im/user/test", new(bytes.Buffer))
+	require.NoError(t, err)
 }

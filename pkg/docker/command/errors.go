@@ -29,3 +29,5 @@ func (e *NotFoundError) Is(target error) bool {
 func IsNotFoundError(err error) bool {
 	return errors.Is(err, &NotFoundError{})
 }
+
+var ErrAuthorizationFailed = errors.New("authorization failed")

@@ -15,8 +15,6 @@ type Command interface {
 	Pull(ctx context.Context, ref string, force bool) (*image.InspectResponse, error)
 	Push(ctx context.Context, ref string) error
 	LoadUserInformation(ctx context.Context, registryHost string) (*UserInfo, error)
-	CreateTarFile(ctx context.Context, ref string, tmpDir string, tarFile string, folder string) (string, error)
-	CreateAptTarFile(ctx context.Context, tmpDir string, aptTarFile string, packages ...string) (string, error)
 	Inspect(ctx context.Context, ref string) (*image.InspectResponse, error)
 	ImageExists(ctx context.Context, ref string) (bool, error)
 	ContainerLogs(ctx context.Context, containerID string, w io.Writer) error
@@ -29,17 +27,22 @@ type Command interface {
 }
 
 type ImageBuildOptions struct {
-	// Platform           string
 	WorkingDir         string
 	DockerfileContents string
-	ImageName          string
-	Secrets            []string
-	NoCache            bool
-	ProgressOutput     string
-	Epoch              *int64
-	ContextDir         string
-	BuildContexts      map[string]string
-	Labels             map[string]string
+	// TODO[md]: ImageName should be renamed to Tag
+	ImageName string
+	// Secrets in the format of "id=foo,src=/path/to/file" or "id=kube,env=KUBECONFIG"
+	// docs: https://docs.docker.com/build/building/secrets/#use-secrets-in-dockerfile
+	Secrets        []string
+	NoCache        bool
+	ProgressOutput string
+	Epoch          *int64
+	ContextDir     string
+	BuildContexts  map[string]string
+	Labels         map[string]string
+
+	// only supported on buildkit client, not cli client
+	BuildArgs map[string]*string
 }
 
 type RunOptions struct {

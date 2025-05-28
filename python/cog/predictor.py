@@ -183,6 +183,12 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
     return predictor
 
 
+def is_none(type_arg: Any) -> bool:
+    if sys.version_info >= (3, 10):
+        return type_arg is NoneType
+    return type_arg is None.__class__
+
+
 def is_union(type: Type[Any]) -> bool:
     if get_origin(type) is Union:
         return True
@@ -195,9 +201,7 @@ def is_optional(type: Type[Any]) -> bool:
     args = get_args(type)
     if len(args) != 2 or not is_union(type):
         return False
-    if sys.version_info >= (3, 10):
-        return args[1] is NoneType
-    return args[1] is None.__class__
+    return is_none(args[1])
 
 
 def validate_input_type(
@@ -231,12 +235,37 @@ def validate_input_type(
 
 
 def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any]:
-    create_model_kwargs = {}
+    create_model_kwargs: Dict[str, Any] = {
+        "__base__": BaseInput,
+        "__config__": None,
+    }
 
     order = 0
 
     for name, parameter in signature.parameters.items():
         InputType = parameter.annotation
+
+        if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
+            raise TypeError(f"Unsupported variadic positional parameter *{name}.")
+
+        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+            if order != 0:
+                raise TypeError(f"Unsupported variadic keyword parameter **{name}")
+
+            class ExtraKeywordInput(BaseInput):
+                if PYDANTIC_V2:
+                    model_config = pydantic.ConfigDict(extra="allow")
+                else:
+
+                    class Config:
+                        extra = "allow"
+
+            create_model_kwargs["__base__"] = ExtraKeywordInput
+            name = "__pydantic_extra__"
+            InputType = Dict[str, Any]
+
+            create_model_kwargs[name] = (InputType, Input())
+            continue
 
         validate_input_type(InputType, name)
 
@@ -325,8 +354,6 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
 
     return create_model(
         "Input",
-        __config__=None,
-        __base__=BaseInput,
         __module__=__name__,
         __validators__=None,
         **get_input_create_model_kwargs(signature),
@@ -431,8 +458,6 @@ def get_training_input_type(predictor: BasePredictor) -> Type[BaseInput]:
 
     return create_model(
         "TrainingInput",
-        __config__=None,
-        __base__=BaseInput,
         __module__=__name__,
         __validators__=None,
         **get_input_create_model_kwargs(signature),

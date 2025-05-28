@@ -9,14 +9,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/creack/pty"
-	"github.com/docker/cli/cli/config"
-	"github.com/docker/cli/cli/config/configfile"
-	"github.com/docker/cli/cli/config/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/mattn/go-isatty"
@@ -77,80 +73,25 @@ func (c *DockerCommand) Pull(ctx context.Context, image string, force bool) (*im
 func (c *DockerCommand) Push(ctx context.Context, image string) error {
 	console.Debugf("=== DockerCommand.Push %s", image)
 
-	return c.exec(ctx, nil, nil, nil, "", []string{"push", image})
+	err := c.exec(ctx, nil, nil, nil, "", []string{"push", image})
+	if err != nil {
+		if isTagNotFoundError(err) {
+			return &command.NotFoundError{Ref: image, Object: "tag"}
+		}
+		if isAuthorizationFailedError(err) {
+			return command.ErrAuthorizationFailed
+		}
+		return err
+	}
+
+	return nil
 }
 
+// TODO[md]: this doesn't need to be on the interface, move to auth handler
 func (c *DockerCommand) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
 	console.Debugf("=== DockerCommand.LoadUserInformation %s", registryHost)
 
-	conf := config.LoadDefaultConfigFile(os.Stderr)
-	credsStore := conf.CredentialsStore
-	if credsStore == "" {
-		authConf, err := loadAuthFromConfig(conf, registryHost)
-		if err != nil {
-			return nil, err
-		}
-		return &command.UserInfo{
-			Token:    authConf.Password,
-			Username: authConf.Username,
-		}, nil
-	}
-	credsHelper, err := loadAuthFromCredentialsStore(ctx, credsStore, registryHost)
-	if err != nil {
-		return nil, err
-	}
-	return &command.UserInfo{
-		Token:    credsHelper.Secret,
-		Username: credsHelper.Username,
-	}, nil
-}
-
-func (c *DockerCommand) CreateTarFile(ctx context.Context, image string, tmpDir string, tarFile string, folder string) (string, error) {
-	console.Debugf("=== DockerCommand.CreateTarFile %s %s %s %s", image, tmpDir, tarFile, folder)
-
-	args := []string{
-		"run",
-		"--rm",
-		// force platform to linux/amd64 so darwin/arm64 outputs work in prod
-		"--platform", "linux/amd64",
-		"--volume",
-		tmpDir + ":/buildtmp",
-		image,
-		"/opt/r8/monobase/tar.sh",
-		"/buildtmp/" + tarFile,
-		"/",
-		folder,
-	}
-	if err := c.exec(ctx, nil, nil, nil, "", args); err != nil {
-		return "", err
-	}
-	return filepath.Join(tmpDir, tarFile), nil
-}
-
-func (c *DockerCommand) CreateAptTarFile(ctx context.Context, tmpDir string, aptTarFile string, packages ...string) (string, error) {
-	console.Debugf("=== DockerCommand.CreateAptTarFile %s %s", aptTarFile, packages)
-
-	// This uses a hardcoded monobase image to produce an apt tar file.
-	// The reason being that this apt tar file is created outside the docker file, and it is created by
-	// running the apt.sh script on the monobase with the packages we intend to install, which produces
-	// a tar file that can be untarred into a docker build to achieve the equivalent of an apt-get install.
-	args := []string{
-		"run",
-		"--rm",
-		// force platform to linux/amd64 so darwin/arm64 outputs work in prod
-		"--platform", "linux/amd64",
-		"--volume",
-		tmpDir + ":/buildtmp",
-		"r8.im/monobase:latest",
-		"/opt/r8/monobase/apt.sh",
-		"/buildtmp/" + aptTarFile,
-	}
-	args = append(args, packages...)
-	if err := c.exec(ctx, nil, nil, nil, "", args); err != nil {
-		return "", err
-	}
-
-	return aptTarFile, nil
+	return loadUserInformation(ctx, registryHost)
 }
 
 func (c *DockerCommand) Inspect(ctx context.Context, ref string) (*image.InspectResponse, error) {
@@ -162,7 +103,7 @@ func (c *DockerCommand) Inspect(ctx context.Context, ref string) (*image.Inspect
 	}
 	output, err := c.execCaptured(ctx, nil, "", args)
 	if err != nil {
-		if strings.Contains(err.Error(), "No such image") {
+		if isImageNotFoundError(err) {
 			return nil, &command.NotFoundError{Object: "image", Ref: ref}
 		}
 		return nil, err
@@ -207,7 +148,14 @@ func (c *DockerCommand) ContainerLogs(ctx context.Context, containerID string, w
 		"--follow",
 	}
 
-	return c.exec(ctx, nil, w, nil, "", args)
+	err := c.exec(ctx, nil, w, nil, "", args)
+	if err != nil {
+		if isContainerNotFoundError(err) {
+			return &command.NotFoundError{Ref: containerID, Object: "container"}
+		}
+		return err
+	}
+	return err
 }
 
 func (c *DockerCommand) ContainerInspect(ctx context.Context, id string) (*container.InspectResponse, error) {
@@ -221,7 +169,7 @@ func (c *DockerCommand) ContainerInspect(ctx context.Context, id string) (*conta
 
 	output, err := c.execCaptured(ctx, nil, "", args)
 	if err != nil {
-		if strings.Contains(err.Error(), "No such container") {
+		if isContainerNotFoundError(err) {
 			return nil, &command.NotFoundError{Object: "container", Ref: id}
 		}
 		return nil, err
@@ -249,7 +197,7 @@ func (c *DockerCommand) ContainerStop(ctx context.Context, containerID string) e
 	}
 
 	if err := c.exec(ctx, nil, io.Discard, nil, "", args); err != nil {
-		if strings.Contains(err.Error(), "No such container") {
+		if isContainerNotFoundError(err) {
 			err = &command.NotFoundError{Object: "container", Ref: containerID}
 		}
 		return fmt.Errorf("failed to stop container %q: %w", containerID, err)
@@ -417,7 +365,7 @@ func (c *DockerCommand) containerRun(ctx context.Context, options command.RunOpt
 
 	err := c.exec(ctx, options.Stdin, options.Stdout, options.Stderr, "", args)
 	if err != nil {
-		if strings.Contains(err.Error(), "could not select device driver") || strings.Contains(err.Error(), "nvidia-container-cli: initialization error") {
+		if isMissingDeviceDriverError(err) {
 			return ErrMissingDeviceDriver
 		}
 		return err
@@ -459,7 +407,7 @@ func (c *DockerCommand) exec(ctx context.Context, in io.Reader, outw, errw io.Wr
 				util.NewRingBufferWriter(&stderrBuf, 1024),
 			), stderrpty)
 			if err != nil {
-				console.Errorf("failed to copy stderr pty to errw: %s", err)
+				console.Debugf("failed to copy stderr pty to errw: %s", err)
 			}
 		}()
 	} else {
@@ -477,7 +425,7 @@ func (c *DockerCommand) exec(ctx context.Context, in io.Reader, outw, errw io.Wr
 
 		_, err = io.Copy(outw, outpipe)
 		if err != nil {
-			console.Errorf("failed to copy stdout to outw: %s", err)
+			console.Debugf("failed to copy stdout to outw: %s", err)
 		}
 	}()
 
@@ -489,6 +437,12 @@ func (c *DockerCommand) exec(ctx context.Context, in io.Reader, outw, errw io.Wr
 	if err := cmd.Run(); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return err
+		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			if !exitErr.Exited() && strings.Contains(exitErr.Error(), "signal: killed") {
+				return context.DeadlineExceeded
+			}
 		}
 		return fmt.Errorf("command failed: %s: %w", stderrBuf.String(), err)
 	}
@@ -502,51 +456,4 @@ func (c *DockerCommand) execCaptured(ctx context.Context, in io.Reader, dir stri
 		return "", err
 	}
 	return out.String(), nil
-}
-
-func loadAuthFromConfig(conf *configfile.ConfigFile, registryHost string) (types.AuthConfig, error) {
-	return conf.AuthConfigs[registryHost], nil
-}
-
-func loadAuthFromCredentialsStore(ctx context.Context, credsStore string, registryHost string) (*CredentialHelperInput, error) {
-	var out strings.Builder
-	binary := DockerCredentialBinary(credsStore)
-	cmd := exec.CommandContext(ctx, binary, "get")
-	cmd.Env = os.Environ()
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, err
-	}
-	defer stdin.Close()
-	console.Debug("$ " + strings.Join(cmd.Args, " "))
-	err = cmd.Start()
-	if err != nil {
-		return nil, err
-	}
-	_, err = io.WriteString(stdin, registryHost)
-	if err != nil {
-		return nil, err
-	}
-	err = stdin.Close()
-	if err != nil {
-		return nil, err
-	}
-	err = cmd.Wait()
-	if err != nil {
-		return nil, fmt.Errorf("exec wait error: %w", err)
-	}
-
-	var config CredentialHelperInput
-	err = json.Unmarshal([]byte(out.String()), &config)
-	if err != nil {
-		return nil, err
-	}
-
-	return &config, nil
-}
-
-func DockerCredentialBinary(credsStore string) string {
-	return "docker-credential-" + credsStore
 }

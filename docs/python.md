@@ -18,6 +18,7 @@ This document defines the API of the `cog` Python module, which is used to defin
   - [`Predictor.predict(**kwargs)`](#predictorpredictkwargs)
 - [`async` predictors and concurrency](#async-predictors-and-concurrency)
 - [`Input(**kwargs)`](#inputkwargs)
+  - [Deprecating inputs](#deprecating-inputs)
 - [Output](#output)
   - [Returning an object](#returning-an-object)
   - [Returning a list](#returning-a-list)
@@ -131,6 +132,7 @@ The `Input()` function takes these keyword arguments:
 - `max_length`: For `str` types, the maximum length of the string.
 - `regex`: For `str` types, the string must match this regular expression.
 - `choices`: For `str` or `int` types, a list of possible values for this input.
+- `deprecated`: (optional) If set to `True`, marks this input as deprecated. Deprecated inputs will still be accepted, but tools and UIs may warn users that the input is deprecated and may be removed in the future. See [Deprecating inputs](#deprecating-inputs).
 
 Each parameter of the `predict()` method must be annotated with a type like `str`, `int`, `float`, `bool`, etc. See [Input and output types](#input-and-output-types) for the full list of supported types.
 
@@ -143,6 +145,24 @@ class Predictor(BasePredictor):
         iterations: int                 # also valid
     ) -> str:
         # ...
+```
+
+## Deprecating inputs
+
+You can mark an input as deprecated by passing `deprecated=True` to the `Input()` function. Deprecated inputs will still be accepted, but tools and UIs may warn users that the input is deprecated and may be removed in the future.
+
+This is useful when you want to phase out an input without breaking existing clients immediately:
+
+```py
+from cog import BasePredictor, Input
+
+class Predictor(BasePredictor):
+    def predict(self,
+        text: str = Input(description="Some deprecated text", deprecated=True),
+        prompt: str = Input(description="Prompt for the model")
+    ) -> str:
+        # ...
+        return prompt
 ```
 
 ## Output

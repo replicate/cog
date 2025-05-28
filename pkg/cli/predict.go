@@ -29,10 +29,11 @@ import (
 )
 
 var (
-	envFlags     []string
-	inputFlags   []string
-	outPath      string
-	setupTimeout uint32
+	envFlags             []string
+	inputFlags           []string
+	outPath              string
+	setupTimeout         uint32
+	useReplicateAPIToken bool
 )
 
 func newPredictCommand() *cobra.Command {
@@ -64,6 +65,7 @@ the prediction on that.`,
 	cmd.Flags().StringArrayVarP(&inputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
 	cmd.Flags().StringArrayVarP(&envFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
+	cmd.Flags().BoolVar(&useReplicateAPIToken, "use-replicate-token", false, "Pass REPLICATE_API_TOKEN from local environment into the model context")
 
 	return cmd
 }
@@ -240,7 +242,16 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 	responseSchema := schema.Paths.Value(url).Post.Responses.Value("200").Value.Content["application/json"].Schema.Value
 	outputSchema := responseSchema.Properties["output"].Value
 
-	prediction, err := predictor.Predict(inputs)
+	context := predict.RequestContext{}
+
+	if useReplicateAPIToken {
+		context.ReplicateAPIToken = os.Getenv("REPLICATE_API_TOKEN")
+		if context.ReplicateAPIToken == "" {
+			return fmt.Errorf("Failed to find REPLICATE_API_TOKEN in the current environment when called with --use-replicate-token")
+		}
+	}
+
+	prediction, err := predictor.Predict(inputs, context)
 	if err != nil {
 		return fmt.Errorf("Failed to predict: %w", err)
 	}
