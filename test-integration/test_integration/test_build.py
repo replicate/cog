@@ -574,3 +574,19 @@ def test_model_dependencies(docker_image, cog_binary):
     labels = image[0]["Config"]["Labels"]
     model_dependencies = labels["run.cog.r8_model_dependencies"]
     assert model_dependencies == '["pipelines-beta/upcase"]'
+
+
+def test_torch_270_cuda_126_base_image(tmpdir_factory, docker_image, cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/torch-270-cuda-126"
+
+    build_process = subprocess.run(
+        [
+            cog_binary,
+            "build",
+            "-t",
+            docker_image,
+        ],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode == 0
