@@ -31,7 +31,7 @@ var (
 		"libfontconfig1",
 		"libgirepository1.0-dev",
 		"libgl1",
-		"libgl1-mesa-glx",
+		"libglx-mesa0",
 		"libglib2.0-0",
 		"libopencv-dev",
 		"libsm6",
