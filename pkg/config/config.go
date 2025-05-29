@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -224,7 +225,7 @@ func (c *Config) cudaFromTF() (tfVersion string, tfCUDA string, tfCuDNN string, 
 
 func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 	for _, pkg := range c.Build.pythonRequirementsContent {
-		pkgName, version, _, _, err := SplitPinnedPythonRequirement(pkg)
+		pkgName, version, _, _, err := requirements.SplitPinnedPythonRequirement(pkg)
 		if err != nil {
 			// package is not in package==version format
 			continue
@@ -346,7 +347,7 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 
 	includePackageNames := []string{}
 	for _, pkg := range includePackages {
-		packageName, err := PackageName(pkg)
+		packageName, err := requirements.PackageName(pkg)
 		if err != nil {
 			return "", err
 		}
@@ -371,7 +372,7 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 			}
 		}
 
-		packageName, _ := PackageName(archPkg)
+		packageName, _ := requirements.PackageName(archPkg)
 		if packageName != "" {
 			foundIdx := -1
 			for i, includePkg := range includePackageNames {
@@ -409,7 +410,7 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 // pythonPackageForArch takes a package==version line and
 // returns a package==version and index URL resolved to the correct GPU package for the given OS and architecture
 func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage string, findLinksList []string, extraIndexURLs []string, err error) {
-	name, version, findLinksList, extraIndexURLs, err := SplitPinnedPythonRequirement(pkg)
+	name, version, findLinksList, extraIndexURLs, err := requirements.SplitPinnedPythonRequirement(pkg)
 	if err != nil {
 		// It's not pinned, so just return the line verbatim
 		return pkg, []string{}, []string{}, nil
@@ -579,6 +580,10 @@ Compatible cuDNN version is: %s`, c.Build.CuDNN, tfVersion, tfCuDNN)
 	}
 
 	return nil
+}
+
+func (c *Config) RequirementsFile(projectDir string) string {
+	return filepath.Join(projectDir, c.Build.PythonRequirements)
 }
 
 func sliceContains(slice []string, s string) bool {

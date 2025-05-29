@@ -11,9 +11,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/env"
+	"github.com/replicate/cog/pkg/global"
 	cogHttp "github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/web"
 	"github.com/replicate/cog/pkg/weights"
@@ -51,7 +53,7 @@ func TestPush(t *testing.T) {
 
 	// Create directories
 	dir := t.TempDir()
-	cogDir := filepath.Join(dir, dockercontext.CogBuildArtifactsFolder)
+	cogDir := filepath.Join(dir, global.CogBuildArtifactsFolder)
 	err = os.Mkdir(cogDir, 0o755)
 	require.NoError(t, err)
 	err = os.Mkdir(filepath.Join(dir, TarballsDir), 0o755)
@@ -75,7 +77,8 @@ func TestPush(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run fast push
-	err = Push(t.Context(), "r8.im/username/modelname", true, dir, command, BuildInfo{}, client)
+	cfg := config.DefaultConfig()
+	err = Push(t.Context(), "r8.im/username/modelname", true, dir, command, BuildInfo{}, client, cfg)
 	require.NoError(t, err)
 }
 
@@ -111,7 +114,7 @@ func TestPushWithWeight(t *testing.T) {
 
 	// Create directories
 	dir := t.TempDir()
-	cogDir := filepath.Join(dir, dockercontext.CogBuildArtifactsFolder)
+	cogDir := filepath.Join(dir, global.CogBuildArtifactsFolder)
 	err = os.Mkdir(cogDir, 0o755)
 	require.NoError(t, err)
 	err = os.Mkdir(filepath.Join(dir, TarballsDir), 0o755)
@@ -148,7 +151,8 @@ func TestPushWithWeight(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run fast push
-	err = Push(t.Context(), "r8.im/username/modelname", true, dir, command, BuildInfo{}, client)
+	cfg := config.DefaultConfig()
+	err = Push(t.Context(), "r8.im/username/modelname", true, dir, command, BuildInfo{}, client, cfg)
 	require.NoError(t, err)
 }
 
@@ -179,8 +183,9 @@ func TestPushPipeline(t *testing.T) {
 	client, err := cogHttp.ProvideHTTPClient(t.Context(), command)
 	require.NoError(t, err)
 
+	cfg := config.DefaultConfig()
 	err = Push(t.Context(), "r8.im/username/modelname", false, dir, command, BuildInfo{
 		Pipeline: true,
-	}, client)
+	}, client, cfg)
 	require.NoError(t, err)
 }
