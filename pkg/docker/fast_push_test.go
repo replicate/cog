@@ -47,8 +47,8 @@ func TestFastPush(t *testing.T) {
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
 	t.Setenv(env.SchemeEnvVarName, url.Scheme)
-	t.Setenv(monobeam.MonobeamHostEnvVarName, url.Host)
-	t.Setenv(web.WebHostEnvVarName, url.Host)
+	t.Setenv(env.MonobeamHostEnvVarName, url.Host)
+	t.Setenv(env.WebHostEnvVarName, url.Host)
 
 	// Create directories
 	dir := t.TempDir()
@@ -108,8 +108,8 @@ func TestFastPushWithWeight(t *testing.T) {
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
 	t.Setenv(env.SchemeEnvVarName, url.Scheme)
-	t.Setenv(monobeam.MonobeamHostEnvVarName, url.Host)
-	t.Setenv(web.WebHostEnvVarName, url.Host)
+	t.Setenv(env.MonobeamHostEnvVarName, url.Host)
+	t.Setenv(env.WebHostEnvVarName, url.Host)
 
 	// Create directories
 	dir := t.TempDir()

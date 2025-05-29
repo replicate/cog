@@ -28,7 +28,7 @@ func TestUploadFile(t *testing.T) {
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
 	t.Setenv(env.SchemeEnvVarName, url.Scheme)
-	t.Setenv(MonobeamHostEnvVarName, url.Host)
+	t.Setenv(env.MonobeamHostEnvVarName, url.Host)
 
 	dir := t.TempDir()
 
@@ -71,7 +71,7 @@ func TestPreUpload(t *testing.T) {
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
 	t.Setenv(env.SchemeEnvVarName, url.Scheme)
-	t.Setenv(MonobeamHostEnvVarName, url.Host)
+	t.Setenv(env.MonobeamHostEnvVarName, url.Host)
 
 	// Setup mock command
 	command := dockertest.NewMockCommand()

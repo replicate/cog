@@ -27,7 +27,7 @@ func TestPipelinePush(t *testing.T) {
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
 	t.Setenv(env.SchemeEnvVarName, url.Scheme)
-	t.Setenv(web.WebHostEnvVarName, url.Host)
+	t.Setenv(env.WebHostEnvVarName, url.Host)
 
 	dir := t.TempDir()
 

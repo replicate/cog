@@ -15,7 +15,6 @@ import (
 	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/env"
 	cogHttp "github.com/replicate/cog/pkg/http"
-	"github.com/replicate/cog/pkg/monobeam"
 	"github.com/replicate/cog/pkg/web"
 	"github.com/replicate/cog/pkg/weights"
 )
@@ -47,8 +46,8 @@ func TestPush(t *testing.T) {
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
 	t.Setenv(env.SchemeEnvVarName, url.Scheme)
-	t.Setenv(monobeam.MonobeamHostEnvVarName, url.Host)
-	t.Setenv(web.WebHostEnvVarName, url.Host)
+	t.Setenv(env.MonobeamHostEnvVarName, url.Host)
+	t.Setenv(env.WebHostEnvVarName, url.Host)
 
 	// Create directories
 	dir := t.TempDir()
@@ -107,8 +106,8 @@ func TestPushWithWeight(t *testing.T) {
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
 	t.Setenv(env.SchemeEnvVarName, url.Scheme)
-	t.Setenv(monobeam.MonobeamHostEnvVarName, url.Host)
-	t.Setenv(web.WebHostEnvVarName, url.Host)
+	t.Setenv(env.MonobeamHostEnvVarName, url.Host)
+	t.Setenv(env.WebHostEnvVarName, url.Host)
 
 	// Create directories
 	dir := t.TempDir()
@@ -164,7 +163,7 @@ func TestPushPipeline(t *testing.T) {
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
 	t.Setenv(env.SchemeEnvVarName, url.Scheme)
-	t.Setenv(web.WebHostEnvVarName, url.Host)
+	t.Setenv(env.WebHostEnvVarName, url.Host)
 
 	dir := t.TempDir()
 
