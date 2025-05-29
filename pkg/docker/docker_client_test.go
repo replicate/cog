@@ -347,7 +347,7 @@ func runDockerClientTests(t *testing.T, dockerClient command.Command) {
 			assert.Condition(t, func() bool {
 				msg := err.Error()
 				return strings.Contains(msg, "connection refused") || strings.Contains(msg, "EOF")
-			}, "Error should indicate registry is unreachable")
+			}, "Error should indicate registry is unreachable, got: %q", err.Error())
 		})
 
 		t.Run("missing image", func(t *testing.T) {
