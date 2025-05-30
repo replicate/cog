@@ -33,8 +33,8 @@ func (c *MockCommand) Push(ctx context.Context, image string) error {
 
 func (c *MockCommand) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
 	userInfo := command.UserInfo{
-		Token:    "",
-		Username: "",
+		Token:    "test-token",
+		Username: "test-user",
 	}
 	return &userInfo, nil
 }
