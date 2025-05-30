@@ -12,6 +12,8 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/dockertest"
+	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/registry_testhelpers"
 )
 
 func testTini() string {
@@ -94,8 +96,8 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
 	command := dockertest.NewMockCommand()
-
-	gen, err := NewStandardGenerator(conf, tmpDir, command)
+	client := registry.NewClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
@@ -130,7 +132,8 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
 	command := dockertest.NewMockCommand()
-	gen, err := NewStandardGenerator(conf, tmpDir, command)
+	client := registry.NewClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
@@ -174,7 +177,8 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
 	command := dockertest.NewMockCommand()
-	gen, err := NewStandardGenerator(conf, tmpDir, command)
+	client := registry.NewClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
@@ -229,7 +233,8 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
 	command := dockertest.NewMockCommand()
-	gen, err := NewStandardGenerator(conf, tmpDir, command)
+	client := registry.NewClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
@@ -280,7 +285,8 @@ build:
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
 	command := dockertest.NewMockCommand()
-	gen, err := NewStandardGenerator(conf, tmpDir, command)
+	client := registry.NewClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
@@ -317,7 +323,8 @@ build:
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(tmpDir))
 	command := dockertest.NewMockCommand()
-	gen, err := NewStandardGenerator(conf, tmpDir, command)
+	client := registry.NewClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
@@ -372,7 +379,8 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
 	command := dockertest.NewMockCommand()
-	gen, err := NewStandardGenerator(conf, tmpDir, command)
+	client := registry.NewClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 
@@ -470,7 +478,8 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
 	command := dockertest.NewMockCommand()
-	gen, err := NewStandardGenerator(conf, tmpDir, command)
+	client := registry.NewClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	actual, err := gen.GenerateDockerfileWithoutSeparateWeights(t.Context())
@@ -494,7 +503,6 @@ COPY . /src`
 
 func TestGenerateEmptyCPUWithCogBaseImage(t *testing.T) {
 	tmpDir := t.TempDir()
-
 	conf, err := config.FromYAML([]byte(`
 build:
   gpu: false
@@ -504,7 +512,10 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
 	command := dockertest.NewMockCommand()
-	gen, err := NewStandardGenerator(conf, tmpDir, command)
+	client := registry.NewClient()
+	registryHelper := registry_testhelpers.StartTestRegistry(t)
+	registryHelper.ImageRef(BaseImageName("", "3.12", ""))
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
@@ -541,7 +552,10 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
 	command := dockertest.NewMockCommand()
-	gen, err := NewStandardGenerator(conf, tmpDir, command)
+	client := registry.NewClient()
+	registryHelper := registry_testhelpers.StartTestRegistry(t)
+	registryHelper.ImageRef(BaseImageName("", "3.12", ""))
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
@@ -570,7 +584,9 @@ COPY . /src`
 
 func TestGenerateFullGPUWithCogBaseImage(t *testing.T) {
 	tmpDir := t.TempDir()
-
+	registryHelper := registry_testhelpers.StartTestRegistry(t)
+	client := registry.NewClient()
+	command := dockertest.NewMockCommand()
 	torchVersions := []string{"2.3", "2.3.0", "2.3.1"}
 	for _, torchVersion := range torchVersions {
 		yaml := fmt.Sprintf(`
@@ -591,8 +607,8 @@ predict: predict.py:Predictor
 		conf, err := config.FromYAML([]byte(yaml))
 		require.NoError(t, err)
 		require.NoError(t, conf.ValidateAndComplete(""))
-		command := dockertest.NewMockCommand()
-		gen, err := NewStandardGenerator(conf, tmpDir, command)
+		registryHelper.ImageRef(BaseImageName("11.8", "3.11", torchVersion))
+		gen, err := NewStandardGenerator(conf, tmpDir, command, client)
 		require.NoError(t, err)
 		gen.SetUseCogBaseImage(true)
 		_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
@@ -651,7 +667,10 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
 	command := dockertest.NewMockCommand()
-	gen, err := NewStandardGenerator(conf, tmpDir, command)
+	client := registry.NewClient()
+	registryHelper := registry_testhelpers.StartTestRegistry(t)
+	registryHelper.ImageRef(BaseImageName("11.8", "3.12", "2.3.1"))
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
@@ -703,7 +722,10 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
 	command := dockertest.NewMockCommand()
-	gen, err := NewStandardGenerator(conf, tmpDir, command)
+	client := registry.NewClient()
+	registryHelper := registry_testhelpers.StartTestRegistry(t)
+	registryHelper.ImageRef(BaseImageName("11.8", "3.12", "2.3.1"))
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	gen.SetStrip(true)
@@ -756,7 +778,10 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
 	command := dockertest.NewMockCommand()
-	gen, err := NewStandardGenerator(conf, tmpDir, command)
+	client := registry.NewClient()
+	registryHelper := registry_testhelpers.StartTestRegistry(t)
+	registryHelper.ImageRef(BaseImageName("11.8", "3.12", "2.3.1"))
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
@@ -788,7 +813,10 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	require.NoError(t, conf.ValidateAndComplete(""))
 	command := dockertest.NewMockCommand()
-	gen, err := NewStandardGenerator(conf, tmpDir, command)
+	client := registry.NewClient()
+	registryHelper := registry_testhelpers.StartTestRegistry(t)
+	registryHelper.ImageRef(BaseImageName("11.8", "3.12", "2.3.1"))
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	gen.SetStrip(true)

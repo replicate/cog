@@ -8,6 +8,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/dockerfile"
+	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -47,7 +48,8 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	generator, err := dockerfile.NewGenerator(cfg, projectDir, buildFast, dockerClient, buildLocalImage)
+	client := registry.NewClient()
+	generator, err := dockerfile.NewGenerator(cfg, projectDir, buildFast, dockerClient, buildLocalImage, client)
 	if err != nil {
 		return fmt.Errorf("Error creating Dockerfile generator: %w", err)
 	}

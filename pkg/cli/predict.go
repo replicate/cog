@@ -24,6 +24,7 @@ import (
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/predict"
+	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/mime"
 )
@@ -94,13 +95,33 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			buildFast = cfg.Build.Fast
 		}
 
+		client := registry.NewClient()
 		if buildFast {
 			imageName = config.DockerImageName(projectDir)
-			if err := image.Build(ctx, cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, nil, buildLocalImage, dockerClient); err != nil {
+			if err := image.Build(
+				ctx,
+				cfg,
+				projectDir,
+				imageName,
+				buildSecrets,
+				buildNoCache,
+				buildSeparateWeights,
+				buildUseCudaBaseImage,
+				buildProgressOutput,
+				buildSchemaFile,
+				buildDockerfileFile,
+				DetermineUseCogBaseImage(cmd),
+				buildStrip,
+				buildPrecompile,
+				buildFast,
+				nil,
+				buildLocalImage,
+				dockerClient,
+				client); err != nil {
 				return err
 			}
 		} else {
-			if imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
+			if imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client); err != nil {
 				return err
 			}
 
