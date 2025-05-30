@@ -92,3 +92,8 @@ func TestInvalidBaseImage(t *testing.T) {
 	_, err := NewBaseImageGenerator("12.78", "3.9", "2.1.0", command)
 	require.Error(t, err)
 }
+
+func TestBaseImageConfigurationNoTorchPythonVersionDoesNotExist(t *testing.T) {
+	exists, _, _, _ := BaseImageConfigurationExists("", "3.99", "")
+	require.False(t, exists)
+}
