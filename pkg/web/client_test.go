@@ -78,12 +78,12 @@ func TestVersionFromManifest(t *testing.T) {
 }
 
 func TestVersionURLErrorWithoutR8IMPrefix(t *testing.T) {
-	_, err := newVersionURL("docker.com/thing/thing", false)
+	_, err := newVersionURL("docker.com/thing/thing")
 	require.Error(t, err)
 }
 
 func TestVersionURLErrorWithout3Components(t *testing.T) {
-	_, err := newVersionURL("username/test", false)
+	_, err := newVersionURL("username/test")
 	require.Error(t, err)
 }
 

@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -272,12 +273,23 @@ func (c *Client) PostNewPipeline(ctx context.Context, image string, tarball *byt
 		}
 	}
 
-	part, err := mp.CreateFormFile("source_archive", "source_archive.tar")
+	var gzipBuf bytes.Buffer
+	gzipWriter := gzip.NewWriter(&gzipBuf)
+	_, err = io.Copy(gzipWriter, bytes.NewReader(tarball.Bytes()))
+	if err != nil {
+		return err
+	}
+	err = gzipWriter.Close()
 	if err != nil {
 		return err
 	}
 
-	_, err = io.Copy(part, bytes.NewReader(tarball.Bytes()))
+	part, err := mp.CreateFormFile("source_archive", "source_archive.tar.gz")
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(part, bytes.NewReader(gzipBuf.Bytes()))
 	if err != nil {
 		return err
 	}
@@ -321,7 +333,6 @@ func (c *Client) PostNewPipeline(ctx context.Context, image string, tarball *byt
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
 	// Make the request
