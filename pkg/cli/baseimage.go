@@ -15,6 +15,7 @@ import (
 	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/update"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -212,8 +213,10 @@ func baseImageGeneratorFromFlags(ctx context.Context) (*dockerfile.BaseImageGene
 	if err != nil {
 		return nil, err
 	}
-
+	client := registry.NewClient()
 	return dockerfile.NewBaseImageGenerator(
+		ctx,
+		client,
 		baseImageCUDAVersion,
 		baseImagePythonVersion,
 		baseImageTorchVersion,

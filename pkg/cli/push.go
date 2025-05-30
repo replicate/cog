@@ -15,6 +15,7 @@ import (
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/image"
+	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -99,8 +100,27 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	startBuildTime := time.Now()
-
-	if err := image.Build(ctx, cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, annotations, buildLocalImage, dockerClient); err != nil {
+	registryClient := registry.NewClient()
+	if err := image.Build(
+		ctx,
+		cfg,
+		projectDir,
+		imageName,
+		buildSecrets,
+		buildNoCache,
+		buildSeparateWeights,
+		buildUseCudaBaseImage,
+		buildProgressOutput,
+		buildSchemaFile,
+		buildDockerfileFile,
+		DetermineUseCogBaseImage(cmd),
+		buildStrip,
+		buildPrecompile,
+		buildFast,
+		annotations,
+		buildLocalImage,
+		dockerClient,
+		registryClient); err != nil {
 		return err
 	}
 

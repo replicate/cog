@@ -5,9 +5,10 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
+	"github.com/replicate/cog/pkg/registry"
 )
 
-func NewGenerator(config *config.Config, dir string, buildFast bool, command command.Command, localImage bool) (Generator, error) {
+func NewGenerator(config *config.Config, dir string, buildFast bool, command command.Command, localImage bool, client registry.Client) (Generator, error) {
 	if buildFast {
 		matrix, err := NewMonobaseMatrix(http.DefaultClient)
 		if err != nil {
@@ -15,5 +16,5 @@ func NewGenerator(config *config.Config, dir string, buildFast bool, command com
 		}
 		return NewFastGenerator(config, dir, command, matrix, localImage)
 	}
-	return NewStandardGenerator(config, dir, command)
+	return NewStandardGenerator(config, dir, command, client)
 }

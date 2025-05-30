@@ -12,6 +12,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/dockercontext"
+	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/slices"
 	"github.com/replicate/cog/pkg/util/version"
@@ -71,9 +72,10 @@ type StandardGenerator struct {
 
 	pythonRequirementsContents string
 	command                    command.Command
+	client                     registry.Client
 }
 
-func NewStandardGenerator(config *config.Config, dir string, command command.Command) (*StandardGenerator, error) {
+func NewStandardGenerator(config *config.Config, dir string, command command.Command, client registry.Client) (*StandardGenerator, error) {
 	tmpDir, err := dockercontext.BuildTempDir(dir)
 	if err != nil {
 		return nil, err
@@ -97,6 +99,7 @@ func NewStandardGenerator(config *config.Config, dir string, command command.Com
 		strip:            false,
 		precompile:       false,
 		command:          command,
+		client:           client,
 	}, nil
 }
 
@@ -131,7 +134,7 @@ func (g *StandardGenerator) SetPrecompile(precompile bool) {
 }
 
 func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, error) {
-	baseImage, err := g.BaseImage()
+	baseImage, err := g.BaseImage(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -299,9 +302,9 @@ func (g *StandardGenerator) Cleanup() error {
 	return nil
 }
 
-func (g *StandardGenerator) BaseImage() (string, error) {
+func (g *StandardGenerator) BaseImage(ctx context.Context) (string, error) {
 	if g.IsUsingCogBaseImage() {
-		baseImage, err := g.determineBaseImageName()
+		baseImage, err := g.determineBaseImageName(ctx)
 		if err == nil || g.useCogBaseImage != nil {
 			return baseImage, err
 		}
@@ -579,7 +582,7 @@ func (g *StandardGenerator) GenerateWeightsManifest(ctx context.Context) (*weigh
 	return m, nil
 }
 
-func (g *StandardGenerator) determineBaseImageName() (string, error) {
+func (g *StandardGenerator) determineBaseImageName(ctx context.Context) (string, error) {
 	var changed bool
 	var err error
 
@@ -597,7 +600,7 @@ func (g *StandardGenerator) determineBaseImageName() (string, error) {
 	torchVersion, _ := g.Config.TorchVersion()
 
 	// validate that the base image configuration exists
-	imageGenerator, err := NewBaseImageGenerator(cudaVersion, pythonVersion, torchVersion, g.command)
+	imageGenerator, err := NewBaseImageGenerator(ctx, g.client, cudaVersion, pythonVersion, torchVersion, g.command)
 	if err != nil {
 		return "", err
 	}

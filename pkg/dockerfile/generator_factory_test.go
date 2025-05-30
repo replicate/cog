@@ -7,6 +7,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/dockertest"
+	"github.com/replicate/cog/pkg/registry"
 )
 
 func TestGeneratorFactory(t *testing.T) {
@@ -18,7 +19,8 @@ func TestGeneratorFactory(t *testing.T) {
 		Build: &build,
 	}
 	command := dockertest.NewMockCommand()
-	generator, err := NewGenerator(&config, dir, true, command, true)
+	client := registry.NewClient()
+	generator, err := NewGenerator(&config, dir, true, command, true, client)
 	require.NoError(t, err)
 	require.Equal(t, generator.Name(), FAST_GENERATOR_NAME)
 }
@@ -32,7 +34,8 @@ func TestGeneratorFactoryStandardGenerator(t *testing.T) {
 		Build: &build,
 	}
 	command := dockertest.NewMockCommand()
-	generator, err := NewGenerator(&config, dir, false, command, true)
+	client := registry.NewClient()
+	generator, err := NewGenerator(&config, dir, false, command, true, client)
 	require.NoError(t, err)
 	require.Equal(t, generator.Name(), STANDARD_GENERATOR_NAME)
 }

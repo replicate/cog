@@ -15,6 +15,7 @@ import (
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/predict"
+	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -78,7 +79,8 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 			buildFast = cfg.Build.Fast
 		}
 
-		if imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
+		client := registry.NewClient()
+		if imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client); err != nil {
 			return err
 		}
 

@@ -60,7 +60,7 @@ func (g *FastGenerator) GenerateInitialSteps(ctx context.Context) (string, error
 	return "", errors.New("GenerateInitialSteps not supported in FastGenerator")
 }
 
-func (g *FastGenerator) BaseImage() (string, error) {
+func (g *FastGenerator) BaseImage(ctx context.Context) (string, error) {
 	return "", errors.New("BaseImage not supported in FastGenerator")
 }
 
