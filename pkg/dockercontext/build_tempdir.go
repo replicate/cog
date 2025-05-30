@@ -4,16 +4,32 @@ import (
 	"os"
 	"path"
 	"time"
+
+	"github.com/replicate/cog/pkg/global"
 )
 
-const CogBuildArtifactsFolder = ".cog"
+func CogBuildArtifactsDirPath(dir string) (string, error) {
+	tmpDir := path.Join(dir, global.CogBuildArtifactsFolder)
+	err := os.MkdirAll(tmpDir, 0o777)
+	if err != nil {
+		return "", err
+	}
+	return tmpDir, nil
+}
 
-func CogTempDir(dir string, contextDir string) string {
-	return path.Join(dir, CogBuildArtifactsFolder, "tmp", contextDir)
+func CogTempDir(dir string, contextDir string) (string, error) {
+	tmpDir, err := CogBuildArtifactsDirPath(dir)
+	if err != nil {
+		return "", err
+	}
+	return path.Join(tmpDir, "tmp", contextDir), nil
 }
 
 func BuildCogTempDir(dir string, subDir string) (string, error) {
-	rootTmp := CogTempDir(dir, subDir)
+	rootTmp, err := CogTempDir(dir, subDir)
+	if err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(rootTmp, 0o777); err != nil {
 		return "", err
 	}

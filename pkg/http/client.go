@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/replicate/cog/pkg/docker/command"
+	"github.com/replicate/cog/pkg/env"
 	"github.com/replicate/cog/pkg/global"
 )
 
@@ -20,8 +21,11 @@ func ProvideHTTPClient(ctx context.Context, dockerCommand command.Command) (*htt
 		Transport: &Transport{
 			headers: map[string]string{
 				UserAgentHeader: UserAgent(),
-				"Authorization": "Bearer " + userInfo.Token,
 				"Content-Type":  "application/json",
+			},
+			authentication: map[string]string{
+				env.MonobeamHostFromEnvironment(): "Bearer " + userInfo.Token,
+				env.WebHostFromEnvironment():      "Bearer " + userInfo.Token,
 			},
 		},
 	}

@@ -483,7 +483,7 @@ func newVersionURL(image string, isProcedure bool) (url.URL, error) {
 func webBaseURL() url.URL {
 	return url.URL{
 		Scheme: env.SchemeFromEnvironment(),
-		Host:   HostFromEnvironment(),
+		Host:   env.WebHostFromEnvironment(),
 	}
 }
 

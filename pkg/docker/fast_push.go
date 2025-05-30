@@ -14,6 +14,7 @@ import (
 
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/dockercontext"
+	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/monobeam"
 	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/util"
@@ -21,7 +22,7 @@ import (
 	"github.com/replicate/cog/pkg/weights"
 )
 
-var TarballsDir = filepath.Join(dockercontext.CogBuildArtifactsFolder, "tarballs")
+var TarballsDir = filepath.Join(global.CogBuildArtifactsFolder, "tarballs")
 
 const weightsObjectType = "weights"
 const filesObjectType = "files"
@@ -49,7 +50,11 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 	// Create a list of files to upload.
 	files := []web.File{}
 
-	aptTarFile, err := CurrentAptTarball(dockercontext.CogTempDir(projectDir, dockercontext.AptBuildDir))
+	aptBuildDir, err := dockercontext.CogTempDir(projectDir, dockercontext.AptBuildDir)
+	if err != nil {
+		return err
+	}
+	aptTarFile, err := CurrentAptTarball(aptBuildDir)
 	if err != nil {
 		return fmt.Errorf("current apt tarball error: %w", err)
 	}
@@ -69,7 +74,10 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 		})
 	}
 
-	tmpRequirementsDir := dockercontext.CogTempDir(projectDir, dockercontext.RequirementsBuildDir)
+	tmpRequirementsDir, err := dockercontext.CogTempDir(projectDir, dockercontext.RequirementsBuildDir)
+	if err != nil {
+		return err
+	}
 	requirementsFile, err := requirements.CurrentRequirements(tmpRequirementsDir)
 	if err != nil {
 		return err

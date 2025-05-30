@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/monobeam"
 	"github.com/replicate/cog/pkg/util/console"
@@ -17,11 +18,11 @@ type BuildInfo struct {
 	Pipeline  bool
 }
 
-func Push(ctx context.Context, image string, fast bool, projectDir string, command command.Command, buildInfo BuildInfo, client *http.Client) error {
+func Push(ctx context.Context, image string, fast bool, projectDir string, command command.Command, buildInfo BuildInfo, client *http.Client, cfg *config.Config) error {
 	webClient := web.NewClient(command, client)
 
 	if buildInfo.Pipeline {
-		return PipelinePush(ctx, image, projectDir, webClient)
+		return PipelinePush(ctx, image, projectDir, webClient, client, cfg)
 	}
 
 	if err := webClient.PostPushStart(ctx, buildInfo.BuildID, buildInfo.BuildTime); err != nil {

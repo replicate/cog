@@ -14,6 +14,7 @@ import (
 	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/env"
+	"github.com/replicate/cog/pkg/global"
 	r8HTTP "github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/monobeam"
 	"github.com/replicate/cog/pkg/web"
@@ -47,12 +48,12 @@ func TestFastPush(t *testing.T) {
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
 	t.Setenv(env.SchemeEnvVarName, url.Scheme)
-	t.Setenv(monobeam.MonobeamHostEnvVarName, url.Host)
-	t.Setenv(web.WebHostEnvVarName, url.Host)
+	t.Setenv(env.MonobeamHostEnvVarName, url.Host)
+	t.Setenv(env.WebHostEnvVarName, url.Host)
 
 	// Create directories
 	dir := t.TempDir()
-	cogDir := filepath.Join(dir, dockercontext.CogBuildArtifactsFolder)
+	cogDir := filepath.Join(dir, global.CogBuildArtifactsFolder)
 	err = os.Mkdir(cogDir, 0o755)
 	require.NoError(t, err)
 	err = os.Mkdir(filepath.Join(dir, TarballsDir), 0o755)
@@ -108,12 +109,12 @@ func TestFastPushWithWeight(t *testing.T) {
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
 	t.Setenv(env.SchemeEnvVarName, url.Scheme)
-	t.Setenv(monobeam.MonobeamHostEnvVarName, url.Host)
-	t.Setenv(web.WebHostEnvVarName, url.Host)
+	t.Setenv(env.MonobeamHostEnvVarName, url.Host)
+	t.Setenv(env.WebHostEnvVarName, url.Host)
 
 	// Create directories
 	dir := t.TempDir()
-	cogDir := filepath.Join(dir, dockercontext.CogBuildArtifactsFolder)
+	cogDir := filepath.Join(dir, global.CogBuildArtifactsFolder)
 	err = os.Mkdir(cogDir, 0o755)
 	require.NoError(t, err)
 	err = os.Mkdir(filepath.Join(dir, TarballsDir), 0o755)

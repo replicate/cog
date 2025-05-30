@@ -29,7 +29,7 @@ func TestPostNewVersion(t *testing.T) {
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
 	t.Setenv(env.SchemeEnvVarName, url.Scheme)
-	t.Setenv(WebHostEnvVarName, url.Host)
+	t.Setenv(env.WebHostEnvVarName, url.Host)
 
 	dir := t.TempDir()
 
@@ -148,7 +148,7 @@ func TestDoFileChallenge(t *testing.T) {
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
 	t.Setenv(env.SchemeEnvVarName, url.Scheme)
-	t.Setenv(WebHostEnvVarName, url.Host)
+	t.Setenv(env.WebHostEnvVarName, url.Host)
 
 	// Setup mock command
 	command := dockertest.NewMockCommand()
@@ -180,7 +180,7 @@ func TestPostPipeline(t *testing.T) {
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
 	t.Setenv(env.SchemeEnvVarName, url.Scheme)
-	t.Setenv(WebHostEnvVarName, url.Host)
+	t.Setenv(env.WebHostEnvVarName, url.Host)
 
 	dir := t.TempDir()
 

@@ -185,7 +185,7 @@ func (c *Client) checkVerificationStatus(req *http.Request, uuid string) (bool, 
 func baseURL() url.URL {
 	return url.URL{
 		Scheme: env.SchemeFromEnvironment(),
-		Host:   HostFromEnvironment(),
+		Host:   env.MonobeamHostFromEnvironment(),
 	}
 }
 
