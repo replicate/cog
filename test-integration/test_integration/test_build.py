@@ -593,7 +593,7 @@ def test_torch_270_cuda_126_base_image(tmpdir_factory, docker_image, cog_binary)
 
 
 def test_python_313(tmpdir_factory, docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/python_313"
+    project_dir = Path(__file__).parent / "fixtures/python-313"
 
     build_process = subprocess.run(
         [
