@@ -12,6 +12,7 @@ import (
 
 	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/dockerignore"
+	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
 
@@ -490,7 +491,7 @@ func (g *FastGenerator) rsyncSrc(srcDir string, weights []weights.Weight) error 
 			return nil
 		}
 
-		if info.IsDir() && info.Name() == dockercontext.CogBuildArtifactsFolder {
+		if info.IsDir() && info.Name() == global.CogBuildArtifactsFolder {
 			return filepath.SkipDir
 		}
 

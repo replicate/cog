@@ -115,7 +115,7 @@ func push(cmd *cobra.Command, args []string) error {
 		BuildTime: buildDuration,
 		BuildID:   buildID.String(),
 		Pipeline:  pushPipeline,
-	}, client)
+	}, client, cfg)
 	if err != nil {
 		if strings.Contains(err.Error(), "404") {
 			err = fmt.Errorf("Unable to find existing Replicate model for %s. "+

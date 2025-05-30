@@ -29,7 +29,7 @@ func TestPostNewVersion(t *testing.T) {
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
 	t.Setenv(env.SchemeEnvVarName, url.Scheme)
-	t.Setenv(WebHostEnvVarName, url.Host)
+	t.Setenv(env.WebHostEnvVarName, url.Host)
 
 	dir := t.TempDir()
 
@@ -78,12 +78,12 @@ func TestVersionFromManifest(t *testing.T) {
 }
 
 func TestVersionURLErrorWithoutR8IMPrefix(t *testing.T) {
-	_, err := newVersionURL("docker.com/thing/thing", false)
+	_, err := newVersionURL("docker.com/thing/thing")
 	require.Error(t, err)
 }
 
 func TestVersionURLErrorWithout3Components(t *testing.T) {
-	_, err := newVersionURL("username/test", false)
+	_, err := newVersionURL("username/test")
 	require.Error(t, err)
 }
 
@@ -148,7 +148,7 @@ func TestDoFileChallenge(t *testing.T) {
 	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
 	t.Setenv(env.SchemeEnvVarName, url.Scheme)
-	t.Setenv(WebHostEnvVarName, url.Host)
+	t.Setenv(env.WebHostEnvVarName, url.Host)
 
 	// Setup mock command
 	command := dockertest.NewMockCommand()
@@ -170,17 +170,53 @@ func TestDoFileChallenge(t *testing.T) {
 }
 
 func TestPostPipeline(t *testing.T) {
-	// Setup mock http server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		output := "{\"version\":\"user/test:53c740f17ce88a61c3da5b0c20e48fd48e2da537c3a1276dec63ab11fbad6bcb\"}"
-		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte(output))
+	// Setup mock web server for cog.replicate.com (token exchange)
+	webServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/token/user":
+			// Mock token exchange response
+			//nolint:gosec
+			tokenResponse := `{
+				"keys": {
+					"cog": {
+						"key": "test-api-token",
+						"expires_at": "2024-12-31T23:59:59Z"
+					}
+				}
+			}`
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(tokenResponse))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
 	}))
-	defer server.Close()
-	url, err := url.Parse(server.URL)
+	defer webServer.Close()
+
+	// Setup mock API server for api.replicate.com (version and release endpoints)
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models/user/test/versions":
+			// Mock version creation response
+			versionResponse := `{"id": "test-version-id"}`
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(versionResponse))
+		case "/v1/models/user/test/releases":
+			// Mock release creation response - empty body with 204 status
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer apiServer.Close()
+
+	webURL, err := url.Parse(webServer.URL)
 	require.NoError(t, err)
-	t.Setenv(env.SchemeEnvVarName, url.Scheme)
-	t.Setenv(WebHostEnvVarName, url.Host)
+	apiURL, err := url.Parse(apiServer.URL)
+	require.NoError(t, err)
+
+	t.Setenv(env.SchemeEnvVarName, webURL.Scheme)
+	t.Setenv(env.WebHostEnvVarName, webURL.Host)
+	t.Setenv(env.APIHostEnvVarName, apiURL.Host)
 
 	dir := t.TempDir()
 
