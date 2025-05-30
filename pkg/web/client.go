@@ -224,10 +224,11 @@ func (c *Client) PostNewPipeline(ctx context.Context, image string, tarball *byt
 		return ErrorBadRegistryHost
 	}
 
-	tokenURL := fmt.Sprintf("https://cog.replicate.com/api/token/%s", imageComponents[1])
+	tokenURL := webBaseURL()
+	tokenURL.Path = fmt.Sprintf("/api/token/%s", imageComponents[1])
 
 	// Authorization header is provided by the transport.
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL.String(), nil)
 	if err != nil {
 		return err
 	}
@@ -295,8 +296,9 @@ func (c *Client) PostNewPipeline(ctx context.Context, image string, tarball *byt
 	}
 	mp.Close()
 
-	versionURL := fmt.Sprintf("https://api.replicate.com/v1/models/%s/%s/versions", imageComponents[1], imageComponents[2])
-	req, err = http.NewRequestWithContext(ctx, http.MethodPost, versionURL, bytes.NewReader(body.Bytes()))
+	versionURL := apiBaseURL()
+	versionURL.Path = fmt.Sprintf("/v1/models/%s/%s/versions", imageComponents[1], imageComponents[2])
+	req, err = http.NewRequestWithContext(ctx, http.MethodPost, versionURL.String(), bytes.NewReader(body.Bytes()))
 	if err != nil {
 		return err
 	}
@@ -321,7 +323,8 @@ func (c *Client) PostNewPipeline(ctx context.Context, image string, tarball *byt
 		return fmt.Errorf("Unable to decode response body: %w", err)
 	}
 
-	releaseURL := fmt.Sprintf("https://api.replicate.com/v1/models/%s/%s/releases", imageComponents[1], imageComponents[2])
+	releaseURL := apiBaseURL()
+	releaseURL.Path = fmt.Sprintf("/v1/models/%s/%s/releases", imageComponents[1], imageComponents[2])
 	buf := new(bytes.Buffer)
 	if err := json.NewEncoder(buf).Encode(struct {
 		Version string `json:"version"`
@@ -329,7 +332,7 @@ func (c *Client) PostNewPipeline(ctx context.Context, image string, tarball *byt
 		return fmt.Errorf("Unable to encode JSON request body: %w", err)
 	}
 
-	req, err = http.NewRequestWithContext(ctx, http.MethodPost, releaseURL, buf)
+	req, err = http.NewRequestWithContext(ctx, http.MethodPost, releaseURL.String(), buf)
 	if err != nil {
 		return err
 	}
@@ -570,6 +573,13 @@ func webBaseURL() url.URL {
 	return url.URL{
 		Scheme: env.SchemeFromEnvironment(),
 		Host:   env.WebHostFromEnvironment(),
+	}
+}
+
+func apiBaseURL() url.URL {
+	return url.URL{
+		Scheme: env.SchemeFromEnvironment(),
+		Host:   env.APIHostFromEnvironment(),
 	}
 }
 
