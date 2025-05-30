@@ -51,6 +51,7 @@ func isMissingDeviceDriverError(err error) bool {
 		strings.Contains(msg, "nvidia-container-cli: initialization error")
 }
 
+// isNetworkError checks if the error is a network error. This is janky and intended for use in tests only
 func isNetworkError(err error) bool {
 	// for both CLI and API clients, network errors are wrapped and lose the net.Error interface
 	// CLI client: wrapped by exec.Command as exec.ExitError
@@ -65,6 +66,7 @@ func isNetworkError(err error) bool {
 		"EOF",
 		"no route to host",
 		"network is unreachable",
+		"server closed",
 	}
 
 	for _, errStr := range networkErrorStrings {
