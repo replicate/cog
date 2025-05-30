@@ -1,6 +1,9 @@
 package docker
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
 
 // Error messages vary between different backends (dockerd, containerd, podman, orbstack, etc) or even versions of docker.
 // These helpers normalize the check so callers can handle situations without worrying about the underlying implementation.
@@ -46,4 +49,34 @@ func isMissingDeviceDriverError(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "could not select device driver") ||
 		strings.Contains(msg, "nvidia-container-cli: initialization error")
+}
+
+func isNetworkError(err error) bool {
+	// for both CLI and API clients, network errors are wrapped and lose the net.Error interface
+	// CLI client: wrapped by exec.Command as exec.ExitError
+	// API client: wrapped by JSON message stream processing
+	// Sad as it may be, we rely on string matching for common network error messages
+
+	msg := err.Error()
+	networkErrorStrings := []string{
+		"connection refused",
+		"connection reset by peer",
+		"dial tcp",
+		"EOF",
+		"no route to host",
+		"network is unreachable",
+	}
+
+	for _, errStr := range networkErrorStrings {
+		if strings.Contains(msg, errStr) {
+			return true
+		}
+	}
+
+	// also check wrapped errors
+	if unwrapped := errors.Unwrap(err); unwrapped != nil {
+		return isNetworkError(unwrapped)
+	}
+
+	return false
 }
