@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/docker/dockertest"
-	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/registry/registrytest"
 	"github.com/replicate/cog/pkg/registry_testhelpers"
 )
 
@@ -39,9 +39,8 @@ func TestGenerateDockerfile(t *testing.T) {
 	cudaVersion := "12.1"
 	pythonVersion := "3.8"
 	torchVersion := "2.1.0"
-	registryHelper := registry_testhelpers.StartTestRegistry(t)
-	registryHelper.ImageRef(BaseImageName(cudaVersion, pythonVersion, torchVersion))
-	client := registry.NewClient()
+	client := registrytest.NewMockRegistryClient()
+	client.AddMockImage(BaseImageName(cudaVersion, pythonVersion, torchVersion))
 	command := dockertest.NewMockCommand()
 	generator, err := NewBaseImageGenerator(
 		t.Context(),
@@ -66,9 +65,8 @@ func TestBaseImageConfigurationExists(t *testing.T) {
 	cudaVersion := "12.1"
 	pythonVersion := "3.9"
 	torchVersion := "2.3"
-	registryHelper := registry_testhelpers.StartTestRegistry(t)
-	registryHelper.ImageRef(BaseImageName(cudaVersion, pythonVersion, torchVersion))
-	client := registry.NewClient()
+	client := registrytest.NewMockRegistryClient()
+	client.AddMockImage(BaseImageName(cudaVersion, pythonVersion, torchVersion))
 	exists, _, _, torchVersion, err := BaseImageConfigurationExists(t.Context(), client, cudaVersion, pythonVersion, torchVersion)
 	require.NoError(t, err)
 	require.True(t, exists)
@@ -79,9 +77,8 @@ func TestBaseImageConfigurationExistsNoTorch(t *testing.T) {
 	cudaVersion := ""
 	pythonVersion := "3.12"
 	torchVersion := ""
-	registryHelper := registry_testhelpers.StartTestRegistry(t)
-	registryHelper.ImageRef(BaseImageName(cudaVersion, pythonVersion, torchVersion))
-	client := registry.NewClient()
+	client := registrytest.NewMockRegistryClient()
+	client.AddMockImage(BaseImageName(cudaVersion, pythonVersion, torchVersion))
 	exists, _, _, _, err := BaseImageConfigurationExists(t.Context(), client, cudaVersion, pythonVersion, torchVersion)
 	require.NoError(t, err)
 	require.True(t, exists)
@@ -91,9 +88,8 @@ func TestBaseImageConfigurationExistsNoCUDA(t *testing.T) {
 	cudaVersion := ""
 	pythonVersion := "3.8"
 	torchVersion := "2.1"
-	registryHelper := registry_testhelpers.StartTestRegistry(t)
-	registryHelper.ImageRef(BaseImageName(cudaVersion, pythonVersion, torchVersion))
-	client := registry.NewClient()
+	client := registrytest.NewMockRegistryClient()
+	client.AddMockImage(BaseImageName(cudaVersion, pythonVersion, torchVersion))
 	exists, _, _, torchVersion, err := BaseImageConfigurationExists(t.Context(), client, cudaVersion, pythonVersion, torchVersion)
 	require.NoError(t, err)
 	require.True(t, exists)
@@ -109,10 +105,9 @@ func TestPythonPackages(t *testing.T) {
 	cudaVersion := "12.1"
 	pythonVersion := "3.9"
 	torchVersion := "2.1.0"
-	registryHelper := registry_testhelpers.StartTestRegistry(t)
-	registryHelper.ImageRef(BaseImageName(cudaVersion, pythonVersion, torchVersion))
 	command := dockertest.NewMockCommand()
-	client := registry.NewClient()
+	client := registrytest.NewMockRegistryClient()
+	client.AddMockImage(BaseImageName(cudaVersion, pythonVersion, torchVersion))
 	generator, err := NewBaseImageGenerator(t.Context(), client, cudaVersion, pythonVersion, torchVersion, command)
 	require.NoError(t, err)
 	pkgs := generator.pythonPackages()
@@ -126,14 +121,14 @@ func TestPythonPackages(t *testing.T) {
 
 func TestInvalidBaseImage(t *testing.T) {
 	command := dockertest.NewMockCommand()
-	client := registry.NewClient()
+	client := registrytest.NewMockRegistryClient()
 	_, err := NewBaseImageGenerator(t.Context(), client, "12.78", "3.9", "2.1.0", command)
 	require.Error(t, err)
 }
 
 func TestBaseImageConfigurationNoTorchPythonVersionDoesNotExist(t *testing.T) {
 	registry_testhelpers.StartTestRegistry(t)
-	client := registry.NewClient()
+	client := registrytest.NewMockRegistryClient()
 	exists, _, _, _, err := BaseImageConfigurationExists(t.Context(), client, "", "3.99", "")
 	require.NoError(t, err)
 	require.False(t, exists)

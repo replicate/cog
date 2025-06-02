@@ -213,7 +213,7 @@ func baseImageGeneratorFromFlags(ctx context.Context) (*dockerfile.BaseImageGene
 	if err != nil {
 		return nil, err
 	}
-	client := registry.NewClient()
+	client := registry.NewRegistryClient()
 	return dockerfile.NewBaseImageGenerator(
 		ctx,
 		client,

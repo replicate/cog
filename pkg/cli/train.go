@@ -79,7 +79,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 			buildFast = cfg.Build.Fast
 		}
 
-		client := registry.NewClient()
+		client := registry.NewRegistryClient()
 		if imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client); err != nil {
 			return err
 		}

@@ -95,7 +95,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			buildFast = cfg.Build.Fast
 		}
 
-		client := registry.NewClient()
+		client := registry.NewRegistryClient()
 		if buildFast {
 			imageName = config.DockerImageName(projectDir)
 			if err := image.Build(
