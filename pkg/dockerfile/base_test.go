@@ -9,7 +9,6 @@ import (
 
 	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/registry/registrytest"
-	"github.com/replicate/cog/pkg/registry_testhelpers"
 )
 
 func TestBaseImageName(t *testing.T) {
@@ -127,7 +126,6 @@ func TestInvalidBaseImage(t *testing.T) {
 }
 
 func TestBaseImageConfigurationNoTorchPythonVersionDoesNotExist(t *testing.T) {
-	registry_testhelpers.StartTestRegistry(t)
 	client := registrytest.NewMockRegistryClient()
 	exists, _, _, _, err := BaseImageConfigurationExists(t.Context(), client, "", "3.99", "")
 	require.NoError(t, err)
