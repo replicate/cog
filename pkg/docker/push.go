@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/replicate/cog/pkg/api"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/monobeam"
@@ -22,7 +23,8 @@ func Push(ctx context.Context, image string, fast bool, projectDir string, comma
 	webClient := web.NewClient(command, client)
 
 	if buildInfo.Pipeline {
-		return PipelinePush(ctx, image, projectDir, webClient, client, cfg)
+		apiClient := api.NewClient(command, client, webClient)
+		return PipelinePush(ctx, image, projectDir, apiClient, client, cfg)
 	}
 
 	if err := webClient.PostPushStart(ctx, buildInfo.BuildID, buildInfo.BuildTime); err != nil {

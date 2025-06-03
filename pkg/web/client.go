@@ -2,13 +2,10 @@ package web
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,6 +20,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/env"
+	r8_errors "github.com/replicate/cog/pkg/errors"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
@@ -37,8 +35,6 @@ var (
 	ErrorBadResponseNewVersionEndpoint        = errors.New("Bad response from new version endpoint")
 	ErrorBadResponsePushStartEndpoint         = errors.New("Bad response from push start endpoint")
 	ErrorBadResponseInitiateChallengeEndpoint = errors.New("Bad response from start file challenge endpoint")
-	ErrorBadRegistryURL                       = errors.New("The image URL must have 3 components in the format of " + global.ReplicateRegistryHost + "/your-username/your-model")
-	ErrorBadRegistryHost                      = errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using fast: true in cog.yaml.")
 	ErrorNoSuchDigest                         = errors.New("No digest submitted matches the digest requested")
 )
 
@@ -116,6 +112,19 @@ type VersionErrors struct {
 
 type VersionCreate struct {
 	Version string `json:"version"`
+}
+
+type CogKey struct {
+	Key       string `json:"key"`
+	ExpiresAt string `json:"expires_at"`
+}
+
+type Keys struct {
+	Cog CogKey `json:"cog"`
+}
+
+type TokenData struct {
+	Keys Keys `json:"keys"`
 }
 
 func NewClient(dockerCommand command.Command, client *http.Client) *Client {
@@ -208,153 +217,30 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 	return nil
 }
 
-func (c *Client) PostNewPipeline(ctx context.Context, image string, tarball *bytes.Buffer) error {
-	// Fetch manifest
-	manifest, err := c.dockerCommand.Inspect(ctx, image)
+func (c *Client) FetchAPIToken(ctx context.Context, entity string) (string, error) {
+	tokenUrl := tokenURL(entity)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenUrl.String(), nil)
 	if err != nil {
-		return util.WrapError(err, "failed to inspect docker image")
+		return "", err
 	}
 
-	// Create version URL
-	imageComponents := strings.Split(image, "/")
-	if len(imageComponents) != 3 {
-		return ErrorBadRegistryURL
-	}
-	if imageComponents[0] != global.ReplicateRegistryHost {
-		return ErrorBadRegistryHost
-	}
-
-	tokenURL := webBaseURL()
-	tokenURL.Path = fmt.Sprintf("/api/token/%s", imageComponents[1])
-
-	// Authorization header is provided by the transport.
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL.String(), nil)
-	if err != nil {
-		return err
-	}
-
-	// Make the request
 	tokenResp, err := c.client.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer tokenResp.Body.Close()
 
 	if tokenResp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Bad response: %s attempting to exchange tokens", strconv.Itoa(tokenResp.StatusCode))
+		return "", fmt.Errorf("Bad response: %s attempting to exchange tokens", strconv.Itoa(tokenResp.StatusCode))
 	}
 
-	var tokenData struct {
-		Keys struct {
-			Cog struct {
-				Key       string `json:"key"`
-				ExpiresAt string `json:"expires_at"`
-			} `json:"cog"`
-		} `json:"keys"`
-	}
-	if err := json.NewDecoder(tokenResp.Body).Decode(&tokenData); err != nil {
-		return fmt.Errorf("Unable to decode response body: %w", err)
-	}
-	token := tokenData.Keys.Cog.Key
-
-	// Create form data body
-	body := new(bytes.Buffer)
-	mp := multipart.NewWriter(body)
-	defer mp.Close()
-	err = mp.WriteField("openapi_schema", manifest.Config.Labels[command.CogOpenAPISchemaLabelKey])
+	var tokenData TokenData
+	err = json.NewDecoder(tokenResp.Body).Decode(&tokenData)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	dependencies := manifest.Config.Labels[command.CogModelDependenciesLabelKey]
-	if dependencies != "" && dependencies != `[""]` {
-		err = mp.WriteField("dependencies", dependencies)
-		if err != nil {
-			return err
-		}
-	}
-
-	var gzipBuf bytes.Buffer
-	gzipWriter := gzip.NewWriter(&gzipBuf)
-	_, err = io.Copy(gzipWriter, bytes.NewReader(tarball.Bytes()))
-	if err != nil {
-		return err
-	}
-	err = gzipWriter.Close()
-	if err != nil {
-		return err
-	}
-
-	part, err := mp.CreateFormFile("source_archive", "source_archive.tar.gz")
-	if err != nil {
-		return err
-	}
-
-	_, err = io.Copy(part, bytes.NewReader(gzipBuf.Bytes()))
-	if err != nil {
-		return err
-	}
-	mp.Close()
-
-	versionURL := apiBaseURL()
-	versionURL.Path = fmt.Sprintf("/v1/models/%s/%s/versions", imageComponents[1], imageComponents[2])
-	req, err = http.NewRequestWithContext(ctx, http.MethodPost, versionURL.String(), bytes.NewReader(body.Bytes()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", mp.FormDataContentType())
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-
-	// Make the request
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return util.WrapError(ErrorBadResponseNewVersionEndpoint, strconv.Itoa(resp.StatusCode))
-	}
-
-	var v struct {
-		Id string `json:"id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
-		return fmt.Errorf("Unable to decode response body: %w", err)
-	}
-
-	releaseURL := apiBaseURL()
-	releaseURL.Path = fmt.Sprintf("/v1/models/%s/%s/releases", imageComponents[1], imageComponents[2])
-	buf := new(bytes.Buffer)
-	if err := json.NewEncoder(buf).Encode(struct {
-		Version string `json:"version"`
-	}{Version: v.Id}); err != nil {
-		return fmt.Errorf("Unable to encode JSON request body: %w", err)
-	}
-
-	req, err = http.NewRequestWithContext(ctx, http.MethodPost, releaseURL.String(), buf)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-
-	// Make the request
-	releaseResp, err := c.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer releaseResp.Body.Close()
-
-	if releaseResp.StatusCode != http.StatusNoContent {
-		body, err := io.ReadAll(releaseResp.Body)
-		if err != nil {
-			return err
-		}
-		fmt.Println(string(body))
-		return fmt.Errorf("Bad response: %s attempting to create a release", strconv.Itoa(releaseResp.StatusCode))
-	}
-
-	return nil
+	return tokenData.Keys.Cog.Key, nil
 }
 
 func (c *Client) versionFromManifest(ctx context.Context, image string, weights []File, files []File, fileChallenges []FileChallengeAnswer) (*Version, error) {
@@ -560,26 +446,25 @@ func newVersionURL(image string) (url.URL, error) {
 	imageComponents := strings.Split(image, "/")
 	newVersionUrl := webBaseURL()
 	if len(imageComponents) != 3 {
-		return newVersionUrl, ErrorBadRegistryURL
+		return newVersionUrl, r8_errors.ErrorBadRegistryURL
 	}
 	if imageComponents[0] != global.ReplicateRegistryHost {
-		return newVersionUrl, ErrorBadRegistryHost
+		return newVersionUrl, r8_errors.ErrorBadRegistryHost
 	}
 	newVersionUrl.Path = strings.Join([]string{"", "api", "models", imageComponents[1], imageComponents[2], "versions"}, "/")
 	return newVersionUrl, nil
+}
+
+func tokenURL(entity string) url.URL {
+	newVersionUrl := webBaseURL()
+	newVersionUrl.Path = strings.Join([]string{"", "api", "token", entity}, "/")
+	return newVersionUrl
 }
 
 func webBaseURL() url.URL {
 	return url.URL{
 		Scheme: env.SchemeFromEnvironment(),
 		Host:   env.WebHostFromEnvironment(),
-	}
-}
-
-func apiBaseURL() url.URL {
-	return url.URL{
-		Scheme: env.SchemeFromEnvironment(),
-		Host:   env.APIHostFromEnvironment(),
 	}
 }
 
