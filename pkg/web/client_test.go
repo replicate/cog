@@ -167,3 +167,39 @@ func TestDoFileChallenge(t *testing.T) {
 		},
 	})
 }
+
+func TestFetchToken(t *testing.T) {
+	// Setup mock http server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/token/user":
+			// Mock token exchange response
+			//nolint:gosec
+			tokenResponse := `{
+				"keys": {
+					"cog": {
+						"key": "test-api-token",
+						"expires_at": "2024-12-31T23:59:59Z"
+					}
+				}
+			}`
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(tokenResponse))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	url, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	t.Setenv(env.SchemeEnvVarName, url.Scheme)
+	t.Setenv(env.WebHostEnvVarName, url.Host)
+
+	// Setup mock command
+	command := dockertest.NewMockCommand()
+
+	client := NewClient(command, http.DefaultClient)
+	token, err := client.FetchAPIToken(t.Context(), "user")
+	require.NoError(t, err)
+	require.Equal(t, "test-api-token", token)
+}
