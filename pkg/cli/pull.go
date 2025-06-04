@@ -33,6 +33,74 @@ func newPullCommand() *cobra.Command {
 	return cmd
 }
 
+func extractTarFile(projectDir string) func(*tar.Header, *tar.Reader) error {
+	return func(header *tar.Header, tr *tar.Reader) error {
+		target := filepath.Join(projectDir, header.Name)
+		if !strings.HasPrefix(target, projectDir) {
+			return errors.New("Illegal access, attempted to write to " + target)
+		}
+
+		if strings.HasPrefix(filepath.Base(target), "._") {
+			return nil
+		}
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			console.Infof("Creating directory %s", target)
+			err := os.MkdirAll(target, 0o755)
+			if err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			console.Infof("Creating file %s", target)
+			err := os.MkdirAll(filepath.Dir(target), 0o755)
+			if err != nil {
+				return err
+			}
+			outFile, err := os.Create(target)
+			if err != nil {
+				return err
+			}
+			defer outFile.Close()
+
+			_, err = io.Copy(outFile, tr)
+			if err != nil {
+				return err
+			}
+
+			err = os.Chmod(target, os.FileMode(header.Mode))
+			if err != nil {
+				return err
+			}
+		case tar.TypeSymlink:
+			link := filepath.Join(projectDir, header.Linkname)
+			link, err := filepath.EvalSymlinks(link)
+			if err != nil {
+				return err
+			}
+			if !strings.HasPrefix(link, projectDir) {
+				return errors.New("Illegal access, attempted to link to " + link)
+			}
+
+			console.Infof("Creating symlink %s -> %s", target, link)
+
+			err = os.MkdirAll(filepath.Dir(target), 0o755)
+			if err != nil {
+				return err
+			}
+
+			err = os.Symlink(link, target)
+			if err != nil {
+				return err
+			}
+
+		default:
+			return fmt.Errorf("unknown file type: %v", header.Typeflag)
+		}
+		return nil
+	}
+}
+
 func pull(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
@@ -70,83 +138,9 @@ func pull(cmd *cobra.Command, args []string) error {
 	apiClient := api.NewClient(dockerClient, client, webClient)
 
 	// Pull the source
-	tr, err := apiClient.PullSource(ctx, image)
+	err = apiClient.PullSource(ctx, image, extractTarFile(projectDir))
 	if err != nil {
 		return err
-	}
-
-	// Extract source to the local directory
-	for {
-		header, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		target := filepath.Join(projectDir, header.Name)
-		target, err = filepath.EvalSymlinks(target)
-		if err != nil {
-			return err
-		}
-		if !strings.HasPrefix(target, projectDir) {
-			return errors.New("Illegal access, attempted to write to " + target)
-		}
-
-		switch header.Typeflag {
-		case tar.TypeDir:
-			console.Infof("Creating directory %s", target)
-			err = os.MkdirAll(target, 0o755)
-			if err != nil {
-				return err
-			}
-		case tar.TypeReg:
-			console.Infof("Creating file %s", target)
-			err = os.MkdirAll(filepath.Dir(target), 0o755)
-			if err != nil {
-				return err
-			}
-			outFile, err := os.Create(target)
-			if err != nil {
-				return err
-			}
-			defer outFile.Close()
-
-			_, err = io.Copy(outFile, tr)
-			if err != nil {
-				return err
-			}
-
-			err = os.Chmod(target, os.FileMode(header.Mode))
-			if err != nil {
-				return err
-			}
-		case tar.TypeSymlink:
-			link := filepath.Join(projectDir, header.Linkname)
-			link, err = filepath.EvalSymlinks(link)
-			if err != nil {
-				return err
-			}
-			if !strings.HasPrefix(link, projectDir) {
-				return errors.New("Illegal access, attempted to link to " + link)
-			}
-
-			console.Infof("Creating symlink %s -> %s", target, link)
-
-			err = os.MkdirAll(filepath.Dir(target), 0o755)
-			if err != nil {
-				return err
-			}
-
-			err = os.Symlink(link, target)
-			if err != nil {
-				return err
-			}
-
-		default:
-			return fmt.Errorf("unknown file type: %v", header.Typeflag)
-		}
 	}
 
 	return nil

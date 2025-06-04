@@ -20,7 +20,6 @@ import (
 	r8_errors "github.com/replicate/cog/pkg/errors"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util"
-	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/web"
 )
 
@@ -65,24 +64,24 @@ func (c *Client) PostNewPipeline(ctx context.Context, image string, tarball *byt
 	return c.postNewRelease(ctx, id, image)
 }
 
-func (c *Client) PullSource(ctx context.Context, image string) (*tar.Reader, error) {
+func (c *Client) PullSource(ctx context.Context, image string, tarFileProcess func(*tar.Header, *tar.Reader) error) error {
 	// Fetch token
 	_, entity, name, tag, err := decomposeImageName(image)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Check if we require the tag
 	if tag == "" {
 		model, err := c.getModel(ctx, entity, name)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		tag = model.LatestVersion.Id
 	}
 
 	// Fetch the source
-	return c.getSource(ctx, entity, name, tag)
+	return c.getSource(ctx, entity, name, tag, tarFileProcess)
 }
 
 func (c *Client) provideToken(ctx context.Context, entity string) (string, error) {
@@ -223,37 +222,47 @@ func (c *Client) postNewRelease(ctx context.Context, id string, image string) er
 	return nil
 }
 
-func (c *Client) getSource(ctx context.Context, entity string, name string, tag string) (*tar.Reader, error) {
+func (c *Client) getSource(ctx context.Context, entity string, name string, tag string, tarFileProcess func(*tar.Header, *tar.Reader) error) error {
 	token, err := c.provideToken(ctx, entity)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	sourceURL := newSourceURL(entity, name, tag)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL.String(), nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
 	// Make the request
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("Bad response: %s attempting to fetch the image source", strconv.Itoa(resp.StatusCode))
+		return fmt.Errorf("Bad response: %s attempting to fetch the image source", strconv.Itoa(resp.StatusCode))
 	}
 
-	gzipReader, err := gzip.NewReader(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	defer gzipReader.Close()
+	tr := tar.NewReader(resp.Body)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
 
-	return tar.NewReader(resp.Body), nil
+		err = tarFileProcess(header, tr)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (c *Client) getModel(ctx context.Context, entity string, name string) (*Model, error) {
@@ -262,9 +271,8 @@ func (c *Client) getModel(ctx context.Context, entity string, name string) (*Mod
 		return nil, err
 	}
 
-	versionsURL := newModelURL(entity, name)
-	console.Info(versionsURL.String())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, versionsURL.String(), nil)
+	modelURL := newModelURL(entity, name)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, modelURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
