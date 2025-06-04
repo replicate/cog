@@ -79,7 +79,7 @@ func pull(cmd *cobra.Command, args []string) error {
 		}
 
 		target := filepath.Join(projectDir, header.Name)
-		target, err = filepath.Abs(target)
+		target, err = filepath.EvalSymlinks(target)
 		if err != nil {
 			return err
 		}
@@ -116,7 +116,8 @@ func pull(cmd *cobra.Command, args []string) error {
 				return err
 			}
 		case tar.TypeSymlink:
-			link, err := filepath.Abs(header.Linkname)
+			link := filepath.Join(projectDir, header.Linkname)
+			link, err = filepath.EvalSymlinks(link)
 			if err != nil {
 				return err
 			}
