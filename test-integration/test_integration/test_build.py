@@ -264,24 +264,6 @@ def test_torch_1_13_0_base_image_fallback(docker_image, cog_binary):
     assert build_process.returncode == 0
 
 
-def test_torch_1_13_0_base_image_fail(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/torch-baseimage-project"
-    build_process = subprocess.run(
-        [
-            cog_binary,
-            "build",
-            "-t",
-            docker_image,
-            "--openapi-schema",
-            "openapi.json",
-            "--use-cog-base-image",
-        ],
-        cwd=project_dir,
-        capture_output=True,
-    )
-    assert build_process.returncode == 1
-
-
 def test_torch_1_13_0_base_image_fail_explicit(docker_image, cog_binary):
     project_dir = Path(__file__).parent / "fixtures/torch-baseimage-project"
     build_process = subprocess.run(
@@ -578,6 +560,22 @@ def test_model_dependencies(docker_image, cog_binary):
 
 def test_torch_270_cuda_126_base_image(tmpdir_factory, docker_image, cog_binary):
     project_dir = Path(__file__).parent / "fixtures/torch-270-cuda-126"
+
+    build_process = subprocess.run(
+        [
+            cog_binary,
+            "build",
+            "-t",
+            docker_image,
+        ],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode == 0
+
+
+def test_python_313(tmpdir_factory, docker_image, cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/python-313"
 
     build_process = subprocess.run(
         [
