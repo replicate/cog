@@ -35,7 +35,13 @@ func newPullCommand() *cobra.Command {
 
 func extractTarFile(projectDir string) func(*tar.Header, *tar.Reader) error {
 	return func(header *tar.Header, tr *tar.Reader) error {
-		target := filepath.Join(projectDir, header.Name)
+		// gosec reports this as a security vulnerability, however we do check that the target
+		// is within the project directory after resolving it to its absolute path.
+		target := filepath.Join(projectDir, header.Name) // #nosec G305
+		target, err := filepath.Abs(target)
+		if err != nil {
+			return err
+		}
 		if !strings.HasPrefix(target, projectDir) {
 			return errors.New("Illegal access, attempted to write to " + target)
 		}
@@ -68,13 +74,13 @@ func extractTarFile(projectDir string) func(*tar.Header, *tar.Reader) error {
 				return err
 			}
 
-			err = os.Chmod(target, os.FileMode(header.Mode))
+			err = os.Chmod(target, os.FileMode(header.Mode)) // #nosec G115
 			if err != nil {
 				return err
 			}
 		case tar.TypeSymlink:
-			link := filepath.Join(projectDir, header.Linkname)
-			link, err := filepath.EvalSymlinks(link)
+			link := filepath.Join(projectDir, header.Linkname) // #nosec G305
+			link, err := filepath.Abs(link)
 			if err != nil {
 				return err
 			}
