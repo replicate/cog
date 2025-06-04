@@ -20,6 +20,7 @@ import (
 	r8_errors "github.com/replicate/cog/pkg/errors"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util"
+	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/web"
 )
 
@@ -40,6 +41,10 @@ type Version struct {
 
 type CreateRelease struct {
 	Version string `json:"version"`
+}
+
+type Model struct {
+	LatestVersion Version `json:"latest_version"`
 }
 
 func NewClient(dockerCommand command.Command, client *http.Client, webClient *web.Client) *Client {
@@ -66,45 +71,28 @@ func (c *Client) PullSource(ctx context.Context, image string) (*tar.Reader, err
 	if err != nil {
 		return nil, err
 	}
-	token, err := c.provideToken(ctx, entity)
-	if err != nil {
-		return nil, err
+
+	// Check if we require the tag
+	if tag == "" {
+		model, err := c.getModel(ctx, entity, name)
+		if err != nil {
+			return nil, err
+		}
+		tag = model.LatestVersion.Id
 	}
 
-	sourceURL := newSourceURL(entity, name, tag)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-
-	// Make the request
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode <= 400 {
-		return nil, fmt.Errorf("Bad response: %s attempting to fetch the image source", strconv.Itoa(resp.StatusCode))
-	}
-
-	gzipReader, err := gzip.NewReader(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	defer gzipReader.Close()
-
-	return tar.NewReader(gzipReader), nil
+	// Fetch the source
+	return c.getSource(ctx, entity, name, tag)
 }
 
 func (c *Client) provideToken(ctx context.Context, entity string) (string, error) {
 	token, ok := c.tokens[entity]
 	if !ok {
-		token, err := c.webClient.FetchAPIToken(ctx, entity)
+		webToken, err := c.webClient.FetchAPIToken(ctx, entity)
 		if err != nil {
 			return "", err
 		}
+		token = webToken
 		c.tokens[entity] = token
 	}
 	return token, nil
@@ -166,7 +154,7 @@ func (c *Client) postNewVersion(ctx context.Context, image string, tarball *byte
 	}
 	mp.Close()
 
-	versionURL := newVersionURL(entity, name)
+	versionURL := newVersionsURL(entity, name)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, versionURL.String(), bytes.NewReader(body.Bytes()))
 	if err != nil {
 		return "", err
@@ -235,6 +223,73 @@ func (c *Client) postNewRelease(ctx context.Context, id string, image string) er
 	return nil
 }
 
+func (c *Client) getSource(ctx context.Context, entity string, name string, tag string) (*tar.Reader, error) {
+	token, err := c.provideToken(ctx, entity)
+	if err != nil {
+		return nil, err
+	}
+
+	sourceURL := newSourceURL(entity, name, tag)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+
+	// Make the request
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("Bad response: %s attempting to fetch the image source", strconv.Itoa(resp.StatusCode))
+	}
+
+	gzipReader, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	defer gzipReader.Close()
+
+	return tar.NewReader(resp.Body), nil
+}
+
+func (c *Client) getModel(ctx context.Context, entity string, name string) (*Model, error) {
+	token, err := c.provideToken(ctx, entity)
+	if err != nil {
+		return nil, err
+	}
+
+	versionsURL := newModelURL(entity, name)
+	console.Info(versionsURL.String())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, versionsURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+
+	// Make the request
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("Bad response: %s attempting to fetch the models versions", strconv.Itoa(resp.StatusCode))
+	}
+
+	var model Model
+	err = json.NewDecoder(resp.Body).Decode(&model)
+	if err != nil {
+		return nil, err
+	}
+
+	return &model, nil
+}
+
 func apiBaseURL() url.URL {
 	return url.URL{
 		Scheme: env.SchemeFromEnvironment(),
@@ -242,7 +297,7 @@ func apiBaseURL() url.URL {
 	}
 }
 
-func newVersionURL(entity string, name string) url.URL {
+func newVersionsURL(entity string, name string) url.URL {
 	newVersionUrl := apiBaseURL()
 	newVersionUrl.Path = strings.Join([]string{"", "v1", "models", entity, name, "versions"}, "/")
 	return newVersionUrl
@@ -258,6 +313,12 @@ func newSourceURL(entity string, name string, tag string) url.URL {
 	newSourceUrl := apiBaseURL()
 	newSourceUrl.Path = strings.Join([]string{"", "v1", "models", entity, name, "versions", tag, "source"}, "/")
 	return newSourceUrl
+}
+
+func newModelURL(entity string, name string) url.URL {
+	newModelUrl := apiBaseURL()
+	newModelUrl.Path = strings.Join([]string{"", "v1", "models", entity, name}, "/")
+	return newModelUrl
 }
 
 func decomposeImageName(image string) (string, string, string, string, error) {
