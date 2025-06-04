@@ -1,6 +1,7 @@
 package api
 
 import (
+	"archive/tar"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -59,6 +60,44 @@ func (c *Client) PostNewPipeline(ctx context.Context, image string, tarball *byt
 	return c.postNewRelease(ctx, id, image)
 }
 
+func (c *Client) PullSource(ctx context.Context, image string) (*tar.Reader, error) {
+	// Fetch token
+	_, entity, name, tag, err := decomposeImageName(image)
+	if err != nil {
+		return nil, err
+	}
+	token, err := c.provideToken(ctx, entity)
+	if err != nil {
+		return nil, err
+	}
+
+	sourceURL := newSourceURL(entity, name, tag)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+
+	// Make the request
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode <= 400 {
+		return nil, fmt.Errorf("Bad response: %s attempting to fetch the image source", strconv.Itoa(resp.StatusCode))
+	}
+
+	gzipReader, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	defer gzipReader.Close()
+
+	return tar.NewReader(gzipReader), nil
+}
+
 func (c *Client) provideToken(ctx context.Context, entity string) (string, error) {
 	token, ok := c.tokens[entity]
 	if !ok {
@@ -79,7 +118,7 @@ func (c *Client) postNewVersion(ctx context.Context, image string, tarball *byte
 	}
 
 	// Fetch token
-	_, entity, name, err := decomposeImageName(image)
+	_, entity, name, _, err := decomposeImageName(image)
 	if err != nil {
 		return "", err
 	}
@@ -156,7 +195,7 @@ func (c *Client) postNewVersion(ctx context.Context, image string, tarball *byte
 }
 
 func (c *Client) postNewRelease(ctx context.Context, id string, image string) error {
-	_, entity, name, err := decomposeImageName(image)
+	_, entity, name, _, err := decomposeImageName(image)
 	if err != nil {
 		return err
 	}
@@ -215,13 +254,24 @@ func newReleaseURL(entity string, name string) url.URL {
 	return newReleaseUrl
 }
 
-func decomposeImageName(image string) (string, string, string, error) {
+func newSourceURL(entity string, name string, tag string) url.URL {
+	newSourceUrl := apiBaseURL()
+	newSourceUrl.Path = strings.Join([]string{"", "v1", "models", entity, name, "versions", tag, "source"}, "/")
+	return newSourceUrl
+}
+
+func decomposeImageName(image string) (string, string, string, string, error) {
 	imageComponents := strings.Split(image, "/")
 	if len(imageComponents) != 3 {
-		return "", "", "", r8_errors.ErrorBadRegistryURL
+		return "", "", "", "", r8_errors.ErrorBadRegistryURL
 	}
 	if imageComponents[0] != global.ReplicateRegistryHost {
-		return "", "", "", r8_errors.ErrorBadRegistryHost
+		return "", "", "", "", r8_errors.ErrorBadRegistryHost
 	}
-	return imageComponents[0], imageComponents[1], imageComponents[2], nil
+	tagComponents := strings.Split(image, ":")
+	tag := ""
+	if len(tagComponents) == 2 {
+		tag = tagComponents[1]
+	}
+	return imageComponents[0], imageComponents[1], imageComponents[2], tag, nil
 }
