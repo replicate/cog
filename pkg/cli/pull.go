@@ -37,16 +37,23 @@ func pull(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	// Find image name
-	cfg, projectDir, err := config.GetConfig(configFilename)
+	projectDir, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	projectDir, err = filepath.Abs(projectDir)
-	if err != nil {
-		return err
-	}
-	image := cfg.Image
-	if len(args) > 0 {
+
+	var image string
+	if len(args) == 0 {
+		cfg, cfgProjectDir, err := config.GetConfig(configFilename)
+		if err != nil {
+			return err
+		}
+		projectDir, err = filepath.Abs(cfgProjectDir)
+		if err != nil {
+			return err
+		}
+		image = cfg.Image
+	} else {
 		image = args[0]
 	}
 
