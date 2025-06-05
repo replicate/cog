@@ -65,7 +65,6 @@ func (c *Client) PostNewPipeline(ctx context.Context, image string, tarball *byt
 }
 
 func (c *Client) PullSource(ctx context.Context, image string, tarFileProcess func(*tar.Header, *tar.Reader) error) error {
-	// Fetch token
 	_, entity, name, tag, err := decomposeImageName(image)
 	if err != nil {
 		return err
