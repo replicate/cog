@@ -12,7 +12,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/api"
-	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/util/console"
@@ -26,7 +25,7 @@ func newPullCommand() *cobra.Command {
 		Short:   "Pull the contents of a model into your local directory.",
 		Example: `cog pull r8.im/your-username/hotdog-detector`,
 		RunE:    pull,
-		Args:    cobra.MaximumNArgs(1),
+		Args:    cobra.MinimumNArgs(1),
 		Hidden:  true,
 	}
 
@@ -115,21 +114,7 @@ func pull(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-
-	var image string
-	if len(args) == 0 {
-		cfg, cfgProjectDir, err := config.GetConfig(configFilename)
-		if err != nil {
-			return err
-		}
-		projectDir, err = filepath.Abs(cfgProjectDir)
-		if err != nil {
-			return err
-		}
-		image = cfg.Image
-	} else {
-		image = args[0]
-	}
+	image := args[0]
 
 	// Create the clients
 	dockerClient, err := docker.NewClient(ctx)
