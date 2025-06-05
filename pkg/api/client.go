@@ -330,6 +330,12 @@ func newModelURL(entity string, name string) url.URL {
 
 func decomposeImageName(image string) (string, string, string, string, error) {
 	imageComponents := strings.Split(image, "/")
+
+	// Attempt normalisation of image
+	if len(imageComponents) == 2 && imageComponents[0] != global.ReplicateRegistryHost {
+		imageComponents = append([]string{global.ReplicateRegistryHost}, imageComponents...)
+	}
+
 	if len(imageComponents) != 3 {
 		return "", "", "", "", r8_errors.ErrorBadRegistryURL
 	}
