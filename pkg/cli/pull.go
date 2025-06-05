@@ -28,6 +28,7 @@ func newPullCommand() *cobra.Command {
 		Args:    cobra.MinimumNArgs(1),
 		Hidden:  true,
 	}
+	addPipelineImage(cmd)
 
 	return cmd
 }
@@ -121,6 +122,12 @@ func pull(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	// Check if we are in a pipeline
+	if !pushPipeline {
+		return errors.New("Please use docker pull " + image + " to download this model.")
+	}
+
 	client, err := http.ProvideHTTPClient(ctx, dockerClient)
 	if err != nil {
 		return err
