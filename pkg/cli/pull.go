@@ -107,6 +107,13 @@ func extractTarFile(projectDir string) func(*tar.Header, *tar.Reader) error {
 	}
 }
 
+func imageToDir(image string, projectDir string) string {
+	imageComponents := strings.Split(image, "/")
+	modelName := imageComponents[len(imageComponents)-1]
+	modelNameComponents := strings.Split(modelName, ":")
+	return filepath.Join(projectDir, modelNameComponents[0])
+}
+
 func pull(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
@@ -116,6 +123,13 @@ func pull(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	image := args[0]
+
+	// Create the working folder
+	projectDir = imageToDir(image, projectDir)
+	err = os.MkdirAll(projectDir, 0o755)
+	if err != nil {
+		return err
+	}
 
 	// Create the clients
 	dockerClient, err := docker.NewClient(ctx)
