@@ -241,6 +241,10 @@ func (c *Client) getSource(ctx context.Context, entity string, name string, tag 
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("Model %s/%s does not have a source package associated with it.", entity, name)
+	}
+
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("Bad response: %s attempting to fetch the image source", strconv.Itoa(resp.StatusCode))
 	}
