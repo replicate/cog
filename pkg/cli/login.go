@@ -173,6 +173,10 @@ func checkTokenFormat(token string) error {
 }
 
 func verifyToken(registryHost string, token string) (username string, err error) {
+	if token == "" {
+		return "", fmt.Errorf("Token is empty")
+	}
+
 	resp, err := http.PostForm(addressWithScheme(registryHost)+"/cog/v1/verify-token", url.Values{
 		"token": []string{token},
 	})
