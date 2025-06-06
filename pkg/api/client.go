@@ -20,7 +20,6 @@ import (
 	r8_errors "github.com/replicate/cog/pkg/errors"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util"
-	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/web"
 )
 
@@ -255,7 +254,6 @@ func (c *Client) getDraftSource(ctx context.Context, username string, digest str
 }
 
 func (c *Client) downloadTarball(ctx context.Context, token string, url url.URL, slug string, tarFileProcess func(*tar.Header, *tar.Reader) error) error {
-	console.Info(url.String())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url.String(), nil)
 	if err != nil {
 		return err
