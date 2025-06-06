@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/api"
+	"github.com/replicate/cog/pkg/coglog"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/util/console"
@@ -117,9 +118,24 @@ func imageToDir(image string, projectDir string) string {
 func pull(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
+	// Create the clients
+	dockerClient, err := docker.NewClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	client, err := http.ProvideHTTPClient(ctx, dockerClient)
+	if err != nil {
+		return err
+	}
+
+	logClient := coglog.NewClient(client)
+	logCtx := logClient.StartPull()
+
 	// Find image name
 	projectDir, err := os.Getwd()
 	if err != nil {
+		logClient.EndPull(ctx, err, logCtx)
 		return err
 	}
 	image := args[0]
@@ -128,32 +144,27 @@ func pull(cmd *cobra.Command, args []string) error {
 	projectDir = imageToDir(image, projectDir)
 	err = os.MkdirAll(projectDir, 0o755)
 	if err != nil {
-		return err
-	}
-
-	// Create the clients
-	dockerClient, err := docker.NewClient(ctx)
-	if err != nil {
+		logClient.EndPull(ctx, err, logCtx)
 		return err
 	}
 
 	// Check if we are in a pipeline
 	if !pushPipeline {
-		return errors.New("Please use docker pull " + image + " to download this model.")
-	}
-
-	client, err := http.ProvideHTTPClient(ctx, dockerClient)
-	if err != nil {
+		err = errors.New("Please use docker pull " + image + " to download this model.")
+		logClient.EndPull(ctx, err, logCtx)
 		return err
 	}
+
 	webClient := web.NewClient(dockerClient, client)
 	apiClient := api.NewClient(dockerClient, client, webClient)
 
 	// Pull the source
 	err = apiClient.PullSource(ctx, image, extractTarFile(projectDir))
 	if err != nil {
+		logClient.EndPull(ctx, err, logCtx)
 		return err
 	}
 
+	logClient.EndPull(ctx, nil, logCtx)
 	return nil
 }

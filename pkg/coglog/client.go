@@ -43,6 +43,11 @@ type migrateLog struct {
 	PythonTrainStatus   string  `json:"python_train_status"`
 }
 
+type pullLog struct {
+	DurationMs float32 `json:"length_ms"`
+	BuildError *string `json:"error"`
+}
+
 func NewClient(client *http.Client) *Client {
 	return &Client{
 		client: client,
@@ -151,6 +156,39 @@ func (c *Client) EndMigrate(ctx context.Context, err error, logContext *MigrateL
 	}
 
 	err = c.postLog(ctx, jsonData, "migrate")
+	if err != nil {
+		console.Warn(err.Error())
+		return false
+	}
+
+	return true
+}
+
+func (c *Client) StartPull() PullLogContext {
+	logContext := PullLogContext{
+		started: time.Now(),
+	}
+	return logContext
+}
+
+func (c *Client) EndPull(ctx context.Context, err error, logContext PullLogContext) bool {
+	var errorStr *string = nil
+	if err != nil {
+		errStr := err.Error()
+		errorStr = &errStr
+	}
+	pushLog := pushLog{
+		DurationMs: float32(time.Now().Sub(logContext.started).Milliseconds()),
+		BuildError: errorStr,
+	}
+
+	jsonData, err := json.Marshal(pushLog)
+	if err != nil {
+		console.Warn("Failed to marshal JSON for build log: " + err.Error())
+		return false
+	}
+
+	err = c.postLog(ctx, jsonData, "pull")
 	if err != nil {
 		console.Warn(err.Error())
 		return false
