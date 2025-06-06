@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/replicate/cog/pkg/api"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/dockerignore"
@@ -22,7 +23,6 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
 	"github.com/replicate/cog/pkg/util/version"
-	"github.com/replicate/cog/pkg/web"
 )
 
 const EtagHeader = "etag"
@@ -34,7 +34,7 @@ var (
 	ErrorETagHeaderNotFound = errors.New("ETag header was not found on pipelines runtime requirements.txt")
 )
 
-func PipelinePush(ctx context.Context, image string, projectDir string, webClient *web.Client, client *http.Client, cfg *config.Config) error {
+func PipelinePush(ctx context.Context, image string, projectDir string, apiClient *api.Client, client *http.Client, cfg *config.Config) error {
 	err := validateRequirements(projectDir, client, cfg)
 	if err != nil {
 		return err
@@ -44,7 +44,7 @@ func PipelinePush(ctx context.Context, image string, projectDir string, webClien
 	if err != nil {
 		return err
 	}
-	return webClient.PostNewPipeline(ctx, image, tarball)
+	return apiClient.PostNewPipeline(ctx, image, tarball)
 }
 
 func createTarball(folder string) (*bytes.Buffer, error) {

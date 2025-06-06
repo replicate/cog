@@ -13,6 +13,7 @@ import (
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/image"
+	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -96,8 +97,27 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		logClient.EndBuild(ctx, err, logCtx)
 		return err
 	}
-
-	if err := image.Build(ctx, cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, nil, buildLocalImage, dockerClient); err != nil {
+	registryClient := registry.NewRegistryClient()
+	if err := image.Build(
+		ctx,
+		cfg,
+		projectDir,
+		imageName,
+		buildSecrets,
+		buildNoCache,
+		buildSeparateWeights,
+		buildUseCudaBaseImage,
+		buildProgressOutput,
+		buildSchemaFile,
+		buildDockerfileFile,
+		DetermineUseCogBaseImage(cmd),
+		buildStrip,
+		buildPrecompile,
+		buildFast,
+		nil,
+		buildLocalImage,
+		dockerClient,
+		registryClient); err != nil {
 		logClient.EndBuild(ctx, err, logCtx)
 		return err
 	}

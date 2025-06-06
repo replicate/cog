@@ -16,7 +16,7 @@ type Generator interface {
 	SetPrecompile(bool)
 	SetUseCudaBaseImage(string)
 	IsUsingCogBaseImage() bool
-	BaseImage() (string, error)
+	BaseImage(ctx context.Context) (string, error)
 	GenerateWeightsManifest(ctx context.Context) (*weights.Manifest, error)
 	GenerateDockerfileWithoutSeparateWeights(ctx context.Context) (string, error)
 	GenerateModelBase(ctx context.Context) (string, error)
