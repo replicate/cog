@@ -2,6 +2,7 @@ package util
 
 import (
 	"os"
+	"strconv"
 
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -19,4 +20,10 @@ func GetEnvOrDefault[T any](key string, defaultVal T, conversionFunc func(string
 		}
 	}
 	return defaultVal
+}
+
+// EnvIsTruthy returns true if the environment variable is set to 1, t, T, TRUE, true, True. Any other value returns false.
+func EnvIsTruthy(key string) bool {
+	ok, _ := strconv.ParseBool(os.Getenv(key))
+	return ok
 }
