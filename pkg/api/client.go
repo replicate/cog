@@ -23,8 +23,12 @@ import (
 	"github.com/replicate/cog/pkg/web"
 )
 
+const DraftsPrefix = "draft:"
+
 var (
 	ErrorBadResponseNewVersionEndpoint = errors.New("Bad response from new version endpoint")
+	ErrorBadDraftFormat                = errors.New("Bad draft format")
+	ErrorBadDraftUsernameDigestFormat  = errors.New("Bad draft username/digest format")
 )
 
 type Client struct {
@@ -65,6 +69,14 @@ func (c *Client) PostNewPipeline(ctx context.Context, image string, tarball *byt
 }
 
 func (c *Client) PullSource(ctx context.Context, image string, tarFileProcess func(*tar.Header, *tar.Reader) error) error {
+	if strings.HasPrefix(image, DraftsPrefix) {
+		username, digest, err := decomposeDraftSlug(image)
+		if err != nil {
+			return err
+		}
+		return c.getDraftSource(ctx, username, digest, tarFileProcess)
+	}
+
 	_, entity, name, tag, err := decomposeImageName(image)
 	if err != nil {
 		return err
@@ -228,7 +240,21 @@ func (c *Client) getSource(ctx context.Context, entity string, name string, tag 
 	}
 
 	sourceURL := newSourceURL(entity, name, tag)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL.String(), nil)
+	return c.downloadTarball(ctx, token, sourceURL, strings.Join([]string{entity, name}, "/"), tarFileProcess)
+}
+
+func (c *Client) getDraftSource(ctx context.Context, username string, digest string, tarFileProcess func(*tar.Header, *tar.Reader) error) error {
+	token, err := c.provideToken(ctx, username)
+	if err != nil {
+		return err
+	}
+
+	draftURL := newDraftSourceURL(digest)
+	return c.downloadTarball(ctx, token, draftURL, DraftsPrefix+strings.Join([]string{username, digest}, "/"), tarFileProcess)
+}
+
+func (c *Client) downloadTarball(ctx context.Context, token string, url url.URL, slug string, tarFileProcess func(*tar.Header, *tar.Reader) error) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url.String(), nil)
 	if err != nil {
 		return err
 	}
@@ -242,7 +268,7 @@ func (c *Client) getSource(ctx context.Context, entity string, name string, tag 
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("Model %s/%s does not have a source package associated with it.", entity, name)
+		return fmt.Errorf("Entity %s does not have a source package associated with it.", slug)
 	}
 
 	if resp.StatusCode >= 400 {
@@ -332,6 +358,12 @@ func newModelURL(entity string, name string) url.URL {
 	return newModelUrl
 }
 
+func newDraftSourceURL(digest string) url.URL {
+	newDraftSourceUrl := apiBaseURL()
+	newDraftSourceUrl.Path = strings.Join([]string{"", "v1", "drafts", digest, "source"}, "/")
+	return newDraftSourceUrl
+}
+
 func decomposeImageName(image string) (string, string, string, string, error) {
 	imageComponents := strings.Split(image, "/")
 
@@ -352,4 +384,18 @@ func decomposeImageName(image string) (string, string, string, string, error) {
 		tag = tagComponents[1]
 	}
 	return imageComponents[0], imageComponents[1], imageComponents[2], tag, nil
+}
+
+func decomposeDraftSlug(slug string) (string, string, error) {
+	slugComponents := strings.Split(slug, ":")
+	if len(slugComponents) != 2 {
+		return "", "", ErrorBadDraftFormat
+	}
+
+	draftComponents := strings.Split(slugComponents[1], "/")
+	if len(draftComponents) != 2 {
+		return "", "", ErrorBadDraftUsernameDigestFormat
+	}
+
+	return draftComponents[0], draftComponents[1], nil
 }
