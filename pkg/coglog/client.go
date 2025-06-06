@@ -177,7 +177,7 @@ func (c *Client) EndPull(ctx context.Context, err error, logContext PullLogConte
 		errStr := err.Error()
 		errorStr = &errStr
 	}
-	pushLog := pushLog{
+	pushLog := pullLog{
 		DurationMs: float32(time.Now().Sub(logContext.started).Milliseconds()),
 		BuildError: errorStr,
 	}
