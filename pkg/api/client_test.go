@@ -1,6 +1,9 @@
-package docker
+package api
 
 import (
+	"archive/tar"
+	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,15 +13,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/replicate/cog/pkg/api"
-	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/env"
-	cogHttp "github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/web"
 )
 
-func TestPipelinePush(t *testing.T) {
+func TestPostPipeline(t *testing.T) {
 	// Setup mock web server for cog.replicate.com (token exchange)
 	webServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -78,17 +78,25 @@ func TestPipelinePush(t *testing.T) {
 
 	// Setup mock command
 	command := dockertest.NewMockCommand()
-	client, err := cogHttp.ProvideHTTPClient(t.Context(), command)
-	require.NoError(t, err)
-	webClient := web.NewClient(command, client)
-	apiClient := api.NewClient(command, client, webClient)
+	webClient := web.NewClient(command, http.DefaultClient)
 
-	cfg := config.DefaultConfig()
-	err = PipelinePush(t.Context(), "r8.im/user/test", dir, apiClient, client, cfg)
+	client := NewClient(command, http.DefaultClient, webClient)
+	err = client.PostNewPipeline(t.Context(), "r8.im/user/test", new(bytes.Buffer))
 	require.NoError(t, err)
 }
 
-func TestPipelinePushFailWithExtraRequirements(t *testing.T) {
+func TestPullSource(t *testing.T) {
+	// Create file to pull
+	dir := t.TempDir()
+	predictPyPath := filepath.Join(dir, "predict.py")
+	handle, err := os.Create(predictPyPath)
+	require.NoError(t, err)
+	handle.WriteString("import cog")
+	err = handle.Close()
+	require.NoError(t, err)
+	info, err := os.Stat(predictPyPath)
+	require.NoError(t, err)
+
 	// Setup mock web server for cog.replicate.com (token exchange)
 	webServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -111,17 +119,32 @@ func TestPipelinePushFailWithExtraRequirements(t *testing.T) {
 	}))
 	defer webServer.Close()
 
-	// Setup mock API server for api.replicate.com (version and release endpoints)
+	// Setup mock API server for api.replicate.com (model and source endpoints)
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/v1/models/user/test/versions":
-			// Mock version creation response
-			versionResponse := `{"id": "test-version-id"}`
-			w.WriteHeader(http.StatusCreated)
+		case "/v1/models/user/test":
+			// Mock model response
+			versionResponse := `{"latest_version": {"id": "test-version-id"}}`
+			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(versionResponse))
-		case "/v1/models/user/test/releases":
-			// Mock release creation response - empty body with 204 status
-			w.WriteHeader(http.StatusNoContent)
+		case "/v1/models/user/test/versions/test-version-id/source":
+			// Mock source pull endpoint
+			var buf bytes.Buffer
+			tw := tar.NewWriter(&buf)
+			header, err := tar.FileInfoHeader(info, info.Name())
+			require.NoError(t, err)
+			header.Name = "predict.py"
+			err = tw.WriteHeader(header)
+			require.NoError(t, err)
+			file, err := os.Open(predictPyPath)
+			require.NoError(t, err)
+			defer file.Close()
+			_, err = io.Copy(tw, file)
+			require.NoError(t, err)
+			err = tw.Close()
+			require.NoError(t, err)
+			w.WriteHeader(http.StatusOK)
+			w.Write(buf.Bytes())
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -137,30 +160,13 @@ func TestPipelinePushFailWithExtraRequirements(t *testing.T) {
 	t.Setenv(env.WebHostEnvVarName, webURL.Host)
 	t.Setenv(env.APIHostEnvVarName, apiURL.Host)
 
-	dir := t.TempDir()
-
-	// Create mock predict
-	predictPyPath := filepath.Join(dir, "predict.py")
-	handle, err := os.Create(predictPyPath)
-	require.NoError(t, err)
-	handle.WriteString("import cog")
-	handle.Close()
-	dockertest.MockCogConfig = "{\"build\":{\"python_version\":\"3.12\",\"python_packages\":[\"torch==2.5.0\",\"beautifulsoup4==4.12.3\"],\"system_packages\":[\"git\"]},\"image\":\"test\",\"predict\":\"" + predictPyPath + ":Predictor\"}"
-
 	// Setup mock command
 	command := dockertest.NewMockCommand()
-	client, err := cogHttp.ProvideHTTPClient(t.Context(), command)
-	require.NoError(t, err)
-	webClient := web.NewClient(command, client)
-	apiClient := api.NewClient(command, client, webClient)
+	webClient := web.NewClient(command, http.DefaultClient)
 
-	cfg := config.DefaultConfig()
-	requirementsPath := filepath.Join(dir, "requirements.txt")
-	handle, err = os.Create(requirementsPath)
+	client := NewClient(command, http.DefaultClient, webClient)
+	err = client.PullSource(t.Context(), "r8.im/user/test", func(header *tar.Header, tr *tar.Reader) error {
+		return nil
+	})
 	require.NoError(t, err)
-	handle.WriteString("mycustompackage==1.0.0")
-	handle.Close()
-	cfg.Build.PythonRequirements = filepath.Base(requirementsPath)
-	err = PipelinePush(t.Context(), "r8.im/user/test", dir, apiClient, client, cfg)
-	require.Error(t, err)
 }

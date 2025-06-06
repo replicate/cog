@@ -1,7 +1,6 @@
 package web
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -169,9 +168,9 @@ func TestDoFileChallenge(t *testing.T) {
 	})
 }
 
-func TestPostPipeline(t *testing.T) {
-	// Setup mock web server for cog.replicate.com (token exchange)
-	webServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestFetchToken(t *testing.T) {
+	// Setup mock http server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/token/user":
 			// Mock token exchange response
@@ -190,47 +189,17 @@ func TestPostPipeline(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
-	defer webServer.Close()
-
-	// Setup mock API server for api.replicate.com (version and release endpoints)
-	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/v1/models/user/test/versions":
-			// Mock version creation response
-			versionResponse := `{"id": "test-version-id"}`
-			w.WriteHeader(http.StatusCreated)
-			w.Write([]byte(versionResponse))
-		case "/v1/models/user/test/releases":
-			// Mock release creation response - empty body with 204 status
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer apiServer.Close()
-
-	webURL, err := url.Parse(webServer.URL)
+	defer server.Close()
+	url, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	apiURL, err := url.Parse(apiServer.URL)
-	require.NoError(t, err)
-
-	t.Setenv(env.SchemeEnvVarName, webURL.Scheme)
-	t.Setenv(env.WebHostEnvVarName, webURL.Host)
-	t.Setenv(env.APIHostEnvVarName, apiURL.Host)
-
-	dir := t.TempDir()
-
-	// Create mock predict
-	predictPyPath := filepath.Join(dir, "predict.py")
-	handle, err := os.Create(predictPyPath)
-	require.NoError(t, err)
-	handle.WriteString("import cog")
-	dockertest.MockCogConfig = "{\"build\":{\"python_version\":\"3.12\",\"python_packages\":[\"torch==2.5.0\",\"beautifulsoup4==4.12.3\"],\"system_packages\":[\"git\"]},\"image\":\"test\",\"predict\":\"" + predictPyPath + ":Predictor\"}"
+	t.Setenv(env.SchemeEnvVarName, url.Scheme)
+	t.Setenv(env.WebHostEnvVarName, url.Host)
 
 	// Setup mock command
 	command := dockertest.NewMockCommand()
 
 	client := NewClient(command, http.DefaultClient)
-	err = client.PostNewPipeline(t.Context(), "r8.im/user/test", new(bytes.Buffer))
+	token, err := client.FetchAPIToken(t.Context(), "user")
 	require.NoError(t, err)
+	require.Equal(t, "test-api-token", token)
 }
