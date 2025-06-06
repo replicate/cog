@@ -3,19 +3,15 @@ package cli
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
-
-	"github.com/replicate/go/uuid"
 
 	"github.com/replicate/cog/pkg/coglog"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/http"
-	"github.com/replicate/cog/pkg/image"
-	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/model/factory"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -90,50 +86,26 @@ func push(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	annotations := map[string]string{}
-	buildID, err := uuid.NewV7()
-	if err != nil {
-		// Don't insert build ID but continue anyways
-		console.Debugf("Failed to create build ID %v", err)
-	} else {
-		annotations["run.cog.push_id"] = buildID.String()
-	}
+	buildSettings := buildSettings(cmd, cfg, false, projectDir)
 
-	startBuildTime := time.Now()
-	registryClient := registry.NewRegistryClient()
-	if err := image.Build(
-		ctx,
-		cfg,
-		projectDir,
-		imageName,
-		buildSecrets,
-		buildNoCache,
-		buildSeparateWeights,
-		buildUseCudaBaseImage,
-		buildProgressOutput,
-		buildSchemaFile,
-		buildDockerfileFile,
-		DetermineUseCogBaseImage(cmd),
-		buildStrip,
-		buildPrecompile,
-		buildFast,
-		annotations,
-		buildLocalImage,
-		dockerClient,
-		registryClient); err != nil {
+	modelFactory, err := factory.New(dockerClient)
+	if err != nil {
 		return err
 	}
 
-	buildDuration := time.Since(startBuildTime)
+	model, buildInfo, err := modelFactory.Build(ctx, buildSettings)
+	if err != nil {
+		return err
+	}
 
-	console.Infof("\nPushing image '%s'...", imageName)
+	console.Infof("\nPushing image '%s'...", model.ImageRef())
 	if buildFast {
 		console.Info("Fast push enabled.")
 	}
 
 	err = docker.Push(ctx, imageName, buildFast, projectDir, dockerClient, docker.BuildInfo{
-		BuildTime: buildDuration,
-		BuildID:   buildID.String(),
+		BuildTime: buildInfo.Duration,
+		BuildID:   buildInfo.BuildID,
 		Pipeline:  pushPipeline,
 	}, client, cfg)
 	if err != nil {

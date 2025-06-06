@@ -274,12 +274,7 @@ func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOp
 	}
 	defer os.RemoveAll(buildDir)
 
-	bc, err := buildkitclient.New(ctx, "",
-		// Connect to Docker Engine's embedded Buildkit.
-		buildkitclient.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-			return c.client.DialHijack(ctx, "/grpc", "h2c", map[string][]string{})
-		}),
-	)
+	bc, err := c.BuildKitClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -307,7 +302,7 @@ func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOp
 		}
 
 		// run the display in a goroutine _after_ we've built SolveOpt
-		eg.Go(newDisplay(statusCh, displayMode))
+		eg.Go(NewBuildKitSolveDisplay(statusCh, displayMode))
 
 		res, err = bc.Solve(ctx, nil, options, statusCh)
 		if err != nil {
@@ -537,4 +532,22 @@ func parseGPURequest(opts command.RunOptions) (container.DeviceRequest, error) {
 	}
 
 	return deviceRequest, nil
+}
+
+func (c *apiClient) DockerClient() (client.APIClient, error) {
+	return c.client, nil
+}
+
+func (c *apiClient) BuildKitClient(ctx context.Context) (*buildkitclient.Client, error) {
+	bc, err := buildkitclient.New(ctx, "",
+		// Connect to Docker Engine's embedded Buildkit.
+		buildkitclient.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return c.client.DialHijack(ctx, "/grpc", "h2c", map[string][]string{})
+		}),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return bc, nil
 }

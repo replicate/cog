@@ -6,6 +6,8 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/client"
+	buildkitclient "github.com/moby/buildkit/client"
 )
 
 type Command interface {
@@ -67,4 +69,10 @@ type Port struct {
 type Volume struct {
 	Source      string
 	Destination string
+}
+
+type ClientProvider interface {
+	Command
+	DockerClient() (client.APIClient, error)
+	BuildKitClient(ctx context.Context) (*buildkitclient.Client, error)
 }

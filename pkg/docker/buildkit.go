@@ -143,7 +143,7 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 	return solveOpts, nil
 }
 
-func newDisplay(statusCh chan *buildkitclient.SolveStatus, displayMode string) func() error {
+func NewBuildKitSolveDisplay(statusCh chan *buildkitclient.SolveStatus, displayMode string) func() error {
 	return func() error {
 		display, err := progressui.NewDisplay(
 			os.Stderr,

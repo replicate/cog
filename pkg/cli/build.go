@@ -12,8 +12,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/http"
-	"github.com/replicate/cog/pkg/image"
-	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/model/factory"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -97,32 +96,22 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		logClient.EndBuild(ctx, err, logCtx)
 		return err
 	}
-	registryClient := registry.NewRegistryClient()
-	if err := image.Build(
-		ctx,
-		cfg,
-		projectDir,
-		imageName,
-		buildSecrets,
-		buildNoCache,
-		buildSeparateWeights,
-		buildUseCudaBaseImage,
-		buildProgressOutput,
-		buildSchemaFile,
-		buildDockerfileFile,
-		DetermineUseCogBaseImage(cmd),
-		buildStrip,
-		buildPrecompile,
-		buildFast,
-		nil,
-		buildLocalImage,
-		dockerClient,
-		registryClient); err != nil {
+
+	modelFactory, err := factory.New(dockerClient)
+	if err != nil {
 		logClient.EndBuild(ctx, err, logCtx)
 		return err
 	}
 
-	console.Infof("\nImage built as %s", imageName)
+	settings := buildSettings(cmd, cfg, false, projectDir)
+
+	model, _, err := modelFactory.Build(ctx, settings)
+	if err != nil {
+		logClient.EndBuild(ctx, err, logCtx)
+		return err
+	}
+
+	console.Infof("\nImage built as %s", model.ImageRef())
 	logClient.EndBuild(ctx, nil, logCtx)
 
 	return nil

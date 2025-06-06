@@ -58,11 +58,7 @@ type Predictor struct {
 	port        int
 }
 
-func NewPredictor(ctx context.Context, runOptions command.RunOptions, isTrain bool, fastFlag bool, dockerCommand command.Command) (*Predictor, error) {
-	if fastFlag {
-		console.Info("Fast predictor enabled.")
-	}
-
+func NewPredictor(ctx context.Context, runOptions command.RunOptions, isTrain bool, dockerCommand command.Command) (*Predictor, error) {
 	if global.Debug {
 		runOptions.Env = append(runOptions.Env, "COG_LOG_LEVEL=debug")
 	} else {

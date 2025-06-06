@@ -13,9 +13,9 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
-	"github.com/replicate/cog/pkg/image"
+	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/model/factory"
 	"github.com/replicate/cog/pkg/predict"
-	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -63,7 +63,6 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	imageName := ""
 	volumes := []command.Volume{}
 	gpus := gpusFlag
 
@@ -72,58 +71,59 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	var cogModel *model.Model
+
 	if len(args) == 0 {
 		// Build image
 
-		if cfg.Build.Fast {
-			buildFast = cfg.Build.Fast
-		}
+		settings := buildSettings(cmd, cfg, true, projectDir)
 
-		client := registry.NewRegistryClient()
-		if imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client); err != nil {
+		modelFactory, err := factory.New(dockerClient)
+		if err != nil {
 			return err
 		}
+		builtModel, buildInfo, err := modelFactory.Build(ctx, settings)
+		if err != nil {
+			return err
+		}
+		cogModel = builtModel
 
-		// Base image doesn't have /src in it, so mount as volume
-		volumes = append(volumes, command.Volume{
-			Source:      projectDir,
-			Destination: "/src",
-		})
-
-		if gpus == "" && cfg.Build.GPU {
-			gpus = "all"
+		// dockerfile images for predict don't have /src in it, so mount as volume
+		if buildInfo.BaseImageOnly {
+			volumes = append(volumes, command.Volume{
+				Source:      projectDir,
+				Destination: "/src",
+			})
 		}
 	} else {
 		// Use existing image
-		imageName = args[0]
+		imageName := args[0]
 
-		inspectResp, err := dockerClient.Pull(ctx, imageName, false)
+		_, err := dockerClient.Pull(ctx, imageName, false)
 		if err != nil {
 			return fmt.Errorf("Failed to pull image %q: %w", imageName, err)
 		}
 
-		conf, err := image.CogConfigFromManifest(ctx, inspectResp)
+		cogModel, err = model.Resolve(ctx, imageName, model.WithProvider(dockerClient), model.WithResolveMode(docker.ResolveModeLocal))
 		if err != nil {
-			return err
-		}
-		if gpus == "" && conf.Build.GPU {
-			gpus = "all"
-		}
-		if conf.Build.Fast {
-			buildFast = conf.Build.Fast
+			return fmt.Errorf("Failed to resolve model %q: %w", imageName, err)
 		}
 	}
 
+	if gpus == "" && cogModel.Config.Build.GPU {
+		gpus = "all"
+	}
+
 	console.Info("")
-	console.Infof("Starting Docker image %s...", imageName)
+	console.Infof("Starting Docker image %s...", cogModel.Name())
 
 	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
 		GPUs:    gpus,
-		Image:   imageName,
+		Image:   cogModel.ImageRef(),
 		Volumes: volumes,
 		Env:     trainEnvFlags,
 		Args:    []string{"python", "-m", "cog.server.http", "--x-mode", "train"},
-	}, true, buildFast, dockerClient)
+	}, true, dockerClient)
 	if err != nil {
 		return err
 	}
