@@ -21,7 +21,7 @@ import (
 
 func newPullCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "pull [IMAGE]",
+		Use: "pull [IMAGE] [FOLDER]",
 
 		Short:   "Pull the contents of a model into your local directory.",
 		Example: `cog pull r8.im/your-username/hotdog-detector`,
@@ -141,7 +141,11 @@ func pull(cmd *cobra.Command, args []string) error {
 	image := args[0]
 
 	// Create the working folder
-	projectDir = imageToDir(image, projectDir)
+	if len(args) == 1 {
+		projectDir = imageToDir(image, projectDir)
+	} else {
+		projectDir = filepath.Join(projectDir, args[1])
+	}
 	err = os.MkdirAll(projectDir, 0o755)
 	if err != nil {
 		logClient.EndPull(ctx, err, logCtx)
