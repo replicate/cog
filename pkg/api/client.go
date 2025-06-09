@@ -378,12 +378,12 @@ func decomposeImageName(image string) (string, string, string, string, error) {
 	if imageComponents[0] != global.ReplicateRegistryHost {
 		return "", "", "", "", r8_errors.ErrorBadRegistryHost
 	}
-	tagComponents := strings.Split(image, ":")
+	tagComponents := strings.Split(imageComponents[2], ":")
 	tag := ""
 	if len(tagComponents) == 2 {
 		tag = tagComponents[1]
 	}
-	return imageComponents[0], imageComponents[1], imageComponents[2], tag, nil
+	return imageComponents[0], imageComponents[1], tagComponents[0], tag, nil
 }
 
 func decomposeDraftSlug(slug string) (string, string, error) {
