@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/exp/slices"
 
+	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 
@@ -276,7 +277,7 @@ func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
 func tfGPUPackage(ver string, cuda string) (name string, cpuVersion string, err error) {
 	for _, compat := range TFCompatibilityMatrix {
 		if compat.TF == ver && version.Equal(compat.CUDA, cuda) {
-			name, cpuVersion, _, _, err = splitPinnedPythonRequirement(compat.TFGPUPackage)
+			name, cpuVersion, _, _, err = requirements.SplitPinnedPythonRequirement(compat.TFGPUPackage)
 			return name, cpuVersion, err
 		}
 	}

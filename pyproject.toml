@@ -23,7 +23,7 @@ requires-python = ">=3.8"
 dependencies = [
   # intentionally loose. perhaps these should be vendored to not collide with user code?
   "attrs>=20.1,<24",
-  "fastapi>=0.75.2,<0.116.0",
+  "fastapi>=0.100,<0.116.0",
   "pydantic>=1.9,<3",
   "PyYAML",
   "requests>=2,<3",
@@ -34,21 +34,27 @@ dependencies = [
 
 dynamic = ["version"]
 
-[project.optional-dependencies]
-dev = ["build", "setuptools_scm", "tox", "tox-uv"]
+[dependency-groups]
+dev = [
+    "build>=1.2.2.post1",
+    "ruff",
+    "setuptools-scm>=8.2.0",
+    "tox>=4.25.0",
+    "tox-uv>=1.13.1",
+]
 
-tests = [
-  "httpx",
-  "hypothesis",
-  "numpy",
-  "pillow",
-  "pytest",
-  "pytest-asyncio",
-  "pytest-httpserver",
-  "pytest-timeout",
-  "pytest-xdist",
-  "pytest-cov",
-  "responses",
+test = [
+    "httpx",
+    "hypothesis",
+    "numpy",
+    "pillow",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-httpserver",
+    "pytest-timeout",
+    "pytest-xdist",
+    "pytest-cov",
+    "responses",
 ]
 
 [tool.setuptools_scm]
@@ -98,7 +104,7 @@ good-names = ["id", "input"]
 ignore-paths = ["python/cog/_version.py", "python/tests"]
 
 [tool.ruff]
-format.exclude = ["python/cog/_version.py"]
+exclude = ["python/cog/_version.py"]
 lint.select = [
   "E",   # pycodestyle error
   "F",   # Pyflakes
@@ -116,8 +122,6 @@ lint.ignore = [
   "ANN001", # Missing type annotation for function argument
   "ANN002", # Missing type annotation for `*args`
   "ANN003", # Missing type annotation for `**kwargs`
-  "ANN101", # Missing type annotation for self in method
-  "ANN102", # Missing type annotation for cls in classmethod
   "ANN401", # Dynamically typed expressions are disallowed
 ]
 extend-exclude = [

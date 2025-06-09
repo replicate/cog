@@ -1,0 +1,15 @@
+# Configuration for Cog ⚙️
+# Reference: https://cog.run/yaml
+
+# image name:version
+image: "r8.im/ibm-granite/granite-3.3-8b-instruct:1.0.0"
+
+build:
+  # python version in the form '3.11' or '3.11.4'
+  python_version: "3.11"
+
+  # path to a Python requirements.txt file
+  python_requirements: requirements.txt
+
+# predict.py defines how predictions are run on your model
+predict: "predict.py:Predictor"

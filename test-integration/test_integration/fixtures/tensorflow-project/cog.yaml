@@ -1,0 +1,11 @@
+build:
+  gpu: true
+  cuda: "11.8"
+  python_version: "3.10"
+  system_packages:
+    - "libgl1-mesa-glx"
+    - "libglib2.0-0"
+    - "xvfb"
+  python_requirements: .requirements.txt
+
+predict: "predict.py:Predictor"

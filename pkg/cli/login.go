@@ -41,6 +41,8 @@ func newLoginCommand() *cobra.Command {
 }
 
 func login(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
 	registryHost, err := cmd.Flags().GetString("registry")
 	if err != nil {
 		return err
@@ -73,7 +75,7 @@ func login(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := docker.SaveLoginToken(registryHost, username, token); err != nil {
+	if err := docker.SaveLoginToken(ctx, registryHost, username, token); err != nil {
 		return err
 	}
 
@@ -171,6 +173,10 @@ func checkTokenFormat(token string) error {
 }
 
 func verifyToken(registryHost string, token string) (username string, err error) {
+	if token == "" {
+		return "", fmt.Errorf("Token is empty")
+	}
+
 	resp, err := http.PostForm(addressWithScheme(registryHost)+"/cog/v1/verify-token", url.Values{
 		"token": []string{token},
 	})

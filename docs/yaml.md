@@ -7,8 +7,7 @@ It has three keys: [`build`](#build), [`image`](#image), and [`predict`](#predic
 ```yaml
 build:
   python_version: "3.11"
-  python_packages:
-    - pytorch==2.0.1
+  python_requirements: requirements.txt
   system_packages:
     - "ffmpeg"
     - "git"
@@ -47,39 +46,6 @@ build:
 
 When you use `cog run` or `cog predict`, Cog will automatically pass the `--gpus=all` flag to Docker. When you run a Docker image built with Cog, you'll need to pass this option to `docker run`.
 
-### `python_packages`
-
-A list of Python packages to install from the PyPi package index, in the format `package==version`. For example:
-
-```yaml
-build:
-  python_packages:
-    - pillow==8.3.1
-    - tensorflow==2.5.0
-```
-
-To install Git-hosted Python packages, add `git` to the `system_packages` list, then use the `git+https://` syntax to specify the package name. For example:
-
-```yaml
-build:
-  system_packages:
-    - "git"
-  python_packages:
-    - "git+https://github.com/huggingface/transformers"
-```
-
-You can also pin Python package installations to a specific git commit:
-
-```yaml
-build:
-  system_packages:
-    - "git"
-  python_packages:
-    - "git+https://github.com/huggingface/transformers@2d1602a"
-```
-
-Note that you can use a shortened prefix of the 40-character git commit SHA, but you must use at least six characters, like `2d1602a` above.
-
 ### `python_requirements`
 
 A pip requirements file specifying the Python packages to install. For example:
@@ -90,6 +56,55 @@ build:
 ```
 
 Your `cog.yaml` file can set either `python_packages` or `python_requirements`, but not both. Use `python_requirements` when you need to configure options like `--extra-index-url` or `--trusted-host` to fetch Python package dependencies.
+
+This follows the standard [requirements.txt](https://pip.pypa.io/en/stable/reference/requirements-file-format/) format.
+
+To install Git-hosted Python packages, add `git` to the `system_packages` list, then use the `git+https://` syntax to specify the package name. For example:
+
+`cog.yaml`:
+```yaml
+build:
+  system_packages:
+    - "git"
+  python_requirements: requirements.txt
+```
+
+`requirements.txt`:
+```
+git+https://github.com/huggingface/transformers
+```
+
+You can also pin Python package installations to a specific git commit:
+
+`cog.yaml`:
+```yaml
+build:
+  system_packages:
+    - "git"
+  python_requirements: requirements.txt
+```
+
+`requirements.txt`:
+```
+git+https://github.com/huggingface/transformers@2d1602a
+```
+
+Note that you can use a shortened prefix of the 40-character git commit SHA, but you must use at least six characters, like `2d1602a` above.
+
+### `python_packages`
+
+**DEPRECATED**: This will be removed in future versions, please use [python_requirements](#python_requirements) instead.
+
+A list of Python packages to install from the PyPi package index, in the format `package==version`. For example:
+
+```yaml
+build:
+  python_packages:
+    - pillow==8.3.1
+    - tensorflow==2.5.0
+```
+
+Your `cog.yaml` file can set either `python_packages` or `python_requirements`, but not both.
 
 ### `python_version`
 
@@ -142,6 +157,23 @@ build:
   system_packages:
     - "ffmpeg"
     - "libavcodec-dev"
+```
+
+## `concurrency`
+
+> Added in cog 0.14.0.
+
+This stanza describes the concurrency capabilities of the model. It has one option:
+
+### `max`
+
+The maximum number of concurrent predictions the model can process.  If this is set, the model must specify an [async `predict()` method](python.md#async-predictors-and-concurrency).
+
+For example:
+
+```yaml
+concurrency:
+  max: 10
 ```
 
 ## `image`

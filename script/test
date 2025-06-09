@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+echo "script/test is not used in this project, check out:"
+echo "  script/test-all    - runs all the tests, including integration tests"
+echo "  script/test-go     - runs just the go tests"
+echo "  script/test-python - runs just the python tests"
+exit 1

@@ -78,9 +78,9 @@ def test_wait_for_env_no_env_vars():
     if COG_EAGER_IMPORTS_ENV_VAR in os.environ:
         del os.environ[COG_EAGER_IMPORTS_ENV_VAR]
     result = wait_for_env()
-    assert (
-        result
-    ), "We should return true if we have no env vars associated with the wait."
+    assert result, (
+        "We should return true if we have no env vars associated with the wait."
+    )
 
 
 def test_wait_for_env():
@@ -88,9 +88,9 @@ def test_wait_for_env():
         os.environ[COG_WAIT_FILE_ENV_VAR] = tmpfile.name
         os.environ[COG_EAGER_IMPORTS_ENV_VAR] = "pytest,pathlib,time"
         result = wait_for_env()
-        assert (
-            result
-        ), "We should return true if we have waited for the right environment."
+        assert result, (
+            "We should return true if we have waited for the right environment."
+        )
         del os.environ[COG_EAGER_IMPORTS_ENV_VAR]
         del os.environ[COG_WAIT_FILE_ENV_VAR]
 
@@ -118,6 +118,6 @@ def test_wait_inserts_pythonpath():
         expected_path = ":".join(
             original_sys_path + [pyenv_path + "/lib/python3.11/site-packages"]
         )
-        assert (
-            expected_path == current_python_path
-        ), "Our python path should be updated with the pyenv path."
+        assert expected_path == current_python_path, (
+            "Our python path should be updated with the pyenv path."
+        )

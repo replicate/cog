@@ -73,6 +73,7 @@ def Input(  # pylint: disable=invalid-name, too-many-arguments
     max_length: Optional[int] = None,
     regex: Optional[str] = None,
     choices: Optional[List[Union[str, int]]] = None,
+    deprecated: Optional[bool] = None,
 ) -> Any:
     """Input is similar to pydantic.Field, but doesn't require a default value to be the first argument."""
     field_kwargs = {
@@ -94,6 +95,10 @@ def Input(  # pylint: disable=invalid-name, too-many-arguments
     else:
         field_kwargs["regex"] = regex
         field_kwargs["enum"] = choices
+
+    if deprecated is not None:
+        field_kwargs["deprecated"] = deprecated
+
     return pydantic.Field(**field_kwargs)
 
 
@@ -261,6 +266,9 @@ class URLPath(pathlib.PosixPath):  # pylint: disable=abstract-method
     _path: Optional[Path]
 
     def __init__(self, *, source: str, filename: str, fileobj: io.IOBase) -> None:  # pylint: disable=super-init-not-called
+        if len(filename) > FILENAME_MAX_LENGTH:
+            filename = _truncate_filename_bytes(filename, FILENAME_MAX_LENGTH)
+
         self.source = source
         self.filename = filename
         self.fileobj = fileobj
@@ -540,5 +548,6 @@ def _truncate_filename_bytes(s: str, length: int, encoding: str = "utf-8") -> st
     and avoiding text encoding corruption from truncation.
     """
     root, ext = os.path.splitext(s.encode(encoding))
+    ext = ext.decode(encoding).split("?")[0].encode(encoding)
     root = root[: length - len(ext) - 1]
     return root.decode(encoding, "ignore") + "~" + ext.decode(encoding)

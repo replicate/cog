@@ -26,12 +26,18 @@
         },
         "python_version": {
           "$id": "#/properties/build/properties/python_version",
-          "type": ["string", "number"],
+          "type": [
+            "string",
+            "number"
+          ],
           "description": "The minor (`3.8`) or patch (`3.8.1`) version of Python to use."
         },
         "python_packages": {
           "$id": "#/properties/build/properties/python_packages",
-          "type": ["array", "null"],
+          "type": [
+            "array",
+            "null"
+          ],
           "description": "A list of Python packages to install, in the format `package==version`.",
           "additionalItems": true,
           "items": {
@@ -46,7 +52,10 @@
         },
         "pre_install": {
           "$id": "#/properties/build/properties/pre_install",
-          "type": ["array", "null"],
+          "type": [
+            "array",
+            "null"
+          ],
           "description": "A list of setup commands to run in the environment before your Python packages are installed.",
           "additionalItems": true,
           "items": {
@@ -66,7 +75,10 @@
         },
         "system_packages": {
           "$id": "#/properties/build/properties/system_packages",
-          "type": ["array", "null"],
+          "type": [
+            "array",
+            "null"
+          ],
           "description": "A list of Ubuntu APT packages to install.",
           "additionalItems": true,
           "items": {
@@ -81,7 +93,10 @@
         },
         "run": {
           "$id": "#/properties/build/properties/run",
-          "type": ["array", "null"],
+          "type": [
+            "array",
+            "null"
+          ],
           "description": "A list of setup commands to run in the environment after your system packages and Python packages have been installed. If you're familiar with Docker, it's like a `RUN` instruction in your `Dockerfile`.",
           "additionalItems": true,
           "items": {
@@ -105,7 +120,9 @@
                       "properties": {
                         "type": {
                           "type": "string",
-                          "enum": ["secret"]
+                          "enum": [
+                            "secret"
+                          ]
                         },
                         "id": {
                           "type": "string"
@@ -114,14 +131,30 @@
                           "type": "string"
                         }
                       },
-                      "required": ["type", "id", "target"]
+                      "required": [
+                        "type",
+                        "id",
+                        "target"
+                      ]
                     }
                   }
                 },
-                "required": ["command"]
+                "required": [
+                  "command"
+                ]
               }
             ]
           }
+        },
+        "fast": {
+          "$id": "#/properties/build/properties/fast",
+          "type": "boolean",
+          "description": "A flag to enable the experimental fast-push feature from a config level."
+        },
+        "python_overrides": {
+          "$id": "#/properties/build/properties/python_overrides",
+          "type": "string",
+          "description": "A file in the format of pip requirements that specifies python overrides."
         }
       },
       "additionalProperties": false
@@ -160,6 +193,33 @@
           "type": "integer",
           "description": "The default target for number of concurrent predictions. This setting can be used by an autoscaler to determine when to scale a deployment of a model up or down."
         }
+      }
+    },
+    "tests": {
+      "$id": "#/properties/tests",
+      "type": [
+        "array",
+        "null"
+      ],
+      "description": "A list of test cog commands to run.",
+      "additionalItems": false,
+      "items": {
+        "type": "object",
+        "additionalItems": true
+      }
+    },
+    "environment": {
+      "$id": "#/properties/properties/environment",
+      "type": [
+        "array",
+        "null"
+      ],
+      "description": "A list of environment variables to make available during builds and at runtime, in the format `NAME=value`",
+      "additionalItems": true,
+      "items": {
+        "$id": "#/properties/properties/environment/items",
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*=[^\\s]+$"
       }
     }
   },

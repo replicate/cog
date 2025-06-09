@@ -1,0 +1,9 @@
+build:
+  gpu: true
+  python_version: "3.12"
+  python_packages:
+    - "torch==2.5.1"
+  cuda: "12.4"
+  run:
+    - command: ffmpeg --help
+predict: "predict.py:Predictor"

@@ -87,6 +87,7 @@ class PredictionRunner:
     def predict(
         self,
         prediction: schema.PredictionRequest,
+        is_train: bool,
         task_kwargs: Optional[Dict[str, Any]] = None,
     ) -> "PredictTask":
         self._raise_if_busy()
@@ -97,7 +98,7 @@ class PredictionRunner:
         if tag is None:
             tag = uuid.uuid4().hex
 
-        task = PredictTask(prediction, **task_kwargs)
+        task = PredictTask(prediction, is_train, **task_kwargs)
 
         with self._predict_tasks_lock:
             self._predict_tasks[tag] = task
@@ -113,7 +114,7 @@ class PredictionRunner:
             payload = prediction.input.copy()
 
         sid = self._worker.subscribe(task.handle_event, tag=tag)
-        task.track(self._worker.predict(payload, tag=tag))
+        task.track(self._worker.predict(payload, context=prediction.context, tag=tag))
         task.add_done_callback(self._task_done_callback(tag, sid))
 
         return task
@@ -281,11 +282,13 @@ class PredictTask(Task[schema.PredictionResponse]):
     def __init__(
         self,
         prediction_request: schema.PredictionRequest,
+        is_train: bool,
         upload_url: Optional[str] = None,
     ) -> None:
+        self._is_train = is_train
         self._log = log.bind(prediction_id=prediction_request.id)
 
-        self._log.info("starting prediction")
+        self._log.info("starting " + ("prediction" if not is_train else "train"))
 
         self._fut: "Optional[Future[Done]]" = None
 
@@ -324,7 +327,7 @@ class PredictTask(Task[schema.PredictionResponse]):
         return self._p
 
     def track(self, fut: "Future[Done]") -> None:
-        self._log.info("started prediction")
+        self._log.info("started " + ("prediction" if not self._is_train else "train"))
 
         # HACK: don't send an initial webhook if we're trying to optimize for
         # latency (this guarantees that the first output webhook won't be
@@ -355,12 +358,12 @@ class PredictTask(Task[schema.PredictionResponse]):
         self._fut.result(timeout=timeout)
 
     def set_output_type(self, *, multi: bool) -> None:
-        assert (
-            self._output_type_multi is None
-        ), "Predictor unexpectedly returned multiple output types"
-        assert (
-            self._p.output is None
-        ), "Predictor unexpectedly returned output type after output"
+        assert self._output_type_multi is None, (
+            "Predictor unexpectedly returned multiple output types"
+        )
+        assert self._p.output is None, (
+            "Predictor unexpectedly returned output type after output"
+        )
 
         if multi:
             self._p.output = []
@@ -368,9 +371,9 @@ class PredictTask(Task[schema.PredictionResponse]):
         self._output_type_multi = multi
 
     def append_output(self, output: Any) -> None:
-        assert (
-            self._output_type_multi is not None
-        ), "Predictor unexpectedly returned output before output type"
+        assert self._output_type_multi is not None, (
+            "Predictor unexpectedly returned output before output type"
+        )
 
         uploaded_output = self._upload_files(output)
         if self._output_type_multi:
@@ -393,7 +396,7 @@ class PredictTask(Task[schema.PredictionResponse]):
         self._p.metrics[key] = value
 
     def succeeded(self) -> None:
-        self._log.info("prediction succeeded")
+        self._log.info(("prediction" if not self._is_train else "train") + " succeeded")
         self._p.status = schema.Status.SUCCEEDED
         self._set_completed_at()
         # These have been set already: this is to convince the typechecker of

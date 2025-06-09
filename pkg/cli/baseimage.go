@@ -1,16 +1,21 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
+	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/update"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -32,7 +37,7 @@ func NewBaseImageRootCommand() (*cobra.Command, error) {
 				console.SetLevel(console.DebugLevel)
 			}
 			cmd.SilenceUsage = true
-			if err := update.DisplayAndCheckForRelease(); err != nil {
+			if err := update.DisplayAndCheckForRelease(cmd.Context()); err != nil {
 				console.Debugf("%s", err)
 			}
 		},
@@ -54,14 +59,57 @@ func newBaseImageGenerateMatrix() *cobra.Command {
 		Use:   "generate-matrix",
 		Short: "Generate a matrix of Cog base image versions (JSON)",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			validCudaVersions := strings.FieldsFunc(baseImageCUDAVersion, func(c rune) bool {
+				return c == ','
+			})
+			validPythonVersions := strings.FieldsFunc(baseImagePythonVersion, func(c rune) bool {
+				return c == ','
+			})
+			validTorchVersions := strings.FieldsFunc(baseImageTorchVersion, func(c rune) bool {
+				return c == ','
+			})
+
 			allConfigurations := dockerfile.BaseImageConfigurations()
 			filteredMatrix := make([]dockerfile.BaseImageConfiguration, 0, len(allConfigurations))
 			for _, config := range allConfigurations {
-				if (baseImageCUDAVersion == "" || config.CUDAVersion == baseImageCUDAVersion) &&
-					(baseImagePythonVersion == "" || config.PythonVersion == baseImagePythonVersion) &&
-					(baseImageTorchVersion == "" || config.TorchVersion == baseImageTorchVersion) {
-					filteredMatrix = append(filteredMatrix, config)
+				var found bool
+				if len(validCudaVersions) > 0 {
+					found = false
+					for _, validCudaVersion := range validCudaVersions {
+						if config.CUDAVersion == validCudaVersion {
+							found = true
+						}
+					}
+					if !found {
+						continue
+					}
 				}
+
+				if len(validPythonVersions) > 0 {
+					found = false
+					for _, validPythonVersion := range validPythonVersions {
+						if config.PythonVersion == validPythonVersion {
+							found = true
+						}
+					}
+					if !found {
+						continue
+					}
+				}
+
+				if len(validTorchVersions) > 0 {
+					found = false
+					for _, validTorchVersion := range validTorchVersions {
+						if config.TorchVersion == validTorchVersion {
+							found = true
+						}
+					}
+					if !found {
+						continue
+					}
+				}
+
+				filteredMatrix = append(filteredMatrix, config)
 			}
 
 			output, err := json.Marshal(filteredMatrix)
@@ -82,11 +130,13 @@ func newBaseImageDockerfileCommand() *cobra.Command {
 		Use:   "dockerfile",
 		Short: "Display Cog base image Dockerfile",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			generator, err := baseImageGeneratorFromFlags()
+			ctx := cmd.Context()
+
+			generator, err := baseImageGeneratorFromFlags(ctx)
 			if err != nil {
 				return err
 			}
-			dockerfile, err := generator.GenerateDockerfile()
+			dockerfile, err := generator.GenerateDockerfile(ctx)
 			if err != nil {
 				return err
 			}
@@ -107,11 +157,18 @@ func newBaseImageBuildCommand() *cobra.Command {
 		Use:   "build",
 		Short: "Build Cog base image",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			generator, err := baseImageGeneratorFromFlags()
+			ctx := cmd.Context()
+
+			dockerClient, err := docker.NewClient(ctx)
 			if err != nil {
 				return err
 			}
-			dockerfileContents, err := generator.GenerateDockerfile()
+
+			generator, err := baseImageGeneratorFromFlags(ctx)
+			if err != nil {
+				return err
+			}
+			dockerfileContents, err := generator.GenerateDockerfile(ctx)
 			if err != nil {
 				return err
 			}
@@ -122,8 +179,16 @@ func newBaseImageBuildCommand() *cobra.Command {
 			}
 			baseImageName := dockerfile.BaseImageName(baseImageCUDAVersion, baseImagePythonVersion, baseImageTorchVersion)
 
-			err = docker.Build(cwd, dockerfileContents, baseImageName, []string{}, buildNoCache, buildProgressOutput, config.BuildSourceEpochTimestamp)
-			if err != nil {
+			buildOpts := command.ImageBuildOptions{
+				WorkingDir:         cwd,
+				DockerfileContents: dockerfileContents,
+				ImageName:          baseImageName,
+				NoCache:            buildNoCache,
+				ProgressOutput:     buildProgressOutput,
+				Epoch:              &config.BuildSourceEpochTimestamp,
+				ContextDir:         dockercontext.StandardBuildDirectory,
+			}
+			if err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 				return err
 			}
 			fmt.Println("Successfully built image: " + baseImageName)
@@ -143,10 +208,18 @@ func addBaseImageFlags(cmd *cobra.Command) {
 	addBuildTimestampFlag(cmd)
 }
 
-func baseImageGeneratorFromFlags() (*dockerfile.BaseImageGenerator, error) {
+func baseImageGeneratorFromFlags(ctx context.Context) (*dockerfile.BaseImageGenerator, error) {
+	dockerClient, err := docker.NewClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	client := registry.NewRegistryClient()
 	return dockerfile.NewBaseImageGenerator(
+		ctx,
+		client,
 		baseImageCUDAVersion,
 		baseImagePythonVersion,
 		baseImageTorchVersion,
+		dockerClient,
 	)
 }

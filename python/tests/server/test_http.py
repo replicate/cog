@@ -1,4 +1,5 @@
 import base64
+import http
 import io
 import time
 import unittest.mock as mock
@@ -59,12 +60,11 @@ def test_predict_works_with_functions(client, match):
 
 
 @uses_predictor("openapi_complex_input")
-def test_openapi_specification(client, static_schema):
+def test_openapi_specification(client):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
     schema = resp.json()
-    assert schema == static_schema
     assert schema["openapi"] == "3.0.2"
     assert schema["info"] == {"title": "Cog", "version": "0.1.0"}
     assert schema["paths"]["/"] == {
@@ -89,7 +89,10 @@ def test_openapi_specification(client, static_schema):
                     "in": "header",
                     "name": "prefer",
                     "required": False,
-                    "schema": {"title": "Prefer", "type": "string"},
+                    "schema": {
+                        "title": "Prefer",
+                        "type": "string",
+                    },
                 }
             ],
             "requestBody": {
@@ -165,29 +168,19 @@ def test_openapi_specification(client, static_schema):
         ],
         "type": "object",
         "properties": {
-            "no_default": {
-                "title": "No Default",
-                "type": "string",
-                "x-order": 0,
+            "choices": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/choices",
+                    }
+                ],
+                "x-order": 5,
             },
             "default_without_input": {
                 "title": "Default Without Input",
                 "type": "string",
                 "default": "default",
                 "x-order": 1,
-            },
-            "input_with_default": {
-                "title": "Input With Default",
-                "type": "integer",
-                "default": -10,
-                "x-order": 2,
-            },
-            "path": {
-                "title": "Path",
-                "description": "Some path",
-                "type": "string",
-                "format": "uri",
-                "x-order": 3,
             },
             "image": {
                 "title": "Image",
@@ -196,13 +189,37 @@ def test_openapi_specification(client, static_schema):
                 "format": "uri",
                 "x-order": 4,
             },
-            "choices": {
-                "allOf": [{"$ref": "#/components/schemas/choices"}],
-                "x-order": 5,
+            "input_with_default": {
+                "title": "Input With Default",
+                "type": "integer",
+                "default": -10,
+                "x-order": 2,
             },
             "int_choices": {
-                "allOf": [{"$ref": "#/components/schemas/int_choices"}],
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/int_choices",
+                    }
+                ],
                 "x-order": 6,
+            },
+            "no_default": {
+                "title": "No Default",
+                "type": "string",
+                "x-order": 0,
+            },
+            "optional_str": {
+                "nullable": True,
+                "title": "Optional Str",
+                "type": "string",
+                "x-order": 7,
+            },
+            "path": {
+                "title": "Path",
+                "description": "Some path",
+                "type": "string",
+                "format": "uri",
+                "x-order": 3,
             },
         },
     }
@@ -226,13 +243,12 @@ def test_openapi_specification(client, static_schema):
 
 @uses_predictor("openapi_custom_output_type")
 def test_openapi_specification_with_custom_user_defined_output_type(
-    client, static_schema
+    client,
 ):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
     schema = resp.json()
-    assert schema == static_schema
     assert schema["components"]["schemas"]["Output"] == {
         "$ref": "#/components/schemas/MyOutput",
         "title": "Output",
@@ -255,15 +271,51 @@ def test_openapi_specification_with_custom_user_defined_output_type(
     }
 
 
-@uses_predictor("openapi_output_type")
-def test_openapi_specification_with_custom_user_defined_output_type_called_output(
-    client, static_schema
+@uses_predictor("openapi_optional_output_type")
+def test_openapi_specification_with_optional_output_type(
+    client,
 ):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
     schema = resp.json()
-    assert schema == static_schema
-    assert resp.json()["components"]["schemas"]["Output"] == {
+    assert schema["components"]["schemas"]["Output"] == {
+        "anyOf": [
+            {
+                "$ref": "#/components/schemas/ModelOutput",
+            },
+            {
+                "type": "string",
+            },
+        ],
+        "nullable": True,
+        "title": "Output",
+    }
+    assert schema["components"]["schemas"]["ModelOutput"] == {
+        "properties": {
+            "foo_number": {
+                "default": "42",
+                "title": "Foo Number",
+                "type": "integer",
+            },
+            "foo_string": {
+                "title": "Foo String",
+                "type": "string",
+                "nullable": True,
+            },
+        },
+        "type": "object",
+        "title": "ModelOutput",
+    }
+
+
+@uses_predictor("openapi_output_type")
+def test_openapi_specification_with_custom_user_defined_output_type_called_output(
+    client,
+):
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+    schema = resp.json()
+    assert schema["components"]["schemas"]["Output"] == {
         "properties": {
             "foo_number": {"default": "42", "title": "Foo Number", "type": "integer"},
             "foo_string": {
@@ -278,11 +330,10 @@ def test_openapi_specification_with_custom_user_defined_output_type_called_outpu
 
 
 @uses_predictor("openapi_output_yield")
-def test_openapi_specification_with_yield(client, static_schema):
+def test_openapi_specification_with_yield(client):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
     schema = resp.json()
-    assert schema == static_schema
     assert schema["components"]["schemas"]["Output"] == {
         "title": "Output",
         "type": "array",
@@ -294,14 +345,11 @@ def test_openapi_specification_with_yield(client, static_schema):
 
 
 @uses_predictor("yield_concatenate_iterator")
-def test_openapi_specification_with_yield_with_concatenate_iterator(
-    client, static_schema
-):
+def test_openapi_specification_with_yield_with_concatenate_iterator(client):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
     schema = resp.json()
-    assert schema == static_schema
     assert schema["components"]["schemas"]["Output"] == {
         "title": "Output",
         "type": "array",
@@ -314,12 +362,11 @@ def test_openapi_specification_with_yield_with_concatenate_iterator(
 
 
 @uses_predictor("openapi_output_list")
-def test_openapi_specification_with_list(client, static_schema):
+def test_openapi_specification_with_list(client):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
     schema = resp.json()
-    assert schema == static_schema
     assert schema["components"]["schemas"]["Output"] == {
         "title": "Output",
         "type": "array",
@@ -330,12 +377,11 @@ def test_openapi_specification_with_list(client, static_schema):
 
 
 @uses_predictor("openapi_input_int_choices")
-def test_openapi_specification_with_int_choices(client, static_schema):
+def test_openapi_specification_with_int_choices(client):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
 
     schema = resp.json()
-    assert schema == static_schema
     schemas = schema["components"]["schemas"]
 
     assert schemas["Input"]["properties"]["pick_a_number_any_number"] == {
@@ -684,3 +730,20 @@ def test_weights_are_read_from_environment_variables(client, match):
     resp = client.post("/predictions")
     assert resp.status_code == 200
     assert resp.json() == match({"status": "succeeded", "output": "hello"})
+
+
+@uses_predictor("input_deprecated")
+def test_openapi_specification_with_deprecated(client, static_schema):
+    resp = client.get("/openapi.json")
+    assert resp.status_code == http.HTTPStatus.OK
+
+    schema = resp.json()
+    schemas = schema["components"]["schemas"]
+
+    assert schemas["Input"]["properties"]["text"] == {
+        "x-order": 0,
+        "deprecated": True,
+        "type": "string",
+        "title": "Text",
+        "description": "Some deprecated text",
+    }

@@ -1,0 +1,7 @@
+build:
+  python_version: "3.10"
+  python_requirements: requirements.txt
+  fast: true
+  gpu: true
+  cuda: "12.1"
+predict: "predict.py:Predictor"

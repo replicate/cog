@@ -1,6 +1,7 @@
 package files
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +17,17 @@ func Exists(path string) (bool, error) {
 	} else {
 		return false, fmt.Errorf("Failed to determine if %s exists: %w", path, err)
 	}
+}
+
+func IsEmpty(path string) (bool, error) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		return false, err
+	}
+	return len(entries) == 0, nil
 }
 
 func IsDir(path string) (bool, error) {
@@ -48,4 +60,25 @@ func CopyFile(src string, dest string) error {
 		return fmt.Errorf("Failed to copy %s to %s: %w", src, dest, err)
 	}
 	return out.Close()
+}
+
+func WriteIfDifferent(file, content string) error {
+	if _, err := os.Stat(file); err == nil {
+		bs, err := os.ReadFile(file)
+		if err != nil {
+			return err
+		}
+		if string(bs) == content {
+			return nil
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	// Write out a new requirements file
+	err := os.WriteFile(file, []byte(content), 0o644)
+	if err != nil {
+		return err
+	}
+	return nil
 }

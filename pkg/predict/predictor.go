@@ -2,6 +2,7 @@ package predict
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -22,9 +24,14 @@ type HealthcheckResponse struct {
 	Status string `json:"status"`
 }
 
+type RequestContext struct {
+	ReplicateAPIToken string `json:"replicate_api_token,omitempty"`
+}
+
 type Request struct {
 	// TODO: could this be Inputs?
-	Input map[string]interface{} `json:"input"`
+	Input   map[string]interface{} `json:"input"`
+	Context RequestContext         `json:"context"`
 }
 
 type Response struct {
@@ -42,15 +49,16 @@ type ValidationErrorResponse struct {
 }
 
 type Predictor struct {
-	runOptions docker.RunOptions
-	isTrain    bool
+	runOptions   command.RunOptions
+	isTrain      bool
+	dockerClient command.Command
 
 	// Running state
 	containerID string
 	port        int
 }
 
-func NewPredictor(runOptions docker.RunOptions, isTrain bool, fastFlag bool) Predictor {
+func NewPredictor(ctx context.Context, runOptions command.RunOptions, isTrain bool, fastFlag bool, dockerCommand command.Command) (*Predictor, error) {
 	if fastFlag {
 		console.Info("Fast predictor enabled.")
 	}
@@ -60,27 +68,37 @@ func NewPredictor(runOptions docker.RunOptions, isTrain bool, fastFlag bool) Pre
 	} else {
 		runOptions.Env = append(runOptions.Env, "COG_LOG_LEVEL=warning")
 	}
-	return Predictor{runOptions: runOptions, isTrain: isTrain}
+
+	runOptions, err := docker.FillInWeightsManifestVolumes(ctx, dockerCommand, runOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Predictor{
+		runOptions:   runOptions,
+		isTrain:      isTrain,
+		dockerClient: dockerCommand,
+	}, nil
 }
 
-func (p *Predictor) Start(logsWriter io.Writer, timeout time.Duration) error {
+func (p *Predictor) Start(ctx context.Context, logsWriter io.Writer, timeout time.Duration) error {
 	var err error
 	containerPort := 5000
 
-	p.runOptions.Ports = append(p.runOptions.Ports, docker.Port{HostPort: 0, ContainerPort: containerPort})
+	p.runOptions.Ports = append(p.runOptions.Ports, command.Port{HostPort: 0, ContainerPort: containerPort})
 
-	p.containerID, err = docker.RunDaemon(p.runOptions, logsWriter)
+	p.containerID, err = docker.RunDaemon(ctx, p.dockerClient, p.runOptions, logsWriter)
 	if err != nil {
 		return fmt.Errorf("Failed to start container: %w", err)
 	}
 
-	p.port, err = docker.GetPort(p.containerID, containerPort)
+	p.port, err = docker.GetHostPortForContainer(ctx, p.dockerClient, p.containerID, containerPort)
 	if err != nil {
 		return fmt.Errorf("Failed to determine container port: %w", err)
 	}
 
 	go func() {
-		if err := docker.ContainerLogsFollow(p.containerID, logsWriter); err != nil {
+		if err := p.dockerClient.ContainerLogs(ctx, p.containerID, logsWriter); err != nil {
 			// if user hits ctrl-c we expect an error signal
 			if !strings.Contains(err.Error(), "signal: interrupt") {
 				console.Warnf("Error getting container logs: %s", err)
@@ -88,10 +106,10 @@ func (p *Predictor) Start(logsWriter io.Writer, timeout time.Duration) error {
 		}
 	}()
 
-	return p.waitForContainerReady(timeout)
+	return p.waitForContainerReady(ctx, timeout)
 }
 
-func (p *Predictor) waitForContainerReady(timeout time.Duration) error {
+func (p *Predictor) waitForContainerReady(ctx context.Context, timeout time.Duration) error {
 	url := fmt.Sprintf("http://localhost:%d/health-check", p.port)
 
 	start := time.Now()
@@ -103,7 +121,7 @@ func (p *Predictor) waitForContainerReady(timeout time.Duration) error {
 
 		time.Sleep(100 * time.Millisecond)
 
-		cont, err := docker.ContainerInspect(p.containerID)
+		cont, err := p.dockerClient.ContainerInspect(ctx, p.containerID)
 		if err != nil {
 			return fmt.Errorf("Failed to get container status: %w", err)
 		}
@@ -136,16 +154,20 @@ func (p *Predictor) waitForContainerReady(timeout time.Duration) error {
 	}
 }
 
-func (p *Predictor) Stop() error {
-	return docker.Stop(p.containerID)
+func (p *Predictor) Stop(ctx context.Context) error {
+	return p.dockerClient.ContainerStop(ctx, p.containerID)
 }
 
-func (p *Predictor) Predict(inputs Inputs) (*Response, error) {
+func (p *Predictor) Predict(inputs Inputs, context RequestContext) (*Response, error) {
 	inputMap, err := inputs.toMap()
 	if err != nil {
 		return nil, err
 	}
-	request := Request{Input: inputMap}
+
+	request := Request{
+		Input:   inputMap,
+		Context: context,
+	}
 	requestBody, err := json.Marshal(request)
 	if err != nil {
 		return nil, err

@@ -7,6 +7,9 @@ import sys
 import types
 import uuid
 from collections.abc import Iterable, Iterator
+
+if sys.version_info >= (3, 10):
+    from types import NoneType
 from typing import (
     Any,
     Callable,
@@ -45,6 +48,11 @@ from .types import (
     Path as CogPath,
 )
 from .types import Secret as CogSecret
+
+if PYDANTIC_V2:
+    from pydantic.fields import PydanticUndefined  # type: ignore
+else:
+    from pydantic.fields import Undefined as PydanticUndefined
 
 log = structlog.get_logger("cog.server.predictor")
 
@@ -175,6 +183,27 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
     return predictor
 
 
+def is_none(type_arg: Any) -> bool:
+    if sys.version_info >= (3, 10):
+        return type_arg is NoneType
+    return type_arg is None.__class__
+
+
+def is_union(type: Type[Any]) -> bool:
+    if get_origin(type) is Union:
+        return True
+    if hasattr(types, "UnionType") and get_origin(type) is types.UnionType:
+        return True
+    return False
+
+
+def is_optional(type: Type[Any]) -> bool:
+    args = get_args(type)
+    if len(args) != 2 or not is_union(type):
+        return False
+    return is_none(args[1])
+
+
 def validate_input_type(
     type: Type[Any],  # pylint: disable=redefined-builtin
     name: str,
@@ -187,11 +216,13 @@ def validate_input_type(
         if get_origin(type) is Literal:
             for t in get_args(type):
                 validate_input_type(builtins.type(t), name)
-        elif get_origin(type) in (Union, List, list) or (
-            hasattr(types, "UnionType") and get_origin(type) is types.UnionType
-        ):  # noqa: E721
-            for t in get_args(type):
-                validate_input_type(t, name)
+        elif get_origin(type) in (Union, List, list) or is_union(type):  # noqa: E721
+            args = get_args(type)
+            if is_optional(type):
+                validate_input_type(args[0], name)
+            else:
+                for t in args:
+                    validate_input_type(t, name)
         else:
             if PYDANTIC_V2:
                 # Cog types are exported as `Annotated[Type, ...]`, but `type` is the inner type
@@ -204,12 +235,37 @@ def validate_input_type(
 
 
 def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any]:
-    create_model_kwargs = {}
+    create_model_kwargs: Dict[str, Any] = {
+        "__base__": BaseInput,
+        "__config__": None,
+    }
 
     order = 0
 
     for name, parameter in signature.parameters.items():
         InputType = parameter.annotation
+
+        if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
+            raise TypeError(f"Unsupported variadic positional parameter *{name}.")
+
+        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+            if order != 0:
+                raise TypeError(f"Unsupported variadic keyword parameter **{name}")
+
+            class ExtraKeywordInput(BaseInput):
+                if PYDANTIC_V2:
+                    model_config = pydantic.ConfigDict(extra="allow")
+                else:
+
+                    class Config:
+                        extra = "allow"
+
+            create_model_kwargs["__base__"] = ExtraKeywordInput
+            name = "__pydantic_extra__"
+            InputType = Dict[str, Any]
+
+            create_model_kwargs[name] = (InputType, Input())
+            continue
 
         validate_input_type(InputType, name)
 
@@ -220,6 +276,17 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
             if not isinstance(parameter.default, FieldInfo):
                 default = Input(default=parameter.default)
             else:
+                if is_optional(InputType):
+                    # If we are an optional, make sure the default is None
+                    if (
+                        parameter.default.default is PydanticUndefined
+                        or parameter.default.default is ...
+                    ):
+                        if PYDANTIC_V2:
+                            parameter.default.default = None
+                        else:
+                            parameter.default.default_factory = None
+                            parameter.default.default = None
                 default = parameter.default
 
         if PYDANTIC_V2:
@@ -287,8 +354,6 @@ def get_input_type(predictor: BasePredictor) -> Type[BaseInput]:
 
     return create_model(
         "Input",
-        __config__=None,
-        __base__=BaseInput,
         __module__=__name__,
         __validators__=None,
         **get_input_create_model_kwargs(signature),
@@ -393,8 +458,6 @@ def get_training_input_type(predictor: BasePredictor) -> Type[BaseInput]:
 
     return create_model(
         "TrainingInput",
-        __config__=None,
-        __base__=BaseInput,
         __module__=__name__,
         __validators__=None,
         **get_input_create_model_kwargs(signature),

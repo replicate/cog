@@ -10,11 +10,26 @@ import sys
 import threading
 import uuid
 from types import TracebackType
-from typing import Any, BinaryIO, Callable, Dict, List, Sequence, TextIO, Union
+from typing import (
+    Any,
+    BinaryIO,
+    Callable,
+    Dict,
+    List,
+    Sequence,
+    TextIO,
+    Union,
+    get_args,
+    get_type_hints,
+)
 
 import pydantic
+from fastapi import FastAPI
+from fastapi.routing import APIRoute
+from pydantic import BaseModel
 from typing_extensions import Self  # added to typing in python 3.11
 
+from ..predictor import is_none, is_optional
 from ..types import PYDANTIC_V2
 from .errors import CogRuntimeError, CogTimeoutError
 
@@ -361,12 +376,87 @@ if PYDANTIC_V2:
             return [unwrap_pydantic_serialization_iterators(value) for value in obj]
         return obj
 
+else:
+
+    def get_annotations(tp) -> dict[str, Any]:
+        if sys.version_info >= (3, 10):
+            return get_type_hints(tp)
+        return tp.__annotations__
+
+    def is_pydantic_model_type(tp) -> bool:
+        try:
+            return isinstance(tp, type) and issubclass(tp, BaseModel)
+        except TypeError:
+            return False
+
+    def update_nullable_optional(openapi_schema: Dict[str, Any], app: FastAPI) -> None:
+        def fetch_referenced_schema(schema: Dict[str, Any], ref: str) -> Dict[str, Any]:
+            input_path = ref.replace("#/", "").split("/")
+            referenced_schema = schema
+            while input_path:
+                referenced_schema = referenced_schema[input_path[0]]
+                input_path = input_path[1:]
+            return referenced_schema
+
+        for route in app.routes:
+            if not isinstance(route, APIRoute):
+                continue
+
+            for dep in route.dependant.body_params:
+                model = getattr(dep, "type_", None)
+                if not is_pydantic_model_type(model):
+                    continue
+                input_model_union = get_annotations(model).get("input")
+                if input_model_union is None:
+                    continue
+                input_model = get_args(input_model_union)[0]
+                schema_node = openapi_schema["components"]["schemas"].get(
+                    model.__name__
+                )
+                referenced_schema = fetch_referenced_schema(
+                    openapi_schema, schema_node["properties"]["input"]["$ref"]
+                )
+                for k, v in referenced_schema["properties"].items():
+                    annotated_type = get_annotations(input_model)[k]
+                    if is_optional(annotated_type):
+                        v["nullable"] = True
+
+            response_model = getattr(route, "response_model", None)
+            if is_pydantic_model_type(response_model):
+                output_model_union = get_annotations(response_model).get("output")
+                if output_model_union is None:
+                    continue
+                output_model = get_args(output_model_union)[0]
+                schema_node = openapi_schema["components"]["schemas"].get(
+                    output_model.__name__
+                )
+                root = get_annotations(output_model).get("__root__")
+                for type_arg in get_args(root):
+                    if not is_none(type_arg):
+                        continue
+                    schema_node["nullable"] = True
+                    break
+                for count, type_node in enumerate(schema_node.get("anyOf", [])):
+                    ref_node = type_node.get("$ref")
+                    if ref_node is None:
+                        continue
+                    referenced_schema = fetch_referenced_schema(
+                        openapi_schema, ref_node
+                    )
+                    output_model = get_args(root)[count]
+                    for k, v in referenced_schema["properties"].items():
+                        annotated_type = get_annotations(output_model)[k]
+                        if is_optional(annotated_type):
+                            v["nullable"] = True
+
+        return None
+
 
 def update_openapi_schema_for_pydantic_2(
     openapi_schema: Dict[str, Any],
 ) -> None:
     _remove_webhook_events_filter_title(openapi_schema)
-    _remove_empty_or_nullable_anyof(openapi_schema)
+    _update_nullable_anyof(openapi_schema)
     _flatten_selected_allof_refs(openapi_schema)
     _extract_enum_properties(openapi_schema)
     _set_default_enumeration_description(openapi_schema)
@@ -384,27 +474,36 @@ def _remove_webhook_events_filter_title(
         pass
 
 
-def _remove_empty_or_nullable_anyof(
+def _update_nullable_anyof(
     openapi_schema: Union[Dict[str, Any], List[Dict[str, Any]]],
+    in_header: Union[bool, None] = None,
 ) -> None:
+    # Version 3.0.X of OpenAPI doesn't support a `null` type, expecting
+    # `nullable` to be set instead.
     if isinstance(openapi_schema, dict):
+        if in_header is None:
+            if "in" in openapi_schema:
+                in_header = openapi_schema.get("in") == "header"
         for key, value in list(openapi_schema.items()):
-            if key == "anyOf" and isinstance(value, list):
-                non_null_types = [item for item in value if item.get("type") != "null"]
-                if len(non_null_types) == 0:
-                    del openapi_schema[key]
-                elif len(non_null_types) == 1:
-                    openapi_schema.update(non_null_types[0])
-                    del openapi_schema[key]
+            if key != "anyOf" or not isinstance(value, list):
+                _update_nullable_anyof(value, in_header=in_header)
+                continue
 
-                    # FIXME: Update tests to expect nullable
-                    # openapi_schema["nullable"] = True
-
+            non_null_items = [item for item in value if item.get("type") != "null"]
+            if len(non_null_items) == 0:
+                del openapi_schema[key]
+            elif len(non_null_items) == 1:
+                openapi_schema.update(non_null_items[0])
+                del openapi_schema[key]
             else:
-                _remove_empty_or_nullable_anyof(value)
-    elif isinstance(openapi_schema, list):  # pyright: ignore
+                openapi_schema[key] = non_null_items
+
+            if len(non_null_items) < len(value) and not in_header:
+                openapi_schema["nullable"] = True
+
+    elif isinstance(openapi_schema, list):
         for item in openapi_schema:
-            _remove_empty_or_nullable_anyof(item)
+            _update_nullable_anyof(item, in_header=in_header)
 
 
 def _flatten_selected_allof_refs(

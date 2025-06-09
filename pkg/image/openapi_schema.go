@@ -2,19 +2,18 @@ package image
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
-	"fmt"
-
-	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
 // GenerateOpenAPISchema by running the image and executing Cog
 // This will be run as part of the build process then added as a label to the image. It can be retrieved more efficiently with the label by using GetOpenAPISchema
-func GenerateOpenAPISchema(imageName string, enableGPU bool) (map[string]any, error) {
+func GenerateOpenAPISchema(ctx context.Context, dockerClient command.Command, imageName string, enableGPU bool) (map[string]any, error) {
+	console.Debugf("=== image.GenerateOpenAPISchema %s", imageName)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
@@ -24,7 +23,7 @@ func GenerateOpenAPISchema(imageName string, enableGPU bool) (map[string]any, er
 		gpus = "all"
 	}
 
-	err := docker.RunWithIO(docker.RunOptions{
+	err := docker.RunWithIO(ctx, dockerClient, command.RunOptions{
 		Image: imageName,
 		Args: []string{
 			"python", "-m", "cog.command.openapi_schema",
@@ -36,7 +35,7 @@ func GenerateOpenAPISchema(imageName string, enableGPU bool) (map[string]any, er
 		console.Debug(stdout.String())
 		console.Debug(stderr.String())
 		console.Debug("Missing device driver, re-trying without GPU")
-		return GenerateOpenAPISchema(imageName, false)
+		return GenerateOpenAPISchema(ctx, dockerClient, imageName, false)
 	}
 
 	if err != nil {
@@ -55,18 +54,19 @@ func GenerateOpenAPISchema(imageName string, enableGPU bool) (map[string]any, er
 	return schema, nil
 }
 
-func GetOpenAPISchema(imageName string) (*openapi3.T, error) {
-	image, err := docker.ImageInspect(imageName)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to inspect %s: %w", imageName, err)
-	}
-	schemaString := image.Config.Labels[global.LabelNamespace+"openapi_schema"]
-	if schemaString == "" {
-		// Deprecated. Remove for 1.0.
-		schemaString = image.Config.Labels["org.cogmodel.openapi_schema"]
-	}
-	if schemaString == "" {
-		return nil, fmt.Errorf("Image %s does not appear to be a Cog model", imageName)
-	}
-	return openapi3.NewLoader().LoadFromData([]byte(schemaString))
-}
+// // TODO[md]: this is unused, remove it
+// func GetOpenAPISchema(ctx context.Context, dockerClient command.Command, imageName string) (*openapi3.T, error) {
+// 	manifest, err := dockerClient.Inspect(ctx, imageName)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("Failed to inspect %s: %w", imageName, err)
+// 	}
+// 	schemaString := manifest.Config.Labels[command.CogOpenAPISchemaLabelKey]
+// 	if schemaString == "" {
+// 		// Deprecated. Remove for 1.0.
+// 		schemaString = manifest.Config.Labels["org.cogmodel.openapi_schema"]
+// 	}
+// 	if schemaString == "" {
+// 		return nil, fmt.Errorf("Image %s does not appear to be a Cog model", imageName)
+// 	}
+// 	return openapi3.NewLoader().LoadFromData([]byte(schemaString))
+// }

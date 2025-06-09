@@ -37,10 +37,13 @@ jobs:
       - name: Setup Cog
         uses: replicate/setup-cog@v2
         with:
-          # If you set REPLICATE_API_TOKEN in your GitHub repository secrets,
+          # If you add a CI auth token to your GitHub repository secrets, 
           # the action will authenticate with Replicate automatically so you
-          # can push your model
-          token: ${{ secrets.REPLICATE_API_TOKEN }}
+          # can push your model without needing to pass in a token.
+          # 
+          # To genereate a CLI auth token, run `cog login` or visit this page
+          # in your browser: https://replicate.com/account/api-token
+          token: ${{ secrets.REPLICATE_CLI_AUTH_TOKEN }}
 
       # If you trigger the workflow manually, you can specify the model name.
       # If you leave it blank (or if the workflow is triggered by a push), the 

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,17 +21,20 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/predict"
+	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/mime"
 )
 
 var (
-	envFlags     []string
-	inputFlags   []string
-	outPath      string
-	setupTimeout uint32
+	envFlags             []string
+	inputFlags           []string
+	outPath              string
+	setupTimeout         uint32
+	useReplicateAPIToken bool
 )
 
 func newPredictCommand() *cobra.Command {
@@ -56,39 +60,80 @@ the prediction on that.`,
 	addGpusFlag(cmd)
 	addSetupTimeoutFlag(cmd)
 	addFastFlag(cmd)
+	addLocalImage(cmd)
+	addConfigFlag(cmd)
 
 	cmd.Flags().StringArrayVarP(&inputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
 	cmd.Flags().StringArrayVarP(&envFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
+	cmd.Flags().BoolVar(&useReplicateAPIToken, "use-replicate-token", false, "Pass REPLICATE_API_TOKEN from local environment into the model context")
 
 	return cmd
 }
 
 func cmdPredict(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
+	dockerClient, err := docker.NewClient(ctx)
+	if err != nil {
+		return err
+	}
+
 	imageName := ""
-	volumes := []docker.Volume{}
+	volumes := []command.Volume{}
 	gpus := gpusFlag
 
 	if len(args) == 0 {
 		// Build image
 
-		cfg, projectDir, err := config.GetConfig(projectDirFlag)
+		cfg, projectDir, err := config.GetConfig(configFilename)
 		if err != nil {
 			return err
 		}
 
-		if imageName, err = image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput); err != nil {
-			return err
+		if cfg.Build.Fast {
+			buildFast = cfg.Build.Fast
 		}
 
-		// Base image doesn't have /src in it, so mount as volume
-		volumes = append(volumes, docker.Volume{
-			Source:      projectDir,
-			Destination: "/src",
-		})
+		client := registry.NewRegistryClient()
+		if buildFast {
+			imageName = config.DockerImageName(projectDir)
+			if err := image.Build(
+				ctx,
+				cfg,
+				projectDir,
+				imageName,
+				buildSecrets,
+				buildNoCache,
+				buildSeparateWeights,
+				buildUseCudaBaseImage,
+				buildProgressOutput,
+				buildSchemaFile,
+				buildDockerfileFile,
+				DetermineUseCogBaseImage(cmd),
+				buildStrip,
+				buildPrecompile,
+				buildFast,
+				nil,
+				buildLocalImage,
+				dockerClient,
+				client); err != nil {
+				return err
+			}
+		} else {
+			if imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client); err != nil {
+				return err
+			}
 
-		if gpus == "" && cfg.Build.GPU {
-			gpus = "all"
+			// Base image doesn't have /src in it, so mount as volume
+			volumes = append(volumes, command.Volume{
+				Source:      projectDir,
+				Destination: "/src",
+			})
+
+			if gpus == "" && cfg.Build.GPU {
+				gpus = "all"
+			}
 		}
 
 	} else {
@@ -100,34 +145,35 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("Invalid image name '%s'. Did you forget `-i`?", imageName)
 		}
 
-		exists, err := docker.ImageExists(imageName)
+		inspectResp, err := dockerClient.Pull(ctx, imageName, false)
 		if err != nil {
-			return fmt.Errorf("Failed to determine if %s exists: %w", imageName, err)
+			return fmt.Errorf("Failed to pull image %q: %w", imageName, err)
 		}
-		if !exists {
-			console.Infof("Pulling image: %s", imageName)
-			if err := docker.Pull(imageName); err != nil {
-				return fmt.Errorf("Failed to pull %s: %w", imageName, err)
-			}
-		}
-		conf, err := image.GetConfig(imageName)
+
+		conf, err := image.CogConfigFromManifest(ctx, inspectResp)
 		if err != nil {
 			return err
 		}
 		if gpus == "" && conf.Build.GPU {
 			gpus = "all"
 		}
+		if conf.Build.Fast {
+			buildFast = conf.Build.Fast
+		}
 	}
 
 	console.Info("")
 	console.Infof("Starting Docker image %s and running setup()...", imageName)
 
-	predictor := predict.NewPredictor(docker.RunOptions{
+	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: volumes,
 		Env:     envFlags,
-	}, false, buildFast)
+	}, false, buildFast, dockerClient)
+	if err != nil {
+		return err
+	}
 
 	go func() {
 		captureSignal := make(chan os.Signal, 1)
@@ -136,26 +182,29 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		<-captureSignal
 
 		console.Info("Stopping container...")
-		if err := predictor.Stop(); err != nil {
+		if err := predictor.Stop(ctx); err != nil {
 			console.Warnf("Failed to stop container: %s", err)
 		}
 	}()
 
 	timeout := time.Duration(setupTimeout) * time.Second
-	if err := predictor.Start(os.Stderr, timeout); err != nil {
+	if err := predictor.Start(ctx, os.Stderr, timeout); err != nil {
 		// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
 		// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
 		if gpus == "all" && errors.Is(err, docker.ErrMissingDeviceDriver) {
 			console.Info("Missing device driver, re-trying without GPU")
 
-			_ = predictor.Stop()
-			predictor = predict.NewPredictor(docker.RunOptions{
+			_ = predictor.Stop(ctx)
+			predictor, err = predict.NewPredictor(ctx, command.RunOptions{
 				Image:   imageName,
 				Volumes: volumes,
 				Env:     envFlags,
-			}, false, buildFast)
+			}, false, buildFast, dockerClient)
+			if err != nil {
+				return err
+			}
 
-			if err := predictor.Start(os.Stderr, timeout); err != nil {
+			if err := predictor.Start(ctx, os.Stderr, timeout); err != nil {
 				return err
 			}
 		} else {
@@ -166,12 +215,13 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	// FIXME: will not run on signal
 	defer func() {
 		console.Debugf("Stopping container...")
-		if err := predictor.Stop(); err != nil {
+		// use background context to ensure stop signal is still sent after root context is canceled
+		if err := predictor.Stop(context.Background()); err != nil {
 			console.Warnf("Failed to stop container: %s", err)
 		}
 	}()
 
-	return predictIndividualInputs(predictor, inputFlags, outPath, false)
+	return predictIndividualInputs(*predictor, inputFlags, outPath, false)
 }
 
 func isURI(ref *openapi3.Schema) bool {
@@ -179,13 +229,18 @@ func isURI(ref *openapi3.Schema) bool {
 }
 
 func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, outputPath string, isTrain bool) error {
-	console.Info("Running prediction...")
+	if isTrain {
+		console.Info("Running training...")
+	} else {
+		console.Info("Running prediction...")
+	}
+
 	schema, err := predictor.GetSchema()
 	if err != nil {
 		return err
 	}
 
-	inputs, err := parseInputFlags(inputFlags)
+	inputs, err := parseInputFlags(inputFlags, schema)
 	if err != nil {
 		return err
 	}
@@ -208,7 +263,16 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 	responseSchema := schema.Paths.Value(url).Post.Responses.Value("200").Value.Content["application/json"].Schema.Value
 	outputSchema := responseSchema.Properties["output"].Value
 
-	prediction, err := predictor.Predict(inputs)
+	context := predict.RequestContext{}
+
+	if useReplicateAPIToken {
+		context.ReplicateAPIToken = os.Getenv("REPLICATE_API_TOKEN")
+		if context.ReplicateAPIToken == "" {
+			return fmt.Errorf("Failed to find REPLICATE_API_TOKEN in the current environment when called with --use-replicate-token")
+		}
+	}
+
+	prediction, err := predictor.Predict(inputs, context)
 	if err != nil {
 		return fmt.Errorf("Failed to predict: %w", err)
 	}
@@ -361,7 +425,7 @@ func writeDataURLOutput(outputString string, outputPath string, addExtension boo
 	return nil
 }
 
-func parseInputFlags(inputs []string) (predict.Inputs, error) {
+func parseInputFlags(inputs []string, schema *openapi3.T) (predict.Inputs, error) {
 	keyVals := map[string][]string{}
 	for _, input := range inputs {
 		var name, value string
@@ -383,7 +447,7 @@ func parseInputFlags(inputs []string) (predict.Inputs, error) {
 		keyVals[name] = append(keyVals[name], value)
 	}
 
-	return predict.NewInputs(keyVals), nil
+	return predict.NewInputs(keyVals, schema)
 }
 
 func addSetupTimeoutFlag(cmd *cobra.Command) {

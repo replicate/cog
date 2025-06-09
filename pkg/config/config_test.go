@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path"
+	"path/filepath"
 	"testing"
 
 	"github.com/hashicorp/go-version"
@@ -251,13 +252,8 @@ flask>0.4
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
 	expected := `foo==1.0.0
-# complex requirements
 fastapi>=0.6,<1
 flask>0.4
-# comments!
-# blank lines!
-
-# arguments
 -f http://example.com`
 	require.Equal(t, expected, requirements)
 
@@ -670,41 +666,6 @@ func TestBlankBuild(t *testing.T) {
 	require.Equal(t, false, config.Build.GPU)
 }
 
-func TestSplitPinnedPythonRequirement(t *testing.T) {
-	testCases := []struct {
-		input                  string
-		expectedName           string
-		expectedVersion        string
-		expectedFindLinks      []string
-		expectedExtraIndexURLs []string
-		expectedError          bool
-	}{
-		{"package1==1.0.0", "package1", "1.0.0", nil, nil, false},
-		{"package1==1.0.0+alpha", "package1", "1.0.0+alpha", nil, nil, false},
-		{"--find-links=link1 --find-links=link2 package3==3.0.0", "package3", "3.0.0", []string{"link1", "link2"}, nil, false},
-		{"package4==4.0.0 --extra-index-url=url1 --extra-index-url=url2", "package4", "4.0.0", nil, []string{"url1", "url2"}, false},
-		{"-f link1 --find-links=link2 package5==5.0.0 --extra-index-url=url1 --extra-index-url=url2", "package5", "5.0.0", []string{"link1", "link2"}, []string{"url1", "url2"}, false},
-		{"package6 --find-links=link1 --find-links=link2 --extra-index-url=url1 --extra-index-url=url2", "", "", nil, nil, true},
-		{"invalid package", "", "", nil, nil, true},
-		{"package8==", "", "", nil, nil, true},
-		{"==8.0.0", "", "", nil, nil, true},
-	}
-
-	for _, tc := range testCases {
-		name, version, findLinks, extraIndexURLs, err := splitPinnedPythonRequirement(tc.input)
-
-		if tc.expectedError {
-			require.Error(t, err)
-		} else {
-			require.NoError(t, err)
-			require.Equal(t, tc.expectedName, name, "input: "+tc.input)
-			require.Equal(t, tc.expectedVersion, version, "input: "+tc.input)
-			require.Equal(t, tc.expectedFindLinks, findLinks, "input: "+tc.input)
-			require.Equal(t, tc.expectedExtraIndexURLs, extraIndexURLs, "input: "+tc.input)
-		}
-	}
-}
-
 func TestPythonRequirementsForArchWithAddedPackage(t *testing.T) {
 	config := &Config{
 		Build: &Build{
@@ -727,4 +688,65 @@ func TestPythonRequirementsForArchWithAddedPackage(t *testing.T) {
 torch==2.4.0
 torchvision==2.4.0`
 	require.Equal(t, expected, requirements)
+}
+
+func TestParseTests(t *testing.T) {
+	yamlString := `
+build:
+  run:
+  - command: "echo 'Hello, World!'"
+`
+	_, err := FromYAML([]byte(yamlString))
+	require.NoError(t, err)
+}
+
+func TestFastPushConfig(t *testing.T) {
+	yamlString := `
+build:
+  python_version: "3.12"
+  fast: true
+`
+	_, err := FromYAML([]byte(yamlString))
+	require.NoError(t, err)
+}
+
+func TestPythonOverridesConfig(t *testing.T) {
+	yamlString := `
+build:
+  python_version: "3.12"
+  fast: true
+  python_overrides: "overrides.txt"
+`
+	_, err := FromYAML([]byte(yamlString))
+	require.NoError(t, err)
+}
+
+func TestConfigMarshal(t *testing.T) {
+	cfg := DefaultConfig()
+	data, err := yaml.Marshal(cfg)
+	require.NoError(t, err)
+	require.Equal(t, `build:
+  python_version: "3.12"
+  fast: false
+predict: ""
+`, string(data))
+}
+
+func TestAbsolutePathInPythonRequirements(t *testing.T) {
+	dir := t.TempDir()
+	requirementsFilePath := filepath.Join(dir, "requirements.txt")
+	err := os.WriteFile(requirementsFilePath, []byte("torch==2.5.0"), 0o644)
+	require.NoError(t, err)
+	config := &Config{
+		Build: &Build{
+			GPU:                true,
+			PythonVersion:      "3.8",
+			PythonRequirements: requirementsFilePath,
+		},
+	}
+	err = config.ValidateAndComplete(dir)
+	require.NoError(t, err)
+	torchVersion, ok := config.TorchVersion()
+	require.Equal(t, torchVersion, "2.5.0")
+	require.True(t, ok)
 }
