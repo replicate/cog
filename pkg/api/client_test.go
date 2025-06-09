@@ -251,3 +251,84 @@ func TestPullDraftSource(t *testing.T) {
 	})
 	require.NoError(t, err)
 }
+
+func TestPullSourceWithTag(t *testing.T) {
+	// Create file to pull
+	dir := t.TempDir()
+	predictPyPath := filepath.Join(dir, "predict.py")
+	handle, err := os.Create(predictPyPath)
+	require.NoError(t, err)
+	handle.WriteString("import cog")
+	err = handle.Close()
+	require.NoError(t, err)
+	info, err := os.Stat(predictPyPath)
+	require.NoError(t, err)
+
+	// Setup mock web server for cog.replicate.com (token exchange)
+	webServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/token/user":
+			// Mock token exchange response
+			//nolint:gosec
+			tokenResponse := `{
+				"keys": {
+					"cog": {
+						"key": "test-api-token",
+						"expires_at": "2024-12-31T23:59:59Z"
+					}
+				}
+			}`
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(tokenResponse))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer webServer.Close()
+
+	// Setup mock API server for api.replicate.com (model and source endpoints)
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models/user/test/versions/12435/source":
+			// Mock source pull endpoint
+			var buf bytes.Buffer
+			tw := tar.NewWriter(&buf)
+			header, err := tar.FileInfoHeader(info, info.Name())
+			require.NoError(t, err)
+			header.Name = "predict.py"
+			err = tw.WriteHeader(header)
+			require.NoError(t, err)
+			file, err := os.Open(predictPyPath)
+			require.NoError(t, err)
+			defer file.Close()
+			_, err = io.Copy(tw, file)
+			require.NoError(t, err)
+			err = tw.Close()
+			require.NoError(t, err)
+			w.WriteHeader(http.StatusOK)
+			w.Write(buf.Bytes())
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer apiServer.Close()
+
+	webURL, err := url.Parse(webServer.URL)
+	require.NoError(t, err)
+	apiURL, err := url.Parse(apiServer.URL)
+	require.NoError(t, err)
+
+	t.Setenv(env.SchemeEnvVarName, webURL.Scheme)
+	t.Setenv(env.WebHostEnvVarName, webURL.Host)
+	t.Setenv(env.APIHostEnvVarName, apiURL.Host)
+
+	// Setup mock command
+	command := dockertest.NewMockCommand()
+	webClient := web.NewClient(command, http.DefaultClient)
+
+	client := NewClient(command, http.DefaultClient, webClient)
+	err = client.PullSource(t.Context(), "r8.im/user/test:12435", func(header *tar.Header, tr *tar.Reader) error {
+		return nil
+	})
+	require.NoError(t, err)
+}
