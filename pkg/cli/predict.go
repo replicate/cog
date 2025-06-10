@@ -3,9 +3,11 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -35,6 +37,7 @@ var (
 	outPath              string
 	setupTimeout         uint32
 	useReplicateAPIToken bool
+	inputJSON            string
 )
 
 func newPredictCommand() *cobra.Command {
@@ -67,8 +70,77 @@ the prediction on that.`,
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
 	cmd.Flags().StringArrayVarP(&envFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
 	cmd.Flags().BoolVar(&useReplicateAPIToken, "use-replicate-token", false, "Pass REPLICATE_API_TOKEN from local environment into the model context")
+	cmd.Flags().StringVar(&inputJSON, "json", "", "Pass inputs as JSON object, read from file (@inputs.json) or via stdin (@-)")
 
 	return cmd
+}
+
+func parseJSONInput(jsonInput string) (map[string]any, error) {
+	var jsonStr string
+
+	if strings.HasPrefix(jsonInput, "@") {
+		// Read from file or stdin
+		source := jsonInput[1:]
+
+		if source == "-" {
+			// Read from stdin
+			data, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to read JSON from stdin: %w", err)
+			}
+			jsonStr = string(data)
+		} else {
+			// Read from file
+			data, err := os.ReadFile(source)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to read JSON from file %q: %w", source, err)
+			}
+			jsonStr = string(data)
+		}
+	} else {
+		// Direct JSON string
+		jsonStr = jsonInput
+	}
+
+	var inputs map[string]any
+	if err := json.Unmarshal([]byte(jsonStr), &inputs); err != nil {
+		return nil, fmt.Errorf("Failed to parse JSON: %w", err)
+	}
+
+	return inputs, nil
+}
+
+func transformPathsToBase64URLs(inputs map[string]any) (map[string]any, error) {
+	result := make(map[string]any)
+
+	for key, value := range inputs {
+		if strValue, ok := value.(string); ok && strings.HasPrefix(strValue, "@") {
+			// This is a file path, convert to base64 data URL
+			filePath := strValue[1:]
+
+			// Read file
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to read file %q: %w", filePath, err)
+			}
+
+			// Get MIME type
+			mimeType := mime.TypeByExtension(filepath.Ext(filePath))
+			if mimeType == "" {
+				mimeType = "application/octet-stream"
+			}
+
+			// Create base64 data URL
+			base64Data := base64.StdEncoding.EncodeToString(data)
+			dataURL := fmt.Sprintf("data:%s;base64,%s", mimeType, base64Data)
+
+			result[key] = dataURL
+		} else {
+			result[key] = value
+		}
+	}
+
+	return result, nil
 }
 
 func cmdPredict(cmd *cobra.Command, args []string) error {
@@ -221,6 +293,13 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
+	if inputJSON != "" {
+		if len(inputFlags) > 0 {
+			return fmt.Errorf("Must use one of --json or --input to provide model inputs")
+		}
+
+		return predictJSONInputs(*predictor, inputJSON, outPath, false)
+	}
 	return predictIndividualInputs(*predictor, inputFlags, outPath, false)
 }
 
@@ -301,7 +380,7 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 
 		return nil
 	case outputSchema.Type.Is("array") && isURI(outputSchema.Items.Value):
-		outputs, ok := (*prediction.Output).([]interface{})
+		outputs, ok := (*prediction.Output).([]any)
 		if !ok {
 			return fmt.Errorf("Failed to decode output")
 		}
@@ -359,6 +438,87 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 
 		return nil
 	}
+}
+
+func predictJSONInputs(predictor predict.Predictor, jsonInput string, outputPath string, isTrain bool) error {
+	if isTrain {
+		console.Info("Running training...")
+	} else {
+		console.Info("Running prediction...")
+	}
+
+	jsonInputs, err := parseJSONInput(jsonInput)
+	if err != nil {
+		return err
+	}
+
+	transformedInputs, err := transformPathsToBase64URLs(jsonInputs)
+	if err != nil {
+		return err
+	}
+
+	// Convert to predict.Inputs format
+	inputs := make(predict.Inputs)
+	for key, value := range transformedInputs {
+		if strValue, ok := value.(string); ok {
+			inputs[key] = predict.Input{String: &strValue}
+		} else {
+			// For non-string values, marshal to JSON
+			jsonBytes, err := json.Marshal(value)
+			if err != nil {
+				return fmt.Errorf("Failed to marshal input %q to JSON: %w", key, err)
+			}
+			jsonRaw := json.RawMessage(jsonBytes)
+			inputs[key] = predict.Input{Json: &jsonRaw}
+		}
+	}
+
+	// If outputPath != "", then we now know the output path for sure
+	if outputPath != "" {
+		// Ignore @, to make it behave the same as -i
+		outputPath = strings.TrimPrefix(outputPath, "@")
+
+		if err := checkOutputWritable(outputPath); err != nil {
+			return fmt.Errorf("Output path is not writable: %w", err)
+		}
+	}
+
+	context := predict.RequestContext{}
+
+	if useReplicateAPIToken {
+		context.ReplicateAPIToken = os.Getenv("REPLICATE_API_TOKEN")
+		if context.ReplicateAPIToken == "" {
+			return fmt.Errorf("Failed to find REPLICATE_API_TOKEN in the current environment when called with --use-replicate-token")
+		}
+	}
+
+	prediction, err := predictor.Predict(inputs, context)
+	if err != nil {
+		return fmt.Errorf("Failed to predict: %w", err)
+	}
+
+	if prediction.Output == nil {
+		console.Warn("No output generated")
+		return nil
+	}
+
+	// For JSON mode, output the full prediction response as JSON
+	rawJSON, err := json.Marshal(prediction)
+	if err != nil {
+		return fmt.Errorf("Failed to encode prediction response as JSON: %w", err)
+	}
+
+	if outputPath == "" {
+		// Write raw JSON to stdout as specified in the requirements
+		console.Output(string(rawJSON))
+	} else {
+		err := writeOutput(outputPath, rawJSON)
+		if err != nil {
+			return fmt.Errorf("Failed to write output: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func checkOutputWritable(outputPath string) error {
