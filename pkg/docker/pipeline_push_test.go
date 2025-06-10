@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/replicate/cog/pkg/api"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/env"
@@ -80,9 +81,10 @@ func TestPipelinePush(t *testing.T) {
 	client, err := cogHttp.ProvideHTTPClient(t.Context(), command)
 	require.NoError(t, err)
 	webClient := web.NewClient(command, client)
+	apiClient := api.NewClient(command, client, webClient)
 
 	cfg := config.DefaultConfig()
-	err = PipelinePush(t.Context(), "r8.im/user/test", dir, webClient, client, cfg)
+	err = PipelinePush(t.Context(), "r8.im/user/test", dir, apiClient, client, cfg)
 	require.NoError(t, err)
 }
 
@@ -150,6 +152,7 @@ func TestPipelinePushFailWithExtraRequirements(t *testing.T) {
 	client, err := cogHttp.ProvideHTTPClient(t.Context(), command)
 	require.NoError(t, err)
 	webClient := web.NewClient(command, client)
+	apiClient := api.NewClient(command, client, webClient)
 
 	cfg := config.DefaultConfig()
 	requirementsPath := filepath.Join(dir, "requirements.txt")
@@ -158,6 +161,6 @@ func TestPipelinePushFailWithExtraRequirements(t *testing.T) {
 	handle.WriteString("mycustompackage==1.0.0")
 	handle.Close()
 	cfg.Build.PythonRequirements = filepath.Base(requirementsPath)
-	err = PipelinePush(t.Context(), "r8.im/user/test", dir, webClient, client, cfg)
+	err = PipelinePush(t.Context(), "r8.im/user/test", dir, apiClient, client, cfg)
 	require.Error(t, err)
 }

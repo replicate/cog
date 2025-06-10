@@ -11,13 +11,10 @@ build:
   #   - "libglib2.0-0"
 
   # python version in the form '3.11' or '3.11.4'
-  python_version: "3.11"
+  python_version: "3.13"
 
   # path to a Python requirements.txt file
   python_requirements: requirements.txt
-
-  # enable fast boots
-  fast: true
 
   # commands run after the environment is setup
   # run:

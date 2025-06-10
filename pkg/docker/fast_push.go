@@ -86,6 +86,10 @@ func FastPush(ctx context.Context, image string, projectDir string, command comm
 	// Temp directory for tarballs extracted from the image
 	// Separate from other temp directories so that they don't cause cache invalidation
 	tmpTarballsDir := filepath.Join(projectDir, TarballsDir)
+	err = os.MkdirAll(tmpTarballsDir, 0o755)
+	if err != nil {
+		return err
+	}
 	// Upload python packages.
 	if requirementsFile != "" {
 		pythonTar, err := createPythonPackagesTarFile(ctx, image, tmpTarballsDir, command)
