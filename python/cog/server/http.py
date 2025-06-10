@@ -12,7 +12,7 @@ import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional, Type
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Dict, Optional, Type
 
 import structlog
 import uvicorn
@@ -124,7 +124,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     started_at = datetime.now(tz=timezone.utc)
 
     @asynccontextmanager
-    async def lifespan(app: MyFastAPI):
+    async def lifespan(app: MyFastAPI) -> AsyncGenerator[None, None]:
         # Startup code (was previously in @app.on_event("startup"))
         # check for early setup failures
         if (
