@@ -143,6 +143,82 @@ func transformPathsToBase64URLs(inputs map[string]any) (map[string]any, error) {
 	return result, nil
 }
 
+func processOutputDataURLs(output interface{}, baseOutputPath string) (interface{}, error) {
+	return processDataURLsRecursive(output, baseOutputPath, 0)
+}
+
+func processDataURLsRecursive(data interface{}, baseOutputPath string, fileCounter int) (interface{}, error) {
+	switch v := data.(type) {
+	case string:
+		// Check if this is a data URL
+		if strings.HasPrefix(v, "data:") {
+			// Parse the data URL
+			dataurlObj, err := dataurl.DecodeString(v)
+			if err != nil {
+				// If it fails to parse as data URL, just return the original string
+				return v, nil
+			}
+			
+			// Generate filename with counter
+			filename := fmt.Sprintf("%s_%d", baseOutputPath, fileCounter)
+			
+			// Get file extension from MIME type
+			extension := mime.ExtensionByType(dataurlObj.ContentType())
+			if extension != "" {
+				filename += extension
+			}
+			
+			// Write file to disk
+			err = os.WriteFile(filename, dataurlObj.Data, 0644)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to write output file %q: %w", filename, err)
+			}
+			
+			console.Infof("Written output to %s", filename)
+			return filename, nil
+		}
+		return v, nil
+		
+	case []interface{}:
+		// Process array
+		result := make([]interface{}, len(v))
+		currentCounter := fileCounter
+		for i, item := range v {
+			processed, err := processDataURLsRecursive(item, baseOutputPath, currentCounter)
+			if err != nil {
+				return nil, err
+			}
+			result[i] = processed
+			// Increment counter if we wrote a file
+			if processed != item {
+				currentCounter++
+			}
+		}
+		return result, nil
+		
+	case map[string]interface{}:
+		// Process object
+		result := make(map[string]interface{})
+		currentCounter := fileCounter
+		for key, value := range v {
+			processed, err := processDataURLsRecursive(value, baseOutputPath, currentCounter)
+			if err != nil {
+				return nil, err
+			}
+			result[key] = processed
+			// Increment counter if we wrote a file
+			if processed != value {
+				currentCounter++
+			}
+		}
+		return result, nil
+		
+	default:
+		// For all other types (numbers, booleans, null), return as-is
+		return v, nil
+	}
+}
+
 func cmdPredict(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
@@ -501,6 +577,21 @@ func predictJSONInputs(predictor predict.Predictor, jsonInput string, outputPath
 		console.Warn("No output generated")
 		return nil
 	}
+
+	// Process any data URLs in the output, writing them to disk and replacing with file paths
+	baseOutputPath := "output"
+	if outputPath != "" {
+		// Use the output path as base, but remove extension if any
+		baseOutputPath = strings.TrimSuffix(outputPath, filepath.Ext(outputPath))
+	}
+	
+	processedOutput, err := processOutputDataURLs(*prediction.Output, baseOutputPath)
+	if err != nil {
+		return fmt.Errorf("Failed to process output data URLs: %w", err)
+	}
+	
+	// Update the prediction with processed output
+	prediction.Output = &processedOutput
 
 	// For JSON mode, output the full prediction response as JSON
 	rawJSON, err := json.Marshal(prediction)
