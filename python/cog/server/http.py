@@ -9,9 +9,19 @@ import sys
 import textwrap
 import threading
 import traceback
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional, Type
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncGenerator,
+    Awaitable,
+    Callable,
+    Dict,
+    Optional,
+    Type,
+)
 
 import structlog
 import uvicorn
@@ -120,9 +130,32 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     is_build: bool = False,
     await_explicit_shutdown: bool = False,  # pylint: disable=redefined-outer-name
 ) -> MyFastAPI:
+    started_at = datetime.now(tz=timezone.utc)
+
+    @asynccontextmanager
+    async def lifespan(app: MyFastAPI) -> AsyncGenerator[None, None]:
+        # Startup code (was previously in @app.on_event("startup"))
+        # check for early setup failures
+        if (
+            app.state.setup_result
+            and app.state.setup_result.status == schema.Status.FAILED
+        ):
+            # signal shutdown if interactive run
+            if shutdown_event and not await_explicit_shutdown:
+                shutdown_event.set()
+        else:
+            setup_task = runner.setup()
+            setup_task.add_done_callback(_handle_setup_done)
+
+        yield
+
+        # Shutdown code (was previously in @app.on_event("shutdown"))
+        worker.terminate()
+
     app = MyFastAPI(  # pylint: disable=redefined-outer-name
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
+        lifespan=lifespan,
     )
 
     def custom_openapi() -> Dict[str, Any]:
@@ -149,7 +182,6 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
 
     app.state.health = Health.STARTING
     app.state.setup_result = None
-    started_at = datetime.now(tz=timezone.utc)
 
     # shutdown is needed no matter what happens
     @app.post("/shutdown")
@@ -317,24 +349,6 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                 msg = "Error while loading trainer:\n\n" + traceback.format_exc()
                 add_setup_failed_routes(app, started_at, msg)
                 return app
-
-    @app.on_event("startup")
-    def startup() -> None:
-        # check for early setup failures
-        if (
-            app.state.setup_result
-            and app.state.setup_result.status == schema.Status.FAILED
-        ):
-            # signal shutdown if interactive run
-            if shutdown_event and not await_explicit_shutdown:
-                shutdown_event.set()
-        else:
-            setup_task = runner.setup()
-            setup_task.add_done_callback(_handle_setup_done)
-
-    @app.on_event("shutdown")
-    def shutdown() -> None:
-        worker.terminate()
 
     @app.get("/")
     async def root() -> Any:
