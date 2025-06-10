@@ -121,17 +121,11 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     is_build: bool = False,
     await_explicit_shutdown: bool = False,  # pylint: disable=redefined-outer-name
 ) -> MyFastAPI:
-    
-    # Store references for lifespan event handler
-    worker_ref = None
-    runner_ref = None
-    
+    started_at = datetime.now(tz=timezone.utc)
+
     @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        """Lifespan event handler for startup and shutdown events"""
-        nonlocal worker_ref, runner_ref
-        
-        # Startup logic (previously in @app.on_event("startup"))
+    async def lifespan(app: MyFastAPI):
+        # Startup code (was previously in @app.on_event("startup"))
         # check for early setup failures
         if (
             app.state.setup_result
@@ -141,20 +135,18 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             if shutdown_event and not await_explicit_shutdown:
                 shutdown_event.set()
         else:
-            if runner_ref:
-                setup_task = runner_ref.setup()
-                setup_task.add_done_callback(_handle_setup_done)
-        
-        yield  # Application runs here
-        
-        # Shutdown logic (previously in @app.on_event("shutdown"))
-        if worker_ref:
-            worker_ref.terminate()
+            setup_task = runner.setup()
+            setup_task.add_done_callback(_handle_setup_done)
+
+        yield
+
+        # Shutdown code (was previously in @app.on_event("shutdown"))
+        worker.terminate()
 
     app = MyFastAPI(  # pylint: disable=redefined-outer-name
         title="Cog",  # TODO: mention model name?
-        lifespan=lifespan,
         # version=None # TODO
+        lifespan=lifespan
     )
 
     def custom_openapi() -> Dict[str, Any]:
@@ -181,7 +173,6 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
 
     app.state.health = Health.STARTING
     app.state.setup_result = None
-    started_at = datetime.now(tz=timezone.utc)
 
     # shutdown is needed no matter what happens
     @app.post("/shutdown")
@@ -207,10 +198,6 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         max_concurrency=cog_config.max_concurrency,
     )
     runner = PredictionRunner(worker=worker, max_concurrency=cog_config.max_concurrency)
-    
-    # Store references for lifespan handler
-    worker_ref = worker
-    runner_ref = runner
 
     class PredictionRequest(schema.PredictionRequest.with_types(input_type=InputType)):
         pass
