@@ -308,6 +308,36 @@ func isURI(ref *openapi3.Schema) bool {
 	return ref != nil && ref.Type.Is("string") && ref.Format == "uri"
 }
 
+func predictJSONInputs(predictor predict.Predictor, jsonInput string, outputPath string, isTrain bool) error {
+	jsonInputs, err := parseJSONInput(jsonInput)
+	if err != nil {
+		return err
+	}
+
+	transformedInputs, err := transformPathsToBase64URLs(jsonInputs)
+	if err != nil {
+		return err
+	}
+
+	// Convert to predict.Inputs format
+	inputs := make(predict.Inputs)
+	for key, value := range transformedInputs {
+		if strValue, ok := value.(string); ok {
+			inputs[key] = predict.Input{String: &strValue}
+		} else {
+			// For non-string values, marshal to JSON
+			jsonBytes, err := json.Marshal(value)
+			if err != nil {
+				return fmt.Errorf("Failed to marshal input %q to JSON: %w", key, err)
+			}
+			jsonRaw := json.RawMessage(jsonBytes)
+			inputs[key] = predict.Input{Json: &jsonRaw}
+		}
+	}
+
+	return runPrediction(predictor, inputs, outputPath, isTrain, true)
+}
+
 func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, outputPath string, isTrain bool) error {
 	schema, err := predictor.GetSchema()
 	if err != nil {
@@ -364,17 +394,49 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 		return fmt.Errorf("Failed to predict: %w", err)
 	}
 
-	// FIXME: Return JSON if needsJSON is true.
-	if prediction.Output == nil {
-		console.Warn("No output generated")
-		return nil
-	}
-
 	schema, err := predictor.GetSchema()
 	if err != nil {
 		return err
 	}
 	outputSchema := schema.Paths.Value(url).Post.Responses.Value("200").Value.Content["application/json"].Schema.Value.Properties["output"].Value
+
+	fileOutputPath := outputPath
+	if needsJSON {
+		// Strip the suffix when in JSON mode.
+		fileOutputPath = trimExt(fileOutputPath)
+	}
+	transformed, err := processFileOutputs(*prediction.Output, outputSchema, fileOutputPath)
+	if err != nil {
+		return err
+	}
+	prediction.Output = &transformed
+
+	if needsJSON {
+		rawJSON, err := json.Marshal(prediction)
+		if err != nil {
+			return fmt.Errorf("Failed to encode prediction output as JSON: %w", err)
+		}
+		var indentedJSON bytes.Buffer
+		if err := json.Indent(&indentedJSON, rawJSON, "", "  "); err != nil {
+			return err
+		}
+
+		if writeOutputToDisk {
+			path, err := writeFile(indentedJSON.Bytes(), outputPath)
+			if err != nil {
+				return fmt.Errorf("Failed to write output: %w", err)
+			}
+			console.Infof("Written output to: %s", path)
+		} else {
+			console.Output(indentedJSON.String())
+		}
+		return nil
+	}
+
+	if prediction.Output == nil {
+		console.Warn("No output generated")
+		return nil
+	}
 
 	switch {
 	case isURI(outputSchema):
@@ -528,36 +590,6 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 	}
 }
 
-func predictJSONInputs(predictor predict.Predictor, jsonInput string, outputPath string, isTrain bool) error {
-	jsonInputs, err := parseJSONInput(jsonInput)
-	if err != nil {
-		return err
-	}
-
-	transformedInputs, err := transformPathsToBase64URLs(jsonInputs)
-	if err != nil {
-		return err
-	}
-
-	// Convert to predict.Inputs format
-	inputs := make(predict.Inputs)
-	for key, value := range transformedInputs {
-		if strValue, ok := value.(string); ok {
-			inputs[key] = predict.Input{String: &strValue}
-		} else {
-			// For non-string values, marshal to JSON
-			jsonBytes, err := json.Marshal(value)
-			if err != nil {
-				return fmt.Errorf("Failed to marshal input %q to JSON: %w", key, err)
-			}
-			jsonRaw := json.RawMessage(jsonBytes)
-			inputs[key] = predict.Input{Json: &jsonRaw}
-		}
-	}
-
-	return runPrediction(predictor, inputs, outputPath, isTrain, true)
-}
-
 // Ensures the path (or fallback) provided is writable. Returns path, error
 func ensureOutputWriteable(outputPath string, fallbackPath string) (string, error) {
 	// If no outputPath is provided use fallback path and track.
@@ -601,6 +633,49 @@ func ensureOutputWriteable(outputPath string, fallbackPath string) (string, erro
 	}
 
 	return outputPath, nil
+}
+
+func ptr[T any](v T) *T {
+	return &v
+}
+
+func processFileOutputs(output any, schema *openapi3.Schema, destination string) (any, error) {
+	// TODO: This doesn't currently support arbitrary objects.
+	switch {
+	case isURI(schema):
+		outputStr, ok := output.(string)
+		if !ok {
+			return nil, fmt.Errorf("Failed to convert prediction output to string: %v", output)
+		}
+
+		path, err := writeDataURLToFile(outputStr, destination)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to write output: %w", err)
+		}
+		console.Infof("Written output to: %s", path)
+
+		return any(path), nil
+	case schema.Type.Is("array") && isURI(schema.Items.Value):
+		outputs, ok := (output).([]any)
+		if !ok {
+			return nil, fmt.Errorf("Failed to decode output: %v", output)
+		}
+
+		clone := []any{}
+		for i, output := range outputs {
+			itemDestination := fmt.Sprintf("%s.%d%s", trimExt(destination), i, path.Ext(destination))
+			item, err := processFileOutputs(output, schema.Items.Value, itemDestination)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to write output %d: %w", i, err)
+			}
+
+			clone = append(clone, item)
+		}
+
+		return clone, nil
+	}
+
+	return output, nil
 }
 
 func writeFile(output []byte, outputPath string) (string, error) {
