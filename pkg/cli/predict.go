@@ -22,9 +22,10 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
-	"github.com/replicate/cog/pkg/image"
+	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/model/factory"
 	"github.com/replicate/cog/pkg/predict"
-	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/mime"
 )
@@ -79,98 +80,67 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	imageName := ""
 	volumes := []command.Volume{}
 	gpus := gpusFlag
 
+	var predictModel *model.Model
+
 	if len(args) == 0 {
 		// Build image
-
 		cfg, projectDir, err := config.GetConfig(configFilename)
 		if err != nil {
 			return err
 		}
 
-		if cfg.Build.Fast {
-			buildFast = cfg.Build.Fast
+		settings := buildSettings(cmd, cfg, true, projectDir)
+
+		modelFactory, err := factory.New(dockerClient)
+		if err != nil {
+			return err
 		}
+		builtModel, buildInfo, err := modelFactory.Build(ctx, settings)
+		if err != nil {
+			return err
+		}
+		predictModel = builtModel
 
-		client := registry.NewRegistryClient()
-		if buildFast {
-			imageName = config.DockerImageName(projectDir)
-			if err := image.Build(
-				ctx,
-				cfg,
-				projectDir,
-				imageName,
-				buildSecrets,
-				buildNoCache,
-				buildSeparateWeights,
-				buildUseCudaBaseImage,
-				buildProgressOutput,
-				buildSchemaFile,
-				buildDockerfileFile,
-				DetermineUseCogBaseImage(cmd),
-				buildStrip,
-				buildPrecompile,
-				buildFast,
-				nil,
-				buildLocalImage,
-				dockerClient,
-				client); err != nil {
-				return err
-			}
-		} else {
-			if imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client); err != nil {
-				return err
-			}
-
-			// Base image doesn't have /src in it, so mount as volume
+		// dockerfile images for predict don't have /src in it, so mount as volume
+		if buildInfo.BaseImageOnly {
 			volumes = append(volumes, command.Volume{
 				Source:      projectDir,
 				Destination: "/src",
 			})
-
-			if gpus == "" && cfg.Build.GPU {
-				gpus = "all"
-			}
 		}
-
 	} else {
 		// Use existing image
-		imageName = args[0]
+		imageName := args[0]
 
-		// If the image name contains '=', then it's probably a mistake
-		if strings.Contains(imageName, "=") {
-			return fmt.Errorf("Invalid image name '%s'. Did you forget `-i`?", imageName)
-		}
-
-		inspectResp, err := dockerClient.Pull(ctx, imageName, false)
+		_, err := dockerClient.Pull(ctx, imageName, false)
 		if err != nil {
 			return fmt.Errorf("Failed to pull image %q: %w", imageName, err)
 		}
 
-		conf, err := image.CogConfigFromManifest(ctx, inspectResp)
+		predictModel, err = model.Resolve(ctx, imageName, model.WithProvider(dockerClient), model.WithResolveMode(docker.ResolveModeLocal))
 		if err != nil {
-			return err
-		}
-		if gpus == "" && conf.Build.GPU {
-			gpus = "all"
-		}
-		if conf.Build.Fast {
-			buildFast = conf.Build.Fast
+			return fmt.Errorf("Failed to resolve model %q: %w", imageName, err)
 		}
 	}
 
+	util.PrettyPrintJSON(predictModel)
+
+	if gpus == "" && predictModel.Config.Build.GPU {
+		gpus = "all"
+	}
+
 	console.Info("")
-	console.Infof("Starting Docker image %s and running setup()...", imageName)
+	console.Infof("Starting Docker image %s and running setup()...", predictModel.Name())
 
 	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
 		GPUs:    gpus,
-		Image:   imageName,
+		Image:   predictModel.ImageRef(),
 		Volumes: volumes,
 		Env:     envFlags,
-	}, false, buildFast, dockerClient)
+	}, false, dockerClient)
 	if err != nil {
 		return err
 	}
@@ -196,10 +166,10 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 			_ = predictor.Stop(ctx)
 			predictor, err = predict.NewPredictor(ctx, command.RunOptions{
-				Image:   imageName,
+				Image:   predictModel.ImageRef(),
 				Volumes: volumes,
 				Env:     envFlags,
-			}, false, buildFast, dockerClient)
+			}, false, dockerClient)
 			if err != nil {
 				return err
 			}

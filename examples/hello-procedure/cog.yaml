@@ -1,0 +1,4 @@
+predict: "function.py:run"
+build:
+  system_packages:
+    - tini
