@@ -438,119 +438,19 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 		return nil
 	}
 
+	// Handle default presentation of output types.
+	// 1. For Path and list[Path] do nothing. We already print info for each file write.
+	// 2. For everything else we want to print the raw value.
 	switch {
 	case isURI(outputSchema):
-		outputStr, ok := (*prediction.Output).(string)
-		if !ok {
-			return fmt.Errorf("Failed to convert prediction output to string")
-		}
-
-		fileOutputPath := outputPath
-		if needsJSON {
-			// Strip the suffix when in JSON mode.
-			fileOutputPath = trimExt(fileOutputPath)
-		}
-
-		path, err := writeDataURLToFile(outputStr, fileOutputPath)
-		if err != nil {
-			return fmt.Errorf("Failed to write output: %w", err)
-		}
-		console.Infof("Written output to: %s", path)
-
-		if needsJSON {
-			var output any
-			output = path
-			prediction.Output = &output
-			rawJSON, err := json.Marshal(prediction)
-			if err != nil {
-				return fmt.Errorf("Failed to encode prediction output as JSON: %w", err)
-			}
-			if writeOutputToDisk {
-				path, err := writeFile(rawJSON, outputPath)
-				if err != nil {
-					return fmt.Errorf("Failed to write output: %w", err)
-				}
-				console.Infof("Written output to: %s", path)
-			} else {
-				console.Output(string(rawJSON))
-			}
-		}
-
 		return nil
 	case outputSchema.Type.Is("array") && isURI(outputSchema.Items.Value):
-		outputs, ok := (*prediction.Output).([]any)
-		if !ok {
-			return fmt.Errorf("Failed to decode output")
-		}
-
-		clone := []string{}
-		for i, output := range outputs {
-			fileOutputExt := path.Ext(outputPath)
-			if needsJSON {
-				fileOutputExt = ""
-			}
-			fileOutputPath := fmt.Sprintf("%s.%d%s", trimExt(outputPath), i, fileOutputExt)
-
-			outputStr, ok := output.(string)
-			if !ok {
-				return fmt.Errorf("Failed to convert prediction output to string")
-			}
-
-			path, err := writeDataURLToFile(outputStr, fileOutputPath)
-			if err != nil {
-				return fmt.Errorf("Failed to write output %d: %w", i, err)
-			}
-			console.Infof("Written output to: %s", path)
-
-			clone = append(clone, path)
-		}
-
-		if needsJSON {
-			var output any
-			output = clone
-			prediction.Output = &output
-			rawJSON, err := json.Marshal(prediction)
-			if err != nil {
-				return fmt.Errorf("Failed to encode prediction output as JSON: %w", err)
-			}
-			if writeOutputToDisk {
-				path, err := writeFile(rawJSON, outputPath)
-				if err != nil {
-					return fmt.Errorf("Failed to write output: %w", err)
-				}
-				console.Infof("Written output to: %s", path)
-			} else {
-				console.Output(string(rawJSON))
-			}
-		}
-
 		return nil
 	case outputSchema.Type.Is("string"):
+		// Output the raw string.
 		s, ok := (*prediction.Output).(string)
 		if !ok {
 			return fmt.Errorf("Failed to convert prediction output to string")
-		}
-
-		if needsJSON {
-			var output any
-			output = s
-			prediction.Output = &output
-			rawJSON, err := json.Marshal(prediction)
-
-			if err != nil {
-				return fmt.Errorf("Failed to encode prediction output as JSON: %w", err)
-			}
-
-			if writeOutputToDisk {
-				path, err := writeFile(rawJSON, outputPath)
-				if err != nil {
-					return fmt.Errorf("Failed to write output: %w", err)
-				}
-				console.Infof("Written output to: %s", path)
-			} else {
-				console.Output(s)
-			}
-			return nil
 		}
 
 		if writeOutputToDisk {
@@ -565,25 +465,22 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 
 		return nil
 	default:
-		// Treat everything else as JSON -- ints, floats, bools will all convert correctly.
-		rawJSON, err := json.Marshal(prediction.Output)
+		// Treat everything else as JSON -- ints, floats, bools will all be presented
+		// as raw values. Lists and objects will be pretty printed JSON.
+		output, err := prettyJSONMarshal(prediction.Output)
 		if err != nil {
-			return fmt.Errorf("Failed to encode prediction output as JSON: %w", err)
-		}
-		var indentedJSON bytes.Buffer
-		if err := json.Indent(&indentedJSON, rawJSON, "", "  "); err != nil {
 			return err
 		}
 
 		// No special handling for needsJSON here.
 		if writeOutputToDisk {
-			path, err := writeFile(indentedJSON.Bytes(), outputPath)
+			path, err := writeFile(output, outputPath)
 			if err != nil {
 				return fmt.Errorf("Failed to write output: %w", err)
 			}
 			console.Infof("Written output to: %s", path)
 		} else {
-			console.Output(indentedJSON.String())
+			console.Output(string(output))
 		}
 
 		return nil
@@ -608,11 +505,12 @@ func ensureOutputWriteable(outputPath string, fallbackPath string) (string, erro
 
 	// If the file doesn't exist, use the parent directory with given filename.
 	if os.IsNotExist(err) {
-		return ensureOutputWriteable(filepath.Dir(outputPath), filepath.Base(outputPath))
-	}
-
-	if err != nil {
-		return "", err
+		if err = unix.Access(path.Dir(outputPath), unix.W_OK); err != nil {
+			return "", fmt.Errorf("Output directory is not writable: %s", path.Dir(outputPath))
+		}
+		return outputPath, nil
+	} else if err != nil {
+		return "", fmt.Errorf("Unexpected error checking output path: %w", err)
 	}
 
 	// If a directory was provided, use that with the fallback filename
@@ -635,8 +533,16 @@ func ensureOutputWriteable(outputPath string, fallbackPath string) (string, erro
 	return outputPath, nil
 }
 
-func ptr[T any](v T) *T {
-	return &v
+func prettyJSONMarshal(v any) ([]byte, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return []byte(""), fmt.Errorf("Failed to encode JSON: %w", err)
+	}
+	var formatted bytes.Buffer
+	if err := json.Indent(&formatted, raw, "", "  "); err != nil {
+		return []byte(""), err
+	}
+	return formatted.Bytes(), nil
 }
 
 func processFileOutputs(output any, schema *openapi3.Schema, destination string) (any, error) {
