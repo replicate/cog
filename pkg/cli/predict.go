@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -334,14 +335,19 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 		url = "/trainings"
 	}
 
-	// If outputPath != "", then we now know the output path for sure
-	if outputPath != "" {
-		// Ignore @, to make it behave the same as -i
-		outputPath = strings.TrimPrefix(outputPath, "@")
+	writeOutputToDisk := outputPath != ""
+	fallbackPath := "output"
+	if needsJSON {
+		fallbackPath = "output.json"
+	}
 
-		if err := checkOutputWritable(outputPath); err != nil {
-			return fmt.Errorf("Output path is not writable: %w", err)
-		}
+	outputPath, err := ensureOutputWriteable(strings.TrimPrefix(outputPath, "@"), fallbackPath)
+	if err != nil {
+		return fmt.Errorf("Output path is not writable: %w", err)
+	}
+
+	if needsJSON && !strings.HasSuffix(outputPath, ".json") {
+		console.Warnf("--output value does not have a .json suffix: %s", path.Base(outputPath))
 	}
 
 	context := predict.RequestContext{}
@@ -371,19 +377,18 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 
 	switch {
 	case isURI(outputSchema):
-		addExtension := false
-		fileOutputPath := outputPath
-		if fileOutputPath == "" {
-			fileOutputPath = "output"
-			addExtension = true
-		}
-
 		outputStr, ok := (*prediction.Output).(string)
 		if !ok {
 			return fmt.Errorf("Failed to convert prediction output to string")
 		}
 
-		path, err := writeDataURLOutput(outputStr, fileOutputPath, addExtension)
+		fileOutputPath := outputPath
+		if needsJSON {
+			// Strip the suffix when in JSON mode.
+			fileOutputPath = trimExt(fileOutputPath)
+		}
+
+		path, err := writeDataURLOutput(outputStr, fileOutputPath)
 		if err != nil {
 			return fmt.Errorf("Failed to write output: %w", err)
 		}
@@ -397,14 +402,14 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 			if err != nil {
 				return fmt.Errorf("Failed to encode prediction output as JSON: %w", err)
 			}
-			if outputPath == "" {
-				console.Output(string(rawJSON))
-			} else {
-				path, err := writeOutput(outputPath, rawJSON)
+			if writeOutputToDisk {
+				path, err := writeOutput(rawJSON, outputPath)
 				if err != nil {
 					return fmt.Errorf("Failed to write output: %w", err)
 				}
 				console.Infof("Written output to: %s", path)
+			} else {
+				console.Output(string(rawJSON))
 			}
 		}
 
@@ -417,15 +422,18 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 
 		clone := []string{}
 		for i, output := range outputs {
-			fileOutputPath := fmt.Sprintf("output.%d", i)
-			addExtension := true
+			fileOutputExt := path.Ext(outputPath)
+			if needsJSON {
+				fileOutputExt = ""
+			}
+			fileOutputPath := fmt.Sprintf("%s.%d%s", trimExt(outputPath), i, fileOutputExt)
 
 			outputStr, ok := output.(string)
 			if !ok {
 				return fmt.Errorf("Failed to convert prediction output to string")
 			}
 
-			path, err := writeDataURLOutput(outputStr, fileOutputPath, addExtension)
+			path, err := writeDataURLOutput(outputStr, fileOutputPath)
 			if err != nil {
 				return fmt.Errorf("Failed to write output %d: %w", i, err)
 			}
@@ -442,14 +450,14 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 			if err != nil {
 				return fmt.Errorf("Failed to encode prediction output as JSON: %w", err)
 			}
-			if outputPath == "" {
-				console.Output(string(rawJSON))
-			} else {
-				path, err := writeOutput(outputPath, rawJSON)
+			if writeOutputToDisk {
+				path, err := writeOutput(rawJSON, outputPath)
 				if err != nil {
 					return fmt.Errorf("Failed to write output: %w", err)
 				}
 				console.Infof("Written output to: %s", path)
+			} else {
+				console.Output(string(rawJSON))
 			}
 		}
 
@@ -470,26 +478,26 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 				return fmt.Errorf("Failed to encode prediction output as JSON: %w", err)
 			}
 
-			if outputPath == "" {
-				console.Output(s)
-			} else {
-				path, err := writeOutput(outputPath, rawJSON)
+			if writeOutputToDisk {
+				path, err := writeOutput(rawJSON, outputPath)
 				if err != nil {
 					return fmt.Errorf("Failed to write output: %w", err)
 				}
 				console.Infof("Written output to: %s", path)
+			} else {
+				console.Output(s)
 			}
 			return nil
 		}
 
-		if outputPath == "" {
-			console.Output(s)
-		} else {
-			path, err := writeOutput(outputPath, []byte(s))
+		if writeOutputToDisk {
+			path, err := writeOutput([]byte(s), outputPath)
 			if err != nil {
 				return fmt.Errorf("Failed to write output: %w", err)
 			}
 			console.Infof("Written output to: %s", path)
+		} else {
+			console.Output(s)
 		}
 
 		return nil
@@ -505,14 +513,14 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 		}
 
 		// No special handling for needsJSON here.
-		if outputPath == "" {
-			console.Output(indentedJSON.String())
-		} else {
-			path, err := writeOutput(outputPath, indentedJSON.Bytes())
+		if writeOutputToDisk {
+			path, err := writeOutput(indentedJSON.Bytes(), outputPath)
 			if err != nil {
 				return fmt.Errorf("Failed to write output: %w", err)
 			}
 			console.Infof("Written output to: %s", path)
+		} else {
+			console.Output(indentedJSON.String())
 		}
 
 		return nil
@@ -549,28 +557,52 @@ func predictJSONInputs(predictor predict.Predictor, jsonInput string, outputPath
 	return runPrediction(predictor, inputs, outputPath, isTrain, true)
 }
 
-func checkOutputWritable(outputPath string) error {
+// Ensures the path (or fallback) provided is writable. Returns path, error
+func ensureOutputWriteable(outputPath string, fallbackPath string) (string, error) {
+	// If no outputPath is provided use fallback path and track.
+	usingFallback := false
+	if outputPath == "" {
+		outputPath = fallbackPath
+		usingFallback = true
+	}
+
 	outputPath, err := homedir.Expand(outputPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	// Check if the file exists
-	_, err = os.Stat(outputPath)
-	if err == nil {
-		// File exists, check if it's writable
-		return unix.Access(outputPath, unix.W_OK)
-	} else if os.IsNotExist(err) {
-		// File doesn't exist, check if the directory is writable
-		dir := filepath.Dir(outputPath)
-		return unix.Access(dir, unix.W_OK)
+	stat, err := os.Stat(outputPath)
+
+	// If the file doesn't exist, use the parent directory with given filename.
+	if os.IsNotExist(err) {
+		return ensureOutputWriteable(filepath.Dir(outputPath), filepath.Base(outputPath))
 	}
 
-	// Some other error occurred
-	return err
+	if err != nil {
+		return "", err
+	}
+
+	// If a directory was provided, use that with the fallback filename
+	if stat.IsDir() {
+		// If the fallback path already exists as a directory error.
+		if usingFallback {
+			return "", fmt.Errorf("Default output name \"%s\" conflicts with directory, provide --output", outputPath)
+		}
+		err := unix.Access(outputPath, unix.W_OK)
+		if err != nil {
+			return "", err
+		}
+		return path.Join(outputPath, path.Base(fallbackPath)), nil
+	}
+
+	if err = unix.Access(outputPath, unix.W_OK); err != nil {
+		return "", err
+	}
+
+	return outputPath, nil
 }
 
-func writeOutput(outputPath string, output []byte) (string, error) {
+func writeOutput(output []byte, outputPath string) (string, error) {
 	outputPath, err := homedir.Expand(outputPath)
 	if err != nil {
 		return "", err
@@ -591,26 +623,34 @@ func writeOutput(outputPath string, output []byte) (string, error) {
 	return outputPath, nil
 }
 
-func writeDataURLOutput(outputString string, outputPath string, addExtension bool) (string, error) {
-	dataurlObj, err := dataurl.DecodeString(outputString)
+// Writes a data URL to the destination. If no file extension is provided then it
+// will be inferred from the data URL mime type and appended.
+func writeDataURLOutput(url string, destination string) (string, error) {
+	dataurlObj, err := dataurl.DecodeString(url)
 	if err != nil {
 		return "", fmt.Errorf("Failed to decode data URL: %w", err)
 	}
 	output := dataurlObj.Data
 
-	if addExtension {
-		extension := mime.ExtensionByType(dataurlObj.ContentType())
-		if extension != "" {
-			outputPath += extension
-		}
+	ext := path.Ext(destination)
+	dir := path.Dir(destination)
+	base := path.Base(destination)
+	name := trimExt(base)
+
+	if ext == "" {
+		ext = mime.ExtensionByType(dataurlObj.ContentType())
 	}
 
-	path, err := writeOutput(outputPath, output)
+	path, err := writeOutput(output, path.Join(dir, name+ext))
 	if err != nil {
 		return "", err
 	}
 
 	return path, nil
+}
+
+func trimExt(s string) string {
+	return strings.TrimSuffix(s, path.Ext(s))
 }
 
 func parseInputFlags(inputs []string, schema *openapi3.T) (predict.Inputs, error) {
