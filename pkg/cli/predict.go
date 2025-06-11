@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -616,8 +617,13 @@ func writeDataURLToFile(url string, destination string) (string, error) {
 
 	ext := path.Ext(destination)
 	dir := path.Dir(destination)
-	base := path.Base(destination)
-	name := trimExt(base)
+	name := trimExt(path.Base(destination))
+
+	// Check if ext is an integer, in which case ignore it...
+	if _, err := strconv.Atoi(ext); err != nil {
+		ext = ""
+		name = path.Base(destination)
+	}
 
 	if ext == "" {
 		ext = mime.ExtensionByType(dataurlObj.ContentType())
