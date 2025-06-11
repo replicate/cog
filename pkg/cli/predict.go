@@ -434,7 +434,18 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 		} else {
 			console.Output(indentedJSON.String())
 		}
+
+		// Exit with non-zero code if the prediction has failed.
+		if prediction.Status != "succeeded" {
+			os.Exit(1)
+		}
+
 		return nil
+	}
+
+	if prediction.Status != "succeeded" {
+		console.Errorf("Prediction failed with status \"%s\": %s", prediction.Status, prediction.Error)
+		os.Exit(1)
 	}
 
 	if prediction.Output == nil {
