@@ -364,6 +364,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 		return fmt.Errorf("Failed to predict: %w", err)
 	}
 
+	// FIXME: Return JSON if needsJSON is true.
 	if prediction.Output == nil {
 		console.Warn("No output generated")
 		return nil
@@ -388,7 +389,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 			fileOutputPath = trimExt(fileOutputPath)
 		}
 
-		path, err := writeDataURLOutput(outputStr, fileOutputPath)
+		path, err := writeDataURLToFile(outputStr, fileOutputPath)
 		if err != nil {
 			return fmt.Errorf("Failed to write output: %w", err)
 		}
@@ -403,7 +404,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 				return fmt.Errorf("Failed to encode prediction output as JSON: %w", err)
 			}
 			if writeOutputToDisk {
-				path, err := writeOutput(rawJSON, outputPath)
+				path, err := writeFile(rawJSON, outputPath)
 				if err != nil {
 					return fmt.Errorf("Failed to write output: %w", err)
 				}
@@ -433,7 +434,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 				return fmt.Errorf("Failed to convert prediction output to string")
 			}
 
-			path, err := writeDataURLOutput(outputStr, fileOutputPath)
+			path, err := writeDataURLToFile(outputStr, fileOutputPath)
 			if err != nil {
 				return fmt.Errorf("Failed to write output %d: %w", i, err)
 			}
@@ -451,7 +452,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 				return fmt.Errorf("Failed to encode prediction output as JSON: %w", err)
 			}
 			if writeOutputToDisk {
-				path, err := writeOutput(rawJSON, outputPath)
+				path, err := writeFile(rawJSON, outputPath)
 				if err != nil {
 					return fmt.Errorf("Failed to write output: %w", err)
 				}
@@ -479,7 +480,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 			}
 
 			if writeOutputToDisk {
-				path, err := writeOutput(rawJSON, outputPath)
+				path, err := writeFile(rawJSON, outputPath)
 				if err != nil {
 					return fmt.Errorf("Failed to write output: %w", err)
 				}
@@ -491,7 +492,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 		}
 
 		if writeOutputToDisk {
-			path, err := writeOutput([]byte(s), outputPath)
+			path, err := writeFile([]byte(s), outputPath)
 			if err != nil {
 				return fmt.Errorf("Failed to write output: %w", err)
 			}
@@ -514,7 +515,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 
 		// No special handling for needsJSON here.
 		if writeOutputToDisk {
-			path, err := writeOutput(indentedJSON.Bytes(), outputPath)
+			path, err := writeFile(indentedJSON.Bytes(), outputPath)
 			if err != nil {
 				return fmt.Errorf("Failed to write output: %w", err)
 			}
@@ -602,7 +603,7 @@ func ensureOutputWriteable(outputPath string, fallbackPath string) (string, erro
 	return outputPath, nil
 }
 
-func writeOutput(output []byte, outputPath string) (string, error) {
+func writeFile(output []byte, outputPath string) (string, error) {
 	outputPath, err := homedir.Expand(outputPath)
 	if err != nil {
 		return "", err
@@ -625,7 +626,7 @@ func writeOutput(output []byte, outputPath string) (string, error) {
 
 // Writes a data URL to the destination. If no file extension is provided then it
 // will be inferred from the data URL mime type and appended.
-func writeDataURLOutput(url string, destination string) (string, error) {
+func writeDataURLToFile(url string, destination string) (string, error) {
 	dataurlObj, err := dataurl.DecodeString(url)
 	if err != nil {
 		return "", fmt.Errorf("Failed to decode data URL: %w", err)
@@ -641,7 +642,7 @@ func writeDataURLOutput(url string, destination string) (string, error) {
 		ext = mime.ExtensionByType(dataurlObj.ContentType())
 	}
 
-	path, err := writeOutput(output, path.Join(dir, name+ext))
+	path, err := writeFile(output, path.Join(dir, name+ext))
 	if err != nil {
 		return "", err
 	}
