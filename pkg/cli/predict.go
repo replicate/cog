@@ -406,11 +406,14 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 		// Strip the suffix when in JSON mode.
 		fileOutputPath = trimExt(fileOutputPath)
 	}
-	transformed, err := processFileOutputs(*prediction.Output, outputSchema, fileOutputPath)
-	if err != nil {
-		return err
+
+	if prediction.Status == "succeeded" && prediction.Output != nil {
+		transformed, err := processFileOutputs(*prediction.Output, outputSchema, fileOutputPath)
+		if err != nil {
+			return err
+		}
+		prediction.Output = &transformed
 	}
-	prediction.Output = &transformed
 
 	if needsJSON {
 		rawJSON, err := json.Marshal(prediction)
