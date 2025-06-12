@@ -1,6 +1,9 @@
 package http
 
-import "net/http"
+import (
+	"errors"
+	"net/http"
+)
 
 const AuthorizationHeader = "Authorization"
 
@@ -22,6 +25,9 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Header.Get(AuthorizationHeader) == "" {
 		authorisation, ok := t.authentication[req.URL.Host]
 		if ok {
+			if authorisation == BearerHeaderPrefix {
+				return nil, errors.New("No token supplied for HTTP authorization.")
+			}
 			req.Header.Set(AuthorizationHeader, authorisation)
 		}
 	}
