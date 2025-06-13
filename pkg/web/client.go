@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types/image"
@@ -366,6 +367,7 @@ func (c *Client) versionFromManifest(ctx context.Context, image string, weights 
 
 func (c *Client) InitiateAndDoFileChallenge(ctx context.Context, weights []File, files []File) ([]FileChallengeAnswer, error) {
 	var challengeAnswers []FileChallengeAnswer
+	var mu sync.Mutex
 
 	var wg errgroup.Group
 	for _, item := range files {
@@ -374,7 +376,9 @@ func (c *Client) InitiateAndDoFileChallenge(ctx context.Context, weights []File,
 			if err != nil {
 				return util.WrapError(err, fmt.Sprintf("do file challenge for digest %s", item.Digest))
 			}
+			mu.Lock()
 			challengeAnswers = append(challengeAnswers, answer)
+			mu.Unlock()
 			return nil
 		})
 	}
@@ -384,7 +388,9 @@ func (c *Client) InitiateAndDoFileChallenge(ctx context.Context, weights []File,
 			if err != nil {
 				return util.WrapError(err, fmt.Sprintf("do file challenge for digest %s", item.Digest))
 			}
+			mu.Lock()
 			challengeAnswers = append(challengeAnswers, answer)
+			mu.Unlock()
 			return nil
 		})
 	}
