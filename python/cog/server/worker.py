@@ -489,7 +489,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if self.is_alive() and self.pid:
             os.kill(self.pid, signal.SIGUSR1)
 
-    def record_metric(self, name: str, value: Union[float, int]) -> None:
+    def record_metric(self, name: str, value: Optional[Union[bool, float, int, str]]) -> None:
         self._events.send(
             Envelope(PredictionMetric(name, value), tag=self._current_tag)
         )

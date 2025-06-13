@@ -32,7 +32,7 @@ class Log:
 @define
 class PredictionMetric:
     name: str
-    value: Union[float, int]
+    value: Optional[Union[bool, float, int, str]]
 
 
 @define
