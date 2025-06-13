@@ -1,12 +1,16 @@
 package internal
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/anaskhan96/soup"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/replicate/cog/pkg/config"
 )
@@ -18,16 +22,22 @@ func FetchCUDABaseImages() ([]config.CUDABaseImage, error) {
 		return nil, err
 	}
 
-	images := []config.CUDABaseImage{}
-	for _, tag := range tags {
-		image, err := parseCUDABaseImage(tag)
-		if err != nil {
-			return nil, err
-		}
-		images = append(images, *image)
-	}
+	images := make([]config.CUDABaseImage, len(tags))
+	eg, egctx := errgroup.WithContext(context.TODO())
+	// set a concurrency limit to avoid throttling by the docker hub api (since these are authenticated requests)
+	eg.SetLimit(1)
 
-	return images, nil
+	for idx, tag := range tags {
+		eg.Go(func() error {
+			image, err := parseCUDABaseImage(egctx, tag)
+			if err != nil {
+				return err
+			}
+			images[idx] = *image
+			return nil
+		})
+	}
+	return images, eg.Wait()
 }
 
 func fetchCUDABaseImageTags(url string) ([]string, error) {
@@ -70,17 +80,56 @@ func fetchCUDABaseImageTags(url string) ([]string, error) {
 	return tags, nil
 }
 
-func parseCUDABaseImage(tag string) (*config.CUDABaseImage, error) {
-	parts := strings.Split(tag, "-")
-	if len(parts) != 4 {
-		return nil, fmt.Errorf("Tag must be in the format <cudaVersion>-cudnn<cudnnVersion>-{devel,runtime}-ubuntu<ubuntuVersion>. Invalid tag: %s", tag)
+func parseCUDABaseImage(ctx context.Context, tag string) (*config.CUDABaseImage, error) {
+	fmt.Println("parsing", tag)
+	baseImg := &config.CUDABaseImage{
+		Tag:     tag,
+		IsDevel: strings.Contains(tag, "-devel"),
 	}
 
-	return &config.CUDABaseImage{
-		Tag:     tag,
-		CUDA:    parts[0],
-		CuDNN:   strings.Split(parts[1], "cudnn")[1],
-		IsDevel: parts[2] == "devel",
-		Ubuntu:  strings.Split(parts[3], "ubuntu")[1],
-	}, nil
+	fmt.Println("tag", tag)
+	if parts := strings.Split(tag, "ubuntu"); len(parts) == 2 {
+		baseImg.Ubuntu = parts[1]
+	} else {
+		return nil, fmt.Errorf("Invalid tag, must end in ubuntu<version>: %q", tag)
+	}
+
+	ref, err := name.ParseReference(fmt.Sprintf("nvidia/cuda:%s", tag))
+	if err != nil {
+		return nil, fmt.Errorf("Failed to parse reference %s: %w", tag, err)
+	}
+
+	img, err := remote.Image(ref, remote.WithContext(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("Failed to get image %s: %w", tag, err)
+	}
+
+	cfg, err := img.ConfigFile()
+	if err != nil {
+		return nil, fmt.Errorf("Failed to get config file %s: %w", tag, err)
+	}
+
+	for _, envVal := range cfg.Config.Env {
+		parts := strings.SplitN(envVal, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("Invalid environment variable %s", envVal)
+		}
+		switch parts[0] {
+		case "CUDA_VERSION":
+			baseImg.CUDA = parts[1]
+		case "NV_CUDNN_VERSION":
+			fmt.Println("FOUND CUDNN", envVal)
+			// downstream code expects only the major version component, so strip the rest here
+			// and we can remove it if/when we need the full version
+			baseImg.CuDNN = strings.Split(parts[1], ".")[0]
+		}
+	}
+
+	fmt.Printf("baseImg: %+v\n", baseImg)
+
+	if baseImg.CuDNN == "" {
+		return nil, fmt.Errorf("No CuDNN found in tag %s", tag)
+	}
+
+	return baseImg, nil
 }

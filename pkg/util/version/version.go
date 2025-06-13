@@ -14,12 +14,12 @@ type Version struct {
 }
 
 func NewVersion(s string) (version *Version, err error) {
+	// TODO[md]: handle prerelease versions (0.1.2-rc1) so they aren't appended to the previous component
+	// todo[md]: tbh just switch to hashicorp/go-version or github.com/Masterminds/semver/v3
 	plusParts := strings.SplitN(s, "+", 2)
 	number := plusParts[0]
+	// we're splitting on all periods, but only using the MAJOR.MINOR.PATCH components
 	parts := strings.Split(number, ".")
-	if len(parts) > 3 {
-		return nil, fmt.Errorf("Version must not have more than 3 parts: %s", s)
-	}
 	version = new(Version)
 	version.Major, err = strconv.Atoi(parts[0])
 	if err != nil {
