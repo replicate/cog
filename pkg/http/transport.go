@@ -26,7 +26,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		authorisation, ok := t.authentication[req.URL.Host]
 		if ok {
 			if authorisation == BearerHeaderPrefix {
-				return nil, errors.New("No token supplied for HTTP authorization.")
+				return nil, errors.New("No token supplied for HTTP authorization. Have you run 'cog login'?")
 			}
 			req.Header.Set(AuthorizationHeader, authorisation)
 		}
