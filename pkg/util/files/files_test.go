@@ -18,3 +18,10 @@ func TestIsExecutable(t *testing.T) {
 	require.NoError(t, os.Chmod(path, 0o744))
 	require.True(t, IsExecutable(path))
 }
+
+func TestWriteBadlyFormattedBase64DataURI(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test-file")
+	err := WriteDataURLOutput("data:None;base64,SGVsbG8gVGhlcmU=", path, false)
+	require.NoError(t, err)
+}

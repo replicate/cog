@@ -5,8 +5,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
+	"github.com/mitchellh/go-homedir"
+	"github.com/vincent-petithory/dataurl"
 	"golang.org/x/sys/unix"
+
+	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/mime"
 )
 
 func Exists(path string) (bool, error) {
@@ -80,5 +86,51 @@ func WriteIfDifferent(file, content string) error {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func WriteDataURLOutput(outputString string, outputPath string, addExtension bool) error {
+	if strings.HasPrefix(outputString, "data:None;base64") {
+		outputString = strings.Replace(outputString, "data:None;base64", "data:;base64", 1)
+	}
+	dataurlObj, err := dataurl.DecodeString(outputString)
+	if err != nil {
+		return fmt.Errorf("Failed to decode dataurl: %w", err)
+	}
+	output := dataurlObj.Data
+
+	if addExtension {
+		extension := mime.ExtensionByType(dataurlObj.ContentType())
+		if extension != "" {
+			outputPath += extension
+		}
+	}
+
+	if err := WriteOutput(outputPath, output); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func WriteOutput(outputPath string, output []byte) error {
+	outputPath, err := homedir.Expand(outputPath)
+	if err != nil {
+		return err
+	}
+
+	// Write to file
+	outFile, err := os.OpenFile(outputPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+
+	if _, err := outFile.Write(output); err != nil {
+		return err
+	}
+	if err := outFile.Close(); err != nil {
+		return err
+	}
+	console.Infof("Written output to %s", outputPath)
 	return nil
 }

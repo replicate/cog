@@ -616,3 +616,21 @@ def test_predict_tensorflow_project(docker_image, cog_binary):
     )
     assert result.returncode == 0
     assert result.stdout == "2.10.0\n"
+
+
+def test_predict_glb_file(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/glb-project"
+
+    result = subprocess.run(
+        [
+            cog_binary,
+            "predict",
+            "--debug",
+        ],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+    )
+    assert result.returncode == 0

@@ -16,7 +16,6 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
-	"github.com/vincent-petithory/dataurl"
 	"golang.org/x/sys/unix"
 
 	"github.com/replicate/cog/pkg/config"
@@ -26,7 +25,7 @@ import (
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
-	"github.com/replicate/cog/pkg/util/mime"
+	"github.com/replicate/cog/pkg/util/files"
 )
 
 var (
@@ -295,7 +294,8 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 			return fmt.Errorf("Failed to convert prediction output to string")
 		}
 
-		if err := writeDataURLOutput(outputStr, outputPath, addExtension); err != nil {
+		err := files.WriteDataURLOutput(outputStr, outputPath, addExtension)
+		if err != nil {
 			return fmt.Errorf("Failed to write output: %w", err)
 		}
 
@@ -315,8 +315,9 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 				return fmt.Errorf("Failed to convert prediction output to string")
 			}
 
-			if err := writeDataURLOutput(outputStr, outputPath, addExtension); err != nil {
-				return fmt.Errorf("Failed to write output %d: %w", i, err)
+			err := files.WriteDataURLOutput(outputStr, outputPath, addExtension)
+			if err != nil {
+				return fmt.Errorf("Failed to write output: %w", err)
 			}
 		}
 
@@ -330,7 +331,7 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 		if outputPath == "" {
 			console.Output(s)
 		} else {
-			err := writeOutput(outputPath, []byte(s))
+			err := files.WriteOutput(outputPath, []byte(s))
 			if err != nil {
 				return fmt.Errorf("Failed to write output: %w", err)
 			}
@@ -351,7 +352,7 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 		if outputPath == "" {
 			console.Output(indentedJSON.String())
 		} else {
-			err := writeOutput(outputPath, indentedJSON.Bytes())
+			err := files.WriteOutput(outputPath, indentedJSON.Bytes())
 			if err != nil {
 				return fmt.Errorf("Failed to write output: %w", err)
 			}
@@ -380,49 +381,6 @@ func checkOutputWritable(outputPath string) error {
 
 	// Some other error occurred
 	return err
-}
-
-func writeOutput(outputPath string, output []byte) error {
-	outputPath, err := homedir.Expand(outputPath)
-	if err != nil {
-		return err
-	}
-
-	// Write to file
-	outFile, err := os.OpenFile(outputPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
-	if err != nil {
-		return err
-	}
-
-	if _, err := outFile.Write(output); err != nil {
-		return err
-	}
-	if err := outFile.Close(); err != nil {
-		return err
-	}
-	console.Infof("Written output to %s", outputPath)
-	return nil
-}
-
-func writeDataURLOutput(outputString string, outputPath string, addExtension bool) error {
-	dataurlObj, err := dataurl.DecodeString(outputString)
-	if err != nil {
-		return fmt.Errorf("Failed to decode dataurl: %w", err)
-	}
-	output := dataurlObj.Data
-
-	if addExtension {
-		extension := mime.ExtensionByType(dataurlObj.ContentType())
-		if extension != "" {
-			outputPath += extension
-		}
-	}
-
-	if err := writeOutput(outputPath, output); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func parseInputFlags(inputs []string, schema *openapi3.T) (predict.Inputs, error) {
