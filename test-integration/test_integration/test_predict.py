@@ -620,13 +620,6 @@ def test_predict_tensorflow_project(docker_image, cog_binary):
     assert result.stdout == "2.10.0\n"
 
 
-<<<<<<< sackfield/future-annotations-int-test
-def test_predict_future_annotations(cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/future-annotations-project"
-
-    result = subprocess.run(
-        [cog_binary, "predict", "--debug", "-i", "image=@some_image.jpg"],
-=======
 def test_predict_json_input(cog_binary):
     project_dir = Path(__file__).parent / "fixtures/string-project"
 
@@ -638,7 +631,6 @@ def test_predict_json_input(cog_binary):
             "--json",
             '{"s": "sackfield"}',
         ],
->>>>>>> main
         cwd=project_dir,
         check=True,
         capture_output=True,
@@ -646,9 +638,6 @@ def test_predict_json_input(cog_binary):
         timeout=120.0,
     )
     assert result.returncode == 0
-<<<<<<< sackfield/future-annotations-int-test
-    assert result.stdout == "2.10.0\n"
-=======
     assert (
         result.stdout
         == """{
@@ -780,4 +769,35 @@ def test_predict_json_input_stdin_dash(cog_binary):
 }
 """
     )
->>>>>>> main
+
+
+def test_predict_glb_file(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/glb-project"
+
+    result = subprocess.run(
+        [
+            cog_binary,
+            "predict",
+            "--debug",
+        ],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+    )
+    assert result.returncode == 0
+
+ 
+def test_predict_future_annotations(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/future-annotations-project"
+
+    result = subprocess.run(
+        [cog_binary, "predict", "--debug", "-i", "image=@some_image.jpg"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+    )
+    assert result.returncode == 0
