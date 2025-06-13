@@ -12,7 +12,6 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -635,8 +634,7 @@ func writeDataURLToFile(url string, destination string) (string, error) {
 	name := r8_path.TrimExt(path.Base(destination))
 
 	// Check if ext is an integer, in which case ignore it...
-	_, err = strconv.Atoi(ext)
-	if err == nil {
+	if r8_path.IsExtInteger(ext) {
 		ext = ""
 		name = path.Base(destination)
 	}
