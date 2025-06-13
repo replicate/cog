@@ -549,7 +549,7 @@ func ensureOutputWriteable(outputPath string, fallbackPath string) (string, erro
 	if stat.IsDir() {
 		// If the fallback path already exists as a directory error.
 		if usingFallback {
-			return "", fmt.Errorf("Default output name \"%s\" conflicts with directory, provide --output", outputPath)
+			return "", fmt.Errorf("Default output name %q conflicts with directory, provide --output", outputPath)
 		}
 		err := unix.Access(outputPath, unix.W_OK)
 		if err != nil {
