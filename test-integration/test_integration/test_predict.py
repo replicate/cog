@@ -644,7 +644,8 @@ def test_predict_json_input(cog_binary):
   "status": "succeeded",
   "output": "hello sackfield",
   "error": ""
-}"""
+}
+"""
     )
 
 
@@ -672,7 +673,8 @@ def test_predict_json_input_filename(cog_binary):
   "status": "succeeded",
   "output": "hello sackfield",
   "error": ""
-}"""
+}
+"""
     )
 
 
@@ -701,7 +703,8 @@ def test_predict_json_input_stdin(cog_binary):
   "status": "succeeded",
   "output": "hello sackfield",
   "error": ""
-}"""
+}
+"""
     )
 
 
@@ -734,6 +737,37 @@ def test_predict_json_output(tmpdir_factory, cog_binary):
   "status": "succeeded",
   "output": "hello sackfield",
   "error": ""
-}"""
+}
+"""
         )
     assert result.stdout == "Output written to: output.json\n"
+
+
+def test_predict_json_input_stdin_dash(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/string-project"
+
+    result = subprocess.run(
+        [
+            cog_binary,
+            "predict",
+            "--debug",
+            "--json",
+            "-",
+        ],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+        input='{"s": "sackfield"}',
+    )
+    assert result.returncode == 0
+    assert (
+        result.stdout
+        == """{
+  "status": "succeeded",
+  "output": "hello sackfield",
+  "error": ""
+}
+"""
+    )
