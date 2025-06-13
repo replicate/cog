@@ -5,8 +5,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
+	"strings"
 
+	"github.com/mitchellh/go-homedir"
+	"github.com/vincent-petithory/dataurl"
 	"golang.org/x/sys/unix"
+
+	r8_path "github.com/replicate/cog/pkg/path"
+	"github.com/replicate/cog/pkg/util/mime"
 )
 
 func Exists(path string) (bool, error) {
@@ -81,4 +88,57 @@ func WriteIfDifferent(file, content string) error {
 		return err
 	}
 	return nil
+}
+
+func WriteDataURLToFile(url string, destination string) (string, error) {
+	if strings.HasPrefix(url, "data:None;base64") {
+		url = strings.Replace(url, "data:None;base64", "data:;base64", 1)
+	}
+	dataurlObj, err := dataurl.DecodeString(url)
+	if err != nil {
+		return "", fmt.Errorf("Failed to decode data URL: %w", err)
+	}
+	output := dataurlObj.Data
+
+	ext := path.Ext(destination)
+	dir := path.Dir(destination)
+	name := r8_path.TrimExt(path.Base(destination))
+
+	// Check if ext is an integer, in which case ignore it...
+	if r8_path.IsExtInteger(ext) {
+		ext = ""
+		name = path.Base(destination)
+	}
+
+	if ext == "" {
+		ext = mime.ExtensionByType(dataurlObj.ContentType())
+	}
+
+	path, err := WriteFile(output, path.Join(dir, name+ext))
+	if err != nil {
+		return "", err
+	}
+
+	return path, nil
+}
+
+func WriteFile(output []byte, outputPath string) (string, error) {
+	outputPath, err := homedir.Expand(outputPath)
+	if err != nil {
+		return "", err
+	}
+
+	// Write to file
+	outFile, err := os.OpenFile(outputPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
+	if err != nil {
+		return "", err
+	}
+
+	if _, err := outFile.Write(output); err != nil {
+		return "", err
+	}
+	if err := outFile.Close(); err != nil {
+		return "", err
+	}
+	return outputPath, nil
 }

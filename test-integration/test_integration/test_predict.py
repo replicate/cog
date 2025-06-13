@@ -769,3 +769,21 @@ def test_predict_json_input_stdin_dash(cog_binary):
 }
 """
     )
+
+
+def test_predict_glb_file(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/glb-project"
+
+    result = subprocess.run(
+        [
+            cog_binary,
+            "predict",
+            "--debug",
+        ],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+    )
+    assert result.returncode == 0

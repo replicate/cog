@@ -19,7 +19,6 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
-	"github.com/vincent-petithory/dataurl"
 	"golang.org/x/sys/unix"
 
 	"github.com/replicate/cog/pkg/config"
@@ -30,6 +29,7 @@ import (
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/files"
 	"github.com/replicate/cog/pkg/util/mime"
 )
 
@@ -443,7 +443,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 		}
 
 		if writeOutputToDisk {
-			path, err := writeFile(indentedJSON.Bytes(), outputPath)
+			path, err := files.WriteFile(indentedJSON.Bytes(), outputPath)
 			if err != nil {
 				return fmt.Errorf("Failed to write output: %w", err)
 			}
@@ -485,7 +485,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 		}
 
 		if writeOutputToDisk {
-			path, err := writeFile([]byte(s), outputPath)
+			path, err := files.WriteFile([]byte(s), outputPath)
 			if err != nil {
 				return fmt.Errorf("Failed to write output: %w", err)
 			}
@@ -505,7 +505,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 
 		// No special handling for needsJSON here.
 		if writeOutputToDisk {
-			path, err := writeFile(output, outputPath)
+			path, err := files.WriteFile(output, outputPath)
 			if err != nil {
 				return fmt.Errorf("Failed to write output: %w", err)
 			}
@@ -585,7 +585,7 @@ func processFileOutputs(output any, schema *openapi3.Schema, destination string)
 			return nil, fmt.Errorf("Failed to convert prediction output to string: %v", output)
 		}
 
-		path, err := writeDataURLToFile(outputStr, destination)
+		path, err := files.WriteDataURLToFile(outputStr, destination)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to write output: %w", err)
 		}
@@ -613,58 +613,6 @@ func processFileOutputs(output any, schema *openapi3.Schema, destination string)
 	}
 
 	return output, nil
-}
-
-func writeFile(output []byte, outputPath string) (string, error) {
-	outputPath, err := homedir.Expand(outputPath)
-	if err != nil {
-		return "", err
-	}
-
-	// Write to file
-	outFile, err := os.OpenFile(outputPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
-	if err != nil {
-		return "", err
-	}
-
-	if _, err := outFile.Write(output); err != nil {
-		return "", err
-	}
-	if err := outFile.Close(); err != nil {
-		return "", err
-	}
-	return outputPath, nil
-}
-
-// Writes a data URL to the destination. If no file extension is provided then it
-// will be inferred from the data URL mime type and appended.
-func writeDataURLToFile(url string, destination string) (string, error) {
-	dataurlObj, err := dataurl.DecodeString(url)
-	if err != nil {
-		return "", fmt.Errorf("Failed to decode data URL: %w", err)
-	}
-	output := dataurlObj.Data
-
-	ext := path.Ext(destination)
-	dir := path.Dir(destination)
-	name := r8_path.TrimExt(path.Base(destination))
-
-	// Check if ext is an integer, in which case ignore it...
-	if r8_path.IsExtInteger(ext) {
-		ext = ""
-		name = path.Base(destination)
-	}
-
-	if ext == "" {
-		ext = mime.ExtensionByType(dataurlObj.ContentType())
-	}
-
-	path, err := writeFile(output, path.Join(dir, name+ext))
-	if err != nil {
-		return "", err
-	}
-
-	return path, nil
 }
 
 func parseInputFlags(inputs []string, schema *openapi3.T) (predict.Inputs, error) {
