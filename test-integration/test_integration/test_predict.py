@@ -737,8 +737,7 @@ def test_predict_json_output(tmpdir_factory, cog_binary):
   "status": "succeeded",
   "output": "hello sackfield",
   "error": ""
-}
-"""
+}"""
         )
     assert result.stdout == "Output written to: output.json\n"
 
