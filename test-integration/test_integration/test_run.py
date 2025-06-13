@@ -1,4 +1,5 @@
 import subprocess
+from pathlib import Path
 
 
 def test_run(tmpdir_factory, cog_binary):
@@ -46,3 +47,16 @@ build:
     )
     assert b"RUN echo hello world" in result.stdout
     assert b"RUN --mount=type=secret,id=foo,target=secret.txt echo shh" in result.stdout
+
+
+def test_run_fast_build(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/fast-build"
+    result = subprocess.run(
+        [cog_binary, "run", "echo", "hello world"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert result.stdout == "hello world\n"
