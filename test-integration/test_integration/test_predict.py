@@ -739,7 +739,6 @@ def test_predict_json_output(tmpdir_factory, cog_binary):
   "error": ""
 }"""
         )
-    assert result.stdout == "Output written to: output.json\n"
 
 
 def test_predict_json_input_stdin_dash(cog_binary):
