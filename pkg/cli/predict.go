@@ -33,6 +33,8 @@ import (
 	"github.com/replicate/cog/pkg/util/mime"
 )
 
+const StdinPath = "-"
+
 var (
 	envFlags             []string
 	inputFlags           []string
@@ -77,20 +79,29 @@ the prediction on that.`,
 	return cmd
 }
 
+func readStdin() (string, error) {
+	// Read from stdin
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return "", fmt.Errorf("Failed to read JSON from stdin: %w", err)
+	}
+	return string(data), nil
+}
+
 func parseJSONInput(jsonInput string) (map[string]any, error) {
 	var jsonStr string
 
-	if strings.HasPrefix(jsonInput, "@") {
+	switch {
+	case strings.HasPrefix(jsonInput, "@"):
 		// Read from file or stdin
 		source := jsonInput[1:]
 
-		if source == "-" {
-			// Read from stdin
-			data, err := io.ReadAll(os.Stdin)
+		if source == StdinPath {
+			jsonStdinStr, err := readStdin()
 			if err != nil {
-				return nil, fmt.Errorf("Failed to read JSON from stdin: %w", err)
+				return nil, err
 			}
-			jsonStr = string(data)
+			jsonStr = jsonStdinStr
 		} else {
 			// Read from file
 			data, err := os.ReadFile(source)
@@ -99,7 +110,13 @@ func parseJSONInput(jsonInput string) (map[string]any, error) {
 			}
 			jsonStr = string(data)
 		}
-	} else {
+	case jsonInput == StdinPath:
+		jsonStdinStr, err := readStdin()
+		if err != nil {
+			return nil, err
+		}
+		jsonStr = jsonStdinStr
+	default:
 		// Direct JSON string
 		jsonStr = jsonInput
 	}
