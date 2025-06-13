@@ -22,6 +22,6 @@ func TestIsExecutable(t *testing.T) {
 func TestWriteBadlyFormattedBase64DataURI(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test-file")
-	err := WriteDataURLOutput("data:None;base64,SGVsbG8gVGhlcmU=", path, false)
+	_, err := WriteDataURLToFile("data:None;base64,SGVsbG8gVGhlcmU=", path)
 	require.NoError(t, err)
 }

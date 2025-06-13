@@ -3,11 +3,14 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -22,11 +25,15 @@ import (
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/image"
+	r8_path "github.com/replicate/cog/pkg/path"
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
+	"github.com/replicate/cog/pkg/util/mime"
 )
+
+const StdinPath = "-"
 
 var (
 	envFlags             []string
@@ -34,6 +41,7 @@ var (
 	outPath              string
 	setupTimeout         uint32
 	useReplicateAPIToken bool
+	inputJSON            string
 )
 
 func newPredictCommand() *cobra.Command {
@@ -66,8 +74,92 @@ the prediction on that.`,
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
 	cmd.Flags().StringArrayVarP(&envFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
 	cmd.Flags().BoolVar(&useReplicateAPIToken, "use-replicate-token", false, "Pass REPLICATE_API_TOKEN from local environment into the model context")
+	cmd.Flags().StringVar(&inputJSON, "json", "", "Pass inputs as JSON object, read from file (@inputs.json) or via stdin (@-)")
 
 	return cmd
+}
+
+func readStdin() (string, error) {
+	// Read from stdin
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return "", fmt.Errorf("Failed to read JSON from stdin: %w", err)
+	}
+	return string(data), nil
+}
+
+func parseJSONInput(jsonInput string) (map[string]any, error) {
+	var jsonStr string
+
+	switch {
+	case strings.HasPrefix(jsonInput, "@"):
+		// Read from file or stdin
+		source := jsonInput[1:]
+
+		if source == StdinPath {
+			jsonStdinStr, err := readStdin()
+			if err != nil {
+				return nil, err
+			}
+			jsonStr = jsonStdinStr
+		} else {
+			// Read from file
+			data, err := os.ReadFile(source)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to read JSON from file %q: %w", source, err)
+			}
+			jsonStr = string(data)
+		}
+	case jsonInput == StdinPath:
+		jsonStdinStr, err := readStdin()
+		if err != nil {
+			return nil, err
+		}
+		jsonStr = jsonStdinStr
+	default:
+		// Direct JSON string
+		jsonStr = jsonInput
+	}
+
+	var inputs map[string]any
+	if err := json.Unmarshal([]byte(jsonStr), &inputs); err != nil {
+		return nil, fmt.Errorf("Failed to parse JSON: %w", err)
+	}
+
+	return inputs, nil
+}
+
+func transformPathsToBase64URLs(inputs map[string]any) (map[string]any, error) {
+	result := make(map[string]any)
+
+	for key, value := range inputs {
+		if strValue, ok := value.(string); ok && strings.HasPrefix(strValue, "@") {
+			// This is a file path, convert to base64 data URL
+			filePath := strValue[1:]
+
+			// Read file
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to read file %q: %w", filePath, err)
+			}
+
+			// Get MIME type
+			mimeType := mime.TypeByExtension(filepath.Ext(filePath))
+			if mimeType == "" {
+				mimeType = "application/octet-stream"
+			}
+
+			// Create base64 data URL
+			base64Data := base64.StdEncoding.EncodeToString(data)
+			dataURL := fmt.Sprintf("data:%s;base64,%s", mimeType, base64Data)
+
+			result[key] = dataURL
+		} else {
+			result[key] = value
+		}
+	}
+
+	return result, nil
 }
 
 func cmdPredict(cmd *cobra.Command, args []string) error {
@@ -220,6 +312,13 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
+	if inputJSON != "" {
+		if len(inputFlags) > 0 {
+			return fmt.Errorf("Must use one of --json or --input to provide model inputs")
+		}
+
+		return predictJSONInputs(*predictor, inputJSON, outPath, false)
+	}
 	return predictIndividualInputs(*predictor, inputFlags, outPath, false)
 }
 
@@ -227,13 +326,37 @@ func isURI(ref *openapi3.Schema) bool {
 	return ref != nil && ref.Type.Is("string") && ref.Format == "uri"
 }
 
-func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, outputPath string, isTrain bool) error {
-	if isTrain {
-		console.Info("Running training...")
-	} else {
-		console.Info("Running prediction...")
+func predictJSONInputs(predictor predict.Predictor, jsonInput string, outputPath string, isTrain bool) error {
+	jsonInputs, err := parseJSONInput(jsonInput)
+	if err != nil {
+		return err
 	}
 
+	transformedInputs, err := transformPathsToBase64URLs(jsonInputs)
+	if err != nil {
+		return err
+	}
+
+	// Convert to predict.Inputs format
+	inputs := make(predict.Inputs)
+	for key, value := range transformedInputs {
+		if strValue, ok := value.(string); ok {
+			inputs[key] = predict.Input{String: &strValue}
+		} else {
+			// For non-string values, marshal to JSON
+			jsonBytes, err := json.Marshal(value)
+			if err != nil {
+				return fmt.Errorf("Failed to marshal input %q to JSON: %w", key, err)
+			}
+			jsonRaw := json.RawMessage(jsonBytes)
+			inputs[key] = predict.Input{Json: &jsonRaw}
+		}
+	}
+
+	return runPrediction(predictor, inputs, outputPath, isTrain, true)
+}
+
+func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, outputPath string, isTrain bool) error {
 	schema, err := predictor.GetSchema()
 	if err != nil {
 		return err
@@ -244,14 +367,14 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 		return err
 	}
 
-	// If outputPath != "", then we now know the output path for sure
-	if outputPath != "" {
-		// Ignore @, to make it behave the same as -i
-		outputPath = strings.TrimPrefix(outputPath, "@")
+	return runPrediction(predictor, inputs, outputPath, isTrain, false)
+}
 
-		if err := checkOutputWritable(outputPath); err != nil {
-			return fmt.Errorf("Output path is not writable: %w", err)
-		}
+func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPath string, isTrain bool, needsJSON bool) error {
+	if isTrain {
+		console.Info("Running training...")
+	} else {
+		console.Info("Running prediction...")
 	}
 
 	// Generate output depending on type in schema
@@ -259,8 +382,21 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 	if isTrain {
 		url = "/trainings"
 	}
-	responseSchema := schema.Paths.Value(url).Post.Responses.Value("200").Value.Content["application/json"].Schema.Value
-	outputSchema := responseSchema.Properties["output"].Value
+
+	writeOutputToDisk := outputPath != ""
+	fallbackPath := "output"
+	if needsJSON {
+		fallbackPath = "output.json"
+	}
+
+	outputPath, err := ensureOutputWriteable(strings.TrimPrefix(outputPath, "@"), fallbackPath)
+	if err != nil {
+		return fmt.Errorf("Output path is not writable: %w", err)
+	}
+
+	if needsJSON && !strings.HasSuffix(outputPath, ".json") {
+		console.Warnf("--output value does not have a .json suffix: %s", path.Base(outputPath))
+	}
 
 	context := predict.RequestContext{}
 
@@ -276,71 +412,28 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 		return fmt.Errorf("Failed to predict: %w", err)
 	}
 
-	if prediction.Output == nil {
-		console.Warn("No output generated")
-		return nil
+	schema, err := predictor.GetSchema()
+	if err != nil {
+		return err
+	}
+	outputSchema := schema.Paths.Value(url).Post.Responses.Value("200").Value.Content["application/json"].Schema.Value.Properties["output"].Value
+
+	fileOutputPath := outputPath
+	if needsJSON {
+		// Strip the suffix when in JSON mode.
+		fileOutputPath = r8_path.TrimExt(fileOutputPath)
 	}
 
-	switch {
-	case isURI(outputSchema):
-		addExtension := false
-		if outputPath == "" {
-			outputPath = "output"
-			addExtension = true
-		}
-
-		outputStr, ok := (*prediction.Output).(string)
-		if !ok {
-			return fmt.Errorf("Failed to convert prediction output to string")
-		}
-
-		err := files.WriteDataURLOutput(outputStr, outputPath, addExtension)
+	if prediction.Status == "succeeded" && prediction.Output != nil {
+		transformed, err := processFileOutputs(*prediction.Output, outputSchema, fileOutputPath)
 		if err != nil {
-			return fmt.Errorf("Failed to write output: %w", err)
+			return err
 		}
+		prediction.Output = &transformed
+	}
 
-		return nil
-	case outputSchema.Type.Is("array") && isURI(outputSchema.Items.Value):
-		outputs, ok := (*prediction.Output).([]interface{})
-		if !ok {
-			return fmt.Errorf("Failed to decode output")
-		}
-
-		for i, output := range outputs {
-			outputPath := fmt.Sprintf("output.%d", i)
-			addExtension := true
-
-			outputStr, ok := output.(string)
-			if !ok {
-				return fmt.Errorf("Failed to convert prediction output to string")
-			}
-
-			err := files.WriteDataURLOutput(outputStr, outputPath, addExtension)
-			if err != nil {
-				return fmt.Errorf("Failed to write output: %w", err)
-			}
-		}
-
-		return nil
-	case outputSchema.Type.Is("string"):
-		s, ok := (*prediction.Output).(string)
-		if !ok {
-			return fmt.Errorf("Failed to convert prediction output to string")
-		}
-
-		if outputPath == "" {
-			console.Output(s)
-		} else {
-			err := files.WriteOutput(outputPath, []byte(s))
-			if err != nil {
-				return fmt.Errorf("Failed to write output: %w", err)
-			}
-		}
-
-		return nil
-	default:
-		// Treat everything else as JSON -- ints, floats, bools will all convert correctly.
-		rawJSON, err := json.Marshal(prediction.Output)
+	if needsJSON {
+		rawJSON, err := json.Marshal(prediction)
 		if err != nil {
 			return fmt.Errorf("Failed to encode prediction output as JSON: %w", err)
 		}
@@ -349,38 +442,177 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 			return err
 		}
 
-		if outputPath == "" {
-			console.Output(indentedJSON.String())
-		} else {
-			err := files.WriteOutput(outputPath, indentedJSON.Bytes())
+		if writeOutputToDisk {
+			path, err := files.WriteFile(indentedJSON.Bytes(), outputPath)
 			if err != nil {
 				return fmt.Errorf("Failed to write output: %w", err)
 			}
+			console.Infof("Written output to: %s", path)
+		} else {
+			console.Output(indentedJSON.String())
+		}
+
+		// Exit with non-zero code if the prediction has failed.
+		if prediction.Status != "succeeded" {
+			os.Exit(1)
+		}
+
+		return nil
+	}
+
+	if prediction.Status != "succeeded" {
+		return fmt.Errorf("Prediction failed with status %q: %s", prediction.Status, prediction.Error)
+	}
+
+	if prediction.Output == nil {
+		console.Warn("No output generated")
+		return nil
+	}
+
+	// Handle default presentation of output types.
+	// 1. For Path and list[Path] do nothing. We already print info for each file write.
+	// 2. For everything else we want to print the raw value.
+	switch {
+	case isURI(outputSchema):
+		return nil
+	case outputSchema.Type.Is("array") && isURI(outputSchema.Items.Value):
+		return nil
+	case outputSchema.Type.Is("string"):
+		// Output the raw string.
+		s, ok := (*prediction.Output).(string)
+		if !ok {
+			return fmt.Errorf("Failed to convert prediction output to string")
+		}
+
+		if writeOutputToDisk {
+			path, err := files.WriteFile([]byte(s), outputPath)
+			if err != nil {
+				return fmt.Errorf("Failed to write output: %w", err)
+			}
+			console.Infof("Written output to: %s", path)
+		} else {
+			console.Output(s)
+		}
+
+		return nil
+	default:
+		// Treat everything else as JSON -- ints, floats, bools will all be presented
+		// as raw values. Lists and objects will be pretty printed JSON.
+		output, err := prettyJSONMarshal(prediction.Output)
+		if err != nil {
+			return err
+		}
+
+		// No special handling for needsJSON here.
+		if writeOutputToDisk {
+			path, err := files.WriteFile(output, outputPath)
+			if err != nil {
+				return fmt.Errorf("Failed to write output: %w", err)
+			}
+			console.Infof("Written output to: %s", path)
+		} else {
+			console.Output(string(output))
 		}
 
 		return nil
 	}
 }
 
-func checkOutputWritable(outputPath string) error {
+// Ensures the path (or fallback) provided is writable. Returns path, error
+func ensureOutputWriteable(outputPath string, fallbackPath string) (string, error) {
+	// If no outputPath is provided use fallback path and track.
+	usingFallback := false
+	if outputPath == "" {
+		outputPath = fallbackPath
+		usingFallback = true
+	}
+
 	outputPath, err := homedir.Expand(outputPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	// Check if the file exists
-	_, err = os.Stat(outputPath)
-	if err == nil {
-		// File exists, check if it's writable
-		return unix.Access(outputPath, unix.W_OK)
-	} else if os.IsNotExist(err) {
-		// File doesn't exist, check if the directory is writable
-		dir := filepath.Dir(outputPath)
-		return unix.Access(dir, unix.W_OK)
+	stat, err := os.Stat(outputPath)
+
+	// If the file doesn't exist, use the parent directory with given filename.
+	if os.IsNotExist(err) {
+		if err = unix.Access(path.Dir(outputPath), unix.W_OK); err != nil {
+			return "", fmt.Errorf("Output directory is not writable: %s", path.Dir(outputPath))
+		}
+		return outputPath, nil
+	} else if err != nil {
+		return "", fmt.Errorf("Unexpected error checking output path: %w", err)
 	}
 
-	// Some other error occurred
-	return err
+	// If a directory was provided, use that with the fallback filename
+	if stat.IsDir() {
+		// If the fallback path already exists as a directory error.
+		if usingFallback {
+			return "", fmt.Errorf("Default output name %q conflicts with directory, provide --output", outputPath)
+		}
+		err := unix.Access(outputPath, unix.W_OK)
+		if err != nil {
+			return "", err
+		}
+		return path.Join(outputPath, path.Base(fallbackPath)), nil
+	}
+
+	if err = unix.Access(outputPath, unix.W_OK); err != nil {
+		return "", err
+	}
+
+	return outputPath, nil
+}
+
+func prettyJSONMarshal(v any) ([]byte, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return []byte(""), fmt.Errorf("Failed to encode JSON: %w", err)
+	}
+	var formatted bytes.Buffer
+	if err := json.Indent(&formatted, raw, "", "  "); err != nil {
+		return []byte(""), err
+	}
+	return formatted.Bytes(), nil
+}
+
+func processFileOutputs(output any, schema *openapi3.Schema, destination string) (any, error) {
+	// TODO: This doesn't currently support arbitrary objects.
+	switch {
+	case isURI(schema):
+		outputStr, ok := output.(string)
+		if !ok {
+			return nil, fmt.Errorf("Failed to convert prediction output to string: %v", output)
+		}
+
+		path, err := files.WriteDataURLToFile(outputStr, destination)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to write output: %w", err)
+		}
+		console.Infof("Written output to: %s", path)
+
+		return any(path), nil
+	case schema.Type.Is("array") && isURI(schema.Items.Value):
+		outputs, ok := (output).([]any)
+		if !ok {
+			return nil, fmt.Errorf("Failed to decode output: %v", output)
+		}
+
+		clone := []any{}
+		for i, output := range outputs {
+			itemDestination := fmt.Sprintf("%s.%d%s", r8_path.TrimExt(destination), i, path.Ext(destination))
+			item, err := processFileOutputs(output, schema.Items.Value, itemDestination)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to write output %d: %w", i, err)
+			}
+
+			clone = append(clone, item)
+		}
+
+		return clone, nil
+	}
+
+	return output, nil
 }
 
 func parseInputFlags(inputs []string, schema *openapi3.T) (predict.Inputs, error) {
