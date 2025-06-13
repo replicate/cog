@@ -27,6 +27,7 @@ import (
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/image"
+	r8_path "github.com/replicate/cog/pkg/path"
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
@@ -404,7 +405,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 	fileOutputPath := outputPath
 	if needsJSON {
 		// Strip the suffix when in JSON mode.
-		fileOutputPath = trimExt(fileOutputPath)
+		fileOutputPath = r8_path.TrimExt(fileOutputPath)
 	}
 
 	if prediction.Status == "succeeded" && prediction.Output != nil {
@@ -584,7 +585,7 @@ func processFileOutputs(output any, schema *openapi3.Schema, destination string)
 
 		clone := []any{}
 		for i, output := range outputs {
-			itemDestination := fmt.Sprintf("%s.%d%s", trimExt(destination), i, path.Ext(destination))
+			itemDestination := fmt.Sprintf("%s.%d%s", r8_path.TrimExt(destination), i, path.Ext(destination))
 			item, err := processFileOutputs(output, schema.Items.Value, itemDestination)
 			if err != nil {
 				return nil, fmt.Errorf("Failed to write output %d: %w", i, err)
@@ -631,10 +632,11 @@ func writeDataURLToFile(url string, destination string) (string, error) {
 
 	ext := path.Ext(destination)
 	dir := path.Dir(destination)
-	name := trimExt(path.Base(destination))
+	name := r8_path.TrimExt(path.Base(destination))
 
 	// Check if ext is an integer, in which case ignore it...
-	if _, err := strconv.Atoi(ext); err != nil {
+	_, err = strconv.Atoi(ext)
+	if err == nil {
 		ext = ""
 		name = path.Base(destination)
 	}
@@ -649,10 +651,6 @@ func writeDataURLToFile(url string, destination string) (string, error) {
 	}
 
 	return path, nil
-}
-
-func trimExt(s string) string {
-	return strings.TrimSuffix(s, path.Ext(s))
 }
 
 func parseInputFlags(inputs []string, schema *openapi3.T) (predict.Inputs, error) {

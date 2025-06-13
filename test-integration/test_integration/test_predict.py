@@ -107,8 +107,6 @@ def test_predict_writes_files_to_files_with_custom_name(tmpdir_factory, cog_bina
         text=True,
         timeout=DEFAULT_TIMEOUT,
     )
-    # DEBUG: Print the last 30 lines of stderr to try and help debugging.
-    print(result.stderr.splitlines()[-30:])
 
     assert result.returncode == 0
     assert result.stdout == ""
