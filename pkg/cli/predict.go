@@ -461,8 +461,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 	}
 
 	if prediction.Status != "succeeded" {
-		console.Errorf("Prediction failed with status \"%s\": %s", prediction.Status, prediction.Error)
-		os.Exit(1)
+		return fmt.Errorf("Prediction failed with status %q: %s", prediction.Status, prediction.Error)
 	}
 
 	if prediction.Output == nil {
