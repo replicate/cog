@@ -10,6 +10,7 @@ nav:
   - Prediction API: python.md
   - Training API: training.md
   - HTTP API: http.md
+  - CLI: cli.md
   - Environment variables: environment.md
   - Private registry: private-package-registry.md
   - Notebooks: notebooks.md
