@@ -255,7 +255,7 @@ propcache==0.3.1
     # via
     #   aiohttp
     #   yarl
-protobuf==6.30.2
+protobuf==6.31.1
     # via
     #   ray
     #   vllm
