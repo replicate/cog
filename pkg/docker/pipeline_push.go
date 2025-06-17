@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aquasecurity/go-version/pkg/version"
+
 	"github.com/replicate/cog/pkg/api"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/dockercontext"
@@ -22,7 +24,6 @@ import (
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
-	"github.com/replicate/cog/pkg/util/version"
 )
 
 const EtagHeader = "etag"
@@ -210,7 +211,19 @@ func validateRequirements(projectDir string, client *http.Client, cfg *config.Co
 				return err
 			}
 			if pipelinePackage == projectPackage {
-				found = pipelineVersion == "" || version.GreaterOrEqual(projectVersion, pipelineVersion)
+				if pipelineVersion == "" || projectVersion == pipelineVersion {
+					found = true
+				} else {
+					leftVersion, err := version.Parse(projectVersion)
+					if err != nil {
+						return err
+					}
+					rightVersion, err := version.Parse(pipelineVersion)
+					if err != nil {
+						return err
+					}
+					found = leftVersion.GreaterThanOrEqual(rightVersion)
+				}
 				break
 			}
 		}
