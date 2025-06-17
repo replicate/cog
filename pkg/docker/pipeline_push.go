@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aquasecurity/go-version/pkg/version"
+	version "github.com/aquasecurity/go-pep440-version"
 
 	"github.com/replicate/cog/pkg/api"
 	"github.com/replicate/cog/pkg/config"
@@ -200,29 +200,38 @@ func validateRequirements(projectDir string, client *http.Client, cfg *config.Co
 	}
 
 	for _, projectRequirement := range projectRequirements {
-		projectPackage, projectVersion, _, _, err := requirements.SplitPinnedPythonRequirement(projectRequirement)
-		if err != nil {
-			return err
+		projectPackage := requirements.PackageName(projectRequirement)
+		projectVersionSpecifier := requirements.VersionSpecifier(projectRequirement)
+		// Continue in case the project does not specify a specific version
+		if projectVersionSpecifier == "" {
+			continue
 		}
 		found := false
 		for _, pipelineRequirement := range pipelineRequirements {
+			if pipelineRequirement == projectRequirement {
+				found = true
+				break
+			}
 			pipelinePackage, pipelineVersion, _, _, err := requirements.SplitPinnedPythonRequirement(pipelineRequirement)
 			if err != nil {
 				return err
 			}
 			if pipelinePackage == projectPackage {
-				if pipelineVersion == "" || projectVersion == pipelineVersion {
+				if pipelineVersion == "" {
 					found = true
 				} else {
-					leftVersion, err := version.Parse(projectVersion)
+					pipelineVersion, err := version.Parse(pipelineVersion)
 					if err != nil {
 						return err
 					}
-					rightVersion, err := version.Parse(pipelineVersion)
+					specifier, err := version.NewSpecifiers(projectVersionSpecifier)
 					if err != nil {
 						return err
 					}
-					found = leftVersion.GreaterThanOrEqual(rightVersion)
+					if specifier.Check(pipelineVersion) {
+						found = true
+						break
+					}
 				}
 				break
 			}
