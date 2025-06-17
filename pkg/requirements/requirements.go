@@ -43,6 +43,8 @@ func CurrentRequirements(tmpDir string) (string, error) {
 }
 
 func ReadRequirements(path string) ([]string, error) {
+	re := regexp.MustCompile(`(?m)^\s*-e\s+\.\s*$`)
+
 	fh, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -60,6 +62,10 @@ func ReadRequirements(path string) ([]string, error) {
 
 		// Skip empty lines and comment lines
 		if strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		if re.MatchString(line) {
 			continue
 		}
 
