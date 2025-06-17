@@ -423,6 +423,17 @@ func TestSplitPinnedPythonRequirement(t *testing.T) {
 	}
 }
 
+func TestReadRequirementsWithEditable(t *testing.T) {
+	srcDir := t.TempDir()
+	reqFile := path.Join(srcDir, "requirements.txt")
+	err := os.WriteFile(reqFile, []byte("-e .\ntorch==2.5.1"), 0o644)
+	require.NoError(t, err)
+
+	requirements, err := ReadRequirements(reqFile)
+	require.NoError(t, err)
+	require.Equal(t, []string{"torch==2.5.1"}, requirements)
+}
+
 func checkRequirements(t *testing.T, expected []string, actual []string) {
 	t.Helper()
 	for n, expectLine := range expected {
