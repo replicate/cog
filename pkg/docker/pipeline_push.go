@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 
+	version "github.com/aquasecurity/go-pep440-version"
+
 	"github.com/replicate/cog/pkg/api"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/dockercontext"
@@ -22,7 +24,6 @@ import (
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
-	"github.com/replicate/cog/pkg/util/version"
 )
 
 const EtagHeader = "etag"
@@ -199,18 +200,39 @@ func validateRequirements(projectDir string, client *http.Client, cfg *config.Co
 	}
 
 	for _, projectRequirement := range projectRequirements {
-		projectPackage, projectVersion, _, _, err := requirements.SplitPinnedPythonRequirement(projectRequirement)
-		if err != nil {
-			return err
+		projectPackage := requirements.PackageName(projectRequirement)
+		projectVersionSpecifier := requirements.VersionSpecifier(projectRequirement)
+		// Continue in case the project does not specify a specific version
+		if projectVersionSpecifier == "" {
+			continue
 		}
 		found := false
 		for _, pipelineRequirement := range pipelineRequirements {
+			if pipelineRequirement == projectRequirement {
+				found = true
+				break
+			}
 			pipelinePackage, pipelineVersion, _, _, err := requirements.SplitPinnedPythonRequirement(pipelineRequirement)
 			if err != nil {
 				return err
 			}
 			if pipelinePackage == projectPackage {
-				found = pipelineVersion == "" || version.GreaterOrEqual(projectVersion, pipelineVersion)
+				if pipelineVersion == "" {
+					found = true
+				} else {
+					pipelineVersion, err := version.Parse(pipelineVersion)
+					if err != nil {
+						return err
+					}
+					specifier, err := version.NewSpecifiers(projectVersionSpecifier)
+					if err != nil {
+						return err
+					}
+					if specifier.Check(pipelineVersion) {
+						found = true
+						break
+					}
+				}
 				break
 			}
 		}

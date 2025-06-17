@@ -347,10 +347,7 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 
 	includePackageNames := []string{}
 	for _, pkg := range includePackages {
-		packageName, err := requirements.PackageName(pkg)
-		if err != nil {
-			return "", err
-		}
+		packageName := requirements.PackageName(pkg)
 		includePackageNames = append(includePackageNames, packageName)
 	}
 
@@ -372,7 +369,7 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 			}
 		}
 
-		packageName, _ := requirements.PackageName(archPkg)
+		packageName := requirements.PackageName(archPkg)
 		if packageName != "" {
 			foundIdx := -1
 			for i, includePkg := range includePackageNames {
