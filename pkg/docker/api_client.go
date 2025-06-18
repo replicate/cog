@@ -345,6 +345,14 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 		containerCfg.WorkingDir = options.Workdir
 	}
 
+	if len(options.Ports) > 0 {
+		containerCfg.ExposedPorts = make(nat.PortSet)
+		for _, port := range options.Ports {
+			containerPort := nat.Port(fmt.Sprintf("%d/tcp", port.ContainerPort))
+			containerCfg.ExposedPorts[containerPort] = struct{}{}
+		}
+	}
+
 	// Check if stdin is a TTY
 	if options.Stdin != nil {
 		if f, ok := options.Stdin.(*os.File); ok {
@@ -376,7 +384,7 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 			containerPort := nat.Port(fmt.Sprintf("%d/tcp", port.ContainerPort))
 			hostCfg.PortBindings[containerPort] = []nat.PortBinding{
 				{
-					HostIP:   "0.0.0.0",
+					HostIP:   "", // use empty string to bind to all interfaces
 					HostPort: strconv.Itoa(port.HostPort),
 				},
 			}
