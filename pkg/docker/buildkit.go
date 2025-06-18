@@ -84,6 +84,8 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 			continue
 		}
 		localDirs[name] = dir
+		// Tell the dockerfile frontend about this build context
+		frontendAttrs["context:"+name] = "local:" + name
 	}
 
 	// Set exporter attributes
