@@ -212,6 +212,9 @@ func validateRequirements(projectDir string, client *http.Client, cfg *config.Co
 				found = true
 				break
 			}
+			if strings.Contains(pipelineRequirement, "@") {
+				continue
+			}
 			pipelinePackage, pipelineVersion, _, _, err := requirements.SplitPinnedPythonRequirement(pipelineRequirement)
 			if err != nil {
 				return err
