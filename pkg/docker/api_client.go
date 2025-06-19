@@ -24,6 +24,7 @@ import (
 	"github.com/mattn/go-isatty"
 	buildkitclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
+	"github.com/moby/term"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 
@@ -462,11 +463,27 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 			})
 		}
 		if attachStdin {
-			eg.Go(func() error {
+
+			go func() {
+				if tty {
+					state, err := term.SetRawTerminal(os.Stdin.Fd())
+					if err != nil {
+						console.Warnf("error setting raw terminal on stdin: %s", err)
+					}
+					defer func() {
+						if err := term.RestoreTerminal(os.Stdin.Fd(), state); err != nil {
+							console.Warnf("error restoring terminal on stdin: %s", err)
+						}
+					}()
+
+					// TODO[md]: handle terminal resize events, see: github.com/containerd/console
+				}
 				_, err := io.Copy(stream.Conn, options.Stdin)
 				// Close the stdin stream to signal EOF to the container
-				return errors.Join(err, stream.CloseWrite())
-			})
+				if err := errors.Join(err, stream.CloseWrite()); err != nil {
+					console.Errorf("error copying and closing stdin stream: %s", err)
+				}
+			}()
 		}
 	}
 
@@ -493,6 +510,9 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 			return "", fmt.Errorf("container exited with status %d", status.StatusCode)
 		}
 	}
+
+	// container is gone, close the attached streams so stdin is released, ignore the error
+	_ = stream.CloseWrite()
 
 	// Wait for stream copying to complete
 	if eg != nil {
@@ -585,7 +605,8 @@ func shouldAttachStdin(stdin io.Reader) (attach bool, tty bool) {
 		return true, false
 	}
 
-	// If it's os.Stdin and a TTY, don't attach by default
-	// This avoids blocking on commands like "echo hello" that don't need input
-	return false, true
+	// If it's os.Stdin and a TTY, attach by default. if this becomes a problem for some
+	// reason we need to add a flag to the run command similar to `docker run -i` that instructs
+	// the container to attach stdin and keep open
+	return true, true
 }
