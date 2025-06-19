@@ -558,31 +558,26 @@ func parseGPURequest(opts command.RunOptions) (container.DeviceRequest, error) {
 //   - OR stdin is os.Stdin but it's not a TTY (piped input)
 func shouldAttachStdin(stdin io.Reader) bool {
 	if stdin == nil {
-		fmt.Println("DEBUG: stdin is nil")
 		return false
 	}
 
 	// If it's not a file, it's probably a buffer/pipe with actual data
 	f, ok := stdin.(*os.File)
 	if !ok {
-		fmt.Println("DEBUG: stdin is not a file, attaching")
 		return true
 	}
 
 	// If it's not os.Stdin, it's an explicit file, so attach it
 	if f != os.Stdin {
-		fmt.Println("DEBUG: stdin is not os.Stdin, attaching")
 		return true
 	}
 
 	// If it's os.Stdin but not a TTY, it's probably piped input
 	if !isatty.IsTerminal(f.Fd()) {
-		fmt.Println("DEBUG: stdin is os.Stdin but not TTY (piped), attaching")
 		return true
 	}
 
 	// If it's os.Stdin and a TTY, don't attach by default
 	// This avoids blocking on commands like "echo hello" that don't need input
-	fmt.Println("DEBUG: stdin is os.Stdin TTY, not attaching")
 	return false
 }
