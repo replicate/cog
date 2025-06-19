@@ -73,9 +73,15 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 		frontendAttrs["build-arg:SOURCE_DATE_EPOCH"] = fmt.Sprintf("%d", *opts.Epoch)
 	}
 
+	// Use WorkingDir as context if ContextDir is relative to ensure consistency with CLI client
+	contextDir := opts.ContextDir
+	if opts.WorkingDir != "" && !filepath.IsAbs(opts.ContextDir) {
+		contextDir = filepath.Join(opts.WorkingDir, opts.ContextDir)
+	}
+
 	localDirs := map[string]string{
 		"dockerfile": filepath.Dir(dockerfilePath),
-		"context":    opts.ContextDir,
+		"context":    contextDir,
 	}
 
 	// Add user-supplied build contexts, but don't overwrite 'dockerfile' or 'context'
