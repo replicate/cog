@@ -41,7 +41,7 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 	frontendAttrs := map[string]string{
 		// filename is the path to the Dockerfile within the "dockerfile" LocalDir context
 		"filename": filepath.Base(dockerfilePath),
-		"syntax": "docker/dockerfile:1",
+		"syntax":   "docker/dockerfile:1",
 		// TODO[md]: support multi-stage target
 		// target is the name of a stage in a multi-stage Dockerfile
 		// "target": opts.Target,
