@@ -330,11 +330,13 @@ func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOp
 func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions) (string, error) {
 	console.Debugf("=== APIClient.containerRun %s", options.Image)
 
+	// Determine if we should attach stdin (file, pipe, interactive stdin, etc)
+	attachStdin := shouldAttachStdin(options.Stdin)
 	containerCfg := &container.Config{
 		Image:        options.Image,
 		Cmd:          options.Args,
 		Env:          options.Env,
-		AttachStdin:  options.Stdin != nil,
+		AttachStdin:  !options.Detach && attachStdin,
 		AttachStdout: options.Stdout != nil,
 		AttachStderr: options.Stderr != nil,
 		Tty:          false, // Will be set below if stdin is a TTY
@@ -354,7 +356,7 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 	}
 
 	// Check if stdin is a TTY
-	if options.Stdin != nil {
+	if attachStdin && options.Stdin != nil {
 		if f, ok := options.Stdin.(*os.File); ok {
 			containerCfg.Tty = isatty.IsTerminal(f.Fd())
 		}
@@ -427,12 +429,12 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 	var stream types.HijackedResponse
 
 	// Attach to container streams if we have any writers and not detached
-	if !options.Detach && (options.Stdout != nil || options.Stderr != nil || options.Stdin != nil) {
+	if !options.Detach && (options.Stdout != nil || options.Stderr != nil || attachStdin) {
 		attachOpts := container.AttachOptions{
 			Stream: true,
-			Stdin:  options.Stdin != nil,
-			Stdout: options.Stdout != nil,
-			Stderr: options.Stderr != nil,
+			Stdin:  attachStdin,
+			Stdout: !options.Detach && options.Stdout != nil,
+			Stderr: !options.Detach && options.Stderr != nil,
 		}
 
 		var err error
@@ -454,7 +456,7 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 				return err
 			})
 		}
-		if options.Stdin != nil {
+		if attachStdin {
 			eg.Go(func() error {
 				_, err = io.Copy(stream.Conn, options.Stdin)
 				return err
@@ -548,4 +550,39 @@ func parseGPURequest(opts command.RunOptions) (container.DeviceRequest, error) {
 	}
 
 	return deviceRequest, nil
+}
+
+// shouldAttachStdin determines if we should attach stdin to the container
+// We should attach stdin only if:
+//   - stdin is not os.Stdin (explicit input like pipe/file/buffer)
+//   - OR stdin is os.Stdin but it's not a TTY (piped input)
+func shouldAttachStdin(stdin io.Reader) bool {
+	if stdin == nil {
+		fmt.Println("DEBUG: stdin is nil")
+		return false
+	}
+
+	// If it's not a file, it's probably a buffer/pipe with actual data
+	f, ok := stdin.(*os.File)
+	if !ok {
+		fmt.Println("DEBUG: stdin is not a file, attaching")
+		return true
+	}
+
+	// If it's not os.Stdin, it's an explicit file, so attach it
+	if f != os.Stdin {
+		fmt.Println("DEBUG: stdin is not os.Stdin, attaching")
+		return true
+	}
+
+	// If it's os.Stdin but not a TTY, it's probably piped input
+	if !isatty.IsTerminal(f.Fd()) {
+		fmt.Println("DEBUG: stdin is os.Stdin but not TTY (piped), attaching")
+		return true
+	}
+
+	// If it's os.Stdin and a TTY, don't attach by default
+	// This avoids blocking on commands like "echo hello" that don't need input
+	fmt.Println("DEBUG: stdin is os.Stdin TTY, not attaching")
+	return false
 }
