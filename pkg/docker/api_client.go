@@ -464,6 +464,9 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 
 	// Start the container
 	if err := c.client.ContainerStart(ctx, runContainer.ID, container.StartOptions{}); err != nil {
+		if isMissingDeviceDriverError(err) {
+			return "", ErrMissingDeviceDriver
+		}
 		return "", fmt.Errorf("failed to start container: %w", err)
 	}
 
