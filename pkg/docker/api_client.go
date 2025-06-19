@@ -331,14 +331,17 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 	console.Debugf("=== APIClient.containerRun %s", options.Image)
 
 	// Determine if we should attach stdin (file, pipe, interactive stdin, etc)
-	attachStdin := shouldAttachStdin(options.Stdin)
+	attachStdin := !options.Detach && shouldAttachStdin(options.Stdin)
+	attachStdout := !options.Detach && options.Stdout != nil
+	attachStderr := !options.Detach && options.Stderr != nil
+
 	containerCfg := &container.Config{
 		Image:        options.Image,
 		Cmd:          options.Args,
 		Env:          options.Env,
-		AttachStdin:  !options.Detach && attachStdin,
-		AttachStdout: options.Stdout != nil,
-		AttachStderr: options.Stderr != nil,
+		AttachStdin:  attachStdin,
+		AttachStdout: attachStdout,
+		AttachStderr: attachStderr,
 		Tty:          false, // Will be set below if stdin is a TTY
 	}
 
@@ -356,7 +359,7 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 	}
 
 	// Check if stdin is a TTY
-	if attachStdin && options.Stdin != nil {
+	if attachStdin {
 		if f, ok := options.Stdin.(*os.File); ok {
 			containerCfg.Tty = isatty.IsTerminal(f.Fd())
 		}
@@ -429,12 +432,12 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 	var stream types.HijackedResponse
 
 	// Attach to container streams if we have any writers and not detached
-	if !options.Detach && (options.Stdout != nil || options.Stderr != nil || attachStdin) {
+	if attachStderr || attachStdout || attachStdin {
 		attachOpts := container.AttachOptions{
 			Stream: true,
 			Stdin:  attachStdin,
-			Stdout: !options.Detach && options.Stdout != nil,
-			Stderr: !options.Detach && options.Stderr != nil,
+			Stdout: attachStdout,
+			Stderr: attachStderr,
 		}
 
 		var err error
@@ -446,10 +449,14 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 
 		// Start copying streams in the background
 		eg, _ = errgroup.WithContext(ctx)
-		if options.Stdout != nil || options.Stderr != nil {
+		if attachStdout || attachStderr {
 			eg.Go(func() error {
 				if containerCfg.Tty {
-					_, err = io.Copy(options.Stdout, stream.Reader)
+					w := options.Stdout
+					if w == nil {
+						w = options.Stderr
+					}
+					_, err = io.Copy(w, stream.Reader)
 				} else {
 					_, err = stdcopy.StdCopy(options.Stdout, options.Stderr, stream.Reader)
 				}
