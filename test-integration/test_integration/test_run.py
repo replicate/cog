@@ -60,3 +60,62 @@ def test_run_fast_build(cog_binary):
     )
     assert result.returncode == 0
     assert result.stdout == "hello world\n"
+
+
+def test_run_with_unconsumed_piped_stdin(tmpdir_factory, cog_binary):
+    tmpdir = tmpdir_factory.mktemp("project")
+    with open(tmpdir / "cog.yaml", "w") as f:
+        cog_yaml = """
+build:
+  python_version: "3.13"
+        """
+        f.write(cog_yaml)
+
+    result = subprocess.run(
+        [cog_binary, "run", "echo", "hello-from-echo"],
+        cwd=tmpdir,
+        check=True,
+        capture_output=True,
+        input=b"hello-from-stdin\n",
+    )
+    assert result.returncode == 0
+    assert b"hello-from-echo" in result.stdout
+
+
+def test_run_with_unattached_stdin(tmpdir_factory, cog_binary):
+    tmpdir = tmpdir_factory.mktemp("project")
+    with open(tmpdir / "cog.yaml", "w") as f:
+        cog_yaml = """
+build:
+  python_version: "3.13"
+        """
+        f.write(cog_yaml)
+
+    result = subprocess.run(
+        [cog_binary, "run", "echo", "hello-from-echo"],
+        cwd=tmpdir,
+        check=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0
+    assert b"hello-from-echo" in result.stdout
+
+
+def test_run_with_piped_stdin_returned_to_stdout(tmpdir_factory, cog_binary):
+    tmpdir = tmpdir_factory.mktemp("project")
+    with open(tmpdir / "cog.yaml", "w") as f:
+        cog_yaml = """
+build:
+  python_version: "3.13"
+        """
+        f.write(cog_yaml)
+
+    result = subprocess.run(
+        [cog_binary, "run", "cat"],
+        cwd=tmpdir,
+        check=True,
+        capture_output=True,
+        input=b"hello world\n",
+    )
+    assert result.returncode == 0
+    assert b"hello world" in result.stdout.splitlines()

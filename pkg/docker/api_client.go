@@ -330,10 +330,13 @@ func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOp
 func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions) (string, error) {
 	console.Debugf("=== APIClient.containerRun %s", options.Image)
 
-	// Determine if we should attach stdin (file, pipe, interactive stdin, etc)
-	attachStdin := !options.Detach && shouldAttachStdin(options.Stdin)
-	attachStdout := !options.Detach && options.Stdout != nil
-	attachStderr := !options.Detach && options.Stderr != nil
+	var attachStdin, tty, attachStderr, attachStdout bool
+	if !options.Detach {
+		// Determine if we should attach stdin (file, pipe, interactive stdin, etc)
+		attachStdin, tty = shouldAttachStdin(options.Stdin)
+		attachStdout = options.Stdout != nil
+		attachStderr = options.Stderr != nil
+	}
 
 	containerCfg := &container.Config{
 		Image:        options.Image,
@@ -342,7 +345,9 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 		AttachStdin:  attachStdin,
 		AttachStdout: attachStdout,
 		AttachStderr: attachStderr,
-		Tty:          false, // Will be set below if stdin is a TTY
+		OpenStdin:    attachStdin,
+		StdinOnce:    attachStdin,
+		Tty:          tty,
 	}
 
 	// Set working directory if specified
@@ -355,13 +360,6 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 		for _, port := range options.Ports {
 			containerPort := nat.Port(fmt.Sprintf("%d/tcp", port.ContainerPort))
 			containerCfg.ExposedPorts[containerPort] = struct{}{}
-		}
-	}
-
-	// Check if stdin is a TTY
-	if attachStdin {
-		if f, ok := options.Stdin.(*os.File); ok {
-			containerCfg.Tty = isatty.IsTerminal(f.Fd())
 		}
 	}
 
@@ -450,7 +448,7 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 		// Start copying streams in the background
 		eg, _ = errgroup.WithContext(ctx)
 		if attachStdout || attachStderr {
-			eg.Go(func() error {
+			eg.Go(func() (err error) {
 				if containerCfg.Tty {
 					w := options.Stdout
 					if w == nil {
@@ -465,8 +463,9 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 		}
 		if attachStdin {
 			eg.Go(func() error {
-				_, err = io.Copy(stream.Conn, options.Stdin)
-				return err
+				_, err := io.Copy(stream.Conn, options.Stdin)
+				// Close the stdin stream to signal EOF to the container
+				return errors.Join(err, stream.CloseWrite())
 			})
 		}
 	}
@@ -563,28 +562,30 @@ func parseGPURequest(opts command.RunOptions) (container.DeviceRequest, error) {
 // We should attach stdin only if:
 //   - stdin is not os.Stdin (explicit input like pipe/file/buffer)
 //   - OR stdin is os.Stdin but it's not a TTY (piped input)
-func shouldAttachStdin(stdin io.Reader) bool {
+func shouldAttachStdin(stdin io.Reader) (attach bool, tty bool) {
 	if stdin == nil {
-		return false
+		return false, false
 	}
 
 	// If it's not a file, it's probably a buffer/pipe with actual data
 	f, ok := stdin.(*os.File)
 	if !ok {
-		return true
+		return true, false
 	}
+
+	tty = isatty.IsTerminal(f.Fd())
 
 	// If it's not os.Stdin, it's an explicit file, so attach it
 	if f != os.Stdin {
-		return true
+		return true, tty
 	}
 
 	// If it's os.Stdin but not a TTY, it's probably piped input
-	if !isatty.IsTerminal(f.Fd()) {
-		return true
+	if !tty {
+		return true, false
 	}
 
 	// If it's os.Stdin and a TTY, don't attach by default
 	// This avoids blocking on commands like "echo hello" that don't need input
-	return false
+	return false, true
 }
