@@ -55,6 +55,7 @@ test = [
     "pytest-xdist",
     "pytest-cov",
     "responses",
+    "pexpect",
 ]
 
 [tool.setuptools_scm]

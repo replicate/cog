@@ -41,6 +41,7 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 	frontendAttrs := map[string]string{
 		// filename is the path to the Dockerfile within the "dockerfile" LocalDir context
 		"filename": filepath.Base(dockerfilePath),
+		"syntax":   "docker/dockerfile:1",
 		// TODO[md]: support multi-stage target
 		// target is the name of a stage in a multi-stage Dockerfile
 		// "target": opts.Target,
@@ -72,9 +73,15 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 		frontendAttrs["build-arg:SOURCE_DATE_EPOCH"] = fmt.Sprintf("%d", *opts.Epoch)
 	}
 
+	// Use WorkingDir as context if ContextDir is relative to ensure consistency with CLI client
+	contextDir := opts.ContextDir
+	if opts.WorkingDir != "" && !filepath.IsAbs(opts.ContextDir) {
+		contextDir = filepath.Join(opts.WorkingDir, opts.ContextDir)
+	}
+
 	localDirs := map[string]string{
 		"dockerfile": filepath.Dir(dockerfilePath),
-		"context":    opts.ContextDir,
+		"context":    contextDir,
 	}
 
 	// Add user-supplied build contexts, but don't overwrite 'dockerfile' or 'context'
@@ -84,6 +91,8 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 			continue
 		}
 		localDirs[name] = dir
+		// Tell the dockerfile frontend about this build context
+		frontendAttrs["context:"+name] = "local:" + name
 	}
 
 	// Set exporter attributes
