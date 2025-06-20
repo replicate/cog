@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/joho/godotenv"
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"golang.org/x/sys/unix"
@@ -69,10 +70,10 @@ the prediction on that.`,
 	addFastFlag(cmd)
 	addLocalImage(cmd)
 	addConfigFlag(cmd)
+	addEnvFlag(cmd)
 
 	cmd.Flags().StringArrayVarP(&inputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
-	cmd.Flags().StringArrayVarP(&envFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
 	cmd.Flags().BoolVar(&useReplicateAPIToken, "use-replicate-token", false, "Pass REPLICATE_API_TOKEN from local environment into the model context")
 	cmd.Flags().StringVar(&inputJSON, "json", "", "Pass inputs as JSON object, read from file (@inputs.json) or via stdin (@-)")
 
@@ -642,4 +643,22 @@ func parseInputFlags(inputs []string, schema *openapi3.T) (predict.Inputs, error
 
 func addSetupTimeoutFlag(cmd *cobra.Command) {
 	cmd.Flags().Uint32Var(&setupTimeout, "setup-timeout", 5*60, "The timeout for a container to setup (in seconds).")
+}
+
+func addEnvFlag(cmd *cobra.Command) {
+	defaultEnv := []string{}
+
+	// Attempt to fill default environment variables with a .env file
+	exists, _ := files.Exists(".env")
+	if exists {
+		var dotEnv map[string]string
+		dotEnv, err := godotenv.Read()
+		if err == nil {
+			for key, value := range dotEnv {
+				defaultEnv = append(defaultEnv, fmt.Sprintf("%s=%s", key, value))
+			}
+		}
+	}
+
+	cmd.Flags().StringArrayVarP(&envFlags, "env", "e", defaultEnv, "Environment variables, in the form name=value")
 }
