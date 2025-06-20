@@ -804,7 +804,7 @@ def test_predict_future_annotations(cog_binary):
 
 
 def test_predict_dotenv(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/future-annotations-project"
+    project_dir = Path(__file__).parent / "fixtures/env-cli-project"
 
     result = subprocess.run(
         [cog_binary, "predict", "--debug", docker_image, "-i", "name=TEST_VAR"],
