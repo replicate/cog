@@ -463,21 +463,21 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 			})
 		}
 		if attachStdin {
+			// if we're in a TTY we need to set the terminal to raw mode, and restore it when we're done
+			if tty {
+				// TODO[md]: handle terminal resize events, see: github.com/containerd/console
+				state, err := term.SetRawTerminal(os.Stdin.Fd())
+				if err != nil {
+					console.Warnf("error setting raw terminal on stdin: %s", err)
+				}
+				defer func() {
+					if err := term.RestoreTerminal(os.Stdin.Fd(), state); err != nil {
+						console.Warnf("error restoring terminal on stdin: %s", err)
+					}
+				}()
+			}
 
 			go func() {
-				if tty {
-					state, err := term.SetRawTerminal(os.Stdin.Fd())
-					if err != nil {
-						console.Warnf("error setting raw terminal on stdin: %s", err)
-					}
-					defer func() {
-						if err := term.RestoreTerminal(os.Stdin.Fd(), state); err != nil {
-							console.Warnf("error restoring terminal on stdin: %s", err)
-						}
-					}()
-
-					// TODO[md]: handle terminal resize events, see: github.com/containerd/console
-				}
 				_, err := io.Copy(stream.Conn, options.Stdin)
 				// Close the stdin stream to signal EOF to the container
 				if err := errors.Join(err, stream.CloseWrite()); err != nil {
