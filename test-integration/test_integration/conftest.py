@@ -1,6 +1,7 @@
 import os
 import shutil
 from pathlib import Path
+from typing import Callable
 
 import pytest
 from _pytest.config import Config
@@ -49,3 +50,18 @@ def docker_image(docker_image_name: str) -> str:
     # We expect the image to exist by this point and will fail if it doesn't.
     # If you just need a name, use docker_image_name.
     remove_docker_image(docker_image_name)
+
+
+@pytest.fixture
+def fixture(tmp_path_factory: pytest.TempPathFactory) -> Callable[[str], Path]:
+    """
+    Return a function that gives each test an isolated copy of a fixture dir.
+    """
+
+    def _make(name: str) -> Path:
+        src = Path(__file__).parent / "fixtures" / name
+        dst = tmp_path_factory.mktemp(name)  # unique dir per test
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+        return dst
+
+    return _make

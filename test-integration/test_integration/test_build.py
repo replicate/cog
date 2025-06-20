@@ -394,8 +394,8 @@ def test_cog_installs_apt_packages(docker_image, cog_binary):
     assert build_process.returncode == 0
 
 
-def test_fast_build(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/fast-build"
+def test_fast_build(fixture, docker_image, cog_binary):
+    project_dir = fixture("fast-build")
     weights_file = os.path.join(project_dir, "weights.h5")
     with open(weights_file, "w", encoding="utf8") as handle:
         handle.seek(256 * 1024 * 1024)
@@ -406,8 +406,6 @@ def test_fast_build(docker_image, cog_binary):
         cwd=project_dir,
         capture_output=True,
     )
-
-    os.remove(weights_file)
 
     assert build_process.returncode == 0
 
@@ -464,8 +462,8 @@ def test_pydantic1_none(docker_image, cog_binary):
     assert build_process.returncode == 0
 
 
-def test_fast_build_with_local_image(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/fast-build"
+def test_fast_build_with_local_image(fixture, docker_image, cog_binary):
+    project_dir = fixture("fast-build")
     weights_file = os.path.join(project_dir, "weights.h5")
     with open(weights_file, "w", encoding="utf8") as handle:
         handle.seek(256 * 1024 * 1024)
@@ -476,8 +474,6 @@ def test_fast_build_with_local_image(docker_image, cog_binary):
         cwd=project_dir,
         capture_output=True,
     )
-
-    os.remove(weights_file)
 
     assert build_process.returncode == 0
 
