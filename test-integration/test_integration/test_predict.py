@@ -801,3 +801,18 @@ def test_predict_future_annotations(cog_binary):
         timeout=120.0,
     )
     assert result.returncode == 0
+
+
+def test_predict_dotenv(docker_image, cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/future-annotations-project"
+
+    result = subprocess.run(
+        [cog_binary, "predict", "--debug", docker_image, "-i", "name=TEST_VAR"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+    )
+    assert result.returncode == 0
+    assert result.stdout == "ENV[TEST_VAR]=test_value\n"
