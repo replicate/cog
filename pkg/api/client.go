@@ -29,6 +29,7 @@ var (
 	ErrorBadResponseNewVersionEndpoint = errors.New("Bad response from new version endpoint")
 	ErrorBadDraftFormat                = errors.New("Bad draft format")
 	ErrorBadDraftUsernameDigestFormat  = errors.New("Bad draft username/digest format")
+	ErrorBadRequestModelHasVersions    = errors.New("Model already has versions associated with it.")
 )
 
 type Client struct {
@@ -48,6 +49,18 @@ type CreateRelease struct {
 
 type Model struct {
 	LatestVersion Version `json:"latest_version"`
+}
+
+type SubError struct {
+	Detail  string `json:"detail"`
+	Pointer string `json:"pointer"`
+}
+
+type Error struct {
+	Detail string     `json:"detail"`
+	Errors []SubError `json:"errors"`
+	Status int        `json:"status"`
+	Title  string     `json:"title"`
 }
 
 func NewClient(dockerCommand command.Command, client *http.Client, webClient *web.Client) *Client {
@@ -180,6 +193,14 @@ func (c *Client) postNewVersion(ctx context.Context, image string, tarball *byte
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		var bodyError Error
+		err = json.NewDecoder(resp.Body).Decode(&bodyError)
+		if err != nil {
+			return "", err
+		}
+		if bodyError.Errors[0].Detail == "This endpoint does not support models that have versions published with `cog push`." {
+			return "", util.WrapError(ErrorBadRequestModelHasVersions, strconv.Itoa(resp.StatusCode))
+		}
 		return "", util.WrapError(ErrorBadResponseNewVersionEndpoint, strconv.Itoa(resp.StatusCode))
 	}
 
