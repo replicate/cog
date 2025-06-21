@@ -41,7 +41,7 @@ func FetchTorchCompatibilityMatrix() ([]config.TorchCompatibility, error) {
 }
 
 func fetchTorchPackages(name string) ([]torchPackage, error) {
-	pkgRegexp := regexp.MustCompile(`(.+?)-(([0-9.]+)\+([a-z0-9]+))-cp([0-9.]+)-cp([0-9.]+)-linux_x86_64.whl`)
+	pkgRegexp := regexp.MustCompile(`(.+?)-(([0-9.]+)\+([a-z0-9]+))-cp([0-9.]+)-cp([0-9.]+)-(linux|manylinux_2_[0-9]+)_x86_64.whl`)
 
 	url := fmt.Sprintf("https://download.pytorch.org/whl/%s/", name)
 	resp, err := soup.Get(url)
