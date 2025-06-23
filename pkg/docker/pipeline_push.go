@@ -16,7 +16,7 @@ import (
 )
 
 func PipelinePush(ctx context.Context, image string, projectDir string, apiClient *api.Client, client *http.Client, cfg *config.Config) error {
-	err := procedure.Validate(projectDir, client, cfg)
+	err := procedure.Validate(projectDir, client, cfg, false)
 	if err != nil {
 		return err
 	}

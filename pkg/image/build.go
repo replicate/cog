@@ -21,6 +21,8 @@ import (
 	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/dockerignore"
 	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/http"
+	"github.com/replicate/cog/pkg/procedure"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/weights"
@@ -54,10 +56,22 @@ func Build(
 	annotations map[string]string,
 	localImage bool,
 	dockerCommand command.Command,
-	client registry.Client) error {
+	client registry.Client,
+	pipelinesImage bool) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 	if fastFlag {
 		console.Info("Fast build enabled.")
+	}
+
+	if pipelinesImage {
+		httpClient, err := http.ProvideHTTPClient(ctx, dockerCommand)
+		if err != nil {
+			return err
+		}
+		err = procedure.Validate(dir, httpClient, cfg, true)
+		if err != nil {
+			return err
+		}
 	}
 
 	// remove bundled schema files that may be left from previous builds

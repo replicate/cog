@@ -56,6 +56,7 @@ func newBuildCommand() *cobra.Command {
 	addFastFlag(cmd)
 	addLocalImage(cmd)
 	addConfigFlag(cmd)
+	addPipelineImage(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
 }
@@ -117,7 +118,8 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		nil,
 		buildLocalImage,
 		dockerClient,
-		registryClient); err != nil {
+		registryClient,
+		pipelinesImage); err != nil {
 		logClient.EndBuild(ctx, err, logCtx)
 		return err
 	}

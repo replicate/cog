@@ -43,42 +43,74 @@ var SystemPackages = map[string]bool{
 	"imagemagick": true,
 }
 
-func Validate(projectDir string, client *http.Client, cfg *config.Config) error {
-	err := validateRequirements(projectDir, client, cfg)
+func Validate(projectDir string, client *http.Client, cfg *config.Config, fill bool) error {
+	// Validate requirements
+	err := validateRequirements(projectDir, client, cfg, fill)
 	if err != nil {
 		return err
 	}
-	if cfg.Build.PythonVersion != "" && cfg.Build.PythonVersion != PythonVersion {
+
+	// Handle python versions
+	if fill && cfg.Build.PythonVersion == "" {
+		cfg.Build.PythonVersion = PythonVersion
+	}
+	if cfg.Build.PythonVersion != PythonVersion {
 		return util.WrapError(ErrorPythonVersion, cfg.Build.PythonVersion)
 	}
+
+	// Handle system packages
+	seenSystemPackages := map[string]bool{}
 	for _, systemPackage := range cfg.Build.SystemPackages {
 		_, ok := SystemPackages[systemPackage]
 		if !ok {
 			return util.WrapError(ErrorSystemPackage, systemPackage)
 		}
+		seenSystemPackages[systemPackage] = true
 	}
+
+	if fill {
+		for systemPackage := range SystemPackages {
+			_, ok := seenSystemPackages[systemPackage]
+			if !ok {
+				cfg.Build.SystemPackages = append(cfg.Build.SystemPackages, systemPackage)
+			}
+		}
+	}
+
+	// Validate run comamnds
 	if len(cfg.Build.Run) > 0 {
 		return ErrorRunCommand
 	}
+
+	// Validate GPU
 	if cfg.Build.GPU {
 		return ErrorGPU
 	}
+
+	// Validate CUDA
 	if cfg.Build.CUDA != "" {
 		return ErrorCUDA
 	}
-	if cfg.Concurrency.Max > 1 {
-		return ErrorConcurrency
+
+	// Validate concurrency
+	concurrency := cfg.Concurrency
+	if concurrency != nil {
+		if concurrency.Max > 1 {
+			return ErrorConcurrency
+		}
 	}
+
+	err = cfg.ValidateAndComplete(projectDir)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func validateRequirements(projectDir string, client *http.Client, cfg *config.Config) error {
+func validateRequirements(projectDir string, client *http.Client, cfg *config.Config, fill bool) error {
 	if len(cfg.Build.PythonPackages) > 0 {
 		return ErrorPythonPackages
-	}
-
-	if cfg.Build.PythonRequirements == "" {
-		return nil
 	}
 
 	requirementsFilePath, err := downloadRequirements(projectDir, client)
@@ -86,59 +118,65 @@ func validateRequirements(projectDir string, client *http.Client, cfg *config.Co
 		return err
 	}
 
-	pipelineRequirements, err := requirements.ReadRequirements(requirementsFilePath)
-	if err != nil {
-		return err
-	}
-
-	projectRequirements, err := requirements.ReadRequirements(cfg.RequirementsFile(projectDir))
-	if err != nil {
-		return err
-	}
-
-	for _, projectRequirement := range projectRequirements {
-		projectPackage := requirements.PackageName(projectRequirement)
-		projectVersionSpecifier := requirements.VersionSpecifier(projectRequirement)
-		// Continue in case the project does not specify a specific version
-		if projectVersionSpecifier == "" {
-			continue
+	if cfg.Build.PythonRequirements != "" {
+		pipelineRequirements, err := requirements.ReadRequirements(requirementsFilePath)
+		if err != nil {
+			return err
 		}
-		found := false
-		for _, pipelineRequirement := range pipelineRequirements {
-			if pipelineRequirement == projectRequirement {
-				found = true
-				break
-			}
-			if strings.Contains(pipelineRequirement, "@") {
+
+		projectRequirements, err := requirements.ReadRequirements(cfg.RequirementsFile(projectDir))
+		if err != nil {
+			return err
+		}
+
+		for _, projectRequirement := range projectRequirements {
+			projectPackage := requirements.PackageName(projectRequirement)
+			projectVersionSpecifier := requirements.VersionSpecifier(projectRequirement)
+			// Continue in case the project does not specify a specific version
+			if projectVersionSpecifier == "" {
 				continue
 			}
-			pipelinePackage, pipelineVersion, _, _, err := requirements.SplitPinnedPythonRequirement(pipelineRequirement)
-			if err != nil {
-				return err
-			}
-			if pipelinePackage == projectPackage {
-				if pipelineVersion == "" {
+			found := false
+			for _, pipelineRequirement := range pipelineRequirements {
+				if pipelineRequirement == projectRequirement {
 					found = true
-				} else {
-					pipelineVersion, err := version.Parse(pipelineVersion)
-					if err != nil {
-						return err
-					}
-					specifier, err := version.NewSpecifiers(projectVersionSpecifier)
-					if err != nil {
-						return err
-					}
-					if specifier.Check(pipelineVersion) {
-						found = true
-						break
-					}
+					break
 				}
-				break
+				if strings.Contains(pipelineRequirement, "@") {
+					continue
+				}
+				pipelinePackage, pipelineVersion, _, _, err := requirements.SplitPinnedPythonRequirement(pipelineRequirement)
+				if err != nil {
+					return err
+				}
+				if pipelinePackage == projectPackage {
+					if pipelineVersion == "" {
+						found = true
+					} else {
+						pipelineVersion, err := version.Parse(pipelineVersion)
+						if err != nil {
+							return err
+						}
+						specifier, err := version.NewSpecifiers(projectVersionSpecifier)
+						if err != nil {
+							return err
+						}
+						if specifier.Check(pipelineVersion) {
+							found = true
+							break
+						}
+					}
+					break
+				}
+			}
+			if !found {
+				return util.WrapError(ErrorPythonPackage, projectRequirement)
 			}
 		}
-		if !found {
-			return util.WrapError(ErrorPythonPackage, projectRequirement)
-		}
+	}
+
+	if fill {
+		cfg.Build.PythonRequirements = requirementsFilePath
 	}
 
 	return nil
