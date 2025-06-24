@@ -29,7 +29,7 @@ var (
 	ErrorBadResponseNewVersionEndpoint = errors.New("Bad response from new version endpoint")
 	ErrorBadDraftFormat                = errors.New("Bad draft format")
 	ErrorBadDraftUsernameDigestFormat  = errors.New("Bad draft username/digest format")
-	ErrorBadRequestModelHasVersions    = errors.New("Model already has versions associated with it.")
+	ErrorBadRequestModelHasVersions    = errors.New("This model already has versions associated with it, and can't be used with procedures.")
 )
 
 type Client struct {
