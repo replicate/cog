@@ -29,7 +29,8 @@ var (
 	ErrorBadResponseNewVersionEndpoint = errors.New("Bad response from new version endpoint")
 	ErrorBadDraftFormat                = errors.New("Bad draft format")
 	ErrorBadDraftUsernameDigestFormat  = errors.New("Bad draft username/digest format")
-	ErrorBadRequestModelHasVersions    = errors.New("This model already has versions associated with it, and can't be used with procedures.")
+	ErrorBadRequestModelHasVersions    = errors.New("This model already has versions associated with it, and can't be used with procedures")
+	ErrorBadRequestModelIsPrivate      = errors.New("This model is private, procedures are only supported on public models")
 )
 
 type Client struct {
@@ -200,6 +201,9 @@ func (c *Client) postNewVersion(ctx context.Context, image string, tarball *byte
 		}
 		if bodyError.Errors[0].Detail == "This endpoint does not support models that have versions published with `cog push`." {
 			return "", util.WrapError(ErrorBadRequestModelHasVersions, strconv.Itoa(resp.StatusCode))
+		}
+		if bodyError.Errors[0].Detail == "This endpoint does not support private models." {
+			return "", util.WrapError(ErrorBadRequestModelIsPrivate, strconv.Itoa(resp.StatusCode))
 		}
 		return "", util.WrapError(ErrorBadResponseNewVersionEndpoint, strconv.Itoa(resp.StatusCode))
 	}
