@@ -813,4 +813,4 @@ def test_predict_pipeline(cog_binary):
         timeout=120.0,
     )
     assert result.returncode == 0
-    assert result.stdout == "HELLO HELLO\n"
+    assert result.stdout == "HELLO TEST\n"
