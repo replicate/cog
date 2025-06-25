@@ -804,7 +804,7 @@ def test_predict_future_annotations(cog_binary):
 
 
 def test_predict_pipeline(cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/pipeline-project"
+    project_dir = Path(__file__).parent / "fixtures/procedure-project"
     result = subprocess.run(
         [cog_binary, "predict", "--x-pipeline", "--debug", "-i", "prompt=test"],
         cwd=project_dir,
