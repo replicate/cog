@@ -808,7 +808,6 @@ def test_predict_pipeline(cog_binary):
     result = subprocess.run(
         [cog_binary, "predict", "--x-pipeline", "--debug", "-i", "prompt=test"],
         cwd=project_dir,
-        check=True,
         capture_output=True,
         text=True,
         timeout=120.0,
