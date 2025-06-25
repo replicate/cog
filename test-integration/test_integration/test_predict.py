@@ -809,7 +809,6 @@ def test_predict_dotenv(docker_image, cog_binary):
     result = subprocess.run(
         [cog_binary, "predict", "--debug", docker_image, "-i", "name=TEST_VAR"],
         cwd=project_dir,
-        check=True,
         capture_output=True,
         text=True,
         timeout=120.0,
