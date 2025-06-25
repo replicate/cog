@@ -803,11 +803,11 @@ def test_predict_future_annotations(cog_binary):
     assert result.returncode == 0
 
 
-def test_predict_dotenv(docker_image, cog_binary):
+def test_predict_dotenv(cog_binary):
     project_dir = Path(__file__).parent / "fixtures/env-cli-project"
 
     result = subprocess.run(
-        [cog_binary, "predict", "--debug", docker_image, "-i", "name=TEST_VAR"],
+        [cog_binary, "predict", "--debug", "-i", "name=TEST_VAR"],
         cwd=project_dir,
         capture_output=True,
         text=True,
