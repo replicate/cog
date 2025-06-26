@@ -1,7 +1,7 @@
 from cog import Input
-from cog.ext.pipelines import include
+from replicate import use
 
-upcase = include("pipelines-beta/upcase")
+upcase = use("pipelines-beta/upcase")
 
 
 def run(

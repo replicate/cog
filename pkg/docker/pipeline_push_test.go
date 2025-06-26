@@ -15,6 +15,7 @@ import (
 	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/env"
 	cogHttp "github.com/replicate/cog/pkg/http"
+	"github.com/replicate/cog/pkg/procedure"
 	"github.com/replicate/cog/pkg/web"
 )
 
@@ -210,7 +211,7 @@ func TestPipelinePushSuccessWithBetaPatch(t *testing.T) {
 		case "/requirements.txt":
 			// Mock requirements.txt response
 			requirementsResponse := "mycustompackage==1.1.0b2"
-			w.Header().Add(EtagHeader, "a")
+			w.Header().Add(procedure.EtagHeader, "a")
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(requirementsResponse))
 		default:
@@ -304,7 +305,7 @@ func TestPipelinePushSuccessWithAlphaPatch(t *testing.T) {
 		case "/requirements.txt":
 			// Mock requirements.txt response
 			requirementsResponse := "mycustompackage==1.1.0b2"
-			w.Header().Add(EtagHeader, "a")
+			w.Header().Add(procedure.EtagHeader, "a")
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(requirementsResponse))
 		default:
@@ -398,7 +399,7 @@ func TestPipelinePushSuccessWithURLInstallPath(t *testing.T) {
 		case "/requirements.txt":
 			// Mock requirements.txt response
 			requirementsResponse := "mycustompackage==1.1.0b2\ncoglet @ https://github.com/replicate/cog-runtime/releases/download/v0.1.0-alpha29/coglet-0.1.0a29-py3-none-any.whl"
-			w.Header().Add(EtagHeader, "a")
+			w.Header().Add(procedure.EtagHeader, "a")
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(requirementsResponse))
 		default:

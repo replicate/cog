@@ -57,11 +57,11 @@ class IncludeAnalyzer(ast.NodeVisitor):
             # Handles `from replicate import include` then `include(...)`
             target = self.imports.get(node.func.id, node.func.id)
 
-        if target == "cog.ext.pipelines.include":
+        if target == "replicate.use":
             # Check scope
             if self.scope_stack:
                 raise ValueError(
-                    f"[{self.file_path}] Invalid scope at line {node.lineno}: `cog.ext.pipelines.include(...)` must be in global scope"
+                    f"[{self.file_path}] Invalid scope at line {node.lineno}: `replicate.use(...)` must be in global scope"
                 )
             elif node.args:
                 arg = node.args[0]
