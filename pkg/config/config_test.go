@@ -726,7 +726,7 @@ func TestConfigMarshal(t *testing.T) {
 	data, err := yaml.Marshal(cfg)
 	require.NoError(t, err)
 	require.Equal(t, `build:
-  python_version: "3.12"
+  python_version: "3.13"
   fast: false
 predict: ""
 `, string(data))

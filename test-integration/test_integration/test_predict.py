@@ -801,3 +801,16 @@ def test_predict_future_annotations(cog_binary):
         timeout=120.0,
     )
     assert result.returncode == 0
+
+
+def test_predict_pipeline(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/procedure-project"
+    result = subprocess.run(
+        [cog_binary, "predict", "--x-pipeline", "--debug", "-i", "prompt=test"],
+        cwd=project_dir,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+    )
+    assert result.returncode == 0
+    assert result.stdout == "HELLO TEST\n"
