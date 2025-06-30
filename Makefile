@@ -7,12 +7,13 @@ BINDIR = $(PREFIX)/bin
 INSTALL := install -m 0755
 
 GO ?= go
-GORELEASER := $(GO) run github.com/goreleaser/goreleaser/v2@v2.3.2
-GOIMPORTS := $(GO) run golang.org/x/tools/cmd/goimports@latest
-GOLINT := $(GO) run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0
+# GORELEASER := $(GO) tool goreleaser
+GORELEASER := $(GO) run github.com/goreleaser/goreleaser/v2@latest
+GOIMPORTS := $(GO) tool goimports
+GOLINT := $(GO) tool golangci-lint
 
-PYTHON ?= python
-TOX := $(PYTHON) -Im tox
+UV ?= uv
+TOX := $(UV) run tox
 
 COG_GO_SOURCE := $(shell find cmd pkg -type f)
 COG_PYTHON_SOURCE := $(shell find python/cog -type f -name '*.py')
@@ -38,7 +39,7 @@ else
 pkg/dockerfile/embed/.wheel: $(COG_PYTHON_SOURCE)
 	@mkdir -p pkg/dockerfile/embed
 	@rm -f pkg/dockerfile/embed/*.whl # there can only be one embedded wheel
-	$(PYTHON) -m pip wheel --no-deps --no-binary=:all: --wheel-dir=pkg/dockerfile/embed .
+	$(UV) build --wheel --out-dir=pkg/dockerfile/embed .
 	@touch $@
 
 define COG_WHEEL
@@ -67,11 +68,11 @@ clean:
 
 .PHONY: test-go
 test-go: pkg/dockerfile/embed/.wheel
-	$(GO) get gotest.tools/gotestsum
-	$(GO) run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
+	$(GO) tool gotestsum -- -short -timeout 1200s -parallel 5 ./... $(ARGS)
 
 .PHONY: test-integration
 test-integration: $(COG_BINARIES)
+	$(GO) test ./pkg/docker/...
 	PATH="$(PWD):$(PATH)" $(TOX) -e integration
 
 .PHONY: test-python
@@ -83,7 +84,8 @@ test: test-go test-python test-integration
 
 .PHONY: fmt
 fmt:
-	$(GO) run golang.org/x/tools/cmd/goimports@latest -w -d .
+	$(GOIMPORTS) -w -d .
+	uv run ruff format
 
 .PHONY: generate
 generate:
@@ -105,7 +107,11 @@ lint: pkg/dockerfile/embed/.wheel check-fmt vet
 
 .PHONY: run-docs-server
 run-docs-server:
-	pip install mkdocs-material
+	uv pip install mkdocs-material
 	sed 's/docs\///g' README.md > ./docs/README.md
 	cp CONTRIBUTING.md ./docs/
 	mkdocs serve
+
+.PHONY: gen-mocks
+gen-mocks:
+	mockery

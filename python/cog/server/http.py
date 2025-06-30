@@ -9,9 +9,19 @@ import sys
 import textwrap
 import threading
 import traceback
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from enum import Enum, auto, unique
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional, Type
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncGenerator,
+    Awaitable,
+    Callable,
+    Dict,
+    Optional,
+    Type,
+)
 
 import structlog
 import uvicorn
@@ -41,6 +51,8 @@ if PYDANTIC_V2:
         unwrap_pydantic_serialization_iterators,
         update_openapi_schema_for_pydantic_2,
     )
+else:
+    from .helpers import update_nullable_optional
 
 from .probes import ProbeHelper
 from .runner import (
@@ -118,9 +130,32 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     is_build: bool = False,
     await_explicit_shutdown: bool = False,  # pylint: disable=redefined-outer-name
 ) -> MyFastAPI:
+    started_at = datetime.now(tz=timezone.utc)
+
+    @asynccontextmanager
+    async def lifespan(app: MyFastAPI) -> AsyncGenerator[None, None]:
+        # Startup code (was previously in @app.on_event("startup"))
+        # check for early setup failures
+        if (
+            app.state.setup_result
+            and app.state.setup_result.status == schema.Status.FAILED
+        ):
+            # signal shutdown if interactive run
+            if shutdown_event and not await_explicit_shutdown:
+                shutdown_event.set()
+        else:
+            setup_task = runner.setup()
+            setup_task.add_done_callback(_handle_setup_done)
+
+        yield
+
+        # Shutdown code (was previously in @app.on_event("shutdown"))
+        worker.terminate()
+
     app = MyFastAPI(  # pylint: disable=redefined-outer-name
         title="Cog",  # TODO: mention model name?
         # version=None # TODO
+        lifespan=lifespan,
     )
 
     def custom_openapi() -> Dict[str, Any]:
@@ -136,6 +171,8 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             # See: https://github.com/tiangolo/fastapi/pull/9873#issuecomment-1997105091
             if PYDANTIC_V2:
                 update_openapi_schema_for_pydantic_2(openapi_schema)
+            else:
+                update_nullable_optional(openapi_schema, app)
 
             app.openapi_schema = openapi_schema
 
@@ -145,7 +182,6 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
 
     app.state.health = Health.STARTING
     app.state.setup_result = None
-    started_at = datetime.now(tz=timezone.utc)
 
     # shutdown is needed no matter what happens
     @app.post("/shutdown")
@@ -167,6 +203,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     worker = make_worker(
         predictor_ref=cog_config.get_predictor_ref(mode=mode),
         is_async=is_async,
+        is_train=False if mode == Mode.PREDICT else True,
         max_concurrency=cog_config.max_concurrency,
     )
     runner = PredictionRunner(worker=worker, max_concurrency=cog_config.max_concurrency)
@@ -238,6 +275,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                         request=request,
                         response_type=TrainingResponse,
                         respond_async=respond_async,
+                        is_train=True,
                     )
 
             @app.put(
@@ -286,6 +324,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                         request=request,
                         response_type=TrainingResponse,
                         respond_async=respond_async,
+                        is_train=True,
                     )
 
             @app.post("/trainings/{training_id}/cancel")
@@ -310,24 +349,6 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                 msg = "Error while loading trainer:\n\n" + traceback.format_exc()
                 add_setup_failed_routes(app, started_at, msg)
                 return app
-
-    @app.on_event("startup")
-    def startup() -> None:
-        # check for early setup failures
-        if (
-            app.state.setup_result
-            and app.state.setup_result.status == schema.Status.FAILED
-        ):
-            # signal shutdown if interactive run
-            if shutdown_event and not await_explicit_shutdown:
-                shutdown_event.set()
-        else:
-            setup_task = runner.setup()
-            setup_task.add_done_callback(_handle_setup_done)
-
-    @app.on_event("shutdown")
-    def shutdown() -> None:
-        worker.terminate()
 
     @app.get("/")
     async def root() -> Any:
@@ -420,6 +441,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         request: Optional[PredictionRequest],
         response_type: Type[schema.PredictionResponse],
         respond_async: bool = False,
+        is_train: bool = False,
     ) -> Response:
         # [compat] If no body is supplied, assume that this model can be run
         # with empty input. This will throw a ValidationError if that's not
@@ -439,7 +461,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             task_kwargs["upload_url"] = upload_url
 
         try:
-            predict_task = runner.predict(request, task_kwargs=task_kwargs)
+            predict_task = runner.predict(request, is_train, task_kwargs=task_kwargs)
         except RunnerBusyError:
             return JSONResponse(
                 {"detail": "Already running a prediction"}, status_code=409
@@ -469,7 +491,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         try:
             _ = response_type(**response_object)
         except ValidationError as e:
-            _log_invalid_output(e)
+            _log_invalid_output(e, mode)
             raise HTTPException(status_code=500, detail=str(e)) from e
 
         response_object["output"] = upload_files(
@@ -486,8 +508,6 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         """
         Cancel a running prediction
         """
-        if not runner.is_busy():
-            return JSONResponse({}, status_code=404)
         try:
             runner.cancel(prediction_id)
         except UnknownPredictionError:
@@ -522,17 +542,20 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     return app
 
 
-def _log_invalid_output(error: Any) -> None:
+def _log_invalid_output(error: Any, mode: Mode) -> None:
+    function_name = "predict()"
+    if mode == Mode.TRAIN:
+        function_name = "train()"
     log.error(
         textwrap.dedent(
             f"""\
-            The return value of predict() was not valid:
+            The return value of {function_name} was not valid:
 
             {error}
 
             Check that your predict function is in this form, where `output_type` is the same as the type you are returning (e.g. `str`):
 
-                def predict(...) -> output_type:
+                def {function_name} -> output_type:
                     ...
            """
         )

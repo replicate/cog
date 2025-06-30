@@ -83,20 +83,6 @@ METRICS_FIXTURES = [
             "foo": 123,
         },
     ),
-    (
-        WorkerConfig("emit_metric"),
-        {"name": ST_NAMES},
-        {
-            "foo": 123,
-        },
-    ),
-    (
-        WorkerConfig("emit_metric_async", min_python=(3, 11), is_async=True),
-        {"name": ST_NAMES},
-        {
-            "foo": 123,
-        },
-    ),
 ]
 
 OUTPUT_FIXTURES = [
@@ -487,7 +473,7 @@ def test_output(worker, payloads, output_generator, data):
     SETUP_LOGS_FIXTURES,
     indirect=["worker"],
 )
-def test_setup_logging(worker, expected_stdout, expected_stderr):
+def test_setup_logging(worker: Worker, expected_stdout, expected_stderr):
     """
     We should get the logs we expect from predictors that generate logs during
     setup.
@@ -497,6 +483,32 @@ def test_setup_logging(worker, expected_stdout, expected_stderr):
 
     assert result.stdout == expected_stdout
     assert result.stderr == expected_stderr
+
+
+@uses_worker_configs(
+    [
+        WorkerConfig("import_err", setup=False),
+        WorkerConfig("import_err", setup=False, min_python=(3, 11), is_async=True),
+    ]
+)
+def test_predictor_load_error_logging(worker: Worker):
+    """
+    This test ensures that we capture standard output that occurrs when the predictor
+    errors when it is loaded. Before setup or predict are even run.
+    """
+    result = _process(worker, worker.setup, swallow_exceptions=True)
+
+    assert result.done.error
+    assert result.done.error_detail == "No module named 'missing_module'"
+
+    assert result.stdout == "writing to stdout at import time\n"
+    stderr_lines = result.stderr.splitlines(keepends=True)
+    assert stderr_lines[0] == "writing to stderr at import time\n"
+
+    assert "python/tests/server/fixtures/import_err.py" in stderr_lines[-3]
+    assert "line 6" in stderr_lines[-3]
+    assert "import missing_module" in stderr_lines[-2]
+    assert stderr_lines[-1] == "ModuleNotFoundError: No module named 'missing_module'\n"
 
 
 @pytest.mark.parametrize(
@@ -678,6 +690,34 @@ def test_graceful_shutdown(worker: Worker):
 def test_async_setup_uses_same_loop_as_predict(worker: Worker):
     result = _process(worker, lambda: worker.predict({}), tag=None)
     assert result, "Expected worker to return True to assert same event loop"
+
+
+@uses_worker("with_context")
+def test_context(worker: Worker):
+    result = _process(
+        worker,
+        lambda: worker.predict({"name": "context"}, context={"prefix": "hello"}),
+        tag=None,
+    )
+    assert result.done
+    assert not result.done.error
+    assert result.output == "hello context!"
+
+
+@uses_worker("with_context_async", min_python=(3, 11), is_async=True)
+def test_context_async(worker: Worker):
+    result = _process(
+        worker,
+        lambda: worker.predict(
+            {"name": "context"}, tag="t1", context={"prefix": "hello"}
+        ),
+        tag=None,
+    )
+
+    print("\n".join(result.stderr_lines))
+    assert result.done
+    assert not result.done.error, result.done.error_detail
+    assert result.output == "hello context!"
 
 
 @frozen

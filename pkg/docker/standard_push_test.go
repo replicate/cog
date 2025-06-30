@@ -11,6 +11,13 @@ import (
 func TestStandardPush(t *testing.T) {
 	command := dockertest.NewMockCommand()
 	dockertest.PushError = nil
-	err := StandardPush("test", command)
+	err := StandardPush(t.Context(), "test", command)
+	require.NoError(t, err)
+}
+
+func TestStandardPushWithFullDockerCommand(t *testing.T) {
+	t.Setenv(DockerCommandEnvVarName, "echo")
+	command := NewDockerCommand()
+	err := StandardPush(t.Context(), "test", command)
 	require.NoError(t, err)
 }

@@ -1,0 +1,19 @@
+# Configuration for Cog ⚙️
+# Reference: https://cog.run/yaml
+
+build:
+  # set to true if your model requires a GPU
+  gpu: false
+
+  # python version in the form '3.11' or '3.11.4'
+  python_version: "3.12"
+
+  # a list of packages in the format <package-name>==<version>
+  python_packages:
+    - "pydantic==2.10.6"  # The problematic Pydantic version
+
+# predict.py defines how predictions are run on your model
+predict: "predict.py:Predictor"
+
+# train.py defines how training runs on your model
+train: "train.py:train"

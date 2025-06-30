@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,13 +15,13 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-func SaveLoginToken(registryHost string, username string, token string) error {
+func SaveLoginToken(ctx context.Context, registryHost string, username string, token string) error {
 	conf := config.LoadDefaultConfigFile(os.Stderr)
 	credsStore := conf.CredentialsStore
 	if credsStore == "" {
 		return saveAuthToConfig(conf, registryHost, username, token)
 	}
-	return saveAuthToCredentialsStore(credsStore, registryHost, username, token)
+	return saveAuthToCredentialsStore(ctx, credsStore, registryHost, username, token)
 }
 
 func saveAuthToConfig(conf *configfile.ConfigFile, registryHost string, username string, token string) error {
@@ -35,14 +36,14 @@ func saveAuthToConfig(conf *configfile.ConfigFile, registryHost string, username
 	return nil
 }
 
-func saveAuthToCredentialsStore(credsStore string, registryHost string, username string, token string) error {
-	binary := DockerCredentialBinary(credsStore)
+func saveAuthToCredentialsStore(ctx context.Context, credsStore string, registryHost string, username string, token string) error {
+	binary := dockerCredentialBinary(credsStore)
 	input := CredentialHelperInput{
 		Username:  username,
 		Secret:    token,
 		ServerURL: registryHost,
 	}
-	cmd := exec.Command(binary, "store")
+	cmd := exec.CommandContext(ctx, binary, "store")
 	cmd.Env = os.Environ()
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()

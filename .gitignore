@@ -20,3 +20,5 @@ docs/CONTRIBUTING.md
 venv
 base-image
 flag_file
+
+bin/*

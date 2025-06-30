@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -9,8 +8,9 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/image"
-	"github.com/replicate/cog/pkg/util"
+	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -37,6 +37,9 @@ func newRunCommand() *cobra.Command {
 	addUseCogBaseImageFlag(cmd)
 	addGpusFlag(cmd)
 	addFastFlag(cmd)
+	addLocalImage(cmd)
+	addConfigFlag(cmd)
+	addPipelineImage(cmd)
 
 	flags := cmd.Flags()
 	// Flags after first argument are considered args and passed to command
@@ -51,13 +54,51 @@ func newRunCommand() *cobra.Command {
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	cfg, projectDir, err := config.GetConfig(projectDirFlag)
+	ctx := cmd.Context()
+
+	dockerClient, err := docker.NewClient(ctx)
 	if err != nil {
 		return err
 	}
-	imageName, err := image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput)
+	client := registry.NewRegistryClient()
+
+	cfg, projectDir, err := config.GetConfig(configFilename)
 	if err != nil {
 		return err
+	}
+
+	var imageName string
+	if cfg.Build.Fast || buildFast || pipelinesImage {
+		imageName = config.DockerImageName(projectDir)
+		err = image.Build(
+			ctx,
+			cfg,
+			projectDir,
+			imageName,
+			buildSecrets,
+			buildNoCache,
+			buildSeparateWeights,
+			buildUseCudaBaseImage,
+			buildProgressOutput,
+			buildSchemaFile,
+			buildDockerfileFile,
+			DetermineUseCogBaseImage(cmd),
+			buildStrip,
+			buildPrecompile,
+			cfg.Build.Fast || buildFast,
+			nil,
+			buildLocalImage,
+			dockerClient,
+			client,
+			pipelinesImage)
+		if err != nil {
+			return err
+		}
+	} else {
+		imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client)
+		if err != nil {
+			return err
+		}
 	}
 
 	gpus := ""
@@ -67,17 +108,17 @@ func run(cmd *cobra.Command, args []string) error {
 		gpus = "all"
 	}
 
-	runOptions := docker.RunOptions{
+	runOptions := command.RunOptions{
 		Args:    args,
 		Env:     envFlags,
 		GPUs:    gpus,
 		Image:   imageName,
-		Volumes: []docker.Volume{{Source: projectDir, Destination: "/src"}},
+		Volumes: []command.Volume{{Source: projectDir, Destination: "/src"}},
 		Workdir: "/src",
 	}
-
-	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
-		runOptions.Platform = "linux/amd64"
+	runOptions, err = docker.FillInWeightsManifestVolumes(ctx, dockerClient, runOptions)
+	if err != nil {
+		return err
 	}
 
 	for _, portString := range runPorts {
@@ -86,24 +127,20 @@ func run(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		runOptions.Ports = append(runOptions.Ports, docker.Port{HostPort: port, ContainerPort: port})
+		runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: port})
 	}
 
 	console.Info("")
 	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
 
-	if buildFast {
-		console.Info("Fast run enabled.")
-	}
-
-	err = docker.Run(runOptions)
+	err = docker.Run(ctx, dockerClient, runOptions)
 	// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
 	// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
 	if runOptions.GPUs == "all" && err == docker.ErrMissingDeviceDriver {
 		console.Info("Missing device driver, re-trying without GPU")
 
 		runOptions.GPUs = ""
-		err = docker.Run(runOptions)
+		err = docker.Run(ctx, dockerClient, runOptions)
 	}
 
 	return err

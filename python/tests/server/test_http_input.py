@@ -1,5 +1,6 @@
 import base64
 import os
+import sys
 import threading
 import time
 
@@ -36,6 +37,18 @@ def test_empty_input(client, match):
     resp = client.post("/predictions", json={"input": {}})
     assert resp.status_code == 200
     assert resp.json() == match({"status": "succeeded", "output": "foobar"})
+
+
+@uses_predictor("input_kwargs")
+def test_kwargs_input(client, match):
+    """Check we support kwargs input fields"""
+    input = {"animal": "giraffe", "no": 5}
+    resp = client.post("/predictions", json={"input": input})
+    assert resp.json() == match({"status": "succeeded"})
+    assert resp.status_code == 200
+
+    result = resp.json()["output"]
+    assert result == input
 
 
 @uses_predictor("input_integer")
@@ -333,3 +346,14 @@ def test_input_with_unsupported_type():
     assert "TypeError: Unsupported input type input_unsupported_type" in "".join(
         app.state.setup_result.logs
     )
+
+
+@pytest.mark.skipif(sys.version_info < (3, 10), reason="Requires Python 3.10 or newer")
+@uses_predictor("input_path_or_none")
+def test_path_or_none(client, httpserver, match):
+    httpserver.expect_request("/foo.txt").respond_with_data("hello")
+    resp = client.post(
+        "/predictions",
+        json={"input": {"file": httpserver.url_for("/foo.txt")}},
+    )
+    assert resp.json() == match({"output": "hello", "status": "succeeded"})

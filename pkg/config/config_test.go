@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path"
+	"path/filepath"
 	"testing"
 
 	"github.com/hashicorp/go-version"
@@ -251,13 +252,8 @@ flask>0.4
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
 	expected := `foo==1.0.0
-# complex requirements
 fastapi>=0.6,<1
 flask>0.4
-# comments!
-# blank lines!
-
-# arguments
 -f http://example.com`
 	require.Equal(t, expected, requirements)
 
@@ -692,4 +688,65 @@ func TestPythonRequirementsForArchWithAddedPackage(t *testing.T) {
 torch==2.4.0
 torchvision==2.4.0`
 	require.Equal(t, expected, requirements)
+}
+
+func TestParseTests(t *testing.T) {
+	yamlString := `
+build:
+  run:
+  - command: "echo 'Hello, World!'"
+`
+	_, err := FromYAML([]byte(yamlString))
+	require.NoError(t, err)
+}
+
+func TestFastPushConfig(t *testing.T) {
+	yamlString := `
+build:
+  python_version: "3.12"
+  fast: true
+`
+	_, err := FromYAML([]byte(yamlString))
+	require.NoError(t, err)
+}
+
+func TestPythonOverridesConfig(t *testing.T) {
+	yamlString := `
+build:
+  python_version: "3.12"
+  fast: true
+  python_overrides: "overrides.txt"
+`
+	_, err := FromYAML([]byte(yamlString))
+	require.NoError(t, err)
+}
+
+func TestConfigMarshal(t *testing.T) {
+	cfg := DefaultConfig()
+	data, err := yaml.Marshal(cfg)
+	require.NoError(t, err)
+	require.Equal(t, `build:
+  python_version: "3.13"
+  fast: false
+predict: ""
+`, string(data))
+}
+
+func TestAbsolutePathInPythonRequirements(t *testing.T) {
+	dir := t.TempDir()
+	requirementsFilePath := filepath.Join(dir, "requirements.txt")
+	err := os.WriteFile(requirementsFilePath, []byte("torch==2.5.0"), 0o644)
+	require.NoError(t, err)
+	config := &Config{
+		Build: &Build{
+			GPU:                true,
+			PythonVersion:      "3.8",
+			PythonRequirements: requirementsFilePath,
+		},
+	}
+	err = config.ValidateAndComplete(dir)
+	require.NoError(t, err)
+	torchVersion, ok := config.TorchVersion()
+	require.Equal(t, torchVersion, "2.5.0")
+	require.True(t, ok)
 }

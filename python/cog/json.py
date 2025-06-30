@@ -1,4 +1,6 @@
 import io
+import os
+import pathlib
 from datetime import datetime
 from enum import Enum
 from types import GeneratorType
@@ -13,7 +15,7 @@ try:
 except ImportError:
     np = None
 
-from .types import PYDANTIC_V2, Path
+from .types import PYDANTIC_V2
 
 
 def make_encodeable(obj: Any) -> Any:  # pylint: disable=too-many-return-statements
@@ -38,6 +40,8 @@ def make_encodeable(obj: Any) -> Any:  # pylint: disable=too-many-return-stateme
         return obj.value
     if isinstance(obj, datetime):
         return obj.isoformat()
+    if isinstance(obj, os.PathLike):
+        return pathlib.Path(obj)
     if np:
         if isinstance(obj, np.integer):
             return int(obj)
@@ -61,8 +65,8 @@ def upload_files(obj: Any, upload_file: Callable[[io.IOBase], str]) -> Any:
         return {key: upload_files(value, upload_file) for key, value in obj.items()}
     if isinstance(obj, list):
         return [upload_files(value, upload_file) for value in obj]
-    if isinstance(obj, Path):
-        with obj.open("rb") as f:
+    if isinstance(obj, os.PathLike):
+        with open(obj, "rb") as f:
             return upload_file(f)
     if isinstance(obj, io.IOBase):
         return upload_file(obj)

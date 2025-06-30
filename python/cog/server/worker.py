@@ -9,7 +9,6 @@ import threading
 import traceback
 import types
 import uuid
-import warnings
 import weakref
 from concurrent import futures
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -34,6 +33,7 @@ from ..json import make_encodeable
 from ..predictor import (
     extract_setup_weights,
     get_predict,
+    get_train,
     has_setup_weights,
     load_predictor_from_ref,
 )
@@ -135,7 +135,11 @@ class Worker:
         return self._setup_result
 
     def predict(
-        self, payload: Dict[str, Any], tag: Optional[str] = None
+        self,
+        payload: Dict[str, Any],
+        tag: Optional[str] = None,
+        *,
+        context: Optional[Dict[str, str]] = None,
     ) -> "Future[Done]":
         # TODO: tag is Optional, but it's required when in concurrent mode and
         # basically unnecessary in sequential mode. Should we have a separate
@@ -158,11 +162,17 @@ class Worker:
             result = Future()
             self._predictions_in_flight[tag] = PredictionState(tag, payload, result)
 
-        self._prediction_start_pool.submit(self._start_prediction(tag, payload))
+        self._prediction_start_pool.submit(
+            self._start_prediction(tag, payload, context=context)
+        )
         return result
 
     def _start_prediction(
-        self, tag: Optional[str], payload: Dict[str, Any]
+        self,
+        tag: Optional[str],
+        payload: Dict[str, Any],
+        *,
+        context: Optional[Dict[str, str]],
     ) -> Callable[[], None]:
         def start_prediction() -> None:
             try:
@@ -213,7 +223,7 @@ class Worker:
                 # send the prediction to the child to start
                 self._events.send(
                     Envelope(
-                        event=PredictionInput(payload=payload),
+                        event=PredictionInput(payload=payload, context=context or {}),
                         tag=tag,
                     )
                 )
@@ -390,6 +400,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         predictor_ref: str,
         *,
         is_async: bool,
+        is_train: bool,
         events: Connection,
         max_concurrency: int = 1,
         tee_output: bool = True,
@@ -406,6 +417,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         # for synchronous predictors only! async predictors use current_scope()._tag instead
         self._sync_tag: Optional[str] = None
         self._has_async_predictor = is_async
+        self._is_train = is_train
 
         super().__init__()
 
@@ -430,9 +442,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             )
 
         with scope(Scope(record_metric=self.record_metric)), redirector:
-            self._predictor = self._load_predictor()
+            with self._handle_setup_error(redirector):
+                wait_for_env()
+                self._predictor = load_predictor_from_ref(self._predictor_ref)
 
-            # If _load_predictor hasn't returned a predictor instance then
+            # If load_predictor_from_ref hasn't returned a predictor instance then
             # it has sent a error Done event and we're done here.
             if not self._predictor:
                 return
@@ -440,8 +454,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             if not self._validate_predictor(redirector):
                 return
 
-            self._predictor.log = self._log  # type: ignore
-            predict = get_predict(self._predictor)
+            predict = (
+                get_predict(self._predictor)
+                if not self._is_train
+                else get_train(self._predictor)
+            )
 
             if self._has_async_predictor:
                 assert isinstance(redirector, SimpleStreamRedirector)
@@ -482,27 +499,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         if self._has_async_predictor:
             return _get_current_scope()._tag
         return self._sync_tag
-
-    def _load_predictor(self) -> Optional[BasePredictor]:
-        done = Done()
-        wait_for_env()
-        try:
-            return load_predictor_from_ref(self._predictor_ref)
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            traceback.print_exc()
-            done.error = True
-            done.error_detail = str(e)
-            self._events.send(Envelope(event=done))
-        except BaseException as e:
-            # For SystemExit and friends we attempt to add some useful context
-            # to the logs, but reraise to ensure the process dies.
-            traceback.print_exc()
-            done.error = True
-            done.error_detail = str(e)
-            self._events.send(Envelope(event=done))
-            raise
-
-        return None
 
     def _validate_predictor(
         self,
@@ -584,7 +580,13 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             elif isinstance(e.event, Shutdown):
                 break
             elif isinstance(e.event, PredictionInput):
-                self._predict(e.tag, e.event.payload, predict, redirector)
+                self._predict(
+                    e.tag,
+                    e.event.payload,
+                    context=e.event.context,
+                    predict=predict,
+                    redirector=redirector,
+                )
             else:
                 print(f"Got unexpected event: {e.event}", file=sys.stderr)
 
@@ -618,7 +620,13 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     break
                 elif isinstance(e.event, PredictionInput):
                     tasks[e.tag] = tg.create_task(
-                        self._apredict(e.tag, e.event.payload, predict, redirector)
+                        self._apredict(
+                            e.tag,
+                            e.event.payload,
+                            context=e.event.context,
+                            predict=predict,
+                            redirector=redirector,
+                        )
                     )
                 else:
                     print(f"Got unexpected event: {e.event}", file=sys.stderr)
@@ -627,10 +635,14 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self,
         tag: Optional[str],
         payload: Dict[str, Any],
+        *,
+        context: Dict[str, str],
         predict: Callable[..., Any],
         redirector: StreamRedirector,
     ) -> None:
-        with self._handle_predict_error(redirector, tag=tag):
+        with evolve_scope(context=context), self._handle_predict_error(
+            redirector, tag=tag
+        ):
             result = predict(**payload)
 
             if result:
@@ -678,10 +690,14 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self,
         tag: Optional[str],
         payload: Dict[str, Any],
+        *,
+        context: Dict[str, str],
         predict: Callable[..., Any],
         redirector: SimpleStreamRedirector,
     ) -> None:
-        with evolve_scope(tag=tag), self._handle_predict_error(redirector, tag=tag):
+        with evolve_scope(context=context, tag=tag), self._handle_predict_error(
+            redirector, tag=tag
+        ):
             future_result = predict(**payload)
 
             if future_result:
@@ -839,23 +855,12 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 Envelope(event=Log(data, source="stderr"), tag=self._current_tag)
             )
 
-    def _log(self, *messages: str, source: str = "stderr") -> None:
-        """
-        DEPRECATED: This function will be removed in a future version of cog.
-        """
-        warnings.warn(
-            "log() is deprecated and will be removed in a future version. Use `print` or `logging` module instead",
-            category=DeprecationWarning,
-            stacklevel=1,
-        )
-        file = sys.stdout if source == "stdout" else sys.stderr
-        print(*messages, file=file, end="")
-
 
 def make_worker(
     predictor_ref: str,
     *,
     is_async: bool,
+    is_train: bool,
     tee_output: bool = True,
     max_concurrency: int = 1,
 ) -> Worker:
@@ -863,6 +868,7 @@ def make_worker(
     child = _ChildWorker(
         predictor_ref,
         is_async=is_async,
+        is_train=is_train,
         events=child_conn,
         tee_output=tee_output,
         max_concurrency=max_concurrency,

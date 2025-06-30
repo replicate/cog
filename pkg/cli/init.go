@@ -25,6 +25,9 @@ var predictPyContent []byte
 //go:embed init-templates/.github/workflows/push.yaml
 var actionsWorkflowContent []byte
 
+//go:embed init-templates/requirements.txt
+var requirementsTxtContent []byte
+
 func newInitCommand() *cobra.Command {
 	var cmd = &cobra.Command{
 		Use:        "init",
@@ -52,6 +55,7 @@ func initCommand(args []string) error {
 		"predict.py":                  predictPyContent,
 		".dockerignore":               dockerignoreContent,
 		".github/workflows/push.yaml": actionsWorkflowContent,
+		"requirements.txt":            requirementsTxtContent,
 	}
 
 	for filename, content := range fileContentMap {

@@ -1,18 +1,18 @@
 package config
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v2"
 
+	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/slices"
 	"github.com/replicate/cog/pkg/util/version"
@@ -42,19 +42,21 @@ type RunItem struct {
 		Type   string `json:"type,omitempty" yaml:"type"`
 		ID     string `json:"id,omitempty" yaml:"id"`
 		Target string `json:"target,omitempty" yaml:"target"`
-	} `json:"mounts,omitempty" yaml:"mounts"`
+	} `json:"mounts,omitempty" yaml:"mounts,omitempty"`
 }
 
 type Build struct {
-	GPU                bool      `json:"gpu,omitempty" yaml:"gpu"`
+	GPU                bool      `json:"gpu,omitempty" yaml:"gpu,omitempty"`
 	PythonVersion      string    `json:"python_version,omitempty" yaml:"python_version"`
-	PythonRequirements string    `json:"python_requirements,omitempty" yaml:"python_requirements"`
-	PythonPackages     []string  `json:"python_packages,omitempty" yaml:"python_packages"` // Deprecated, but included for backwards compatibility
-	Run                []RunItem `json:"run,omitempty" yaml:"run"`
-	SystemPackages     []string  `json:"system_packages,omitempty" yaml:"system_packages"`
-	PreInstall         []string  `json:"pre_install,omitempty" yaml:"pre_install"` // Deprecated, but included for backwards compatibility
-	CUDA               string    `json:"cuda,omitempty" yaml:"cuda"`
-	CuDNN              string    `json:"cudnn,omitempty" yaml:"cudnn"`
+	PythonRequirements string    `json:"python_requirements,omitempty" yaml:"python_requirements,omitempty"`
+	PythonPackages     []string  `json:"python_packages,omitempty" yaml:"python_packages,omitempty"` // Deprecated, but included for backwards compatibility
+	Run                []RunItem `json:"run,omitempty" yaml:"run,omitempty"`
+	SystemPackages     []string  `json:"system_packages,omitempty" yaml:"system_packages,omitempty"`
+	PreInstall         []string  `json:"pre_install,omitempty" yaml:"pre_install,omitempty"` // Deprecated, but included for backwards compatibility
+	CUDA               string    `json:"cuda,omitempty" yaml:"cuda,omitempty"`
+	CuDNN              string    `json:"cudnn,omitempty" yaml:"cudnn,omitempty"`
+	Fast               bool      `json:"fast,omitempty" yaml:"fast"`
+	PythonOverrides    string    `json:"python_overrides,omitempty" yaml:"python_overrides,omitempty"`
 
 	pythonRequirementsContent []string
 }
@@ -70,17 +72,20 @@ type Example struct {
 
 type Config struct {
 	Build       *Build       `json:"build" yaml:"build"`
-	Image       string       `json:"image,omitempty" yaml:"image"`
+	Image       string       `json:"image,omitempty" yaml:"image,omitempty"`
 	Predict     string       `json:"predict,omitempty" yaml:"predict"`
-	Train       string       `json:"train,omitempty" yaml:"train"`
-	Concurrency *Concurrency `json:"concurrency,omitempty" yaml:"concurrency"`
+	Train       string       `json:"train,omitempty" yaml:"train,omitempty"`
+	Concurrency *Concurrency `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
+	Environment []string     `json:"environment,omitempty" yaml:"environment,omitempty"`
+
+	parsedEnvironment map[string]string
 }
 
 func DefaultConfig() *Config {
 	return &Config{
 		Build: &Build{
 			GPU:           false,
-			PythonVersion: "3.12",
+			PythonVersion: "3.13",
 		},
 	}
 }
@@ -220,7 +225,7 @@ func (c *Config) cudaFromTF() (tfVersion string, tfCUDA string, tfCuDNN string, 
 
 func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 	for _, pkg := range c.Build.pythonRequirementsContent {
-		pkgName, version, _, _, err := SplitPinnedPythonRequirement(pkg)
+		pkgName, version, _, _, err := requirements.SplitPinnedPythonRequirement(pkg)
 		if err != nil {
 			// package is not in package==version format
 			continue
@@ -288,20 +293,26 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 		}
 	}
 
-	if len(c.Build.PythonPackages) > 0 && c.Build.PythonRequirements != "" {
-		errs = append(errs, fmt.Errorf("Only one of python_packages or python_requirements can be set in your cog.yaml, not both"))
+	if len(c.Build.PythonPackages) > 0 {
+		console.Warn("`python_packages` in cog.yaml is deprecated and will be removed in future versions, use `python_requirements` instead.")
+		if c.Build.PythonRequirements != "" {
+			errs = append(errs, fmt.Errorf("Only one of python_packages or python_requirements can be set in your cog.yaml, not both"))
+		}
+	}
+
+	if len(c.Build.PreInstall) > 0 {
+		console.Warn("`pre_install` in cog.yaml is deprecated and will be removed in future versions.")
 	}
 
 	// Load python_requirements into memory to simplify reading it multiple times
 	if c.Build.PythonRequirements != "" {
-		fh, err := os.Open(path.Join(projectDir, c.Build.PythonRequirements))
+		requirementsFilePath := c.Build.PythonRequirements
+		if !strings.HasPrefix(requirementsFilePath, "/") {
+			requirementsFilePath = path.Join(projectDir, c.Build.PythonRequirements)
+		}
+		c.Build.pythonRequirementsContent, err = requirements.ReadRequirements(requirementsFilePath)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("Failed to open python_requirements file: %w", err))
-		}
-		// Use scanner to handle CRLF endings
-		scanner := bufio.NewScanner(fh)
-		for scanner.Scan() {
-			c.Build.pythonRequirementsContent = append(c.Build.pythonRequirementsContent, scanner.Text())
 		}
 	}
 
@@ -314,6 +325,11 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 		if err := c.validateAndCompleteCUDA(); err != nil {
 			errs = append(errs, err)
 		}
+	}
+
+	// parse and validate environment variables
+	if err := c.loadEnvironment(); err != nil {
+		errs = append(errs, err)
 	}
 
 	if len(errs) > 0 {
@@ -331,10 +347,7 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 
 	includePackageNames := []string{}
 	for _, pkg := range includePackages {
-		packageName, err := PackageName(pkg)
-		if err != nil {
-			return "", err
-		}
+		packageName := requirements.PackageName(pkg)
 		includePackageNames = append(includePackageNames, packageName)
 	}
 
@@ -356,7 +369,7 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 			}
 		}
 
-		packageName, _ := PackageName(archPkg)
+		packageName := requirements.PackageName(archPkg)
 		if packageName != "" {
 			foundIdx := -1
 			for i, includePkg := range includePackageNames {
@@ -394,7 +407,7 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 // pythonPackageForArch takes a package==version line and
 // returns a package==version and index URL resolved to the correct GPU package for the given OS and architecture
 func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage string, findLinksList []string, extraIndexURLs []string, err error) {
-	name, version, findLinksList, extraIndexURLs, err := SplitPinnedPythonRequirement(pkg)
+	name, version, findLinksList, extraIndexURLs, err := requirements.SplitPinnedPythonRequirement(pkg)
 	if err != nil {
 		// It's not pinned, so just return the line verbatim
 		return pkg, []string{}, []string{}, nil
@@ -566,6 +579,10 @@ Compatible cuDNN version is: %s`, c.Build.CuDNN, tfVersion, tfCuDNN)
 	return nil
 }
 
+func (c *Config) RequirementsFile(projectDir string) string {
+	return filepath.Join(projectDir, c.Build.PythonRequirements)
+}
+
 func sliceContains(slice []string, s string) bool {
 	for _, el := range slice {
 		if el == s {
@@ -573,4 +590,17 @@ func sliceContains(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func (c *Config) ParsedEnvironment() map[string]string {
+	return c.parsedEnvironment
+}
+
+func (c *Config) loadEnvironment() error {
+	env, err := parseAndValidateEnvironment(c.Environment)
+	if err != nil {
+		return err
+	}
+	c.parsedEnvironment = env
+	return nil
 }

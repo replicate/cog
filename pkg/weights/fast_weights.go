@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/replicate/cog/pkg/dockerignore"
 	"github.com/replicate/cog/pkg/util"
 )
 
@@ -58,11 +59,14 @@ func ReadFastWeights(tmpDir string) ([]Weight, error) {
 }
 
 func findFullWeights(folder string, weights []Weight, weightFile string) ([]Weight, error) {
-	err := filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
+	matcher, err := dockerignore.CreateMatcher(folder)
+	if err != nil {
+		return weights, err
+	}
+	err = dockerignore.Walk(folder, matcher, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-
 		relPath, err := filepath.Rel(folder, path)
 		if err != nil {
 			return err
