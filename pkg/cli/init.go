@@ -68,7 +68,7 @@ func initCommand(cmd *cobra.Command, args []string) error {
 		"requirements.txt":            requirementsTxtContent,
 	}
 
-	var globalChoice string
+	globalSkip := false
 
 	for filename, content := range fileContentMap {
 		filePath := path.Join(cwd, filename)
@@ -87,7 +87,7 @@ func initCommand(cmd *cobra.Command, args []string) error {
 				console.Infof("Overwriting existing %s", filename)
 			} else {
 				// Check if we have a global choice from previous prompts
-				if globalChoice == "S" {
+				if globalSkip {
 					console.Infof("Skipped existing %s", filename)
 					continue
 				}
@@ -106,7 +106,7 @@ func initCommand(cmd *cobra.Command, args []string) error {
 					console.Infof("Skipped existing %s", filename)
 					continue
 				case "skip-all":
-					globalChoice = "S"
+					globalSkip = true
 					console.Infof("Skipped existing %s (and will skip all remaining)", filename)
 					continue
 				case "quit":
