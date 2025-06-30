@@ -444,6 +444,11 @@ func TestPackageName(t *testing.T) {
 	require.Equal(t, name, "mypackage")
 }
 
+func TestVersions(t *testing.T) {
+	versions := Versions("another @ https://some.domain/package.whl")
+	require.Equal(t, versions, []string{"https://some.domain/package.whl"})
+}
+
 func checkRequirements(t *testing.T, expected []string, actual []string) {
 	t.Helper()
 	for n, expectLine := range expected {
