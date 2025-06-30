@@ -69,6 +69,7 @@ the prediction on that.`,
 	addFastFlag(cmd)
 	addLocalImage(cmd)
 	addConfigFlag(cmd)
+	addPipelineImage(cmd)
 
 	cmd.Flags().StringArrayVarP(&inputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
@@ -187,7 +188,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 
 		client := registry.NewRegistryClient()
-		if buildFast {
+		if buildFast || pipelinesImage {
 			imageName = config.DockerImageName(projectDir)
 			if err := image.Build(
 				ctx,
@@ -208,7 +209,8 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 				nil,
 				buildLocalImage,
 				dockerClient,
-				client); err != nil {
+				client,
+				pipelinesImage); err != nil {
 				return err
 			}
 		} else {

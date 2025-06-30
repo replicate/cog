@@ -391,8 +391,8 @@ def test_predict_new_union_project(tmpdir_factory, cog_binary):
     assert result.stdout == "hello world\n"
 
 
-def test_predict_with_fast_build_with_local_image(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/fast-build"
+def test_predict_with_fast_build_with_local_image(fixture, docker_image, cog_binary):
+    project_dir = fixture("fast-build")
     weights_file = os.path.join(project_dir, "weights.h5")
     with open(weights_file, "w", encoding="utf8") as handle:
         handle.seek(256 * 1024 * 1024)
@@ -417,7 +417,7 @@ def test_predict_with_fast_build_with_local_image(docker_image, cog_binary):
         cwd=project_dir,
         capture_output=True,
     )
-    os.remove(weights_file)
+
     assert build_process.returncode == 0
     assert result.returncode == 0
 
@@ -788,7 +788,7 @@ def test_predict_glb_file(cog_binary):
     )
     assert result.returncode == 0
 
- 
+
 def test_predict_future_annotations(cog_binary):
     project_dir = Path(__file__).parent / "fixtures/future-annotations-project"
 
@@ -801,3 +801,16 @@ def test_predict_future_annotations(cog_binary):
         timeout=120.0,
     )
     assert result.returncode == 0
+
+
+def test_predict_pipeline(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/procedure-project"
+    result = subprocess.run(
+        [cog_binary, "predict", "--x-pipeline", "--debug", "-i", "prompt=test"],
+        cwd=project_dir,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+    )
+    assert result.returncode == 0
+    assert result.stdout == "HELLO TEST\n"

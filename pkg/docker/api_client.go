@@ -24,6 +24,7 @@ import (
 	"github.com/mattn/go-isatty"
 	buildkitclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
+	"github.com/moby/term"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 
@@ -330,14 +331,24 @@ func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOp
 func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions) (string, error) {
 	console.Debugf("=== APIClient.containerRun %s", options.Image)
 
+	var attachStdin, tty, attachStderr, attachStdout bool
+	if !options.Detach {
+		// Determine if we should attach stdin (file, pipe, interactive stdin, etc)
+		attachStdin, tty = shouldAttachStdin(options.Stdin)
+		attachStdout = options.Stdout != nil
+		attachStderr = options.Stderr != nil
+	}
+
 	containerCfg := &container.Config{
 		Image:        options.Image,
 		Cmd:          options.Args,
 		Env:          options.Env,
-		AttachStdin:  options.Stdin != nil,
-		AttachStdout: options.Stdout != nil,
-		AttachStderr: options.Stderr != nil,
-		Tty:          false, // Will be set below if stdin is a TTY
+		AttachStdin:  attachStdin,
+		AttachStdout: attachStdout,
+		AttachStderr: attachStderr,
+		OpenStdin:    attachStdin,
+		StdinOnce:    attachStdin,
+		Tty:          tty,
 	}
 
 	// Set working directory if specified
@@ -345,10 +356,11 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 		containerCfg.WorkingDir = options.Workdir
 	}
 
-	// Check if stdin is a TTY
-	if options.Stdin != nil {
-		if f, ok := options.Stdin.(*os.File); ok {
-			containerCfg.Tty = isatty.IsTerminal(f.Fd())
+	if len(options.Ports) > 0 {
+		containerCfg.ExposedPorts = make(nat.PortSet)
+		for _, port := range options.Ports {
+			containerPort := nat.Port(fmt.Sprintf("%d/tcp", port.ContainerPort))
+			containerCfg.ExposedPorts[containerPort] = struct{}{}
 		}
 	}
 
@@ -376,7 +388,7 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 			containerPort := nat.Port(fmt.Sprintf("%d/tcp", port.ContainerPort))
 			hostCfg.PortBindings[containerPort] = []nat.PortBinding{
 				{
-					HostIP:   "0.0.0.0",
+					HostIP:   "", // use empty string to bind to all interfaces
 					HostPort: strconv.Itoa(port.HostPort),
 				},
 			}
@@ -419,12 +431,12 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 	var stream types.HijackedResponse
 
 	// Attach to container streams if we have any writers and not detached
-	if !options.Detach && (options.Stdout != nil || options.Stderr != nil || options.Stdin != nil) {
+	if attachStderr || attachStdout || attachStdin {
 		attachOpts := container.AttachOptions{
 			Stream: true,
-			Stdin:  options.Stdin != nil,
-			Stdout: options.Stdout != nil,
-			Stderr: options.Stderr != nil,
+			Stdin:  attachStdin,
+			Stdout: attachStdout,
+			Stderr: attachStderr,
 		}
 
 		var err error
@@ -436,26 +448,50 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 
 		// Start copying streams in the background
 		eg, _ = errgroup.WithContext(ctx)
-		if options.Stdout != nil || options.Stderr != nil {
-			eg.Go(func() error {
+		if attachStdout || attachStderr {
+			eg.Go(func() (err error) {
 				if containerCfg.Tty {
-					_, err = io.Copy(options.Stdout, stream.Reader)
+					w := options.Stdout
+					if w == nil {
+						w = options.Stderr
+					}
+					_, err = io.Copy(w, stream.Reader)
 				} else {
 					_, err = stdcopy.StdCopy(options.Stdout, options.Stderr, stream.Reader)
 				}
 				return err
 			})
 		}
-		if options.Stdin != nil {
-			eg.Go(func() error {
-				_, err = io.Copy(stream.Conn, options.Stdin)
-				return err
-			})
+		if attachStdin {
+			// if we're in a TTY we need to set the terminal to raw mode, and restore it when we're done
+			if tty {
+				// TODO[md]: handle terminal resize events, see: github.com/containerd/console
+				state, err := term.SetRawTerminal(os.Stdin.Fd())
+				if err != nil {
+					console.Warnf("error setting raw terminal on stdin: %s", err)
+				}
+				defer func() {
+					if err := term.RestoreTerminal(os.Stdin.Fd(), state); err != nil {
+						console.Warnf("error restoring terminal on stdin: %s", err)
+					}
+				}()
+			}
+
+			go func() {
+				_, err := io.Copy(stream.Conn, options.Stdin)
+				// Close the stdin stream to signal EOF to the container
+				if err := errors.Join(err, stream.CloseWrite()); err != nil {
+					console.Errorf("error copying and closing stdin stream: %s", err)
+				}
+			}()
 		}
 	}
 
 	// Start the container
 	if err := c.client.ContainerStart(ctx, runContainer.ID, container.StartOptions{}); err != nil {
+		if isMissingDeviceDriverError(err) {
+			return "", ErrMissingDeviceDriver
+		}
 		return "", fmt.Errorf("failed to start container: %w", err)
 	}
 
@@ -474,6 +510,9 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 			return "", fmt.Errorf("container exited with status %d", status.StatusCode)
 		}
 	}
+
+	// container is gone, close the attached streams so stdin is released, ignore the error
+	_ = stream.CloseWrite()
 
 	// Wait for stream copying to complete
 	if eg != nil {
@@ -537,4 +576,37 @@ func parseGPURequest(opts command.RunOptions) (container.DeviceRequest, error) {
 	}
 
 	return deviceRequest, nil
+}
+
+// shouldAttachStdin determines if we should attach stdin to the container
+// We should attach stdin only if:
+//   - stdin is not os.Stdin (explicit input like pipe/file/buffer)
+//   - OR stdin is os.Stdin but it's not a TTY (piped input)
+func shouldAttachStdin(stdin io.Reader) (attach bool, tty bool) {
+	if stdin == nil {
+		return false, false
+	}
+
+	// If it's not a file, it's probably a buffer/pipe with actual data
+	f, ok := stdin.(*os.File)
+	if !ok {
+		return true, false
+	}
+
+	tty = isatty.IsTerminal(f.Fd())
+
+	// If it's not os.Stdin, it's an explicit file, so attach it
+	if f != os.Stdin {
+		return true, tty
+	}
+
+	// If it's os.Stdin but not a TTY, it's probably piped input
+	if !tty {
+		return true, false
+	}
+
+	// If it's os.Stdin and a TTY, attach by default. if this becomes a problem for some
+	// reason we need to add a flag to the run command similar to `docker run -i` that instructs
+	// the container to attach stdin and keep open
+	return true, true
 }

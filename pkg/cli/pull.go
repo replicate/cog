@@ -153,7 +153,7 @@ func pull(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check if we are in a pipeline
-	if !pushPipeline {
+	if !pipelinesImage {
 		err = errors.New("Please use docker pull " + image + " to download this model.")
 		logClient.EndPull(ctx, err, logCtx)
 		return err
