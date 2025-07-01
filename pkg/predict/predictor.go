@@ -114,8 +114,7 @@ func (p *Predictor) waitForContainerReady(ctx context.Context, timeout time.Dura
 
 	start := time.Now()
 	for {
-		now := time.Now()
-		if now.Sub(start) > timeout {
+		if time.Since(start) > timeout {
 			return fmt.Errorf("Timed out")
 		}
 
@@ -129,17 +128,35 @@ func (p *Predictor) waitForContainerReady(ctx context.Context, timeout time.Dura
 			return fmt.Errorf("Container exited unexpectedly")
 		}
 
-		resp, err := http.Get(url) //#nosec G107
+		healthcheck, err := func() (*HealthcheckResponse, error) {
+			ctx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
+			defer cancel()
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to create HTTP request to %s: %w", url, err)
+			}
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return nil, nil
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return nil, nil
+			}
+			healthcheck := &HealthcheckResponse{}
+			if err := json.NewDecoder(resp.Body).Decode(healthcheck); err != nil {
+				return nil, fmt.Errorf("Container healthcheck returned invalid response: %w", err)
+			}
+			return healthcheck, nil
+		}()
 		if err != nil {
+			return err
+		}
+		if healthcheck == nil {
 			continue
 		}
-		if resp.StatusCode != http.StatusOK {
-			continue
-		}
-		healthcheck := &HealthcheckResponse{}
-		if err := json.NewDecoder(resp.Body).Decode(healthcheck); err != nil {
-			return fmt.Errorf("Container healthcheck returned invalid response: %w", err)
-		}
+
 		// These status values are defined in python/cog/server/http.py
 		switch healthcheck.Status {
 		case "STARTING":

@@ -726,7 +726,7 @@ func TestConfigMarshal(t *testing.T) {
 	data, err := yaml.Marshal(cfg)
 	require.NoError(t, err)
 	require.Equal(t, `build:
-  python_version: "3.12"
+  python_version: "3.13"
   fast: false
 predict: ""
 `, string(data))
@@ -749,4 +749,18 @@ func TestAbsolutePathInPythonRequirements(t *testing.T) {
 	torchVersion, ok := config.TorchVersion()
 	require.Equal(t, torchVersion, "2.5.0")
 	require.True(t, ok)
+}
+
+func TestContainsCoglet(t *testing.T) {
+	config := &Config{
+		Build: &Build{
+			PythonVersion: "3.13",
+			PythonPackages: []string{
+				"coglet @ https://github.com/replicate/cog-runtime/releases/download/v0.1.0-alpha31/coglet-0.1.0a31-py3-none-any.whl",
+			},
+		},
+	}
+	err := config.ValidateAndComplete("")
+	require.NoError(t, err)
+	require.True(t, config.ContainsCoglet())
 }

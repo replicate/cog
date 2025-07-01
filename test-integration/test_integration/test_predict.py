@@ -107,6 +107,8 @@ def test_predict_writes_files_to_files_with_custom_name(tmpdir_factory, cog_bina
         text=True,
         timeout=DEFAULT_TIMEOUT,
     )
+
+    assert result.returncode == 0
     assert result.stdout == ""
     with open(out_dir / "myoutput.bmp", "rb") as f:
         assert len(f.read()) == 195894
@@ -389,8 +391,8 @@ def test_predict_new_union_project(tmpdir_factory, cog_binary):
     assert result.stdout == "hello world\n"
 
 
-def test_predict_with_fast_build_with_local_image(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/fast-build"
+def test_predict_with_fast_build_with_local_image(fixture, docker_image, cog_binary):
+    project_dir = fixture("fast-build")
     weights_file = os.path.join(project_dir, "weights.h5")
     with open(weights_file, "w", encoding="utf8") as handle:
         handle.seek(256 * 1024 * 1024)
@@ -415,7 +417,7 @@ def test_predict_with_fast_build_with_local_image(docker_image, cog_binary):
         cwd=project_dir,
         capture_output=True,
     )
-    os.remove(weights_file)
+
     assert build_process.returncode == 0
     assert result.returncode == 0
 
@@ -616,3 +618,199 @@ def test_predict_tensorflow_project(docker_image, cog_binary):
     )
     assert result.returncode == 0
     assert result.stdout == "2.10.0\n"
+
+
+def test_predict_json_input(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/string-project"
+
+    result = subprocess.run(
+        [
+            cog_binary,
+            "predict",
+            "--debug",
+            "--json",
+            '{"s": "sackfield"}',
+        ],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+    )
+    assert result.returncode == 0
+    assert (
+        result.stdout
+        == """{
+  "status": "succeeded",
+  "output": "hello sackfield",
+  "error": ""
+}
+"""
+    )
+
+
+def test_predict_json_input_filename(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/string-project"
+
+    result = subprocess.run(
+        [
+            cog_binary,
+            "predict",
+            "--debug",
+            "--json",
+            "@input.json",
+        ],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+    )
+    assert result.returncode == 0
+    assert (
+        result.stdout
+        == """{
+  "status": "succeeded",
+  "output": "hello sackfield",
+  "error": ""
+}
+"""
+    )
+
+
+def test_predict_json_input_stdin(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/string-project"
+
+    result = subprocess.run(
+        [
+            cog_binary,
+            "predict",
+            "--debug",
+            "--json",
+            "@-",
+        ],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+        input='{"s": "sackfield"}',
+    )
+    assert result.returncode == 0
+    assert (
+        result.stdout
+        == """{
+  "status": "succeeded",
+  "output": "hello sackfield",
+  "error": ""
+}
+"""
+    )
+
+
+def test_predict_json_output(tmpdir_factory, cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/string-project"
+    out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
+    shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
+
+    result = subprocess.run(
+        [
+            cog_binary,
+            "predict",
+            "--debug",
+            "--json",
+            '{"s": "sackfield"}',
+            "--output",
+            "output.json",
+        ],
+        cwd=out_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+    )
+    assert result.returncode == 0
+    with open(out_dir / "output.json", encoding="utf-8") as f:
+        assert (
+            f.read()
+            == """{
+  "status": "succeeded",
+  "output": "hello sackfield",
+  "error": ""
+}"""
+        )
+
+
+def test_predict_json_input_stdin_dash(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/string-project"
+
+    result = subprocess.run(
+        [
+            cog_binary,
+            "predict",
+            "--debug",
+            "--json",
+            "-",
+        ],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+        input='{"s": "sackfield"}',
+    )
+    assert result.returncode == 0
+    assert (
+        result.stdout
+        == """{
+  "status": "succeeded",
+  "output": "hello sackfield",
+  "error": ""
+}
+"""
+    )
+
+
+def test_predict_glb_file(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/glb-project"
+
+    result = subprocess.run(
+        [
+            cog_binary,
+            "predict",
+            "--debug",
+        ],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+    )
+    assert result.returncode == 0
+
+
+def test_predict_future_annotations(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/future-annotations-project"
+
+    result = subprocess.run(
+        [cog_binary, "predict", "--debug", "-i", "image=@some_image.jpg"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+    )
+    assert result.returncode == 0
+
+
+def test_predict_pipeline(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/procedure-project"
+    result = subprocess.run(
+        [cog_binary, "predict", "--x-pipeline", "--debug", "-i", "prompt=test"],
+        cwd=project_dir,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+    )
+    assert result.returncode == 0
+    assert result.stdout == "HELLO TEST\n"

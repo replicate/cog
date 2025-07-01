@@ -85,7 +85,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Build: &Build{
 			GPU:           false,
-			PythonVersion: "3.12",
+			PythonVersion: "3.13",
 		},
 	}
 }
@@ -201,6 +201,11 @@ func (c *Config) TensorFlowVersion() (string, bool) {
 	return c.pythonPackageVersion("tensorflow")
 }
 
+func (c *Config) ContainsCoglet() bool {
+	_, ok := c.pythonPackageVersion("coglet")
+	return ok
+}
+
 func (c *Config) cudasFromTorch() (torchVersion string, torchCUDAs []string, err error) {
 	if version, ok := c.TorchVersion(); ok {
 		cudas, err := cudasFromTorch(version)
@@ -225,13 +230,13 @@ func (c *Config) cudaFromTF() (tfVersion string, tfCUDA string, tfCuDNN string, 
 
 func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 	for _, pkg := range c.Build.pythonRequirementsContent {
-		pkgName, version, _, _, err := requirements.SplitPinnedPythonRequirement(pkg)
-		if err != nil {
-			// package is not in package==version format
-			continue
-		}
+		pkgName := requirements.PackageName(pkg)
 		if pkgName == name {
-			return version, true
+			versions := requirements.Versions(pkg)
+			if len(versions) > 0 {
+				return versions[0], true
+			}
+			return "", true
 		}
 	}
 	return "", false
@@ -347,10 +352,7 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 
 	includePackageNames := []string{}
 	for _, pkg := range includePackages {
-		packageName, err := requirements.PackageName(pkg)
-		if err != nil {
-			return "", err
-		}
+		packageName := requirements.PackageName(pkg)
 		includePackageNames = append(includePackageNames, packageName)
 	}
 
@@ -372,7 +374,7 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 			}
 		}
 
-		packageName, _ := requirements.PackageName(archPkg)
+		packageName := requirements.PackageName(archPkg)
 		if packageName != "" {
 			foundIdx := -1
 			for i, includePkg := range includePackageNames {

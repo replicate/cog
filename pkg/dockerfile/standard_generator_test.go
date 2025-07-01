@@ -840,3 +840,61 @@ COPY . /src`
 torch==2.3.1
 pandas==2.0.3`, string(requirements))
 }
+
+func TestGenerateWithCoglet(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	yaml := `
+build:
+  gpu: true
+  cuda: "11.8"
+  python_version: "3.12"
+  system_packages:
+    - ffmpeg
+    - cowsay
+  python_packages:
+    - torch==2.3.1
+    - pandas==2.0.3
+    - coglet @ https://github.com/replicate/cog-runtime/releases/download/v0.1.0-alpha31/coglet-0.1.0a31-py3-none-any.whl
+  run:
+    - "cowsay moo"
+predict: predict.py:Predictor
+`
+	conf, err := config.FromYAML([]byte(yaml))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	client.AddMockImage(BaseImageName("11.8", "3.12", "2.3.1"))
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(true)
+	gen.SetStrip(true)
+	gen.SetPrecompile(true)
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	expected := `#syntax=docker/dockerfile:1.4
+FROM r8.im/replicate/cog-test-weights AS weights
+FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
+COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
+ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
+ENV CFLAGS=
+RUN find / -type f -name "*.py[co]" -delete && find / -type f -name "*.py" -exec touch -t 197001010000 {} \; && find / -type f -name "*.py" -printf "%h\n" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0
+RUN cowsay moo
+WORKDIR /src
+EXPOSE 5000
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`
+
+	require.Equal(t, expected, actual)
+
+	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
+	require.NoError(t, err)
+	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118
+torch==2.3.1
+pandas==2.0.3
+coglet @ https://github.com/replicate/cog-runtime/releases/download/v0.1.0-alpha31/coglet-0.1.0a31-py3-none-any.whl`, string(requirements))
+}

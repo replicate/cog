@@ -43,6 +43,8 @@ func CurrentRequirements(tmpDir string) (string, error) {
 }
 
 func ReadRequirements(path string) ([]string, error) {
+	re := regexp.MustCompile(`(?m)^\s*-e\s+\.\s*$`)
+
 	fh, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -60,6 +62,10 @@ func ReadRequirements(path string) ([]string, error) {
 
 		// Skip empty lines and comment lines
 		if strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		if re.MatchString(line) {
 			continue
 		}
 
@@ -170,7 +176,42 @@ func SplitPinnedPythonRequirement(requirement string) (name string, version stri
 	return name, version, findLinks, extraIndexURLs, nil
 }
 
-func PackageName(pipRequirement string) (string, error) {
-	name, _, _, _, err := SplitPinnedPythonRequirement(pipRequirement)
-	return name, err
+func PackageName(pipRequirement string) string {
+	re := regexp.MustCompile(`^([a-zA-Z0-9_\-\.]+(?:\[[^\]]+\])?)`)
+	match := re.FindStringSubmatch(pipRequirement)
+	if len(match) > 1 {
+		return match[1]
+	}
+	return ""
+}
+
+func VersionSpecifier(pipRequirement string) string {
+	re := regexp.MustCompile(`^[a-zA-Z0-9_\-\.]+(?:\[[^\]]+\])?\s*([<>=!~]=?\s*[^;,#\s]+(?:\s*,\s*[<>=!~]=?\s*[^;,#\s]+)*(?:\s*\|\|\s*[<>=!~]=?\s*[^;,#\s]+(?:\s*,\s*[<>=!~]=?\s*[^;,#\s]+)*)*)?`)
+	match := re.FindStringSubmatch(pipRequirement)
+	if len(match) > 1 {
+		// Optional: strip spaces for uniform output
+		return strings.ReplaceAll(match[1], " ", "")
+	}
+	return ""
+}
+
+func Versions(pipRequirement string) []string {
+	var versions []string
+
+	// Match standard specifier versions
+	reVersion := regexp.MustCompile(`[<>=!~]=?\s*([^\s,;|]+)`)
+	matches := reVersion.FindAllStringSubmatch(pipRequirement, -1)
+	for _, match := range matches {
+		if len(match) > 1 {
+			versions = append(versions, match[1])
+		}
+	}
+
+	// Match @ file/url version
+	reURL := regexp.MustCompile(`@\s*([^\s]+)`)
+	if match := reURL.FindStringSubmatch(pipRequirement); len(match) > 1 {
+		versions = append(versions, match[1])
+	}
+
+	return versions
 }

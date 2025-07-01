@@ -10,6 +10,7 @@ import (
 )
 
 const UserAgentHeader = "User-Agent"
+const BearerHeaderPrefix = "Bearer "
 
 func ProvideHTTPClient(ctx context.Context, dockerCommand command.Command) (*http.Client, error) {
 	userInfo, err := dockerCommand.LoadUserInformation(ctx, global.ReplicateRegistryHost)
@@ -24,8 +25,8 @@ func ProvideHTTPClient(ctx context.Context, dockerCommand command.Command) (*htt
 				"Content-Type":  "application/json",
 			},
 			authentication: map[string]string{
-				env.MonobeamHostFromEnvironment(): "Bearer " + userInfo.Token,
-				env.WebHostFromEnvironment():      "Bearer " + userInfo.Token,
+				env.MonobeamHostFromEnvironment(): BearerHeaderPrefix + userInfo.Token,
+				env.WebHostFromEnvironment():      BearerHeaderPrefix + userInfo.Token,
 			},
 		},
 	}

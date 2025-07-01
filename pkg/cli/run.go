@@ -39,6 +39,7 @@ func newRunCommand() *cobra.Command {
 	addFastFlag(cmd)
 	addLocalImage(cmd)
 	addConfigFlag(cmd)
+	addPipelineImage(cmd)
 
 	flags := cmd.Flags()
 	// Flags after first argument are considered args and passed to command
@@ -59,15 +60,45 @@ func run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	client := registry.NewRegistryClient()
 
 	cfg, projectDir, err := config.GetConfig(configFilename)
 	if err != nil {
 		return err
 	}
-	client := registry.NewRegistryClient()
-	imageName, err := image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client)
-	if err != nil {
-		return err
+
+	var imageName string
+	if cfg.Build.Fast || buildFast || pipelinesImage {
+		imageName = config.DockerImageName(projectDir)
+		err = image.Build(
+			ctx,
+			cfg,
+			projectDir,
+			imageName,
+			buildSecrets,
+			buildNoCache,
+			buildSeparateWeights,
+			buildUseCudaBaseImage,
+			buildProgressOutput,
+			buildSchemaFile,
+			buildDockerfileFile,
+			DetermineUseCogBaseImage(cmd),
+			buildStrip,
+			buildPrecompile,
+			cfg.Build.Fast || buildFast,
+			nil,
+			buildLocalImage,
+			dockerClient,
+			client,
+			pipelinesImage)
+		if err != nil {
+			return err
+		}
+	} else {
+		imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client)
+		if err != nil {
+			return err
+		}
 	}
 
 	gpus := ""
@@ -101,10 +132,6 @@ func run(cmd *cobra.Command, args []string) error {
 
 	console.Info("")
 	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
-
-	if buildFast {
-		console.Info("Fast run enabled.")
-	}
 
 	err = docker.Run(ctx, dockerClient, runOptions)
 	// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
