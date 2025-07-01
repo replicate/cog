@@ -33,16 +33,14 @@ func newInitCommand() *cobra.Command {
 		Use:        "init",
 		SuggestFor: []string{"new", "start"},
 		Short:      "Configure your project for use with Cog",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return initCommand(args)
-		},
-		Args: cobra.MaximumNArgs(0),
+		RunE:       initCommand,
+		Args:       cobra.MaximumNArgs(0),
 	}
 
 	return cmd
 }
 
-func initCommand(args []string) error {
+func initCommand(cmd *cobra.Command, args []string) error {
 	console.Infof("\nSetting up the current directory for use with Cog...\n")
 
 	cwd, err := os.Getwd()
@@ -66,7 +64,8 @@ func initCommand(args []string) error {
 		}
 
 		if fileExists {
-			return fmt.Errorf("Found an existing %s.\nExiting without overwriting (to be on the safe side!)", filename)
+			console.Infof("Skipped existing %s", filename)
+			continue
 		}
 
 		dirPath := path.Dir(filePath)
