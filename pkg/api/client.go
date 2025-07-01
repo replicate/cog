@@ -29,7 +29,6 @@ var (
 	ErrorBadResponseNewVersionEndpoint = errors.New("Bad response from new version endpoint")
 	ErrorBadDraftFormat                = errors.New("Bad draft format")
 	ErrorBadDraftUsernameDigestFormat  = errors.New("Bad draft username/digest format")
-	ErrorBadRequestModelHasVersions    = errors.New("This model already has versions associated with it, and can't be used with procedures.")
 )
 
 type Client struct {
@@ -142,15 +141,14 @@ func (c *Client) postNewVersion(ctx context.Context, image string, tarball *byte
 	body := new(bytes.Buffer)
 	mp := multipart.NewWriter(body)
 	defer mp.Close()
-	err = mp.WriteField("openapi_schema", manifest.Config.Labels[command.CogOpenAPISchemaLabelKey])
-	if err != nil {
+
+	if err := mp.WriteField("openapi_schema", manifest.Config.Labels[command.CogOpenAPISchemaLabelKey]); err != nil {
 		return "", err
 	}
 
 	dependencies := manifest.Config.Labels[command.CogModelDependenciesLabelKey]
 	if dependencies != "" && dependencies != `[""]` {
-		err = mp.WriteField("dependencies", dependencies)
-		if err != nil {
+		if err := mp.WriteField("dependencies", dependencies); err != nil {
 			return "", err
 		}
 	}
@@ -161,8 +159,7 @@ func (c *Client) postNewVersion(ctx context.Context, image string, tarball *byte
 	if err != nil {
 		return "", err
 	}
-	err = gzipWriter.Close()
-	if err != nil {
+	if err := gzipWriter.Close(); err != nil {
 		return "", err
 	}
 
@@ -194,19 +191,17 @@ func (c *Client) postNewVersion(ctx context.Context, image string, tarball *byte
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		var bodyError Error
-		err = json.NewDecoder(resp.Body).Decode(&bodyError)
-		if err != nil {
+		if err := json.NewDecoder(resp.Body).Decode(&bodyError); err != nil {
 			return "", err
 		}
-		if bodyError.Errors[0].Detail == "This endpoint does not support models that have versions published with `cog push`." {
-			return "", util.WrapError(ErrorBadRequestModelHasVersions, strconv.Itoa(resp.StatusCode))
+		if len(bodyError.Errors) > 0 && bodyError.Errors[0].Detail != "" {
+			return "", errors.New(bodyError.Errors[0].Detail)
 		}
-		return "", util.WrapError(ErrorBadResponseNewVersionEndpoint, strconv.Itoa(resp.StatusCode))
+		return "", ErrorBadResponseNewVersionEndpoint
 	}
 
 	var version Version
-	err = json.NewDecoder(resp.Body).Decode(&version)
-	if err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&version); err != nil {
 		return "", err
 	}
 
@@ -292,7 +287,7 @@ func (c *Client) downloadTarball(ctx context.Context, token string, url url.URL,
 		return fmt.Errorf("Entity %s does not have a source package associated with it.", slug)
 	}
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("Bad response: %s attempting to fetch the image source", strconv.Itoa(resp.StatusCode))
 	}
 
@@ -306,8 +301,7 @@ func (c *Client) downloadTarball(ctx context.Context, token string, url url.URL,
 			return err
 		}
 
-		err = tarFileProcess(header, tr)
-		if err != nil {
+		if err := tarFileProcess(header, tr); err != nil {
 			return err
 		}
 	}
@@ -335,13 +329,12 @@ func (c *Client) getModel(ctx context.Context, entity string, name string) (*Mod
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= http.StatusBadRequest {
 		return nil, fmt.Errorf("Bad response: %s attempting to fetch the models versions", strconv.Itoa(resp.StatusCode))
 	}
 
 	var model Model
-	err = json.NewDecoder(resp.Body).Decode(&model)
-	if err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&model); err != nil {
 		return nil, err
 	}
 

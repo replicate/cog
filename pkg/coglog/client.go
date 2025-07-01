@@ -70,7 +70,7 @@ func (c *Client) EndBuild(ctx context.Context, err error, logContext BuildLogCon
 		errorStr = &errStr
 	}
 	buildLog := buildLog{
-		DurationMs: float32(time.Now().Sub(logContext.started).Milliseconds()),
+		DurationMs: float32(time.Since(logContext.started).Milliseconds()),
 		BuildError: errorStr,
 		Fast:       logContext.fast,
 		LocalImage: logContext.localImage,
@@ -107,7 +107,7 @@ func (c *Client) EndPush(ctx context.Context, err error, logContext PushLogConte
 		errorStr = &errStr
 	}
 	pushLog := pushLog{
-		DurationMs: float32(time.Now().Sub(logContext.started).Milliseconds()),
+		DurationMs: float32(time.Since(logContext.started).Milliseconds()),
 		BuildError: errorStr,
 		Fast:       logContext.fast,
 		LocalImage: logContext.localImage,
@@ -140,7 +140,7 @@ func (c *Client) EndMigrate(ctx context.Context, err error, logContext *MigrateL
 		errorStr = &errStr
 	}
 	migrateLog := migrateLog{
-		DurationMs:          float32(time.Now().Sub(logContext.started).Milliseconds()),
+		DurationMs:          float32(time.Since(logContext.started).Milliseconds()),
 		BuildError:          errorStr,
 		Accept:              logContext.accept,
 		PythonPackageStatus: logContext.PythonPackageStatus,
@@ -178,7 +178,7 @@ func (c *Client) EndPull(ctx context.Context, err error, logContext PullLogConte
 		errorStr = &errStr
 	}
 	pushLog := pullLog{
-		DurationMs: float32(time.Now().Sub(logContext.started).Milliseconds()),
+		DurationMs: float32(time.Since(logContext.started).Milliseconds()),
 		BuildError: errorStr,
 	}
 
