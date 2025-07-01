@@ -194,3 +194,24 @@ func VersionSpecifier(pipRequirement string) string {
 	}
 	return ""
 }
+
+func Versions(pipRequirement string) []string {
+	var versions []string
+
+	// Match standard specifier versions
+	reVersion := regexp.MustCompile(`[<>=!~]=?\s*([^\s,;|]+)`)
+	matches := reVersion.FindAllStringSubmatch(pipRequirement, -1)
+	for _, match := range matches {
+		if len(match) > 1 {
+			versions = append(versions, match[1])
+		}
+	}
+
+	// Match @ file/url version
+	reURL := regexp.MustCompile(`@\s*([^\s]+)`)
+	if match := reURL.FindStringSubmatch(pipRequirement); len(match) > 1 {
+		versions = append(versions, match[1])
+	}
+
+	return versions
+}
