@@ -750,3 +750,17 @@ func TestAbsolutePathInPythonRequirements(t *testing.T) {
 	require.Equal(t, torchVersion, "2.5.0")
 	require.True(t, ok)
 }
+
+func TestContainsCoglet(t *testing.T) {
+	config := &Config{
+		Build: &Build{
+			PythonVersion: "3.13",
+			PythonPackages: []string{
+				"coglet @ https://github.com/replicate/cog-runtime/releases/download/v0.1.0-alpha31/coglet-0.1.0a31-py3-none-any.whl",
+			},
+		},
+	}
+	err := config.ValidateAndComplete("")
+	require.NoError(t, err)
+	require.True(t, config.ContainsCoglet())
+}

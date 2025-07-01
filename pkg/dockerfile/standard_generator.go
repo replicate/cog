@@ -169,9 +169,11 @@ func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, e
 			"FROM " + baseImage,
 			envs,
 			aptInstalls,
-			installCog,
-			pipInstalls,
 		}
+		if installCog != "" {
+			steps = append(steps, installCog)
+		}
+		steps = append(steps, pipInstalls)
 		if g.precompile {
 			steps = append(steps, PrecompilePythonCommand)
 		}
@@ -424,6 +426,10 @@ RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /u
 }
 
 func (g *StandardGenerator) installCog() (string, error) {
+	if g.Config.ContainsCoglet() {
+		return "", nil
+	}
+
 	data, filename, err := ReadWheelFile()
 	if err != nil {
 		return "", err
