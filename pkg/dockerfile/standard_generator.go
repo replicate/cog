@@ -73,9 +73,10 @@ type StandardGenerator struct {
 	pythonRequirementsContents string
 	command                    command.Command
 	client                     registry.Client
+	requiresCog                bool
 }
 
-func NewStandardGenerator(config *config.Config, dir string, command command.Command, client registry.Client) (*StandardGenerator, error) {
+func NewStandardGenerator(config *config.Config, dir string, command command.Command, client registry.Client, requiresCog bool) (*StandardGenerator, error) {
 	tmpDir, err := dockercontext.BuildTempDir(dir)
 	if err != nil {
 		return nil, err
@@ -100,6 +101,7 @@ func NewStandardGenerator(config *config.Config, dir string, command command.Com
 		precompile:       false,
 		command:          command,
 		client:           client,
+		requiresCog:      requiresCog,
 	}, nil
 }
 
@@ -426,7 +428,7 @@ RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /u
 }
 
 func (g *StandardGenerator) installCog() (string, error) {
-	if g.Config.ContainsCoglet() {
+	if g.Config.ContainsCoglet() || !g.requiresCog {
 		return "", nil
 	}
 
