@@ -45,25 +45,26 @@ func NewAPIClient(ctx context.Context, opts ...Option) (*apiClient, error) {
 		opt(clientOptions)
 	}
 
-	// Check to see if we need to override docker host
-	host := os.Getenv("DOCKER_HOST")
-	if host == "" {
-		inspects, err := findDockerHost()
-		if err == nil {
-			for _, inspect := range inspects {
-				endpoint, ok := inspect.Endpoints["docker"]
-				if ok {
-					os.Setenv("DOCKER_HOST", endpoint.Host)
-					break
-				}
-			}
+	if clientOptions.host == "" {
+		host, err := determineDockerHost()
+		if err != nil {
+			return nil, fmt.Errorf("error determining docker host: %w", err)
 		}
+		clientOptions.host = host
 	}
 
 	// TODO[md]: we create a client at the top of each cli invocation, the sdk client hits an api which
 	// adds (a tiny biy of) overead. swap this with a handle that'll lazily initialize a client and ping for health.
 	// ditto for fetching registry credentials.
-	client, err := dc.NewClientWithOpts(dc.FromEnv, dc.WithAPIVersionNegotiation())
+
+	dockerClientOpts := []dc.Opt{
+		dc.WithTLSClientConfigFromEnv(),
+		dc.WithVersionFromEnv(),
+		dc.WithAPIVersionNegotiation(),
+		dc.WithHost(clientOptions.host),
+	}
+
+	client, err := dc.NewClientWithOpts(dockerClientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("error creating docker client: %w", err)
 	}
