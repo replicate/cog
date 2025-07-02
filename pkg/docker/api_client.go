@@ -1,12 +1,15 @@
 package docker
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -40,6 +43,21 @@ func NewAPIClient(ctx context.Context, opts ...Option) (*apiClient, error) {
 	}
 	for _, opt := range opts {
 		opt(clientOptions)
+	}
+
+	// Check to see if we need to override docker host
+	host := os.Getenv("DOCKER_HOST")
+	if host == "" {
+		inspects, err := findDockerHost()
+		if err == nil {
+			for _, inspect := range inspects {
+				endpoint, ok := inspect.Endpoints["docker"]
+				if ok {
+					os.Setenv("DOCKER_HOST", endpoint.Host)
+					break
+				}
+			}
+		}
 	}
 
 	// TODO[md]: we create a client at the top of each cli invocation, the sdk client hits an api which
@@ -609,4 +627,25 @@ func shouldAttachStdin(stdin io.Reader) (attach bool, tty bool) {
 	// reason we need to add a flag to the run command similar to `docker run -i` that instructs
 	// the container to attach stdin and keep open
 	return true, true
+}
+
+func findDockerHost() ([]command.ContextInspect, error) {
+	cmd := exec.Command(DockerCommandFromEnvironment(), "context", "inspect")
+
+	// Create a buffer to capture the standard output
+	var out bytes.Buffer
+	cmd.Stdout = &out
+
+	// Run the command
+	err := cmd.Run()
+	if err != nil {
+		return nil, err
+	}
+
+	var resp []command.ContextInspect
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		return nil, fmt.Errorf("error unmarshaling inspect response: %w", err)
+	}
+
+	return resp, nil
 }
