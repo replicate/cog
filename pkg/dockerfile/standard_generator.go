@@ -3,6 +3,7 @@ package dockerfile
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -428,10 +429,34 @@ RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /u
 }
 
 func (g *StandardGenerator) installCog() (string, error) {
-	if g.Config.ContainsCoglet() || !g.requiresCog {
+	// FIXME: remove once pipelines use cog_runtime: true
+	if g.Config.ContainsCoglet() {
 		return "", nil
 	}
 
+	// Do not install Cog in base images
+	if !g.requiresCog {
+		return "", nil
+	}
+
+	if g.Config.Build.CogRuntime {
+		if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
+			return "", fmt.Errorf("Python version must be <major>.<minor>")
+		}
+		m, err := NewMonobaseMatrix(http.DefaultClient)
+		if err != nil {
+			return "", err
+		}
+		cmds := []string{
+			"ENV R8_COG_VERSION=coglet",
+			"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
+			"RUN pip install " + m.LatestCoglet.URL,
+		}
+		return strings.Join(cmds, "\n"), nil
+	}
+
+	// FIXME: add doc URL & enable this before new release
+	// console.Warnf("A new Cog runtime implementation is avaible, set build.cog_runtime = true in cog.yaml to try it out.")
 	data, filename, err := ReadWheelFile()
 	if err != nil {
 		return "", err
