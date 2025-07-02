@@ -57,11 +57,12 @@ func initCommand(cmd *cobra.Command, args []string) error {
 			if err := processTemplateDirectory(initTemplates, templateDir, entry.Name(), cwd); err != nil {
 				return err
 			}
-		} else {
-			// Process individual files
-			if err := processTemplateFile(initTemplates, templateDir, entry.Name(), cwd); err != nil {
-				return err
-			}
+			continue
+		}
+
+		// Process individual files
+		if err := processTemplateFile(initTemplates, templateDir, entry.Name(), cwd); err != nil {
+			return err
 		}
 	}
 
@@ -83,14 +84,16 @@ func processTemplateDirectory(fs embed.FS, templateDir, subDir, cwd string) erro
 			if err := processTemplateDirectory(fs, subDirPath, entry.Name(), cwd); err != nil {
 				return err
 			}
-		} else {
-			// Process files in subdirectories
-			relativePath := path.Join(subDir, entry.Name())
-			if err := processTemplateFile(fs, templateDir, relativePath, cwd); err != nil {
-				return err
-			}
+			continue
+		}
+
+		// Process files in subdirectories
+		relativePath := path.Join(subDir, entry.Name())
+		if err := processTemplateFile(fs, templateDir, relativePath, cwd); err != nil {
+			return err
 		}
 	}
+
 	return nil
 }
 
