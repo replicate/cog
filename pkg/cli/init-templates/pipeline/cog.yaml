@@ -7,9 +7,6 @@ build:
   #   - "libgl1-mesa-glx"
   #   - "libglib2.0-0"
 
-  # path to a Python requirements.txt file
-  python_requirements: requirements.txt
-
   # commands run after the environment is setup
   # run:
   #   - "echo env is ready!"
