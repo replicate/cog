@@ -103,7 +103,7 @@ func Build(
 			return fmt.Errorf("Failed to build Docker image: %w", err)
 		}
 	} else {
-		generator, err := dockerfile.NewGenerator(cfg, dir, fastFlag, dockerCommand, localImage, client)
+		generator, err := dockerfile.NewGenerator(cfg, dir, fastFlag, dockerCommand, localImage, client, true)
 		if err != nil {
 			return fmt.Errorf("Error creating Dockerfile generator: %w", err)
 		}
@@ -343,7 +343,7 @@ func BuildBase(ctx context.Context, dockerClient command.Command, cfg *config.Co
 	imageName := config.BaseDockerImageName(dir)
 
 	console.Info("Building Docker image from environment in cog.yaml...")
-	generator, err := dockerfile.NewGenerator(cfg, dir, false, dockerClient, false, client)
+	generator, err := dockerfile.NewGenerator(cfg, dir, false, dockerClient, false, client, false)
 	if err != nil {
 		return "", fmt.Errorf("Error creating Dockerfile generator: %w", err)
 	}
