@@ -16,8 +16,8 @@ jobs:
   push_to_replicate:
     name: Push to Replicate
 
-    # If your model is large, the default GitHub Actions runner may not 
-    # have enough disk space. If you need more space you can set up a 
+    # If your model is large, the default GitHub Actions runner may not
+    # have enough disk space. If you need more space you can set up a
     # bigger runner on GitHub.
     runs-on: ubuntu-latest
 
@@ -37,16 +37,16 @@ jobs:
       - name: Setup Cog
         uses: replicate/setup-cog@v2
         with:
-          # If you add a CI auth token to your GitHub repository secrets, 
+          # If you add a CI auth token to your GitHub repository secrets,
           # the action will authenticate with Replicate automatically so you
           # can push your model without needing to pass in a token.
-          # 
+          #
           # To genereate a CLI auth token, run `cog login` or visit this page
           # in your browser: https://replicate.com/account/api-token
           token: ${{ secrets.REPLICATE_CLI_AUTH_TOKEN }}
 
       # If you trigger the workflow manually, you can specify the model name.
-      # If you leave it blank (or if the workflow is triggered by a push), the 
+      # If you leave it blank (or if the workflow is triggered by a push), the
       # model name will be derived from the `image` value in cog.yaml.
       - name: Push to Replicate
         run: |
