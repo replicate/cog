@@ -21,7 +21,8 @@ type MonobaseMatrix struct {
 }
 
 func NewMonobaseMatrix(client *http.Client) (*MonobaseMatrix, error) {
-	resp, err := client.Get(MonobaseMatrixSchemeFromEnvironment() + "://" + MonobaseMatrixHostFromEnvironment() + "/replicate/monobase/refs/heads/main/matrix.json")
+	url := "https://monobase-packages.replicate.delivery/matrix.json"
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err
 	}
