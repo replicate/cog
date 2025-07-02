@@ -630,7 +630,8 @@ func shouldAttachStdin(stdin io.Reader) (attach bool, tty bool) {
 }
 
 func findDockerHost() ([]command.ContextInspect, error) {
-	cmd := exec.Command(DockerCommandFromEnvironment(), "context", "inspect")
+	dockerCmd := DockerCommandFromEnvironment()
+	cmd := exec.Command(dockerCmd, "context", "inspect")
 
 	// Create a buffer to capture the standard output
 	var out bytes.Buffer
