@@ -1,15 +1,12 @@
 package docker
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -628,26 +625,4 @@ func shouldAttachStdin(stdin io.Reader) (attach bool, tty bool) {
 	// reason we need to add a flag to the run command similar to `docker run -i` that instructs
 	// the container to attach stdin and keep open
 	return true, true
-}
-
-func findDockerHost() ([]command.ContextInspect, error) {
-	dockerCmd := DockerCommandFromEnvironment()
-	cmd := exec.Command(dockerCmd, "context", "inspect")
-
-	// Create a buffer to capture the standard output
-	var out bytes.Buffer
-	cmd.Stdout = &out
-
-	// Run the command
-	err := cmd.Run()
-	if err != nil {
-		return nil, err
-	}
-
-	var resp []command.ContextInspect
-	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
-		return nil, fmt.Errorf("error unmarshaling inspect response: %w", err)
-	}
-
-	return resp, nil
 }
