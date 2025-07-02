@@ -13,10 +13,8 @@ import (
 )
 
 var (
-	//go:embed init-templates/base/*
-	baseFolder embed.FS
-	//go:embed init-templates/pipeline/*
-	pipelineFolder   embed.FS
+	//go:embed init-templates/**/*
+	initTemplates    embed.FS
 	pipelineTemplate bool
 )
 
@@ -41,16 +39,14 @@ func initCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fs := baseFolder
 	initTemplate := "base"
 	if pipelineTemplate {
-		fs = pipelineFolder
 		initTemplate = "pipeline"
 	}
 
 	// Discover all files in the embedded template directory
 	templateDir := path.Join("init-templates", initTemplate)
-	entries, err := fs.ReadDir(templateDir)
+	entries, err := initTemplates.ReadDir(templateDir)
 	if err != nil {
 		return fmt.Errorf("Error reading template directory: %w", err)
 	}
@@ -58,12 +54,12 @@ func initCommand(cmd *cobra.Command, args []string) error {
 	for _, entry := range entries {
 		if entry.IsDir() {
 			// Recursively process subdirectories
-			if err := processTemplateDirectory(fs, templateDir, entry.Name(), cwd); err != nil {
+			if err := processTemplateDirectory(initTemplates, templateDir, entry.Name(), cwd); err != nil {
 				return err
 			}
 		} else {
 			// Process individual files
-			if err := processTemplateFile(fs, templateDir, entry.Name(), cwd); err != nil {
+			if err := processTemplateFile(initTemplates, templateDir, entry.Name(), cwd); err != nil {
 				return err
 			}
 		}
