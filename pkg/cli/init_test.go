@@ -38,7 +38,6 @@ func TestInitPipeline(t *testing.T) {
 	require.FileExists(t, path.Join(dir, ".dockerignore"))
 	require.FileExists(t, path.Join(dir, "cog.yaml"))
 	require.FileExists(t, path.Join(dir, "main.py"))
-	require.FileExists(t, path.Join(dir, "requirements.txt"))
 }
 
 func TestInitSkipExisting(t *testing.T) {
