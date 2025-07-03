@@ -221,5 +221,6 @@ func baseImageGeneratorFromFlags(ctx context.Context) (*dockerfile.BaseImageGene
 		baseImagePythonVersion,
 		baseImageTorchVersion,
 		dockerClient,
+		true,
 	)
 }

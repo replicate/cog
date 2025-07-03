@@ -606,7 +606,7 @@ func (g *StandardGenerator) determineBaseImageName(ctx context.Context) (string,
 	torchVersion, _ := g.Config.TorchVersion()
 
 	// validate that the base image configuration exists
-	imageGenerator, err := NewBaseImageGenerator(ctx, g.client, cudaVersion, pythonVersion, torchVersion, g.command)
+	imageGenerator, err := NewBaseImageGenerator(ctx, g.client, cudaVersion, pythonVersion, torchVersion, g.command, false)
 	if err != nil {
 		return "", err
 	}
