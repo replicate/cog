@@ -40,6 +40,7 @@ func (f *Factory) Build(ctx context.Context, cfg *config.Config, dir, imageName 
 		NoCache:            noCache,
 		ProgressOutput:     progressOutput,
 		Epoch:              &config.BuildSourceEpochTimestamp,
+		Target:             "runtime",
 		// Standard build context – use project directory directly.
 	}
 
@@ -51,16 +52,15 @@ func (f *Factory) Build(ctx context.Context, cfg *config.Config, dir, imageName 
 	if os.Getenv("COG_EXPORT_DEV_IMAGE") == "1" {
 		devTag := imageName + "-dev"
 
-		devDockerfile := dockerfile + "\nFROM build as dev\n"
-
 		devOpts := command.ImageBuildOptions{
 			WorkingDir:         dir,
-			DockerfileContents: devDockerfile,
+			DockerfileContents: dockerfile,
 			ImageName:          devTag,
 			Secrets:            secrets,
 			NoCache:            noCache,
 			ProgressOutput:     progressOutput,
 			Epoch:              &config.BuildSourceEpochTimestamp,
+			Target:             "build",
 		}
 
 		if err := f.dockerProvider.ImageBuild(ctx, devOpts); err != nil {
