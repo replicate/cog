@@ -40,7 +40,7 @@ python:3.10 application/vnd.oci.image.manifest.v1+json
   single platform image -> sha256:f33bb19d5a518ba7e0353b6da48d58a04ef674de0bab0810e4751230ea1d4b19
 ```
 
-You can then use these images in your tests using referenes like:
+You can then use these images in your tests using references like:
 
 - `localhost:<port>/alpine:latest` to get a multi-platform index
 - `localhost:<port>/alpine:latest` with platform `linux/amd64` to get a single image from a multi-platform index
