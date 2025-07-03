@@ -10,7 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.67
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.3
 	github.com/creack/pty v1.1.24
-	github.com/docker/cli v28.1.1+incompatible
+	github.com/docker/cli v28.3.0+incompatible
 	github.com/docker/docker v28.1.1+incompatible
 	github.com/docker/go-connections v0.5.0
 	github.com/getkin/kin-openapi v0.128.0
@@ -128,6 +128,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/firefart/nonamedreturns v1.0.5 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
+	github.com/fvbommel/sortorder v1.1.0 // indirect
 	github.com/fzipp/gocyclo v0.6.0 // indirect
 	github.com/ghostiam/protogetter v0.3.9 // indirect
 	github.com/go-critic/go-critic v0.12.0 // indirect
@@ -207,6 +208,7 @@ require (
 	github.com/moby/go-archive v0.1.0 // indirect
 	github.com/moby/locker v1.0.1 // indirect
 	github.com/moby/patternmatcher v0.6.0 // indirect
+	github.com/moby/sys/atomicwriter v0.1.0 // indirect
 	github.com/moby/sys/sequential v0.6.0 // indirect
 	github.com/moby/sys/signal v0.7.1 // indirect
 	github.com/moby/sys/user v0.4.0 // indirect
