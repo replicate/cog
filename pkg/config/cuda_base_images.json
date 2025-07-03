@@ -1,5 +1,110 @@
 [
   {
+    "Tag": "12.9.1-cudnn-devel-ubuntu24.04",
+    "CUDA": "12.9.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "24.04"
+  },
+  {
+    "Tag": "12.9.1-cudnn-devel-ubuntu22.04",
+    "CUDA": "12.9.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.9.1-cudnn-devel-ubuntu20.04",
+    "CUDA": "12.9.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.9.0-cudnn-devel-ubuntu24.04",
+    "CUDA": "12.9.0",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "24.04"
+  },
+  {
+    "Tag": "12.9.0-cudnn-devel-ubuntu22.04",
+    "CUDA": "12.9.0",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.9.0-cudnn-devel-ubuntu20.04",
+    "CUDA": "12.9.0",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.8.1-cudnn-devel-ubuntu24.04",
+    "CUDA": "12.8.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "24.04"
+  },
+  {
+    "Tag": "12.8.1-cudnn-devel-ubuntu22.04",
+    "CUDA": "12.8.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.8.1-cudnn-devel-ubuntu20.04",
+    "CUDA": "12.8.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.8.0-cudnn-devel-ubuntu24.04",
+    "CUDA": "12.8.0",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "24.04"
+  },
+  {
+    "Tag": "12.8.0-cudnn-devel-ubuntu22.04",
+    "CUDA": "12.8.0",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.8.0-cudnn-devel-ubuntu20.04",
+    "CUDA": "12.8.0",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.6.3-cudnn-devel-ubuntu24.04",
+    "CUDA": "12.6.3",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "24.04"
+  },
+  {
+    "Tag": "12.6.3-cudnn-devel-ubuntu22.04",
+    "CUDA": "12.6.3",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.6.3-cudnn-devel-ubuntu20.04",
+    "CUDA": "12.6.3",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
     "Tag": "12.6.2-cudnn-devel-ubuntu24.04",
     "CUDA": "12.6.2",
     "CuDNN": "9",
