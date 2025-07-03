@@ -25,6 +25,7 @@ import (
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/image"
+	"github.com/replicate/cog/pkg/newbuilder"
 	r8_path "github.com/replicate/cog/pkg/path"
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/registry"
@@ -188,7 +189,22 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 
 		client := registry.NewRegistryClient()
-		if buildFast || pipelinesImage {
+		// Experimental builder toggle
+		if os.Getenv("COG_EXPERIMENTAL_BUILDER") == "1" {
+			imageName = config.DockerImageName(projectDir)
+			if err := newbuilder.Build(
+				ctx,
+				cfg,
+				projectDir,
+				imageName,
+				buildSecrets,
+				buildNoCache,
+				buildProgressOutput,
+				dockerClient,
+			); err != nil {
+				return err
+			}
+		} else if buildFast || pipelinesImage {
 			imageName = config.DockerImageName(projectDir)
 			if err := image.Build(
 				ctx,
@@ -282,7 +298,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 	timeout := time.Duration(setupTimeout) * time.Second
 	if err := predictor.Start(ctx, os.Stderr, timeout); err != nil {
-		// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
+		// Only retry if we're using a GPU but but the user didn't explicitly selected a GPU with --gpus
 		// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
 		if gpus == "all" && errors.Is(err, docker.ErrMissingDeviceDriver) {
 			console.Info("Missing device driver, re-trying without GPU")

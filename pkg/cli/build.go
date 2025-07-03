@@ -13,6 +13,7 @@ import (
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/image"
+	"github.com/replicate/cog/pkg/newbuilder"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -99,29 +100,48 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	registryClient := registry.NewRegistryClient()
-	if err := image.Build(
-		ctx,
-		cfg,
-		projectDir,
-		imageName,
-		buildSecrets,
-		buildNoCache,
-		buildSeparateWeights,
-		buildUseCudaBaseImage,
-		buildProgressOutput,
-		buildSchemaFile,
-		buildDockerfileFile,
-		DetermineUseCogBaseImage(cmd),
-		buildStrip,
-		buildPrecompile,
-		buildFast,
-		nil,
-		buildLocalImage,
-		dockerClient,
-		registryClient,
-		pipelinesImage); err != nil {
-		logClient.EndBuild(ctx, err, logCtx)
-		return err
+
+	// Experimental builder toggle – set COG_EXPERIMENTAL_BUILDER=1 to use the
+	// new implementation.
+	if os.Getenv("COG_EXPERIMENTAL_BUILDER") == "1" {
+		if err := newbuilder.Build(
+			ctx,
+			cfg,
+			projectDir,
+			imageName,
+			buildSecrets,
+			buildNoCache,
+			buildProgressOutput,
+			dockerClient,
+		); err != nil {
+			logClient.EndBuild(ctx, err, logCtx)
+			return err
+		}
+	} else {
+		if err := image.Build(
+			ctx,
+			cfg,
+			projectDir,
+			imageName,
+			buildSecrets,
+			buildNoCache,
+			buildSeparateWeights,
+			buildUseCudaBaseImage,
+			buildProgressOutput,
+			buildSchemaFile,
+			buildDockerfileFile,
+			DetermineUseCogBaseImage(cmd),
+			buildStrip,
+			buildPrecompile,
+			buildFast,
+			nil,
+			buildLocalImage,
+			dockerClient,
+			registryClient,
+			pipelinesImage); err != nil {
+			logClient.EndBuild(ctx, err, logCtx)
+			return err
+		}
 	}
 
 	console.Infof("\nImage built as %s", imageName)

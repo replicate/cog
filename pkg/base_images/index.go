@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/hashicorp/go-version"
 )
@@ -75,8 +76,12 @@ func newIndex(r io.Reader) (*index, error) {
 		return nil, err
 	}
 
-	// Detect header row (starts with "name" or "accelerator")
-	if !(len(firstRecord) > 0 && (firstRecord[0] == "name" || firstRecord[0] == "accelerator")) {
+	// Detect header row (starts with "name" or "accelerator") – allow surrounding spaces
+	header0 := ""
+	if len(firstRecord) > 0 {
+		header0 = strings.TrimSpace(firstRecord[0])
+	}
+	if !(header0 == "name" || header0 == "accelerator") {
 		// Not a header row – process it as data
 		img, err := parseRecord(firstRecord)
 		if err != nil {
@@ -141,17 +146,20 @@ func parseRecord(record []string) (*BaseImage, error) {
 		DevTag: record[devTagField],
 	}
 
-	switch record[acceleratorField] {
+	// Trim whitespace around all parsed fields first
+	accel := strings.TrimSpace(record[acceleratorField])
+
+	switch accel {
 	case "cpu":
 		img.Accelerator = AcceleratorCPU
 	case "gpu":
 		img.Accelerator = AcceleratorGPU
 	default:
-		return nil, fieldParseErr{field: acceleratorField, err: fmt.Errorf("invalid accelerator: %q", record[acceleratorField])}
+		return nil, fieldParseErr{field: acceleratorField, err: fmt.Errorf("invalid accelerator: %q", accel)}
 	}
 
 	// ubuntu version
-	if s := record[ubuntuField]; s != "" {
+	if s := strings.TrimSpace(record[ubuntuField]); s != "" {
 		if v, err := version.NewVersion(s); err == nil {
 			img.UbuntuVersion = v
 		} else {
@@ -160,7 +168,7 @@ func parseRecord(record []string) (*BaseImage, error) {
 	}
 
 	// cuda version
-	if s := record[cudaField]; s != "" {
+	if s := strings.TrimSpace(record[cudaField]); s != "" {
 		if v, err := version.NewVersion(s); err == nil {
 			img.CudaVersion = v
 		} else {
@@ -169,13 +177,17 @@ func parseRecord(record []string) (*BaseImage, error) {
 	}
 
 	// python version
-	if s := record[pythonField]; s != "" {
+	if s := strings.TrimSpace(record[pythonField]); s != "" {
 		if v, err := version.NewVersion(s); err == nil {
 			img.PythonVersion = v
 		} else {
 			return nil, fieldParseErr{field: pythonField, err: err}
 		}
 	}
+
+	// Trim whitespace around all parsed fields first
+	img.RunTag = strings.TrimSpace(img.RunTag)
+	img.DevTag = strings.TrimSpace(img.DevTag)
 
 	return img, nil
 }
