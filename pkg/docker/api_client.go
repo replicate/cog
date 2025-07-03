@@ -1,15 +1,12 @@
 package docker
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -45,25 +42,26 @@ func NewAPIClient(ctx context.Context, opts ...Option) (*apiClient, error) {
 		opt(clientOptions)
 	}
 
-	// Check to see if we need to override docker host
-	host := os.Getenv("DOCKER_HOST")
-	if host == "" {
-		inspects, err := findDockerHost()
-		if err == nil {
-			for _, inspect := range inspects {
-				endpoint, ok := inspect.Endpoints["docker"]
-				if ok {
-					os.Setenv("DOCKER_HOST", endpoint.Host)
-					break
-				}
-			}
+	if clientOptions.host == "" {
+		host, err := determineDockerHost()
+		if err != nil {
+			return nil, fmt.Errorf("error determining docker host: %w", err)
 		}
+		clientOptions.host = host
 	}
 
 	// TODO[md]: we create a client at the top of each cli invocation, the sdk client hits an api which
 	// adds (a tiny biy of) overead. swap this with a handle that'll lazily initialize a client and ping for health.
 	// ditto for fetching registry credentials.
-	client, err := dc.NewClientWithOpts(dc.FromEnv, dc.WithAPIVersionNegotiation())
+
+	dockerClientOpts := []dc.Opt{
+		dc.WithTLSClientConfigFromEnv(),
+		dc.WithVersionFromEnv(),
+		dc.WithAPIVersionNegotiation(),
+		dc.WithHost(clientOptions.host),
+	}
+
+	client, err := dc.NewClientWithOpts(dockerClientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("error creating docker client: %w", err)
 	}
@@ -627,26 +625,4 @@ func shouldAttachStdin(stdin io.Reader) (attach bool, tty bool) {
 	// reason we need to add a flag to the run command similar to `docker run -i` that instructs
 	// the container to attach stdin and keep open
 	return true, true
-}
-
-func findDockerHost() ([]command.ContextInspect, error) {
-	dockerCmd := DockerCommandFromEnvironment()
-	cmd := exec.Command(dockerCmd, "context", "inspect")
-
-	// Create a buffer to capture the standard output
-	var out bytes.Buffer
-	cmd.Stdout = &out
-
-	// Run the command
-	err := cmd.Run()
-	if err != nil {
-		return nil, err
-	}
-
-	var resp []command.ContextInspect
-	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
-		return nil, fmt.Errorf("error unmarshaling inspect response: %w", err)
-	}
-
-	return resp, nil
 }
