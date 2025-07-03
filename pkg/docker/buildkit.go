@@ -42,9 +42,8 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 		// filename is the path to the Dockerfile within the "dockerfile" LocalDir context
 		"filename": filepath.Base(dockerfilePath),
 		"syntax":   "docker/dockerfile:1",
-		// TODO[md]: support multi-stage target
 		// target is the name of a stage in a multi-stage Dockerfile
-		// "target": opts.Target,
+		"target": opts.Target,
 		// Replicate only supports linux/amd64, but local Docker Engine could be running on ARM,
 		// including Apple Silicon. Force it to linux/amd64 for now.
 		"platform": "linux/amd64",

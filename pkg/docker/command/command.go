@@ -40,6 +40,7 @@ type ImageBuildOptions struct {
 	ContextDir     string
 	BuildContexts  map[string]string
 	Labels         map[string]string
+	Target         string
 
 	// only supported on buildkit client, not cli client
 	BuildArgs map[string]*string
