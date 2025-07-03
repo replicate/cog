@@ -56,6 +56,7 @@ type Build struct {
 	CUDA               string    `json:"cuda,omitempty" yaml:"cuda,omitempty"`
 	CuDNN              string    `json:"cudnn,omitempty" yaml:"cudnn,omitempty"`
 	Fast               bool      `json:"fast,omitempty" yaml:"fast"`
+	CogRuntime         bool      `json:"cog_runtime,omitempty" yaml:"cog_runtime"`
 	PythonOverrides    string    `json:"python_overrides,omitempty" yaml:"python_overrides,omitempty"`
 
 	pythonRequirementsContent []string

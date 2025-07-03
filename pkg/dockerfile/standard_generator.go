@@ -3,6 +3,7 @@ package dockerfile
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -426,10 +427,20 @@ RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /u
 }
 
 func (g *StandardGenerator) installCog() (string, error) {
+	// FIXME: remove once pipelines use cog_runtime: true
 	if g.Config.ContainsCoglet() {
 		return "", nil
 	}
 
+	if g.Config.Build.CogRuntime {
+		m, err := NewMonobaseMatrix(http.DefaultClient)
+		if err != nil {
+			return "", err
+		}
+		return "RUN pip install " + m.LatestCoglet.URL, nil
+	}
+
+	console.Warnf("A new Cog runtime implementation is avaible, set build.cog_runtime = true in cog.yaml to try it out.")
 	data, filename, err := ReadWheelFile()
 	if err != nil {
 		return "", err
