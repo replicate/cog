@@ -16,30 +16,36 @@ import (
 func determineDockerHost() (string, error) {
 	// 1) if DOCKER_HOST is set, use it
 	if host := os.Getenv("DOCKER_HOST"); host != "" {
+		console.Debug("using docker host from DOCKER_HOST")
+
 		return host, nil
 	}
 
 	// 2) try to get a host from the docker context. Use DOCKER_CONTEXT if set, otherwise check the current context
-	if host, err := dockerHostFromContext(os.Getenv("DOCKER_CONTEXT")); err != nil {
-		console.Warnf("error finding docker host from context: %v", err)
+	if host, contextName, err := dockerHostFromContext(os.Getenv("DOCKER_CONTEXT")); err != nil {
+		console.Debugf("could not find docker host from context %q: %v", contextName, err)
 
 		// if DOCKER_CONTEXT was explicitly set, return an error since the user probably expects that context to be used
 		if os.Getenv("DOCKER_CONTEXT") != "" {
 			return "", err
 		}
 	} else if host != "" {
+		console.Debugf("using docker host from context %q", contextName)
+
 		return host, nil
 	}
+
+	console.Debug("using system default docker host")
 
 	// 3) if we couldn't get a host from env or context, fallback to the system default
 	return defaultDockerHost, nil
 }
 
-func dockerHostFromContext(contextName string) (string, error) {
+func dockerHostFromContext(contextName string) (string, string, error) {
 	if contextName == "" {
 		cf, err := dconfig.Load(dconfig.Dir())
 		if err != nil {
-			return "", err
+			return "", "", fmt.Errorf("error loading docker config: %w", err)
 		}
 		contextName = cf.CurrentContext
 	}
@@ -50,22 +56,22 @@ func dockerHostFromContext(contextName string) (string, error) {
 	store := dctxstore.New(dconfig.ContextStoreDir(), storeConfig)
 	meta, err := store.GetMetadata(contextName)
 	if err != nil {
-		return "", err
+		return "", contextName, fmt.Errorf("error getting metadata for context %q: %w", contextName, err)
 	}
 
 	endpoint, ok := meta.Endpoints[dctxdocker.DockerEndpoint]
 	if !ok {
-		return "", fmt.Errorf("no docker endpoints found for context %s", contextName)
+		return "", contextName, fmt.Errorf("no docker endpoints found for context %q", contextName)
 	}
 
 	dockerEPMeta, ok := endpoint.(dctxdocker.EndpointMeta)
 	if !ok {
-		return "", fmt.Errorf("invalid context config: %v", endpoint)
+		return "", contextName, fmt.Errorf("invalid context config: %v", endpoint)
 	}
 
 	if dockerEPMeta.Host == "" {
-		return "", fmt.Errorf("no host found for context %s", contextName)
+		return "", contextName, fmt.Errorf("no host found for context %q", contextName)
 	}
 
-	return dockerEPMeta.Host, nil
+	return dockerEPMeta.Host, contextName, nil
 }
