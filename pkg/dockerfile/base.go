@@ -164,8 +164,8 @@ func BaseImageConfigurations() []BaseImageConfiguration {
 	return configs
 }
 
-func NewBaseImageGenerator(ctx context.Context, client registry.Client, cudaVersion string, pythonVersion string, torchVersion string, command command.Command) (*BaseImageGenerator, error) {
-	valid, cudaVersion, pythonVersion, torchVersion, err := BaseImageConfigurationExists(ctx, client, cudaVersion, pythonVersion, torchVersion)
+func NewBaseImageGenerator(ctx context.Context, client registry.Client, cudaVersion string, pythonVersion string, torchVersion string, command command.Command, generate bool) (*BaseImageGenerator, error) {
+	valid, cudaVersion, pythonVersion, torchVersion, err := BaseImageConfigurationExists(ctx, client, cudaVersion, pythonVersion, torchVersion, generate)
 	if err != nil {
 		return nil, err
 	}
@@ -309,7 +309,7 @@ func BaseImageName(cudaVersion string, pythonVersion string, torchVersion string
 	return global.ReplicateRegistryHost + "/" + CogBaseImageName + ":" + tag
 }
 
-func BaseImageConfigurationExists(ctx context.Context, client registry.Client, cudaVersion, pythonVersion, torchVersion string) (bool, string, string, string, error) {
+func BaseImageConfigurationExists(ctx context.Context, client registry.Client, cudaVersion, pythonVersion, torchVersion string, generate bool) (bool, string, string, string, error) {
 	cudaVersion, pythonVersion, torchVersion = baseImageComponentNormalisation(cudaVersion, pythonVersion, torchVersion)
 
 	valid := false
@@ -333,7 +333,7 @@ func BaseImageConfigurationExists(ctx context.Context, client registry.Client, c
 	}
 
 	var err error
-	if valid {
+	if valid && !generate {
 		valid, err = client.Exists(ctx, BaseImageName(cudaVersion, pythonVersion, torchVersion))
 	}
 
