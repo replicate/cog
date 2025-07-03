@@ -24,8 +24,8 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
+	"github.com/replicate/cog/pkg/factory"
 	"github.com/replicate/cog/pkg/image"
-	"github.com/replicate/cog/pkg/newbuilder"
 	r8_path "github.com/replicate/cog/pkg/path"
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/registry"
@@ -192,7 +192,8 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		// Experimental builder toggle
 		if os.Getenv("COG_EXPERIMENTAL_BUILDER") == "1" {
 			imageName = config.DockerImageName(projectDir)
-			if err := newbuilder.Build(
+			fact := factory.NewFactory(dockerClient)
+			if err := fact.Build(
 				ctx,
 				cfg,
 				projectDir,
@@ -200,7 +201,6 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 				buildSecrets,
 				buildNoCache,
 				buildProgressOutput,
-				dockerClient,
 			); err != nil {
 				return err
 			}

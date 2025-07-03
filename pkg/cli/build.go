@@ -11,9 +11,9 @@ import (
 	"github.com/replicate/cog/pkg/coglog"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/factory"
 	"github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/image"
-	"github.com/replicate/cog/pkg/newbuilder"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -104,7 +104,8 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 	// Experimental builder toggle – set COG_EXPERIMENTAL_BUILDER=1 to use the
 	// new implementation.
 	if os.Getenv("COG_EXPERIMENTAL_BUILDER") == "1" {
-		if err := newbuilder.Build(
+		fact := factory.NewFactory(dockerClient)
+		if err := fact.Build(
 			ctx,
 			cfg,
 			projectDir,
@@ -112,7 +113,6 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 			buildSecrets,
 			buildNoCache,
 			buildProgressOutput,
-			dockerClient,
 		); err != nil {
 			logClient.EndBuild(ctx, err, logCtx)
 			return err
