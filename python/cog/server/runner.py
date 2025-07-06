@@ -390,10 +390,15 @@ class PredictTask(Task[schema.PredictionResponse]):
         self._p.logs += logs
         self._send_webhook(schema.WebhookEvent.LOGS)
 
-    def set_metric(self, key: str, value: Union[float, int]) -> None:
+    def set_metric(self, key: str, value: Optional[Union[bool, float, int, str]]) -> None:
         if self._p.metrics is None:
             self._p.metrics = {}
-        self._p.metrics[key] = value
+
+        if value is None:
+            if key in self._p.metrics:
+                del self._p.metrics[key]
+        else:
+            self._p.metrics[key] = value
 
     def succeeded(self) -> None:
         self._log.info(("prediction" if not self._is_train else "train") + " succeeded")
