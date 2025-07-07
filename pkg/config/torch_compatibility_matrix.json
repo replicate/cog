@@ -1,7 +1,7 @@
 [
   {
     "Torch": "2.7.1+cpu",
-    "Torchvision": "0.23.0",
+    "Torchvision": "0.22.1",
     "Torchaudio": "2.7.1",
     "FindLinks": "",
     "ExtraIndexURL": "https://download.pytorch.org/whl/cpu",
@@ -15,7 +15,7 @@
   },
   {
     "Torch": "2.7.1+cu118",
-    "Torchvision": "0.23.0",
+    "Torchvision": "0.22.1",
     "Torchaudio": "2.7.1",
     "FindLinks": "",
     "ExtraIndexURL": "https://download.pytorch.org/whl/cu118",
@@ -29,7 +29,7 @@
   },
   {
     "Torch": "2.7.1+cu121",
-    "Torchvision": "0.23.0",
+    "Torchvision": "0.22.1",
     "Torchaudio": "2.7.1",
     "FindLinks": "",
     "ExtraIndexURL": "https://download.pytorch.org/whl/cu121",
@@ -43,7 +43,7 @@
   },
   {
     "Torch": "2.7.1+cu124",
-    "Torchvision": "0.23.0",
+    "Torchvision": "0.22.1",
     "Torchaudio": "2.7.1",
     "FindLinks": "",
     "ExtraIndexURL": "https://download.pytorch.org/whl/cu124",
@@ -57,7 +57,7 @@
   },
   {
     "Torch": "2.7.1+cu126",
-    "Torchvision": "0.23.0",
+    "Torchvision": "0.22.1",
     "Torchaudio": "2.7.1",
     "FindLinks": "",
     "ExtraIndexURL": "https://download.pytorch.org/whl/cu126",
@@ -71,7 +71,7 @@
   },
   {
     "Torch": "2.7.1+cu128",
-    "Torchvision": "0.23.0",
+    "Torchvision": "0.22.1",
     "Torchaudio": "2.7.1",
     "FindLinks": "",
     "ExtraIndexURL": "https://download.pytorch.org/whl/cu128",
