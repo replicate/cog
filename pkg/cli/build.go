@@ -74,16 +74,16 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	logClient := coglog.NewClient(client)
-	logCtx := logClient.StartBuild(buildFast, buildLocalImage)
+	logCtx := logClient.StartBuild(buildLocalImage)
 
 	cfg, projectDir, err := config.GetConfig(configFilename)
 	if err != nil {
 		logClient.EndBuild(ctx, err, logCtx)
 		return err
 	}
-	if cfg.Build.Fast {
-		buildFast = cfg.Build.Fast
-	}
+	// In case one of `--x-fast` & `fast: bool` is set
+	logCtx.Fast = buildFast || cfg.Build.Fast
+	logCtx.CogRuntime = cfg.Build.CogRuntime
 
 	imageName := cfg.Image
 	if buildTag != "" {
