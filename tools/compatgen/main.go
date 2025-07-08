@@ -18,6 +18,8 @@ func main() {
 		Short: "Generate compatibility matrix for Cog base images",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			ctx := cmd.Context()
+
 			target := args[0]
 
 			var v interface{}
@@ -25,7 +27,7 @@ func main() {
 
 			switch target {
 			case "cuda":
-				v, err = internal.FetchCUDABaseImages()
+				v, err = internal.FetchCUDABaseImages(ctx)
 				if err != nil {
 					console.Fatalf("Failed to fetch CUDA base image tags: %s", err)
 				}
