@@ -82,7 +82,10 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	// In case one of `--x-fast` & `fast: bool` is set
-	logCtx.Fast = buildFast || cfg.Build.Fast
+	if cfg.Build.Fast {
+		buildFast = cfg.Build.Fast
+	}
+	logCtx.Fast = buildFast
 	logCtx.CogRuntime = cfg.Build.CogRuntime
 
 	imageName := cfg.Image
