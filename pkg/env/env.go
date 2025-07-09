@@ -7,6 +7,7 @@ const MonobeamHostEnvVarName = "R8_MONOBEAM_HOST"
 const WebHostEnvVarName = "R8_WEB_HOST"
 const APIHostEnvVarName = "R8_API_HOST"
 const PipelinesRuntimeHostEnvVarName = "R8_PIPELINES_RUNTIME_HOST"
+const PytorchHostEnvVarName = "R8_PYTORCH_HOST"
 
 func SchemeFromEnvironment() string {
 	scheme := os.Getenv(SchemeEnvVarName)
@@ -44,6 +45,14 @@ func PipelinesRuntimeHostFromEnvironment() string {
 	host := os.Getenv(PipelinesRuntimeHostEnvVarName)
 	if host == "" {
 		host = "pipelines-runtime.replicate.delivery"
+	}
+	return host
+}
+
+func PytorchHostFromEnvironment() string {
+	host := os.Getenv(PytorchHostEnvVarName)
+	if host == "" {
+		host = "download.pytorch.org"
 	}
 	return host
 }
