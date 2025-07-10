@@ -119,7 +119,7 @@ func validateRequirements(projectDir string, client *http.Client, cfg *config.Co
 	}
 
 	if cfg.Build.PythonRequirements != "" {
-		pipelineRequirements, err := requirements.ReadRequirements(requirementsFilePath)
+		pipelineRequirements, err := requirements.ReadRequirements(filepath.Join(projectDir, requirementsFilePath))
 		if err != nil {
 			return err
 		}
@@ -233,6 +233,11 @@ func downloadRequirements(projectDir string, client *http.Client) (string, error
 		if err != nil {
 			return "", err
 		}
+	}
+
+	requirementsFilePath, err = filepath.Rel(projectDir, requirementsFilePath)
+	if err != nil {
+		return "", err
 	}
 
 	return requirementsFilePath, nil
