@@ -160,9 +160,9 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - run: docker info
-      - name: Check Docker Rate Limits
+      - name: Docker Hub Check (Full)
         run: |
-          curl -s -D - -u "${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}" https://registry-1.docker.io/v2/ | grep -i ratelimit || echo "No rate limit headers found"
+          curl -i -u "${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}" https://registry-1.docker.io/v2/
       - name: Download pre-built packages
         uses: actions/download-artifact@v4
         with:
