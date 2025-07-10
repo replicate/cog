@@ -162,7 +162,7 @@ jobs:
       - run: docker info
       - name: Check Docker Rate Limits
         run: |
-          curl -v -u "${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}" https://registry-1.docker.io/v2/ 2>&1 | grep -i ratelimit
+          curl -s -D - -u "${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}" https://registry-1.docker.io/v2/ | grep -i ratelimit || echo "No rate limit headers found"
       - name: Download pre-built packages
         uses: actions/download-artifact@v4
         with:
