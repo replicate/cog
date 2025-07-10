@@ -19,7 +19,7 @@ type index struct {
 	images []*BaseImage
 }
 
-func (i *index) Query(constraints ...constraint) ([]*BaseImage, error) {
+func (i *index) Query(constraints ...Constraint) ([]*BaseImage, error) {
 	var images []*BaseImage
 
 	filter, err := joinConstraints(constraints...)
@@ -35,7 +35,7 @@ func (i *index) Query(constraints ...constraint) ([]*BaseImage, error) {
 	return images, nil
 }
 
-func joinConstraints(constraints ...constraint) (filter, error) {
+func joinConstraints(constraints ...Constraint) (filter, error) {
 	filterFuncs := make([]filter, len(constraints))
 	for i, constraint := range constraints {
 		f, err := constraint()

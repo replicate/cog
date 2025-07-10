@@ -21,6 +21,9 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/sys/unix"
 
+	"github.com/replicate/cog/pkg/cogpack"
+	"github.com/replicate/cog/pkg/cogpack/build"
+	"github.com/replicate/cog/pkg/cogpack/core"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
@@ -29,6 +32,7 @@ import (
 	r8_path "github.com/replicate/cog/pkg/path"
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
 	"github.com/replicate/cog/pkg/util/mime"
@@ -191,14 +195,34 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		client := registry.NewRegistryClient()
 		// Experimental builder toggle
 		if os.Getenv("COG_EXPERIMENTAL_BUILDER") == "1" {
+			sourceInfo, err := core.NewSourceInfo(projectDir, cfg)
+			if err != nil {
+				return err
+			}
+			result, err := cogpack.GenerateBuildPlan(ctx, sourceInfo)
+			if err != nil {
+				return err
+			}
+
+			util.JSONPrettyPrint(result)
+
+			builder := build.NewBuilder(dockerClient)
+			if err := builder.Build(ctx, sourceInfo, result.Plan); err != nil {
+				return err
+			}
+
+			return nil
+
 			imageName = config.DockerImageName(projectDir)
 			fact := factory.NewFactory(dockerClient)
+			env, err := factory.NewBuildEnv(projectDir, cfg, buildSecrets)
+			if err != nil {
+				return err
+			}
 			if err := fact.Build(
 				ctx,
-				cfg,
-				projectDir,
+				env,
 				imageName,
-				buildSecrets,
 				buildNoCache,
 				buildProgressOutput,
 			); err != nil {

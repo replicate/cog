@@ -3,6 +3,7 @@ package base_images
 import (
 	"errors"
 	"sort"
+	"strings"
 
 	"github.com/hashicorp/go-version"
 )
@@ -26,9 +27,9 @@ type BaseImage struct {
 
 type filter func(img *BaseImage) bool
 
-type constraint func() (filter, error)
+type Constraint func() (filter, error)
 
-func ForAccelerator(accelerator Accelerator) constraint {
+func ForAccelerator(accelerator Accelerator) Constraint {
 	return func() (filter, error) {
 		return func(img *BaseImage) bool {
 			return img.Accelerator == accelerator
@@ -36,41 +37,41 @@ func ForAccelerator(accelerator Accelerator) constraint {
 	}
 }
 
-func UbuntuConstraint(spec string) constraint {
+func UbuntuConstraint(spec string) Constraint {
 	return func() (filter, error) {
-		constraint, err := version.NewConstraint(spec)
+		checks, err := parseConstraints(spec)
 		if err != nil {
 			return nil, err
 		}
 
 		return func(img *BaseImage) bool {
-			return img.UbuntuVersion != nil && constraint.Check(img.UbuntuVersion)
+			return img.UbuntuVersion != nil && checks(img.UbuntuVersion)
 		}, nil
 	}
 }
 
-func PythonConstraint(spec string) constraint {
+func PythonConstraint(spec string) Constraint {
 	return func() (filter, error) {
-		constraint, err := version.NewConstraint(spec)
+		checks, err := parseConstraints(spec)
 		if err != nil {
 			return nil, err
 		}
 
 		return func(img *BaseImage) bool {
-			return img.PythonVersion != nil && constraint.Check(img.PythonVersion)
+			return img.PythonVersion != nil && checks(img.PythonVersion)
 		}, nil
 	}
 }
 
-func CudaConstraint(spec string) constraint {
+func CudaConstraint(spec string) Constraint {
 	return func() (filter, error) {
-		constraint, err := version.NewConstraint(spec)
+		checks, err := parseConstraints(spec)
 		if err != nil {
 			return nil, err
 		}
 
 		return func(img *BaseImage) bool {
-			return img.CudaVersion != nil && constraint.Check(img.CudaVersion)
+			return img.CudaVersion != nil && checks(img.CudaVersion)
 		}, nil
 	}
 }
@@ -82,7 +83,7 @@ var (
 
 // ResolveBaseImage returns the best matching base image for the given constraints.
 // The "best" image is chosen by preferring newer versions of Python, then CUDA, then Ubuntu.
-func ResolveBaseImage(constraints ...constraint) (*BaseImage, error) {
+func ResolveBaseImage(constraints ...Constraint) (*BaseImage, error) {
 	idx, err := defaultIndex()
 	if err != nil {
 		return nil, err
@@ -119,6 +120,15 @@ func ResolveBaseImage(constraints ...constraint) (*BaseImage, error) {
 	return images[0], nil
 }
 
+func Query(constraints ...Constraint) ([]*BaseImage, error) {
+	idx, err := defaultIndex()
+	if err != nil {
+		return nil, err
+	}
+
+	return idx.Query(constraints...)
+}
+
 func compareVersionPointers(a, b *version.Version) int {
 	switch {
 	case a == nil && b == nil:
@@ -130,4 +140,23 @@ func compareVersionPointers(a, b *version.Version) int {
 	default:
 		return a.Compare(b)
 	}
+}
+
+func parseConstraints(c string) (func(v *version.Version) bool, error) {
+	var constraints []version.Constraints
+	for _, spec := range strings.Split(c, "||") {
+		constraintSet, err := version.NewConstraint(spec)
+		if err != nil {
+			return nil, err
+		}
+		constraints = append(constraints, constraintSet)
+	}
+	return func(v *version.Version) bool {
+		for _, constraint := range constraints {
+			if constraint.Check(v) {
+				return true
+			}
+		}
+		return false
+	}, nil
 }

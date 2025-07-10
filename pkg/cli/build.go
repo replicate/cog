@@ -105,12 +105,14 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 	// new implementation.
 	if os.Getenv("COG_EXPERIMENTAL_BUILDER") == "1" {
 		fact := factory.NewFactory(dockerClient)
+		env, err := factory.NewBuildEnv(projectDir, cfg, buildSecrets)
+		if err != nil {
+			return err
+		}
 		if err := fact.Build(
 			ctx,
-			cfg,
-			projectDir,
+			env,
 			imageName,
-			buildSecrets,
 			buildNoCache,
 			buildProgressOutput,
 		); err != nil {

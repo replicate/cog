@@ -609,3 +609,91 @@ func (c *Config) loadEnvironment() error {
 	c.parsedEnvironment = env
 	return nil
 }
+
+// CudaVersionConstraint returns a semver constraint for the supported CUDA versions.
+// If the user has specified a CUDA version in the cog.yaml file, it will return that.
+// Otherwise, it will return a semver constraint for the supported CUDA versions for the
+// latest Torch version.
+func (c *Config) CudaVersionConstraint() (string, error) {
+	if c.Build == nil || !c.Build.GPU {
+		return "", nil
+	}
+	var cudaVersions [][]string
+
+	if c.Build.CUDA != "" {
+		fmt.Println("cuda version", c.Build.CUDA)
+		cudaVersions = append(cudaVersions, []string{c.Build.CUDA})
+	}
+
+	if v, ok := c.TorchVersion(); ok {
+		fmt.Println("torch version", v)
+		cudas, err := cudasFromTorch(v)
+		if err != nil {
+			return "", err
+		}
+		cudaVersions = append(cudaVersions, cudas)
+	}
+
+	if v, ok := c.TorchaudioVersion(); ok {
+		fmt.Println("torchaudio version", v)
+		cudas, err := cudasFromTorch(v)
+		if err != nil {
+			return "", err
+		}
+		cudaVersions = append(cudaVersions, cudas)
+	}
+
+	if v, ok := c.TorchvisionVersion(); ok {
+		fmt.Println("torchvision version", v)
+		cudas, err := cudasFromTorch(v)
+		if err != nil {
+			return "", err
+		}
+		cudaVersions = append(cudaVersions, cudas)
+	}
+
+	if v, ok := c.TensorFlowVersion(); ok {
+		fmt.Println("tensorflow version", v)
+		cuda, cudnn, err := cudaFromTF(v)
+		if err != nil {
+			return "", err
+		}
+		cudaVersions = append(cudaVersions, []string{cuda, cudnn})
+	}
+
+	intersect := map[string]int{}
+	for _, cuda := range cudaVersions {
+		for _, v := range cuda {
+			intersect[v]++
+		}
+	}
+
+	var possibleCUDAs []string
+	for v, count := range intersect {
+		if count == len(cudaVersions) {
+			possibleCUDAs = append(possibleCUDAs, v)
+		}
+	}
+
+	if len(possibleCUDAs) == 0 {
+		return "", fmt.Errorf("no supported CUDA version found")
+	}
+
+	return strings.Join(possibleCUDAs, "||"), nil
+}
+
+func (c *Config) PythonVersionConstraint() (string, error) {
+	if c.Build == nil || c.Build.PythonVersion == "" {
+		return "~>3.13.0", nil
+	}
+
+	if strings.Count(c.Build.PythonVersion, ".") == 1 {
+		return "~>" + c.Build.PythonVersion + ".0", nil
+	}
+
+	return c.Build.PythonVersion, nil
+}
+
+func (c *Config) PythonPackages() ([]string, error) {
+	return c.Build.pythonRequirementsContent, nil
+}

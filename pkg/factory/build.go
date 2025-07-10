@@ -14,8 +14,8 @@ import (
 
 // Build builds an image using the experimental builder. It intentionally
 // handles only a subset of flags – most parameters are ignored for now.
-func (f *Factory) Build(ctx context.Context, cfg *config.Config, dir, imageName string, secrets []string, noCache bool, progressOutput string) error {
-	spec, err := BuildSpecFromConfig(cfg)
+func (f *Factory) Build(ctx context.Context, env *BuildEnv, imageName string, noCache bool, progressOutput string) error {
+	spec, err := f.solveBuildSpec(env)
 	if err != nil {
 		return fmt.Errorf("failed to derive build spec: %w", err)
 	}
@@ -25,18 +25,18 @@ func (f *Factory) Build(ctx context.Context, cfg *config.Config, dir, imageName 
 		return fmt.Errorf("failed to generate Dockerfile: %w", err)
 	}
 
-	// Ensure the embedded cog wheel exists in context at .cog/<wheel>
-	if err := ensureCogWheelInContext(dir, spec.CogWheelFilename); err != nil {
-		return err
-	}
+	// // Ensure the embedded cog wheel exists in context at .cog/<wheel>
+	// if err := ensureCogWheelInContext(dir, spec.CogWheelFilename); err != nil {
+	// 	return err
+	// }
 
 	fmt.Println(dockerfile)
 
 	buildOpts := command.ImageBuildOptions{
-		WorkingDir:         dir,
+		WorkingDir:         env.ProjectDir,
 		DockerfileContents: dockerfile,
 		ImageName:          imageName,
-		Secrets:            secrets,
+		Secrets:            env.Secrets,
 		NoCache:            noCache,
 		ProgressOutput:     progressOutput,
 		Epoch:              &config.BuildSourceEpochTimestamp,
@@ -53,10 +53,10 @@ func (f *Factory) Build(ctx context.Context, cfg *config.Config, dir, imageName 
 		devTag := imageName + "-dev"
 
 		devOpts := command.ImageBuildOptions{
-			WorkingDir:         dir,
+			WorkingDir:         env.ProjectDir,
 			DockerfileContents: dockerfile,
 			ImageName:          devTag,
-			Secrets:            secrets,
+			Secrets:            env.Secrets,
 			NoCache:            noCache,
 			ProgressOutput:     progressOutput,
 			Epoch:              &config.BuildSourceEpochTimestamp,

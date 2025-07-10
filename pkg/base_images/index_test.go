@@ -13,13 +13,13 @@ import (
 func TestIndexFiltering(t *testing.T) {
 	tests := []struct {
 		Name        string
-		constraints []constraint
+		constraints []Constraint
 		input       []string
 		want        []string
 	}{
 		{
 			Name:        "no filters",
-			constraints: []constraint{},
+			constraints: []Constraint{},
 			input: []string{
 				"name1,cpu,22.04,,3.10,run,dev",
 				"name2,gpu,22.04,11.8,3.10,run,dev",
@@ -31,7 +31,7 @@ func TestIndexFiltering(t *testing.T) {
 		},
 		{
 			Name: "filter by accelerator",
-			constraints: []constraint{
+			constraints: []Constraint{
 				ForAccelerator(AcceleratorGPU),
 			},
 			input: []string{
@@ -44,7 +44,7 @@ func TestIndexFiltering(t *testing.T) {
 		},
 		{
 			Name: "filter by python version",
-			constraints: []constraint{
+			constraints: []Constraint{
 				PythonConstraint("3.10"),
 			},
 			input: []string{

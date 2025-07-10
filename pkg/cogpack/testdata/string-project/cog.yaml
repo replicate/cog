@@ -1,0 +1,8 @@
+build:
+  gpu: true
+  python_version: "3.13"
+  python_packages:
+    - "torch==2.5.1"
+  system_packages:
+    - "curl"
+predict: "predict.py:Predictor"
