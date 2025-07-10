@@ -159,6 +159,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - run: docker info
       - name: Download pre-built packages
         uses: actions/download-artifact@v4
         with:
