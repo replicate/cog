@@ -1,4 +1,4 @@
-package core
+package project
 
 import (
 	"io/fs"

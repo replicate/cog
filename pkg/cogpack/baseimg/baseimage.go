@@ -1,6 +1,26 @@
-package cogpack
+package baseimg
 
-import "fmt"
+// BaseImage contains the selected base images and their metadata
+type BaseImage struct {
+	Build    string            `json:"build"`    // dev image with build tools
+	Runtime  string            `json:"runtime"`  // minimal runtime image
+	Metadata BaseImageMetadata `json:"metadata"` // what's pre-installed
+}
+
+// BaseImageMetadata describes what packages are available in the base image
+type BaseImageMetadata struct {
+	Packages map[string]Package `json:"packages"` // "python", "cuda", "git", etc.
+}
+
+// Package represents an installed package with metadata
+type Package struct {
+	Name         string `json:"name"`                    // "python", "cuda"
+	Version      string `json:"version"`                 // "3.11.8", "11.8"
+	Source       string `json:"source"`                  // "apt", "base-image", "uv"
+	Executable   string `json:"executable,omitempty"`    // "/usr/bin/python3"
+	SitePackages string `json:"site_packages,omitempty"` // "/usr/local/lib/python3.11/site-packages"
+	LibPath      string `json:"lib_path,omitempty"`      // "/usr/local/cuda/lib64"
+}
 
 // GetBaseImageMetadata returns metadata for a given base image reference.
 // This is a mock implementation that will be replaced by the cogpack-images project.
@@ -128,46 +148,43 @@ func GetBaseImageMetadata(imageRef string) (*BaseImageMetadata, error) {
 }
 
 // SelectBaseImage chooses the best base image based on resolved dependencies.
-// This is a mock implementation that will be replaced by the cogpack-images project.
-func SelectBaseImage(dependencies map[string]Dependency) (BaseImage, error) {
-	// Extract key requirements
+// For initial implementation, we use known working r8.im base images.
+func SelectBaseImage(dependencies map[string]string) (BaseImage, error) {
+	// Extract Python version if available
 	pythonVersion := ""
-	cudaVersion := ""
-
 	if python, exists := dependencies["python"]; exists {
-		pythonVersion = python.ResolvedVersion
+		pythonVersion = python
 	}
 
-	if cuda, exists := dependencies["cuda"]; exists {
-		cudaVersion = cuda.ResolvedVersion
-	}
-
-	// Select appropriate images based on requirements
+	// Use known working base images from r8.im registry
 	var buildImage, runtimeImage string
 
-	if pythonVersion != "" && cudaVersion != "" {
-		// Python + CUDA
-		buildImage = fmt.Sprintf("cogpack/python:%s-cuda%s", pythonVersion, cudaVersion)
-		runtimeImage = fmt.Sprintf("cogpack/python:%s-cuda%s-runtime", pythonVersion, cudaVersion)
-	} else if pythonVersion != "" {
-		// Python only
-		buildImage = fmt.Sprintf("cogpack/python:%s", pythonVersion)
-		runtimeImage = fmt.Sprintf("cogpack/python:%s-runtime", pythonVersion)
+	if pythonVersion != "" {
+		// Use Python base images - these are known to exist and work
+		buildImage = "r8.im/cog-base:python3.13.4-ubuntu22.04-dev"
+		runtimeImage = "r8.im/cog-base:python3.13.4-ubuntu22.04-run"
 	} else {
-		// Fallback to Ubuntu
-		buildImage = "ubuntu:22.04"
-		runtimeImage = "ubuntu:22.04"
+		// Fallback to basic Ubuntu images
+		buildImage = "r8.im/cog-base:ubuntu22.04-dev"
+		runtimeImage = "r8.im/cog-base:ubuntu22.04-run"
 	}
 
-	// Get metadata for the build image
-	metadata, err := GetBaseImageMetadata(buildImage)
-	if err != nil {
-		return BaseImage{}, fmt.Errorf("failed to get metadata for %s: %w", buildImage, err)
+	// Create basic metadata - for now just mark that Python is available
+	metadata := BaseImageMetadata{
+		Packages: map[string]Package{
+			"python": {
+				Name:         "python",
+				Version:      "3.13.4",
+				Source:       "base-image",
+				Executable:   "/usr/bin/python3",
+				SitePackages: "/usr/local/lib/python3.13/site-packages",
+			},
+		},
 	}
 
 	return BaseImage{
 		Build:    buildImage,
 		Runtime:  runtimeImage,
-		Metadata: *metadata,
+		Metadata: metadata,
 	}, nil
 }

@@ -85,9 +85,10 @@ Key sub-domains:
 ---
 
 ## Further reading
-• `builder.cursor.md` – high-level roadmap + checklist for cogpack builder.  
-• `cogpack.deepdive.cursor.md` – detailed decision log.  
-• `docs/` – public user documentation.
+- https://cog.run/llms.txt - Cog documentation, formatted for LLMs
+- `builder.cursor.md` – high-level roadmap + checklist for cogpack builder.  
+- `cogpack.deepdive.cursor.md` – detailed decision log.  
+- `docs/` – public user documentation.
 
 ---
 *Happy hacking!* 

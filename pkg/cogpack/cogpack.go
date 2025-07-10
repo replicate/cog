@@ -4,48 +4,50 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/replicate/cog/pkg/cogpack/core"
+	"github.com/replicate/cog/pkg/cogpack/plan"
+	"github.com/replicate/cog/pkg/cogpack/project"
+	"github.com/replicate/cog/pkg/cogpack/stacks"
 )
 
 // GeneratePlan generates a complete build plan for the given project.
 // This is the main entry point for the cogpack system.
-func GeneratePlan(ctx context.Context, src *core.SourceInfo) (*PlanResult, error) {
+func GeneratePlan(ctx context.Context, src *project.SourceInfo) (*plan.PlanResult, error) {
 	// 1. Initialize plan with platform
-	plan := &Plan{
-		Platform: Platform{
+	p := &plan.Plan{
+		Platform: plan.Platform{
 			OS:   "linux",
 			Arch: "amd64",
 		},
-		Dependencies: make(map[string]Dependency),
-		BuildPhases:  []Phase{},
-		ExportPhases: []Phase{},
+		Dependencies: make(map[string]plan.Dependency),
+		BuildPhases:  []plan.Phase{},
+		ExportPhases: []plan.Phase{},
 	}
 
 	// 2. Select stack (first match wins)
-	stack, err := SelectStack(ctx, src)
+	stack, err := stacks.SelectStack(ctx, src)
 	if err != nil {
 		return nil, fmt.Errorf("stack selection failed: %w", err)
 	}
 
 	// 3. Let stack orchestrate the build
-	if err := stack.Plan(ctx, src, plan); err != nil {
+	if err := stack.Plan(ctx, src, p); err != nil {
 		return nil, fmt.Errorf("stack %s planning failed: %w", stack.Name(), err)
 	}
 
 	// 4. Validate plan
-	if err := ValidatePlan(plan); err != nil {
+	if err := ValidatePlan(p); err != nil {
 		return nil, fmt.Errorf("plan validation failed: %w", err)
 	}
 
 	// 5. Create result with metadata
-	metadata := &PlanMetadata{
+	metadata := &plan.PlanMetadata{
 		Stack:     stack.Name(),
-		BaseImage: plan.BaseImage.Build,
+		BaseImage: p.BaseImage.Build,
 		Version:   "1.0",
 	}
 
-	return &PlanResult{
-		Plan:     plan,
+	return &plan.PlanResult{
+		Plan:     p,
 		Metadata: metadata,
 		Timing:   map[string]string{}, // TODO: Add timing information
 	}, nil
@@ -53,12 +55,12 @@ func GeneratePlan(ctx context.Context, src *core.SourceInfo) (*PlanResult, error
 
 // ValidatePlan performs basic validation on a generated plan.
 // This ensures the plan is well-formed and can be executed.
-func ValidatePlan(plan *Plan) error {
+func ValidatePlan(p *plan.Plan) error {
 	// Check that we have a base image
-	if plan.BaseImage.Build == "" {
+	if p.BaseImage.Build == "" {
 		return fmt.Errorf("no build base image specified")
 	}
-	if plan.BaseImage.Runtime == "" {
+	if p.BaseImage.Runtime == "" {
 		return fmt.Errorf("no runtime base image specified")
 	}
 
@@ -66,7 +68,7 @@ func ValidatePlan(plan *Plan) error {
 	seenIDs := make(map[string]bool)
 
 	// Check build phases
-	for _, phase := range plan.BuildPhases {
+	for _, phase := range p.BuildPhases {
 		for _, stage := range phase.Stages {
 			if stage.ID == "" {
 				return fmt.Errorf("stage %q has empty ID", stage.Name)
@@ -79,7 +81,7 @@ func ValidatePlan(plan *Plan) error {
 	}
 
 	// Check export phases
-	for _, phase := range plan.ExportPhases {
+	for _, phase := range p.ExportPhases {
 		for _, stage := range phase.Stages {
 			if stage.ID == "" {
 				return fmt.Errorf("stage %q has empty ID", stage.Name)
@@ -92,17 +94,17 @@ func ValidatePlan(plan *Plan) error {
 	}
 
 	// Validate stage inputs can be resolved
-	for _, phase := range plan.BuildPhases {
+	for _, phase := range p.BuildPhases {
 		for _, stage := range phase.Stages {
-			if err := validateStageInput(plan, stage); err != nil {
+			if err := validateStageInput(p, stage); err != nil {
 				return fmt.Errorf("stage %q input validation failed: %w", stage.ID, err)
 			}
 		}
 	}
 
-	for _, phase := range plan.ExportPhases {
+	for _, phase := range p.ExportPhases {
 		for _, stage := range phase.Stages {
-			if err := validateStageInput(plan, stage); err != nil {
+			if err := validateStageInput(p, stage); err != nil {
 				return fmt.Errorf("stage %q input validation failed: %w", stage.ID, err)
 			}
 		}
@@ -112,7 +114,7 @@ func ValidatePlan(plan *Plan) error {
 }
 
 // validateStageInput ensures a stage's input can be resolved
-func validateStageInput(plan *Plan, stage Stage) error {
+func validateStageInput(p *plan.Plan, stage plan.Stage) error {
 	input := stage.Source
 
 	// Check if input refers to an image
@@ -123,7 +125,7 @@ func validateStageInput(plan *Plan, stage Stage) error {
 
 	// Check if input refers to another stage
 	if input.Stage != "" {
-		if plan.GetStage(input.Stage) == nil {
+		if p.GetStage(input.Stage) == nil {
 			return fmt.Errorf("stage input %q not found", input.Stage)
 		}
 		return nil

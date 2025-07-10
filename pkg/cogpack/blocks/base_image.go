@@ -3,8 +3,8 @@ package blocks
 import (
 	"context"
 
-	"github.com/replicate/cog/pkg/cogpack"
-	"github.com/replicate/cog/pkg/cogpack/core"
+	p "github.com/replicate/cog/pkg/cogpack/plan"
+	"github.com/replicate/cog/pkg/cogpack/project"
 )
 
 // BaseImageBlock establishes the base image for the build
@@ -16,31 +16,38 @@ func (b *BaseImageBlock) Name() string {
 }
 
 // Detect determines if this block is needed (always true)
-func (b *BaseImageBlock) Detect(ctx context.Context, src *core.SourceInfo) (bool, error) {
+func (b *BaseImageBlock) Detect(ctx context.Context, src *project.SourceInfo) (bool, error) {
 	return true, nil // Always need a base image
 }
 
 // Dependencies returns no dependencies (this block consumes dependencies, doesn't emit them)
-func (b *BaseImageBlock) Dependencies(ctx context.Context, src *core.SourceInfo) ([]cogpack.Dependency, error) {
+func (b *BaseImageBlock) Dependencies(ctx context.Context, src *project.SourceInfo) ([]p.Dependency, error) {
 	return nil, nil // This block consumes dependencies from other blocks
 }
 
-// Plan establishes the base image stage
-func (b *BaseImageBlock) Plan(ctx context.Context, src *core.SourceInfo, plan *cogpack.Plan) error {
-	// Create the base stage that other stages will build from
-	stage, err := plan.AddStage(cogpack.PhaseBase, "Base Image", "base")
+// Plan establishes both build and export base image stages
+func (b *BaseImageBlock) Plan(ctx context.Context, src *project.SourceInfo, plan *p.Plan) error {
+	// Create the build base stage
+	buildStage, err := plan.AddStage(p.PhaseBase, "Build Base", "build-base")
 	if err != nil {
 		return err
 	}
 
-	// Use the selected base image as input
-	stage.Source = cogpack.Input{Image: plan.BaseImage.Build}
+	// Use the build base image
+	buildStage.Source = p.Input{Image: plan.BaseImage.Build}
+	buildStage.Operations = []p.Op{} // No operations needed for base
+	buildStage.Provides = []string{"build-base"}
 
-	// No operations needed - just establishes the base
-	stage.Operations = []cogpack.Op{}
+	// Create the export base stage for runtime image
+	exportStage, err := plan.AddStage(p.ExportPhaseBase, "Runtime Base", "runtime-base")
+	if err != nil {
+		return err
+	}
 
-	// Provide base runtime
-	stage.Provides = []string{"base-runtime"}
+	// Use the runtime base image
+	exportStage.Source = p.Input{Image: plan.BaseImage.Runtime}
+	exportStage.Operations = []p.Op{} // r8.im images already have what we need
+	exportStage.Provides = []string{"runtime-base"}
 
 	return nil
 }

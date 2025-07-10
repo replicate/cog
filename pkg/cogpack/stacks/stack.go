@@ -1,10 +1,11 @@
-package cogpack
+package stacks
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/replicate/cog/pkg/cogpack/core"
+	"github.com/replicate/cog/pkg/cogpack/plan"
+	"github.com/replicate/cog/pkg/cogpack/project"
 )
 
 // Stack orchestrates the build for a specific project type (e.g., Python).
@@ -15,27 +16,12 @@ type Stack interface {
 	Name() string
 
 	// Detect analyzes the project to determine if this stack can handle it
-	Detect(ctx context.Context, src *core.SourceInfo) (bool, error)
+	Detect(ctx context.Context, src *project.SourceInfo) (bool, error)
 
 	// Plan orchestrates the entire build process for this stack type.
 	// This includes block composition, dependency collection/resolution,
 	// and plan generation.
-	Plan(ctx context.Context, src *core.SourceInfo, plan *Plan) error
-}
-
-// PlanResult contains the result of plan generation along with metadata
-type PlanResult struct {
-	Plan     *Plan             `json:"plan"`     // the generated plan
-	Metadata *PlanMetadata     `json:"metadata"` // build context and debug info
-	Timing   map[string]string `json:"timing"`   // timing information (future)
-}
-
-// PlanMetadata contains build context and debug information
-type PlanMetadata struct {
-	Stack     string   `json:"stack"`      // e.g., "python"
-	Blocks    []string `json:"blocks"`     // active block names
-	BaseImage string   `json:"base_image"` // resolved base image
-	Version   string   `json:"version"`    // plan schema version
+	Plan(ctx context.Context, src *project.SourceInfo, plan *plan.Plan) error
 }
 
 // registeredStacks holds the global stack registry
@@ -54,7 +40,7 @@ func GetRegisteredStacks() []Stack {
 }
 
 // SelectStack finds the first stack that can handle the given project
-func SelectStack(ctx context.Context, src *core.SourceInfo) (Stack, error) {
+func SelectStack(ctx context.Context, src *project.SourceInfo) (Stack, error) {
 	for _, stack := range registeredStacks {
 		if detected, err := stack.Detect(ctx, src); err != nil {
 			return nil, err

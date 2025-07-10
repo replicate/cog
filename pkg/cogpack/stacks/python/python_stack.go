@@ -1,11 +1,12 @@
-package stacks
+package python
 
 import (
 	"context"
 
-	"github.com/replicate/cog/pkg/cogpack"
+	"github.com/replicate/cog/pkg/cogpack/baseimg"
 	"github.com/replicate/cog/pkg/cogpack/blocks"
-	"github.com/replicate/cog/pkg/cogpack/core"
+	"github.com/replicate/cog/pkg/cogpack/plan"
+	"github.com/replicate/cog/pkg/cogpack/project"
 )
 
 // PythonStack orchestrates builds for Python-based projects
@@ -17,7 +18,7 @@ func (s *PythonStack) Name() string {
 }
 
 // Detect analyzes the project to determine if this is a Python project
-func (s *PythonStack) Detect(ctx context.Context, src *core.SourceInfo) (bool, error) {
+func (s *PythonStack) Detect(ctx context.Context, src *project.SourceInfo) (bool, error) {
 	// Check for Python indicators
 	pythonIndicators := []string{
 		"*.py",
@@ -41,15 +42,15 @@ func (s *PythonStack) Detect(ctx context.Context, src *core.SourceInfo) (bool, e
 }
 
 // Plan orchestrates the entire build process for Python projects
-func (s *PythonStack) Plan(ctx context.Context, src *core.SourceInfo, plan *cogpack.Plan) error {
+func (s *PythonStack) Plan(ctx context.Context, src *project.SourceInfo, p *plan.Plan) error {
 	// Phase 1: Compose blocks based on project analysis
-	blocks := s.composeBlocks(ctx, src)
+	allBlocks := s.composeBlocks(ctx, src)
 
 	// Phase 2: Collect dependencies from all active blocks
-	var allDeps []cogpack.Dependency
-	var activeBlocks []cogpack.Block
+	var allDeps []plan.Dependency
+	var activeBlocks []blocks.Block
 
-	for _, block := range blocks {
+	for _, block := range allBlocks {
 		if active, err := block.Detect(ctx, src); err != nil {
 			return err
 		} else if active {
@@ -64,35 +65,51 @@ func (s *PythonStack) Plan(ctx context.Context, src *core.SourceInfo, plan *cogp
 	}
 
 	// Phase 3: Resolve dependencies
-	resolved, err := cogpack.ResolveDependencies(ctx, allDeps)
+	resolved, err := plan.ResolveDependencies(ctx, allDeps)
 	if err != nil {
 		return err
 	}
-	plan.Dependencies = resolved
+	p.Dependencies = resolved
+
+	mappedResolved := make(map[string]string)
+	for _, dep := range resolved {
+		mappedResolved[dep.Name] = dep.ResolvedVersion
+	}
 
 	// Phase 4: Select base image based on resolved dependencies
-	baseImage, err := cogpack.SelectBaseImage(resolved)
+	baseImage, err := baseimg.SelectBaseImage(mappedResolved)
 	if err != nil {
 		return err
 	}
-	plan.BaseImage = baseImage
+	p.BaseImage = baseImage
 
 	// Phase 5: Let active blocks contribute to the plan
 	for _, block := range activeBlocks {
-		if err := block.Plan(ctx, src, plan); err != nil {
+		if err := block.Plan(ctx, src, p); err != nil {
 			return err
 		}
+	}
+
+	// Phase 6: Set export configuration for runtime image
+	p.Export = &plan.ExportConfig{
+		Entrypoint:   []string{"python", "-m", "cog.server.http"},
+		Cmd:          []string{},
+		WorkingDir:   "/src",
+		ExposedPorts: map[string]struct{}{"5000/tcp": {}},
+		Labels: map[string]string{
+			"org.opencontainers.image.title": "Cog Model",
+		},
 	}
 
 	return nil
 }
 
 // composeBlocks determines which blocks to use based on project characteristics
-func (s *PythonStack) composeBlocks(ctx context.Context, src *core.SourceInfo) []cogpack.Block {
-	var blockList []cogpack.Block
+func (s *PythonStack) composeBlocks(ctx context.Context, src *project.SourceInfo) []blocks.Block {
+	var blockList []blocks.Block
 
 	// Always include base blocks
-	blockList = append(blockList, &blocks.PythonVersionBlock{})
+	blockList = append(blockList, &PythonVersionBlock{})
 	blockList = append(blockList, &blocks.BaseImageBlock{})
 
 	// System packages if specified
@@ -110,6 +127,9 @@ func (s *PythonStack) composeBlocks(ctx context.Context, src *core.SourceInfo) [
 	// ML frameworks - these self-detect if needed
 	blockList = append(blockList, &blocks.TorchBlock{})
 	blockList = append(blockList, &blocks.CudaBlock{})
+
+	// Always copy source code to runtime image
+	blockList = append(blockList, &blocks.SourceCopyBlock{})
 
 	return blockList
 }

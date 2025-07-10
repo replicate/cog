@@ -1,8 +1,8 @@
 package stacks
 
-import "github.com/replicate/cog/pkg/cogpack"
+import "github.com/replicate/cog/pkg/cogpack/stacks/python"
 
 func init() {
 	// Register all available stacks
-	cogpack.RegisterStack(&PythonStack{})
+	RegisterStack(&python.PythonStack{})
 }

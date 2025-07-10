@@ -1,4 +1,4 @@
-package cogpack_test
+package cogpack
 
 import (
 	"context"
@@ -7,8 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/replicate/cog/pkg/cogpack"
-	"github.com/replicate/cog/pkg/cogpack/core"
+	"github.com/replicate/cog/pkg/cogpack/project"
 	_ "github.com/replicate/cog/pkg/cogpack/stacks" // register stacks
 	"github.com/replicate/cog/pkg/config"
 )
@@ -22,7 +21,7 @@ func TestBasicPythonProject(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "predict.py"), []byte("# test"), 0644)
 	os.WriteFile(filepath.Join(tmpDir, "requirements.txt"), []byte("torch==2.0.0"), 0644)
 
-	src, err := core.NewSourceInfo(tmpDir, &config.Config{
+	src, err := project.NewSourceInfo(tmpDir, &config.Config{
 		Build: &config.Build{
 			PythonVersion: "3.11",
 		},
@@ -33,7 +32,7 @@ func TestBasicPythonProject(t *testing.T) {
 	defer src.Close()
 
 	// Generate plan
-	result, err := cogpack.GeneratePlan(context.Background(), src)
+	result, err := GeneratePlan(context.Background(), src)
 	if err != nil {
 		t.Fatalf("GeneratePlan failed: %v", err)
 	}

@@ -1,7 +1,9 @@
-package cogpack
+package plan
 
 import (
 	"fmt"
+
+	"github.com/replicate/cog/pkg/cogpack/baseimg"
 )
 
 // Package cogpack implements the Stack → Blocks → Plan → Builder architecture
@@ -12,7 +14,7 @@ import (
 type Plan struct {
 	Platform     Platform              `json:"platform"`      // linux/amd64
 	Dependencies map[string]Dependency `json:"dependencies"`  // resolved versions
-	BaseImage    BaseImage             `json:"base_image"`    // build/runtime images
+	BaseImage    baseimg.BaseImage     `json:"base_image"`    // build/runtime images
 	BuildPhases  []Phase               `json:"build_phases"`  // organized build work
 	ExportPhases []Phase               `json:"export_phases"` // runtime image assembly
 	Export       *ExportConfig         `json:"export"`        // final image config
@@ -22,28 +24,6 @@ type Plan struct {
 type Platform struct {
 	OS   string `json:"os"`   // "linux"
 	Arch string `json:"arch"` // "amd64"
-}
-
-// BaseImage contains the selected base images and their metadata
-type BaseImage struct {
-	Build    string            `json:"build"`    // dev image with build tools
-	Runtime  string            `json:"runtime"`  // minimal runtime image
-	Metadata BaseImageMetadata `json:"metadata"` // what's pre-installed
-}
-
-// BaseImageMetadata describes what packages are available in the base image
-type BaseImageMetadata struct {
-	Packages map[string]Package `json:"packages"` // "python", "cuda", "git", etc.
-}
-
-// Package represents an installed package with metadata
-type Package struct {
-	Name         string `json:"name"`                    // "python", "cuda"
-	Version      string `json:"version"`                 // "3.11.8", "11.8"
-	Source       string `json:"source"`                  // "apt", "base-image", "uv"
-	Executable   string `json:"executable,omitempty"`    // "/usr/bin/python3"
-	SitePackages string `json:"site_packages,omitempty"` // "/usr/local/lib/python3.11/site-packages"
-	LibPath      string `json:"lib_path,omitempty"`      // "/usr/local/cuda/lib64"
 }
 
 // Dependency represents a resolved dependency constraint
@@ -332,4 +312,19 @@ func (p *Plan) getPredecessorPhase(phaseName StagePhase) StagePhase {
 	default:
 		return ""
 	}
+}
+
+// PlanResult contains the result of plan generation along with metadata
+type PlanResult struct {
+	Plan     *Plan             `json:"plan"`     // the generated plan
+	Metadata *PlanMetadata     `json:"metadata"` // build context and debug info
+	Timing   map[string]string `json:"timing"`   // timing information (future)
+}
+
+// PlanMetadata contains build context and debug information
+type PlanMetadata struct {
+	Stack     string   `json:"stack"`      // e.g., "python"
+	Blocks    []string `json:"blocks"`     // active block names
+	BaseImage string   `json:"base_image"` // resolved base image
+	Version   string   `json:"version"`    // plan schema version
 }

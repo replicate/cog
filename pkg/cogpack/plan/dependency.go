@@ -1,4 +1,4 @@
-package cogpack
+package plan
 
 import (
 	"context"
