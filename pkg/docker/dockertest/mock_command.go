@@ -9,6 +9,8 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/client"
+	buildkitclient "github.com/moby/buildkit/client"
 
 	"github.com/replicate/cog/pkg/docker/command"
 )
@@ -113,5 +115,13 @@ func (c *MockCommand) Run(ctx context.Context, options command.RunOptions) error
 }
 
 func (c *MockCommand) ContainerStart(ctx context.Context, options command.RunOptions) (string, error) {
+	panic("not implemented")
+}
+
+func (c *MockCommand) DockerClient() (client.APIClient, error) {
+	panic("not implemented")
+}
+
+func (c *MockCommand) BuildKitClient(ctx context.Context) (*buildkitclient.Client, error) {
 	panic("not implemented")
 }

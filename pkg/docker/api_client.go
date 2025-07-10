@@ -650,3 +650,21 @@ func findDockerHost() ([]command.ContextInspect, error) {
 
 	return resp, nil
 }
+
+func (c *apiClient) DockerClient() (client.APIClient, error) {
+	return c.client, nil
+}
+
+func (c *apiClient) BuildKitClient(ctx context.Context) (*buildkitclient.Client, error) {
+	bc, err := buildkitclient.New(ctx, "",
+		// Connect to Docker Engine's embedded Buildkit.
+		buildkitclient.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return c.client.DialHijack(ctx, "/grpc", "h2c", map[string][]string{})
+		}),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return bc, nil
+}

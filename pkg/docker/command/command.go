@@ -6,6 +6,8 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/client"
+	buildkitclient "github.com/moby/buildkit/client"
 )
 
 type Command interface {
@@ -24,6 +26,10 @@ type Command interface {
 	ImageBuild(ctx context.Context, options ImageBuildOptions) error
 	Run(ctx context.Context, options RunOptions) error
 	ContainerStart(ctx context.Context, options RunOptions) (string, error)
+
+	// hack to expose clients, only implemented for api client
+	DockerClient() (client.APIClient, error)
+	BuildKitClient(ctx context.Context) (*buildkitclient.Client, error)
 }
 
 type ImageBuildOptions struct {

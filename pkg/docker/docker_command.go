@@ -15,7 +15,9 @@ import (
 	"github.com/creack/pty"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/client"
 	"github.com/mattn/go-isatty"
+	buildkitclient "github.com/moby/buildkit/client"
 
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/util"
@@ -456,4 +458,12 @@ func (c *DockerCommand) execCaptured(ctx context.Context, in io.Reader, dir stri
 		return "", err
 	}
 	return out.String(), nil
+}
+
+func (c *DockerCommand) DockerClient() (client.APIClient, error) {
+	panic("not supported for this client")
+}
+
+func (c *DockerCommand) BuildKitClient(ctx context.Context) (*buildkitclient.Client, error) {
+	panic("not supported for this client")
 }
