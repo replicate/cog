@@ -10,6 +10,8 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	client0 "github.com/docker/docker/client"
+	"github.com/moby/buildkit/client"
 	"github.com/replicate/cog/pkg/docker/command"
 	mock "github.com/stretchr/testify/mock"
 )
@@ -39,6 +41,62 @@ type MockCommand2_Expecter struct {
 
 func (_m *MockCommand2) EXPECT() *MockCommand2_Expecter {
 	return &MockCommand2_Expecter{mock: &_m.Mock}
+}
+
+// BuildKitClient provides a mock function for the type MockCommand2
+func (_mock *MockCommand2) BuildKitClient(ctx context.Context) (*client.Client, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for BuildKitClient")
+	}
+
+	var r0 *client.Client
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) (*client.Client, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) *client.Client); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*client.Client)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockCommand2_BuildKitClient_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'BuildKitClient'
+type MockCommand2_BuildKitClient_Call struct {
+	*mock.Call
+}
+
+// BuildKitClient is a helper method to define mock.On call
+//   - ctx
+func (_e *MockCommand2_Expecter) BuildKitClient(ctx interface{}) *MockCommand2_BuildKitClient_Call {
+	return &MockCommand2_BuildKitClient_Call{Call: _e.mock.On("BuildKitClient", ctx)}
+}
+
+func (_c *MockCommand2_BuildKitClient_Call) Run(run func(ctx context.Context)) *MockCommand2_BuildKitClient_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context))
+	})
+	return _c
+}
+
+func (_c *MockCommand2_BuildKitClient_Call) Return(client1 *client.Client, err error) *MockCommand2_BuildKitClient_Call {
+	_c.Call.Return(client1, err)
+	return _c
+}
+
+func (_c *MockCommand2_BuildKitClient_Call) RunAndReturn(run func(ctx context.Context) (*client.Client, error)) *MockCommand2_BuildKitClient_Call {
+	_c.Call.Return(run)
+	return _c
 }
 
 // ContainerInspect provides a mock function for the type MockCommand2
@@ -246,125 +304,57 @@ func (_c *MockCommand2_ContainerStop_Call) RunAndReturn(run func(ctx context.Con
 	return _c
 }
 
-// CreateAptTarFile provides a mock function for the type MockCommand2
-func (_mock *MockCommand2) CreateAptTarFile(ctx context.Context, tmpDir string, aptTarFile string, packages ...string) (string, error) {
-	var tmpRet mock.Arguments
-	if len(packages) > 0 {
-		tmpRet = _mock.Called(ctx, tmpDir, aptTarFile, packages)
-	} else {
-		tmpRet = _mock.Called(ctx, tmpDir, aptTarFile)
-	}
-	ret := tmpRet
+// DockerClient provides a mock function for the type MockCommand2
+func (_mock *MockCommand2) DockerClient() (client0.APIClient, error) {
+	ret := _mock.Called()
 
 	if len(ret) == 0 {
-		panic("no return value specified for CreateAptTarFile")
+		panic("no return value specified for DockerClient")
 	}
 
-	var r0 string
+	var r0 client0.APIClient
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, ...string) (string, error)); ok {
-		return returnFunc(ctx, tmpDir, aptTarFile, packages...)
+	if returnFunc, ok := ret.Get(0).(func() (client0.APIClient, error)); ok {
+		return returnFunc()
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, ...string) string); ok {
-		r0 = returnFunc(ctx, tmpDir, aptTarFile, packages...)
+	if returnFunc, ok := ret.Get(0).(func() client0.APIClient); ok {
+		r0 = returnFunc()
 	} else {
-		r0 = ret.Get(0).(string)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(client0.APIClient)
+		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, ...string) error); ok {
-		r1 = returnFunc(ctx, tmpDir, aptTarFile, packages...)
+	if returnFunc, ok := ret.Get(1).(func() error); ok {
+		r1 = returnFunc()
 	} else {
 		r1 = ret.Error(1)
 	}
 	return r0, r1
 }
 
-// MockCommand2_CreateAptTarFile_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateAptTarFile'
-type MockCommand2_CreateAptTarFile_Call struct {
+// MockCommand2_DockerClient_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DockerClient'
+type MockCommand2_DockerClient_Call struct {
 	*mock.Call
 }
 
-// CreateAptTarFile is a helper method to define mock.On call
-//   - ctx
-//   - tmpDir
-//   - aptTarFile
-//   - packages
-func (_e *MockCommand2_Expecter) CreateAptTarFile(ctx interface{}, tmpDir interface{}, aptTarFile interface{}, packages ...interface{}) *MockCommand2_CreateAptTarFile_Call {
-	return &MockCommand2_CreateAptTarFile_Call{Call: _e.mock.On("CreateAptTarFile",
-		append([]interface{}{ctx, tmpDir, aptTarFile}, packages...)...)}
+// DockerClient is a helper method to define mock.On call
+func (_e *MockCommand2_Expecter) DockerClient() *MockCommand2_DockerClient_Call {
+	return &MockCommand2_DockerClient_Call{Call: _e.mock.On("DockerClient")}
 }
 
-func (_c *MockCommand2_CreateAptTarFile_Call) Run(run func(ctx context.Context, tmpDir string, aptTarFile string, packages ...string)) *MockCommand2_CreateAptTarFile_Call {
+func (_c *MockCommand2_DockerClient_Call) Run(run func()) *MockCommand2_DockerClient_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		variadicArgs := args[3].([]string)
-		run(args[0].(context.Context), args[1].(string), args[2].(string), variadicArgs...)
+		run()
 	})
 	return _c
 }
 
-func (_c *MockCommand2_CreateAptTarFile_Call) Return(s string, err error) *MockCommand2_CreateAptTarFile_Call {
-	_c.Call.Return(s, err)
+func (_c *MockCommand2_DockerClient_Call) Return(aPIClient client0.APIClient, err error) *MockCommand2_DockerClient_Call {
+	_c.Call.Return(aPIClient, err)
 	return _c
 }
 
-func (_c *MockCommand2_CreateAptTarFile_Call) RunAndReturn(run func(ctx context.Context, tmpDir string, aptTarFile string, packages ...string) (string, error)) *MockCommand2_CreateAptTarFile_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// CreateTarFile provides a mock function for the type MockCommand2
-func (_mock *MockCommand2) CreateTarFile(ctx context.Context, ref string, tmpDir string, tarFile string, folder string) (string, error) {
-	ret := _mock.Called(ctx, ref, tmpDir, tarFile, folder)
-
-	if len(ret) == 0 {
-		panic("no return value specified for CreateTarFile")
-	}
-
-	var r0 string
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, string) (string, error)); ok {
-		return returnFunc(ctx, ref, tmpDir, tarFile, folder)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, string) string); ok {
-		r0 = returnFunc(ctx, ref, tmpDir, tarFile, folder)
-	} else {
-		r0 = ret.Get(0).(string)
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, string, string) error); ok {
-		r1 = returnFunc(ctx, ref, tmpDir, tarFile, folder)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// MockCommand2_CreateTarFile_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateTarFile'
-type MockCommand2_CreateTarFile_Call struct {
-	*mock.Call
-}
-
-// CreateTarFile is a helper method to define mock.On call
-//   - ctx
-//   - ref
-//   - tmpDir
-//   - tarFile
-//   - folder
-func (_e *MockCommand2_Expecter) CreateTarFile(ctx interface{}, ref interface{}, tmpDir interface{}, tarFile interface{}, folder interface{}) *MockCommand2_CreateTarFile_Call {
-	return &MockCommand2_CreateTarFile_Call{Call: _e.mock.On("CreateTarFile", ctx, ref, tmpDir, tarFile, folder)}
-}
-
-func (_c *MockCommand2_CreateTarFile_Call) Run(run func(ctx context.Context, ref string, tmpDir string, tarFile string, folder string)) *MockCommand2_CreateTarFile_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].(string), args[3].(string), args[4].(string))
-	})
-	return _c
-}
-
-func (_c *MockCommand2_CreateTarFile_Call) Return(s string, err error) *MockCommand2_CreateTarFile_Call {
-	_c.Call.Return(s, err)
-	return _c
-}
-
-func (_c *MockCommand2_CreateTarFile_Call) RunAndReturn(run func(ctx context.Context, ref string, tmpDir string, tarFile string, folder string) (string, error)) *MockCommand2_CreateTarFile_Call {
+func (_c *MockCommand2_DockerClient_Call) RunAndReturn(run func() (client0.APIClient, error)) *MockCommand2_DockerClient_Call {
 	_c.Call.Return(run)
 	return _c
 }
