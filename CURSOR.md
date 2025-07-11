@@ -10,7 +10,7 @@ This repository is **Cog**, an open-source CLI/tooling suite that packages machi
 The codebase is mostly Go, with some Python runtime code, tests, and docs.
 
 Key sub-domains:
-• **builder / cogpack** – next-generation build system (see @builder.cursor.md & @cogpack.deepdive.cursor.md).  
+• **cogpack** – next-generation build system (see @COGPACK.CURSOR.md for complete context).  
 • **base_images** – logic & data for choosing CUDA/CPU base images.  
 • **cli** – user-facing commands (`cog build`, `cog predict`, …).  
 • **docker** – thin wrappers around Docker / BuildKit APIs.  
@@ -86,8 +86,7 @@ Key sub-domains:
 
 ## Further reading
 - https://cog.run/llms.txt - Cog documentation, formatted for LLMs
-- `builder.cursor.md` – high-level roadmap + checklist for cogpack builder.  
-- `cogpack.deepdive.cursor.md` – detailed decision log.  
+- `COGPACK.CURSOR.md` – complete context for the cogpack build system project, work in progress in this branch.
 - `docs/` – public user documentation.
 
 ---
