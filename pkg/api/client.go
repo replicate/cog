@@ -146,13 +146,6 @@ func (c *Client) postNewVersion(ctx context.Context, image string, tarball *byte
 		return "", err
 	}
 
-	dependencies := manifest.Config.Labels[command.CogModelDependenciesLabelKey]
-	if dependencies != "" && dependencies != `[""]` {
-		if err := mp.WriteField("dependencies", dependencies); err != nil {
-			return "", err
-		}
-	}
-
 	var gzipBuf bytes.Buffer
 	gzipWriter := gzip.NewWriter(&gzipBuf)
 	_, err = io.Copy(gzipWriter, bytes.NewReader(tarball.Bytes()))
