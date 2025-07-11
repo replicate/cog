@@ -3,6 +3,7 @@ package dockerfile
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -73,9 +74,10 @@ type StandardGenerator struct {
 	pythonRequirementsContents string
 	command                    command.Command
 	client                     registry.Client
+	requiresCog                bool
 }
 
-func NewStandardGenerator(config *config.Config, dir string, command command.Command, client registry.Client) (*StandardGenerator, error) {
+func NewStandardGenerator(config *config.Config, dir string, command command.Command, client registry.Client, requiresCog bool) (*StandardGenerator, error) {
 	tmpDir, err := dockercontext.BuildTempDir(dir)
 	if err != nil {
 		return nil, err
@@ -100,6 +102,7 @@ func NewStandardGenerator(config *config.Config, dir string, command command.Com
 		precompile:       false,
 		command:          command,
 		client:           client,
+		requiresCog:      requiresCog,
 	}, nil
 }
 
@@ -426,10 +429,34 @@ RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /u
 }
 
 func (g *StandardGenerator) installCog() (string, error) {
+	// FIXME: remove once pipelines use cog_runtime: true
 	if g.Config.ContainsCoglet() {
 		return "", nil
 	}
 
+	// Do not install Cog in base images
+	if !g.requiresCog {
+		return "", nil
+	}
+
+	if g.Config.Build.CogRuntime {
+		if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
+			return "", fmt.Errorf("Python version must be <major>.<minor>")
+		}
+		m, err := NewMonobaseMatrix(http.DefaultClient)
+		if err != nil {
+			return "", err
+		}
+		cmds := []string{
+			"ENV R8_COG_VERSION=coglet",
+			"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
+			"RUN pip install " + m.LatestCoglet.URL,
+		}
+		return strings.Join(cmds, "\n"), nil
+	}
+
+	// FIXME: add doc URL & enable this before new release
+	// console.Warnf("A new Cog runtime implementation is avaible, set build.cog_runtime = true in cog.yaml to try it out.")
 	data, filename, err := ReadWheelFile()
 	if err != nil {
 		return "", err
@@ -606,7 +633,7 @@ func (g *StandardGenerator) determineBaseImageName(ctx context.Context) (string,
 	torchVersion, _ := g.Config.TorchVersion()
 
 	// validate that the base image configuration exists
-	imageGenerator, err := NewBaseImageGenerator(ctx, g.client, cudaVersion, pythonVersion, torchVersion, g.command)
+	imageGenerator, err := NewBaseImageGenerator(ctx, g.client, cudaVersion, pythonVersion, torchVersion, g.command, false)
 	if err != nil {
 		return "", err
 	}

@@ -55,7 +55,7 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	}
 
 	client := registry.NewRegistryClient()
-	imageName, err := image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client)
+	imageName, err := image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client, true)
 	if err != nil {
 		return err
 	}

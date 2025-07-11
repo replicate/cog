@@ -214,7 +214,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 				return err
 			}
 		} else {
-			if imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client); err != nil {
+			if imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client, true); err != nil {
 				return err
 			}
 

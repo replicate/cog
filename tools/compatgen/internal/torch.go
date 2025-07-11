@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -10,15 +11,20 @@ import (
 	"github.com/hashicorp/go-version"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/env"
+	"github.com/replicate/cog/pkg/util"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
-type torchPackage struct {
+type TorchPackage struct {
 	Name          string
 	Version       string
 	Variant       string
 	CUDA          *string
 	PythonVersion string
 }
+
+var ErrorBadPytorchFormat = errors.New("The pytorch version format could not be parsed.")
 
 func FetchTorchCompatibilityMatrix() ([]config.TorchCompatibility, error) {
 	compats := []config.TorchCompatibility{}
@@ -40,23 +46,24 @@ func FetchTorchCompatibilityMatrix() ([]config.TorchCompatibility, error) {
 	return compats, nil
 }
 
-func fetchTorchPackages(name string) ([]torchPackage, error) {
-	pkgRegexp := regexp.MustCompile(`(.+?)-(([0-9.]+)\+([a-z0-9]+))-cp([0-9.]+)-cp([0-9.]+)-linux_x86_64.whl`)
-
-	url := fmt.Sprintf("https://download.pytorch.org/whl/%s/", name)
+func FetchTorchPackages(name string) ([]TorchPackage, error) {
+	url := pytorchURL(name)
 	resp, err := soup.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to download %s: %w", url, err)
 	}
 	doc := soup.HTMLParse(resp)
 	links := doc.FindAll("a")
-	packages := []torchPackage{}
+	packages := []TorchPackage{}
 	for _, link := range links {
-		groups := pkgRegexp.FindStringSubmatch(link.Text())
-		if len(groups) == 0 {
+		name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion(link.Text())
+		if err != nil {
+			console.Warnf("Failed to parse pytorch version: %v", err)
 			continue
 		}
-		name, version, variant, pythonVersion := groups[2], groups[3], groups[4], groups[5]
+		if (platform != "linux_x86_64" && platform != "manylinux_2_28_x86_64") || strings.Contains(name, ".cxx") {
+			continue
+		}
 
 		var cuda *string
 		switch {
@@ -75,7 +82,7 @@ func fetchTorchPackages(name string) ([]torchPackage, error) {
 		// 310 -> 3.10
 		pythonVersion = pythonVersion[:1] + "." + pythonVersion[1:]
 
-		packages = append(packages, torchPackage{
+		packages = append(packages, TorchPackage{
 			Name:          name,
 			Version:       version,
 			Variant:       variant,
@@ -86,7 +93,7 @@ func fetchTorchPackages(name string) ([]torchPackage, error) {
 	return packages, nil
 }
 
-func getLatestVersion(packages []torchPackage) string {
+func getLatestVersion(packages []TorchPackage) string {
 	latestVersion, _ := version.NewVersion("0.0.0")
 	for _, pkg := range packages {
 		v, err := version.NewVersion(pkg.Version)
@@ -106,15 +113,15 @@ func fetchCurrentTorchVersions(compats []config.TorchCompatibility) ([]config.To
 	// We then install the packages in the same way as we do for 1.12.x:
 	// https://pytorch.org/get-started/previous-versions/#v1121
 
-	torchPackages, err := fetchTorchPackages("torch")
+	torchPackages, err := FetchTorchPackages("torch")
 	if err != nil {
 		return nil, fmt.Errorf("Error fetching PyTorch packages: %w", err)
 	}
-	torchVisionPackages, err := fetchTorchPackages("torchvision")
+	torchVisionPackages, err := FetchTorchPackages("torchvision")
 	if err != nil {
 		return nil, fmt.Errorf("Error fetching PyTorch packages: %w", err)
 	}
-	torchAudioPackages, err := fetchTorchPackages("torchaudio")
+	torchAudioPackages, err := FetchTorchPackages("torchaudio")
 	if err != nil {
 		return nil, fmt.Errorf("Error fetching PyTorch packages: %w", err)
 	}
@@ -139,7 +146,7 @@ func fetchCurrentTorchVersions(compats []config.TorchCompatibility) ([]config.To
 				Torchvision:   latestTorchvisionVersion,
 				Torchaudio:    latestTorchaudioVersion,
 				CUDA:          pkg.CUDA,
-				ExtraIndexURL: "https://download.pytorch.org/whl/" + pkg.Variant,
+				ExtraIndexURL: pytorchURL(pkg.Variant),
 				Pythons:       []string{pkg.PythonVersion},
 			}
 
@@ -304,4 +311,18 @@ func fixTorchCompatibility(compat *config.TorchCompatibility) {
 	if strings.HasPrefix(compat.Torchvision, "0.8.0") {
 		compat.Torchvision = strings.ReplaceAll(compat.Torchvision, "0.8.0", "0.8.1")
 	}
+}
+
+func pytorchURL(name string) string {
+	url := fmt.Sprintf(env.SchemeFromEnvironment()+"://"+env.PytorchHostFromEnvironment()+"/whl/%s/", name)
+	return url
+}
+
+func ExtractSubFeaturesFromPytorchVersion(pytorchVersion string) (string, string, string, string, string, error) {
+	pkgRegexp := regexp.MustCompile(`(.+?)-(([0-9.]+)\+([a-z0-9.]+))-cp([0-9.]+)-cp([0-9.]+)-(.+?).whl`)
+	groups := pkgRegexp.FindStringSubmatch(pytorchVersion)
+	if len(groups) == 0 {
+		return "", "", "", "", "", util.WrapError(ErrorBadPytorchFormat, pytorchVersion)
+	}
+	return groups[2], groups[3], groups[4], groups[5], groups[7], nil
 }

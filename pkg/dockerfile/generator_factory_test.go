@@ -20,7 +20,7 @@ func TestGeneratorFactory(t *testing.T) {
 	}
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	generator, err := NewGenerator(&config, dir, true, command, true, client)
+	generator, err := NewGenerator(&config, dir, true, command, true, client, true)
 	require.NoError(t, err)
 	require.Equal(t, generator.Name(), FAST_GENERATOR_NAME)
 }
@@ -35,7 +35,7 @@ func TestGeneratorFactoryStandardGenerator(t *testing.T) {
 	}
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	generator, err := NewGenerator(&config, dir, false, command, true, client)
+	generator, err := NewGenerator(&config, dir, false, command, true, client, true)
 	require.NoError(t, err)
 	require.Equal(t, generator.Name(), STANDARD_GENERATOR_NAME)
 }

@@ -8,7 +8,7 @@ import (
 	"github.com/replicate/cog/pkg/registry"
 )
 
-func NewGenerator(config *config.Config, dir string, buildFast bool, command command.Command, localImage bool, client registry.Client) (Generator, error) {
+func NewGenerator(config *config.Config, dir string, buildFast bool, command command.Command, localImage bool, client registry.Client, requiresCog bool) (Generator, error) {
 	if buildFast {
 		matrix, err := NewMonobaseMatrix(http.DefaultClient)
 		if err != nil {
@@ -16,5 +16,5 @@ func NewGenerator(config *config.Config, dir string, buildFast bool, command com
 		}
 		return NewFastGenerator(config, dir, command, matrix, localImage)
 	}
-	return NewStandardGenerator(config, dir, command, client)
+	return NewStandardGenerator(config, dir, command, client, requiresCog)
 }
