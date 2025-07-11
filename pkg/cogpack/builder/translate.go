@@ -34,7 +34,7 @@ func translatePlan(ctx context.Context, p *plan.Plan) (llb.State, map[string]llb
 		}
 	}
 
-	phases := append([]plan.Phase{}, p.BuildPhases...)
+	phases := append([]*plan.Phase{}, p.BuildPhases...)
 	phases = append(phases, p.ExportPhases...)
 
 	var last llb.State
@@ -74,7 +74,7 @@ func translatePlan(ctx context.Context, p *plan.Plan) (llb.State, map[string]llb
 	return last, stageStates, nil
 }
 
-func applyOps(ctx context.Context, base llb.State, st plan.Stage, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
+func applyOps(ctx context.Context, base llb.State, st *plan.Stage, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
 	cur := base
 	for _, op := range st.Operations {
 		switch o := op.(type) {

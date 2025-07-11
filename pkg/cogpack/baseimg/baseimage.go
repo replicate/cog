@@ -149,7 +149,7 @@ func GetBaseImageMetadata(imageRef string) (*BaseImageMetadata, error) {
 
 // SelectBaseImage chooses the best base image based on resolved dependencies.
 // For initial implementation, we use known working r8.im base images.
-func SelectBaseImage(dependencies map[string]string) (BaseImage, error) {
+func SelectBaseImage(dependencies map[string]string) (*BaseImage, error) {
 	// Extract Python version if available
 	pythonVersion := ""
 	if python, exists := dependencies["python"]; exists {
@@ -182,7 +182,7 @@ func SelectBaseImage(dependencies map[string]string) (BaseImage, error) {
 		},
 	}
 
-	return BaseImage{
+	return &BaseImage{
 		Build:    buildImage,
 		Runtime:  runtimeImage,
 		Metadata: metadata,

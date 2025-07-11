@@ -19,6 +19,10 @@ func (s *SourceInfo) Close() error {
 	return s.FS.Close()
 }
 
+func (s *SourceInfo) RootPath() string {
+	return s.FS.path
+}
+
 func NewSourceInfo(rootPath string, config *config.Config) (*SourceInfo, error) {
 	fs, err := NewSourceFS(rootPath)
 	if err != nil {
@@ -61,4 +65,17 @@ func (s *SourceFS) GlobExists(pattern string) bool {
 		return false
 	}
 	return len(files) > 0
+}
+
+func (s *SourceFS) Match(globPatterns ...string) (bool, error) {
+	for _, pattern := range globPatterns {
+		files, err := fs.Glob(s.FS, pattern)
+		if err != nil {
+			return false, err
+		}
+		if len(files) > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }

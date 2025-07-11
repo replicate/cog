@@ -2,11 +2,13 @@ package python
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/replicate/cog/pkg/cogpack/baseimg"
 	"github.com/replicate/cog/pkg/cogpack/plan"
 	"github.com/replicate/cog/pkg/cogpack/project"
 	"github.com/replicate/cog/pkg/cogpack/stacks/commonblocks"
+	"github.com/replicate/cog/pkg/util"
 )
 
 // PythonStack orchestrates builds for Python-based projects
@@ -27,41 +29,48 @@ func (s *PythonStack) Detect(ctx context.Context, src *project.SourceInfo) (bool
 		"setup.py",
 	}
 
-	for _, pattern := range pythonIndicators {
-		if src.FS.GlobExists(pattern) {
-			return true, nil
-		}
+	var (
+		match bool
+		err   error
+	)
+
+	match, err = src.FS.Match(pythonIndicators...)
+	if err != nil {
+		return false, err
 	}
 
 	// Also check if Python version is explicitly specified in config
-	if src.Config.Build.PythonVersion != "" {
-		return true, nil
+	if !match {
+		match = src.Config.Build.PythonVersion != ""
 	}
 
-	return false, nil
+	return match, nil
 }
 
 // Plan orchestrates the entire build process for Python projects
 func (s *PythonStack) Plan(ctx context.Context, src *project.SourceInfo, p *plan.Plan) error {
 	// Phase 1: Compose blocks based on project analysis
-	allBlocks := s.composeBlocks(ctx, src)
+	blocks := plan.DetectBlocks(ctx, src, []plan.Block{
+		&PythonBlock{},
+		// &commonblocks.CudaBlock{},
+		&commonblocks.BaseImageBlock{},
+		&CogWheelBlock{},
+		// &commonblocks.AptBlock{},
+		&UvBlock{},
+		// &PipBlock{},
+		// &TorchBlock{},
+		// &commonblocks.SourceCopyBlock{},
+	})
 
 	// Phase 2: Collect dependencies from all active blocks
-	var allDeps []plan.Dependency
-	var activeBlocks []plan.Block
+	var allDeps []*plan.Dependency
 
-	for _, block := range allBlocks {
-		if active, err := block.Detect(ctx, src); err != nil {
+	for _, block := range blocks {
+		deps, err := block.Dependencies(ctx, src)
+		if err != nil {
 			return err
-		} else if active {
-			activeBlocks = append(activeBlocks, block)
-
-			deps, err := block.Dependencies(ctx, src)
-			if err != nil {
-				return err
-			}
-			allDeps = append(allDeps, deps...)
 		}
+		allDeps = append(allDeps, deps...)
 	}
 
 	// Phase 3: Resolve dependencies
@@ -84,11 +93,14 @@ func (s *PythonStack) Plan(ctx context.Context, src *project.SourceInfo, p *plan
 	p.BaseImage = baseImage
 
 	// Phase 5: Let active blocks contribute to the plan
-	for _, block := range activeBlocks {
+	for _, block := range blocks {
 		if err := block.Plan(ctx, src, p); err != nil {
 			return err
 		}
 	}
+
+	fmt.Println("====Plan====")
+	util.JSONPrettyPrint(p)
 
 	// Phase 6: Set export configuration for runtime image
 	p.Export = &plan.ExportConfig{
@@ -102,32 +114,4 @@ func (s *PythonStack) Plan(ctx context.Context, src *project.SourceInfo, p *plan
 	}
 
 	return nil
-}
-
-// composeBlocks determines which blocks to use based on project characteristics
-func (s *PythonStack) composeBlocks(ctx context.Context, src *project.SourceInfo) (blockList []plan.Block) {
-	// Always include base blocks
-	blockList = append(blockList, &PythonBlock{})
-	blockList = append(blockList, &commonblocks.BaseImageBlock{})
-
-	// System packages if specified
-	if len(src.Config.Build.SystemPackages) > 0 {
-		blockList = append(blockList, &commonblocks.AptBlock{})
-	}
-
-	// Python dependency management - pick one based on project structure
-	if src.FS.GlobExists("pyproject.toml") {
-		blockList = append(blockList, &UvBlock{})
-	} else if src.FS.GlobExists("requirements.txt") {
-		blockList = append(blockList, &PipBlock{})
-	}
-
-	// ML frameworks - these self-detect if needed
-	blockList = append(blockList, &TorchBlock{})
-	blockList = append(blockList, &commonblocks.CudaBlock{})
-
-	// Always copy source code to runtime image
-	blockList = append(blockList, &commonblocks.SourceCopyBlock{})
-
-	return blockList
 }

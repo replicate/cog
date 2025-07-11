@@ -12,12 +12,12 @@ import (
 
 // Plan represents the complete build specification that can be executed by a builder
 type Plan struct {
-	Platform     Platform              `json:"platform"`      // linux/amd64
-	Dependencies map[string]Dependency `json:"dependencies"`  // resolved versions
-	BaseImage    baseimg.BaseImage     `json:"base_image"`    // build/runtime images
-	BuildPhases  []Phase               `json:"build_phases"`  // organized build work
-	ExportPhases []Phase               `json:"export_phases"` // runtime image assembly
-	Export       *ExportConfig         `json:"export"`        // final image config
+	Platform     Platform               `json:"platform"`      // linux/amd64
+	Dependencies map[string]*Dependency `json:"dependencies"`  // resolved versions
+	BaseImage    *baseimg.BaseImage     `json:"base_image"`    // build/runtime images
+	BuildPhases  []*Phase               `json:"build_phases"`  // organized build work
+	ExportPhases []*Phase               `json:"export_phases"` // runtime image assembly
+	Export       *ExportConfig          `json:"export"`        // final image config
 }
 
 // Platform represents the target platform for the build
@@ -38,7 +38,7 @@ type Dependency struct {
 // Phase represents a logical group of stages in the build process
 type Phase struct {
 	Name   StagePhase `json:"name"`   // PhaseSystemDeps, PhaseFrameworkDeps, etc.
-	Stages []Stage    `json:"stages"` // all stages within this phase
+	Stages []*Stage   `json:"stages"` // all stages within this phase
 }
 
 // StagePhase represents the different phases of the build process
@@ -73,20 +73,20 @@ func (p StagePhase) IsExportPhase() bool {
 
 // Stage represents a build phase with explicit state management
 type Stage struct {
-	ID         string   `json:"id"`         // unique identifier (set by block)
-	Name       string   `json:"name"`       // human-readable name
-	Source     Input    `json:"source"`     // input dependency
-	Operations []Op     `json:"operations"` // build operations
-	Env        []string `json:"env"`        // environment state
-	Dir        string   `json:"dir"`        // working directory
-	Provides   []string `json:"provides"`   // what this stage provides
+	ID         string   `json:"id"`                          // unique identifier (set by block)
+	Name       string   `json:"name,omitempty,omitzero"`     // human-readable name
+	Source     Input    `json:"source,omitempty,omitzero"`   // input dependency
+	Operations []Op     `json:"operations"`                  // build operations
+	Env        []string `json:"env,omitempty,omitzero"`      // environment state
+	Dir        string   `json:"dir,omitempty,omitzero"`      // working directory
+	Provides   []string `json:"provides,omitempty,omitzero"` // what this stage provides
 }
 
 // Input represents stage or image dependencies
 type Input struct {
-	Image string `json:"image,omitempty"` // external image reference
-	Stage string `json:"stage,omitempty"` // reference to another stage
-	Local string `json:"local,omitempty"` // build context name
+	Image string `json:"image,omitempty,omitzero"` // external image reference
+	Stage string `json:"stage,omitempty,omitzero"` // reference to another stage
+	Local string `json:"local,omitempty,omitzero"` // build context name
 }
 
 // ExportConfig represents the final runtime image configuration
@@ -172,7 +172,7 @@ func (p *Plan) AddStage(phaseName StagePhase, stageName, stageID string) (*Stage
 		Source: p.resolvePhaseInput(phaseName),
 	}
 
-	phase.Stages = append(phase.Stages, *stage)
+	phase.Stages = append(phase.Stages, stage)
 	return stage, nil
 }
 
@@ -182,7 +182,7 @@ func (p *Plan) GetStage(id string) *Stage {
 	for i := range p.BuildPhases {
 		for j := range p.BuildPhases[i].Stages {
 			if p.BuildPhases[i].Stages[j].ID == id {
-				return &p.BuildPhases[i].Stages[j]
+				return p.BuildPhases[i].Stages[j]
 			}
 		}
 	}
@@ -191,7 +191,7 @@ func (p *Plan) GetStage(id string) *Stage {
 	for i := range p.ExportPhases {
 		for j := range p.ExportPhases[i].Stages {
 			if p.ExportPhases[i].Stages[j].ID == id {
-				return &p.ExportPhases[i].Stages[j]
+				return p.ExportPhases[i].Stages[j]
 			}
 		}
 	}
@@ -234,37 +234,38 @@ func (p *Plan) HasProvider(packageName string) bool {
 
 // getOrCreatePhase finds an existing phase or creates a new one
 func (p *Plan) getOrCreatePhase(phaseName StagePhase) *Phase {
-	phases := &p.BuildPhases
+	// note! we're mutating the pointer here, so we need to pass it by pointer
+	phases := &(p.BuildPhases)
 	if phaseName.IsExportPhase() {
-		phases = &p.ExportPhases
+		phases = &(p.ExportPhases)
 	}
 
 	// Find existing phase
-	for i := range *phases {
-		if (*phases)[i].Name == phaseName {
-			return &(*phases)[i]
+	for _, phase := range *phases {
+		if phase.Name == phaseName {
+			return phase
 		}
 	}
 
 	// Create new phase
-	newPhase := Phase{
+	newPhase := &Phase{
 		Name:   phaseName,
-		Stages: []Stage{},
+		Stages: []*Stage{},
 	}
 	*phases = append(*phases, newPhase)
-	return &(*phases)[len(*phases)-1]
+	return newPhase
 }
 
 // getPhase finds an existing phase by name
 func (p *Plan) getPhase(phaseName StagePhase) *Phase {
-	phases := &p.BuildPhases
+	phases := p.BuildPhases
 	if phaseName.IsExportPhase() {
-		phases = &p.ExportPhases
+		phases = p.ExportPhases
 	}
 
-	for i := range *phases {
-		if (*phases)[i].Name == phaseName {
-			return &(*phases)[i]
+	for _, phase := range phases {
+		if phase.Name == phaseName {
+			return phase
 		}
 	}
 

@@ -21,7 +21,7 @@ func (b *BaseImageBlock) Detect(ctx context.Context, src *project.SourceInfo) (b
 }
 
 // Dependencies returns no dependencies (this block consumes dependencies, doesn't emit them)
-func (b *BaseImageBlock) Dependencies(ctx context.Context, src *project.SourceInfo) ([]p.Dependency, error) {
+func (b *BaseImageBlock) Dependencies(ctx context.Context, src *project.SourceInfo) ([]*p.Dependency, error) {
 	return nil, nil // This block consumes dependencies from other blocks
 }
 

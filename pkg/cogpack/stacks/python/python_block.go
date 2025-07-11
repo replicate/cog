@@ -45,13 +45,13 @@ func (b *PythonBlock) Detect(ctx context.Context, src *project.SourceInfo) (bool
 }
 
 // Dependencies emits Python version dependency from various sources
-func (b *PythonBlock) Dependencies(ctx context.Context, src *project.SourceInfo) ([]plan.Dependency, error) {
+func (b *PythonBlock) Dependencies(ctx context.Context, src *project.SourceInfo) ([]*plan.Dependency, error) {
 	pythonVersion, err := b.detectPythonVersion(src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect Python version: %w", err)
 	}
 
-	return []plan.Dependency{
+	return []*plan.Dependency{
 		{
 			Name:             "python",
 			Provider:         "python",

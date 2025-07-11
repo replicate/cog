@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/replicate/cog/pkg/cogpack/plan"
+	"github.com/replicate/cog/pkg/cogpack/project"
 	"github.com/replicate/cog/pkg/docker/command"
 )
 
@@ -21,9 +22,16 @@ import (
 //
 // Implementations are expected to respect the Platform specified on the Plan.
 type Builder interface {
-	Build(ctx context.Context, p *plan.Plan, buildContextDir, tag string) error
+	Build(ctx context.Context, p *plan.Plan, buildConfig *BuildConfig) error
 }
 
 func NewBuilder(dockerCmd command.Command) Builder {
 	return NewBuildKitBuilder(dockerCmd)
+}
+
+type BuildConfig struct {
+	Source *project.SourceInfo
+
+	ContextDir string
+	Tag        string
 }

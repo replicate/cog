@@ -7,9 +7,9 @@ import (
 
 // ResolveDependencies handles all dependency logic: deduplication, conflict resolution, and version resolution.
 // It takes a slice of dependency requirements and returns a resolved map.
-func ResolveDependencies(ctx context.Context, deps []Dependency) (map[string]Dependency, error) {
+func ResolveDependencies(ctx context.Context, deps []*Dependency) (map[string]*Dependency, error) {
 	// Phase 1: Convert slice to map, handling conflicts
-	depMap := make(map[string]Dependency)
+	depMap := make(map[string]*Dependency)
 	for _, dep := range deps {
 		if existing, exists := depMap[dep.Name]; exists {
 			// Handle conflict - for now, use simple "last wins" strategy
@@ -39,31 +39,31 @@ func ResolveDependencies(ctx context.Context, deps []Dependency) (map[string]Dep
 
 // resolveConflict handles conflicts between dependency requirements.
 // For the initial implementation, we use a simple strategy.
-func resolveConflict(existing, new Dependency) (Dependency, error) {
+func resolveConflict(existing, incoming *Dependency) (*Dependency, error) {
 	// Simple strategy: if versions are the same, merge metadata
-	if existing.RequestedVersion == new.RequestedVersion {
+	if existing.RequestedVersion == incoming.RequestedVersion {
 		// Prefer more specific source information
-		if new.Source != "" {
-			existing.Source = new.Source
+		if incoming.Source != "" {
+			existing.Source = incoming.Source
 		}
-		if new.Provider != "" {
-			existing.Provider = new.Provider
+		if incoming.Provider != "" {
+			existing.Provider = incoming.Provider
 		}
 		return existing, nil
 	}
 
 	// For now, just return an error on version conflicts
 	// TODO: Implement semantic version constraint resolution
-	return Dependency{}, fmt.Errorf(
+	return nil, fmt.Errorf(
 		"version conflict: %s wants %s (from %s) but %s wants %s (from %s)",
 		existing.Provider, existing.RequestedVersion, existing.Source,
-		new.Provider, new.RequestedVersion, new.Source,
+		incoming.Provider, incoming.RequestedVersion, incoming.Source,
 	)
 }
 
 // resolveVersion resolves a dependency requirement to a specific version.
 // This is where we would integrate with compatibility matrices and version resolution logic.
-func resolveVersion(ctx context.Context, dep Dependency) (string, error) {
+func resolveVersion(ctx context.Context, dep *Dependency) (string, error) {
 	// For the initial implementation, use simple hardcoded resolution
 	// TODO: Integrate with pkg/base_images compatibility matrices
 

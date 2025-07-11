@@ -2,8 +2,8 @@ package python
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
+	"testing/fstest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,6 +12,7 @@ import (
 	"github.com/replicate/cog/pkg/cogpack/plan"
 	"github.com/replicate/cog/pkg/cogpack/project"
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/util"
 )
 
 func TestPythonBlock_Name(t *testing.T) {
@@ -22,66 +23,74 @@ func TestPythonBlock_Name(t *testing.T) {
 func TestPythonBlock_Detect(t *testing.T) {
 	tests := []struct {
 		name           string
-		files          map[string]string
+		fs             fstest.MapFS
 		pythonVersion  string
 		expectedDetect bool
 	}{
 		{
 			name: "python files present",
-			files: map[string]string{
-				"main.py": "print('hello')",
+			fs: fstest.MapFS{
+				"main.py": &fstest.MapFile{
+					Data: []byte("print('hello')"),
+				},
 			},
 			expectedDetect: true,
 		},
 		{
 			name: "pyproject.toml present",
-			files: map[string]string{
-				"pyproject.toml": `[project]
+			fs: fstest.MapFS{
+				"pyproject.toml": &fstest.MapFile{
+					Data: []byte(`[project]
 name = "test"
-version = "0.1.0"`,
+version = "0.1.0"`),
+				},
 			},
 			expectedDetect: true,
 		},
 		{
 			name: "requirements.txt present",
-			files: map[string]string{
-				"requirements.txt": "requests==2.31.0",
+			fs: fstest.MapFS{
+				"requirements.txt": &fstest.MapFile{
+					Data: []byte("requests==2.31.0"),
+				},
 			},
 			expectedDetect: true,
 		},
 		{
 			name: "uv.lock present",
-			files: map[string]string{
-				"uv.lock": `version = 1
-requires-python = ">=3.11"`,
+			fs: fstest.MapFS{
+				"uv.lock": &fstest.MapFile{
+					Data: []byte(`version = 1
+requires-python = ">=3.11"`),
+				},
 			},
 			expectedDetect: true,
 		},
 		{
 			name: ".python-version present",
-			files: map[string]string{
-				".python-version": "3.11",
+			fs: fstest.MapFS{
+				".python-version": &fstest.MapFile{
+					Data: []byte("3.11"),
+				},
 			},
 			expectedDetect: true,
 		},
 		{
 			name:           "python_version in config",
-			files:          map[string]string{},
+			fs:             fstest.MapFS{},
 			pythonVersion:  "3.11",
 			expectedDetect: true,
 		},
 		{
 			name:           "no python indicators",
-			files:          map[string]string{},
+			fs:             fstest.MapFS{},
 			expectedDetect: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create temporary directory with test files
-			tmpDir := createTempDir(t, tt.files)
-			defer os.RemoveAll(tmpDir)
+			tmpDir := createTempDir(t, tt.fs)
 
 			// Create source info
 			cfg := &config.Config{
@@ -105,58 +114,70 @@ requires-python = ">=3.11"`,
 func TestPythonBlock_Dependencies_VersionPriority(t *testing.T) {
 	tests := []struct {
 		name            string
-		files           map[string]string
+		fs              fstest.MapFS
 		pythonVersion   string
 		expectedVersion string
 	}{
 		{
 			name: "cog.yaml has priority",
-			files: map[string]string{
-				"uv.lock": `version = 1
-requires-python = ">=3.10"`,
-				".python-version": "3.9",
+			fs: fstest.MapFS{
+				"uv.lock": &fstest.MapFile{
+					Data: []byte(`version = 1
+requires-python = ">=3.10"`),
+				},
+				".python-version": &fstest.MapFile{
+					Data: []byte("3.9"),
+				},
 			},
 			pythonVersion:   "3.11",
 			expectedVersion: "3.11",
 		},
 		{
 			name: "uv.lock second priority",
-			files: map[string]string{
-				"uv.lock": `version = 1
-requires-python = ">=3.10"`,
-				".python-version": "3.9",
+			fs: fstest.MapFS{
+				"uv.lock": &fstest.MapFile{
+					Data: []byte(`version = 1
+requires-python = ">=3.10"`),
+				},
+				".python-version": &fstest.MapFile{
+					Data: []byte("3.9"),
+				},
 			},
 			expectedVersion: "3.10",
 		},
 		{
 			name: ".python-version third priority",
-			files: map[string]string{
-				".python-version": "3.9",
-				"pyproject.toml": `[project]
-requires-python = ">=3.8"`,
+			fs: fstest.MapFS{
+				".python-version": &fstest.MapFile{
+					Data: []byte("3.9"),
+				},
+				"pyproject.toml": &fstest.MapFile{
+					Data: []byte(`[project]
+requires-python = ">=3.8"`),
+				},
 			},
 			expectedVersion: "3.9",
 		},
 		{
 			name: "pyproject.toml fourth priority",
-			files: map[string]string{
-				"pyproject.toml": `[project]
-requires-python = ">=3.8"`,
+			fs: fstest.MapFS{
+				"pyproject.toml": &fstest.MapFile{
+					Data: []byte(`[project]
+requires-python = ">=3.8"`),
+				},
 			},
 			expectedVersion: "3.8",
 		},
 		{
 			name:            "default to 3.12",
-			files:           map[string]string{},
+			fs:              fstest.MapFS{},
 			expectedVersion: "3.12",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create temporary directory with test files
-			tmpDir := createTempDir(t, tt.files)
-			defer os.RemoveAll(tmpDir)
+			tmpDir := createTempDir(t, tt.fs)
 
 			// Create source info
 			cfg := &config.Config{
@@ -183,9 +204,7 @@ requires-python = ">=3.8"`,
 }
 
 func TestPythonBlock_Plan_NoInstallNeeded(t *testing.T) {
-	// Create temporary directory (empty is fine for this test)
-	tmpDir := createTempDir(t, map[string]string{})
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	cfg := &config.Config{Build: &config.Build{}}
 	src, err := project.NewSourceInfo(tmpDir, cfg)
@@ -225,9 +244,7 @@ func TestPythonBlock_Plan_NoInstallNeeded(t *testing.T) {
 }
 
 func TestPythonBlock_Plan_InstallNeeded(t *testing.T) {
-	// Create temporary directory (empty is fine for this test)
-	tmpDir := createTempDir(t, map[string]string{})
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	cfg := &config.Config{Build: &config.Build{}}
 	src, err := project.NewSourceInfo(tmpDir, cfg)
@@ -257,6 +274,8 @@ func TestPythonBlock_Plan_InstallNeeded(t *testing.T) {
 
 	err = block.Plan(t.Context(), src, p)
 	require.NoError(t, err)
+
+	util.JSONPrettyPrint(p)
 
 	// Should add installation stages
 	totalStages := countStages(p)
@@ -327,25 +346,13 @@ func TestPythonBlock_VersionCompatibility(t *testing.T) {
 
 // Helper functions
 
-func createTempDir(t *testing.T, files map[string]string) string {
+func createTempDir(t *testing.T, f fstest.MapFS) string {
 	t.Helper()
 
-	tmpDir, err := os.MkdirTemp("", "python-block-test-*")
+	tmpDir := t.TempDir()
+
+	err := os.CopyFS(tmpDir, f)
 	require.NoError(t, err)
-
-	for filename, content := range files {
-		filePath := filepath.Join(tmpDir, filename)
-
-		// Create directory if needed
-		dir := filepath.Dir(filePath)
-		if dir != tmpDir {
-			err := os.MkdirAll(dir, 0755)
-			require.NoError(t, err)
-		}
-
-		err := os.WriteFile(filePath, []byte(content), 0644)
-		require.NoError(t, err)
-	}
 
 	return tmpDir
 }

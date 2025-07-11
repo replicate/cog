@@ -63,7 +63,7 @@ func ValidatePlan(p *Plan) error {
 }
 
 // validateStageInput ensures a stage's input can be resolved
-func validateStageInput(p *Plan, stage Stage) error {
+func validateStageInput(p *Plan, stage *Stage) error {
 	input := stage.Source
 
 	// Check if input refers to an image

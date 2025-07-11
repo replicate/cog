@@ -193,12 +193,12 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 		client := registry.NewRegistryClient()
 		// Experimental builder toggle
-		if os.Getenv("COG_EXPERIMENTAL_BUILDER") == "1" {
+		if cogpack.Enabled() {
 			sourceInfo, err := project.NewSourceInfo(projectDir, cfg)
 			if err != nil {
 				return err
 			}
-			result, err := cogpack.GeneratePlan(ctx, sourceInfo)
+			result, err := cogpack.BuildModel(ctx, dockerClient, sourceInfo)
 			if err != nil {
 				return err
 			}
