@@ -326,7 +326,7 @@ func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOp
 		}
 
 		// run the display in a goroutine _after_ we've built SolveOpt
-		eg.Go(newDisplay(statusCh, displayMode))
+		eg.Go(NewBuildkitSolveDisplay(statusCh, displayMode))
 
 		res, err = bc.Solve(ctx, nil, options, statusCh)
 		if err != nil {
