@@ -1,4 +1,4 @@
-package blocks
+package commonblocks
 
 import (
 	"context"

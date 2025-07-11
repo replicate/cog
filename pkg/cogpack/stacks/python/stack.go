@@ -4,9 +4,9 @@ import (
 	"context"
 
 	"github.com/replicate/cog/pkg/cogpack/baseimg"
-	"github.com/replicate/cog/pkg/cogpack/blocks"
 	"github.com/replicate/cog/pkg/cogpack/plan"
 	"github.com/replicate/cog/pkg/cogpack/project"
+	"github.com/replicate/cog/pkg/cogpack/stacks/commonblocks"
 )
 
 // PythonStack orchestrates builds for Python-based projects
@@ -48,7 +48,7 @@ func (s *PythonStack) Plan(ctx context.Context, src *project.SourceInfo, p *plan
 
 	// Phase 2: Collect dependencies from all active blocks
 	var allDeps []plan.Dependency
-	var activeBlocks []blocks.Block
+	var activeBlocks []plan.Block
 
 	for _, block := range allBlocks {
 		if active, err := block.Detect(ctx, src); err != nil {
@@ -105,31 +105,29 @@ func (s *PythonStack) Plan(ctx context.Context, src *project.SourceInfo, p *plan
 }
 
 // composeBlocks determines which blocks to use based on project characteristics
-func (s *PythonStack) composeBlocks(ctx context.Context, src *project.SourceInfo) []blocks.Block {
-	var blockList []blocks.Block
-
+func (s *PythonStack) composeBlocks(ctx context.Context, src *project.SourceInfo) (blockList []plan.Block) {
 	// Always include base blocks
-	blockList = append(blockList, &PythonVersionBlock{})
-	blockList = append(blockList, &blocks.BaseImageBlock{})
+	blockList = append(blockList, &PythonBlock{})
+	blockList = append(blockList, &commonblocks.BaseImageBlock{})
 
 	// System packages if specified
 	if len(src.Config.Build.SystemPackages) > 0 {
-		blockList = append(blockList, &blocks.AptBlock{})
+		blockList = append(blockList, &commonblocks.AptBlock{})
 	}
 
 	// Python dependency management - pick one based on project structure
 	if src.FS.GlobExists("pyproject.toml") {
-		blockList = append(blockList, &blocks.UvBlock{})
+		blockList = append(blockList, &UvBlock{})
 	} else if src.FS.GlobExists("requirements.txt") {
-		blockList = append(blockList, &blocks.PipBlock{})
+		blockList = append(blockList, &PipBlock{})
 	}
 
 	// ML frameworks - these self-detect if needed
-	blockList = append(blockList, &blocks.TorchBlock{})
-	blockList = append(blockList, &blocks.CudaBlock{})
+	blockList = append(blockList, &TorchBlock{})
+	blockList = append(blockList, &commonblocks.CudaBlock{})
 
 	// Always copy source code to runtime image
-	blockList = append(blockList, &blocks.SourceCopyBlock{})
+	blockList = append(blockList, &commonblocks.SourceCopyBlock{})
 
 	return blockList
 }

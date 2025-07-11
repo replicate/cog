@@ -1,9 +1,8 @@
-package blocks
+package plan
 
 import (
 	"context"
 
-	"github.com/replicate/cog/pkg/cogpack/plan"
 	"github.com/replicate/cog/pkg/cogpack/project"
 )
 
@@ -18,10 +17,10 @@ type Block interface {
 
 	// Dependencies returns the dependency requirements this block is responsible for.
 	// These will be collected and resolved centrally before plan generation.
-	Dependencies(ctx context.Context, src *project.SourceInfo) ([]plan.Dependency, error)
+	Dependencies(ctx context.Context, src *project.SourceInfo) ([]Dependency, error)
 
 	// Plan contributes build operations to the overall Plan.
 	// This is called after dependencies have been resolved, so blocks can
 	// access resolved versions via plan.Dependencies.
-	Plan(ctx context.Context, src *project.SourceInfo, p *plan.Plan) error
+	Plan(ctx context.Context, src *project.SourceInfo, p *Plan) error
 }

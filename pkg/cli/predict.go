@@ -22,8 +22,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/replicate/cog/pkg/cogpack"
-	"github.com/replicate/cog/pkg/cogpack/build"
-	"github.com/replicate/cog/pkg/cogpack/core"
+	"github.com/replicate/cog/pkg/cogpack/project"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
@@ -195,21 +194,21 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		client := registry.NewRegistryClient()
 		// Experimental builder toggle
 		if os.Getenv("COG_EXPERIMENTAL_BUILDER") == "1" {
-			sourceInfo, err := core.NewSourceInfo(projectDir, cfg)
+			sourceInfo, err := project.NewSourceInfo(projectDir, cfg)
 			if err != nil {
 				return err
 			}
-			result, err := cogpack.GenerateBuildPlan(ctx, sourceInfo)
+			result, err := cogpack.GeneratePlan(ctx, sourceInfo)
 			if err != nil {
 				return err
 			}
 
 			util.JSONPrettyPrint(result)
 
-			builder := build.NewBuilder(dockerClient)
-			if err := builder.Build(ctx, sourceInfo, result.Plan); err != nil {
-				return err
-			}
+			// builder := builder.NewBuilder(dockerClient)
+			// if err := builder.Build(ctx, sourceInfo, result.Plan); err != nil {
+			// 	return err
+			// }
 
 			return nil
 

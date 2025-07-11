@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/replicate/cog/pkg/cogpack/plan"
+	"github.com/replicate/cog/pkg/docker/command"
 )
 
 // Builder executes a generated Plan and produces a container image (or other
@@ -21,4 +22,8 @@ import (
 // Implementations are expected to respect the Platform specified on the Plan.
 type Builder interface {
 	Build(ctx context.Context, p *plan.Plan, buildContextDir, tag string) error
+}
+
+func NewBuilder(dockerCmd command.Command) Builder {
+	return NewBuildKitBuilder(dockerCmd)
 }

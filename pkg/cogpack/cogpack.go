@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/replicate/cog/pkg/cogpack/builder"
 	"github.com/replicate/cog/pkg/cogpack/plan"
 	"github.com/replicate/cog/pkg/cogpack/project"
 	"github.com/replicate/cog/pkg/cogpack/stacks"
+	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/docker/command"
 )
 
 // GeneratePlan generates a complete build plan for the given project.
@@ -35,7 +38,7 @@ func GeneratePlan(ctx context.Context, src *project.SourceInfo) (*plan.PlanResul
 	}
 
 	// 4. Validate plan
-	if err := ValidatePlan(p); err != nil {
+	if err := plan.ValidatePlan(p); err != nil {
 		return nil, fmt.Errorf("plan validation failed: %w", err)
 	}
 
@@ -53,90 +56,84 @@ func GeneratePlan(ctx context.Context, src *project.SourceInfo) (*plan.PlanResul
 	}, nil
 }
 
-// ValidatePlan performs basic validation on a generated plan.
-// This ensures the plan is well-formed and can be executed.
-func ValidatePlan(p *plan.Plan) error {
-	// Check that we have a base image
-	if p.BaseImage.Build == "" {
-		return fmt.Errorf("no build base image specified")
+// ExecutePlan executes a pre-generated Plan using the supplied Builder.
+func ExecutePlan(ctx context.Context, p *plan.Plan, buildContextDir, tag string, b builder.Builder) error {
+	if b == nil {
+		return fmt.Errorf("builder cannot be nil")
 	}
-	if p.BaseImage.Runtime == "" {
-		return fmt.Errorf("no runtime base image specified")
-	}
-
-	// Validate stage ID uniqueness across all phases
-	seenIDs := make(map[string]bool)
-
-	// Check build phases
-	for _, phase := range p.BuildPhases {
-		for _, stage := range phase.Stages {
-			if stage.ID == "" {
-				return fmt.Errorf("stage %q has empty ID", stage.Name)
-			}
-			if seenIDs[stage.ID] {
-				return fmt.Errorf("duplicate stage ID: %q", stage.ID)
-			}
-			seenIDs[stage.ID] = true
-		}
-	}
-
-	// Check export phases
-	for _, phase := range p.ExportPhases {
-		for _, stage := range phase.Stages {
-			if stage.ID == "" {
-				return fmt.Errorf("stage %q has empty ID", stage.Name)
-			}
-			if seenIDs[stage.ID] {
-				return fmt.Errorf("duplicate stage ID: %q", stage.ID)
-			}
-			seenIDs[stage.ID] = true
-		}
-	}
-
-	// Validate stage inputs can be resolved
-	for _, phase := range p.BuildPhases {
-		for _, stage := range phase.Stages {
-			if err := validateStageInput(p, stage); err != nil {
-				return fmt.Errorf("stage %q input validation failed: %w", stage.ID, err)
-			}
-		}
-	}
-
-	for _, phase := range p.ExportPhases {
-		for _, stage := range phase.Stages {
-			if err := validateStageInput(p, stage); err != nil {
-				return fmt.Errorf("stage %q input validation failed: %w", stage.ID, err)
-			}
-		}
-	}
-
-	return nil
+	return b.Build(ctx, p, buildContextDir, tag)
 }
 
-// validateStageInput ensures a stage's input can be resolved
-func validateStageInput(p *plan.Plan, stage plan.Stage) error {
-	input := stage.Source
-
-	// Check if input refers to an image
-	if input.Image != "" {
-		// Image inputs are always valid (we assume they exist)
-		return nil
+// BuildWithDocker is a convenience helper that performs the full pipeline:
+//  1. Source inspection of srcDir into a SourceInfo
+//  2. Plan generation (GeneratePlan)
+//  3. Plan execution via the supplied Builder that uses Docker
+//
+// It returns the Plan so callers can inspect or snapshot it.
+func BuildWithDocker(ctx context.Context, srcDir, tag string, dockerCmd command.Command, builderFactory func(command.Command) builder.Builder) (*plan.Plan, error) {
+	if dockerCmd == nil {
+		return nil, fmt.Errorf("docker command cannot be nil")
+	}
+	if builderFactory == nil {
+		return nil, fmt.Errorf("builder factory cannot be nil")
 	}
 
-	// Check if input refers to another stage
-	if input.Stage != "" {
-		if p.GetStage(input.Stage) == nil {
-			return fmt.Errorf("stage input %q not found", input.Stage)
-		}
-		return nil
+	// Initialize a basic config with Build field
+	cfg := &config.Config{
+		Build: &config.Build{},
 	}
 
-	// Check if input refers to local context
-	if input.Local != "" {
-		// Local inputs are always valid (build context)
-		return nil
+	src, err := project.NewSourceInfo(srcDir, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("new source info: %w", err)
+	}
+	defer src.Close()
+
+	planResult, err := GeneratePlan(ctx, src)
+	if err != nil {
+		return nil, err
 	}
 
-	// Stage has no input - this might be valid for some cases
-	return nil
+	// Create builder with Docker command
+	b := builderFactory(dockerCmd)
+
+	if err := b.Build(ctx, planResult.Plan, srcDir, tag); err != nil {
+		return nil, err
+	}
+
+	return planResult.Plan, nil
+}
+
+// Build is a convenience helper that performs the full pipeline:
+//  1. Source inspection of srcDir into a SourceInfo
+//  2. Plan generation (GeneratePlan)
+//  3. Plan execution via the supplied Builder
+//
+// It returns the Plan so callers can inspect or snapshot it.
+func Build(ctx context.Context, srcDir, tag string, b builder.Builder) (*plan.Plan, error) {
+	if b == nil {
+		return nil, fmt.Errorf("builder cannot be nil")
+	}
+
+	// Initialize a basic config with Build field
+	cfg := &config.Config{
+		Build: &config.Build{},
+	}
+
+	src, err := project.NewSourceInfo(srcDir, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("new source info: %w", err)
+	}
+	defer src.Close()
+
+	planResult, err := GeneratePlan(ctx, src)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := b.Build(ctx, planResult.Plan, srcDir, tag); err != nil {
+		return nil, err
+	}
+
+	return planResult.Plan, nil
 }
