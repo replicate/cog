@@ -3,6 +3,7 @@ package builder
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/moby/buildkit/client/llb"
@@ -29,6 +30,8 @@ func translatePlan(ctx context.Context, p *plan.Plan) (llb.State, map[string]llb
 			return llb.Image(in.Image, llb.Platform(platform)), nil
 		case in.Local != "":
 			return llb.Local(in.Local), nil
+		case in.URL != "":
+			return llb.HTTP(in.URL), nil
 		default:
 			return llb.Scratch(), nil
 		}
@@ -77,44 +80,164 @@ func translatePlan(ctx context.Context, p *plan.Plan) (llb.State, map[string]llb
 func applyOps(ctx context.Context, base llb.State, st *plan.Stage, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
 	cur := base
 	for _, op := range st.Operations {
+		var err error
 		switch o := op.(type) {
 		case plan.Exec:
-			opts := []llb.RunOption{llb.Shlex(o.Command)}
-			if st.Dir != "" {
-				opts = append(opts, llb.Dir(st.Dir))
-			}
-			cur = cur.Run(opts...).Root()
-
+			cur, err = applyExecOp(ctx, cur, o, st, stageStates, platform)
 		case plan.Copy:
-			var src llb.State
-			if o.From != "" {
-				if s, ok := stageStates[o.From]; ok {
-					src = s
-				} else if strings.HasPrefix(o.From, "local:") {
-					src = llb.Local(strings.TrimPrefix(o.From, "local:"))
-				} else {
-					src = llb.Image(o.From, llb.Platform(platform))
-				}
-			} else {
-				src = llb.Scratch()
-			}
-			for _, sp := range o.Src {
-				cur = cur.File(llb.Copy(src, sp, o.Dest))
-			}
-
+			cur, err = applyCopyOp(ctx, cur, o, stageStates, platform)
 		case plan.Add:
-			for _, sp := range o.Src {
-				cur = cur.File(llb.Copy(llb.HTTP(sp), "download.bin", o.Dest))
-			}
-
+			cur, err = applyAddOp(ctx, cur, o, stageStates, platform)
 		case plan.SetEnv:
-			for k, v := range o.Vars {
-				cur = cur.AddEnv(k, v)
-			}
-
+			cur, err = applySetEnvOp(ctx, cur, o)
+		case plan.MkFile:
+			cur, err = applyMkFileOp(ctx, cur, o)
 		default:
 			return llb.State{}, fmt.Errorf("unsupported op %T", o)
 		}
+		if err != nil {
+			return llb.State{}, err
+		}
 	}
 	return cur, nil
+}
+
+// applyMounts converts plan.Mount structs to BuildKit LLB mount options
+func applyMounts(mounts []plan.Mount, stageStates map[string]llb.State, platform ocispec.Platform) ([]llb.RunOption, error) {
+	var opts []llb.RunOption
+	
+	for _, mount := range mounts {
+		// Validate mount input
+		if err := validateMountInput(mount.Source, stageStates); err != nil {
+			return nil, fmt.Errorf("invalid mount source: %w", err)
+		}
+		
+		source, err := resolveMountInput(mount.Source, stageStates, platform)
+		if err != nil {
+			return nil, fmt.Errorf("resolve mount source: %w", err)
+		}
+		
+		opts = append(opts, llb.AddMount(mount.Target, source))
+	}
+	
+	return opts, nil
+}
+
+// validateMountInput validates that a mount input is correct
+func validateMountInput(input plan.Input, stageStates map[string]llb.State) error {
+	// Check that exactly one input type is specified
+	inputCount := 0
+	if input.Stage != "" {
+		inputCount++
+	}
+	if input.Image != "" {
+		inputCount++
+	}
+	if input.Local != "" {
+		inputCount++
+	}
+	
+	if inputCount == 0 {
+		return fmt.Errorf("mount input must specify stage, image, or local")
+	}
+	
+	if inputCount > 1 {
+		return fmt.Errorf("mount input must specify exactly one of stage, image, or local")
+	}
+	
+	// Validate stage reference exists
+	if input.Stage != "" {
+		if _, ok := stageStates[input.Stage]; !ok {
+			return fmt.Errorf("stage %q does not exist", input.Stage)
+		}
+	}
+	
+	// Image and Local validations are implicit since we already checked they're not empty strings above
+	
+	return nil
+}
+
+// resolveMountInput resolves a plan.Input to an LLB state for mount operations
+func resolveMountInput(in plan.Input, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
+	switch {
+	case in.Stage != "":
+		s, ok := stageStates[in.Stage]
+		if !ok {
+			return llb.State{}, fmt.Errorf("unknown stage %q", in.Stage)
+		}
+		return s, nil
+	case in.Image != "":
+		return llb.Image(in.Image, llb.Platform(platform)), nil
+	case in.Local != "":
+		return llb.Local(in.Local), nil
+	case in.URL != "":
+		return llb.HTTP(in.URL), nil
+	default:
+		return llb.Scratch(), nil
+	}
+}
+
+// applyExecOp handles Exec operations with mount support
+func applyExecOp(ctx context.Context, base llb.State, exec plan.Exec, st *plan.Stage, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
+	opts := []llb.RunOption{llb.Shlex(exec.Command)}
+	if st.Dir != "" {
+		opts = append(opts, llb.Dir(st.Dir))
+	}
+	
+	// Apply mounts
+	mountOpts, err := applyMounts(exec.Mounts, stageStates, platform)
+	if err != nil {
+		return llb.State{}, err
+	}
+	opts = append(opts, mountOpts...)
+	
+	return base.Run(opts...).Root(), nil
+}
+
+// applyCopyOp handles Copy operations
+func applyCopyOp(ctx context.Context, base llb.State, copy plan.Copy, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
+	src, err := resolveMountInput(copy.From, stageStates, platform)
+	if err != nil {
+		return llb.State{}, fmt.Errorf("resolve copy source: %w", err)
+	}
+	
+	for _, sp := range copy.Src {
+		base = base.File(llb.Copy(src, sp, copy.Dest))
+	}
+	return base, nil
+}
+
+// applyAddOp handles Add operations
+func applyAddOp(ctx context.Context, base llb.State, add plan.Add, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
+	if add.From.Stage != "" || add.From.Image != "" || add.From.Local != "" || add.From.URL != "" {
+		// Add with From source - copy from source first
+		src, err := resolveMountInput(add.From, stageStates, platform)
+		if err != nil {
+			return llb.State{}, fmt.Errorf("resolve add source: %w", err)
+		}
+		
+		for _, sp := range add.Src {
+			base = base.File(llb.Copy(src, sp, add.Dest))
+		}
+		return base, nil
+	}
+	
+	// Traditional Add with URLs in Src
+	for _, sp := range add.Src {
+		base = base.File(llb.Copy(llb.HTTP(sp), "download.bin", add.Dest))
+	}
+	return base, nil
+}
+
+// applySetEnvOp handles SetEnv operations
+func applySetEnvOp(ctx context.Context, base llb.State, setEnv plan.SetEnv) (llb.State, error) {
+	for k, v := range setEnv.Vars {
+		base = base.AddEnv(k, v)
+	}
+	return base, nil
+}
+
+// applyMkFileOp handles MkFile operations
+func applyMkFileOp(ctx context.Context, base llb.State, mkFile plan.MkFile) (llb.State, error) {
+	return base.File(llb.Mkfile(mkFile.Dest, os.FileMode(mkFile.Mode), mkFile.Data)), nil
 }

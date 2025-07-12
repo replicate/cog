@@ -41,7 +41,7 @@ func (b *SourceCopyBlock) Plan(ctx context.Context, src *project.SourceInfo, p *
 	stage.Operations = []plan.Op{
 		// Copy source files from build context
 		plan.Copy{
-			From: "local:context",
+			From: plan.Input{Local: "context"},
 			Src:  []string{"."},
 			Dest: "/src",
 			Patterns: plan.FilePattern{

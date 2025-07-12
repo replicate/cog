@@ -29,7 +29,7 @@ func (b *PipBlock) Plan(ctx context.Context, src *project.SourceInfo, p *plan.Pl
 	buildStage.Operations = []plan.Op{
 		// Copy requirements.txt first
 		plan.Copy{
-			From: "local:context",
+			From: plan.Input{Local: "context"},
 			Src:  []string{"requirements.txt"},
 			Dest: "/tmp/requirements.txt",
 		},
@@ -51,7 +51,7 @@ func (b *PipBlock) Plan(ctx context.Context, src *project.SourceInfo, p *plan.Pl
 	exportStage.Operations = []plan.Op{
 		// Copy installed packages from build stage
 		plan.Copy{
-			From: "pip-install",
+			From: plan.Input{Stage: "pip-install"},
 			Src:  []string{"/usr/local/lib/python3.13/site-packages"},
 			Dest: "/usr/local/lib/python3.13/site-packages",
 		},

@@ -2,8 +2,8 @@
 
 > **For LLM Assistants**: This file provides complete context for the cogpack build system project. Please continue to refine and update this document as we work together, keeping it current with implementation progress and design decisions.
 
-> **Last Updated**: 2025-01-27  
-> **Status**: Design Complete, Implementation In Progress  
+> **Last Updated**: 2025-07-11  
+> **Status**: Core Implementation Complete, Mount-Based Context System Implemented  
 
 ## Table of Contents
 1. [Mission & Objectives](#mission--objectives)
@@ -76,11 +76,23 @@ Success = images build & run via `cog predict`, under env-var flag.
 ```go
 type Plan struct {
     Platform      Platform                 `json:"platform"`      // linux/amd64
-    Dependencies  map[string]Dependency    `json:"dependencies"`  // resolved versions
-    BaseImage     BaseImage               `json:"base_image"`    // build/runtime images
-    BuildPhases   []Phase                 `json:"build_phases"`  // organized build work
-    ExportPhases  []Phase                 `json:"export_phases"` // runtime image assembly
+    Dependencies  map[string]*Dependency   `json:"dependencies"`  // resolved versions
+    BaseImage     *BaseImage              `json:"base_image"`    // build/runtime images
+    BuildPhases   []*Phase                `json:"build_phases"`  // organized build work
+    ExportPhases  []*Phase                `json:"export_phases"` // runtime image assembly
     Export        *ExportConfig           `json:"export"`        // final image config
+    Contexts      map[string]*BuildContext `json:"contexts"`      // build contexts for mounting
+}
+```
+
+#### BuildContext Structure
+```go
+type BuildContext struct {
+    Name        string            `json:"name"`         // context name for referencing
+    SourceBlock string            `json:"source_block"` // which block created this context
+    Description string            `json:"description"`  // human-readable description
+    Metadata    map[string]string `json:"metadata"`     // debug annotations
+    FS          fs.FS             `json:"-"`            // the actual filesystem (not serialized)
 }
 ```
 
@@ -102,6 +114,24 @@ type Stage struct {
     Env        []string `json:"env"`        // environment state
     Dir        string   `json:"dir"`        // working directory
     Provides   []string `json:"provides"`   // what this stage provides
+}
+```
+
+#### Input Structure
+```go
+type Input struct {
+    Image string `json:"image,omitempty"` // external image reference
+    Stage string `json:"stage,omitempty"` // reference to another stage
+    Local string `json:"local,omitempty"` // build context name
+    URL   string `json:"url,omitempty"`   // HTTP/HTTPS URL for files
+}
+```
+
+#### Mount Structure
+```go
+type Mount struct {
+    Source Input  `json:"source"` // mount source (supports Input types)
+    Target string `json:"target"` // mount path in container
 }
 ```
 
@@ -164,25 +194,29 @@ func (s *PythonStack) Plan(ctx context.Context, src *SourceInfo, plan *Plan) err
 ## Implementation Status
 
 ### Current Focus
-**Produce a functional Python stack** that can build CPU and GPU models with PyTorch/TensorFlow support.
+**Completed functional Python stack** with mount-based context system for enhanced build flexibility and cog wheel installation.
 
 ### Completed ✅
-- System architecture design
-- Data structure definitions
-- Workflow patterns established
-- Core interfaces defined
+- ✅ System architecture design
+- ✅ Data structure definitions (Plan, Phase, Stage, BuildContext)
+- ✅ Workflow patterns established
+- ✅ Core interfaces defined
+- ✅ **Mount-based context system** - Generic fs.FS mounting with BuildKit integration
+- ✅ **Python Stack orchestration** - Complete PythonStack with block composition
+- ✅ **Core Block implementations** - UvBlock, CogWheelBlock with context support
+- ✅ **BuildKit LLB Builder integration** - Full LLB translation with mount support
+- ✅ **Context management** - Generic ContextFS for directory and fs.FS contexts
+- ✅ **Plan validation** - Comprehensive validation including context references
+- ✅ **Integration testing** - End-to-end BuildKit integration tests passing
+- ✅ **Cog wheel installation** - Mount-based wheel installation using embedded fs
 
 ### In Progress 🔄
-- Core Plan data structures implementation
-- Python Stack orchestration logic
-- Basic Block implementations (UvBlock, AptBlock, etc.)
-- BuildKit LLB Builder integration
+- Additional Block implementations (TorchBlock, AptBlock, etc.)
+- Enhanced dependency resolution engine
 
 ### Planned 📋
-- Dependency resolution engine
-- Base image metadata system
-- Complete block implementations
-- Integration testing
+- Complete block implementations for GPU/CUDA support
+- Enhanced base image metadata system
 - CLI integration behind feature flag
 
 ---
@@ -198,6 +232,11 @@ func (s *PythonStack) Plan(ctx context.Context, src *SourceInfo, plan *Plan) err
 | **Block-managed stage IDs** | Blocks set unique IDs, plan validates uniqueness. Enables precise stage referencing. |
 | **Squash pattern for layers** | Use llb.Diff + llb.Copy, not LayerID matching. Guarantees one layer per logical unit. |
 | **Dependency map pattern** | Consistent structure for plan deps and base image metadata. Flexible and extensible. |
+| **Mount-based context system** | Generic fs.FS mounting instead of MkFile operations. Enables flexible file/wheel installation. |
+| **BuildContext on Plan** | Contexts stored directly in Plan with fs.FS. Centralized context management and validation. |
+| **Extended Input type** | Input supports Image, Stage, Local, and URL sources. Unified interface for all source types. |
+| **Generic ContextFS** | Single ContextFS handles both directories and fs.FS. Flexible context creation from any source. |
+| **Consolidated validation** | Single ValidatePlan function handles all validation. Comprehensive plan verification in one place. |
 
 ### Current Assumptions 🟡
 
@@ -223,40 +262,47 @@ func (s *PythonStack) Plan(ctx context.Context, src *SourceInfo, plan *Plan) err
 ## Current Working Checklist
 
 ### Core Infrastructure
-- [ ] **Plan data structures** - Plan, Phase, Stage, BaseImage types
-- [ ] **Plan methods** - AddStage, GetStage, GetPhaseResult with ID validation
-- [ ] **Dependency resolution** - ResolveDependencies function with conflict handling
-- [ ] **Base image metadata** - Mock implementation with Package map structure
-- [ ] **Stack interface** - Detect and Plan methods
-- [ ] **Block interface** - Detect, Dependencies, and Plan methods
+- [x] ✅ **Plan data structures** - Plan, Phase, Stage, BaseImage, BuildContext types
+- [x] ✅ **Plan methods** - AddStage, GetStage, GetPhaseResult with ID validation
+- [x] ✅ **Dependency resolution** - ResolveDependencies function with conflict handling
+- [x] ✅ **Base image metadata** - Mock implementation with Package map structure
+- [x] ✅ **Stack interface** - Detect and Plan methods
+- [x] ✅ **Block interface** - Detect, Dependencies, and Plan methods
+- [x] ✅ **Mount-based context system** - Generic fs.FS mounting with BuildKit integration
+- [x] ✅ **Input type extensions** - Support for Image, Stage, Local, URL sources
+- [x] ✅ **Context validation** - Comprehensive plan validation including context references
 
 ### Python Stack Implementation
-- [ ] **PythonStack** - Main orchestrator with block composition logic
-- [ ] **BaseImageBlock** - Select build/runtime images based on resolved dependencies
-- [ ] **PythonVersionBlock** - Emit Python version dependency from cog.yaml
+- [x] ✅ **PythonStack** - Main orchestrator with block composition logic
+- [x] ✅ **BaseImageBlock** - Select build/runtime images based on resolved dependencies
+- [x] ✅ **PythonBlock** - Emit Python version dependency and installation
 - [ ] **AptBlock** - Install system packages from cog.yaml
-- [ ] **UvBlock** - Handle uv-based Python dependency management
+- [x] ✅ **UvBlock** - Handle uv-based Python dependency management
 - [ ] **PipBlock** - Fallback Python dependency management
 - [ ] **TorchBlock** - Install PyTorch with GPU/CPU variants
+- [x] ✅ **CogWheelBlock** - Mount-based cog wheel installation with embedded fs
 - [ ] **CudaBlock** - Handle CUDA dependencies and detection
 
 ### Build System Integration
-- [ ] **Builder interface** - Abstract builder for plan execution
-- [ ] **LLB Builder** - Convert plan to BuildKit LLB operations
-- [ ] **Squash pattern implementation** - Use llb.Diff + llb.Copy for layer control
-- [ ] **Platform handling** - Ensure linux/amd64 platform in all LLB operations
+- [x] ✅ **Builder interface** - Abstract builder for plan execution
+- [x] ✅ **LLB Builder** - Convert plan to BuildKit LLB operations with mount support
+- [x] ✅ **Context processing** - Generic context conversion from fs.FS to fsutil.FS
+- [x] ✅ **Mount translation** - LLB mount creation from plan mount specifications
+- [x] ✅ **Platform handling** - Ensure linux/amd64 platform in all LLB operations
+- [x] ✅ **Image export** - Proper "moby" exporter for local Docker daemon
 
 ### Validation & Testing
-- [ ] **Plan validation** - Check for cycles, missing inputs, duplicate IDs
-- [ ] **Unit tests** - Individual block testing
-- [ ] **Integration tests** - Full stack testing with real projects
-- [ ] **Snapshot tests** - Verify plan generation consistency
+- [x] ✅ **Plan validation** - Check for cycles, missing inputs, duplicate IDs, context references
+- [x] ✅ **Unit tests** - Individual block testing with context support
+- [x] ✅ **Integration tests** - Full stack testing with BuildKit integration
+- [x] ✅ **Context tests** - ContextFS and mount system testing
+- [x] ✅ **End-to-end tests** - Complete build pipeline validation
 
 ### CLI Integration
-- [ ] **Environment flag** - Enable cogpack behind feature flag
+- [x] ✅ **Environment flag** - Enable cogpack behind COGPACK=1 feature flag
+- [x] ✅ **Build command** - Execute plans with LLB builder (via BuildWithDocker)
+- [x] ✅ **Debug output** - JSON plan serialization for inspection
 - [ ] **Plan command** - Generate and display plans without building
-- [ ] **Build command** - Execute plans with LLB builder
-- [ ] **Debug output** - JSON plan serialization for inspection
 
 ---
 
@@ -288,7 +334,7 @@ func (b *TorchBlock) Plan(ctx context.Context, src *SourceInfo, plan *Plan) erro
     }
     
     exportStage.Operations = append(exportStage.Operations, Copy{
-        From: "torch-install",
+        From: Input{Stage: "torch-install"},
         Src:  []string{"/usr/local/lib/python3.11/site-packages/torch*"},
         Dest: "/usr/local/lib/python3.11/site-packages/",
     })
@@ -297,10 +343,54 @@ func (b *TorchBlock) Plan(ctx context.Context, src *SourceInfo, plan *Plan) erro
 }
 ```
 
+### Mount-Based Context Pattern
+```go
+func (b *CogWheelBlock) Plan(ctx context.Context, src *SourceInfo, plan *Plan) error {
+    // Initialize contexts map if needed
+    if plan.Contexts == nil {
+        plan.Contexts = make(map[string]*BuildContext)
+    }
+
+    // Add context to plan with embedded filesystem
+    plan.Contexts["wheel-context"] = &BuildContext{
+        Name:        "wheel-context",
+        SourceBlock: "cog-wheel",
+        Description: "Cog wheel file for installation",
+        Metadata: map[string]string{
+            "type": "embedded-wheel",
+        },
+        FS: dockerfile.CogEmbed, // fs.FS implementation
+    }
+
+    stage, err := plan.AddStage(PhaseAppDeps, "cog-wheel", "cog-wheel")
+    if err != nil {
+        return err
+    }
+
+    // Use mount to access wheel files
+    stage.Operations = append(stage.Operations, Exec{
+        Command: "/uv/uv pip install --python /venv/bin/python /mnt/wheel/embed/*.whl 'pydantic>=1.9,<3'",
+        Mounts: []Mount{
+            {
+                Source: Input{Local: "wheel-context"},
+                Target: "/mnt/wheel",
+            },
+        },
+    })
+
+    return nil
+}
+```
+
 ### Key Patterns to Follow
 - **Plan as single source of truth** - All state flows through the plan object
 - **Blocks stay decoupled** - No direct block-to-block communication
 - **Stacks orchestrate intelligently** - Complex composition logic lives in stacks
+- **Mount-based file access** - Use contexts and mounts instead of MkFile operations
+- **Contexts on Plan** - Store BuildContext directly in Plan.Contexts map
+- **Extended Input types** - Use Input struct for all source specifications (Stage, Image, Local, URL)
+- **Generic context creation** - Use ContextFS for both directories and fs.FS interfaces
+- **Consolidated validation** - Single ValidatePlan function for all validation needs
 - **Fail fast and clear** - Distinguish Cog faults from user faults
 - **JSON serializable everywhere** - Support debugging and testing
 
@@ -346,7 +436,10 @@ This file serves as the primary context for LLM assistants working on the cogpac
 2. What additional validation should we add to plan generation?
 3. How should we structure the LLB builder to handle the squash pattern efficiently?
 4. What base image metadata do we need beyond the current Package structure?
-5. How should we handle build context and local file mounting in the builder?
+5. ✅ ~~How should we handle build context and local file mounting in the builder?~~ **SOLVED**: Mount-based context system implemented
+6. How should we optimize the fs.FS to fsutil.FS conversion to avoid temp directory creation?
+7. What additional context types (beyond directory and fs.FS) might we need in the future?
+8. How should we handle context cleanup and lifecycle management in long-running builds?
 
 ### Update Guidelines for LLM Assistants
 When working on cogpack:

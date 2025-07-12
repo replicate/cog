@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 
 	buildkitclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/frontend/gateway/client"
@@ -55,12 +56,43 @@ func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *
 		return fmt.Errorf("context fs: %w", err)
 	}
 	fmt.Println("Context FS obtained")
+
+	// Create contexts from plan
+	localMounts := map[string]fsutil.FS{
+		"context": contextFS,
+	}
+
+	// Track contexts for cleanup
+	var contextCleanupFuncs []func() error
+	defer func() {
+		for _, cleanup := range contextCleanupFuncs {
+			cleanup()
+		}
+	}()
+
+	// Process plan contexts generically
+	for name, buildCtx := range p.Contexts {
+		fsutilFS, err := convertToFsutilFS(buildCtx.FS)
+		if err != nil {
+			return fmt.Errorf("convert context %s (%s): %w", name, buildCtx.Description, err)
+		}
+		localMounts[name] = fsutilFS
+
+		// Debug logging
+		fmt.Printf("Added context: %s - %s (from %s)\n", name, buildCtx.Description, buildCtx.SourceBlock)
+		for k, v := range buildCtx.Metadata {
+			fmt.Printf("  %s: %s\n", k, v)
+		}
+	}
+
 	solveOpt := buildkitclient.SolveOpt{
 		Exports: []buildkitclient.ExportEntry{{
-			Type:  buildkitclient.ExporterImage,
-			Attrs: map[string]string{"name": buildConfig.Tag, "push": "false"},
+			Type: "moby",
+			Attrs: map[string]string{
+				"name": buildConfig.Tag,
+			},
 		}},
-		LocalMounts: map[string]fsutil.FS{"context": contextFS},
+		LocalMounts: localMounts,
 	}
 	fmt.Println("Solve options created")
 
@@ -128,42 +160,15 @@ func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *
 	util.JSONPrettyPrint(solveResp)
 
 	return nil
+}
 
-	// _, err = bkClient.Build(ctx, solveOpt, "cogpack-mvp", func(ctx context.Context, c client.Client) (*client.Result, error) {
-	// 	res, err := c.Solve(ctx, client.SolveRequest{Definition: def.ToPB()})
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("solve request failed: %w", err)
-	// 	}
-	// 	fmt.Println("Solve request completed")
-	// 	imgCfg := ocispec.ImageConfig{}
-	// 	if p.Export != nil {
-	// 		imgCfg.Entrypoint = p.Export.Entrypoint
-	// 		imgCfg.Cmd = p.Export.Cmd
-	// 		imgCfg.Env = p.Export.Env
-	// 		imgCfg.WorkingDir = p.Export.WorkingDir
-	// 		imgCfg.User = p.Export.User
-	// 		imgCfg.Labels = p.Export.Labels
-	// 		imgCfg.ExposedPorts = p.Export.ExposedPorts
-	// 	}
-	// 	fmt.Println("Image config created")
-	// 	img := ocispec.Image{}
-	// 	img.Config = imgCfg
-	// 	img.Platform = ocispec.Platform{OS: p.Platform.OS, Architecture: p.Platform.Arch}
-
-	// 	cfgJSON, err := json.Marshal(img)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("marshal image config: %w", err)
-	// 	}
-	// 	fmt.Println("Image config marshalled")
-	// 	out := &client.Result{}
-	// 	out.SetRef(res.Ref)
-	// 	out.AddMeta("containerimage.config", cfgJSON)
-	// 	return out, nil
-	// }, nil)
-	// fmt.Println("BuildKit build completed")
-	// if err != nil {
-	// 	return fmt.Errorf("buildkit build failed: %w", err)
-	// }
-	// fmt.Println("BuildKit build completed")
-	// return nil
+// convertToFsutilFS converts fs.FS to fsutil.FS
+func convertToFsutilFS(filesystem fs.FS) (fsutil.FS, error) {
+	// TODO: Check if already fsutil.FS to avoid temp dir conversion
+	// For now, use simplest approach
+	contextFS, err := NewContextFromFS("temp", filesystem)
+	if err != nil {
+		return nil, err
+	}
+	return contextFS.FS(), nil
 }

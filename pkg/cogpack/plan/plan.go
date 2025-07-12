@@ -2,6 +2,7 @@ package plan
 
 import (
 	"fmt"
+	"io/fs"
 
 	"github.com/replicate/cog/pkg/cogpack/baseimg"
 )
@@ -18,6 +19,7 @@ type Plan struct {
 	BuildPhases  []*Phase               `json:"build_phases"`  // organized build work
 	ExportPhases []*Phase               `json:"export_phases"` // runtime image assembly
 	Export       *ExportConfig          `json:"export"`        // final image config
+	Contexts     map[string]*BuildContext `json:"contexts"`    // build contexts for mounting
 }
 
 // Platform represents the target platform for the build
@@ -87,6 +89,7 @@ type Input struct {
 	Image string `json:"image,omitempty,omitzero"` // external image reference
 	Stage string `json:"stage,omitempty,omitzero"` // reference to another stage
 	Local string `json:"local,omitempty,omitzero"` // build context name
+	URL   string `json:"url,omitempty,omitzero"`   // HTTP/HTTPS URL for files
 }
 
 // ExportConfig represents the final runtime image configuration
@@ -116,7 +119,7 @@ func (e Exec) Type() string { return "exec" }
 
 // Copy copies files between stages/images
 type Copy struct {
-	From     string      `json:"from,omitempty"`     // source stage/image
+	From     Input       `json:"from"`               // source stage/image/url/local
 	Src      []string    `json:"src"`                // source paths
 	Dest     string      `json:"dest"`               // destination path
 	Chown    string      `json:"chown,omitempty"`    // ownership
@@ -127,6 +130,7 @@ func (c Copy) Type() string { return "copy" }
 
 // Add copies files with URL support and auto-extraction
 type Add struct {
+	From     Input       `json:"from,omitempty"`     // optional source stage/image/url/local
 	Src      []string    `json:"src"`                // source paths/URLs
 	Dest     string      `json:"dest"`               // destination path
 	Chown    string      `json:"chown,omitempty"`    // ownership
@@ -144,7 +148,7 @@ func (s SetEnv) Type() string { return "env" }
 
 // Mount represents additional file system mounts for operations
 type Mount struct {
-	Source string `json:"source"` // stage name or "local:context"
+	Source Input  `json:"source"` // reuse existing Input struct for mount sources
 	Target string `json:"target"` // mount path in container
 }
 
@@ -154,7 +158,23 @@ type FilePattern struct {
 	Exclude []string `json:"exclude,omitempty"` // glob patterns to exclude
 }
 
-// Plan methods for stage management and validation
+// MkFile creates a file at the specified path with given data and mode
+type MkFile struct {
+	Dest string `json:"dest"` // destination path
+	Data []byte `json:"data"` // file contents
+	Mode uint32 `json:"mode"` // file mode (e.g. 0644)
+}
+
+func (m MkFile) Type() string { return "mkfile" }
+
+// BuildContext represents a build context that can be mounted during operations
+type BuildContext struct {
+	Name        string            `json:"name"`         // context name for referencing
+	SourceBlock string            `json:"source_block"` // which block created this context
+	Description string            `json:"description"`  // human-readable description
+	Metadata    map[string]string `json:"metadata"`     // debug annotations
+	FS          fs.FS             `json:"-"`            // the actual filesystem (not serialized)
+}
 
 // AddStage adds a new stage to the specified phase with validation
 func (p *Plan) AddStage(phaseName StagePhase, stageName, stageID string) (*Stage, error) {
@@ -313,6 +333,11 @@ func (p *Plan) getPredecessorPhase(phaseName StagePhase) StagePhase {
 	default:
 		return ""
 	}
+}
+
+// Validate performs comprehensive validation on the plan
+func (p *Plan) Validate() error {
+	return ValidatePlan(p)
 }
 
 // PlanResult contains the result of plan generation along with metadata

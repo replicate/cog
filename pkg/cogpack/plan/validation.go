@@ -2,7 +2,7 @@ package plan
 
 import "fmt"
 
-// ValidatePlan performs basic validation on a generated plan.
+// ValidatePlan performs comprehensive validation on a generated plan.
 // This ensures the plan is well-formed and can be executed.
 func ValidatePlan(p *Plan) error {
 	// Check that we have a base image
@@ -59,6 +59,11 @@ func ValidatePlan(p *Plan) error {
 		}
 	}
 
+	// Validate context references - ensure all referenced contexts exist
+	if err := validateContextReferences(p); err != nil {
+		return fmt.Errorf("context validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -87,5 +92,43 @@ func validateStageInput(p *Plan, stage *Stage) error {
 	}
 
 	// Stage has no input - this might be valid for some cases
+	return nil
+}
+
+// validateContextReferences ensures all referenced contexts exist in the plan
+func validateContextReferences(p *Plan) error {
+	contextRefs := make(map[string]bool)
+	
+	// Collect all context references from operations
+	for _, phase := range append(p.BuildPhases, p.ExportPhases...) {
+		for _, stage := range phase.Stages {
+			for _, op := range stage.Operations {
+				switch o := op.(type) {
+				case Exec:
+					for _, mount := range o.Mounts {
+						if mount.Source.Local != "" {
+							contextRefs[mount.Source.Local] = true
+						}
+					}
+				case Copy:
+					if o.From.Local != "" {
+						contextRefs[o.From.Local] = true
+					}
+				case Add:
+					if o.From.Local != "" {
+						contextRefs[o.From.Local] = true
+					}
+				}
+			}
+		}
+	}
+	
+	// Validate all referenced contexts exist
+	for contextName := range contextRefs {
+		if _, exists := p.Contexts[contextName]; !exists {
+			return fmt.Errorf("context %q referenced but not defined", contextName)
+		}
+	}
+	
 	return nil
 }

@@ -215,7 +215,7 @@ func TestPythonBlock_Plan_NoInstallNeeded(t *testing.T) {
 
 	// Create plan where Python is already present and correct version
 	p := &plan.Plan{
-		BaseImage: baseimg.BaseImage{
+		BaseImage: &baseimg.BaseImage{
 			Build:   "ubuntu:22.04",
 			Runtime: "ubuntu:22.04",
 			Metadata: baseimg.BaseImageMetadata{
@@ -227,7 +227,7 @@ func TestPythonBlock_Plan_NoInstallNeeded(t *testing.T) {
 				},
 			},
 		},
-		Dependencies: map[string]plan.Dependency{
+		Dependencies: map[string]*plan.Dependency{
 			"python": {
 				Name:            "python",
 				ResolvedVersion: "3.12",
@@ -255,7 +255,7 @@ func TestPythonBlock_Plan_InstallNeeded(t *testing.T) {
 
 	// Create plan where Python installation is needed
 	p := &plan.Plan{
-		BaseImage: baseimg.BaseImage{
+		BaseImage: &baseimg.BaseImage{
 			Build:   "ubuntu:22.04",
 			Runtime: "ubuntu:22.04",
 			Metadata: baseimg.BaseImageMetadata{
@@ -264,7 +264,7 @@ func TestPythonBlock_Plan_InstallNeeded(t *testing.T) {
 				},
 			},
 		},
-		Dependencies: map[string]plan.Dependency{
+		Dependencies: map[string]*plan.Dependency{
 			"python": {
 				Name:            "python",
 				ResolvedVersion: "3.12",

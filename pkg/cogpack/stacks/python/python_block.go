@@ -99,7 +99,7 @@ func (b *PythonBlock) Plan(ctx context.Context, src *project.SourceInfo, p *plan
 			Command: fmt.Sprintf("uv python install %s", pythonVersion),
 			Mounts: []plan.Mount{
 				{
-					Source: "image:ghcr.io/astral-sh/uv:latest",
+					Source: plan.Input{Image: "ghcr.io/astral-sh/uv:latest"},
 					Target: "/uv",
 				},
 			},
@@ -120,7 +120,7 @@ func (b *PythonBlock) Plan(ctx context.Context, src *project.SourceInfo, p *plan
 	// Copy Python installation from build stage
 	exportStage.Operations = []plan.Op{
 		plan.Copy{
-			From: "python-install",
+			From: plan.Input{Stage: "python-install"},
 			Src:  []string{"/python"},
 			Dest: "/python",
 		},

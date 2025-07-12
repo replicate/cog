@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"testing"
+	"time"
 
 	"github.com/replicate/cog/pkg/cogpack"
 	"github.com/replicate/cog/pkg/cogpack/builder"
@@ -71,8 +72,28 @@ func TestBuildKitIntegration_BasicModel(t *testing.T) {
 		t.Logf("Current images:\n%s", string(out))
 	}
 
-	// Verify image exists via docker CLI
+	// Give a moment for the image to be fully committed to Docker daemon
+	time.Sleep(100 * time.Millisecond)
+
+	// Try multiple ways to verify the image exists
+	// First try: docker image inspect
 	if err := exec.Command("docker", "image", "inspect", tag).Run(); err != nil {
-		t.Fatalf("image %s not found after build: %v", tag, err)
+		t.Logf("docker image inspect failed: %v", err)
+		
+		// Second try: docker images grep
+		grepCmd := exec.Command("sh", "-c", "docker images | grep cogpack-test")
+		if out, err := grepCmd.Output(); err == nil {
+			t.Logf("Images matching cogpack-test:\n%s", string(out))
+		}
+		
+		// Third try: check if we can run the image
+		runCmd := exec.Command("docker", "run", "--rm", tag, "echo", "test")
+		if err := runCmd.Run(); err != nil {
+			t.Fatalf("image %s is not usable: %v", tag, err)
+		} else {
+			t.Logf("Image %s is runnable even though inspect failed", tag)
+		}
+	} else {
+		t.Logf("Image %s verified successfully", tag)
 	}
 }
