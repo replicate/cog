@@ -20,6 +20,17 @@ func translatePlan(ctx context.Context, p *plan.Plan) (llb.State, map[string]llb
 
 	resolveInput := func(in plan.Input) (llb.State, error) {
 		switch {
+		case in.Phase != "":
+			// Resolve phase to its last stage
+			phaseResult := p.GetPhaseResult(in.Phase)
+			if phaseResult.Stage == "" {
+				return llb.State{}, fmt.Errorf("phase %q has no stages", in.Phase)
+			}
+			s, ok := stageStates[phaseResult.Stage]
+			if !ok {
+				return llb.State{}, fmt.Errorf("phase %q result stage %q not found", in.Phase, phaseResult.Stage)
+			}
+			return s, nil
 		case in.Stage != "":
 			s, ok := stageStates[in.Stage]
 			if !ok {
@@ -56,7 +67,7 @@ func translatePlan(ctx context.Context, p *plan.Plan) (llb.State, map[string]llb
 				}
 			}
 
-			modified, err := applyOps(ctx, base, st, stageStates, platform)
+			modified, err := applyOps(ctx, base, st, p, stageStates, platform)
 			if err != nil {
 				return llb.State{}, nil, fmt.Errorf("stage %s: %w", st.ID, err)
 			}
@@ -77,17 +88,17 @@ func translatePlan(ctx context.Context, p *plan.Plan) (llb.State, map[string]llb
 	return last, stageStates, nil
 }
 
-func applyOps(ctx context.Context, base llb.State, st *plan.Stage, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
+func applyOps(ctx context.Context, base llb.State, st *plan.Stage, p *plan.Plan, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
 	cur := base
 	for _, op := range st.Operations {
 		var err error
 		switch o := op.(type) {
 		case plan.Exec:
-			cur, err = applyExecOp(ctx, cur, o, st, stageStates, platform)
+			cur, err = applyExecOp(ctx, cur, o, st, p, stageStates, platform)
 		case plan.Copy:
-			cur, err = applyCopyOp(ctx, cur, o, stageStates, platform)
+			cur, err = applyCopyOp(ctx, cur, o, p, stageStates, platform)
 		case plan.Add:
-			cur, err = applyAddOp(ctx, cur, o, stageStates, platform)
+			cur, err = applyAddOp(ctx, cur, o, p, stageStates, platform)
 		case plan.SetEnv:
 			cur, err = applySetEnvOp(ctx, cur, o)
 		case plan.MkFile:
@@ -103,16 +114,16 @@ func applyOps(ctx context.Context, base llb.State, st *plan.Stage, stageStates m
 }
 
 // applyMounts converts plan.Mount structs to BuildKit LLB mount options
-func applyMounts(mounts []plan.Mount, stageStates map[string]llb.State, platform ocispec.Platform) ([]llb.RunOption, error) {
+func applyMounts(mounts []plan.Mount, p *plan.Plan, stageStates map[string]llb.State, platform ocispec.Platform) ([]llb.RunOption, error) {
 	var opts []llb.RunOption
 	
 	for _, mount := range mounts {
 		// Validate mount input
-		if err := validateMountInput(mount.Source, stageStates); err != nil {
+		if err := validateMountInput(mount.Source, p, stageStates); err != nil {
 			return nil, fmt.Errorf("invalid mount source: %w", err)
 		}
 		
-		source, err := resolveMountInput(mount.Source, stageStates, platform)
+		source, err := resolveMountInput(mount.Source, p, stageStates, platform)
 		if err != nil {
 			return nil, fmt.Errorf("resolve mount source: %w", err)
 		}
@@ -124,9 +135,12 @@ func applyMounts(mounts []plan.Mount, stageStates map[string]llb.State, platform
 }
 
 // validateMountInput validates that a mount input is correct
-func validateMountInput(input plan.Input, stageStates map[string]llb.State) error {
+func validateMountInput(input plan.Input, p *plan.Plan, stageStates map[string]llb.State) error {
 	// Check that exactly one input type is specified
 	inputCount := 0
+	if input.Phase != "" {
+		inputCount++
+	}
 	if input.Stage != "" {
 		inputCount++
 	}
@@ -138,11 +152,22 @@ func validateMountInput(input plan.Input, stageStates map[string]llb.State) erro
 	}
 	
 	if inputCount == 0 {
-		return fmt.Errorf("mount input must specify stage, image, or local")
+		return fmt.Errorf("mount input must specify phase, stage, image, or local")
 	}
 	
 	if inputCount > 1 {
-		return fmt.Errorf("mount input must specify exactly one of stage, image, or local")
+		return fmt.Errorf("mount input must specify exactly one of phase, stage, image, or local")
+	}
+	
+	// Validate phase reference exists and has stages
+	if input.Phase != "" {
+		phaseResult := p.GetPhaseResult(input.Phase)
+		if phaseResult.Stage == "" {
+			return fmt.Errorf("phase %q has no stages", input.Phase)
+		}
+		if _, ok := stageStates[phaseResult.Stage]; !ok {
+			return fmt.Errorf("phase %q result stage %q does not exist", input.Phase, phaseResult.Stage)
+		}
 	}
 	
 	// Validate stage reference exists
@@ -158,8 +183,19 @@ func validateMountInput(input plan.Input, stageStates map[string]llb.State) erro
 }
 
 // resolveMountInput resolves a plan.Input to an LLB state for mount operations
-func resolveMountInput(in plan.Input, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
+func resolveMountInput(in plan.Input, p *plan.Plan, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
 	switch {
+	case in.Phase != "":
+		// Resolve phase to its last stage
+		phaseResult := p.GetPhaseResult(in.Phase)
+		if phaseResult.Stage == "" {
+			return llb.State{}, fmt.Errorf("phase %q has no stages", in.Phase)
+		}
+		s, ok := stageStates[phaseResult.Stage]
+		if !ok {
+			return llb.State{}, fmt.Errorf("phase %q result stage %q not found", in.Phase, phaseResult.Stage)
+		}
+		return s, nil
 	case in.Stage != "":
 		s, ok := stageStates[in.Stage]
 		if !ok {
@@ -178,14 +214,14 @@ func resolveMountInput(in plan.Input, stageStates map[string]llb.State, platform
 }
 
 // applyExecOp handles Exec operations with mount support
-func applyExecOp(ctx context.Context, base llb.State, exec plan.Exec, st *plan.Stage, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
+func applyExecOp(ctx context.Context, base llb.State, exec plan.Exec, st *plan.Stage, p *plan.Plan, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
 	opts := []llb.RunOption{llb.Shlex(exec.Command)}
 	if st.Dir != "" {
 		opts = append(opts, llb.Dir(st.Dir))
 	}
 	
 	// Apply mounts
-	mountOpts, err := applyMounts(exec.Mounts, stageStates, platform)
+	mountOpts, err := applyMounts(exec.Mounts, p, stageStates, platform)
 	if err != nil {
 		return llb.State{}, err
 	}
@@ -195,8 +231,8 @@ func applyExecOp(ctx context.Context, base llb.State, exec plan.Exec, st *plan.S
 }
 
 // applyCopyOp handles Copy operations
-func applyCopyOp(ctx context.Context, base llb.State, copy plan.Copy, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
-	src, err := resolveMountInput(copy.From, stageStates, platform)
+func applyCopyOp(ctx context.Context, base llb.State, copy plan.Copy, p *plan.Plan, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
+	src, err := resolveMountInput(copy.From, p, stageStates, platform)
 	if err != nil {
 		return llb.State{}, fmt.Errorf("resolve copy source: %w", err)
 	}
@@ -208,10 +244,10 @@ func applyCopyOp(ctx context.Context, base llb.State, copy plan.Copy, stageState
 }
 
 // applyAddOp handles Add operations
-func applyAddOp(ctx context.Context, base llb.State, add plan.Add, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
+func applyAddOp(ctx context.Context, base llb.State, add plan.Add, p *plan.Plan, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
 	if add.From.Stage != "" || add.From.Image != "" || add.From.Local != "" || add.From.URL != "" {
 		// Add with From source - copy from source first
-		src, err := resolveMountInput(add.From, stageStates, platform)
+		src, err := resolveMountInput(add.From, p, stageStates, platform)
 		if err != nil {
 			return llb.State{}, fmt.Errorf("resolve add source: %w", err)
 		}

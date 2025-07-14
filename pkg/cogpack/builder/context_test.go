@@ -65,12 +65,12 @@ func TestNewContextFromFS(t *testing.T) {
 func TestNewWheelContextFS(t *testing.T) {
 	// Test creating wheel context using generic context from temp directory
 	tempDir := t.TempDir()
-	
+
 	// Create a fake wheel file in temp directory
 	wheelFile := filepath.Join(tempDir, "cog-test-1.0.0-py3-none-any.whl")
 	err := os.WriteFile(wheelFile, []byte("fake wheel content"), 0644)
 	require.NoError(t, err)
-	
+
 	// Create context from directory
 	ctx, err := NewContextFromDirectory("wheel-context", tempDir)
 	require.NoError(t, err)
@@ -93,7 +93,7 @@ func TestContextFS_Close(t *testing.T) {
 	tempDir := t.TempDir()
 	dirCtx, err := NewContextFromDirectory("test", tempDir)
 	require.NoError(t, err)
-	
+
 	err = dirCtx.Close()
 	assert.NoError(t, err)
 	assert.DirExists(t, tempDir) // Directory should still exist
@@ -102,15 +102,14 @@ func TestContextFS_Close(t *testing.T) {
 	testFS := fstest.MapFS{
 		"test.txt": &fstest.MapFile{Data: []byte("test"), Mode: 0644},
 	}
-	
+
 	fsCtx, err := NewContextFromFS("test", testFS)
 	require.NoError(t, err)
-	
+
 	tempDir = fsCtx.tempDir
 	assert.DirExists(t, tempDir)
-	
+
 	err = fsCtx.Close()
 	assert.NoError(t, err)
 	assert.NoDirExists(t, tempDir) // Temp directory should be cleaned up
 }
-

@@ -43,6 +43,16 @@ func TestApplyMounts(t *testing.T) {
 	stageStates := map[string]llb.State{
 		"test-stage": llb.Image("ubuntu:20.04", llb.Platform(platform)),
 	}
+	
+	// Create a test plan
+	p := &plan.Plan{
+		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
+		Contexts: map[string]*plan.BuildContext{
+			"wheel-context": {
+				Name: "wheel-context",
+			},
+		},
+	}
 
 	tests := []struct {
 		name    string
@@ -107,7 +117,7 @@ func TestApplyMounts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts, err := applyMounts(tt.mounts, stageStates, platform)
+			opts, err := applyMounts(tt.mounts, p, stageStates, platform)
 			
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -124,6 +134,11 @@ func TestResolveMountInput(t *testing.T) {
 	platform := ocispec.Platform{OS: "linux", Architecture: "amd64"}
 	stageStates := map[string]llb.State{
 		"existing-stage": llb.Image("ubuntu:20.04", llb.Platform(platform)),
+	}
+	
+	// Create a test plan
+	p := &plan.Plan{
+		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
 	}
 
 	tests := []struct {
@@ -160,7 +175,7 @@ func TestResolveMountInput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			state, err := resolveMountInput(tt.input, stageStates, platform)
+			state, err := resolveMountInput(tt.input, p, stageStates, platform)
 			
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -226,6 +241,11 @@ func TestValidateMountInput(t *testing.T) {
 	stageStates := map[string]llb.State{
 		"existing-stage": llb.Image("ubuntu:20.04", llb.Platform(platform)),
 	}
+	
+	// Create a test plan
+	p := &plan.Plan{
+		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
+	}
 
 	tests := []struct {
 		name    string
@@ -252,13 +272,13 @@ func TestValidateMountInput(t *testing.T) {
 			name:    "empty input",
 			input:   plan.Input{},
 			wantErr: true,
-			errMsg:  "mount input must specify stage, image, or local",
+			errMsg:  "mount input must specify phase, stage, image, or local",
 		},
 		{
 			name:    "multiple inputs",
 			input:   plan.Input{Stage: "existing-stage", Image: "ubuntu:20.04"},
 			wantErr: true,
-			errMsg:  "mount input must specify exactly one of stage, image, or local",
+			errMsg:  "mount input must specify exactly one of phase, stage, image, or local",
 		},
 		{
 			name:    "nonexistent stage",
@@ -270,7 +290,7 @@ func TestValidateMountInput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateMountInput(tt.input, stageStates)
+			err := validateMountInput(tt.input, p, stageStates)
 			
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -288,6 +308,16 @@ func TestApplyMounts_WithValidation(t *testing.T) {
 	platform := ocispec.Platform{OS: "linux", Architecture: "amd64"}
 	stageStates := map[string]llb.State{
 		"existing-stage": llb.Image("ubuntu:20.04", llb.Platform(platform)),
+	}
+	
+	// Create a test plan
+	p := &plan.Plan{
+		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
+		Contexts: map[string]*plan.BuildContext{
+			"wheel-context": {
+				Name: "wheel-context",
+			},
+		},
 	}
 
 	tests := []struct {
@@ -330,13 +360,13 @@ func TestApplyMounts_WithValidation(t *testing.T) {
 				},
 			},
 			wantErr: true,
-			errMsg:  "mount input must specify stage, image, or local",
+			errMsg:  "mount input must specify phase, stage, image, or local",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := applyMounts(tt.mounts, stageStates, platform)
+			_, err := applyMounts(tt.mounts, p, stageStates, platform)
 			
 			if tt.wantErr {
 				assert.Error(t, err)

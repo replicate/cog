@@ -13,13 +13,13 @@ import (
 
 // Plan represents the complete build specification that can be executed by a builder
 type Plan struct {
-	Platform     Platform               `json:"platform"`      // linux/amd64
-	Dependencies map[string]*Dependency `json:"dependencies"`  // resolved versions
-	BaseImage    *baseimg.BaseImage     `json:"base_image"`    // build/runtime images
-	BuildPhases  []*Phase               `json:"build_phases"`  // organized build work
-	ExportPhases []*Phase               `json:"export_phases"` // runtime image assembly
-	Export       *ExportConfig          `json:"export"`        // final image config
-	Contexts     map[string]*BuildContext `json:"contexts"`    // build contexts for mounting
+	Platform     Platform                 `json:"platform"`      // linux/amd64
+	Dependencies map[string]*Dependency   `json:"dependencies"`  // resolved versions
+	BaseImage    *baseimg.BaseImage       `json:"base_image"`    // build/runtime images
+	BuildPhases  []*Phase                 `json:"build_phases"`  // organized build work
+	ExportPhases []*Phase                 `json:"export_phases"` // runtime image assembly
+	Export       *ExportConfig            `json:"export"`        // final image config
+	Contexts     map[string]*BuildContext `json:"contexts"`      // build contexts for mounting
 }
 
 // Platform represents the target platform for the build
@@ -86,10 +86,11 @@ type Stage struct {
 
 // Input represents stage or image dependencies
 type Input struct {
-	Image string `json:"image,omitempty,omitzero"` // external image reference
-	Stage string `json:"stage,omitempty,omitzero"` // reference to another stage
-	Local string `json:"local,omitempty,omitzero"` // build context name
-	URL   string `json:"url,omitempty,omitzero"`   // HTTP/HTTPS URL for files
+	Image string     `json:"image,omitempty,omitzero"` // external image reference
+	Stage string     `json:"stage,omitempty,omitzero"` // reference to another stage
+	Local string     `json:"local,omitempty,omitzero"` // build context name
+	URL   string     `json:"url,omitempty,omitzero"`   // HTTP/HTTPS URL for files
+	Phase StagePhase `json:"phase,omitempty,omitzero"` // reference to a phase result
 }
 
 // ExportConfig represents the final runtime image configuration

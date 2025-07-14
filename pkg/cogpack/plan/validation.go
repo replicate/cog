@@ -71,6 +71,18 @@ func ValidatePlan(p *Plan) error {
 func validateStageInput(p *Plan, stage *Stage) error {
 	input := stage.Source
 
+	// Check if input refers to a phase
+	if input.Phase != "" {
+		// Validate the phase exists and has stages
+		phaseResult := p.GetPhaseResult(input.Phase)
+		if phaseResult.Stage == "" {
+			return fmt.Errorf("phase %q has no stages or does not exist", input.Phase)
+		}
+		// Note: We can't validate that the referenced stage exists yet since it might be
+		// defined later in the plan. This will be caught during translation.
+		return nil
+	}
+
 	// Check if input refers to an image
 	if input.Image != "" {
 		// Image inputs are always valid (we assume they exist)
