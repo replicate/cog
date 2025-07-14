@@ -23,11 +23,6 @@ func (b *CogWheelBlock) Dependencies(ctx context.Context, src *project.SourceInf
 }
 
 func (b *CogWheelBlock) Plan(ctx context.Context, src *project.SourceInfo, p *plan.Plan) error {
-	// Initialize contexts map if it doesn't exist
-	if p.Contexts == nil {
-		p.Contexts = make(map[string]*plan.BuildContext)
-	}
-
 	// Add wheel context to plan
 	p.Contexts["wheel-context"] = &plan.BuildContext{
 		Name:        "wheel-context",

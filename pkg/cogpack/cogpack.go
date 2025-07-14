@@ -33,6 +33,15 @@ func GeneratePlan(ctx context.Context, src *project.SourceInfo) (*plan.PlanResul
 		Dependencies: make(map[string]*plan.Dependency),
 		BuildPhases:  []*plan.Phase{},
 		ExportPhases: []*plan.Phase{},
+		Contexts:     make(map[string]*plan.BuildContext),
+	}
+
+	p.Contexts["context"] = &plan.BuildContext{
+		Name:        "context",
+		SourceBlock: "context",
+		Description: "Build context",
+		Metadata:    map[string]string{},
+		FS:          src.FS,
 	}
 
 	// 2. Select stack (first match wins)

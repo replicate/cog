@@ -35,8 +35,8 @@ func (b *BaseImageBlock) Plan(ctx context.Context, src *project.SourceInfo, plan
 
 	// Use the build base image
 	buildStage.Source = p.Input{Image: plan.BaseImage.Build}
-	buildStage.Operations = []p.Op{} // No operations needed for base
-	buildStage.Provides = []string{"build-base"}
+	// buildStage.Operations = []p.Op{} // No operations needed for base
+	// buildStage.Provides = []string{"build-base"}
 
 	// Create the export base stage for runtime image
 	exportStage, err := plan.AddStage(p.ExportPhaseBase, "Runtime Base", "runtime-base")
@@ -46,8 +46,8 @@ func (b *BaseImageBlock) Plan(ctx context.Context, src *project.SourceInfo, plan
 
 	// Use the runtime base image
 	exportStage.Source = p.Input{Image: plan.BaseImage.Runtime}
-	exportStage.Operations = []p.Op{} // r8.im images already have what we need
-	exportStage.Provides = []string{"runtime-base"}
+	// exportStage.Operations = []p.Op{} // r8.im images already have what we need
+	// exportStage.Provides = []string{"runtime-base"}
 
 	return nil
 }
