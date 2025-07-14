@@ -440,6 +440,7 @@ func (g *StandardGenerator) installCog() (string, error) {
 	}
 
 	if g.Config.Build.CogRuntime {
+		// We need fast-* compliant Python version to reconstruct coglet venv PYTHONPATH
 		if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
 			return "", fmt.Errorf("Python version must be <major>.<minor>")
 		}
@@ -455,8 +456,11 @@ func (g *StandardGenerator) installCog() (string, error) {
 		return strings.Join(cmds, "\n"), nil
 	}
 
-	// FIXME: add doc URL & enable this before new release
-	// console.Warnf("A new Cog runtime implementation is avaible, set build.cog_runtime = true in cog.yaml to try it out.")
+	// cog-runtime does not support training yet
+	if g.Config.Train == "" {
+		console.Warnf("Major Cog runtime upgrade available. Opt in now by setting build.cog_runtime: true in cog.yaml.")
+		console.Warnf("More: https://replicate.com/changelog/2025-07-21-cog-runtime")
+	}
 	data, filename, err := ReadWheelFile()
 	if err != nil {
 		return "", err
