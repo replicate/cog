@@ -2,13 +2,11 @@ package python
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/replicate/cog/pkg/cogpack/baseimg"
 	"github.com/replicate/cog/pkg/cogpack/plan"
 	"github.com/replicate/cog/pkg/cogpack/project"
 	"github.com/replicate/cog/pkg/cogpack/stacks/commonblocks"
-	"github.com/replicate/cog/pkg/util"
 )
 
 // PythonStack orchestrates builds for Python-based projects
@@ -48,7 +46,7 @@ func (s *PythonStack) Detect(ctx context.Context, src *project.SourceInfo) (bool
 }
 
 // Plan orchestrates the entire build process for Python projects
-func (s *PythonStack) Plan(ctx context.Context, src *project.SourceInfo, p *plan.Plan) error {
+func (s *PythonStack) Plan(ctx context.Context, src *project.SourceInfo, composer *plan.PlanComposer) error {
 	// Phase 1: Compose blocks based on project analysis
 	blocks := plan.DetectBlocks(ctx, src, []plan.Block{
 		&PythonBlock{},
@@ -78,7 +76,7 @@ func (s *PythonStack) Plan(ctx context.Context, src *project.SourceInfo, p *plan
 	if err != nil {
 		return err
 	}
-	p.Dependencies = resolved
+	composer.SetDependencies(resolved)
 
 	mappedResolved := make(map[string]string)
 	for _, dep := range resolved {
@@ -90,20 +88,17 @@ func (s *PythonStack) Plan(ctx context.Context, src *project.SourceInfo, p *plan
 	if err != nil {
 		return err
 	}
-	p.BaseImage = baseImage
+	composer.SetBaseImage(baseImage)
 
 	// Phase 5: Let active blocks contribute to the plan
 	for _, block := range blocks {
-		if err := block.Plan(ctx, src, p); err != nil {
+		if err := block.Plan(ctx, src, composer); err != nil {
 			return err
 		}
 	}
 
-	fmt.Println("====Plan====")
-	util.JSONPrettyPrint(p)
-
 	// Phase 6: Set export configuration for runtime image
-	p.Export = &plan.ExportConfig{
+	composer.SetExportConfig(&plan.ExportConfig{
 		Entrypoint:   []string{"python", "-m", "cog.server.http"},
 		Cmd:          []string{},
 		WorkingDir:   "/src",
@@ -111,7 +106,7 @@ func (s *PythonStack) Plan(ctx context.Context, src *project.SourceInfo, p *plan
 		Labels: map[string]string{
 			"org.opencontainers.image.title": "Cog Model",
 		},
-	}
+	})
 
 	return nil
 }

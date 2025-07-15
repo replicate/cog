@@ -26,26 +26,26 @@ func (b *BaseImageBlock) Dependencies(ctx context.Context, src *project.SourceIn
 }
 
 // Plan establishes both build and export base image stages
-func (b *BaseImageBlock) Plan(ctx context.Context, src *project.SourceInfo, plan *p.Plan) error {
+func (b *BaseImageBlock) Plan(ctx context.Context, src *project.SourceInfo, composer *p.PlanComposer) error {
 	// Create the build base stage
-	buildStage, err := plan.AddStage(p.PhaseBase, "Build Base", "build-base")
+	_, err := composer.AddStage(p.PhaseBase, "build-base", p.WithName("Build Base"), p.WithSource(p.FromImage(composer.GetBaseImage().Build)))
 	if err != nil {
 		return err
 	}
 
 	// Use the build base image
-	buildStage.Source = p.Input{Image: plan.BaseImage.Build}
+	// buildStage.Source = p.Input{Image: composer.GetBaseImage().Build}
 	// buildStage.Operations = []p.Op{} // No operations needed for base
 	// buildStage.Provides = []string{"build-base"}
 
 	// Create the export base stage for runtime image
-	exportStage, err := plan.AddStage(p.ExportPhaseBase, "Runtime Base", "runtime-base")
+	_, err = composer.AddStage(p.ExportPhaseBase, "runtime-base", p.WithName("Runtime Base"), p.WithSource(p.FromImage(composer.GetBaseImage().Runtime)))
 	if err != nil {
 		return err
 	}
 
 	// Use the runtime base image
-	exportStage.Source = p.Input{Image: plan.BaseImage.Runtime}
+	// exportStage.Source = p.Input{Image: composer.GetBaseImage().Runtime}
 	// exportStage.Operations = []p.Op{} // r8.im images already have what we need
 	// exportStage.Provides = []string{"runtime-base"}
 

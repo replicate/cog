@@ -5,6 +5,15 @@ import (
 	"fmt"
 )
 
+// Dependency represents a resolved dependency constraint
+type Dependency struct {
+	Name             string `json:"name"`              // e.g., "python", "torch"
+	Provider         string `json:"provider"`          // block that requested it
+	RequestedVersion string `json:"requested_version"` // original constraint
+	ResolvedVersion  string `json:"resolved_version"`  // final resolved version
+	Source           string `json:"source"`            // where it came from
+}
+
 // ResolveDependencies handles all dependency logic: deduplication, conflict resolution, and version resolution.
 // It takes a slice of dependency requirements and returns a resolved map.
 func ResolveDependencies(ctx context.Context, deps []*Dependency) (map[string]*Dependency, error) {

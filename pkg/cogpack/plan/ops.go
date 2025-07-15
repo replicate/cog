@@ -50,3 +50,9 @@ type MkFile struct {
 }
 
 func (m MkFile) Type() string { return "mkfile" }
+
+// FilePattern represents include/exclude patterns for file operations
+type FilePattern struct {
+	Include []string `json:"include,omitempty"` // glob patterns to include
+	Exclude []string `json:"exclude,omitempty"` // glob patterns to exclude
+}

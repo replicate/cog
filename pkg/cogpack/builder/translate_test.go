@@ -9,30 +9,23 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/replicate/cog/pkg/cogpack/baseimg"
 	"github.com/replicate/cog/pkg/cogpack/plan"
 )
 
 func TestTranslatePlan_Basic(t *testing.T) {
 	p := &plan.Plan{
 		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
-		BaseImage: &baseimg.BaseImage{
-			Build:   "ubuntu:22.04",
-			Runtime: "ubuntu:22.04",
-			Metadata: baseimg.BaseImageMetadata{
-				Packages: map[string]baseimg.Package{},
+		BuildStages: []*plan.Stage{
+			{
+				ID:         "base",
+				Name:       "Base",
+				Source:     plan.Input{Image: "ubuntu:22.04"},
+				Operations: []plan.Op{plan.Exec{Command: "echo hello"}},
 			},
 		},
 	}
 
-	stg, err := p.AddStage(plan.PhaseBase, "base", "base")
-	if err != nil {
-		t.Fatalf("AddStage: %v", err)
-	}
-	stg.Source = plan.Input{Image: "ubuntu:22.04"}
-	stg.Operations = []plan.Op{plan.Exec{Command: "echo hello"}}
-
-	_, _, err = translatePlan(context.Background(), p)
+	_, _, err := translatePlan(t.Context(), p)
 	if err != nil {
 		t.Fatalf("translatePlan failed: %v", err)
 	}
@@ -43,7 +36,7 @@ func TestApplyMounts(t *testing.T) {
 	stageStates := map[string]llb.State{
 		"test-stage": llb.Image("ubuntu:20.04", llb.Platform(platform)),
 	}
-	
+
 	// Create a test plan
 	p := &plan.Plan{
 		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
@@ -118,12 +111,12 @@ func TestApplyMounts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			opts, err := applyMounts(tt.mounts, p, stageStates, platform)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 				return
 			}
-			
+
 			require.NoError(t, err)
 			assert.Len(t, opts, len(tt.mounts))
 		})
@@ -135,7 +128,7 @@ func TestResolveMountInput(t *testing.T) {
 	stageStates := map[string]llb.State{
 		"existing-stage": llb.Image("ubuntu:20.04", llb.Platform(platform)),
 	}
-	
+
 	// Create a test plan
 	p := &plan.Plan{
 		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
@@ -176,12 +169,12 @@ func TestResolveMountInput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			state, err := resolveMountInput(tt.input, p, stageStates, platform)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 				return
 			}
-			
+
 			require.NoError(t, err)
 			assert.NotNil(t, state)
 		})
@@ -194,39 +187,27 @@ func TestTranslatePlan_WithMounts(t *testing.T) {
 	// Create a test plan with mount operations
 	p := &plan.Plan{
 		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
-		BaseImage: &baseimg.BaseImage{
-			Build:   "ubuntu:20.04",
-			Runtime: "ubuntu:20.04",
-			Metadata: baseimg.BaseImageMetadata{
-				Packages: map[string]baseimg.Package{},
-			},
-		},
-		BuildPhases: []*plan.Phase{
+		BuildStages: []*plan.Stage{
 			{
-				Name: plan.PhaseAppDeps,
-				Stages: []*plan.Stage{
-					{
-						ID:   "test-stage",
-						Name: "Test Stage",
-						Source: plan.Input{
-							Image: "ubuntu:20.04",
-						},
-						Operations: []plan.Op{
-							plan.Exec{
-								Command: "echo 'testing mounts'",
-								Mounts: []plan.Mount{
-									{
-										Source: plan.Input{Local: "wheel-context"},
-										Target: "/mnt/wheel",
-									},
-								},
+				ID:   "test-stage",
+				Name: "Test Stage",
+				Source: plan.Input{
+					Image: "ubuntu:20.04",
+				},
+				Operations: []plan.Op{
+					plan.Exec{
+						Command: "echo 'testing mounts'",
+						Mounts: []plan.Mount{
+							{
+								Source: plan.Input{Local: "wheel-context"},
+								Target: "/mnt/wheel",
 							},
 						},
 					},
 				},
 			},
 		},
-		ExportPhases: []*plan.Phase{},
+		ExportStages: []*plan.Stage{},
 	}
 
 	// Test that translation succeeds with mounts
@@ -241,7 +222,7 @@ func TestValidateMountInput(t *testing.T) {
 	stageStates := map[string]llb.State{
 		"existing-stage": llb.Image("ubuntu:20.04", llb.Platform(platform)),
 	}
-	
+
 	// Create a test plan
 	p := &plan.Plan{
 		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
@@ -291,7 +272,7 @@ func TestValidateMountInput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validateMountInput(tt.input, p, stageStates)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 				if tt.errMsg != "" {
@@ -309,7 +290,7 @@ func TestApplyMounts_WithValidation(t *testing.T) {
 	stageStates := map[string]llb.State{
 		"existing-stage": llb.Image("ubuntu:20.04", llb.Platform(platform)),
 	}
-	
+
 	// Create a test plan
 	p := &plan.Plan{
 		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
@@ -367,7 +348,7 @@ func TestApplyMounts_WithValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := applyMounts(tt.mounts, p, stageStates, platform)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 				if tt.errMsg != "" {

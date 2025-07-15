@@ -6,7 +6,6 @@ import (
 
 	"github.com/replicate/cog/pkg/cogpack/plan"
 	"github.com/replicate/cog/pkg/cogpack/project"
-	"github.com/replicate/cog/pkg/util"
 )
 
 // UvBlock handles uv-based Python dependency management
@@ -23,13 +22,13 @@ func (b *UvBlock) Dependencies(ctx context.Context, src *project.SourceInfo) ([]
 	return nil, nil
 }
 
-func (b *UvBlock) Plan(ctx context.Context, src *project.SourceInfo, p *plan.Plan) error {
-	buildStage, err := p.AddStage(plan.PhaseAppDeps, "Init venv", "uv-venv")
+func (b *UvBlock) Plan(ctx context.Context, src *project.SourceInfo, composer *plan.PlanComposer) error {
+	buildStage, err := composer.AddStage(plan.PhaseAppDeps, "uv-venv", plan.WithName("Init venv"))
 	if err != nil {
 		return err
 	}
 
-	pythonRuntime, ok := p.Dependencies["python"]
+	pythonRuntime, ok := composer.GetDependency("python")
 	if !ok {
 		return fmt.Errorf("python dependency not found")
 	}
@@ -39,10 +38,6 @@ func (b *UvBlock) Plan(ctx context.Context, src *project.SourceInfo, p *plan.Pla
 			Command: fmt.Sprintf("uv venv /venv --python %s", pythonRuntime.ResolvedVersion),
 		},
 	}
-
-	buildStage.Source = p.GetPhaseResult(plan.PhaseBase)
-
-	util.JSONPrettyPrint(buildStage)
 
 	return nil
 }

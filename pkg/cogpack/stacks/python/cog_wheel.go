@@ -22,9 +22,9 @@ func (b *CogWheelBlock) Dependencies(ctx context.Context, src *project.SourceInf
 	return nil, nil
 }
 
-func (b *CogWheelBlock) Plan(ctx context.Context, src *project.SourceInfo, p *plan.Plan) error {
+func (b *CogWheelBlock) Plan(ctx context.Context, src *project.SourceInfo, composer *plan.PlanComposer) error {
 	// Add wheel context to plan
-	p.Contexts["wheel-context"] = &plan.BuildContext{
+	composer.AddContext("wheel-context", &plan.BuildContext{
 		Name:        "wheel-context",
 		SourceBlock: "cog-wheel",
 		Description: "Cog wheel file for installation",
@@ -32,9 +32,9 @@ func (b *CogWheelBlock) Plan(ctx context.Context, src *project.SourceInfo, p *pl
 			"type": "embedded-wheel",
 		},
 		FS: dockerfile.CogEmbed,
-	}
+	})
 
-	stage, err := p.AddStage(plan.PhaseAppDeps, "cog-wheel", "cog-wheel")
+	stage, err := composer.AddStage(plan.PhaseAppDeps, "cog-wheel", plan.WithName("cog-wheel"))
 	if err != nil {
 		return err
 	}

@@ -20,17 +20,6 @@ func translatePlan(ctx context.Context, p *plan.Plan) (llb.State, map[string]llb
 
 	resolveInput := func(in plan.Input) (llb.State, error) {
 		switch {
-		case in.Phase != "":
-			// Resolve phase to its last stage
-			phaseResult := p.GetPhaseResult(in.Phase)
-			if phaseResult.Stage == "" {
-				return llb.State{}, fmt.Errorf("phase %q has no stages", in.Phase)
-			}
-			s, ok := stageStates[phaseResult.Stage]
-			if !ok {
-				return llb.State{}, fmt.Errorf("phase %q result stage %q not found", in.Phase, phaseResult.Stage)
-			}
-			return s, nil
 		case in.Stage != "":
 			s, ok := stageStates[in.Stage]
 			if !ok {
@@ -43,42 +32,42 @@ func translatePlan(ctx context.Context, p *plan.Plan) (llb.State, map[string]llb
 			return llb.Local(in.Local), nil
 		case in.URL != "":
 			return llb.HTTP(in.URL), nil
-		default:
+		case in.Scratch:
 			return llb.Scratch(), nil
+		default:
+			return llb.State{}, fmt.Errorf("invalid input: %v", in)
 		}
 	}
 
-	phases := append([]*plan.Phase{}, p.BuildPhases...)
-	phases = append(phases, p.ExportPhases...)
+	stages := append([]*plan.Stage{}, p.BuildStages...)
+	stages = append(stages, p.ExportStages...)
 
 	var last llb.State
 	hasStage := false
 
-	for _, ph := range phases {
-		for _, st := range ph.Stages {
-			base, err := resolveInput(st.Source)
-			if err != nil {
-				return llb.State{}, nil, err
-			}
-
-			for _, env := range st.Env {
-				if eq := strings.Index(env, "="); eq != -1 {
-					base = base.AddEnv(env[:eq], env[eq+1:])
-				}
-			}
-
-			modified, err := applyOps(ctx, base, st, p, stageStates, platform)
-			if err != nil {
-				return llb.State{}, nil, fmt.Errorf("stage %s: %w", st.ID, err)
-			}
-
-			diff := llb.Diff(base, modified)
-			final := base.File(llb.Copy(diff, "/", "/"), llb.WithCustomNamef("layer:%s", st.ID))
-
-			stageStates[st.ID] = final
-			last = final
-			hasStage = true
+	for _, st := range stages {
+		base, err := resolveInput(st.Source)
+		if err != nil {
+			return llb.State{}, nil, err
 		}
+
+		for _, env := range st.Env {
+			if eq := strings.Index(env, "="); eq != -1 {
+				base = base.AddEnv(env[:eq], env[eq+1:])
+			}
+		}
+
+		modified, err := applyOps(ctx, base, st, p, stageStates, platform)
+		if err != nil {
+			return llb.State{}, nil, fmt.Errorf("stage %s: %w", st.ID, err)
+		}
+
+		diff := llb.Diff(base, modified)
+		final := base.File(llb.Copy(diff, "/", "/"), llb.WithCustomNamef("layer:%s", st.ID))
+
+		stageStates[st.ID] = final
+		last = final
+		hasStage = true
 	}
 
 	if !hasStage {
@@ -116,21 +105,21 @@ func applyOps(ctx context.Context, base llb.State, st *plan.Stage, p *plan.Plan,
 // applyMounts converts plan.Mount structs to BuildKit LLB mount options
 func applyMounts(mounts []plan.Mount, p *plan.Plan, stageStates map[string]llb.State, platform ocispec.Platform) ([]llb.RunOption, error) {
 	var opts []llb.RunOption
-	
+
 	for _, mount := range mounts {
 		// Validate mount input
 		if err := validateMountInput(mount.Source, p, stageStates); err != nil {
 			return nil, fmt.Errorf("invalid mount source: %w", err)
 		}
-		
+
 		source, err := resolveMountInput(mount.Source, p, stageStates, platform)
 		if err != nil {
 			return nil, fmt.Errorf("resolve mount source: %w", err)
 		}
-		
+
 		opts = append(opts, llb.AddMount(mount.Target, source))
 	}
-	
+
 	return opts, nil
 }
 
@@ -150,35 +139,36 @@ func validateMountInput(input plan.Input, p *plan.Plan, stageStates map[string]l
 	if input.Local != "" {
 		inputCount++
 	}
-	
+
 	if inputCount == 0 {
 		return fmt.Errorf("mount input must specify phase, stage, image, or local")
 	}
-	
+
 	if inputCount > 1 {
 		return fmt.Errorf("mount input must specify exactly one of phase, stage, image, or local")
 	}
-	
+
 	// Validate phase reference exists and has stages
 	if input.Phase != "" {
-		phaseResult := p.GetPhaseResult(input.Phase)
-		if phaseResult.Stage == "" {
-			return fmt.Errorf("phase %q has no stages", input.Phase)
-		}
-		if _, ok := stageStates[phaseResult.Stage]; !ok {
-			return fmt.Errorf("phase %q result stage %q does not exist", input.Phase, phaseResult.Stage)
-		}
+		return fmt.Errorf("phase input not supported")
+		// phaseResult := p.GetPhaseResult(input.Phase)
+		// if phaseResult.Stage == "" {
+		// 	return fmt.Errorf("phase %q has no stages", input.Phase)
+		// }
+		// if _, ok := stageStates[phaseResult.Stage]; !ok {
+		// 	return fmt.Errorf("phase %q result stage %q does not exist", input.Phase, phaseResult.Stage)
+		// }
 	}
-	
+
 	// Validate stage reference exists
 	if input.Stage != "" {
 		if _, ok := stageStates[input.Stage]; !ok {
 			return fmt.Errorf("stage %q does not exist", input.Stage)
 		}
 	}
-	
+
 	// Image and Local validations are implicit since we already checked they're not empty strings above
-	
+
 	return nil
 }
 
@@ -186,16 +176,17 @@ func validateMountInput(input plan.Input, p *plan.Plan, stageStates map[string]l
 func resolveMountInput(in plan.Input, p *plan.Plan, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
 	switch {
 	case in.Phase != "":
-		// Resolve phase to its last stage
-		phaseResult := p.GetPhaseResult(in.Phase)
-		if phaseResult.Stage == "" {
-			return llb.State{}, fmt.Errorf("phase %q has no stages", in.Phase)
-		}
-		s, ok := stageStates[phaseResult.Stage]
-		if !ok {
-			return llb.State{}, fmt.Errorf("phase %q result stage %q not found", in.Phase, phaseResult.Stage)
-		}
-		return s, nil
+		return llb.State{}, fmt.Errorf("phase input not supported")
+		// // Resolve phase to its last stage
+		// phaseResult := p.GetPhaseResult(in.Phase)
+		// if phaseResult.Stage == "" {
+		// 	return llb.State{}, fmt.Errorf("phase %q has no stages", in.Phase)
+		// }
+		// s, ok := stageStates[phaseResult.Stage]
+		// if !ok {
+		// 	return llb.State{}, fmt.Errorf("phase %q result stage %q not found", in.Phase, phaseResult.Stage)
+		// }
+		// return s, nil
 	case in.Stage != "":
 		s, ok := stageStates[in.Stage]
 		if !ok {
@@ -219,14 +210,14 @@ func applyExecOp(ctx context.Context, base llb.State, exec plan.Exec, st *plan.S
 	if st.Dir != "" {
 		opts = append(opts, llb.Dir(st.Dir))
 	}
-	
+
 	// Apply mounts
 	mountOpts, err := applyMounts(exec.Mounts, p, stageStates, platform)
 	if err != nil {
 		return llb.State{}, err
 	}
 	opts = append(opts, mountOpts...)
-	
+
 	return base.Run(opts...).Root(), nil
 }
 
@@ -236,7 +227,7 @@ func applyCopyOp(ctx context.Context, base llb.State, copy plan.Copy, p *plan.Pl
 	if err != nil {
 		return llb.State{}, fmt.Errorf("resolve copy source: %w", err)
 	}
-	
+
 	for _, sp := range copy.Src {
 		base = base.File(llb.Copy(src, sp, copy.Dest))
 	}
@@ -251,13 +242,13 @@ func applyAddOp(ctx context.Context, base llb.State, add plan.Add, p *plan.Plan,
 		if err != nil {
 			return llb.State{}, fmt.Errorf("resolve add source: %w", err)
 		}
-		
+
 		for _, sp := range add.Src {
 			base = base.File(llb.Copy(src, sp, add.Dest))
 		}
 		return base, nil
 	}
-	
+
 	// Traditional Add with URLs in Src
 	for _, sp := range add.Src {
 		base = base.File(llb.Copy(llb.HTTP(sp), "download.bin", add.Dest))

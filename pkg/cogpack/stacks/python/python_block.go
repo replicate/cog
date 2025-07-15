@@ -62,14 +62,14 @@ func (b *PythonBlock) Dependencies(ctx context.Context, src *project.SourceInfo)
 }
 
 // Plan creates installation stages if Python is not available or wrong version
-func (b *PythonBlock) Plan(ctx context.Context, src *project.SourceInfo, p *plan.Plan) error {
+func (b *PythonBlock) Plan(ctx context.Context, src *project.SourceInfo, composer *plan.PlanComposer) error {
 	// Check if installation is needed
-	if !b.needsInstallation(p) {
+	if !b.needsInstallation(composer) {
 		return nil
 	}
 
 	// Get the resolved Python version
-	pythonDep, exists := p.Dependencies["python"]
+	pythonDep, exists := composer.GetDependency("python")
 	if !exists {
 		return fmt.Errorf("python dependency not found in resolved dependencies")
 	}
@@ -77,13 +77,13 @@ func (b *PythonBlock) Plan(ctx context.Context, src *project.SourceInfo, p *plan
 	pythonVersion := pythonDep.ResolvedVersion
 
 	// Create build stage for Python installation
-	buildStage, err := p.AddStage(plan.PhaseRuntime, "Install Python", "python-install")
+	buildStage, err := composer.AddStage(plan.PhaseRuntime, "python-install", plan.WithName("Install Python"), plan.WithSource(plan.FromImage(composer.GetBaseImage().Build)))
 	if err != nil {
 		return fmt.Errorf("failed to add python install stage: %w", err)
 	}
 
 	// Set source to build image
-	buildStage.Source = plan.Input{Image: p.BaseImage.Build}
+	// buildStage.Source = plan.Input{Image: p.BaseImage.Build}
 
 	// Set UV environment variables
 	buildStage.Env = []string{
@@ -109,13 +109,13 @@ func (b *PythonBlock) Plan(ctx context.Context, src *project.SourceInfo, p *plan
 	buildStage.Provides = []string{"python"}
 
 	// Create export stage for Python
-	exportStage, err := p.AddStage(plan.ExportPhaseRuntime, "Export Python", "python-export")
+	exportStage, err := composer.AddStage(plan.ExportPhaseRuntime, "python-export", plan.WithName("Export Python"))
 	if err != nil {
 		return fmt.Errorf("failed to add python export stage: %w", err)
 	}
 
 	// Set source to runtime image
-	exportStage.Source = plan.Input{Image: p.BaseImage.Runtime}
+	// exportStage.Source = plan.Input{Image: p.BaseImage.Runtime}
 
 	// Copy Python installation from build stage
 	exportStage.Operations = []plan.Op{
@@ -173,9 +173,9 @@ func (b *PythonBlock) detectPythonVersion(src *project.SourceInfo) (string, erro
 }
 
 // needsInstallation checks if Python installation is needed
-func (b *PythonBlock) needsInstallation(p *plan.Plan) bool {
+func (b *PythonBlock) needsInstallation(composer *plan.PlanComposer) bool {
 	// Get required Python version
-	pythonDep, exists := p.Dependencies["python"]
+	pythonDep, exists := composer.GetDependency("python")
 	if !exists {
 		return false
 	}
@@ -183,7 +183,8 @@ func (b *PythonBlock) needsInstallation(p *plan.Plan) bool {
 	requiredVersion := pythonDep.ResolvedVersion
 
 	// Check if base image has Python
-	if pythonPkg, exists := p.BaseImage.Metadata.Packages["python"]; exists {
+	baseImage := composer.GetBaseImage()
+	if pythonPkg, exists := baseImage.Metadata.Packages["python"]; exists {
 		// Check if versions are compatible
 		return !b.versionsCompatible(pythonPkg.Version, requiredVersion)
 	}

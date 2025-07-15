@@ -24,25 +24,21 @@ func NewSourceInfo(rootPath string, config *config.Config) (*project.SourceInfo,
 // GeneratePlan generates a complete build plan for the given project.
 // This is the main entry point for the cogpack system.
 func GeneratePlan(ctx context.Context, src *project.SourceInfo) (*plan.PlanResult, error) {
-	// 1. Initialize plan with platform
-	p := &plan.Plan{
-		Platform: plan.Platform{
-			OS:   "linux",
-			Arch: "amd64",
-		},
-		Dependencies: make(map[string]*plan.Dependency),
-		BuildPhases:  []*plan.Phase{},
-		ExportPhases: []*plan.Phase{},
-		Contexts:     make(map[string]*plan.BuildContext),
-	}
+	// 1. Initialize plan composer with platform
+	composer := plan.NewPlanComposer()
+	composer.SetPlatform(plan.Platform{
+		OS:   "linux",
+		Arch: "amd64",
+	})
 
-	p.Contexts["context"] = &plan.BuildContext{
+	// Add default build context
+	composer.AddContext("context", &plan.BuildContext{
 		Name:        "context",
 		SourceBlock: "context",
 		Description: "Build context",
 		Metadata:    map[string]string{},
 		FS:          src.FS,
-	}
+	})
 
 	// 2. Select stack (first match wins)
 	stack, err := stacks.SelectStack(ctx, src)
@@ -51,20 +47,28 @@ func GeneratePlan(ctx context.Context, src *project.SourceInfo) (*plan.PlanResul
 	}
 
 	// 3. Let stack orchestrate the build
-	if err := stack.Plan(ctx, src, p); err != nil {
+	if err := stack.Plan(ctx, src, composer); err != nil {
 		return nil, fmt.Errorf("stack %s planning failed: %w", stack.Name(), err)
 	}
 
-	// 4. Validate plan
-	if err := plan.ValidatePlan(p); err != nil {
-		return nil, fmt.Errorf("plan validation failed: %w", err)
+	// 4. Compose the final plan
+	p, err := composer.Compose()
+	if err != nil {
+		return nil, fmt.Errorf("plan composition failed: %w", err)
 	}
 
-	// 5. Create result with metadata
+	fmt.Println("====Plan====")
+	util.JSONPrettyPrint(p)
+
+	// // 5. Validate plan
+	// if err := plan.ValidatePlan(p); err != nil {
+	// 	return nil, fmt.Errorf("plan validation failed: %w", err)
+	// }
+
+	// 6. Create result with metadata
 	metadata := &plan.PlanMetadata{
-		Stack:     stack.Name(),
-		BaseImage: p.BaseImage.Build,
-		Version:   "1.0",
+		Stack:   stack.Name(),
+		Version: "1.0",
 	}
 
 	return &plan.PlanResult{

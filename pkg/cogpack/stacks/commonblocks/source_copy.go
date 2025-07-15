@@ -26,15 +26,15 @@ func (b *SourceCopyBlock) Dependencies(ctx context.Context, src *project.SourceI
 }
 
 // Plan copies the source code into the runtime image
-func (b *SourceCopyBlock) Plan(ctx context.Context, src *project.SourceInfo, p *plan.Plan) error {
+func (b *SourceCopyBlock) Plan(ctx context.Context, src *project.SourceInfo, c *plan.PlanComposer) error {
 	// Create export stage to copy source to runtime image
-	stage, err := p.AddStage(plan.ExportPhaseApp, "Copy Source", "copy-source")
+	stage, err := c.AddStage(plan.ExportPhaseApp, "copy-source", plan.WithName("Copy Source"))
 	if err != nil {
 		return err
 	}
 
 	// Build from the runtime base
-	stage.Source = p.GetPhaseResult(plan.ExportPhaseBase)
+	// stage.Source = p.GetPhaseResult(plan.ExportPhaseBase)
 
 	// Copy source files to /src directory
 	stage.Dir = "/src"
@@ -58,14 +58,14 @@ func (b *SourceCopyBlock) Plan(ctx context.Context, src *project.SourceInfo, p *
 	}
 
 	// Set the final export configuration for the runtime image
-	p.Export = &plan.ExportConfig{
+	c.SetExportConfig(&plan.ExportConfig{
 		Entrypoint: []string{"python", "-m", "cog.server.http"},
 		WorkingDir: "/src",
 		Labels: map[string]string{
 			"org.cogmodel.config_schema": "1.0",
 			"org.cogmodel.cog_version":   "0.9.0",
 		},
-	}
+	})
 
 	stage.Provides = []string{"model-source"}
 
