@@ -19,5 +19,5 @@ type Stack interface {
 	// Plan orchestrates the entire build process for this stack type.
 	// This includes block composition, dependency collection/resolution,
 	// and plan generation.
-	Plan(ctx context.Context, src *project.SourceInfo, composer *PlanComposer) error
+	Plan(ctx context.Context, src *project.SourceInfo, composer *Composer) error
 }

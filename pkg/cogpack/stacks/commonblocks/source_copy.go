@@ -26,7 +26,7 @@ func (b *SourceCopyBlock) Dependencies(ctx context.Context, src *project.SourceI
 }
 
 // Plan copies the source code into the runtime image
-func (b *SourceCopyBlock) Plan(ctx context.Context, src *project.SourceInfo, c *plan.PlanComposer) error {
+func (b *SourceCopyBlock) Plan(ctx context.Context, src *project.SourceInfo, c *plan.Composer) error {
 	// Create export stage to copy source to runtime image
 	stage, err := c.AddStage(plan.ExportPhaseApp, "copy-source", plan.WithName("Copy Source"))
 	if err != nil {

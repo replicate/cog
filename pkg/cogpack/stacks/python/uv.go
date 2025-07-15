@@ -22,7 +22,7 @@ func (b *UvBlock) Dependencies(ctx context.Context, src *project.SourceInfo) ([]
 	return nil, nil
 }
 
-func (b *UvBlock) Plan(ctx context.Context, src *project.SourceInfo, composer *plan.PlanComposer) error {
+func (b *UvBlock) Plan(ctx context.Context, src *project.SourceInfo, composer *plan.Composer) error {
 	buildStage, err := composer.AddStage(plan.PhaseAppDeps, "uv-venv", plan.WithName("Init venv"))
 	if err != nil {
 		return err

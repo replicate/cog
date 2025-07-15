@@ -26,7 +26,7 @@ func (b *BaseImageBlock) Dependencies(ctx context.Context, src *project.SourceIn
 }
 
 // Plan establishes both build and export base image stages
-func (b *BaseImageBlock) Plan(ctx context.Context, src *project.SourceInfo, composer *p.PlanComposer) error {
+func (b *BaseImageBlock) Plan(ctx context.Context, src *project.SourceInfo, composer *p.Composer) error {
 	// Create the build base stage
 	_, err := composer.AddStage(p.PhaseBase, "build-base", p.WithName("Build Base"), p.WithSource(p.FromImage(composer.GetBaseImage().Build)))
 	if err != nil {

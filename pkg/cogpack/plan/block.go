@@ -23,7 +23,7 @@ type Block interface {
 	// Plan contributes build operations to the overall Plan.
 	// This is called after dependencies have been resolved, so blocks can
 	// access resolved versions via composer.GetDependency().
-	Plan(ctx context.Context, src *project.SourceInfo, composer *PlanComposer) error
+	Plan(ctx context.Context, src *project.SourceInfo, composer *Composer) error
 }
 
 func DetectBlocks(ctx context.Context, src *project.SourceInfo, blocks []Block) []Block {

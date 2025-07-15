@@ -11,22 +11,17 @@ import (
 	"github.com/replicate/cog/pkg/util/iterext"
 )
 
-// PlanComposer provides an API for composing plans during the build process.
+// Composer provides an API for composing plans during the build process.
 // It handles plan-time concerns like phases and automatic input resolution,
 // then converts to a normalized Plan structure for execution.
-type PlanComposer struct {
+type Composer struct {
 	platform     Platform
 	dependencies map[string]*Dependency
 	baseImage    *baseimg.BaseImage
 	contexts     map[string]*BuildContext
 	exportConfig *ExportConfig
-
-	// Phases in insertion order
 	buildPhases  []*ComposerPhase
 	exportPhases []*ComposerPhase
-
-	// All stages by ID for lookups
-	// stages map[string]*ComposerStage
 }
 
 // PhaseKey represents the different phases of the build process
@@ -60,10 +55,10 @@ func (p PhaseKey) IsBuildPhase() bool {
 
 // ComposerPhase represents a phase during composition
 type ComposerPhase struct {
-	Name   PhaseKey
+	Key    PhaseKey
 	Stages []*ComposerStage
 
-	composer *PlanComposer
+	composer *Composer
 }
 
 func (p *ComposerPhase) appendStage(s *ComposerStage) {
@@ -88,8 +83,8 @@ func (p *ComposerPhase) previousStage(stage *ComposerStage) *ComposerStage {
 }
 
 // NewPlanComposer creates a new plan composer
-func NewPlanComposer() *PlanComposer {
-	return &PlanComposer{
+func NewPlanComposer() *Composer {
+	return &Composer{
 		platform: Platform{
 			OS:   "linux",
 			Arch: "amd64",
@@ -101,27 +96,27 @@ func NewPlanComposer() *PlanComposer {
 }
 
 // SetPlatform sets the target platform
-func (pc *PlanComposer) SetPlatform(platform Platform) {
+func (pc *Composer) SetPlatform(platform Platform) {
 	pc.platform = platform
 }
 
 // SetDependencies sets the resolved dependencies
-func (pc *PlanComposer) SetDependencies(deps map[string]*Dependency) {
+func (pc *Composer) SetDependencies(deps map[string]*Dependency) {
 	pc.dependencies = deps
 }
 
 // SetBaseImage sets the base image configuration
-func (pc *PlanComposer) SetBaseImage(baseImage *baseimg.BaseImage) {
+func (pc *Composer) SetBaseImage(baseImage *baseimg.BaseImage) {
 	pc.baseImage = baseImage
 }
 
 // SetExportConfig sets the final export configuration
-func (pc *PlanComposer) SetExportConfig(export *ExportConfig) {
+func (pc *Composer) SetExportConfig(export *ExportConfig) {
 	pc.exportConfig = export
 }
 
 // AddContext adds a build context
-func (pc *PlanComposer) AddContext(name string, context *BuildContext) {
+func (pc *Composer) AddContext(name string, context *BuildContext) {
 	if pc.contexts == nil {
 		pc.contexts = make(map[string]*BuildContext)
 	}
@@ -129,19 +124,19 @@ func (pc *PlanComposer) AddContext(name string, context *BuildContext) {
 }
 
 // GetDependency returns a specific dependency by name
-func (pc *PlanComposer) GetDependency(name string) (*Dependency, bool) {
+func (pc *Composer) GetDependency(name string) (*Dependency, bool) {
 	dep, exists := pc.dependencies[name]
 	return dep, exists
 }
 
 // GetBaseImage returns the base image
-func (pc *PlanComposer) GetBaseImage() *baseimg.BaseImage {
+func (pc *Composer) GetBaseImage() *baseimg.BaseImage {
 	return pc.baseImage
 }
 
 var ErrDuplicateStageID = errors.New("stage ID already exists")
 
-func (pc *PlanComposer) BuildStages() iter.Seq[*ComposerStage] {
+func (pc *Composer) BuildStages() iter.Seq[*ComposerStage] {
 	return func(yield func(*ComposerStage) bool) {
 		for _, phase := range pc.buildPhases {
 			for _, stage := range phase.Stages {
@@ -153,7 +148,7 @@ func (pc *PlanComposer) BuildStages() iter.Seq[*ComposerStage] {
 	}
 }
 
-func (pc *PlanComposer) ExportStages() iter.Seq[*ComposerStage] {
+func (pc *Composer) ExportStages() iter.Seq[*ComposerStage] {
 	return func(yield func(*ComposerStage) bool) {
 		for _, phase := range pc.exportPhases {
 			for _, stage := range phase.Stages {
@@ -165,7 +160,7 @@ func (pc *PlanComposer) ExportStages() iter.Seq[*ComposerStage] {
 	}
 }
 
-func (pc *PlanComposer) AllStages() iter.Seq[*ComposerStage] {
+func (pc *Composer) AllStages() iter.Seq[*ComposerStage] {
 	return iterext.Concat(pc.BuildStages(), pc.ExportStages())
 }
 
@@ -184,7 +179,7 @@ func WithName(name string) StageOpt {
 }
 
 // AddStage adds a new stage to the specified phase
-func (pc *PlanComposer) AddStage(phaseName PhaseKey, stageID string, opts ...StageOpt) (*ComposerStage, error) {
+func (pc *Composer) AddStage(phaseName PhaseKey, stageID string, opts ...StageOpt) (*ComposerStage, error) {
 	// Check for duplicate stage ID
 	for stage := range pc.AllStages() {
 		if stage.ID == stageID {
@@ -210,7 +205,7 @@ func (pc *PlanComposer) AddStage(phaseName PhaseKey, stageID string, opts ...Sta
 }
 
 // GetStage retrieves a stage by ID
-func (pc *PlanComposer) GetStage(stageID string) *ComposerStage {
+func (pc *Composer) GetStage(stageID string) *ComposerStage {
 	for stage := range pc.AllStages() {
 		if stage.ID == stageID {
 			return stage
@@ -220,7 +215,7 @@ func (pc *PlanComposer) GetStage(stageID string) *ComposerStage {
 }
 
 // HasProvider checks if a package is available from base image or build stages
-func (pc *PlanComposer) HasProvider(packageName string) bool {
+func (pc *Composer) HasProvider(packageName string) bool {
 	// Check base image first
 	if pc.baseImage != nil {
 		if _, exists := pc.baseImage.Metadata.Packages[packageName]; exists {
@@ -241,7 +236,7 @@ func (pc *PlanComposer) HasProvider(packageName string) bool {
 }
 
 // Compose converts the PlanComposer to a normalized Plan
-func (pc *PlanComposer) Compose() (*Plan, error) {
+func (pc *Composer) Compose() (*Plan, error) {
 	// Create the base plan
 	plan := &Plan{
 		Platform:     pc.platform,
@@ -276,7 +271,7 @@ func (pc *PlanComposer) Compose() (*Plan, error) {
 }
 
 // convertStage converts a ComposerStage to a Stage with resolved inputs
-func (pc *PlanComposer) convertStage(cs *ComposerStage) (*Stage, error) {
+func (pc *Composer) convertStage(cs *ComposerStage) (*Stage, error) {
 	stage := &Stage{
 		ID:         cs.ID,
 		Name:       cs.Name,
@@ -297,7 +292,7 @@ func (pc *PlanComposer) convertStage(cs *ComposerStage) (*Stage, error) {
 }
 
 // resolveInput resolves any input type to a concrete input
-func (pc *PlanComposer) resolveInput(stage *ComposerStage) (Input, error) {
+func (pc *Composer) resolveInput(stage *ComposerStage) (Input, error) {
 	input := stage.Source
 
 	// Handle Auto resolution
@@ -331,12 +326,12 @@ func (pc *PlanComposer) resolveInput(stage *ComposerStage) (Input, error) {
 	return input, nil
 }
 
-func (pc *PlanComposer) previousPhase(phase *ComposerPhase) *ComposerPhase {
-	if phase.Name.IsBuildPhase() {
+func (pc *Composer) previousPhase(phase *ComposerPhase) *ComposerPhase {
+	if phase.Key.IsBuildPhase() {
 		if idx := slices.Index(pc.buildPhases, phase); idx > 0 {
 			return pc.buildPhases[idx-1]
 		}
-	} else if phase.Name.IsExportPhase() {
+	} else if phase.Key.IsExportPhase() {
 		if idx := slices.Index(pc.exportPhases, phase); idx > 0 {
 			return pc.exportPhases[idx-1]
 		}
@@ -344,7 +339,7 @@ func (pc *PlanComposer) previousPhase(phase *ComposerPhase) *ComposerPhase {
 	return nil
 }
 
-func (pc *PlanComposer) previousStage(stage *ComposerStage) *ComposerStage {
+func (pc *Composer) previousStage(stage *ComposerStage) *ComposerStage {
 	phase := stage.phase
 	if prevStage := phase.previousStage(stage); prevStage != nil {
 		return prevStage
@@ -361,38 +356,8 @@ func (pc *PlanComposer) previousStage(stage *ComposerStage) *ComposerStage {
 	}
 }
 
-// resolveAutoInput resolves an Auto input based on context
-func (pc *PlanComposer) resolveAutoInput(currentPhase PhaseKey, stageIndex int) (Input, error) {
-	// If not the first stage in phase, use previous stage
-	if stageIndex > 0 {
-		// Look in the current phase being built
-		currentComposerPhase := pc.findComposerPhase(currentPhase)
-		if currentComposerPhase != nil && stageIndex-1 < len(currentComposerPhase.Stages) {
-			prevStage := currentComposerPhase.Stages[stageIndex-1]
-			return Input{Stage: prevStage.ID}, nil
-		}
-	}
-
-	// First stage in phase - find previous phase with stages
-	prevPhase := pc.findPreviousComposerPhaseWithStages(currentPhase)
-	if prevPhase != nil && len(prevPhase.Stages) > 0 {
-		lastStage := prevPhase.Stages[len(prevPhase.Stages)-1]
-		return Input{Stage: lastStage.ID}, nil
-	}
-
-	// No previous phase with stages - use base image
-	if pc.baseImage != nil {
-		if currentPhase.IsExportPhase() {
-			return Input{Image: pc.baseImage.Runtime}, nil
-		}
-		return Input{Image: pc.baseImage.Build}, nil
-	}
-
-	return Input{}, fmt.Errorf("cannot resolve auto input: no previous stage, phase, or base image")
-}
-
 // getOrCreatePhase finds or creates a phase
-func (pc *PlanComposer) getOrCreatePhase(phaseName PhaseKey) *ComposerPhase {
+func (pc *Composer) getOrCreatePhase(phaseName PhaseKey) *ComposerPhase {
 	// Check existing phases
 	phases := &pc.buildPhases
 	if phaseName.IsExportPhase() {
@@ -400,14 +365,14 @@ func (pc *PlanComposer) getOrCreatePhase(phaseName PhaseKey) *ComposerPhase {
 	}
 
 	for _, phase := range *phases {
-		if phase.Name == phaseName {
+		if phase.Key == phaseName {
 			return phase
 		}
 	}
 
 	// Create new phase
 	phase := &ComposerPhase{
-		Name:     phaseName,
+		Key:      phaseName,
 		Stages:   []*ComposerStage{},
 		composer: pc,
 	}
@@ -417,14 +382,14 @@ func (pc *PlanComposer) getOrCreatePhase(phaseName PhaseKey) *ComposerPhase {
 }
 
 // findComposerPhase finds a composer phase by name
-func (pc *PlanComposer) findComposerPhase(phaseName PhaseKey) *ComposerPhase {
+func (pc *Composer) findComposerPhase(phaseName PhaseKey) *ComposerPhase {
 	phases := pc.buildPhases
 	if phaseName.IsExportPhase() {
 		phases = pc.exportPhases
 	}
 
 	for _, phase := range phases {
-		if phase.Name == phaseName {
+		if phase.Key == phaseName {
 			return phase
 		}
 	}
@@ -432,7 +397,7 @@ func (pc *PlanComposer) findComposerPhase(phaseName PhaseKey) *ComposerPhase {
 }
 
 // findPreviousComposerPhaseWithStages finds the previous composer phase that has stages
-func (pc *PlanComposer) findPreviousComposerPhaseWithStages(currentPhase PhaseKey) *ComposerPhase {
+func (pc *Composer) findPreviousComposerPhaseWithStages(currentPhase PhaseKey) *ComposerPhase {
 	phases := pc.buildPhases
 	if currentPhase.IsExportPhase() {
 		phases = pc.exportPhases
@@ -440,7 +405,7 @@ func (pc *PlanComposer) findPreviousComposerPhaseWithStages(currentPhase PhaseKe
 
 	var prevPhase *ComposerPhase
 	for _, phase := range phases {
-		if phase.Name == currentPhase {
+		if phase.Key == currentPhase {
 			return prevPhase
 		}
 		if len(phase.Stages) > 0 {
@@ -464,7 +429,7 @@ type ComposerStage struct {
 
 	// Bidirectional references for API convenience
 	phase    *ComposerPhase
-	composer *PlanComposer
+	composer *Composer
 }
 
 func (cs *ComposerStage) inputStage() *ComposerStage {
@@ -507,6 +472,6 @@ func (cs *ComposerStage) GetPhase() *ComposerPhase {
 }
 
 // GetComposer returns the plan composer
-func (cs *ComposerStage) GetComposer() *PlanComposer {
+func (cs *ComposerStage) GetComposer() *Composer {
 	return cs.composer
 }

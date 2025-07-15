@@ -22,7 +22,7 @@ func (b *CogWheelBlock) Dependencies(ctx context.Context, src *project.SourceInf
 	return nil, nil
 }
 
-func (b *CogWheelBlock) Plan(ctx context.Context, src *project.SourceInfo, composer *plan.PlanComposer) error {
+func (b *CogWheelBlock) Plan(ctx context.Context, src *project.SourceInfo, composer *plan.Composer) error {
 	// Add wheel context to plan
 	composer.AddContext("wheel-context", &plan.BuildContext{
 		Name:        "wheel-context",

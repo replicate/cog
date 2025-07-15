@@ -62,7 +62,7 @@ func (b *PythonBlock) Dependencies(ctx context.Context, src *project.SourceInfo)
 }
 
 // Plan creates installation stages if Python is not available or wrong version
-func (b *PythonBlock) Plan(ctx context.Context, src *project.SourceInfo, composer *plan.PlanComposer) error {
+func (b *PythonBlock) Plan(ctx context.Context, src *project.SourceInfo, composer *plan.Composer) error {
 	// Check if installation is needed
 	if !b.needsInstallation(composer) {
 		return nil
@@ -173,7 +173,7 @@ func (b *PythonBlock) detectPythonVersion(src *project.SourceInfo) (string, erro
 }
 
 // needsInstallation checks if Python installation is needed
-func (b *PythonBlock) needsInstallation(composer *plan.PlanComposer) bool {
+func (b *PythonBlock) needsInstallation(composer *plan.Composer) bool {
 	// Get required Python version
 	pythonDep, exists := composer.GetDependency("python")
 	if !exists {

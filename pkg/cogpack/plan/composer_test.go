@@ -11,27 +11,27 @@ import (
 
 func TestComposer_Phases(t *testing.T) {
 	t.Run("add build phase", func(t *testing.T) {
-		c := &PlanComposer{}
+		c := &Composer{}
 		phase := c.getOrCreatePhase(PhaseKey("build.phase"))
 		assert.NotNil(t, phase)
 		assert.Len(t, c.buildPhases, 1)
 		assert.Contains(t, c.buildPhases, phase)
 		assert.Equal(t, c, phase.composer)
-		assert.Equal(t, PhaseKey("build.phase"), phase.Name)
+		assert.Equal(t, PhaseKey("build.phase"), phase.Key)
 	})
 
 	t.Run("add export phase", func(t *testing.T) {
-		c := &PlanComposer{}
+		c := &Composer{}
 		phase := c.getOrCreatePhase(PhaseKey("export.phase"))
 		assert.NotNil(t, phase)
 		assert.Len(t, c.exportPhases, 1)
 		assert.Contains(t, c.exportPhases, phase)
 		assert.Equal(t, c, phase.composer)
-		assert.Equal(t, PhaseKey("export.phase"), phase.Name)
+		assert.Equal(t, PhaseKey("export.phase"), phase.Key)
 	})
 
 	t.Run("add build phase with existing phase", func(t *testing.T) {
-		c := &PlanComposer{}
+		c := &Composer{}
 		phase := c.getOrCreatePhase(PhaseKey("build.phase"))
 		assert.NotNil(t, phase)
 		assert.Len(t, c.buildPhases, 1)
@@ -43,7 +43,7 @@ func TestComposer_Phases(t *testing.T) {
 	})
 
 	t.Run("add export phase with existing phase", func(t *testing.T) {
-		c := &PlanComposer{}
+		c := &Composer{}
 		phase1 := c.getOrCreatePhase(PhaseKey("export.phase"))
 		assert.NotNil(t, phase1)
 		assert.Len(t, c.exportPhases, 1)
@@ -79,7 +79,7 @@ func TestComposer_Stages(t *testing.T) {
 		c := NewPlanComposer()
 		phase1 := c.getOrCreatePhase(PhaseSystemDeps)
 
-		stage1, err := c.AddStage(phase1.Name, "stage1")
+		stage1, err := c.AddStage(phase1.Key, "stage1")
 		require.NoError(t, err)
 		require.NotNil(t, stage1)
 
@@ -89,7 +89,7 @@ func TestComposer_Stages(t *testing.T) {
 		assert.Equal(t, phase1, stage1.GetPhase())
 
 		phase2 := c.getOrCreatePhase(PhaseAppSource)
-		stage2, err := c.AddStage(phase2.Name, "stage2")
+		stage2, err := c.AddStage(phase2.Key, "stage2")
 		require.NoError(t, err)
 		require.NotNil(t, stage1)
 
@@ -103,8 +103,8 @@ func TestComposer_Stages(t *testing.T) {
 	t.Run("add stage fails with a duplicate stage id", func(t *testing.T) {
 		c := NewPlanComposer()
 		phase := c.getOrCreatePhase(PhaseSystemDeps)
-		c.AddStage(phase.Name, "stage1")
-		stage2, err := c.AddStage(phase.Name, "stage1")
+		c.AddStage(phase.Key, "stage1")
+		stage2, err := c.AddStage(phase.Key, "stage1")
 		assert.ErrorIs(t, err, ErrDuplicateStageID)
 		assert.Nil(t, stage2)
 	})
@@ -148,13 +148,13 @@ func TestPlanComposer_BasicComposition(t *testing.T) {
 func TestComposer_StageInputResolution(t *testing.T) {
 	tests := []struct {
 		name                  string
-		setup                 func() *PlanComposer
+		setup                 func() *Composer
 		expectedBuildSources  []Input
 		expectedExportSources []Input
 	}{
 		{
 			name: "auto resolves to previous stage in same phase",
-			setup: func() *PlanComposer {
+			setup: func() *Composer {
 				c := NewPlanComposer()
 
 				stage1, _ := c.AddStage(PhaseKey("build.phase1"), "stage1", WithSource(FromImage("ubuntu:22.04")))
@@ -173,7 +173,7 @@ func TestComposer_StageInputResolution(t *testing.T) {
 		},
 		{
 			name: "auto resolves to final stage of previous phase when first in phase",
-			setup: func() *PlanComposer {
+			setup: func() *Composer {
 				c := NewPlanComposer()
 
 				stage1, _ := c.AddStage(PhaseKey("build.phase1"), "stage1", WithSource(FromScratch()))
@@ -196,7 +196,7 @@ func TestComposer_StageInputResolution(t *testing.T) {
 		},
 		{
 			name: "auto skips empty phases when resolving a previous phase",
-			setup: func() *PlanComposer {
+			setup: func() *Composer {
 				c := NewPlanComposer()
 
 				stage1, _ := c.AddStage(PhaseKey("build.phase1"), "stage1", WithSource(FromScratch()))
@@ -221,7 +221,7 @@ func TestComposer_StageInputResolution(t *testing.T) {
 		},
 		{
 			name: "phase resolves to the last stage of the keyed phase",
-			setup: func() *PlanComposer {
+			setup: func() *Composer {
 				c := NewPlanComposer()
 
 				stage1, _ := c.AddStage(PhaseKey("build.phase1"), "stage1", WithSource(FromScratch()))
@@ -291,7 +291,7 @@ func TestPlanComposer_StageAPIConvenience(t *testing.T) {
 
 	// Test bidirectional references
 	assert.Equal(t, composer, stage.GetComposer())
-	assert.Equal(t, PhaseSystemDeps, stage.GetPhase().Name)
+	assert.Equal(t, PhaseSystemDeps, stage.GetPhase().Key)
 }
 
 func TestPlanComposer_ContextHandling(t *testing.T) {
@@ -332,15 +332,15 @@ func TestPlanComposer_ContextHandling(t *testing.T) {
 func TestPhaseAndStageTraversal(t *testing.T) {
 	p := NewPlanComposer()
 	buildPhase1 := p.getOrCreatePhase(PhaseKey("build.phase1"))
-	buildPhase1Stage1, err := p.AddStage(buildPhase1.Name, "build.phase1.stage1")
+	buildPhase1Stage1, err := p.AddStage(buildPhase1.Key, "build.phase1.stage1")
 	require.NoError(t, err)
-	buildPhase1Stage2, err := p.AddStage(buildPhase1.Name, "build.phase1.stage2")
+	buildPhase1Stage2, err := p.AddStage(buildPhase1.Key, "build.phase1.stage2")
 	require.NoError(t, err)
 
 	buildPhase2 := p.getOrCreatePhase(PhaseKey("build.phase2"))
-	buildPhase2Stage1, err := p.AddStage(buildPhase2.Name, "build.phase2.stage1")
+	buildPhase2Stage1, err := p.AddStage(buildPhase2.Key, "build.phase2.stage1")
 	require.NoError(t, err)
-	buildPhase2Stage2, err := p.AddStage(buildPhase2.Name, "build.phase2.stage2")
+	buildPhase2Stage2, err := p.AddStage(buildPhase2.Key, "build.phase2.stage2")
 	require.NoError(t, err)
 
 	// an empty phase
@@ -348,19 +348,19 @@ func TestPhaseAndStageTraversal(t *testing.T) {
 	require.NoError(t, err)
 
 	buildPhase4 := p.getOrCreatePhase(PhaseKey("build.phase4"))
-	buildPhase4Stage1, err := p.AddStage(buildPhase4.Name, "build.phase4.stage1")
+	buildPhase4Stage1, err := p.AddStage(buildPhase4.Key, "build.phase4.stage1")
 	require.NoError(t, err)
 
 	exportPhase1 := p.getOrCreatePhase(PhaseKey("export.phase1"))
-	exportPhase1Stage1, err := p.AddStage(exportPhase1.Name, "export.phase1.stage1")
+	exportPhase1Stage1, err := p.AddStage(exportPhase1.Key, "export.phase1.stage1")
 	require.NoError(t, err)
-	exportPhase1Stage2, err := p.AddStage(exportPhase1.Name, "export.phase1.stage2")
+	exportPhase1Stage2, err := p.AddStage(exportPhase1.Key, "export.phase1.stage2")
 	require.NoError(t, err)
 
 	exportPhase2 := p.getOrCreatePhase(PhaseKey("export.phase2"))
-	exportPhase2Stage1, err := p.AddStage(exportPhase2.Name, "export.phase2.stage1")
+	exportPhase2Stage1, err := p.AddStage(exportPhase2.Key, "export.phase2.stage1")
 	require.NoError(t, err)
-	_, err = p.AddStage(exportPhase2.Name, "export.phase2.stage2")
+	_, err = p.AddStage(exportPhase2.Key, "export.phase2.stage2")
 	require.NoError(t, err)
 
 	t.Run("Plan.previousStage", func(t *testing.T) {

@@ -46,7 +46,7 @@ func (s *PythonStack) Detect(ctx context.Context, src *project.SourceInfo) (bool
 }
 
 // Plan orchestrates the entire build process for Python projects
-func (s *PythonStack) Plan(ctx context.Context, src *project.SourceInfo, composer *plan.PlanComposer) error {
+func (s *PythonStack) Plan(ctx context.Context, src *project.SourceInfo, composer *plan.Composer) error {
 	// Phase 1: Compose blocks based on project analysis
 	blocks := plan.DetectBlocks(ctx, src, []plan.Block{
 		&PythonBlock{},
