@@ -22,7 +22,7 @@ import (
 //
 // Implementations are expected to respect the Platform specified on the Plan.
 type Builder interface {
-	Build(ctx context.Context, p *plan.Plan, buildConfig *BuildConfig) error
+	Build(ctx context.Context, p *plan.Plan, buildConfig *BuildConfig) (string, error)
 }
 
 func NewBuilder(dockerCmd command.Command) Builder {

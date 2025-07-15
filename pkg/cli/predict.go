@@ -26,7 +26,6 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
-	"github.com/replicate/cog/pkg/factory"
 	"github.com/replicate/cog/pkg/image"
 	r8_path "github.com/replicate/cog/pkg/path"
 	"github.com/replicate/cog/pkg/predict"
@@ -204,29 +203,30 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			}
 
 			util.JSONPrettyPrint(result)
+			imageName = result.ImageTag
 
 			// builder := builder.NewBuilder(dockerClient)
 			// if err := builder.Build(ctx, sourceInfo, result.Plan); err != nil {
 			// 	return err
 			// }
 
-			return nil
+			//
 
-			imageName = config.DockerImageName(projectDir)
-			fact := factory.NewFactory(dockerClient)
-			env, err := factory.NewBuildEnv(projectDir, cfg, buildSecrets)
-			if err != nil {
-				return err
-			}
-			if err := fact.Build(
-				ctx,
-				env,
-				imageName,
-				buildNoCache,
-				buildProgressOutput,
-			); err != nil {
-				return err
-			}
+			// imageName = config.DockerImageName(projectDir)
+			// fact := factory.NewFactory(dockerClient)
+			// env, err := factory.NewBuildEnv(projectDir, cfg, buildSecrets)
+			// if err != nil {
+			// 	return err
+			// }
+			// if err := fact.Build(
+			// 	ctx,
+			// 	env,
+			// 	imageName,
+			// 	buildNoCache,
+			// 	buildProgressOutput,
+			// ); err != nil {
+			// 	return err
+			// }
 		} else if buildFast || pipelinesImage {
 			imageName = config.DockerImageName(projectDir)
 			if err := image.Build(

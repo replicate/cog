@@ -175,18 +175,6 @@ func validateMountInput(input plan.Input, p *plan.Plan, stageStates map[string]l
 // resolveMountInput resolves a plan.Input to an LLB state for mount operations
 func resolveMountInput(in plan.Input, p *plan.Plan, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
 	switch {
-	case in.Phase != "":
-		return llb.State{}, fmt.Errorf("phase input not supported")
-		// // Resolve phase to its last stage
-		// phaseResult := p.GetPhaseResult(in.Phase)
-		// if phaseResult.Stage == "" {
-		// 	return llb.State{}, fmt.Errorf("phase %q has no stages", in.Phase)
-		// }
-		// s, ok := stageStates[phaseResult.Stage]
-		// if !ok {
-		// 	return llb.State{}, fmt.Errorf("phase %q result stage %q not found", in.Phase, phaseResult.Stage)
-		// }
-		// return s, nil
 	case in.Stage != "":
 		s, ok := stageStates[in.Stage]
 		if !ok {
@@ -199,8 +187,10 @@ func resolveMountInput(in plan.Input, p *plan.Plan, stageStates map[string]llb.S
 		return llb.Local(in.Local), nil
 	case in.URL != "":
 		return llb.HTTP(in.URL), nil
-	default:
+	case in.Scratch:
 		return llb.Scratch(), nil
+	default:
+		return llb.State{}, fmt.Errorf("invalid mount input: %v", in)
 	}
 }
 

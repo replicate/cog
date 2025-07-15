@@ -79,55 +79,55 @@ func GeneratePlan(ctx context.Context, src *project.SourceInfo) (*plan.PlanResul
 }
 
 // ExecutePlan executes a pre-generated Plan using the supplied Builder.
-func RunBuildPlan(ctx context.Context, provider command.Command, p *plan.Plan, buildCfg *builder.BuildConfig) error {
+func RunBuildPlan(ctx context.Context, provider command.Command, p *plan.Plan, buildCfg *builder.BuildConfig) (string, error) {
 	return builder.NewBuildKitBuilder(provider).Build(ctx, p, buildCfg)
 }
 
-// BuildWithDocker is a convenience helper that performs the full pipeline:
-//  1. Source inspection of srcDir into a SourceInfo
-//  2. Plan generation (GeneratePlan)
-//  3. Plan execution via the supplied Builder that uses Docker
-//
-// It returns the Plan so callers can inspect or snapshot it.
-func BuildWithDocker(ctx context.Context, srcDir, tag string, dockerCmd command.Command, builderFactory func(command.Command) builder.Builder) (*plan.Plan, error) {
-	if dockerCmd == nil {
-		return nil, fmt.Errorf("docker command cannot be nil")
-	}
-	if builderFactory == nil {
-		return nil, fmt.Errorf("builder factory cannot be nil")
-	}
+// // BuildWithDocker is a convenience helper that performs the full pipeline:
+// //  1. Source inspection of srcDir into a SourceInfo
+// //  2. Plan generation (GeneratePlan)
+// //  3. Plan execution via the supplied Builder that uses Docker
+// //
+// // It returns the Plan so callers can inspect or snapshot it.
+// func BuildWithDocker(ctx context.Context, srcDir, tag string, dockerCmd command.Command, builderFactory func(command.Command) builder.Builder) (*plan.Plan, error) {
+// 	if dockerCmd == nil {
+// 		return nil, fmt.Errorf("docker command cannot be nil")
+// 	}
+// 	if builderFactory == nil {
+// 		return nil, fmt.Errorf("builder factory cannot be nil")
+// 	}
 
-	// Initialize a basic config with Build field
-	cfg := &config.Config{
-		Build: &config.Build{},
-	}
+// 	// Initialize a basic config with Build field
+// 	cfg := &config.Config{
+// 		Build: &config.Build{},
+// 	}
 
-	src, err := NewSourceInfo(srcDir, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("new source info: %w", err)
-	}
-	defer src.Close()
+// 	src, err := NewSourceInfo(srcDir, cfg)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("new source info: %w", err)
+// 	}
+// 	defer src.Close()
 
-	planResult, err := GeneratePlan(ctx, src)
-	if err != nil {
-		return nil, err
-	}
+// 	planResult, err := GeneratePlan(ctx, src)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	// Create builder with Docker command
-	b := builderFactory(dockerCmd)
+// 	// Create builder with Docker command
+// 	b := builderFactory(dockerCmd)
 
-	buildConfig := &builder.BuildConfig{
-		Source:     src,
-		ContextDir: srcDir,
-		Tag:        tag,
-	}
+// 	buildConfig := &builder.BuildConfig{
+// 		Source:     src,
+// 		ContextDir: srcDir,
+// 		Tag:        tag,
+// 	}
 
-	if err := b.Build(ctx, planResult.Plan, buildConfig); err != nil {
-		return nil, err
-	}
+// 	if _, err := b.Build(ctx, planResult.Plan, buildConfig); err != nil {
+// 		return nil, err
+// 	}
 
-	return planResult.Plan, nil
-}
+// 	return planResult.Plan, nil
+// }
 
 // BuildModel is a convenience helper that performs the full pipeline:
 //  1. Source inspection of srcDir into a SourceInfo
@@ -183,14 +183,17 @@ func BuildModel(ctx context.Context, provider command.Command, src *project.Sour
 	}
 
 	fmt.Println("Running build plan")
-	if err := RunBuildPlan(ctx, provider, planResult.Plan, buildConfig); err != nil {
+	if _, err := RunBuildPlan(ctx, provider, planResult.Plan, buildConfig); err != nil {
 		return nil, err
 	}
 
 	fmt.Println("Build plan complete")
 
-	return &BuildModelResult{}, nil
+	return &BuildModelResult{
+		ImageTag: tag,
+	}, nil
 }
 
 type BuildModelResult struct {
+	ImageTag string `json:"image_id"`
 }

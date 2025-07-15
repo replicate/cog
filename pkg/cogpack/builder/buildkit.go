@@ -31,29 +31,29 @@ func NewBuildKitBuilder(dockerCmd command.Command) *BuildKitBuilder {
 }
 
 // Build implements cogpack.Builder.
-func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *BuildConfig) error {
+func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *BuildConfig) (string, error) {
 	fmt.Println("Building with BuildKit")
 	// Translate plan → llb
 	finalState, _, err := translatePlan(ctx, p)
 	if err != nil {
-		return fmt.Errorf("plan translation failed: %w", err)
+		return "", fmt.Errorf("plan translation failed: %w", err)
 	}
 	fmt.Println("Plan translated")
 	def, err := finalState.Marshal(ctx)
 	if err != nil {
-		return fmt.Errorf("marshal llb: %w", err)
+		return "", fmt.Errorf("marshal llb: %w", err)
 	}
 	fmt.Println("LLB marshalled")
 	// Get BuildKit client from Docker command
 	bkClient, err := b.dockerCmd.BuildKitClient(ctx)
 	if err != nil {
-		return fmt.Errorf("get buildkit client: %w", err)
+		return "", fmt.Errorf("get buildkit client: %w", err)
 	}
 	defer bkClient.Close()
 	fmt.Println("BuildKit client obtained")
 	contextFS, err := fsutil.NewFS(buildConfig.ContextDir)
 	if err != nil {
-		return fmt.Errorf("context fs: %w", err)
+		return "", fmt.Errorf("context fs: %w", err)
 	}
 	fmt.Println("Context FS obtained")
 
@@ -74,7 +74,7 @@ func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *
 	for name, buildCtx := range p.Contexts {
 		fsutilFS, err := convertToFsutilFS(buildCtx.FS)
 		if err != nil {
-			return fmt.Errorf("convert context %s (%s): %w", name, buildCtx.Description, err)
+			return "", fmt.Errorf("convert context %s (%s): %w", name, buildCtx.Description, err)
 		}
 		localMounts[name] = fsutilFS
 
@@ -129,9 +129,11 @@ func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *
 					imgCfg.ExposedPorts = p.Export.ExposedPorts
 				}
 				fmt.Println("Image config created")
-				img := ocispec.Image{}
-				img.Config = imgCfg
-				img.Platform = ocispec.Platform{OS: p.Platform.OS, Architecture: p.Platform.Arch}
+				img := ocispec.Image{
+					Config:   imgCfg,
+					Platform: ocispec.Platform{OS: p.Platform.OS, Architecture: p.Platform.Arch},
+					Author:   "cogpack",
+				}
 
 				cfgJSON, err := json.Marshal(img)
 				if err != nil {
@@ -153,13 +155,13 @@ func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *
 	})
 
 	if err := eg.Wait(); err != nil {
-		return fmt.Errorf("failed to solve build: %w", err)
+		return "", fmt.Errorf("failed to solve build: %w", err)
 	}
 
 	fmt.Println("solveResp")
 	util.JSONPrettyPrint(solveResp)
 
-	return nil
+	return solveResp.ExporterResponse["image.name"], nil
 }
 
 // convertToFsutilFS converts fs.FS to fsutil.FS
