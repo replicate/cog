@@ -73,7 +73,7 @@ func NewAPIClient(ctx context.Context, opts ...Option) (*apiClient, error) {
 	authConfig := make(map[string]registry.AuthConfig)
 	userInfo, err := loadUserInformation(ctx, "r8.im")
 	if err != nil {
-		return nil, fmt.Errorf("error loading user information: %w", err)
+		return nil, fmt.Errorf("error loading user information: %w, you may need to authenticate using cog login", err)
 	}
 	authConfig["r8.im"] = registry.AuthConfig{
 		Username:      userInfo.Username,
