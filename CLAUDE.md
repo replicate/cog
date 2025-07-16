@@ -4,9 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Cog is a tool that packages machine learning models in production-ready containers. It consists of:
+Cog is a tool that packages machine learning models in production-ready containers. 
+
+It consists of:
 - **Cog CLI** (`cmd/cog/`) - Command-line interface for building, running, and deploying models, written in Go
 - **Python SDK** (`python/cog/`) - Python library for defining model predictors and training in Python
+
+Documentation for the CLI and SDK is available by reading ./docs/llms.txt.
 
 ## Development Commands
 
@@ -56,8 +60,9 @@ COG_BINARY=./cog/cog make test-integration
 ### Development Workflow
 1. Run `script/setup` for initial dev environment setup
 2. Run `make wheel` to rebuild the Python wheel after making changes to the `./python` directory
-3. Run `script/format` to format both go and python code 
-```bash
+3. Run `script/format` to format both go and python code
+4. Run `script/lint` to check code quality
+5. Read the `./docs` directory and make sure the documentation is up to date
 
 ## Architecture
 
@@ -101,14 +106,16 @@ The CLI follows a command pattern with subcommands. The main components are:
 2. Update framework versions in relevant Dockerfile templates
 3. Test with various framework combinations
 
+### Updating the docs
+- Documentation is in the `docs/` directory, written in Markdown and generated into HTML using `mkdocs`.
+
 ## Important Files
 - `cog.yaml` - User-facing model configuration
-- `pkg/config/config.go` - Config schema definition
+- `pkg/config/config.go` - Go code for parsing and validating `cog.yaml`
+- `pkg/config/data/config_schema_v1.0.json` - JSON schema for `cog.yaml`
 - `python/cog/base_predictor.py` - Predictor interface
-- `pkg/dockerfile/generator.go` - Dockerfile generation logic
 
 ## Testing Philosophy
 - Unit tests for individual components (Go and Python)
 - Integration tests for end-to-end workflows
 - Tests use real Docker operations (no mocking Docker API)
-- Python tests support multiple Pydantic versions via tox
