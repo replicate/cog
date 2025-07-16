@@ -33,17 +33,7 @@ func NewBuildKitBuilder(dockerCmd command.Command) *BuildKitBuilder {
 // Build implements cogpack.Builder.
 func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *BuildConfig) (string, error) {
 	fmt.Println("Building with BuildKit")
-	// Translate plan → llb
-	finalState, _, err := translatePlan(ctx, p)
-	if err != nil {
-		return "", fmt.Errorf("plan translation failed: %w", err)
-	}
-	fmt.Println("Plan translated")
-	def, err := finalState.Marshal(ctx)
-	if err != nil {
-		return "", fmt.Errorf("marshal llb: %w", err)
-	}
-	fmt.Println("LLB marshalled")
+	
 	// Get BuildKit client from Docker command
 	bkClient, err := b.dockerCmd.BuildKitClient(ctx)
 	if err != nil {
@@ -112,17 +102,42 @@ func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *
 			solveOpt,
 			productID,
 			func(ctx context.Context, c client.Client) (*client.Result, error) {
+				// Translate plan → llb with gateway client for image config inspection
+				finalState, _, err := translatePlan(ctx, p, c)
+				if err != nil {
+					return nil, fmt.Errorf("plan translation failed: %w", err)
+				}
+				fmt.Println("Plan translated")
+				def, err := finalState.Marshal(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("marshal llb: %w", err)
+				}
+				fmt.Println("LLB marshalled")
+				
 				res, err := c.Solve(ctx, client.SolveRequest{Definition: def.ToPB()})
 				if err != nil {
 					return nil, fmt.Errorf("solve request failed: %w", err)
 				}
 
 				fmt.Println("Solve request completed")
+				
+				// Extract environment variables from final LLB state
+				envList, err := finalState.Env(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("failed to extract environment variables from final state: %w", err)
+				}
+				
+				// Convert EnvList to []string
+				var envStrings []string
+				if envList != nil {
+					envStrings = envList.ToArray()
+				}
+				
 				imgCfg := ocispec.ImageConfig{}
 				if p.Export != nil {
 					imgCfg.Entrypoint = p.Export.Entrypoint
 					imgCfg.Cmd = p.Export.Cmd
-					imgCfg.Env = p.Export.Env
+					imgCfg.Env = envStrings // Use environment variables from final LLB state
 					imgCfg.WorkingDir = p.Export.WorkingDir
 					imgCfg.User = p.Export.User
 					imgCfg.Labels = p.Export.Labels

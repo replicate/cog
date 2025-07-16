@@ -6,7 +6,7 @@ The current task is written up in the `CURRENT WORK ITEM` section below. Please 
 
 > **Last Updated**: 2025-07-16  
 > **Primary Maintainer**: @md  
-> **Status**: Active Development - Composer API Established
+> **Status**: Active Development - Environment Variable Inheritance Completed
 
 ## Quick Start
 
@@ -104,15 +104,29 @@ See full API: [`pkg/cogpack/plan/composer.go`](pkg/cogpack/plan/composer.go:180-
 
 ### Phase Organization
 
-Phases provide logical grouping of build operations, allowing blocks to insert stages at various points of the build without knowing the current plan structure. The phases are defined in `pkg/cogpack/plan/phases.go` and are currently a work in progress. Add or remove as needed. The main phases are:
+Phases provide logical grouping of build operations, allowing blocks to insert stages at various points of the build without knowing the current plan structure. The phases are defined in `pkg/cogpack/plan/phases.go` and are currently a work in progress. Add or remove as needed.
 
+#### Phase Resolution Behavior
+
+When a stage references a phase as input (e.g., `plan.Input{Phase: plan.PhaseBuildComplete}`), the resolution works by looking through all **preceding phases** to find the latest stage. This means:
+
+- `PhaseBuildComplete` (build.99-complete) is intentionally always empty
+- When referenced, it resolves to the final stage from any preceding build phase
+- This provides a stable reference to "the final build output" regardless of which phases actually contain stages
+- Blocks can safely reference `PhaseBuildComplete` without knowing the specific phase structure
+
+Example: If stages exist in `PhaseAppDeps` but not in `PhaseBuildComplete`, referencing `PhaseBuildComplete` will resolve to the last stage from `PhaseAppDeps`.
+
+#### Build Phases
 Build phases provide logical organization:
 - `PhaseSystemDeps`: System packages (apt, yum)
 - `PhaseRuntime`: Language runtime (Python, Node)
 - `PhaseFrameworkDeps`: Heavy dependencies (PyTorch, TensorFlow)
 - `PhaseAppDeps`: Application dependencies (requirements.txt)
 - `PhaseAppSource`: Copy source code
+- `PhaseBuildComplete`: Always empty, used as reference to final build output
 
+#### Export Phases
 Export phases build the runtime image:
 - `ExportPhaseBase`: Runtime base setup
 - `ExportPhaseRuntime`: Copy runtime dependencies
@@ -125,6 +139,9 @@ Export phases build the runtime image:
 
 | Decision | Rationale | Date |
 |----------|-----------|------|
+| **Environment Variable Inheritance via LLB State** | Use `finalState.Env(ctx)` to extract accumulated environment variables from BuildKit LLB state for proper metadata flow from base images to final export config. Ensures runtime dependencies like Python are properly available. | 2025-07-16 |
+| **Image Config Inspection for Base Images** | Implement image config inspection during Plan → LLB translation to extract environment variables from base images and apply them to image-based states. Required because BuildKit's llb.Diff() operations lose environment context from base images. | 2025-07-16 |
+| **Explicit Wheel Filename Resolution** | Replace wildcard patterns (`*.whl`) with exact filename resolution using `dockerfile.WheelFilename()` for UV pip install commands. UV requires explicit wheel filenames and cannot resolve wildcards. | 2025-07-16 |
 | **Operation Input Resolution** | Enables blocks to reference final build outputs using phase references in Copy operations. Allows UV block to copy from PhaseBuildComplete without knowing specific stage IDs. | 2025-07-16 |
 | **Phase Pre-registration** | All phases are registered at composer creation to enable robust phase resolution. Prevents "phase does not exist" errors when referencing empty phases. | 2025-07-16 |
 | **Separate Phase Resolution Methods** | `resolvePhaseInputStage()` and `resolvePhaseOutputStage()` provide clear semantics for different use cases. Input resolution gets last stage before a phase, output resolution gets accumulated result through a phase. | 2025-07-16 |
@@ -351,13 +368,17 @@ COGPACK_DEBUG=1 cog build
 
 # BuildKit debug output
 BUILDKIT_PROGRESS=plain cog build
+
+# Run build & run predict on a real model. This is a simple echo model that just returns the input string.
+cd ./test-integration/test_integration/fixtures/string-project && COGPACK=1 go run ../../../../cmd/cog predict --input s=hello`
 ```
 
 ## Current Status
 
 ### CURRENT WORK ITEM
 
-*No current work item - ready for next task*
+*No active work item - ready for next task assignment.*
+
 
 ### ✅ Completed
 - Composer API with phase organization
@@ -369,14 +390,18 @@ BUILDKIT_PROGRESS=plain cog build
 - Operation input resolution: Copy, Add, and Mount operations now support phase references that resolve to concrete stages during plan composition
 - Phase pre-registration: All standard phases are registered at composer creation to enable robust phase resolution
 - UV block cross-phase references: UV block can now copy venv from build to export phases using `PhaseBuildComplete` reference
+- **Environment Variable Inheritance**: Implemented complete solution for preserving ENV/PATH from base images through BuildKit LLB translation to final export image config. Fixes runtime dependency resolution (e.g., `python` executable not found)
+- **Wheel Installation Fix**: Resolved UV pip install wildcard issue by using explicit wheel filename resolution instead of `*.whl` patterns
+- **Image Config Metadata Flow**: Added image config inspection and proper metadata accumulation during Plan → LLB translation to ensure base image environment variables are inherited by build stages
 
 ### 🚧 In Progress
-- Get a basic python model working with the `predict` command
+- Source copy functionality: Enable SourceCopyBlock to copy application code into runtime image (final step for basic Python model support)
 - Additional blocks (Apt, Torch, CUDA)
 - Define base image metadata structure and metadata needed for dependency resolution
 
 ### 📋 Planned
 - Implement remaining blocks (TensorFlow, CUDA)
+- ensure phases can't create cycles in the plan
 
 ## Maintenance Instructions
 

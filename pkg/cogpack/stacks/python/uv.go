@@ -39,5 +39,17 @@ func (b *UvBlock) Plan(ctx context.Context, src *project.SourceInfo, composer *p
 		},
 	}
 
+	exportStage, err := composer.AddStage(plan.ExportPhaseRuntime, "copy-venv")
+	if err != nil {
+		return err
+	}
+	exportStage.AddOperation(
+		plan.Copy{
+			From: plan.Input{Phase: plan.PhaseBuildComplete},
+			Src:  []string{"/venv"},
+			Dest: "/venv",
+		},
+	)
+
 	return nil
 }

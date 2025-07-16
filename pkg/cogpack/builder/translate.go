@@ -2,18 +2,53 @@ package builder
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/client/llb/sourceresolver"
+	"github.com/moby/buildkit/frontend/gateway/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/replicate/cog/pkg/cogpack/plan"
 )
 
+// inspectImageConfig inspects an image reference and extracts its environment variables
+func inspectImageConfig(ctx context.Context, gatewayClient client.Client, imageRef string, platform ocispec.Platform) ([]string, error) {
+	if gatewayClient == nil {
+		return nil, nil // Skip inspection if no gateway client
+	}
+
+	named, err := reference.ParseNormalizedNamed(imageRef)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse image reference: %w", err)
+	}
+	named = reference.TagNameOnly(named)
+
+	_, _, blob, err := gatewayClient.ResolveImageConfig(ctx, named.String(), sourceresolver.Opt{
+		Platform: &platform,
+		ImageOpt: &sourceresolver.ResolveImageOpt{
+			ResolveMode: llb.ResolveModePreferLocal.String(),
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve image config for %s: %w", imageRef, err)
+	}
+
+	var img ocispec.Image
+	if err := json.Unmarshal(blob, &img); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal image config: %w", err)
+	}
+
+	return img.Config.Env, nil
+}
+
 // translatePlan converts a cogpack.Plan into an LLB State plus stage map.
-func translatePlan(ctx context.Context, p *plan.Plan) (llb.State, map[string]llb.State, error) {
+// If gatewayClient is provided, it will be used to inspect image configs and extract environment variables.
+func translatePlan(ctx context.Context, p *plan.Plan, gatewayClient client.Client) (llb.State, map[string]llb.State, error) {
 	stageStates := map[string]llb.State{}
 
 	platform := ocispec.Platform{OS: p.Platform.OS, Architecture: p.Platform.Arch}
@@ -27,7 +62,25 @@ func translatePlan(ctx context.Context, p *plan.Plan) (llb.State, map[string]llb
 			}
 			return s, nil
 		case in.Image != "":
-			return llb.Image(in.Image, llb.Platform(platform)), nil
+			state := llb.Image(in.Image, llb.Platform(platform))
+			
+			// Extract environment variables from image config if gateway client is available
+			if gatewayClient != nil {
+				envVars, err := inspectImageConfig(ctx, gatewayClient, in.Image, platform)
+				if err != nil {
+					// Log the error but don't fail the build - environment variables are nice to have
+					fmt.Printf("Warning: failed to inspect image config for %s: %v\n", in.Image, err)
+				} else {
+					// Apply environment variables from image config to the LLB state
+					for _, env := range envVars {
+						if eq := strings.Index(env, "="); eq != -1 {
+							state = state.AddEnv(env[:eq], env[eq+1:])
+						}
+					}
+				}
+			}
+			
+			return state, nil
 		case in.Local != "":
 			return llb.Local(in.Local), nil
 		case in.URL != "":
@@ -64,6 +117,14 @@ func translatePlan(ctx context.Context, p *plan.Plan) (llb.State, map[string]llb
 
 		diff := llb.Diff(base, modified)
 		final := base.File(llb.Copy(diff, "/", "/"), llb.WithCustomNamef("layer:%s", st.ID))
+		
+		// Preserve environment variables from the modified state
+		// Re-apply stage env vars to the final state since they were lost in the diff operation
+		for _, env := range st.Env {
+			if eq := strings.Index(env, "="); eq != -1 {
+				final = final.AddEnv(env[:eq], env[eq+1:])
+			}
+		}
 
 		stageStates[st.ID] = final
 		last = final

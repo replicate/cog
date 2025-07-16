@@ -39,9 +39,15 @@ func (b *CogWheelBlock) Plan(ctx context.Context, src *project.SourceInfo, compo
 		return err
 	}
 
+	// Get the actual wheel filename instead of using wildcards
+	wheelFilename, err := dockerfile.WheelFilename()
+	if err != nil {
+		return err
+	}
+
 	// Install the cog wheel file and pydantic dependency using mount
 	stage.Operations = append(stage.Operations, plan.Exec{
-		Command: "/uv/uv pip install --python /venv/bin/python /mnt/wheel/embed/*.whl 'pydantic>=1.9,<3'",
+		Command: "uv pip install --python /venv/bin/python /mnt/wheel/embed/" + wheelFilename + " 'pydantic>=1.9,<3'",
 		Mounts: []plan.Mount{
 			{
 				Source: plan.Input{Local: "wheel-context"},

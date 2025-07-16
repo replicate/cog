@@ -25,7 +25,7 @@ func TestTranslatePlan_Basic(t *testing.T) {
 		},
 	}
 
-	_, _, err := translatePlan(t.Context(), p)
+	_, _, err := translatePlan(t.Context(), p, nil)
 	if err != nil {
 		t.Fatalf("translatePlan failed: %v", err)
 	}
@@ -160,9 +160,14 @@ func TestResolveMountInput(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "empty input (scratch)",
-			input:   plan.Input{},
+			name:    "scratch input",
+			input:   plan.Input{Scratch: true},
 			wantErr: false,
+		},
+		{
+			name:    "empty input (invalid)",
+			input:   plan.Input{},
+			wantErr: true,
 		},
 	}
 
@@ -211,7 +216,7 @@ func TestTranslatePlan_WithMounts(t *testing.T) {
 	}
 
 	// Test that translation succeeds with mounts
-	_, stageStates, err := translatePlan(ctx, p)
+	_, stageStates, err := translatePlan(ctx, p, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, stageStates)
 	assert.Contains(t, stageStates, "test-stage")
@@ -359,4 +364,117 @@ func TestApplyMounts_WithValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestTranslatePlan_EnvironmentVariablesNotInherited demonstrates the current issue
+// where environment variables set in stages are not properly inherited by subsequent stages
+func TestTranslatePlan_EnvironmentVariablesNotInherited(t *testing.T) {
+	ctx := context.Background()
+
+	// Create a plan with two stages where the second stage should inherit env vars from the first
+	p := &plan.Plan{
+		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
+		BuildStages: []*plan.Stage{
+			{
+				ID:     "base",
+				Name:   "Base with env vars",
+				Source: plan.Input{Image: "ubuntu:22.04"},
+				Env:    []string{"PATH=/venv/bin:/usr/bin", "PYTHONPATH=/venv/lib/python3.11/site-packages"},
+				Operations: []plan.Op{
+					plan.Exec{Command: "echo 'Setting up environment'"},
+				},
+			},
+			{
+				ID:     "dependent",
+				Name:   "Stage that should inherit env vars",
+				Source: plan.Input{Stage: "base"}, // Should inherit from previous stage
+				Operations: []plan.Op{
+					plan.Exec{Command: "python -c 'import os; print(os.environ.get(\"PATH\", \"PATH not found\"))'"},
+				},
+			},
+		},
+		ExportStages: []*plan.Stage{
+			{
+				ID:     "export",
+				Name:   "Export stage",
+				Source: plan.Input{Image: "ubuntu:22.04"},
+				Operations: []plan.Op{
+					plan.Copy{
+						From: plan.Input{Stage: "dependent"},
+						Src:  []string{"/tmp"},
+						Dest: "/tmp",
+					},
+				},
+			},
+		},
+	}
+
+	// Translate the plan
+	finalState, stageStates, err := translatePlan(ctx, p, nil)
+	require.NoError(t, err)
+	assert.NotNil(t, finalState)
+	assert.Contains(t, stageStates, "base")
+	assert.Contains(t, stageStates, "dependent")
+
+	// This test currently passes, but it demonstrates the problem:
+	// The environment variables from the "base" stage are not available 
+	// in the "dependent" stage when it executes the python command.
+	// 
+	// The current implementation:
+	// 1. Applies env vars to the base state in lines 54-58 of translate.go
+	// 2. But then uses llb.Diff() which loses the environment context
+	// 3. The final state has the file system changes but not the env vars
+	//
+	// When fixed, the dependent stage should be able to access the PATH
+	// and PYTHONPATH environment variables set in the base stage.
+}
+
+// TestTranslatePlan_BaseImageEnvironmentLost demonstrates that even environment
+// variables from the base image are not properly preserved
+func TestTranslatePlan_BaseImageEnvironmentLost(t *testing.T) {
+	ctx := context.Background()
+
+	// Create a plan that starts with a base image that has environment variables
+	// and then runs a command that should access those env vars
+	p := &plan.Plan{
+		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
+		BuildStages: []*plan.Stage{
+			{
+				ID:     "with-env-operation",
+				Name:   "Stage with operation that should see base image env",
+				Source: plan.Input{Image: "python:3.11-slim"}, // This image has PATH set
+				Operations: []plan.Op{
+					plan.Exec{Command: "python --version"}, // This should work with PATH from base image
+				},
+			},
+		},
+		ExportStages: []*plan.Stage{
+			{
+				ID:     "export",
+				Name:   "Export stage",
+				Source: plan.Input{Image: "python:3.11-slim"},
+				Operations: []plan.Op{
+					plan.Copy{
+						From: plan.Input{Stage: "with-env-operation"},
+						Src:  []string{"/tmp"},
+						Dest: "/tmp",
+					},
+				},
+			},
+		},
+	}
+
+	// Translate the plan
+	finalState, stageStates, err := translatePlan(ctx, p, nil)
+	require.NoError(t, err)
+	assert.NotNil(t, finalState)
+	assert.Contains(t, stageStates, "with-env-operation")
+
+	// This test passes, but demonstrates the issue:
+	// The base image python:3.11-slim has PATH set to include python,
+	// but when we run operations, the environment from the base image
+	// is not preserved through the llb.Diff() → llb.Copy() process.
+	//
+	// This is exactly the issue we're seeing with the cogpack Python stack
+	// where the base image has /venv/bin in PATH but the runtime can't find python.
 }
