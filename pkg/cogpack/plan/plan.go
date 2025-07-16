@@ -72,9 +72,11 @@ type BuildContext struct {
 
 // PlanResult contains the result of plan generation along with metadata
 type PlanResult struct {
-	Plan     *Plan             `json:"plan"`     // the generated plan
-	Metadata *PlanMetadata     `json:"metadata"` // build context and debug info
-	Timing   map[string]string `json:"timing"`   // timing information (future)
+	Plan          *Plan             `json:"plan"`          // the generated plan
+	ComposerState map[string]any    `json:"composerState"` // the state of the composer
+	Stack         Stack             `json:"stack"`         // the selected stack
+	Metadata      *PlanMetadata     `json:"metadata"`      // build context and debug info
+	Timing        map[string]string `json:"timing"`        // timing information (future)
 }
 
 // PlanMetadata contains build context and debug information

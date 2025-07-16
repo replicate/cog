@@ -57,9 +57,6 @@ func GeneratePlan(ctx context.Context, src *project.SourceInfo) (*plan.PlanResul
 		return nil, fmt.Errorf("plan composition failed: %w", err)
 	}
 
-	fmt.Println("====Plan====")
-	util.JSONPrettyPrint(p)
-
 	// // 5. Validate plan
 	// if err := plan.ValidatePlan(p); err != nil {
 	// 	return nil, fmt.Errorf("plan validation failed: %w", err)
@@ -72,9 +69,11 @@ func GeneratePlan(ctx context.Context, src *project.SourceInfo) (*plan.PlanResul
 	}
 
 	return &plan.PlanResult{
-		Plan:     p,
-		Metadata: metadata,
-		Timing:   map[string]string{}, // TODO: Add timing information
+		Plan:          p,
+		Metadata:      metadata,
+		Stack:         stack,
+		ComposerState: composer.Debug(),
+		Timing:        map[string]string{}, // TODO: Add timing information
 	}, nil
 }
 

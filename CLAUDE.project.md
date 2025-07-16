@@ -27,7 +27,7 @@ export COGPACK=1
 # Run a model, building it if necessary
 cog predict --input key=value
 
-# View generated plan (when implemented)
+# View generated plan along with composer state and metadata
 cog plan --json > plan.json
 ```
 
@@ -329,15 +329,14 @@ BUILDKIT_PROGRESS=plain cog build
 - Mount-based context system
 - BuildKit integration with LLB translation
 - Input resolution (auto, phase, stage references)
+- CLI integration: MVP `cog plan` command (outputs plan metadata and normalized plan as JSON)
 
 ### 🚧 In Progress
 - Get a basic python model working with the `predict` command
 - Additional blocks (Apt, Torch, CUDA)
 - Define base image metadata structure and metadata needed for dependency resolution
-- CLI integration (`cog plan` command)
 
 ### 📋 Planned
-- Implement `plan` command to view composer state, generated build plan, and build metadata
 - Implement remaining blocks (TensorFlow, CUDA)
 
 ## Maintenance Instructions
@@ -371,6 +370,10 @@ When working on cogpack:
    - Assume reader is new to project
    - Explain "why" not just "what"
    - Include examples from real code
+
+5 **Document completed work**:
+   - Append a new line to the `### ✅ Completed` section of the Current Status section with a description of the work that was completed.
+   - Remove references to the work item from other sections, including `### 🚧 In Progress`, `### 📋 Planned`, `### 🔍 Under Investigation`, and `### 🎯 Future Focus Areas`.
 
 ### Review Checklist
 

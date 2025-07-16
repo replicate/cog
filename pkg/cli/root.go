@@ -37,6 +37,7 @@ https://github.com/replicate/cog`,
 
 	rootCmd.AddCommand(
 		newBuildCommand(),
+		newPlanCommand(),
 		newDebugCommand(),
 		newInitCommand(),
 		newLoginCommand(),

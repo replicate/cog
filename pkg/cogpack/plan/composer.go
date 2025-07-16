@@ -95,6 +95,18 @@ func NewPlanComposer() *Composer {
 	}
 }
 
+func (pc *Composer) Debug() map[string]any {
+	return map[string]any{
+		"platform":     pc.platform,
+		"dependencies": pc.dependencies,
+		"contexts":     pc.contexts,
+		"baseImage":    pc.baseImage,
+		"exportConfig": pc.exportConfig,
+		"buildPhases":  pc.buildPhases,
+		"exportPhases": pc.exportPhases,
+	}
+}
+
 // SetPlatform sets the target platform
 func (pc *Composer) SetPlatform(platform Platform) {
 	pc.platform = platform

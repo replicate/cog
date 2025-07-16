@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Read CLAUDE.project.md for context on the current working project.
+
 ## Project Overview
 
 Cog is a tool that packages machine learning models in production-ready containers. 
