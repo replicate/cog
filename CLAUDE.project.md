@@ -2,6 +2,8 @@
 
 > **For LLM Assistants**: This is the primary context document for the cogpack build system. Please update this document as the project evolves, documenting decisions, patterns, and architectural changes.
 
+The current task is written up in the `CURRENT WORK ITEM` section below. Please read it to understand the immediate task.
+
 > **Last Updated**: 2025-07-16  
 > **Primary Maintainer**: @md  
 > **Status**: Active Development - Composer API Established
@@ -123,6 +125,9 @@ Export phases build the runtime image:
 
 | Decision | Rationale | Date |
 |----------|-----------|------|
+| **Operation Input Resolution** | Enables blocks to reference final build outputs using phase references in Copy operations. Allows UV block to copy from PhaseBuildComplete without knowing specific stage IDs. | 2025-07-16 |
+| **Phase Pre-registration** | All phases are registered at composer creation to enable robust phase resolution. Prevents "phase does not exist" errors when referencing empty phases. | 2025-07-16 |
+| **Separate Phase Resolution Methods** | `resolvePhaseInputStage()` and `resolvePhaseOutputStage()` provide clear semantics for different use cases. Input resolution gets last stage before a phase, output resolution gets accumulated result through a phase. | 2025-07-16 |
 | **Composer Pattern** | Separates plan assembly (mutable) from execution (immutable). Provides clean API for blocks. | 2025-07-15 |
 | **Mount-based Contexts** | Use fs.FS mounts instead of MkFile for flexibility. Enables embedded files, remote URLs. | 2025-07-14 |
 | **Phase Organization** | Logical grouping of build operations. Enables auto input resolution within/across phases. | 2024-07-11 |
@@ -145,6 +150,12 @@ This section tracks work that is currently in progress. Once a work item is comp
 *These are significant areas of work that need exploration and implementation. Unlike "Pending Decisions" which have concrete options to evaluate, these items need investigation to understand the problem space first.*
 
 ### 🔍 Under Investigation
+
+**Single Phase List Architecture**
+- Current state: Separate buildPhases and exportPhases slices in Composer
+- Questions: Should we merge these into a single ordered list of phases? This would simplify phase traversal and eliminate the need for separate build/export phase handling in previousPhase()
+- Considerations: Would enable more natural phase ordering, but requires careful design to maintain build vs export semantics
+- Next steps: Evaluate impact on existing code, design unified phase traversal API
 
 **Cogpack Base Images**
 - Current state: Hardcoded base images for a few python<>cuda combinations
@@ -240,6 +251,27 @@ func (b *CogWheelBlock) Plan(ctx context.Context, src *project.SourceInfo, compo
 }
 ```
 
+### Pattern: Cross-Phase File Copy
+
+```go
+func (b *UvBlock) Plan(ctx context.Context, src *project.SourceInfo, composer *plan.Composer) error {
+    // Build stage creates venv
+    buildStage, _ := composer.AddStage(plan.PhaseAppDeps, "uv-venv")
+    buildStage.AddOperation(plan.Exec{
+        Command: "uv venv /venv --python 3.11",
+    })
+
+    // Export stage copies venv from final build output
+    exportStage, _ := composer.AddStage(plan.ExportPhaseRuntime, "copy-venv")
+    exportStage.AddOperation(plan.Copy{
+        From: plan.Input{Phase: plan.PhaseBuildComplete}, // Resolves to final build stage
+        Src:  []string{"/venv"},
+        Dest: "/venv",
+    })
+    return nil
+}
+```
+
 ### Pattern: Dependency Resolution
 
 ```go
@@ -323,6 +355,10 @@ BUILDKIT_PROGRESS=plain cog build
 
 ## Current Status
 
+### CURRENT WORK ITEM
+
+*No current work item - ready for next task*
+
 ### ✅ Completed
 - Composer API with phase organization
 - Python stack with basic blocks (Uv, CogWheel, Python)
@@ -330,6 +366,9 @@ BUILDKIT_PROGRESS=plain cog build
 - BuildKit integration with LLB translation
 - Input resolution (auto, phase, stage references)
 - CLI integration: MVP `cog plan` command (outputs plan metadata and normalized plan as JSON)
+- Operation input resolution: Copy, Add, and Mount operations now support phase references that resolve to concrete stages during plan composition
+- Phase pre-registration: All standard phases are registered at composer creation to enable robust phase resolution
+- UV block cross-phase references: UV block can now copy venv from build to export phases using `PhaseBuildComplete` reference
 
 ### 🚧 In Progress
 - Get a basic python model working with the `predict` command

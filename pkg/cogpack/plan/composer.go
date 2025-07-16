@@ -36,6 +36,7 @@ const (
 	PhaseAppDeps       PhaseKey = "build.04-app-deps"       // requirements.txt, package.json
 	PhaseAppBuild      PhaseKey = "build.05-app-build"      // compile, build artifacts
 	PhaseAppSource     PhaseKey = "build.06-app-source"     // copy source code
+	PhaseBuildComplete PhaseKey = "build.99-complete"       // final build output
 
 	// Export phases (for runtime image)
 	ExportPhaseBase    PhaseKey = "export.00-base"    // runtime base setup
@@ -82,17 +83,49 @@ func (p *ComposerPhase) previousStage(stage *ComposerStage) *ComposerStage {
 	return nil
 }
 
-// NewPlanComposer creates a new plan composer
-func NewPlanComposer() *Composer {
-	return &Composer{
+// DefaultPhases returns the standard phases in order
+func DefaultPhases() []PhaseKey {
+	return []PhaseKey{
+		// Build phases
+		PhaseBase,
+		PhaseSystemDeps,
+		PhaseRuntime,
+		PhaseFrameworkDeps,
+		PhaseAppDeps,
+		PhaseAppBuild,
+		PhaseAppSource,
+		PhaseBuildComplete,
+		
+		// Export phases
+		ExportPhaseBase,
+		ExportPhaseRuntime,
+		ExportPhaseApp,
+		ExportPhaseConfig,
+	}
+}
+
+// newPlanComposerWithPhases creates a new plan composer with specific phases pre-registered
+func newPlanComposerWithPhases(phases []PhaseKey) *Composer {
+	c := &Composer{
 		platform: Platform{
 			OS:   "linux",
 			Arch: "amd64",
 		},
 		dependencies: make(map[string]*Dependency),
 		contexts:     make(map[string]*BuildContext),
-		// stages:       make(map[string]*ComposerStage),
 	}
+	
+	// Pre-register all phases in order
+	for _, phase := range phases {
+		c.getOrCreatePhase(phase)
+	}
+	
+	return c
+}
+
+// NewPlanComposer creates a new plan composer with default phases pre-registered
+func NewPlanComposer() *Composer {
+	return newPlanComposerWithPhases(DefaultPhases())
 }
 
 func (pc *Composer) Debug() map[string]any {
@@ -284,23 +317,72 @@ func (pc *Composer) Compose() (*Plan, error) {
 
 // convertStage converts a ComposerStage to a Stage with resolved inputs
 func (pc *Composer) convertStage(cs *ComposerStage) (*Stage, error) {
+	// Resolve the stage input
+	resolvedInput, err := pc.resolveInput(cs)
+	if err != nil {
+		return nil, fmt.Errorf("resolving input for stage %q: %w", cs.ID, err)
+	}
+	
+	// Resolve operation inputs
+	resolvedOperations, err := pc.resolveOperationInputs(cs.Operations)
+	if err != nil {
+		return nil, fmt.Errorf("resolving operation inputs for stage %q: %w", cs.ID, err)
+	}
+
 	stage := &Stage{
 		ID:         cs.ID,
 		Name:       cs.Name,
-		Operations: cs.Operations,
+		Source:     resolvedInput,
+		Operations: resolvedOperations,
 		Env:        cs.Env,
 		Dir:        cs.Dir,
 		Provides:   cs.Provides,
 	}
 
-	// Resolve the input
-	resolvedInput, err := pc.resolveInput(cs)
-	if err != nil {
-		return nil, fmt.Errorf("resolving input for stage %q: %w", cs.ID, err)
-	}
-	stage.Source = resolvedInput
-
 	return stage, nil
+}
+
+// resolvePhaseInputStage returns the stage that would be provided as input TO the given phase
+// (i.e., the last stage before this phase starts)
+func (pc *Composer) resolvePhaseInputStage(phase *ComposerPhase) *ComposerStage {
+	if phase == nil {
+		return nil
+	}
+	
+	// Find the previous phase with stages
+	for {
+		phase = pc.previousPhase(phase)
+		if phase == nil {
+			return nil
+		}
+		if stage := phase.lastStage(); stage != nil {
+			return stage
+		}
+	}
+}
+
+// resolvePhaseOutputStage returns the stage that results FROM the given phase
+// (i.e., the last stage of this phase, or if empty, walks backwards to find the last stage)
+func (pc *Composer) resolvePhaseOutputStage(phase *ComposerPhase) *ComposerStage {
+	if phase == nil {
+		return nil
+	}
+	
+	// Check the requested phase first
+	if stage := phase.lastStage(); stage != nil {
+		return stage
+	}
+	
+	// Walk backwards through phases until we find a stage
+	for {
+		phase = pc.previousPhase(phase)
+		if phase == nil {
+			return nil
+		}
+		if stage := phase.lastStage(); stage != nil {
+			return stage
+		}
+	}
 }
 
 // resolveInput resolves any input type to a concrete input
@@ -324,17 +406,101 @@ func (pc *Composer) resolveInput(stage *ComposerStage) (Input, error) {
 
 	if input.Phase != "" {
 		composerPhase := pc.findComposerPhase(input.Phase)
-		if composerPhase == nil || len(composerPhase.Stages) == 0 {
-			return Input{}, fmt.Errorf("phase %q has no stages or does not exist", input.Phase)
+		if composerPhase == nil {
+			return Input{}, fmt.Errorf("phase %q does not exist", input.Phase)
 		}
-		stage := composerPhase.lastStage()
-		if stage != nil {
+		
+		// Use resolvePhaseOutputStage to get the output from the phase
+		if stage := pc.resolvePhaseOutputStage(composerPhase); stage != nil {
 			return Input{Stage: stage.ID}, nil
 		}
-		return Input{}, fmt.Errorf("phase %q has no stages", input.Phase)
+		return Input{}, fmt.Errorf("no stages found up to phase %q", input.Phase)
 	}
 
 	// All other input types (Image, Stage, Local, URL, Scratch) are already concrete
+	return input, nil
+}
+
+// resolveOperationInputs resolves Input fields within operations
+func (pc *Composer) resolveOperationInputs(operations []Op) ([]Op, error) {
+	resolved := make([]Op, len(operations))
+	
+	for i, op := range operations {
+		switch typed := op.(type) {
+		case Copy:
+			resolvedInput, err := pc.resolveInputForOperation(typed.From)
+			if err != nil {
+				return nil, fmt.Errorf("resolving Copy.From input: %w", err)
+			}
+			typed.From = resolvedInput
+			resolved[i] = typed
+			
+		case Add:
+			if !typed.From.IsEmpty() {
+				resolvedInput, err := pc.resolveInputForOperation(typed.From)
+				if err != nil {
+					return nil, fmt.Errorf("resolving Add.From input: %w", err)
+				}
+				typed.From = resolvedInput
+			}
+			resolved[i] = typed
+			
+		case Exec:
+			// Resolve mount sources
+			if len(typed.Mounts) > 0 {
+				resolvedMounts := make([]Mount, len(typed.Mounts))
+				for j, mount := range typed.Mounts {
+					resolvedInput, err := pc.resolveInputForOperation(mount.Source)
+					if err != nil {
+						return nil, fmt.Errorf("resolving Mount.Source input: %w", err)
+					}
+					resolvedMounts[j] = Mount{
+						Source: resolvedInput,
+						Target: mount.Target,
+					}
+				}
+				typed.Mounts = resolvedMounts
+			}
+			resolved[i] = typed
+			
+		default:
+			// Operations without Input fields can be passed through unchanged
+			resolved[i] = op
+		}
+	}
+	
+	return resolved, nil
+}
+
+// resolveInputForOperation resolves an Input in the context of an operation
+// This is similar to resolveInput but works for operation-level inputs
+func (pc *Composer) resolveInputForOperation(input Input) (Input, error) {
+	if input.Stage != "" {
+		if stage := pc.GetStage(input.Stage); stage != nil {
+			return Input{Stage: stage.ID}, nil
+		}
+		return Input{}, fmt.Errorf("stage %q does not exist", input.Stage)
+	}
+
+	if input.Phase != "" {
+		composerPhase := pc.findComposerPhase(input.Phase)
+		if composerPhase == nil {
+			return Input{}, fmt.Errorf("phase %q does not exist", input.Phase)
+		}
+		
+		// Use resolvePhaseOutputStage to get the output from the phase
+		if stage := pc.resolvePhaseOutputStage(composerPhase); stage != nil {
+			return Input{Stage: stage.ID}, nil
+		}
+		return Input{}, fmt.Errorf("no stages found up to phase %q", input.Phase)
+	}
+
+	// All other input types (Image, Local, URL, Scratch) are already concrete
+	// Auto is not valid for operation inputs
+	if input.Auto {
+		return Input{}, fmt.Errorf("Auto input resolution not supported for operation inputs")
+	}
+	
 	return input, nil
 }
 
