@@ -150,6 +150,7 @@ Export phases build the runtime image:
 | **Phase Organization** | Logical grouping of build operations. Enables auto input resolution within/across phases. | 2024-07-11 |
 | **Single Stack per Build** | First matching stack wins. Simplifies orchestration, avoids conflicts. | 2024-07-11 |
 | **Source Copy with Directory Removal** | Use `rm -rf /venv` before copying `/venv` from build to runtime to prevent BuildKit Copy operation from creating nested `/venv/venv` structure. BuildKit copies directories INTO existing directories rather than replacing them. | 2025-07-17 |
+| **Single Phase List Architecture** | Replaced separate buildPhases and exportPhases slices with single ordered phases list in Composer. Eliminated artificial boundary between build and export phases. Unified previousPhase() traversal now works naturally across all phases. Maintained backward compatibility through Plan.BuildStages() and Plan.ExportStages() helper methods. | 2025-07-17 |
 
 ### Pending Decisions
 
@@ -168,12 +169,6 @@ This section tracks work that is currently in progress. Once a work item is comp
 *These are significant areas of work that need exploration and implementation. Unlike "Pending Decisions" which have concrete options to evaluate, these items need investigation to understand the problem space first.*
 
 ### 🔍 Under Investigation
-
-**Single Phase List Architecture**
-- Current state: Separate buildPhases and exportPhases slices in Composer
-- Questions: Should we merge these into a single ordered list of phases? This would simplify phase traversal and eliminate the need for separate build/export phase handling in previousPhase()
-- Considerations: Would enable more natural phase ordering, but requires careful design to maintain build vs export semantics
-- Next steps: Evaluate impact on existing code, design unified phase traversal API
 
 **Cogpack Base Images**
 - Current state: Hardcoded base images for a few python<>cuda combinations
@@ -324,6 +319,7 @@ func (s *PythonStack) Plan(ctx context.Context, src *project.SourceInfo, compose
 - Prefer grouping related tests into subtests for better organization.
 - Use helpers in modern `testing` packages such as `t.Context()`, `t.TempDir()`, `t.Cleanup()`, and `testing/synctest`.
 
+
 ### Unit Tests
 - Stacks, Blocks, Composer, and Plan are all in memory representations of a build. They are deterministic and idempotent. Verify behavior through unit tests.
 - Each component should have its own tests that can be unit tested independently witout external dependencies.
@@ -378,7 +374,7 @@ cd ./test-integration/test_integration/fixtures/string-project && COGPACK=1 go r
 
 ### CURRENT TASK
 
-No current task - ready for next feature work.
+None 
 
 ### ✅ Completed
 - Composer API with phase organization
@@ -394,6 +390,7 @@ No current task - ready for next feature work.
 - **Wheel Installation Fix**: Resolved UV pip install wildcard issue by using explicit wheel filename resolution instead of `*.whl` patterns
 - **Image Config Metadata Flow**: Added image config inspection and proper metadata accumulation during Plan → LLB translation to ensure base image environment variables are inherited by build stages
 - **Source Copy Functionality**: Completed implementation of SourceCopyBlock to copy application source code to runtime image. Fixed nested venv issue with proper BuildKit Copy operation semantics using `rm -rf /venv` before copy to prevent directory nesting. Python models now build and run successfully end-to-end.
+- **Single Phase List Architecture**: Refactored Composer and Plan structs to use a single ordered phase list instead of separate build/export phase lists. This simplifies phase traversal, enables natural cross-phase references, and eliminates the artificial boundary between build and export phases. All tests pass and backward compatibility is maintained through helper methods.
 
 ### 🚧 In Progress
 - Additional blocks (Apt, Torch, CUDA)

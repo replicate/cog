@@ -17,17 +17,17 @@ type Platform struct {
 
 // Plan represents the complete build specification that can be executed by a builder
 type Plan struct {
-	Platform     Platform                 `json:"platform"` // linux/amd64
-	BuildStages  []*Stage                 `json:"buildStages"`
-	ExportStages []*Stage                 `json:"exportStages"`
-	Export       *ExportConfig            `json:"export"`   // final image config
-	Contexts     map[string]*BuildContext `json:"contexts"` // build contexts for mounting
+	Platform Platform                 `json:"platform"` // linux/amd64
+	Stages   []*Stage                 `json:"stages"`   // All stages in order
+	Export   *ExportConfig            `json:"export"`   // final image config
+	Contexts map[string]*BuildContext `json:"contexts"` // build contexts for mounting
 }
 
 // Stage represents a build phase with explicit state management
 type Stage struct {
 	ID         string   `json:"id"`                          // unique identifier (set by block)
 	Name       string   `json:"name,omitempty,omitzero"`     // human-readable name
+	PhaseKey   PhaseKey `json:"phaseKey,omitempty"`          // phase this stage belongs to
 	Source     Input    `json:"source,omitempty,omitzero"`   // input dependency
 	Operations []Op     `json:"operations,omitempty"`        // build operations
 	Env        []string `json:"env,omitempty,omitzero"`      // environment state

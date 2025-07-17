@@ -26,46 +26,46 @@ func newTestComposer(phases ...PhaseKey) *Composer {
 
 func TestComposer_Phases(t *testing.T) {
 	t.Run("add build phase", func(t *testing.T) {
-		c := &Composer{}
+		c := &Composer{phases: []*ComposerPhase{}}
 		phase := c.getOrCreatePhase(PhaseKey("build.phase"))
 		assert.NotNil(t, phase)
-		assert.Len(t, c.buildPhases, 1)
-		assert.Contains(t, c.buildPhases, phase)
+		assert.Len(t, c.phases, 1)
+		assert.Contains(t, c.phases, phase)
 		assert.Equal(t, c, phase.composer)
 		assert.Equal(t, PhaseKey("build.phase"), phase.Key)
 	})
 
 	t.Run("add export phase", func(t *testing.T) {
-		c := &Composer{}
+		c := &Composer{phases: []*ComposerPhase{}}
 		phase := c.getOrCreatePhase(PhaseKey("export.phase"))
 		assert.NotNil(t, phase)
-		assert.Len(t, c.exportPhases, 1)
-		assert.Contains(t, c.exportPhases, phase)
+		assert.Len(t, c.phases, 1)
+		assert.Contains(t, c.phases, phase)
 		assert.Equal(t, c, phase.composer)
 		assert.Equal(t, PhaseKey("export.phase"), phase.Key)
 	})
 
 	t.Run("add build phase with existing phase", func(t *testing.T) {
-		c := &Composer{}
+		c := &Composer{phases: []*ComposerPhase{}}
 		phase := c.getOrCreatePhase(PhaseKey("build.phase"))
 		assert.NotNil(t, phase)
-		assert.Len(t, c.buildPhases, 1)
-		assert.Contains(t, c.buildPhases, phase)
+		assert.Len(t, c.phases, 1)
+		assert.Contains(t, c.phases, phase)
 
 		phase = c.getOrCreatePhase(PhaseKey("build.phase"))
-		assert.Len(t, c.buildPhases, 1)
-		assert.Contains(t, c.buildPhases, phase)
+		assert.Len(t, c.phases, 1)
+		assert.Contains(t, c.phases, phase)
 	})
 
 	t.Run("add export phase with existing phase", func(t *testing.T) {
-		c := &Composer{}
+		c := &Composer{phases: []*ComposerPhase{}}
 		phase1 := c.getOrCreatePhase(PhaseKey("export.phase"))
 		assert.NotNil(t, phase1)
-		assert.Len(t, c.exportPhases, 1)
-		assert.Contains(t, c.exportPhases, phase1)
+		assert.Len(t, c.phases, 1)
+		assert.Contains(t, c.phases, phase1)
 
 		phase2 := c.getOrCreatePhase(PhaseKey("export.phase"))
-		assert.Len(t, c.exportPhases, 1)
+		assert.Len(t, c.phases, 1)
 		assert.Equal(t, phase1, phase2)
 	})
 
@@ -152,20 +152,18 @@ func TestPlanComposer_BasicComposition(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify plan structure
-	assert.Len(t, plan.BuildStages, 2)
-	assert.Len(t, plan.ExportStages, 1)
+	assert.Len(t, plan.Stages, 3)
 
-	assert.Equal(t, "ubuntu:22.04", plan.BuildStages[0].Source.Image)
-	assert.Equal(t, "install-deps", plan.BuildStages[1].Source.Stage)
-	assert.Equal(t, "ubuntu:22.04-slim", plan.ExportStages[0].Source.Image)
+	assert.Equal(t, "ubuntu:22.04", plan.Stages[0].Source.Image)
+	assert.Equal(t, "install-deps", plan.Stages[1].Source.Stage)
+	assert.Equal(t, "ubuntu:22.04-slim", plan.Stages[2].Source.Image)
 }
 
 func TestComposer_StageInputResolution(t *testing.T) {
 	tests := []struct {
-		name                  string
-		setup                 func() *Composer
-		expectedBuildSources  []Input
-		expectedExportSources []Input
+		name           string
+		setup          func() *Composer
+		expectedInputs []Input
 	}{
 		{
 			name: "auto resolves to previous stage in same phase",
@@ -180,11 +178,10 @@ func TestComposer_StageInputResolution(t *testing.T) {
 
 				return c
 			},
-			expectedBuildSources: []Input{
+			expectedInputs: []Input{
 				{Image: "ubuntu:22.04"},
 				{Stage: "stage1"},
 			},
-			expectedExportSources: []Input{},
 		},
 		{
 			name: "auto resolves to final stage of previous phase when first in phase",
@@ -202,12 +199,11 @@ func TestComposer_StageInputResolution(t *testing.T) {
 
 				return c
 			},
-			expectedBuildSources: []Input{
+			expectedInputs: []Input{
 				{Scratch: true},
 				{Stage: "stage1"},
 				{Stage: "stage2"},
 			},
-			expectedExportSources: []Input{},
 		},
 		{
 			name: "auto skips empty phases when resolving a previous phase",
@@ -227,12 +223,11 @@ func TestComposer_StageInputResolution(t *testing.T) {
 
 				return c
 			},
-			expectedBuildSources: []Input{
+			expectedInputs: []Input{
 				{Scratch: true},
 				{Stage: "stage1"},
 				{Stage: "stage2"},
 			},
-			expectedExportSources: []Input{},
 		},
 		{
 			name: "phase resolves to the last stage of the keyed phase",
@@ -253,13 +248,12 @@ func TestComposer_StageInputResolution(t *testing.T) {
 
 				return c
 			},
-			expectedBuildSources: []Input{
+			expectedInputs: []Input{
 				{Scratch: true},
 				{Stage: "stage1"},
 				{Stage: "stage2"},
 				{Stage: "stage2"},
 			},
-			expectedExportSources: []Input{},
 		},
 	}
 
@@ -269,17 +263,11 @@ func TestComposer_StageInputResolution(t *testing.T) {
 			plan, err := composer.Compose()
 			require.NoError(t, err)
 
-			actualSources := make([]Input, len(plan.BuildStages))
-			for i, stage := range plan.BuildStages {
-				actualSources[i] = stage.Source
+			var actualSources []Input
+			for _, stage := range plan.Stages {
+				actualSources = append(actualSources, stage.Source)
 			}
-			assert.Equal(t, tt.expectedBuildSources, actualSources)
-
-			actualSources = make([]Input, len(plan.ExportStages))
-			for i, stage := range plan.ExportStages {
-				actualSources[i] = stage.Source
-			}
-			assert.Equal(t, tt.expectedExportSources, actualSources)
+			assert.Equal(t, tt.expectedInputs, actualSources)
 		})
 	}
 }
@@ -344,15 +332,19 @@ func TestPlanComposer_ContextHandling(t *testing.T) {
 	assert.Equal(t, "Cog wheel files", plan.Contexts["wheel-context"].Description)
 }
 
-func TestPhaseAndStageTraversal(t *testing.T) {
+func TestComposer_ResolvingInputAndOutput(t *testing.T) {
 	p := newTestComposer(
-		PhaseKey("build.phase1"), 
-		PhaseKey("build.phase2"), 
-		PhaseKey("build.phase3"), 
+		PhaseKey("build.phase0"),
+		PhaseKey("build.phase1"),
+		PhaseKey("build.phase2"),
+		PhaseKey("build.phase3"),
 		PhaseKey("build.phase4"),
-		PhaseKey("export.phase1"), 
+		PhaseKey("export.phase1"),
 		PhaseKey("export.phase2"),
 	)
+	// an empty phase at the beginning
+	buildPhase0 := p.getOrCreatePhase(PhaseKey("build.phase0"))
+
 	buildPhase1 := p.getOrCreatePhase(PhaseKey("build.phase1"))
 	buildPhase1Stage1, err := p.AddStage(buildPhase1.Key, "build.phase1.stage1")
 	require.NoError(t, err)
@@ -365,7 +357,7 @@ func TestPhaseAndStageTraversal(t *testing.T) {
 	buildPhase2Stage2, err := p.AddStage(buildPhase2.Key, "build.phase2.stage2")
 	require.NoError(t, err)
 
-	// an empty phase
+	// an empty phase in the middle
 	buildPhase3 := p.getOrCreatePhase(PhaseKey("build.phase3"))
 	require.NoError(t, err)
 
@@ -382,399 +374,335 @@ func TestPhaseAndStageTraversal(t *testing.T) {
 	exportPhase2 := p.getOrCreatePhase(PhaseKey("export.phase2"))
 	exportPhase2Stage1, err := p.AddStage(exportPhase2.Key, "export.phase2.stage1")
 	require.NoError(t, err)
-	_, err = p.AddStage(exportPhase2.Key, "export.phase2.stage2")
+	exportPhase2Stage2, err := p.AddStage(exportPhase2.Key, "export.phase2.stage2")
 	require.NoError(t, err)
 
-	t.Run("Plan.previousStage", func(t *testing.T) {
+	t.Run("resolveStageInputStage", func(t *testing.T) {
 		cases := []struct {
-			stage       *ComposerStage
-			expected    *ComposerStage
-			description string
+			stage         *ComposerStage
+			expectedStage *ComposerStage
+			expectedError error
+			description   string
 		}{
 			{
-				stage:       buildPhase1Stage1,
-				expected:    nil,
-				description: "should return nil for first stage in first phase",
+				stage:         buildPhase1Stage1,
+				expectedError: ErrNoInputStage,
+				description:   "should return nil for first stage with no previous stage",
 			},
 			{
-				stage:       buildPhase1Stage2,
-				expected:    buildPhase1Stage1,
-				description: "should returnprevious stage in same phase",
+				stage:         buildPhase1Stage2,
+				expectedStage: buildPhase1Stage1,
+				description:   "should returnprevious stage in same phase",
 			},
 			{
-				stage:       buildPhase2Stage1,
-				expected:    buildPhase1Stage2,
-				description: "should return final stage in previous phase",
+				stage:         buildPhase2Stage1,
+				expectedStage: buildPhase1Stage2,
+				description:   "should return final stage in previous phase",
 			},
 			{
-				stage:       buildPhase4Stage1,
-				expected:    buildPhase2Stage2,
-				description: "should return final stage in previous phase, skipping empty phase",
+				stage:         buildPhase4Stage1,
+				expectedStage: buildPhase2Stage2,
+				description:   "should return final stage in previous phase, skipping empty phase",
 			},
 			{
-				stage:       exportPhase1Stage1,
-				expected:    nil,
-				description: "no previous stage for export.phase1.stage1",
+				stage:         exportPhase1Stage1,
+				expectedStage: buildPhase4Stage1,
+				description:   "export phase can reference previous build phase stage",
 			},
 			{
-				stage:       exportPhase1Stage2,
-				expected:    exportPhase1Stage1,
-				description: "previous stage in same phase",
+				stage:         exportPhase1Stage2,
+				expectedStage: exportPhase1Stage1,
+				description:   "previous stage in same phase",
 			},
 			{
-				stage:       exportPhase2Stage1,
-				expected:    exportPhase1Stage2,
-				description: "should return final stage in previous phase",
+				stage:         exportPhase2Stage1,
+				expectedStage: exportPhase1Stage2,
+				description:   "should return final stage in previous phase",
+			},
+			{
+				stage:         &ComposerStage{ID: "unregistered-stage"},
+				expectedError: ErrStageNotFound,
+				description:   "should return error for unregistered stage",
 			},
 		}
 
 		for _, tt := range cases {
 			t.Run(tt.description, func(t *testing.T) {
-				assert.Equal(t, tt.expected, p.previousStage(tt.stage), tt.description)
+				inputStage, err := p.resolveStageInputStage(tt.stage)
+				if tt.expectedError != nil {
+					assert.ErrorIs(t, err, tt.expectedError)
+				} else {
+					require.NoError(t, err)
+				}
+				if tt.expectedStage != nil {
+					assert.Equal(t, tt.expectedStage, inputStage, tt.description)
+				} else {
+					assert.Nil(t, inputStage, tt.description)
+				}
 			})
 		}
 	})
-
-	t.Run("Plan.previousPhase", func(t *testing.T) {
-		cases := []struct {
-			phase       *ComposerPhase
-			expected    *ComposerPhase
-			description string
-		}{
-			{
-				phase:       buildPhase1,
-				expected:    nil,
-				description: "should return nil for first phase",
-			},
-			{
-				phase:       buildPhase2,
-				expected:    buildPhase1,
-				description: "should return previous phase",
-			},
-			{
-				phase:       buildPhase3,
-				expected:    buildPhase2,
-				description: "should return previous phase",
-			},
-			{
-				phase:       buildPhase4,
-				expected:    buildPhase3,
-				description: "should return previous phase",
-			},
-			{
-				phase:       exportPhase1,
-				expected:    nil,
-				description: "should return nil for first phase",
-			},
-			{
-				phase:       exportPhase2,
-				expected:    exportPhase1,
-				description: "should return previous phase",
-			},
-		}
-
-		for _, tt := range cases {
-			t.Run(tt.description, func(t *testing.T) {
-				assert.Equal(t, tt.expected, p.previousPhase(tt.phase), tt.description)
-			})
-		}
-	})
-
-	t.Run("Phase.lastStage", func(t *testing.T) {
-		cases := []struct {
-			phase       *ComposerPhase
-			expected    *ComposerStage
-			description string
-		}{
-			{
-				phase:       buildPhase1,
-				expected:    buildPhase1Stage2,
-				description: "should return last stage if phase has multiple stages",
-			},
-			{
-				phase:       buildPhase3,
-				expected:    nil,
-				description: "should return nil if phase has no stages",
-			},
-			{
-				phase:       buildPhase4,
-				expected:    buildPhase4Stage1,
-				description: "should return only stage if phase has one stage",
-			},
-		}
-
-		for _, tt := range cases {
-			t.Run(tt.description, func(t *testing.T) {
-				assert.Equal(t, tt.expected, tt.phase.lastStage(), tt.description)
-			})
-		}
-	})
-}
-
-func TestComposer_ResolvePhaseStages(t *testing.T) {
-	// Setup a complex phase/stage hierarchy for testing
-	setupComposer := func() *Composer {
-		p := NewPlanComposer()
-		
-		// Build phases
-		buildPhase1 := p.getOrCreatePhase(PhaseSystemDeps)
-		buildPhase1Stage1, _ := p.AddStage(buildPhase1.Key, "system-deps-1")
-		buildPhase1Stage2, _ := p.AddStage(buildPhase1.Key, "system-deps-2")
-		
-		buildPhase2 := p.getOrCreatePhase(PhaseRuntime)
-		buildPhase2Stage1, _ := p.AddStage(buildPhase2.Key, "runtime-1")
-		
-		// Empty build phase
-		p.getOrCreatePhase(PhaseFrameworkDeps)
-		
-		buildPhase4 := p.getOrCreatePhase(PhaseAppDeps)
-		buildPhase4Stage1, _ := p.AddStage(buildPhase4.Key, "app-deps-1")
-		buildPhase4Stage2, _ := p.AddStage(buildPhase4.Key, "app-deps-2")
-		
-		// Another empty build phase
-		p.getOrCreatePhase(PhaseAppSource)
-		
-		// Export phases
-		exportPhase1 := p.getOrCreatePhase(ExportPhaseBase)
-		exportPhase1Stage1, _ := p.AddStage(exportPhase1.Key, "export-base-1")
-		
-		// Empty export phase
-		p.getOrCreatePhase(ExportPhaseRuntime)
-		
-		exportPhase3 := p.getOrCreatePhase(ExportPhaseApp)
-		exportPhase3Stage1, _ := p.AddStage(exportPhase3.Key, "export-app-1")
-		
-		// Store references for easier test access
-		p.SetDependencies(map[string]*Dependency{
-			"test-buildPhase1Stage1": {Name: string(buildPhase1Stage1.ID)},
-			"test-buildPhase1Stage2": {Name: string(buildPhase1Stage2.ID)},
-			"test-buildPhase2Stage1": {Name: string(buildPhase2Stage1.ID)},
-			"test-buildPhase4Stage1": {Name: string(buildPhase4Stage1.ID)},
-			"test-buildPhase4Stage2": {Name: string(buildPhase4Stage2.ID)},
-			"test-exportPhase1Stage1": {Name: string(exportPhase1Stage1.ID)},
-			"test-exportPhase3Stage1": {Name: string(exportPhase3Stage1.ID)},
-		})
-		
-		return p
-	}
 
 	t.Run("resolvePhaseInputStage", func(t *testing.T) {
-		p := setupComposer()
-		
 		cases := []struct {
-			phaseKey    PhaseKey
-			expected    string // stage ID or empty for nil
-			description string
+			phase         *ComposerPhase
+			expectedStage *ComposerStage
+			expectedError error
+			description   string
 		}{
 			{
-				phaseKey:    PhaseSystemDeps,
-				expected:    "",
-				description: "first phase should have no input stage",
+				phase:         buildPhase0,
+				expectedError: ErrNoInputStage,
+				description:   "should return ErrNoInputStage for first phase",
 			},
 			{
-				phaseKey:    PhaseRuntime,
-				expected:    "system-deps-2",
-				description: "should return last stage of previous phase",
+				phase:         buildPhase1,
+				expectedError: ErrNoInputStage,
+				description:   "should return ErrNoInputStage for 2nd phase with no previous stages",
 			},
 			{
-				phaseKey:    PhaseFrameworkDeps,
-				expected:    "runtime-1",
-				description: "empty phase should return last stage of previous non-empty phase",
+				phase:         buildPhase2,
+				expectedStage: buildPhase1Stage2,
+				description:   "should return last stage of previous phase",
 			},
 			{
-				phaseKey:    PhaseAppDeps,
-				expected:    "runtime-1",
-				description: "should skip empty phases when looking for input",
+				phase:         buildPhase3,
+				expectedStage: buildPhase2Stage2,
+				description:   "should return last stage of previous phase",
 			},
 			{
-				phaseKey:    PhaseAppSource,
-				expected:    "app-deps-2",
-				description: "empty phase at end should return last stage of previous non-empty phase",
+				phase:         buildPhase4,
+				expectedStage: buildPhase2Stage2,
+				description:   "should return last stage of previous phase, skipping empty phase",
 			},
 			{
-				phaseKey:    ExportPhaseBase,
-				expected:    "",
-				description: "first export phase should have no input stage",
+				phase:         exportPhase1,
+				expectedStage: buildPhase4Stage1,
+				description:   "export phase can reference previous build phase stage",
 			},
 			{
-				phaseKey:    ExportPhaseRuntime,
-				expected:    "export-base-1",
-				description: "empty export phase should return last stage of previous export phase",
+				phase:         exportPhase2,
+				expectedStage: exportPhase1Stage2,
+				description:   "should return last stage of previous phase",
 			},
 			{
-				phaseKey:    ExportPhaseApp,
-				expected:    "export-base-1",
-				description: "should skip empty export phases when looking for input",
+				phase:         &ComposerPhase{Key: PhaseKey("unregistered-phase")},
+				expectedError: ErrPhaseNotFound,
+				description:   "should return error for unregistered phase",
 			},
 		}
-		
+
 		for _, tt := range cases {
 			t.Run(tt.description, func(t *testing.T) {
-				phase := p.findComposerPhase(tt.phaseKey)
-				require.NotNil(t, phase, "phase %s should exist", tt.phaseKey)
-				
-				result := p.resolvePhaseInputStage(phase)
-				if tt.expected == "" {
-					assert.Nil(t, result, tt.description)
+				inputStage, err := p.resolvePhaseInputStage(tt.phase)
+				if tt.expectedError != nil {
+					assert.ErrorIs(t, err, tt.expectedError)
 				} else {
-					require.NotNil(t, result, tt.description)
-					assert.Equal(t, tt.expected, result.ID, tt.description)
+					require.NoError(t, err)
+				}
+				if tt.expectedStage != nil {
+					assert.Equal(t, tt.expectedStage, inputStage, tt.description)
+				} else {
+					assert.Nil(t, inputStage, tt.description)
 				}
 			})
 		}
 	})
 
 	t.Run("resolvePhaseOutputStage", func(t *testing.T) {
-		p := setupComposer()
-		
 		cases := []struct {
-			phaseKey    PhaseKey
-			expected    string // stage ID or empty for nil
-			description string
+			phase         *ComposerPhase
+			expected      *ComposerStage
+			expectedError error
+			description   string
 		}{
 			{
-				phaseKey:    PhaseSystemDeps,
-				expected:    "system-deps-2",
-				description: "should return last stage of phase with stages",
+				phase:       buildPhase1,
+				expected:    buildPhase1Stage2,
+				description: "should return last stage of current phase",
 			},
 			{
-				phaseKey:    PhaseRuntime,
-				expected:    "runtime-1",
-				description: "should return last stage of phase with single stage",
+				phase:       buildPhase2,
+				expected:    buildPhase2Stage2,
+				description: "should return last stage of current phase",
 			},
 			{
-				phaseKey:    PhaseFrameworkDeps,
-				expected:    "runtime-1",
-				description: "empty phase should walk back to find last stage",
+				phase:       buildPhase3,
+				expected:    buildPhase2Stage2,
+				description: "should return last stage of previous phase if current phase is empty",
 			},
 			{
-				phaseKey:    PhaseAppDeps,
-				expected:    "app-deps-2",
-				description: "should return last stage of phase after empty phase",
+				phase:       buildPhase4,
+				expected:    buildPhase4Stage1,
+				description: "should return last stage of current phase",
 			},
 			{
-				phaseKey:    PhaseAppSource,
-				expected:    "app-deps-2",
-				description: "empty phase at end should walk back to find last stage",
+				phase:       exportPhase1,
+				expected:    exportPhase1Stage2,
+				description: "should return last stage of current phase",
 			},
 			{
-				phaseKey:    ExportPhaseBase,
-				expected:    "export-base-1",
-				description: "should return stage from export phase",
+				phase:       exportPhase2,
+				expected:    exportPhase2Stage2,
+				description: "should return last stage of current phase",
 			},
 			{
-				phaseKey:    ExportPhaseRuntime,
-				expected:    "export-base-1",
-				description: "empty export phase should walk back to find last stage",
-			},
-			{
-				phaseKey:    ExportPhaseApp,
-				expected:    "export-app-1",
-				description: "should return stage from export phase after empty phase",
+				phase:         &ComposerPhase{Key: PhaseKey("unregistered-phase")},
+				expected:      nil,
+				expectedError: ErrPhaseNotFound,
+				description:   "should return PhaseNotFound error for unregistered phase",
 			},
 		}
-		
+
 		for _, tt := range cases {
 			t.Run(tt.description, func(t *testing.T) {
-				phase := p.findComposerPhase(tt.phaseKey)
-				require.NotNil(t, phase, "phase %s should exist", tt.phaseKey)
-				
-				result := p.resolvePhaseOutputStage(phase)
-				if tt.expected == "" {
-					assert.Nil(t, result, tt.description)
+				outputStage, err := p.resolvePhaseOutputStage(tt.phase)
+				if tt.expectedError != nil {
+					assert.ErrorIs(t, err, tt.expectedError)
 				} else {
-					require.NotNil(t, result, tt.description)
-					assert.Equal(t, tt.expected, result.ID, tt.description)
+					require.NoError(t, err)
+				}
+				if tt.expected != nil {
+					assert.Equal(t, tt.expected, outputStage, tt.description)
+				} else {
+					assert.Nil(t, outputStage, tt.description)
 				}
 			})
 		}
 	})
 
-	t.Run("resolvePhaseOutputStage with all empty phases", func(t *testing.T) {
-		p := NewPlanComposer()
-		
-		// Create only empty phases
-		p.getOrCreatePhase(PhaseSystemDeps)
-		p.getOrCreatePhase(PhaseRuntime)
-		phase := p.getOrCreatePhase(PhaseAppDeps)
-		
-		result := p.resolvePhaseOutputStage(phase)
-		assert.Nil(t, result, "should return nil when all phases are empty")
-	})
+	t.Run("resolveInputFromStage", func(t *testing.T) {
+		cases := []struct {
+			fromStage     *ComposerStage
+			input         Input
+			resolvedInput *Input
+			expectedError error
+			description   string
+		}{
+			{
+				fromStage:     buildPhase2Stage1,
+				input:         Input{Phase: PhaseKey("build.phase1")},
+				resolvedInput: &Input{Stage: "build.phase1.stage2"},
+				description:   "should return final stage of target phase",
+			},
+			{
+				fromStage:     buildPhase4Stage1,
+				input:         Input{Phase: PhaseKey("build.phase0")},
+				expectedError: ErrNoInputStage,
+				description:   "should return error if target phase has no output stages",
+			},
+			{
+				fromStage:     buildPhase2Stage1,
+				input:         Input{Phase: PhaseKey("does.not.exist")},
+				expectedError: ErrPhaseNotFound,
+				description:   "should return error when target phase is unregistered",
+			},
+			{
+				fromStage:     buildPhase2Stage1,
+				input:         Input{Stage: "build.phase1.stage1"},
+				resolvedInput: &Input{Stage: "build.phase1.stage1"},
+				description:   "should return target stage",
+			},
+			{
+				fromStage:     buildPhase2Stage1,
+				input:         Input{Stage: "does.not.exist"},
+				expectedError: ErrStageNotFound,
+				description:   "should return error when target stage is unregistered",
+			},
+			{
+				fromStage:     buildPhase2Stage2,
+				input:         Input{Auto: true},
+				resolvedInput: &Input{Stage: "build.phase2.stage1"},
+				description:   "should return previous stage when target is auto",
+			},
+			{
+				fromStage:     buildPhase2Stage2,
+				input:         Input{Scratch: true},
+				resolvedInput: &Input{Scratch: true},
+				description:   "should return scratch unaltered ",
+			},
+			{
+				fromStage:     buildPhase2Stage2,
+				input:         Input{Local: "context1"},
+				resolvedInput: &Input{Local: "context1"},
+				description:   "should return local input unaltered",
+			},
+			{
+				fromStage:     buildPhase2Stage2,
+				input:         Input{URL: "https://example.com/file.txt"},
+				resolvedInput: &Input{URL: "https://example.com/file.txt"},
+				description:   "should return URL input unaltered",
+			},
+			{
+				fromStage:     &ComposerStage{ID: "does.not.exist"},
+				input:         Input{Scratch: true},
+				expectedError: ErrStageNotFound,
+				description:   "should return error when resolving input from unregistered stage",
+			},
+		}
 
-	t.Run("edge cases", func(t *testing.T) {
-		t.Run("nil phase", func(t *testing.T) {
-			p := NewPlanComposer()
-			
-			// These functions should handle nil gracefully
-			assert.Nil(t, p.resolvePhaseInputStage(nil))
-			assert.Nil(t, p.resolvePhaseOutputStage(nil))
-		})
-		
-		t.Run("phase not in composer", func(t *testing.T) {
-			p := NewPlanComposer()
-			orphanPhase := &ComposerPhase{
-				Key:      PhaseSystemDeps,
-				Stages:   []*ComposerStage{},
-				composer: p,
-			}
-			
-			// Should handle gracefully
-			assert.Nil(t, p.resolvePhaseInputStage(orphanPhase))
-			assert.Nil(t, p.resolvePhaseOutputStage(orphanPhase))
-		})
+		for _, tt := range cases {
+			t.Run(tt.description, func(t *testing.T) {
+				resolvedInput, err := p.resolveInputFromStage(tt.input, tt.fromStage)
+				if tt.expectedError != nil {
+					assert.ErrorIs(t, err, tt.expectedError)
+				} else {
+					require.NoError(t, err)
+				}
+				assert.Equal(t, tt.resolvedInput, resolvedInput, tt.description)
+			})
+		}
+
 	})
 }
 
 func TestComposer_OperationInputResolution(t *testing.T) {
 	t.Run("Copy operation with phase reference", func(t *testing.T) {
 		p := NewPlanComposer()
-		
+
 		// Build phase with venv
 		buildStage, err := p.AddStage(PhaseAppDeps, "create-venv", WithSource(FromImage("python:3.11")))
 		require.NoError(t, err)
 		buildStage.AddOperation(Exec{Command: "python -m venv /venv"})
-		
-		// Add a phase to reference as the "final build output"
-		p.getOrCreatePhase(PhaseKey("build.final"))
-		
-		// Export phase that copies from the build
+
+		// Export phase that copies from the build using PhaseBuildComplete
 		exportStage, err := p.AddStage(ExportPhaseRuntime, "copy-venv", WithSource(FromImage("python:3.11-slim")))
 		require.NoError(t, err)
 		exportStage.AddOperation(Copy{
-			From: Input{Phase: PhaseKey("build.final")},
+			From: Input{Phase: PhaseBuildComplete},
 			Src:  []string{"/venv"},
 			Dest: "/venv",
 		})
-		
+
 		// Compose the plan
 		plan, err := p.Compose()
 		require.NoError(t, err)
-		
+
 		// The Copy operation should have its From input resolved
-		require.Len(t, plan.ExportStages, 1)
-		require.Len(t, plan.ExportStages[0].Operations, 1)
-		
-		copyOp, ok := plan.ExportStages[0].Operations[0].(Copy)
+
+		require.Len(t, plan.Stages, 2)
+		require.Len(t, plan.Stages[1].Operations, 1)
+
+		copyOp, ok := plan.Stages[1].Operations[0].(Copy)
 		require.True(t, ok, "operation should be a Copy")
-		
+
 		// Phase reference should be resolved to the create-venv stage
 		assert.Equal(t, "create-venv", copyOp.From.Stage)
 		assert.Equal(t, PhaseKey(""), copyOp.From.Phase)
 	})
-	
+
 	t.Run("Multiple operations with different input types", func(t *testing.T) {
 		p := NewPlanComposer()
-		
+
 		// Build stages
 		stage1, err := p.AddStage(PhaseSystemDeps, "stage1", WithSource(FromImage("ubuntu:22.04")))
 		require.NoError(t, err)
 		stage1.AddOperation(Exec{Command: "echo stage1"})
-		
+
 		stage2, err := p.AddStage(PhaseRuntime, "stage2")
 		require.NoError(t, err)
 		stage2.AddOperation(Exec{Command: "echo stage2"})
-		
+
 		// Export stage with multiple copy operations
 		exportStage, err := p.AddStage(ExportPhaseBase, "export", WithSource(FromImage("ubuntu:22.04-slim")))
 		require.NoError(t, err)
@@ -795,33 +723,33 @@ func TestComposer_OperationInputResolution(t *testing.T) {
 				Dest: "/file3",
 			},
 		)
-		
+
 		// Compose the plan
 		plan, err := p.Compose()
 		require.NoError(t, err)
-		
+
 		// Check all operations were resolved correctly
-		require.Len(t, plan.ExportStages[0].Operations, 3)
-		
-		copy1 := plan.ExportStages[0].Operations[0].(Copy)
+		require.Len(t, plan.Stages[2].Operations, 3)
+
+		copy1 := plan.Stages[2].Operations[0].(Copy)
 		assert.Equal(t, "stage1", copy1.From.Stage)
-		
-		copy2 := plan.ExportStages[0].Operations[1].(Copy)
+
+		copy2 := plan.Stages[2].Operations[1].(Copy)
 		assert.Equal(t, "stage2", copy2.From.Stage)
 		assert.Equal(t, PhaseKey(""), copy2.From.Phase)
-		
-		copy3 := plan.ExportStages[0].Operations[2].(Copy)
+
+		copy3 := plan.Stages[2].Operations[2].(Copy)
 		assert.Equal(t, "context1", copy3.From.Local)
 	})
-	
+
 	t.Run("Operation with invalid phase reference", func(t *testing.T) {
 		p := NewPlanComposer()
-		
+
 		// Build stage
 		buildStage, err := p.AddStage(PhaseSystemDeps, "build", WithSource(FromImage("ubuntu:22.04")))
 		require.NoError(t, err)
 		buildStage.AddOperation(Exec{Command: "echo build"})
-		
+
 		// Export stage with copy from non-existent phase
 		exportStage, err := p.AddStage(ExportPhaseBase, "export", WithSource(FromImage("ubuntu:22.04-slim")))
 		require.NoError(t, err)
@@ -830,10 +758,10 @@ func TestComposer_OperationInputResolution(t *testing.T) {
 			Src:  []string{"/file"},
 			Dest: "/file",
 		})
-		
+
 		// Compose should fail
 		_, err = p.Compose()
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "nonexistent")
+		assert.ErrorIs(t, err, ErrPhaseNotFound)
 	})
 }

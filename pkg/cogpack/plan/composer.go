@@ -1,14 +1,12 @@
 package plan
 
 import (
-	"errors"
 	"fmt"
 	"iter"
 	"slices"
 	"strings"
 
 	"github.com/replicate/cog/pkg/cogpack/baseimg"
-	"github.com/replicate/cog/pkg/util/iterext"
 )
 
 // Composer provides an API for composing plans during the build process.
@@ -20,12 +18,20 @@ type Composer struct {
 	baseImage    *baseimg.BaseImage
 	contexts     map[string]*BuildContext
 	exportConfig *ExportConfig
-	buildPhases  []*ComposerPhase
-	exportPhases []*ComposerPhase
+	phases       []*ComposerPhase // Single ordered list of all phases
 }
 
 // PhaseKey represents the different phases of the build process
 type PhaseKey string
+
+// PhaseType represents the type of phase (build or export)
+type PhaseType int
+
+const (
+	PhaseTypeUnknown PhaseType = iota
+	PhaseTypeBuild
+	PhaseTypeExport
+)
 
 const (
 	// Build phases
@@ -45,13 +51,15 @@ const (
 	ExportPhaseConfig  PhaseKey = "export.03-config"  // final config, entrypoint
 )
 
-// IsExportPhase returns true if this phase is part of the export process
-func (p PhaseKey) IsExportPhase() bool {
-	return strings.HasPrefix(string(p), "export.")
-}
-
-func (p PhaseKey) IsBuildPhase() bool {
-	return strings.HasPrefix(string(p), "build.")
+// Type returns the type of phase (build or export)
+func (p PhaseKey) Type() PhaseType {
+	if strings.HasPrefix(string(p), "build.") {
+		return PhaseTypeBuild
+	}
+	if strings.HasPrefix(string(p), "export.") {
+		return PhaseTypeExport
+	}
+	return PhaseTypeUnknown
 }
 
 // ComposerPhase represents a phase during composition
@@ -73,14 +81,6 @@ func (p *ComposerPhase) lastStage() *ComposerStage {
 		return nil
 	}
 	return p.Stages[len(p.Stages)-1]
-}
-
-func (p *ComposerPhase) previousStage(stage *ComposerStage) *ComposerStage {
-	stageIdx := slices.Index(p.Stages, stage)
-	if stageIdx > 0 {
-		return p.Stages[stageIdx-1]
-	}
-	return nil
 }
 
 // DefaultPhases returns the standard phases in order
@@ -113,6 +113,7 @@ func newPlanComposerWithPhases(phases []PhaseKey) *Composer {
 		},
 		dependencies: make(map[string]*Dependency),
 		contexts:     make(map[string]*BuildContext),
+		phases:       make([]*ComposerPhase, 0, len(phases)),
 	}
 
 	// Pre-register all phases in order
@@ -135,8 +136,7 @@ func (pc *Composer) Debug() map[string]any {
 		"contexts":     pc.contexts,
 		"baseImage":    pc.baseImage,
 		"exportConfig": pc.exportConfig,
-		"buildPhases":  pc.buildPhases,
-		"exportPhases": pc.exportPhases,
+		"phases":       pc.phases,
 	}
 }
 
@@ -179,34 +179,17 @@ func (pc *Composer) GetBaseImage() *baseimg.BaseImage {
 	return pc.baseImage
 }
 
-var ErrDuplicateStageID = errors.New("stage ID already exists")
-
-func (pc *Composer) BuildStages() iter.Seq[*ComposerStage] {
-	return func(yield func(*ComposerStage) bool) {
-		for _, phase := range pc.buildPhases {
-			for _, stage := range phase.Stages {
-				if !yield(stage) {
-					return
-				}
-			}
-		}
-	}
-}
-
-func (pc *Composer) ExportStages() iter.Seq[*ComposerStage] {
-	return func(yield func(*ComposerStage) bool) {
-		for _, phase := range pc.exportPhases {
-			for _, stage := range phase.Stages {
-				if !yield(stage) {
-					return
-				}
-			}
-		}
-	}
-}
-
+// AllStages returns an iterator over all stages in phase order
 func (pc *Composer) AllStages() iter.Seq[*ComposerStage] {
-	return iterext.Concat(pc.BuildStages(), pc.ExportStages())
+	return func(yield func(*ComposerStage) bool) {
+		for _, phase := range pc.phases {
+			for _, stage := range phase.Stages {
+				if !yield(stage) {
+					return
+				}
+			}
+		}
+	}
 }
 
 type StageOpt func(*ComposerStage)
@@ -284,27 +267,19 @@ func (pc *Composer) HasProvider(packageName string) bool {
 func (pc *Composer) Compose() (*Plan, error) {
 	// Create the base plan
 	plan := &Plan{
-		Platform:     pc.platform,
-		Export:       pc.exportConfig,
-		Contexts:     pc.contexts,
-		BuildStages:  []*Stage{},
-		ExportStages: []*Stage{},
+		Platform: pc.platform,
+		Export:   pc.exportConfig,
+		Contexts: pc.contexts,
+		Stages:   []*Stage{},
 	}
 
-	for cs := range pc.BuildStages() {
+	// Convert all stages in order
+	for cs := range pc.AllStages() {
 		composedStage, err := pc.convertStage(cs)
 		if err != nil {
 			return nil, fmt.Errorf("converting stage %q: %w", cs.ID, err)
 		}
-		plan.BuildStages = append(plan.BuildStages, composedStage)
-	}
-
-	for cs := range pc.ExportStages() {
-		outputStage, err := pc.convertStage(cs)
-		if err != nil {
-			return nil, fmt.Errorf("converting stage %q: %w", cs.ID, err)
-		}
-		plan.ExportStages = append(plan.ExportStages, outputStage)
+		plan.Stages = append(plan.Stages, composedStage)
 	}
 
 	// // Validate the final plan
@@ -318,13 +293,13 @@ func (pc *Composer) Compose() (*Plan, error) {
 // convertStage converts a ComposerStage to a Stage with resolved inputs
 func (pc *Composer) convertStage(cs *ComposerStage) (*Stage, error) {
 	// Resolve the stage input
-	resolvedInput, err := pc.resolveInput(cs)
+	resolvedInput, err := pc.resolveInputFromStage(cs.Source, cs)
 	if err != nil {
 		return nil, fmt.Errorf("resolving input for stage %q: %w", cs.ID, err)
 	}
 
 	// Resolve operation inputs
-	resolvedOperations, err := pc.resolveOperationInputs(cs.Operations)
+	resolvedOperations, err := pc.resolveOperationInputs(cs.Operations, cs)
 	if err != nil {
 		return nil, fmt.Errorf("resolving operation inputs for stage %q: %w", cs.ID, err)
 	}
@@ -332,7 +307,8 @@ func (pc *Composer) convertStage(cs *ComposerStage) (*Stage, error) {
 	stage := &Stage{
 		ID:         cs.ID,
 		Name:       cs.Name,
-		Source:     resolvedInput,
+		PhaseKey:   cs.phase.Key,
+		Source:     *resolvedInput,
 		Operations: resolvedOperations,
 		Env:        cs.Env,
 		Dir:        cs.Dir,
@@ -344,104 +320,114 @@ func (pc *Composer) convertStage(cs *ComposerStage) (*Stage, error) {
 
 // resolvePhaseInputStage returns the stage that would be provided as input TO the given phase
 // (i.e., the last stage before this phase starts)
-func (pc *Composer) resolvePhaseInputStage(phase *ComposerPhase) *ComposerStage {
-	if phase == nil {
-		return nil
+func (pc *Composer) resolvePhaseInputStage(phase *ComposerPhase) (*ComposerStage, error) {
+	idx := slices.Index(pc.phases, phase)
+	if idx == -1 {
+		return nil, ErrPhaseNotFound
+	}
+	if idx == 0 {
+		return nil, ErrNoInputStage
 	}
 
-	// Find the previous phase with stages
-	for {
-		phase = pc.previousPhase(phase)
-		if phase == nil {
-			return nil
-		}
-		if stage := phase.lastStage(); stage != nil {
-			return stage
+	for i := idx - 1; i >= 0; i-- {
+		previousPhase := pc.phases[i]
+		if previousStage := previousPhase.lastStage(); previousStage != nil {
+			return previousStage, nil
 		}
 	}
+
+	return nil, ErrNoInputStage
 }
 
 // resolvePhaseOutputStage returns the stage that results FROM the given phase
 // (i.e., the last stage of this phase, or if empty, walks backwards to find the last stage)
-func (pc *Composer) resolvePhaseOutputStage(phase *ComposerPhase) *ComposerStage {
-	if phase == nil {
-		return nil
+func (pc *Composer) resolvePhaseOutputStage(phase *ComposerPhase) (*ComposerStage, error) {
+	if phase == nil || !pc.phaseExists(phase.Key) {
+		return nil, ErrPhaseNotFound
 	}
 
-	// Check the requested phase first
 	if stage := phase.lastStage(); stage != nil {
-		return stage
+		return stage, nil
 	}
-
-	// Walk backwards through phases until we find a stage
-	for {
-		phase = pc.previousPhase(phase)
-		if phase == nil {
-			return nil
-		}
-		if stage := phase.lastStage(); stage != nil {
-			return stage
-		}
-	}
+	return pc.resolvePhaseInputStage(phase)
 }
 
-// resolveInput resolves any input type to a concrete input
-func (pc *Composer) resolveInput(stage *ComposerStage) (Input, error) {
-	input := stage.Source
+// resolveStageInputStage returns the stage that would be provided as input TO the given stage
+// (i.e., the last stage before this stage starts)
+func (pc *Composer) resolveStageInputStage(stage *ComposerStage) (*ComposerStage, error) {
+	var previousStage *ComposerStage
+	for otherStage := range pc.AllStages() {
+		if otherStage == stage {
+			if previousStage == nil {
+				return nil, ErrNoInputStage
+			}
+			return previousStage, nil
+		}
+		previousStage = otherStage
+	}
+	return nil, ErrStageNotFound
+}
+
+func (pc *Composer) resolveInputFromStage(input Input, stage *ComposerStage) (*Input, error) {
+	if stage == nil || !pc.stageRegistered(stage) {
+		return nil, ErrStageNotFound
+	}
 
 	// Handle Auto resolution
 	if input.Auto {
-		if stage := stage.inputStage(); stage != nil {
-			return Input{Stage: stage.ID}, nil
+		if inputStage, err := pc.resolveStageInputStage(stage); err == nil {
+			return &Input{Stage: inputStage.ID}, nil
+		} else {
+			return nil, err
 		}
-		return Input{}, fmt.Errorf("cannot resolve auto input for stage %q: no previous stage", stage.ID)
 	}
 
 	if input.Stage != "" {
 		if stage := pc.GetStage(input.Stage); stage != nil {
-			return Input{Stage: stage.ID}, nil
+			return &Input{Stage: stage.ID}, nil
 		}
-		return Input{}, fmt.Errorf("stage %q does not exist", input.Stage)
+		return nil, ErrStageNotFound
 	}
 
 	if input.Phase != "" {
-		composerPhase := pc.findComposerPhase(input.Phase)
+		composerPhase := pc.getPhase(input.Phase)
 		if composerPhase == nil {
-			return Input{}, fmt.Errorf("phase %q does not exist", input.Phase)
+			return nil, ErrPhaseNotFound
 		}
 
 		// Use resolvePhaseOutputStage to get the output from the phase
-		if stage := pc.resolvePhaseOutputStage(composerPhase); stage != nil {
-			return Input{Stage: stage.ID}, nil
+		if stage, err := pc.resolvePhaseOutputStage(composerPhase); err == nil {
+			return &Input{Stage: stage.ID}, nil
+		} else {
+			return nil, err
 		}
-		return Input{}, fmt.Errorf("no stages found up to phase %q", input.Phase)
 	}
 
-	// All other input types (Image, Stage, Local, URL, Scratch) are already concrete
-	return input, nil
+	// All other input types (Image, Local, URL, Scratch) are already concrete
+	return &input, nil
 }
 
 // resolveOperationInputs resolves Input fields within operations
-func (pc *Composer) resolveOperationInputs(operations []Op) ([]Op, error) {
+func (pc *Composer) resolveOperationInputs(operations []Op, stage *ComposerStage) ([]Op, error) {
 	resolved := make([]Op, len(operations))
 
 	for i, op := range operations {
 		switch typed := op.(type) {
 		case Copy:
-			resolvedInput, err := pc.resolveInputForOperation(typed.From)
+			resolvedInput, err := pc.resolveInputFromStage(typed.From, stage)
 			if err != nil {
 				return nil, fmt.Errorf("resolving Copy.From input: %w", err)
 			}
-			typed.From = resolvedInput
+			typed.From = *resolvedInput
 			resolved[i] = typed
 
 		case Add:
 			if !typed.From.IsEmpty() {
-				resolvedInput, err := pc.resolveInputForOperation(typed.From)
+				resolvedInput, err := pc.resolveInputFromStage(typed.From, stage)
 				if err != nil {
 					return nil, fmt.Errorf("resolving Add.From input: %w", err)
 				}
-				typed.From = resolvedInput
+				typed.From = *resolvedInput
 			}
 			resolved[i] = typed
 
@@ -450,12 +436,12 @@ func (pc *Composer) resolveOperationInputs(operations []Op) ([]Op, error) {
 			if len(typed.Mounts) > 0 {
 				resolvedMounts := make([]Mount, len(typed.Mounts))
 				for j, mount := range typed.Mounts {
-					resolvedInput, err := pc.resolveInputForOperation(mount.Source)
+					resolvedInput, err := pc.resolveInputFromStage(mount.Source, stage)
 					if err != nil {
 						return nil, fmt.Errorf("resolving Mount.Source input: %w", err)
 					}
 					resolvedMounts[j] = Mount{
-						Source: resolvedInput,
+						Source: *resolvedInput,
 						Target: mount.Target,
 					}
 				}
@@ -472,77 +458,10 @@ func (pc *Composer) resolveOperationInputs(operations []Op) ([]Op, error) {
 	return resolved, nil
 }
 
-// resolveInputForOperation resolves an Input in the context of an operation
-// This is similar to resolveInput but works for operation-level inputs
-func (pc *Composer) resolveInputForOperation(input Input) (Input, error) {
-	if input.Stage != "" {
-		if stage := pc.GetStage(input.Stage); stage != nil {
-			return Input{Stage: stage.ID}, nil
-		}
-		return Input{}, fmt.Errorf("stage %q does not exist", input.Stage)
-	}
-
-	if input.Phase != "" {
-		composerPhase := pc.findComposerPhase(input.Phase)
-		if composerPhase == nil {
-			return Input{}, fmt.Errorf("phase %q does not exist", input.Phase)
-		}
-
-		// Use resolvePhaseOutputStage to get the output from the phase
-		if stage := pc.resolvePhaseOutputStage(composerPhase); stage != nil {
-			return Input{Stage: stage.ID}, nil
-		}
-		return Input{}, fmt.Errorf("no stages found up to phase %q", input.Phase)
-	}
-
-	// All other input types (Image, Local, URL, Scratch) are already concrete
-	// Auto is not valid for operation inputs
-	if input.Auto {
-		return Input{}, fmt.Errorf("Auto input resolution not supported for operation inputs")
-	}
-
-	return input, nil
-}
-
-func (pc *Composer) previousPhase(phase *ComposerPhase) *ComposerPhase {
-	if phase.Key.IsBuildPhase() {
-		if idx := slices.Index(pc.buildPhases, phase); idx > 0 {
-			return pc.buildPhases[idx-1]
-		}
-	} else if phase.Key.IsExportPhase() {
-		if idx := slices.Index(pc.exportPhases, phase); idx > 0 {
-			return pc.exportPhases[idx-1]
-		}
-	}
-	return nil
-}
-
-func (pc *Composer) previousStage(stage *ComposerStage) *ComposerStage {
-	phase := stage.phase
-	if prevStage := phase.previousStage(stage); prevStage != nil {
-		return prevStage
-	}
-
-	for {
-		phase = pc.previousPhase(phase)
-		if phase == nil {
-			return nil
-		}
-		if prevStage := phase.lastStage(); prevStage != nil {
-			return prevStage
-		}
-	}
-}
-
 // getOrCreatePhase finds or creates a phase
 func (pc *Composer) getOrCreatePhase(phaseName PhaseKey) *ComposerPhase {
 	// Check existing phases
-	phases := &pc.buildPhases
-	if phaseName.IsExportPhase() {
-		phases = &pc.exportPhases
-	}
-
-	for _, phase := range *phases {
+	for _, phase := range pc.phases {
 		if phase.Key == phaseName {
 			return phase
 		}
@@ -555,39 +474,28 @@ func (pc *Composer) getOrCreatePhase(phaseName PhaseKey) *ComposerPhase {
 		composer: pc,
 	}
 
-	*phases = append(*phases, phase)
+	pc.phases = append(pc.phases, phase)
 	return phase
 }
 
-// findComposerPhase finds a composer phase by name
-func (pc *Composer) findComposerPhase(phaseName PhaseKey) *ComposerPhase {
-	phases := pc.buildPhases
-	if phaseName.IsExportPhase() {
-		phases = pc.exportPhases
-	}
-
-	for _, phase := range phases {
-		if phase.Key == phaseName {
-			return phase
+func (pc *Composer) stageRegistered(stage *ComposerStage) bool {
+	for other := range pc.AllStages() {
+		if other == stage {
+			return true
 		}
 	}
-	return nil
+	return false
 }
 
-// findPreviousComposerPhaseWithStages finds the previous composer phase that has stages
-func (pc *Composer) findPreviousComposerPhaseWithStages(currentPhase PhaseKey) *ComposerPhase {
-	phases := pc.buildPhases
-	if currentPhase.IsExportPhase() {
-		phases = pc.exportPhases
-	}
+func (pc *Composer) phaseExists(phaseKey PhaseKey) bool {
+	return pc.getPhase(phaseKey) != nil
+}
 
-	var prevPhase *ComposerPhase
-	for _, phase := range phases {
-		if phase.Key == currentPhase {
-			return prevPhase
-		}
-		if len(phase.Stages) > 0 {
-			prevPhase = phase
+// getPhase finds a composer phase by name
+func (pc *Composer) getPhase(phaseName PhaseKey) *ComposerPhase {
+	for _, phase := range pc.phases {
+		if phase.Key == phaseName {
+			return phase
 		}
 	}
 	return nil
@@ -608,10 +516,6 @@ type ComposerStage struct {
 	// Bidirectional references for API convenience
 	phase    *ComposerPhase
 	composer *Composer
-}
-
-func (cs *ComposerStage) inputStage() *ComposerStage {
-	return cs.composer.previousStage(cs)
 }
 
 // AddOperation adds an operation to the stage

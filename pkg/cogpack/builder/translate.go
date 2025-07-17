@@ -92,13 +92,10 @@ func translatePlan(ctx context.Context, p *plan.Plan, gatewayClient client.Clien
 		}
 	}
 
-	stages := append([]*plan.Stage{}, p.BuildStages...)
-	stages = append(stages, p.ExportStages...)
-
 	var last llb.State
 	hasStage := false
 
-	for _, st := range stages {
+	for _, st := range p.Stages {
 		base, err := resolveInput(st.Source)
 		if err != nil {
 			return llb.State{}, nil, err

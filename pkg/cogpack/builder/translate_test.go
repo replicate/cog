@@ -15,10 +15,11 @@ import (
 func TestTranslatePlan_Basic(t *testing.T) {
 	p := &plan.Plan{
 		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
-		BuildStages: []*plan.Stage{
+		Stages: []*plan.Stage{
 			{
 				ID:         "base",
 				Name:       "Base",
+				PhaseKey:   plan.PhaseBase,
 				Source:     plan.Input{Image: "ubuntu:22.04"},
 				Operations: []plan.Op{plan.Exec{Command: "echo hello"}},
 			},
@@ -192,10 +193,11 @@ func TestTranslatePlan_WithMounts(t *testing.T) {
 	// Create a test plan with mount operations
 	p := &plan.Plan{
 		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
-		BuildStages: []*plan.Stage{
+		Stages: []*plan.Stage{
 			{
 				ID:   "test-stage",
 				Name: "Test Stage",
+				PhaseKey: plan.PhaseBase,
 				Source: plan.Input{
 					Image: "ubuntu:20.04",
 				},
@@ -212,7 +214,6 @@ func TestTranslatePlan_WithMounts(t *testing.T) {
 				},
 			},
 		},
-		ExportStages: []*plan.Stage{},
 	}
 
 	// Test that translation succeeds with mounts
@@ -374,10 +375,11 @@ func TestTranslatePlan_EnvironmentVariablesNotInherited(t *testing.T) {
 	// Create a plan with two stages where the second stage should inherit env vars from the first
 	p := &plan.Plan{
 		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
-		BuildStages: []*plan.Stage{
+		Stages: []*plan.Stage{
 			{
 				ID:     "base",
 				Name:   "Base with env vars",
+				PhaseKey: plan.PhaseBase,
 				Source: plan.Input{Image: "ubuntu:22.04"},
 				Env:    []string{"PATH=/venv/bin:/usr/bin", "PYTHONPATH=/venv/lib/python3.11/site-packages"},
 				Operations: []plan.Op{
@@ -387,16 +389,16 @@ func TestTranslatePlan_EnvironmentVariablesNotInherited(t *testing.T) {
 			{
 				ID:     "dependent",
 				Name:   "Stage that should inherit env vars",
+				PhaseKey: plan.PhaseSystemDeps,
 				Source: plan.Input{Stage: "base"}, // Should inherit from previous stage
 				Operations: []plan.Op{
 					plan.Exec{Command: "python -c 'import os; print(os.environ.get(\"PATH\", \"PATH not found\"))'"},
 				},
 			},
-		},
-		ExportStages: []*plan.Stage{
 			{
 				ID:     "export",
 				Name:   "Export stage",
+				PhaseKey: plan.ExportPhaseBase,
 				Source: plan.Input{Image: "ubuntu:22.04"},
 				Operations: []plan.Op{
 					plan.Copy{
@@ -438,20 +440,20 @@ func TestTranslatePlan_BaseImageEnvironmentLost(t *testing.T) {
 	// and then runs a command that should access those env vars
 	p := &plan.Plan{
 		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
-		BuildStages: []*plan.Stage{
+		Stages: []*plan.Stage{
 			{
 				ID:     "with-env-operation",
 				Name:   "Stage with operation that should see base image env",
+				PhaseKey: plan.PhaseBase,
 				Source: plan.Input{Image: "python:3.11-slim"}, // This image has PATH set
 				Operations: []plan.Op{
 					plan.Exec{Command: "python --version"}, // This should work with PATH from base image
 				},
 			},
-		},
-		ExportStages: []*plan.Stage{
 			{
 				ID:     "export",
 				Name:   "Export stage",
+				PhaseKey: plan.ExportPhaseBase,
 				Source: plan.Input{Image: "python:3.11-slim"},
 				Operations: []plan.Op{
 					plan.Copy{
