@@ -2,11 +2,11 @@
 
 > **For LLM Assistants**: This is the primary context document for the cogpack build system. Please update this document as the project evolves, documenting decisions, patterns, and architectural changes.
 
-The current task is written up in the `CURRENT WORK ITEM` section below. Please read it to understand the immediate task.
+The current task is written up in the `CURRENT TASK` section below. Please read it to understand the immediate task.
 
-> **Last Updated**: 2025-07-16  
+> **Last Updated**: 2025-07-17  
 > **Primary Maintainer**: @md  
-> **Status**: Active Development - Environment Variable Inheritance Completed
+> **Status**: Active Development - Source Copy Functionality Completed
 
 ## Quick Start
 
@@ -149,6 +149,7 @@ Export phases build the runtime image:
 | **Mount-based Contexts** | Use fs.FS mounts instead of MkFile for flexibility. Enables embedded files, remote URLs. | 2025-07-14 |
 | **Phase Organization** | Logical grouping of build operations. Enables auto input resolution within/across phases. | 2024-07-11 |
 | **Single Stack per Build** | First matching stack wins. Simplifies orchestration, avoids conflicts. | 2024-07-11 |
+| **Source Copy with Directory Removal** | Use `rm -rf /venv` before copying `/venv` from build to runtime to prevent BuildKit Copy operation from creating nested `/venv/venv` structure. BuildKit copies directories INTO existing directories rather than replacing them. | 2025-07-17 |
 
 ### Pending Decisions
 
@@ -176,8 +177,8 @@ This section tracks work that is currently in progress. Once a work item is comp
 
 **Cogpack Base Images**
 - Current state: Hardcoded base images for a few python<>cuda combinations
-- Questions: What metadata structure do we need for resolving requirements into base images? Once this is defined we can update the WIP image generation repo to export the required data
-- Next steps: Define metadata structure, implement base image selection logic
+- Questions: What metadata structure do we need for resolving requirements into base images? Once this is defined we can update the WIP image generation repo to export the required data. **Note**: Base image metadata should include whether a virtual environment exists at `/venv` to avoid conditional venv creation logic in UV block.
+- Next steps: Define metadata structure, implement base image selection logic, include venv availability in metadata
 
 **UV Projects**
 - Current state: Old dockerfile builds use pyenv & `pip install` for dependencies. We want to move towards UV: this means projects that already use UV will work out of the box, and projects that use requirements.txt or requirements defined in the cog.yaml file will be converted to UV projects on the fly.
@@ -214,9 +215,9 @@ This section tracks work that is currently in progress. Once a work item is comp
 - Next steps: Implement PyTorch/TensorFlow blocks, define versioning strategy, define required metadata for base images and dependency resolution
 
 **Implement Remaining Cog Build Behavior**
-- Current state: Basic build works, python app does not yet work. Most features present in the old cog build system are not yet implemented.
-- Questions: What features are missing? How do we ensure compatibility with existing models? 
-- Next Steps: Look over the old model building code and documentation to identify gaps and plan for implementation.
+- Current state: Basic Python models now build and run successfully. Most advanced features from the old cog build system are not yet implemented.
+- Questions: What advanced features are missing? How do we ensure compatibility with complex models? 
+- Next Steps: Look over the old model building code and documentation to identify gaps for advanced features like custom dependencies, complex builds, etc.
 
 ### 🎯 Future Focus Areas
 
@@ -375,10 +376,9 @@ cd ./test-integration/test_integration/fixtures/string-project && COGPACK=1 go r
 
 ## Current Status
 
-### CURRENT WORK ITEM
+### CURRENT TASK
 
-*No active work item - ready for next task assignment.*
-
+No current task - ready for next feature work.
 
 ### ✅ Completed
 - Composer API with phase organization
@@ -393,9 +393,9 @@ cd ./test-integration/test_integration/fixtures/string-project && COGPACK=1 go r
 - **Environment Variable Inheritance**: Implemented complete solution for preserving ENV/PATH from base images through BuildKit LLB translation to final export image config. Fixes runtime dependency resolution (e.g., `python` executable not found)
 - **Wheel Installation Fix**: Resolved UV pip install wildcard issue by using explicit wheel filename resolution instead of `*.whl` patterns
 - **Image Config Metadata Flow**: Added image config inspection and proper metadata accumulation during Plan → LLB translation to ensure base image environment variables are inherited by build stages
+- **Source Copy Functionality**: Completed implementation of SourceCopyBlock to copy application source code to runtime image. Fixed nested venv issue with proper BuildKit Copy operation semantics using `rm -rf /venv` before copy to prevent directory nesting. Python models now build and run successfully end-to-end.
 
 ### 🚧 In Progress
-- Source copy functionality: Enable SourceCopyBlock to copy application code into runtime image (final step for basic Python model support)
 - Additional blocks (Apt, Torch, CUDA)
 - Define base image metadata structure and metadata needed for dependency resolution
 
@@ -438,6 +438,8 @@ When working on cogpack:
 5 **Document completed work**:
    - Append a new line to the `### ✅ Completed` section of the Current Status section with a description of the work that was completed.
    - Remove references to the work item from other sections, including `### 🚧 In Progress`, `### 📋 Planned`, `### 🔍 Under Investigation`, and `### 🎯 Future Focus Areas`.
+   - Clear the `CURRENT TASK` section
+   - Look over the document to ensure that it's up to date, accurate, and no longer referencing work that has been completed.
 
 ### Review Checklist
 

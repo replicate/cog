@@ -23,7 +23,7 @@ func (b *UvBlock) Dependencies(ctx context.Context, src *project.SourceInfo) ([]
 }
 
 func (b *UvBlock) Plan(ctx context.Context, src *project.SourceInfo, composer *plan.Composer) error {
-	buildStage, err := composer.AddStage(plan.PhaseAppDeps, "uv-venv", plan.WithName("Init venv"))
+	buildStage, err := composer.AddStage(plan.PhaseAppDeps, "uv-venv", plan.WithName("Setup venv"))
 	if err != nil {
 		return err
 	}
@@ -33,9 +33,10 @@ func (b *UvBlock) Plan(ctx context.Context, src *project.SourceInfo, composer *p
 		return fmt.Errorf("python dependency not found")
 	}
 
+	// Setup venv using existing base image venv with --allow-existing
 	buildStage.Operations = []plan.Op{
 		plan.Exec{
-			Command: fmt.Sprintf("uv venv /venv --python %s", pythonRuntime.ResolvedVersion),
+			Command: fmt.Sprintf("uv venv /venv --python %s --allow-existing", pythonRuntime.ResolvedVersion),
 		},
 	}
 
@@ -43,6 +44,11 @@ func (b *UvBlock) Plan(ctx context.Context, src *project.SourceInfo, composer *p
 	if err != nil {
 		return err
 	}
+	exportStage.AddOperation(
+		plan.Exec{
+			Command: "rm -rf /venv",
+		},
+	)
 	exportStage.AddOperation(
 		plan.Copy{
 			From: plan.Input{Phase: plan.PhaseBuildComplete},

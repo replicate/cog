@@ -101,7 +101,7 @@ func resolvePythonVersion(requested string) (string, error) {
 	case "3.12":
 		return "3.12.1", nil
 	case "3.13":
-		return "3.13.0", nil
+		return "3.13.4", nil
 	default:
 		// Try to use the requested version as-is
 		return requested, nil

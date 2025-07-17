@@ -57,7 +57,7 @@ func (s *PythonStack) Plan(ctx context.Context, src *project.SourceInfo, compose
 		// &commonblocks.AptBlock{},
 		// &PipBlock{},
 		// &TorchBlock{},
-		// &commonblocks.SourceCopyBlock{},
+		&commonblocks.SourceCopyBlock{},
 	})
 
 	// Phase 2: Collect dependencies from all active blocks
@@ -99,8 +99,8 @@ func (s *PythonStack) Plan(ctx context.Context, src *project.SourceInfo, compose
 
 	// Phase 6: Set export configuration for runtime image
 	composer.SetExportConfig(&plan.ExportConfig{
-		Entrypoint:   []string{"python", "-m", "cog.server.http"},
-		Cmd:          []string{},
+		Cmd: []string{"python", "-m", "cog.server.http"},
+		// Cmd:          []string{},
 		WorkingDir:   "/src",
 		ExposedPorts: map[string]struct{}{"5000/tcp": {}},
 		Labels: map[string]string{

@@ -95,7 +95,7 @@ func DefaultPhases() []PhaseKey {
 		PhaseAppBuild,
 		PhaseAppSource,
 		PhaseBuildComplete,
-		
+
 		// Export phases
 		ExportPhaseBase,
 		ExportPhaseRuntime,
@@ -114,12 +114,12 @@ func newPlanComposerWithPhases(phases []PhaseKey) *Composer {
 		dependencies: make(map[string]*Dependency),
 		contexts:     make(map[string]*BuildContext),
 	}
-	
+
 	// Pre-register all phases in order
 	for _, phase := range phases {
 		c.getOrCreatePhase(phase)
 	}
-	
+
 	return c
 }
 
@@ -322,7 +322,7 @@ func (pc *Composer) convertStage(cs *ComposerStage) (*Stage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolving input for stage %q: %w", cs.ID, err)
 	}
-	
+
 	// Resolve operation inputs
 	resolvedOperations, err := pc.resolveOperationInputs(cs.Operations)
 	if err != nil {
@@ -348,7 +348,7 @@ func (pc *Composer) resolvePhaseInputStage(phase *ComposerPhase) *ComposerStage 
 	if phase == nil {
 		return nil
 	}
-	
+
 	// Find the previous phase with stages
 	for {
 		phase = pc.previousPhase(phase)
@@ -367,12 +367,12 @@ func (pc *Composer) resolvePhaseOutputStage(phase *ComposerPhase) *ComposerStage
 	if phase == nil {
 		return nil
 	}
-	
+
 	// Check the requested phase first
 	if stage := phase.lastStage(); stage != nil {
 		return stage
 	}
-	
+
 	// Walk backwards through phases until we find a stage
 	for {
 		phase = pc.previousPhase(phase)
@@ -409,7 +409,7 @@ func (pc *Composer) resolveInput(stage *ComposerStage) (Input, error) {
 		if composerPhase == nil {
 			return Input{}, fmt.Errorf("phase %q does not exist", input.Phase)
 		}
-		
+
 		// Use resolvePhaseOutputStage to get the output from the phase
 		if stage := pc.resolvePhaseOutputStage(composerPhase); stage != nil {
 			return Input{Stage: stage.ID}, nil
@@ -424,7 +424,7 @@ func (pc *Composer) resolveInput(stage *ComposerStage) (Input, error) {
 // resolveOperationInputs resolves Input fields within operations
 func (pc *Composer) resolveOperationInputs(operations []Op) ([]Op, error) {
 	resolved := make([]Op, len(operations))
-	
+
 	for i, op := range operations {
 		switch typed := op.(type) {
 		case Copy:
@@ -434,7 +434,7 @@ func (pc *Composer) resolveOperationInputs(operations []Op) ([]Op, error) {
 			}
 			typed.From = resolvedInput
 			resolved[i] = typed
-			
+
 		case Add:
 			if !typed.From.IsEmpty() {
 				resolvedInput, err := pc.resolveInputForOperation(typed.From)
@@ -444,7 +444,7 @@ func (pc *Composer) resolveOperationInputs(operations []Op) ([]Op, error) {
 				typed.From = resolvedInput
 			}
 			resolved[i] = typed
-			
+
 		case Exec:
 			// Resolve mount sources
 			if len(typed.Mounts) > 0 {
@@ -462,13 +462,13 @@ func (pc *Composer) resolveOperationInputs(operations []Op) ([]Op, error) {
 				typed.Mounts = resolvedMounts
 			}
 			resolved[i] = typed
-			
+
 		default:
 			// Operations without Input fields can be passed through unchanged
 			resolved[i] = op
 		}
 	}
-	
+
 	return resolved, nil
 }
 
@@ -487,7 +487,7 @@ func (pc *Composer) resolveInputForOperation(input Input) (Input, error) {
 		if composerPhase == nil {
 			return Input{}, fmt.Errorf("phase %q does not exist", input.Phase)
 		}
-		
+
 		// Use resolvePhaseOutputStage to get the output from the phase
 		if stage := pc.resolvePhaseOutputStage(composerPhase); stage != nil {
 			return Input{Stage: stage.ID}, nil
@@ -500,7 +500,7 @@ func (pc *Composer) resolveInputForOperation(input Input) (Input, error) {
 	if input.Auto {
 		return Input{}, fmt.Errorf("Auto input resolution not supported for operation inputs")
 	}
-	
+
 	return input, nil
 }
 

@@ -21,7 +21,7 @@ func (b *SourceCopyBlock) Detect(ctx context.Context, src *project.SourceInfo) (
 }
 
 // Dependencies returns no dependencies
-func (b *SourceCopyBlock) Dependencies(ctx context.Context, src *project.SourceInfo) ([]plan.Dependency, error) {
+func (b *SourceCopyBlock) Dependencies(ctx context.Context, src *project.SourceInfo) ([]*plan.Dependency, error) {
 	return nil, nil
 }
 
@@ -56,16 +56,6 @@ func (b *SourceCopyBlock) Plan(ctx context.Context, src *project.SourceInfo, c *
 			},
 		},
 	}
-
-	// Set the final export configuration for the runtime image
-	c.SetExportConfig(&plan.ExportConfig{
-		Entrypoint: []string{"python", "-m", "cog.server.http"},
-		WorkingDir: "/src",
-		Labels: map[string]string{
-			"org.cogmodel.config_schema": "1.0",
-			"org.cogmodel.cog_version":   "0.9.0",
-		},
-	})
 
 	stage.Provides = []string{"model-source"}
 
