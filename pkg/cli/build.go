@@ -9,12 +9,14 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/replicate/cog/pkg/coglog"
+	"github.com/replicate/cog/pkg/cogpack"
+	"github.com/replicate/cog/pkg/cogpack/project"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/factory"
 	"github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/image"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -103,22 +105,19 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 
 	// Experimental builder toggle – set COG_EXPERIMENTAL_BUILDER=1 to use the
 	// new implementation.
-	if os.Getenv("COG_EXPERIMENTAL_BUILDER") == "1" {
-		fact := factory.NewFactory(dockerClient)
-		env, err := factory.NewBuildEnv(projectDir, cfg, buildSecrets)
+	if cogpack.Enabled() {
+		sourceInfo, err := project.NewSourceInfo(projectDir, cfg)
 		if err != nil {
 			return err
 		}
-		if err := fact.Build(
-			ctx,
-			env,
-			imageName,
-			buildNoCache,
-			buildProgressOutput,
-		); err != nil {
-			logClient.EndBuild(ctx, err, logCtx)
+		result, err := cogpack.BuildModel(ctx, dockerClient, sourceInfo)
+		if err != nil {
 			return err
 		}
+
+		util.JSONPrettyPrint(result)
+		imageName = result.ImageTag
+		logClient.EndBuild(ctx, err, logCtx)
 	} else {
 		if err := image.Build(
 			ctx,
