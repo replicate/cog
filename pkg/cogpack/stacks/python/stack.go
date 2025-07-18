@@ -99,8 +99,7 @@ func (s *PythonStack) Plan(ctx context.Context, src *project.SourceInfo, compose
 
 	// Phase 6: Set export configuration for runtime image
 	composer.SetExportConfig(&plan.ExportConfig{
-		Cmd: []string{"python", "-m", "cog.server.http"},
-		// Cmd:          []string{},
+		Cmd:          []string{"python", "-m", "cog.server.http"},
 		WorkingDir:   "/src",
 		ExposedPorts: map[string]struct{}{"5000/tcp": {}},
 		Labels: map[string]string{

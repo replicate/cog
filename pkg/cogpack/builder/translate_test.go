@@ -195,8 +195,8 @@ func TestTranslatePlan_WithMounts(t *testing.T) {
 		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
 		Stages: []*plan.Stage{
 			{
-				ID:   "test-stage",
-				Name: "Test Stage",
+				ID:       "test-stage",
+				Name:     "Test Stage",
 				PhaseKey: plan.PhaseBase,
 				Source: plan.Input{
 					Image: "ubuntu:20.04",
@@ -377,29 +377,29 @@ func TestTranslatePlan_EnvironmentVariablesNotInherited(t *testing.T) {
 		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
 		Stages: []*plan.Stage{
 			{
-				ID:     "base",
-				Name:   "Base with env vars",
+				ID:       "base",
+				Name:     "Base with env vars",
 				PhaseKey: plan.PhaseBase,
-				Source: plan.Input{Image: "ubuntu:22.04"},
-				Env:    []string{"PATH=/venv/bin:/usr/bin", "PYTHONPATH=/venv/lib/python3.11/site-packages"},
+				Source:   plan.Input{Image: "ubuntu:22.04"},
+				Env:      []string{"PATH=/venv/bin:/usr/bin", "PYTHONPATH=/venv/lib/python3.11/site-packages"},
 				Operations: []plan.Op{
 					plan.Exec{Command: "echo 'Setting up environment'"},
 				},
 			},
 			{
-				ID:     "dependent",
-				Name:   "Stage that should inherit env vars",
+				ID:       "dependent",
+				Name:     "Stage that should inherit env vars",
 				PhaseKey: plan.PhaseSystemDeps,
-				Source: plan.Input{Stage: "base"}, // Should inherit from previous stage
+				Source:   plan.Input{Stage: "base"}, // Should inherit from previous stage
 				Operations: []plan.Op{
 					plan.Exec{Command: "python -c 'import os; print(os.environ.get(\"PATH\", \"PATH not found\"))'"},
 				},
 			},
 			{
-				ID:     "export",
-				Name:   "Export stage",
+				ID:       "export",
+				Name:     "Export stage",
 				PhaseKey: plan.ExportPhaseBase,
-				Source: plan.Input{Image: "ubuntu:22.04"},
+				Source:   plan.Input{Image: "ubuntu:22.04"},
 				Operations: []plan.Op{
 					plan.Copy{
 						From: plan.Input{Stage: "dependent"},
@@ -419,9 +419,9 @@ func TestTranslatePlan_EnvironmentVariablesNotInherited(t *testing.T) {
 	assert.Contains(t, stageStates, "dependent")
 
 	// This test currently passes, but it demonstrates the problem:
-	// The environment variables from the "base" stage are not available 
+	// The environment variables from the "base" stage are not available
 	// in the "dependent" stage when it executes the python command.
-	// 
+	//
 	// The current implementation:
 	// 1. Applies env vars to the base state in lines 54-58 of translate.go
 	// 2. But then uses llb.Diff() which loses the environment context
@@ -442,19 +442,19 @@ func TestTranslatePlan_BaseImageEnvironmentLost(t *testing.T) {
 		Platform: plan.Platform{OS: "linux", Arch: "amd64"},
 		Stages: []*plan.Stage{
 			{
-				ID:     "with-env-operation",
-				Name:   "Stage with operation that should see base image env",
+				ID:       "with-env-operation",
+				Name:     "Stage with operation that should see base image env",
 				PhaseKey: plan.PhaseBase,
-				Source: plan.Input{Image: "python:3.11-slim"}, // This image has PATH set
+				Source:   plan.Input{Image: "python:3.11-slim"}, // This image has PATH set
 				Operations: []plan.Op{
 					plan.Exec{Command: "python --version"}, // This should work with PATH from base image
 				},
 			},
 			{
-				ID:     "export",
-				Name:   "Export stage",
+				ID:       "export",
+				Name:     "Export stage",
 				PhaseKey: plan.ExportPhaseBase,
-				Source: plan.Input{Image: "python:3.11-slim"},
+				Source:   plan.Input{Image: "python:3.11-slim"},
 				Operations: []plan.Op{
 					plan.Copy{
 						From: plan.Input{Stage: "with-env-operation"},
