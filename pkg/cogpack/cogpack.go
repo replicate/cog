@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+
 	"github.com/replicate/cog/pkg/cogpack/builder"
 	"github.com/replicate/cog/pkg/cogpack/plan"
 	"github.com/replicate/cog/pkg/cogpack/project"
@@ -78,7 +80,7 @@ func GeneratePlan(ctx context.Context, src *project.SourceInfo) (*plan.PlanResul
 }
 
 // ExecutePlan executes a pre-generated Plan using the supplied Builder.
-func RunBuildPlan(ctx context.Context, provider command.Command, p *plan.Plan, buildCfg *builder.BuildConfig) (string, error) {
+func RunBuildPlan(ctx context.Context, provider command.Command, p *plan.Plan, buildCfg *builder.BuildConfig) (string, *ocispec.Image, error) {
 	return builder.NewBuildKitBuilder(provider).Build(ctx, p, buildCfg)
 }
 
@@ -182,17 +184,20 @@ func BuildModel(ctx context.Context, provider command.Command, src *project.Sour
 	}
 
 	fmt.Println("Running build plan")
-	if _, err := RunBuildPlan(ctx, provider, planResult.Plan, buildConfig); err != nil {
+	imgTag, imgCfg, err := RunBuildPlan(ctx, provider, planResult.Plan, buildConfig)
+	if err != nil {
 		return nil, err
 	}
 
 	fmt.Println("Build plan complete")
 
 	return &BuildModelResult{
-		ImageTag: tag,
+		ImageTag:    imgTag,
+		ImageConfig: imgCfg,
 	}, nil
 }
 
 type BuildModelResult struct {
-	ImageTag string `json:"image_id"`
+	ImageTag    string         `json:"image_id"`
+	ImageConfig *ocispec.Image `json:"image_config"`
 }

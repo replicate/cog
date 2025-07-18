@@ -3,6 +3,8 @@ package builder
 import (
 	"context"
 
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+
 	"github.com/replicate/cog/pkg/cogpack/plan"
 	"github.com/replicate/cog/pkg/cogpack/project"
 	"github.com/replicate/cog/pkg/docker/command"
@@ -22,7 +24,7 @@ import (
 //
 // Implementations are expected to respect the Platform specified on the Plan.
 type Builder interface {
-	Build(ctx context.Context, p *plan.Plan, buildConfig *BuildConfig) (string, error)
+	Build(ctx context.Context, p *plan.Plan, buildConfig *BuildConfig) (string, *ocispec.Image, error)
 }
 
 func NewBuilder(dockerCmd command.Command) Builder {

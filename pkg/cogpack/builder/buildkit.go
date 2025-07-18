@@ -31,20 +31,19 @@ func NewBuildKitBuilder(dockerCmd command.Command) *BuildKitBuilder {
 }
 
 // Build implements cogpack.Builder.
-func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *BuildConfig) (string, error) {
+func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *BuildConfig) (string, *ocispec.Image, error) {
 	fmt.Println("Building with BuildKit")
-	
 
 	// Get BuildKit client from Docker command
 	bkClient, err := b.dockerCmd.BuildKitClient(ctx)
 	if err != nil {
-		return "", fmt.Errorf("get buildkit client: %w", err)
+		return "", nil, fmt.Errorf("get buildkit client: %w", err)
 	}
 	defer bkClient.Close()
 	fmt.Println("BuildKit client obtained")
 	contextFS, err := fsutil.NewFS(buildConfig.ContextDir)
 	if err != nil {
-		return "", fmt.Errorf("context fs: %w", err)
+		return "", nil, fmt.Errorf("context fs: %w", err)
 	}
 	fmt.Println("Context FS obtained")
 
@@ -65,7 +64,7 @@ func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *
 	for name, buildCtx := range p.Contexts {
 		fsutilFS, err := convertToFsutilFS(buildCtx.FS)
 		if err != nil {
-			return "", fmt.Errorf("convert context %s (%s): %w", name, buildCtx.Description, err)
+			return "", nil, fmt.Errorf("convert context %s (%s): %w", name, buildCtx.Description, err)
 		}
 		localMounts[name] = fsutilFS
 
@@ -96,6 +95,7 @@ func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *
 	eg.Go(docker.NewBuildkitSolveDisplay(statusCh, "plain"))
 
 	var solveResp *buildkitclient.SolveResponse
+	var imageConfig *ocispec.Image
 
 	eg.Go(func() error {
 		resp, err := bkClient.Build(
@@ -151,6 +151,9 @@ func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *
 					Author:   "cogpack",
 				}
 
+				// Store image config in outer scope
+				imageConfig = &img
+
 				cfgJSON, err := json.Marshal(img)
 				if err != nil {
 					return nil, fmt.Errorf("marshal image config: %w", err)
@@ -171,13 +174,13 @@ func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *
 	})
 
 	if err := eg.Wait(); err != nil {
-		return "", fmt.Errorf("failed to solve build: %w", err)
+		return "", nil, fmt.Errorf("failed to solve build: %w", err)
 	}
 
 	fmt.Println("solveResp")
 	util.JSONPrettyPrint(solveResp)
 
-	return solveResp.ExporterResponse["image.name"], nil
+	return solveResp.ExporterResponse["image.name"], imageConfig, nil
 }
 
 // convertToFsutilFS converts fs.FS to fsutil.FS
