@@ -11,6 +11,8 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	buildkitclient "github.com/moby/buildkit/client"
+	v1 "github.com/moby/docker-image-spec/specs-go/v1"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/replicate/cog/pkg/docker/command"
 )
@@ -63,17 +65,19 @@ func (c *MockCommand) CreateAptTarFile(ctx context.Context, tmpDir string, aptTa
 
 func (c *MockCommand) Inspect(ctx context.Context, ref string) (*image.InspectResponse, error) {
 	resp := &image.InspectResponse{
-		Config: &container.Config{
-			Labels: map[string]string{
-				command.CogConfigLabelKey:        MockCogConfig,
-				command.CogOpenAPISchemaLabelKey: MockOpenAPISchema,
-				command.CogVersionLabelKey:       "0.11.3",
-			},
-			Env: []string{
-				command.R8TorchVersionEnvVarName + "=2.5.0",
-				command.R8CudaVersionEnvVarName + "=2.4",
-				command.R8CudnnVersionEnvVarName + "=1.0",
-				command.R8PythonVersionEnvVarName + "=3.12",
+		Config: &v1.DockerOCIImageConfig{
+			ImageConfig: ocispec.ImageConfig{
+				Labels: map[string]string{
+					command.CogConfigLabelKey:        MockCogConfig,
+					command.CogOpenAPISchemaLabelKey: MockOpenAPISchema,
+					command.CogVersionLabelKey:       "0.11.3",
+				},
+				Env: []string{
+					command.R8TorchVersionEnvVarName + "=2.5.0",
+					command.R8CudaVersionEnvVarName + "=2.4",
+					command.R8CudnnVersionEnvVarName + "=1.0",
+					command.R8PythonVersionEnvVarName + "=3.12",
+				},
 			},
 		},
 	}
