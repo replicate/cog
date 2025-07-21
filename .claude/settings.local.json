@@ -1,7 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "Bash(go test:*)"
+      "Bash(go test:*)",
+      "Bash(docker run:*)",
+      "WebFetch(domain:pkg.go.dev)",
+      "Bash(COGPACK=1 go run ../../../../cmd/cog predict --input s=hello)",
+      "Bash(COGPACK=1 go run ../../../../cmd/cog predict --input s=test)",
+      "Bash(go build:*)",
+      "Bash(COGPACK=1 go run ../../../../cmd/cog plan --json)",
+      "Bash(COGPACK=1 go run ../../../../cmd/cog plan)",
+      "Bash(cp:*)",
+      "Bash(find:*)",
+      "Bash(COGPACK_INTEGRATION=1 go test ./pkg/cogpack/ -v -run TestCogpackIntegration/SourceCopy -timeout 10m)",
+      "Bash(COGPACK_INTEGRATION=1 go test ./pkg/cogpack/ -v -run TestCogpackIntegration/Debug -timeout 10m)",
+      "Bash(COGPACK_INTEGRATION=1 go test ./pkg/cogpack/ -v -run TestCogpackIntegration/EnvPropagation -timeout 10m)"
     ],
     "deny": []
   }

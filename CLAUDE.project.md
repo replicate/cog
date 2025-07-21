@@ -145,6 +145,9 @@ Export phases build the runtime image:
 | **Operation Input Resolution** | Enables blocks to reference final build outputs using phase references in Copy operations. Allows UV block to copy from PhaseBuildComplete without knowing specific stage IDs. | 2025-07-16 |
 | **Phase Pre-registration** | All phases are registered at composer creation to enable robust phase resolution. Prevents "phase does not exist" errors when referencing empty phases. | 2025-07-16 |
 | **Separate Phase Resolution Methods** | `resolvePhaseInputStage()` and `resolvePhaseOutputStage()` provide clear semantics for different use cases. Input resolution gets last stage before a phase, output resolution gets accumulated result through a phase. | 2025-07-16 |
+| **Critical Environment Variable Preservation Fix** | Fixed critical bug in BuildKit LLB translation where `llb.Diff(base, modified)` operations lost environment variables from accumulated state. Solution: extract all environment variables from modified LLB state using `modified.Env(ctx).ToArray()` and apply to final state. This preserves PATH and other base image environment variables across stage chains, fixing runtime dependency resolution failures. | 2025-07-18 |
+| **UV Block UV-Native Architecture** | Redesigned UV block to treat all Python projects as UV projects at build time. Legacy projects (requirements.txt, cog.yaml packages) are converted to UV format via generated pyproject.toml. Native UV projects use existing pyproject.toml/uv.lock files. This unifies dependency management and leverages UV's deterministic lockfile approach for better caching. | 2025-07-18 |
+| **Working Directory vs Shell Commands** | Replace shell cd commands with LLB working directory specification to avoid `cd: executable file not found in $PATH` errors. Use `stage.Dir = "/app"` instead of `cd /app && command` for BuildKit operations. Shell builtins like cd are not available as executables in minimal container environments. | 2025-07-18 |
 | **Composer Pattern** | Separates plan assembly (mutable) from execution (immutable). Provides clean API for blocks. | 2025-07-15 |
 | **Mount-based Contexts** | Use fs.FS mounts instead of MkFile for flexibility. Enables embedded files, remote URLs. | 2025-07-14 |
 | **Phase Organization** | Logical grouping of build operations. Enables auto input resolution within/across phases. | 2024-07-11 |
@@ -374,7 +377,7 @@ cd ./test-integration/test_integration/fixtures/string-project && COGPACK=1 go r
 
 ### CURRENT TASK
 
-None 
+(No active task - ready for next work item)
 
 ### ✅ Completed
 - Composer API with phase organization
@@ -391,6 +394,17 @@ None
 - **Image Config Metadata Flow**: Added image config inspection and proper metadata accumulation during Plan → LLB translation to ensure base image environment variables are inherited by build stages
 - **Source Copy Functionality**: Completed implementation of SourceCopyBlock to copy application source code to runtime image. Fixed nested venv issue with proper BuildKit Copy operation semantics using `rm -rf /venv` before copy to prevent directory nesting. Python models now build and run successfully end-to-end.
 - **Single Phase List Architecture**: Refactored Composer and Plan structs to use a single ordered phase list instead of separate build/export phase lists. This simplifies phase traversal, enables natural cross-phase references, and eliminates the artificial boundary between build and export phases. All tests pass and backward compatibility is maintained through helper methods.
+- **UV Python Dependency Installation**: Completed full implementation of Python dependency installation using UV in the UV block. Features include: two-phase installation (framework vs user packages), intelligent package classification (torch/tensorflow vs pandas/requests), dynamic requirements.txt generation, UV optimization flags (CFLAGS, UV_TORCH_BACKEND), and proper PyTorch index URL handling. Successfully tested with real torch-baseimage-project showing correct plan generation and package separation.
+- **Comprehensive Unit Tests for UV Block**: Refactored monolithic test into 6 focused, single-purpose tests: BasicDetection, VenvCreation, DependencyInstallation_Mixed/FrameworkOnly/UserOnly, and VenvCopyToRuntime. Each test validates specific functionality without interfering with others, making debugging and maintenance much easier.
+- **Complete Integration Test Framework**: Built comprehensive integration testing framework using testcontainers for cogpack functionality verification. Includes:
+  - `buildImageFromFixture()` helper for building cogpack images from test fixtures
+  - Testcontainers integration with proper Docker client selection (`COGPACK=1`)
+  - Custom base image creation and testing with dockerfile builds
+  - Environment variable propagation testing using direct BuildKit plan execution
+  - Test fixtures with comprehensive documentation (`minimal-source`, `minimal-dependencies`, `minimal-debug`)
+  - Located in `pkg/cogpack/integration_test.go` with `COGPACK_INTEGRATION=1` environment gate
+- **UV Block Simplification and Critical Bug Fix**: Completed major refactoring of UV block to implement UV-native approach. Fixed critical environment variable inheritance bug in BuildKit LLB translation where `llb.Diff()` operations lost environment context.
+- **Enhanced Plan->LLB Translation Testing**: Built comprehensive testing framework for plan->LLB translation to catch issues like environment variable loss early.
 
 ### 🚧 In Progress
 - Additional blocks (Apt, Torch, CUDA)
@@ -399,6 +413,14 @@ None
 ### 📋 Planned
 - Implement remaining blocks (TensorFlow, CUDA)
 - ensure phases can't create cycles in the plan
+- composer & plan validation
+    - proper ENV format (key=value)
+    - proper WORKDIR format (absolute path)
+    - proper CMD format (array of strings)
+    - proper ENTRYPOINT format (array of strings)
+    - proper VOLUME format (array of strings)
+    - proper STOPSIGNAL format (string)
+    - proper EXPOSE format (array of strings)
 
 ## Maintenance Instructions
 
