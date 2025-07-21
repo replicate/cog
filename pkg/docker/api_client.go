@@ -291,12 +291,7 @@ func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOp
 	}
 	defer os.RemoveAll(buildDir)
 
-	bc, err := buildkitclient.New(ctx, "",
-		// Connect to Docker Engine's embedded Buildkit.
-		buildkitclient.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-			return c.client.DialHijack(ctx, "/grpc", "h2c", map[string][]string{})
-		}),
-	)
+	bc, err := c.BuildKitClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -625,4 +620,18 @@ func shouldAttachStdin(stdin io.Reader) (attach bool, tty bool) {
 	// reason we need to add a flag to the run command similar to `docker run -i` that instructs
 	// the container to attach stdin and keep open
 	return true, true
+}
+
+func (c *apiClient) DockerClient() (client.APIClient, error) {
+	return c.client, nil
+}
+
+func (c *apiClient) BuildKitClient(ctx context.Context) (*buildkitclient.Client, error) {
+	// TODO[md]: this is a hack to get the buildkit client, we should accept config and cache the client
+	return buildkitclient.New(ctx, "",
+		// Connect to Docker Engine's embedded Buildkit.
+		buildkitclient.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return c.client.DialHijack(ctx, "/grpc", "h2c", map[string][]string{})
+		}),
+	)
 }
