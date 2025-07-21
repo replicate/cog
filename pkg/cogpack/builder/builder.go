@@ -36,4 +36,5 @@ type BuildConfig struct {
 
 	ContextDir string
 	Tag        string
+	Platform   *ocispec.Platform
 }

@@ -1,10 +1,12 @@
 package dockertest
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,6 +32,19 @@ func NewRef(t *testing.T) Ref {
 	require.NoError(t, err, "Failed to create reference for test")
 
 	return Ref{t: t, ref: ref}
+}
+
+func NewRandomRef(t *testing.T) Ref {
+	return NewRef(t).WithRandomLabel()
+}
+
+func NewRandomRefS(t *testing.T) string {
+	return NewRandomRef(t).String()
+}
+
+func (r Ref) WithRandomLabel() Ref {
+	label := fmt.Sprintf("test-%s", uuid.New().String())
+	return r.WithTag(label)
 }
 
 func (r Ref) WithTag(tagName string) Ref {
@@ -79,4 +94,8 @@ func (r Ref) WithoutRegistry() Ref {
 
 func (r Ref) String() string {
 	return r.ref.Name()
+}
+
+func (r Ref) Ref() name.Reference {
+	return r.ref
 }

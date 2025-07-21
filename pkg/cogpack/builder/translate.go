@@ -10,101 +10,138 @@ import (
 	"github.com/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/client/llb/sourceresolver"
-	"github.com/moby/buildkit/frontend/gateway/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/replicate/cog/pkg/cogpack/plan"
 )
 
 // inspectImageConfig inspects an image reference and extracts its environment variables
-func inspectImageConfig(ctx context.Context, gatewayClient client.Client, imageRef string, platform ocispec.Platform) ([]string, error) {
-	if gatewayClient == nil {
-		return nil, nil // Skip inspection if no gateway client
-	}
-
+func inspectImageConfig(ctx context.Context, imageResolver sourceresolver.ImageMetaResolver, imageRef string, platform ocispec.Platform) (*ocispec.ImageConfig, []byte, error) {
 	named, err := reference.ParseNormalizedNamed(imageRef)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse image reference: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse image reference: %w", err)
 	}
 	named = reference.TagNameOnly(named)
 
-	_, _, blob, err := gatewayClient.ResolveImageConfig(ctx, named.String(), sourceresolver.Opt{
+	_, _, blob, err := imageResolver.ResolveImageConfig(ctx, named.String(), sourceresolver.Opt{
 		Platform: &platform,
 		ImageOpt: &sourceresolver.ResolveImageOpt{
 			ResolveMode: llb.ResolveModePreferLocal.String(),
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve image config for %s: %w", imageRef, err)
+		return nil, nil, fmt.Errorf("failed to resolve image config for %s: %w", imageRef, err)
 	}
 
 	var img ocispec.Image
 	if err := json.Unmarshal(blob, &img); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal image config: %w", err)
+		return nil, nil, fmt.Errorf("failed to unmarshal image config: %w", err)
 	}
 
-	return img.Config.Env, nil
+	return &img.Config, blob, nil
 }
 
-// translatePlan converts a cogpack.Plan into an LLB State plus stage map.
+func resolveInput(ctx context.Context, stageStates map[string]llb.State, platform ocispec.Platform, imageResolver sourceresolver.ImageMetaResolver, in plan.Input) (llb.State, error) {
+	switch {
+	case in.Stage != "":
+		s, ok := stageStates[in.Stage]
+		if !ok {
+			return llb.State{}, fmt.Errorf("unknown stage %q", in.Stage)
+		}
+		return s, nil
+	case in.Image != "":
+		state := llb.Image(in.Image, llb.Platform(platform))
+
+		// fetch image config and apply config to the image state
+		_, blob, err := inspectImageConfig(ctx, imageResolver, in.Image, platform)
+		if err != nil {
+			return llb.State{}, fmt.Errorf("failed to inspect image config: %w", err)
+		}
+
+		fmt.Println("blob", string(blob))
+
+		state, err = state.WithImageConfig(blob)
+		if err != nil {
+			return llb.State{}, fmt.Errorf("failed to set image config: %w", err)
+		}
+
+		// for _, env := range cfg.Env {
+		// 	if eq := strings.Index(env, "="); eq != -1 {
+		// 		state = state.AddEnv(env[:eq], env[eq+1:])
+		// 	}
+		// }
+		// // Extract environment variables from image config if gateway client is available
+		// envVars, err := inspectImageConfig(ctx, imageResolver, in.Image, platform)
+		// if err != nil {
+		// 	return llb.State{}, fmt.Errorf("failed to inspect image config: %w", err)
+		// }
+		// // Apply environment variables from image config to the LLB state
+		// for _, env := range envVars {
+		// 	if eq := strings.Index(env, "="); eq != -1 {
+		// 		state = state.AddEnv(env[:eq], env[eq+1:])
+		// 	}
+		// }
+
+		return state, nil
+	case in.Local != "":
+		return llb.Local(in.Local), nil
+	case in.URL != "":
+		return llb.HTTP(in.URL), nil
+	case in.Scratch:
+		return llb.Scratch(), nil
+	default:
+		return llb.State{}, fmt.Errorf("invalid input: %v", in)
+	}
+}
+
+func union(states ...llb.State) llb.State {
+	out := llb.Scratch()
+	for _, st := range states {
+		out = out.File(llb.Copy(
+			st, "/", "/", // src -> dest
+			&llb.CopyInfo{
+				CopyDirContentsOnly: true, // strip the leading “/”
+				CreateDestPath:      true, // mkdir / in the scratch
+			}))
+	}
+	return out
+}
+
+// TranslatePlan converts a cogpack.Plan into an LLB State plus stage map.
 // If gatewayClient is provided, it will be used to inspect image configs and extract environment variables.
-func translatePlan(ctx context.Context, p *plan.Plan, gatewayClient client.Client) (llb.State, map[string]llb.State, error) {
+// This is exported for use in tests.
+func TranslatePlan(ctx context.Context, p *plan.Plan, imageResolver sourceresolver.ImageMetaResolver) (llb.State, map[string]llb.State, error) {
 	stageStates := map[string]llb.State{}
 
 	platform := ocispec.Platform{OS: p.Platform.OS, Architecture: p.Platform.Arch}
-
-	resolveInput := func(in plan.Input) (llb.State, error) {
-		switch {
-		case in.Stage != "":
-			s, ok := stageStates[in.Stage]
-			if !ok {
-				return llb.State{}, fmt.Errorf("unknown stage %q", in.Stage)
-			}
-			return s, nil
-		case in.Image != "":
-			state := llb.Image(in.Image, llb.Platform(platform))
-			
-			// Extract environment variables from image config if gateway client is available
-			if gatewayClient != nil {
-				envVars, err := inspectImageConfig(ctx, gatewayClient, in.Image, platform)
-				if err != nil {
-					// Log the error but don't fail the build - environment variables are nice to have
-					fmt.Printf("Warning: failed to inspect image config for %s: %v\n", in.Image, err)
-				} else {
-					// Apply environment variables from image config to the LLB state
-					for _, env := range envVars {
-						if eq := strings.Index(env, "="); eq != -1 {
-							state = state.AddEnv(env[:eq], env[eq+1:])
-						}
-					}
-				}
-			}
-			
-			return state, nil
-		case in.Local != "":
-			return llb.Local(in.Local), nil
-		case in.URL != "":
-			return llb.HTTP(in.URL), nil
-		case in.Scratch:
-			return llb.Scratch(), nil
-		default:
-			return llb.State{}, fmt.Errorf("invalid input: %v", in)
-		}
-	}
 
 	var last llb.State
 	hasStage := false
 
 	for _, st := range p.Stages {
-		base, err := resolveInput(st.Source)
+		base, err := resolveInput(ctx, stageStates, platform, imageResolver, st.Source)
 		if err != nil {
 			return llb.State{}, nil, err
 		}
 
-		for _, env := range st.Env {
-			if eq := strings.Index(env, "="); eq != -1 {
-				base = base.AddEnv(env[:eq], env[eq+1:])
-			}
+		// dir, err := base.GetDir(ctx)
+		// if err != nil {
+		// 	return llb.State{}, nil, fmt.Errorf("failed to get directory from base state in stage %s: %w", st.ID, err)
+		// }
+		// fmt.Println("CURRENT DIR FROM BASE", dir)
+		// // if dir != "" {
+		// // 	base = base.Dir(dir)
+		// // }
+
+		// for _, env := range st.Env {
+		// 	if eq := strings.Index(env, "="); eq != -1 {
+		// 		base = base.AddEnv(env[:eq], env[eq+1:])
+		// 	}
+		// }
+
+		base, err = applyStageConfigToState(ctx, st, base)
+		if err != nil {
+			return llb.State{}, nil, fmt.Errorf("failed to apply stage config to state in stage %s: %w", st.ID, err)
 		}
 
 		modified, err := applyOps(ctx, base, st, p, stageStates, platform)
@@ -112,11 +149,53 @@ func translatePlan(ctx context.Context, p *plan.Plan, gatewayClient client.Clien
 			return llb.State{}, nil, fmt.Errorf("stage %s: %w", st.ID, err)
 		}
 
-		diff := llb.Diff(base, modified)
-		final := base.File(llb.Copy(diff, "/", "/"), llb.WithCustomNamef("layer:%s", st.ID))
-		
-		// Preserve environment variables from the modified state
-		// Re-apply stage env vars to the final state since they were lost in the diff operation
+		// Try to use diff operation for optimal layer creation
+		// Fall back to using the full modified state if diffop is not available (e.g., in dind)
+		var final llb.State
+
+		// TODO[md]: Detect diffop availability properly. For now, we'll try diff and handle the error
+		// This is a temporary workaround for testing with dind
+		useDiff := false // Set to false for dind compatibility
+
+		if useDiff {
+			diff := llb.Diff(base, modified)
+			final = base.File(llb.Copy(diff, "/", "/"), llb.WithCustomNamef("layer:%s", st.ID))
+		} else {
+			// Fallback: use the full modified state
+			// This creates larger layers but works without diffop
+			final = modified.Reset(base)
+			// TODO: Log warning about using fallback method
+		}
+
+		final, err = copyConfigToState(ctx, modified, final)
+		if err != nil {
+			return llb.State{}, nil, fmt.Errorf("failed to copy config to state in stage %s: %w", st.ID, err)
+		}
+
+		// // Preserve ALL environment variables from the modified state
+		// // The diff operation only captures filesystem changes, not environment changes
+		// // We need to extract all environment variables from the modified state and apply them to final
+		// envList, err := modified.Env(ctx)
+		// if err != nil {
+		// 	return llb.State{}, nil, fmt.Errorf("failed to extract environment variables from modified state in stage %s: %w", st.ID, err)
+		// }
+
+		// envArray := envList.ToArray()
+		// for _, env := range envArray {
+		// 	if eq := strings.Index(env, "="); eq != -1 {
+		// 		final = final.AddEnv(env[:eq], env[eq+1:])
+		// 	}
+		// }
+
+		// // Apply directory from modified state to final
+		// dir, err = modified.GetDir(ctx)
+		// if err != nil {
+		// 	return llb.State{}, nil, fmt.Errorf("failed to get directory from modified state in stage %s: %w", st.ID, err)
+		// }
+		// final = final.Dir(dir)
+
+		// Apply environment variables from plan
+		// TODO: is this what we want!? or do we want the config applied to the beginning state and allow that to carry through?
 		for _, env := range st.Env {
 			if eq := strings.Index(env, "="); eq != -1 {
 				final = final.AddEnv(env[:eq], env[eq+1:])
@@ -133,6 +212,44 @@ func translatePlan(ctx context.Context, p *plan.Plan, gatewayClient client.Clien
 	}
 
 	return last, stageStates, nil
+}
+
+func applyStageConfigToState(ctx context.Context, stage *plan.Stage, state llb.State) (llb.State, error) {
+	if stage.Dir != "" {
+		state = state.Dir(stage.Dir)
+	}
+
+	for _, env := range stage.Env {
+		if eq := strings.Index(env, "="); eq != -1 {
+			state = state.AddEnv(env[:eq], env[eq+1:])
+		}
+	}
+
+	return state, nil
+}
+
+func copyConfigToState(ctx context.Context, from llb.State, to llb.State) (llb.State, error) {
+	dir, err := from.GetDir(ctx)
+	if err != nil {
+		return llb.State{}, fmt.Errorf("failed to get directory from state: %w", err)
+	}
+	if dir != "" {
+		to = to.Dir(dir)
+	}
+
+	envList, err := from.Env(ctx)
+	if err != nil {
+		return llb.State{}, fmt.Errorf("failed to extract environment variables from state: %w", err)
+	}
+
+	envArray := envList.ToArray()
+	for _, env := range envArray {
+		if eq := strings.Index(env, "="); eq != -1 {
+			to = to.AddEnv(env[:eq], env[eq+1:])
+		}
+	}
+
+	return to, nil
 }
 
 func applyOps(ctx context.Context, base llb.State, st *plan.Stage, p *plan.Plan, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {

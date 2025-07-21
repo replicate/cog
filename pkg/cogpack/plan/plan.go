@@ -3,6 +3,8 @@ package plan
 import (
 	"fmt"
 	"io/fs"
+
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 // Package cogpack implements the Stack → Blocks → Plan → Builder architecture
@@ -21,6 +23,10 @@ type Plan struct {
 	Stages   []*Stage                 `json:"stages"`   // All stages in order
 	Export   *ExportConfig            `json:"export"`   // final image config
 	Contexts map[string]*BuildContext `json:"contexts"` // build contexts for mounting
+}
+
+func (p *Plan) GetPlatform() *ocispec.Platform {
+	return &ocispec.Platform{OS: p.Platform.OS, Architecture: p.Platform.Arch}
 }
 
 // Stage represents a build phase with explicit state management

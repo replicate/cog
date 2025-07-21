@@ -7,6 +7,7 @@ import (
 	"io/fs"
 
 	buildkitclient "github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend/gateway/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/tonistiigi/fsutil"
@@ -36,6 +37,15 @@ func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *
 
 	// Get BuildKit client from Docker command
 	bkClient, err := b.dockerCmd.BuildKitClient(ctx)
+	if err != nil {
+		return "", nil, fmt.Errorf("get buildkit client: %w", err)
+	}
+	defer bkClient.Close()
+
+	info, err := bkClient.Info(ctx)
+	fmt.Println("BuildKit info")
+	util.JSONPrettyPrint(info)
+
 	if err != nil {
 		return "", nil, fmt.Errorf("get buildkit client: %w", err)
 	}
@@ -95,7 +105,7 @@ func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *
 	eg.Go(docker.NewBuildkitSolveDisplay(statusCh, "plain"))
 
 	var solveResp *buildkitclient.SolveResponse
-	var imageConfig *ocispec.Image
+	var resultImage *ocispec.Image
 
 	eg.Go(func() error {
 		resp, err := bkClient.Build(
@@ -104,7 +114,7 @@ func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *
 			productID,
 			func(ctx context.Context, c client.Client) (*client.Result, error) {
 				// Translate plan → llb with gateway client for image config inspection
-				finalState, _, err := translatePlan(ctx, p, c)
+				finalState, _, err := TranslatePlan(ctx, p, c)
 				if err != nil {
 					return nil, fmt.Errorf("plan translation failed: %w", err)
 				}
@@ -122,37 +132,12 @@ func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *
 
 				fmt.Println("Solve request completed")
 
-				// Extract environment variables from final LLB state
-				envList, err := finalState.Env(ctx)
+				img, err := ociImageFromStateAndPlan(ctx, finalState, p)
 				if err != nil {
-					return nil, fmt.Errorf("failed to extract environment variables from final state: %w", err)
+					return nil, fmt.Errorf("failed to create image config: %w", err)
 				}
 
-				// Convert EnvList to []string
-				var envStrings []string
-				if envList != nil {
-					envStrings = envList.ToArray()
-				}
-				
-				imgCfg := ocispec.ImageConfig{}
-				if p.Export != nil {
-					imgCfg.Entrypoint = p.Export.Entrypoint
-					imgCfg.Cmd = p.Export.Cmd
-					imgCfg.Env = envStrings // Use environment variables from final LLB state
-					imgCfg.WorkingDir = p.Export.WorkingDir
-					imgCfg.User = p.Export.User
-					imgCfg.Labels = p.Export.Labels
-					imgCfg.ExposedPorts = p.Export.ExposedPorts
-				}
-				fmt.Println("Image config created")
-				img := ocispec.Image{
-					Config:   imgCfg,
-					Platform: ocispec.Platform{OS: p.Platform.OS, Architecture: p.Platform.Arch},
-					Author:   "cogpack",
-				}
-
-				// Store image config in outer scope
-				imageConfig = &img
+				resultImage = img
 
 				cfgJSON, err := json.Marshal(img)
 				if err != nil {
@@ -180,7 +165,47 @@ func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *
 	fmt.Println("solveResp")
 	util.JSONPrettyPrint(solveResp)
 
-	return solveResp.ExporterResponse["image.name"], imageConfig, nil
+	return solveResp.ExporterResponse["image.name"], resultImage, nil
+}
+
+func ociImageFromStateAndPlan(ctx context.Context, finalState llb.State, p *plan.Plan) (*ocispec.Image, error) {
+	img := &ocispec.Image{
+		Config: ocispec.ImageConfig{},
+		Author: "cogpack",
+	}
+
+	// platform
+	if platform, err := finalState.GetPlatform(ctx); err == nil {
+		img.Platform = *platform
+	} else {
+		return nil, fmt.Errorf("error extracting platform from final state: %w", err)
+	}
+
+	// env
+	if envList, err := finalState.Env(ctx); err == nil {
+		img.Config.Env = envList.ToArray()
+	} else {
+		return nil, fmt.Errorf("error extrating env from final state: %w", err)
+	}
+
+	// working dir
+	if dir, err := finalState.GetDir(ctx); err == nil {
+		img.Config.WorkingDir = dir
+	} else {
+		return nil, fmt.Errorf("error extracting working dir from final state: %w", err)
+	}
+
+	// TODO: make sure entrypoint etc are applied from the base image!
+	if p.Export != nil {
+		img.Config.Entrypoint = p.Export.Entrypoint
+		img.Config.Cmd = p.Export.Cmd
+		// TDOO: get user from state!
+		img.Config.User = p.Export.User
+		img.Config.Labels = p.Export.Labels
+		img.Config.ExposedPorts = p.Export.ExposedPorts
+	}
+
+	return img, nil
 }
 
 // convertToFsutilFS converts fs.FS to fsutil.FS
