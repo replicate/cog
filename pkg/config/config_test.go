@@ -531,6 +531,46 @@ func TestCUDABaseImageTag(t *testing.T) {
 	require.Equal(t, "nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04", imageTag)
 }
 
+func TestCUDABaseImageTagWithUbuntuEnv(t *testing.T) {
+	// By default, CUDA 12.8 + Python 3.12 should select Ubuntu 24.04
+	os.Unsetenv("COG_UBUNTU_VERSION")
+	configDefault := &Config{
+		Build: &Build{
+			GPU:           true,
+			PythonVersion: "3.12",
+			CUDA:          "12.8.0",
+			CuDNN:         "9",
+		},
+	}
+
+	err := configDefault.ValidateAndComplete("")
+	require.NoError(t, err)
+
+	imageTag, err := configDefault.CUDABaseImageTag()
+	require.NoError(t, err)
+	require.Equal(t, "nvidia/cuda:12.8.0-cudnn-devel-ubuntu24.04", imageTag)
+
+	// If COG_UBUNTU_VERSION is set to 22.04, should select Ubuntu 22.04 image
+	os.Setenv("COG_UBUNTU_VERSION", "22.04")
+	configEnv := &Config{
+		Build: &Build{
+			GPU:           true,
+			PythonVersion: "3.12",
+			CUDA:          "12.8.0",
+			CuDNN:         "9",
+		},
+	}
+
+	err = configEnv.ValidateAndComplete("")
+	require.NoError(t, err)
+
+	imageTag, err = configEnv.CUDABaseImageTag()
+	require.NoError(t, err)
+	require.Equal(t, "nvidia/cuda:12.8.0-cudnn-devel-ubuntu22.04", imageTag)
+
+	os.Unsetenv("COG_UBUNTU_VERSION")
+}
+
 func TestBuildRunItemStringYAML(t *testing.T) {
 	type BuildWrapper struct {
 		Build *Build `yaml:"build"`
