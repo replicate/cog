@@ -29,12 +29,14 @@ import (
 // images to download and push to the registry. Keep the images sizes small since they're stored in git.
 // For reference, the `alpine:latest` image for `linux/amd64` ~3.5MB compressed.
 var images = []struct {
-	Image          string
-	Platforms      []string
-	SinglePlatform string
+	Image           string
+	DestinationRepo string
+	Platforms       []string
+	SinglePlatform  string
 }{
 	{
-		Image: "alpine:latest",
+		Image:           "alpine:latest",
+		DestinationRepo: "local-alpine",
 		Platforms: []string{
 			"linux/amd64",
 			"linux/arm64",
@@ -128,7 +130,7 @@ func runAndInit(ctx context.Context, dstDir string) error {
 
 	addr := fmt.Sprintf("localhost:%d", hostPort)
 	for _, src := range images {
-		destRepo := fmt.Sprintf("%s/%s", addr, strings.Split(src.Image, ":")[0]) // e.g. localhost:5000/alpine
+		destRepo := fmt.Sprintf("%s/%s", addr, src.DestinationRepo) // e.g. localhost:5000/local-alpine
 		tagPart := strings.Split(src.Image, ":")[1]
 
 		if src.SinglePlatform != "" {

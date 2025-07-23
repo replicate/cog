@@ -11,11 +11,11 @@ import (
 )
 
 type Ref struct {
-	t   *testing.T
+	t   testing.TB
 	ref name.Reference
 }
 
-func NewRef(t *testing.T) Ref {
+func NewRef(t testing.TB) Ref {
 	t.Helper()
 
 	repoName := strings.ToLower(t.Name())
@@ -34,11 +34,11 @@ func NewRef(t *testing.T) Ref {
 	return Ref{t: t, ref: ref}
 }
 
-func NewRandomRef(t *testing.T) Ref {
+func NewRandomRef(t testing.TB) Ref {
 	return NewRef(t).WithRandomLabel()
 }
 
-func NewRandomRefS(t *testing.T) string {
+func NewRandomRefS(t testing.TB) string {
 	return NewRandomRef(t).String()
 }
 

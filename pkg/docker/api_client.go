@@ -42,32 +42,36 @@ func NewAPIClient(ctx context.Context, opts ...Option) (*apiClient, error) {
 		opt(clientOptions)
 	}
 
-	if clientOptions.host == "" {
-		host, err := determineDockerHost()
-		if err != nil {
-			return nil, fmt.Errorf("error determining docker host: %w", err)
+	if clientOptions.client == nil {
+		if clientOptions.host == "" {
+			host, err := determineDockerHost()
+			if err != nil {
+				return nil, fmt.Errorf("error determining docker host: %w", err)
+			}
+			clientOptions.host = host
 		}
-		clientOptions.host = host
-	}
 
-	// TODO[md]: we create a client at the top of each cli invocation, the sdk client hits an api which
-	// adds (a tiny biy of) overead. swap this with a handle that'll lazily initialize a client and ping for health.
-	// ditto for fetching registry credentials.
+		// TODO[md]: we create a client at the top of each cli invocation, the sdk client hits an api which
+		// adds (a tiny biy of) overead. swap this with a handle that'll lazily initialize a client and ping for health.
+		// ditto for fetching registry credentials.
 
-	dockerClientOpts := []dc.Opt{
-		dc.WithTLSClientConfigFromEnv(),
-		dc.WithVersionFromEnv(),
-		dc.WithAPIVersionNegotiation(),
-		dc.WithHost(clientOptions.host),
-	}
+		dockerClientOpts := []dc.Opt{
+			dc.WithTLSClientConfigFromEnv(),
+			dc.WithVersionFromEnv(),
+			dc.WithAPIVersionNegotiation(),
+			dc.WithHost(clientOptions.host),
+		}
 
-	client, err := dc.NewClientWithOpts(dockerClientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("error creating docker client: %w", err)
-	}
+		client, err := dc.NewClientWithOpts(dockerClientOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("error creating docker client: %w", err)
+		}
 
-	if _, err := client.Ping(ctx); err != nil {
-		return nil, fmt.Errorf("error pinging docker daemon: %w", err)
+		if _, err := client.Ping(ctx); err != nil {
+			return nil, fmt.Errorf("error pinging docker daemon: %w", err)
+		}
+
+		clientOptions.client = client
 	}
 
 	authConfig := make(map[string]registry.AuthConfig)
@@ -85,11 +89,11 @@ func NewAPIClient(ctx context.Context, opts ...Option) (*apiClient, error) {
 		authConfig[opt.ServerAddress] = opt
 	}
 
-	return &apiClient{client, authConfig}, nil
+	return &apiClient{clientOptions.client, authConfig}, nil
 }
 
 type apiClient struct {
-	client     *dc.Client
+	client     dc.APIClient
 	authConfig map[string]registry.AuthConfig
 }
 

@@ -132,6 +132,7 @@ func (b *BuildKitBuilder) Build(ctx context.Context, p *plan.Plan, buildConfig *
 
 				fmt.Println("Solve request completed")
 
+				fmt.Println("finalState", finalState)
 				img, err := ociImageFromStateAndPlan(ctx, finalState, p)
 				if err != nil {
 					return nil, fmt.Errorf("failed to create image config: %w", err)
@@ -176,7 +177,9 @@ func ociImageFromStateAndPlan(ctx context.Context, finalState llb.State, p *plan
 
 	// platform
 	if platform, err := finalState.GetPlatform(ctx); err == nil {
-		img.Platform = *platform
+		if platform != nil {
+			img.Platform = *platform
+		}
 	} else {
 		return nil, fmt.Errorf("error extracting platform from final state: %w", err)
 	}

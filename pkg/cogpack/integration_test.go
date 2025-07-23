@@ -17,20 +17,15 @@ import (
 	"github.com/replicate/cog/pkg/cogpack"
 	"github.com/replicate/cog/pkg/cogpack/builder"
 	"github.com/replicate/cog/pkg/cogpack/project"
+	"github.com/replicate/cog/pkg/cogpack/testhelpers"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/util"
 )
 
-func requireIntegrationSuite(t *testing.T) {
-	if os.Getenv("COGPACK_INTEGRATION") == "" {
-		t.Skip("set COGPACK_INTEGRATION=1 to run integration tests")
-	}
-}
-
 func TestPythonStack_SourceCodeIsCopied(t *testing.T) {
-	requireIntegrationSuite(t)
+	testhelpers.RequireIntegrationSuite(t)
 
 	imageName := buildImageFromFixture(t, "minimal-source")
 	fmt.Println("imageName", imageName)
@@ -40,16 +35,14 @@ func TestPythonStack_SourceCodeIsCopied(t *testing.T) {
 }
 
 func TestPythonStack_EnvPropagation(t *testing.T) {
-	requireIntegrationSuite(t)
+	testhelpers.RequireIntegrationSuite(t)
 
 	// baseImage := testcontainers.Run(t.Context())
 
 }
 
 func TestCogpackIntegration(t *testing.T) {
-	if os.Getenv("COGPACK_INTEGRATION") == "" {
-		t.Skip("set COGPACK_INTEGRATION=1 to run integration tests")
-	}
+	testhelpers.RequireIntegrationSuite(t)
 
 	// Set COGPACK=1 to ensure proper Docker client is used
 	t.Setenv("COGPACK", "1")

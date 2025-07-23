@@ -58,29 +58,10 @@ func resolveInput(ctx context.Context, stageStates map[string]llb.State, platfor
 			return llb.State{}, fmt.Errorf("failed to inspect image config: %w", err)
 		}
 
-		fmt.Println("blob", string(blob))
-
 		state, err = state.WithImageConfig(blob)
 		if err != nil {
 			return llb.State{}, fmt.Errorf("failed to set image config: %w", err)
 		}
-
-		// for _, env := range cfg.Env {
-		// 	if eq := strings.Index(env, "="); eq != -1 {
-		// 		state = state.AddEnv(env[:eq], env[eq+1:])
-		// 	}
-		// }
-		// // Extract environment variables from image config if gateway client is available
-		// envVars, err := inspectImageConfig(ctx, imageResolver, in.Image, platform)
-		// if err != nil {
-		// 	return llb.State{}, fmt.Errorf("failed to inspect image config: %w", err)
-		// }
-		// // Apply environment variables from image config to the LLB state
-		// for _, env := range envVars {
-		// 	if eq := strings.Index(env, "="); eq != -1 {
-		// 		state = state.AddEnv(env[:eq], env[eq+1:])
-		// 	}
-		// }
 
 		return state, nil
 	case in.Local != "":
@@ -172,34 +153,16 @@ func TranslatePlan(ctx context.Context, p *plan.Plan, imageResolver sourceresolv
 			return llb.State{}, nil, fmt.Errorf("failed to copy config to state in stage %s: %w", st.ID, err)
 		}
 
-		// // Preserve ALL environment variables from the modified state
-		// // The diff operation only captures filesystem changes, not environment changes
-		// // We need to extract all environment variables from the modified state and apply them to final
-		// envList, err := modified.Env(ctx)
-		// if err != nil {
-		// 	return llb.State{}, nil, fmt.Errorf("failed to extract environment variables from modified state in stage %s: %w", st.ID, err)
-		// }
-
-		// envArray := envList.ToArray()
-		// for _, env := range envArray {
-		// 	if eq := strings.Index(env, "="); eq != -1 {
-		// 		final = final.AddEnv(env[:eq], env[eq+1:])
-		// 	}
-		// }
-
-		// // Apply directory from modified state to final
-		// dir, err = modified.GetDir(ctx)
-		// if err != nil {
-		// 	return llb.State{}, nil, fmt.Errorf("failed to get directory from modified state in stage %s: %w", st.ID, err)
-		// }
-		// final = final.Dir(dir)
-
 		// Apply environment variables from plan
 		// TODO: is this what we want!? or do we want the config applied to the beginning state and allow that to carry through?
 		for _, env := range st.Env {
 			if eq := strings.Index(env, "="); eq != -1 {
 				final = final.AddEnv(env[:eq], env[eq+1:])
 			}
+		}
+
+		if currentPlatform, err := final.GetPlatform(ctx); err == nil && currentPlatform == nil {
+			final = final.Platform(platform)
 		}
 
 		stageStates[st.ID] = final
@@ -247,6 +210,14 @@ func copyConfigToState(ctx context.Context, from llb.State, to llb.State) (llb.S
 		if eq := strings.Index(env, "="); eq != -1 {
 			to = to.AddEnv(env[:eq], env[eq+1:])
 		}
+	}
+
+	platform, err := from.GetPlatform(ctx)
+	if err != nil {
+		return llb.State{}, fmt.Errorf("failed to get platform from state: %w", err)
+	}
+	if platform != nil {
+		to = to.Platform(*platform)
 	}
 
 	return to, nil
