@@ -13,7 +13,17 @@
       "Bash(find:*)",
       "Bash(COGPACK_INTEGRATION=1 go test ./pkg/cogpack/ -v -run TestCogpackIntegration/SourceCopy -timeout 10m)",
       "Bash(COGPACK_INTEGRATION=1 go test ./pkg/cogpack/ -v -run TestCogpackIntegration/Debug -timeout 10m)",
-      "Bash(COGPACK_INTEGRATION=1 go test ./pkg/cogpack/ -v -run TestCogpackIntegration/EnvPropagation -timeout 10m)"
+      "Bash(COGPACK_INTEGRATION=1 go test ./pkg/cogpack/ -v -run TestCogpackIntegration/EnvPropagation -timeout 10m)",
+      "Bash(INTEGRATION=1 go test -v ./pkg/cogpack/builder -run TestIntegration_Build/ENV/base_ENV_is_preserved -count=1)",
+      "Bash(INTEGRATION=1 go test -v ./pkg/cogpack/builder -run TestIntegration_BuildWithRegistry -count=1)",
+      "Bash(INTEGRATION=1 go test -v ./pkg/cogpack/builder -run \"TestIntegration_BuildWithRegistry/build_from_registry\" -count=1)",
+      "Bash(INTEGRATION=1 go test -v ./pkg/docker/dockertest/dockertestenv -run \"TestIntegration_DockerTestEnv/basic_DIND\" -count=1)",
+      "Bash(INTEGRATION=1 go test -v ./pkg/docker/dockertest/dockertestenv -run \"TestIntegration_DockerTestEnv/DIND_with_registry\" -count=1)",
+      "Bash(INTEGRATION=1 go test ./pkg/docker/dockertest/dockertestenv -v -run \"TestIntegration_DockerTestEnv/DIND_with_registry\")",
+      "Bash(INTEGRATION=1 go test ./pkg/docker/dockertest/dockertestenv -v)",
+      "Bash(INTEGRATION=1 go test ./pkg/docker/dockertest/dockertestenv -v -run \"TestIntegration_DockerTestEnv/pull_from_registry\")",
+      "Bash(INTEGRATION=1 go test ./pkg/docker/dockertest/dockertestenv -v -run \"TestIntegration_DockerTestEnv/build_with_registry_base_image\")",
+      "Bash(INTEGRATION=1 go test ./pkg/cogpack/builder -v -run \"TestIntegration_BuildWithRegistry\")"
     ],
     "deny": []
   }
