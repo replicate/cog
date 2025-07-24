@@ -20,7 +20,6 @@ import (
 )
 
 func TestIntegration_Build(t *testing.T) {
-	t.Setenv("INTEGRATION", "1")
 	testhelpers.RequireIntegrationSuite(t)
 
 	env := testenv.New(t)
