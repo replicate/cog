@@ -108,7 +108,7 @@ func TestCopy_Serialization(t *testing.T) {
 }
 
 func TestAdd_Serialization(t *testing.T) {
-	add := Add{
+	add := Copy{
 		Src:  []string{"https://example.com/file.tar.gz"},
 		Dest: "/app/downloads",
 	}
@@ -117,7 +117,7 @@ func TestAdd_Serialization(t *testing.T) {
 	data, err := json.Marshal(add)
 	require.NoError(t, err)
 
-	var unmarshaled Add
+	var unmarshaled Copy
 	err = json.Unmarshal(data, &unmarshaled)
 	require.NoError(t, err)
 

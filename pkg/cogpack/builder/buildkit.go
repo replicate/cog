@@ -202,10 +202,14 @@ func ociImageFromStateAndPlan(ctx context.Context, finalState llb.State, p *plan
 	if p.Export != nil {
 		img.Config.Entrypoint = p.Export.Entrypoint
 		img.Config.Cmd = p.Export.Cmd
-		// TDOO: get user from state!
+		// TODO[md]: get user from state! but llb.State doesn't expose it. Either patch it or track with a custom value
 		img.Config.User = p.Export.User
 		img.Config.Labels = p.Export.Labels
 		img.Config.ExposedPorts = p.Export.ExposedPorts
+		// override working dir from plan if set
+		if p.Export.WorkingDir != "" {
+			img.Config.WorkingDir = p.Export.WorkingDir
+		}
 	}
 
 	return img, nil

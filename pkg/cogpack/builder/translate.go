@@ -57,6 +57,7 @@ func resolveInput(ctx context.Context, stageStates map[string]llb.State, platfor
 		if err != nil {
 			return llb.State{}, fmt.Errorf("failed to inspect image config: %w", err)
 		}
+		fmt.Println("IMAGE CONFIG", string(blob))
 
 		state, err = state.WithImageConfig(blob)
 		if err != nil {
@@ -232,8 +233,6 @@ func applyOps(ctx context.Context, base llb.State, st *plan.Stage, p *plan.Plan,
 			cur, err = applyExecOp(ctx, cur, o, st, p, stageStates, platform)
 		case plan.Copy:
 			cur, err = applyCopyOp(ctx, cur, o, p, stageStates, platform)
-		case plan.Add:
-			cur, err = applyAddOp(ctx, cur, o, p, stageStates, platform)
 		case plan.SetEnv:
 			cur, err = applySetEnvOp(ctx, cur, o)
 		case plan.MkFile:
@@ -364,30 +363,19 @@ func applyCopyOp(ctx context.Context, base llb.State, copy plan.Copy, p *plan.Pl
 		return llb.State{}, fmt.Errorf("resolve copy source: %w", err)
 	}
 
+	copyOpts := &llb.CopyInfo{
+		IncludePatterns: copy.Patterns.Include,
+		ExcludePatterns: copy.Patterns.Exclude,
+		FollowSymlinks:  true,
+		// TODO[md]: this should probably be inferred from the path provided (eg if path ends in /, then copyDirContentsOnly should be true)
+		CopyDirContentsOnly: true,
+		AllowWildcard:       true,
+		AllowEmptyWildcard:  true,
+		CreateDestPath:      copy.CreateDestPath,
+	}
+
 	for _, sp := range copy.Src {
-		base = base.File(llb.Copy(src, sp, copy.Dest))
-	}
-	return base, nil
-}
-
-// applyAddOp handles Add operations
-func applyAddOp(ctx context.Context, base llb.State, add plan.Add, p *plan.Plan, stageStates map[string]llb.State, platform ocispec.Platform) (llb.State, error) {
-	if add.From.Stage != "" || add.From.Image != "" || add.From.Local != "" || add.From.URL != "" {
-		// Add with From source - copy from source first
-		src, err := resolveMountInput(add.From, p, stageStates, platform)
-		if err != nil {
-			return llb.State{}, fmt.Errorf("resolve add source: %w", err)
-		}
-
-		for _, sp := range add.Src {
-			base = base.File(llb.Copy(src, sp, add.Dest))
-		}
-		return base, nil
-	}
-
-	// Traditional Add with URLs in Src
-	for _, sp := range add.Src {
-		base = base.File(llb.Copy(llb.HTTP(sp), "download.bin", add.Dest))
+		base = base.File(llb.Copy(src, sp, copy.Dest, copyOpts))
 	}
 	return base, nil
 }

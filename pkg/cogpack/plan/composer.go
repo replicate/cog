@@ -421,16 +421,6 @@ func (pc *Composer) resolveOperationInputs(operations []Op, stage *ComposerStage
 			typed.From = *resolvedInput
 			resolved[i] = typed
 
-		case Add:
-			if !typed.From.IsEmpty() {
-				resolvedInput, err := pc.resolveInputFromStage(typed.From, stage)
-				if err != nil {
-					return nil, fmt.Errorf("resolving Add.From input: %w", err)
-				}
-				typed.From = *resolvedInput
-			}
-			resolved[i] = typed
-
 		case Exec:
 			// Resolve mount sources
 			if len(typed.Mounts) > 0 {

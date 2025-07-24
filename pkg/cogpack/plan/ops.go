@@ -20,20 +20,14 @@ type Copy struct {
 	Dest     string      `json:"dest"`              // destination path
 	Chown    string      `json:"chown,omitempty"`   // ownership
 	Patterns FilePattern `json:"patterns,omitzero"` // include/exclude patterns
+	// TODO: Add Chmod field to match buildkit/dockerfile API for setting file permissions
+	// Chmod string `json:"chmod,omitempty"` // file permissions (e.g. "755")
+
+	// CreateDestPath ensures the destination path exists before copying files
+	CreateDestPath bool `json:"createDestPath,omitempty"` // create directory if it doesn't exist
 }
 
 func (c Copy) Type() string { return "copy" }
-
-// Add copies files with URL support and auto-extraction
-type Add struct {
-	From     Input       `json:"from,omitempty"`     // optional source stage/image/url/local
-	Src      []string    `json:"src"`                // source paths/URLs
-	Dest     string      `json:"dest"`               // destination path
-	Chown    string      `json:"chown,omitempty"`    // ownership
-	Patterns FilePattern `json:"patterns,omitempty"` // include/exclude patterns
-}
-
-func (a Add) Type() string { return "add" }
 
 // SetEnv sets environment variables
 type SetEnv struct {

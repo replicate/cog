@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"io/fs"
 	"net"
 	"os"
@@ -16,9 +15,9 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -34,7 +33,7 @@ type DockerTestEnv struct {
 	daemonHelper   *TestDaemon
 	registryHelper *TestRegistry
 
-	dindContainer testcontainers.Container
+	dindContainer *dind.Container
 	dindClient    client.APIClient
 	dockerHost    string
 	envID         string
@@ -44,9 +43,15 @@ type DockerTestEnv struct {
 	externalRegistryHost string
 }
 
+// images that will be loaded from the host to the dind container on boot
+var seedImages = []string{
+	"docker.io/library/registry:3",
+}
+
 // config holds configuration options for DockerTestEnv
 type config struct {
 	registryData fs.FS
+	seedImages   []string
 }
 
 // Option configures a DockerTestEnv
@@ -68,6 +73,7 @@ func New(t testing.TB, opts ...Option) *DockerTestEnv {
 
 	cfg := &config{
 		registryData: os.DirFS(filepath.Join(sourceDir, "testdata", "local_registry")),
+		seedImages:   seedImages,
 	}
 
 	for _, opt := range opts {
@@ -87,6 +93,7 @@ func New(t testing.TB, opts ...Option) *DockerTestEnv {
 	}
 
 	env.startDind(t)
+	env.seedDindImages(t, cfg)
 	env.startRegistry(t, cfg)
 
 	return env
@@ -139,7 +146,7 @@ func (env *DockerTestEnv) startDind(t testing.TB) {
 
 	// Configure DIND with proper privileges
 	dindOpts := []testcontainers.ContainerCustomizer{
-		testcontainers.WithImagePlatform("linux/amd64"),
+		testcontainers.WithImagePlatform(dockerHostPlatform(t)),
 		testcontainers.WithCmdArgs("--insecure-registry=localhost:5000"),
 		testcontainers.WithEnv(map[string]string{
 			// Always disable TLS for simplicity in tests
@@ -176,6 +183,35 @@ func (env *DockerTestEnv) startDind(t testing.TB) {
 	env.externalRegistryHost = net.JoinHostPort("localhost", port.Port())
 }
 
+func (env *DockerTestEnv) seedDindImages(t testing.TB, cfg *config) {
+	ctx := t.Context()
+
+	provider, err := testcontainers.ProviderDocker.GetProvider()
+	require.NoError(t, err)
+
+	existingImages, err := provider.ListImages(ctx)
+	require.NoError(t, err)
+
+	existingImageNames := make(map[string]struct{})
+	for _, image := range existingImages {
+		ref, err := name.ParseReference(image.Name)
+		require.NoError(t, err)
+		existingImageNames[ref.Name()] = struct{}{}
+	}
+
+	for _, seedImage := range cfg.seedImages {
+		ref, err := name.ParseReference(seedImage)
+		require.NoError(t, err)
+		if _, ok := existingImageNames[ref.Name()]; !ok {
+			err = provider.PullImage(ctx, ref.Name())
+			require.NoError(t, err, "failed to pull image %s", ref.Name())
+		}
+
+		err = env.dindContainer.LoadImage(ctx, ref.Name())
+		require.NoError(t, err, "failed to load image %s to dind", ref.Name())
+	}
+}
+
 func (env *DockerTestEnv) startRegistry(t testing.TB, cfg *config) {
 	ctx := t.Context()
 
@@ -183,17 +219,9 @@ func (env *DockerTestEnv) startRegistry(t testing.TB, cfg *config) {
 
 	client := env.DockerClient()
 
-	// Pull the registry image first
-	reader, err := client.ImagePull(ctx, "docker.io/library/registry:3", image.PullOptions{})
-	require.NoError(t, err)
-	defer reader.Close()
-
-	// Wait for pull to complete
-	_, err = io.Copy(io.Discard, reader)
-	require.NoError(t, err)
-
 	// Create the registry container
 	resp, err := client.ContainerCreate(ctx, &container.Config{
+		// image is already loaded into dind w/ seedImages, otherwise need to pull first
 		Image: "registry:3",
 		Env: []string{
 			"REGISTRY_HTTP_ADDR=:5000",
@@ -258,4 +286,25 @@ func (env *DockerTestEnv) startRegistry(t testing.TB, cfg *config) {
 	env.registryContainerID = resp.ID
 
 	// note, ignore cleanup since everything vanishes when dind is stopped
+}
+
+// dockerHostPlatform returns a linux/$ARCH string that matches the host architecture.
+// we need this to avoid nested virtualization issues (eg rosetta) when running containers
+// within dind that don't match the host architecture. dind works around this as long as it isn't
+// being emulated itself
+func dockerHostPlatform(t testing.TB) string {
+	t.Helper()
+
+	client, err := testcontainers.NewDockerClientWithOpts(t.Context(), client.FromEnv)
+	require.NoError(t, err)
+
+	info, err := client.Info(t.Context())
+	require.NoError(t, err)
+
+	switch info.Architecture {
+	case "aarch64", "arm64":
+		return "linux/arm64"
+	default:
+		return "linux/amd64"
+	}
 }
