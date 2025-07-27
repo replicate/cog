@@ -75,7 +75,7 @@ func TestBaseImageConfigurationExists(t *testing.T) {
 
 func TestBaseImageConfigurationExistsNoTorch(t *testing.T) {
 	cudaVersion := ""
-	pythonVersion := "3.12"
+	pythonVersion := "3.13"
 	torchVersion := ""
 	client := registrytest.NewMockRegistryClient()
 	client.AddMockImage(BaseImageName(cudaVersion, pythonVersion, torchVersion))
