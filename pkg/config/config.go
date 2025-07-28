@@ -55,7 +55,8 @@ type Build struct {
 	PreInstall         []string  `json:"pre_install,omitempty" yaml:"pre_install,omitempty"` // Deprecated, but included for backwards compatibility
 	CUDA               string    `json:"cuda,omitempty" yaml:"cuda,omitempty"`
 	CuDNN              string    `json:"cudnn,omitempty" yaml:"cudnn,omitempty"`
-	Fast               bool      `json:"fast,omitempty" yaml:"fast"`
+	Fast               bool      `json:"fast,omitempty" yaml:"fast,omitempty"`
+	CogRuntime         bool      `json:"cog_runtime,omitempty" yaml:"cog_runtime,omitempty"`
 	PythonOverrides    string    `json:"python_overrides,omitempty" yaml:"python_overrides,omitempty"`
 
 	pythonRequirementsContent []string

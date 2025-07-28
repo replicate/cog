@@ -151,6 +151,11 @@
           "type": "boolean",
           "description": "A flag to enable the experimental fast-push feature from a config level."
         },
+        "cog_runtime": {
+          "$id": "#/properties/build/properties/cog_runtime",
+          "type": "boolean",
+          "description": "A flag to enable the experimental cog-runtime implementation from a config level."
+        },
         "python_overrides": {
           "$id": "#/properties/build/properties/python_overrides",
           "type": "string",
