@@ -227,14 +227,14 @@ make run-docs-server
 
 This project has a [GitHub Actions workflow](https://github.com/replicate/cog/blob/39cfc5c44ab81832886c9139ee130296f1585b28/.github/workflows/ci.yaml#L107) that uses [goreleaser](https://goreleaser.com/quick-start/#quick-start) to facilitate the process of publishing new releases. The release process is triggered by manually creating and pushing a new annotated git tag.
 
-### Choosing a version number
+### Choose a version number
 
 > Deciding what the annotated git tag should be requires some interpretation. Cog generally follows [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html), and since the major version
 > is `0`, the rules get [a bit more loose](https://semver.org/spec/v2.0.0.html#spec-item-4). Broadly speaking, the rules for when to increment the patch version still hold, but
 > backward-incompatible changes **will not** require incrementing the major version. In this way, the minor version may be incremented whether the changes are additive or
 > subtractive. This all changes once the major version is incremented to `1`.
 
-### Setting up GPG signing (macOS)
+### Set up GPG signing (macOS)
 
 Before creating a signed tag, you'll need to set up GPG signing. On macOS, install GPG using Homebrew:
 
@@ -269,17 +269,7 @@ The key ID is the part after `ed25519/` (in this example, `ABC123DEF456`).
 git config --global user.signingkey YOUR_KEY_ID
 git config --global commit.gpgsign true
 ```
-
-### Creating a release
-
-To publish a new release `v0.13.12` referencing commit `fabdadbead`, for example, one would run the following in one's local checkout of cog:
-
-    git tag --sign --annotate --message 'Release v0.13.12' v0.13.12 fabdadbead
-    git push origin v0.13.12
-
-Then visit [github.com/replicate/cog/actions](https://github.com/replicate/cog/actions) to monitor the release process.
-
-### Publishing a prerelease
+### Create a prerelease (optional)
 
 Prereleases are a useful way to give testers a way to try out new versions of Cog without affecting the documented `latest` download URL which people normally use to install Cog.
 
@@ -289,6 +279,23 @@ To publish a prerelease version, append a [SemVer prerelease identifer](https://
     git fetch --all --tags
     git tag -a v0.1.0-alpha -m "Prerelease v0.1.0"
     git push --tags
+
+### Create a release
+
+To publish a new release `v0.13.12` referencing commit `fabdadbead`, for example, one would run the following in one's local checkout of cog:
+
+    git tag --sign --annotate --message 'Release v0.13.12' v0.13.12 fabdadbead
+    git push origin v0.13.12
+
+Then visit [github.com/replicate/cog/actions](https://github.com/replicate/cog/actions) to monitor the release process.
+
+
+### Get team approval for the PyPI package
+
+The release workflow will halt until another member of the team approves the release.
+
+Ping someone on the team to review and approve the release.
+
 
 ## Troubleshooting
 
