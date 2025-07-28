@@ -227,10 +227,50 @@ make run-docs-server
 
 This project has a [GitHub Actions workflow](https://github.com/replicate/cog/blob/39cfc5c44ab81832886c9139ee130296f1585b28/.github/workflows/ci.yaml#L107) that uses [goreleaser](https://goreleaser.com/quick-start/#quick-start) to facilitate the process of publishing new releases. The release process is triggered by manually creating and pushing a new annotated git tag.
 
+### Choosing a version number
+
 > Deciding what the annotated git tag should be requires some interpretation. Cog generally follows [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html), and since the major version
 > is `0`, the rules get [a bit more loose](https://semver.org/spec/v2.0.0.html#spec-item-4). Broadly speaking, the rules for when to increment the patch version still hold, but
 > backward-incompatible changes **will not** require incrementing the major version. In this way, the minor version may be incremented whether the changes are additive or
 > subtractive. This all changes once the major version is incremented to `1`.
+
+### Setting up GPG signing (macOS)
+
+Before creating a signed tag, you'll need to set up GPG signing. On macOS, install GPG using Homebrew:
+
+```bash
+brew install gnupg
+```
+
+Generate a GPG key for signing:
+
+```bash
+gpg --quick-generate-key "Your Name <your.email@example.com>" ed25519 default 0
+```
+
+Configure Git to use your GPG key:
+
+```bash
+# Get your key ID
+gpg --list-secret-keys --keyid-format=long
+```
+
+This will show output like:
+```
+sec   ed25519/ABC123DEF456 2024-01-15 [SC]
+      ABC123DEF4567890ABCDEF1234567890ABCDEF12
+uid                 [ultimate] Your Name <your.email@example.com>
+```
+
+The key ID is the part after `ed25519/` (in this example, `ABC123DEF456`).
+
+```bash
+# Configure Git (replace YOUR_KEY_ID with your actual key ID)
+git config --global user.signingkey YOUR_KEY_ID
+git config --global commit.gpgsign true
+```
+
+### Creating a release
 
 To publish a new release `v0.13.12` referencing commit `fabdadbead`, for example, one would run the following in one's local checkout of cog:
 
