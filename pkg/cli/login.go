@@ -16,7 +16,6 @@ import (
 	"golang.org/x/term"
 
 	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -34,8 +33,6 @@ func newLoginCommand() *cobra.Command {
 	}
 
 	cmd.Flags().Bool("token-stdin", false, "Pass login token on stdin instead of opening a browser. You can find your Replicate login token at https://replicate.com/auth/token")
-	cmd.Flags().String("registry", global.ReplicateRegistryHost, "Registry host")
-	_ = cmd.Flags().MarkHidden("registry")
 
 	return cmd
 }

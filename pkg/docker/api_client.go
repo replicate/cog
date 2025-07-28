@@ -70,17 +70,13 @@ func NewAPIClient(ctx context.Context, opts ...Option) (*apiClient, error) {
 		return nil, fmt.Errorf("error pinging docker daemon: %w", err)
 	}
 
-	authConfig := make(map[string]registry.AuthConfig)
-	userInfo, err := loadUserInformation(ctx, "r8.im")
+	// Load authentication for r8.im and any other registries that might be needed
+	authConfig, err := loadRegistryAuths(ctx, "r8.im")
 	if err != nil {
-		return nil, fmt.Errorf("error loading user information: %w, you may need to authenticate using cog login", err)
-	}
-	authConfig["r8.im"] = registry.AuthConfig{
-		Username:      userInfo.Username,
-		Password:      userInfo.Token,
-		ServerAddress: "r8.im",
+		return nil, fmt.Errorf("error loading registry auth configs: %w", err)
 	}
 
+	// Add any additional auth configs passed via options
 	for _, opt := range clientOptions.authConfigs {
 		authConfig[opt.ServerAddress] = opt
 	}
@@ -209,8 +205,20 @@ func (c *apiClient) Push(ctx context.Context, imageRef string) error {
 
 	// eagerly set auth config, or do it async
 	var authConfig registry.AuthConfig
-	if auth, ok := c.authConfig[parsedName.Context().RegistryStr()]; ok {
+	registryHost := parsedName.Context().RegistryStr()
+	if auth, ok := c.authConfig[registryHost]; ok {
 		authConfig = auth
+	} else {
+		// Dynamically load authentication for this registry if not already loaded
+		console.Debugf("=== APIClient.Push dynamically loading auth for %s", registryHost)
+		authConfigs, err := loadRegistryAuths(ctx, registryHost)
+		if err != nil {
+			console.Debugf("=== APIClient.Push failed to load auth for %s: %v", registryHost, err)
+		} else if auth, ok := authConfigs[registryHost]; ok {
+			authConfig = auth
+			// Cache the auth config for future use
+			c.authConfig[registryHost] = auth
+		}
 	}
 
 	var opts image.PushOptions
