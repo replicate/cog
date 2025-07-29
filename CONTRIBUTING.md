@@ -93,22 +93,32 @@ Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the fu
 
 ## Development environment
 
-We use the ["scripts to rule them all"](https://github.blog/engineering/engineering-principles/scripts-to-rule-them-all/) philosophy to manage common tasks across the project. These are mostly backed by a Makefile that contains the implementation.
-
 You'll need the following dependencies installed to build Cog locally:
-- [Go](https://golang.org/doc/install): We're targeting 1.24, but you can install the latest version since Go is backwards compatible. If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
-- [uv](https://docs.astral.sh/uv/): Python versions and dependencies are managed by uv.
+
+- [Go](https://golang.org/doc/install): We're targeting 1.23, but you can install the latest version since Go is backwards compatible. If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
+- [uv](https://docs.astral.sh/uv/): Python versions and dependencies are managed by uv, both in development and container environments.
 - [Docker](https://docs.docker.com/desktop) or [OrbStack](https://orbstack.dev)
 
 Install the Python dependencies:
 
     script/setup
 
-Once you have Go installed you can install the cog binary by running:
+Once you have Go installed, run:
 
-    make install PREFIX=$(go env GOPATH)
+    make install
 
-This installs the `cog` binary to `$GOPATH/bin/cog`.
+This will build and install the `cog` binary to `/usr/local/bin/cog`. You can then use it to build and run models.
+
+## Package Management
+
+Cog uses [uv](https://docs.astral.sh/uv/) for Python package management, both in development and container environments. This provides:
+
+- Fast, reliable package installation
+- Consistent dependency resolution
+- Efficient caching
+- Reproducible builds
+
+When building containers, uv is automatically installed and used to install Python packages from requirements.txt files. The cache is mounted at `/srv/r8/uv/cache` to speed up subsequent builds.
 
 To run ALL the tests:
 
