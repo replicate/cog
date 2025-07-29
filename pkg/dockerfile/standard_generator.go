@@ -92,7 +92,7 @@ func NewStandardGenerator(config *config.Config, dir string, command command.Com
 		Config:           config,
 		Dir:              dir,
 		GOOS:             runtime.GOOS,
-		GOARCH:           runtime.GOOS,
+		GOARCH:           runtime.GOARCH,
 		tmpDir:           tmpDir,
 		relativeTmpDir:   relativeTmpDir,
 		fileWalker:       filepath.Walk,
