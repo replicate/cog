@@ -113,7 +113,7 @@ func TestPythonPackages(t *testing.T) {
 	pkgs := generator.pythonPackages()
 	require.Truef(t, reflect.DeepEqual(pkgs, []string{
 		"torch==" + torchVersion,
-		"opencv-python==4.10.0.84",
+		"opencv-python==4.12.0.88",
 		"torchvision==0.16.0",
 		"torchaudio==2.1.0",
 	}), "expected %v", pkgs)

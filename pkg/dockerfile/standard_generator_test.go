@@ -79,7 +79,7 @@ RUN --mount=type=cache,target=/root/.cache/pip curl -s -S -L https://raw.githubu
 	export PYTHON_CFLAGS='-O3' && \
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
-	pip install "wheel<1"
+	pip install --upgrade pip setuptools "wheel<1"
 `, version, version)
 }
 
@@ -193,7 +193,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip pip install --upgrade pip setuptools wheel && pip install -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
 ENV CFLAGS=
 ` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
@@ -250,7 +250,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testInstallPython("3.12") + "RUN rm -rf /usr/bin/python3 && ln -s `realpath \\`pyenv which python\\`` /usr/bin/python3 && chmod +x /usr/bin/python3" + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip pip install --upgrade pip setuptools wheel && pip install -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
 ENV CFLAGS=
 ` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
@@ -414,7 +414,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testInstallPython("3.12") + `RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /usr/bin/python3 && chmod +x /usr/bin/python3" + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip pip install --upgrade pip setuptools wheel && pip install -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
 ENV CFLAGS=
 ` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
@@ -565,7 +565,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 ` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip pip install --upgrade pip setuptools wheel && pip install -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
 ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
@@ -622,7 +622,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 `+testInstallCog(gen.relativeTmpDir, gen.strip)+`
 COPY `+gen.relativeTmpDir+`/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip pip install --upgrade pip setuptools wheel && pip install -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
 ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
@@ -678,7 +678,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 ` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip pip install --upgrade pip setuptools wheel && pip install -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
 ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
@@ -733,7 +733,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 ` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip pip install --upgrade pip setuptools wheel && pip install -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
 ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
@@ -823,7 +823,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 ` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip pip install --upgrade pip setuptools wheel && pip install -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
 ENV CFLAGS=
 RUN find / -type f -name "*.py[co]" -delete && find / -type f -name "*.py" -exec touch -t 197001010000 {} \; && find / -type f -name "*.py" -printf "%h\n" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0
 RUN cowsay moo
@@ -880,7 +880,7 @@ FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip pip install --upgrade pip setuptools wheel && pip install -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
 ENV CFLAGS=
 RUN find / -type f -name "*.py[co]" -delete && find / -type f -name "*.py" -exec touch -t 197001010000 {} \; && find / -type f -name "*.py" -printf "%h\n" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0
 RUN cowsay moo
