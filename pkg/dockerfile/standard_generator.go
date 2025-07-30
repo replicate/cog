@@ -509,7 +509,7 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 		return "", err
 	}
 
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install -r " + containerPath
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --upgrade pip setuptools wheel && pip install -r " + containerPath
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
