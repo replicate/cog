@@ -72,6 +72,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 	liblzma-dev \
 	git \
 	ca-certificates \
+	ninja-build \
+    libgl1 \
+    libglib2.0-0 \
 	&& rm -rf /var/lib/apt/lists/*
 RUN --mount=type=cache,target=/root/.cache/pip curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash && \
 	git clone https://github.com/momo-lab/pyenv-install-latest.git "$(pyenv root)"/plugins/pyenv-install-latest && \
