@@ -82,7 +82,7 @@ RUN --mount=type=cache,target=/root/.cache/pip curl -s -S -L https://raw.githubu
 	export PYTHON_CFLAGS='-O3' && \
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
-	pip install --upgrade pip setuptools "wheel<1"
+	pip install --upgrade pip setuptools wheel
 `, version, version)
 }
 
