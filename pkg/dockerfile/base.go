@@ -223,7 +223,7 @@ func (g *BaseImageGenerator) pythonPackages() []string {
 	if g.torchVersion != "" {
 		pkgs := []string{
 			"torch==" + g.torchVersion,
-			"opencv-python==4.10.0.84",
+			"opencv-python==4.12.0.88",
 		}
 
 		// Find torchvision compatibility.

@@ -413,6 +413,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 	liblzma-dev \
 	git \
 	ca-certificates \
+	ninja-build \
+    libgl1 \
+    libglib2.0-0 \
 	&& rm -rf /var/lib/apt/lists/*
 ` + fmt.Sprintf(`
 RUN --mount=type=cache,target=/root/.cache/pip curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash && \
@@ -421,7 +424,7 @@ RUN --mount=type=cache,target=/root/.cache/pip curl -s -S -L https://raw.githubu
 	export PYTHON_CFLAGS='-O3' && \
 	pyenv install-latest "%s" && \
 	pyenv global $(pyenv install-latest --print "%s") && \
-	pip install "wheel<1"`, py, py) + `
+	pip install --upgrade pip setuptools wheel`, py, py) + `
 RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /usr/bin/python3 && chmod +x /usr/bin/python3", nil
 	// for sitePackagesLocation, kind of need to determine which specific version latest is (3.8 -> 3.8.17 or 3.8.18)
 	// install-latest essentially does pyenv install --list | grep $py | tail -1
