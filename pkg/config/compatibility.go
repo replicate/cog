@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -255,13 +256,20 @@ func versionGreater(a string, b string) (bool, error) {
 
 func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
 	var images []CUDABaseImage
+	ubuntuEnv := os.Getenv("COG_UBUNTU_VERSION")
 	for _, image := range CUDABaseImages {
 		if version.Matches(cuda, image.CUDA) && image.CuDNN == cuDNN {
-			images = append(images, image)
+			if ubuntuEnv == "" || image.Ubuntu == ubuntuEnv {
+				images = append(images, image)
+			}
 		}
 	}
 	if len(images) == 0 {
-		return "", fmt.Errorf("No matching base image for CUDA %s and CuDNN %s", cuda, cuDNN)
+		ubuntuMsg := ubuntuEnv
+		if ubuntuEnv == "" {
+			ubuntuMsg = "any"
+		}
+		return "", fmt.Errorf("No matching base image for CUDA %s, CuDNN %s, Ubuntu %s", cuda, cuDNN, ubuntuMsg)
 	}
 
 	sort.Slice(images, func(i, j int) bool {

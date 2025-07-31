@@ -403,3 +403,14 @@ cog predict --use-replicate-token -i prompt="Hello"
 # Multiple environment variables
 cog run -e CUDA_VISIBLE_DEVICES=0 -e BATCH_SIZE=32 python train.py
 ```
+
+# Selecting Ubuntu version for CUDA base image
+
+To select a specific Ubuntu version for the CUDA base image, set the environment variable `COG_UBUNTU_VERSION` before building:
+
+```bash
+export COG_UBUNTU_VERSION=22.04
+cog build --use-cog-base-image=false
+```
+
+If not set, the latest supported Ubuntu version will be used.
