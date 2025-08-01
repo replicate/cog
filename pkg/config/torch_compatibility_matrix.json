@@ -1,6 +1,6 @@
 [
   {
-    "Torch": "2.7.1+cpu",
+    "Torch": "2.7.1+cu128",
     "Torchvision": "0.22.1",
     "Torchaudio": "2.7.1",
     "FindLinks": "",
@@ -15,7 +15,7 @@
     ]
   },
   {
-    "Torch": "2.7.1+cu118",
+    "Torch": "2.7.1+cpu",
     "Torchvision": "0.22.1",
     "Torchaudio": "2.7.1",
     "FindLinks": "",
