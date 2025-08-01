@@ -357,7 +357,7 @@ The `cog.Secret` type is used to signify that an input holds sensitive informati
 like a password or API token.
 
 `cog.Secret` is a subclass of Pydantic's [`SecretStr`](https://docs.pydantic.dev/latest/api/types/#pydantic.types.SecretStr).
-Its default string representation redacts its contents to prevent accidental disclure.
+Its default string representation redacts its contents to prevent accidental disclosure.
 You can access its contents with the `get_secret_value()` method.
 
 ```python
