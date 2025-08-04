@@ -92,7 +92,7 @@ func NewStandardGenerator(config *config.Config, dir string, command command.Com
 		Config:           config,
 		Dir:              dir,
 		GOOS:             runtime.GOOS,
-		GOARCH:           runtime.GOOS,
+		GOARCH:           runtime.GOARCH,
 		tmpDir:           tmpDir,
 		relativeTmpDir:   relativeTmpDir,
 		fileWalker:       filepath.Walk,
@@ -418,18 +418,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 	git \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
-` + fmt.Sprintf(`
+
+ENV UV_CACHE_DIR="/srv/r8/uv/cache"
 RUN --mount=type=cache,target=/root/.cache/pip curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash && \
 	git clone https://github.com/momo-lab/pyenv-install-latest.git "$(pyenv root)"/plugins/pyenv-install-latest && \
 	export PYTHON_CONFIGURE_OPTS='--enable-optimizations --with-lto' && \
 	export PYTHON_CFLAGS='-O3' && \
-	pyenv install-latest "%s" && \
-	pyenv global $(pyenv install-latest --print "%s") && \
-	pip install "wheel<1"`, py, py) + `
+	pyenv install-latest "` + py + `" && \
+	pyenv global $(pyenv install-latest --print "` + py + `") && \
+	curl -LsSf https://astral.sh/uv/install.sh | sh
+
 RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /usr/bin/python3 && chmod +x /usr/bin/python3", nil
-	// for sitePackagesLocation, kind of need to determine which specific version latest is (3.8 -> 3.8.17 or 3.8.18)
-	// install-latest essentially does pyenv install --list | grep $py | tail -1
-	// there are many bad options, but a symlink to $(pyenv prefix) is the least bad one
 }
 
 func (g *StandardGenerator) installCog() (string, error) {
@@ -455,7 +454,7 @@ func (g *StandardGenerator) installCog() (string, error) {
 		cmds := []string{
 			"ENV R8_COG_VERSION=coglet",
 			"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
-			"RUN pip install " + m.LatestCoglet.URL,
+			"RUN --mount=type=cache,target=/srv/r8/uv/cache,id=uv-cache uv pip install " + m.LatestCoglet.URL,
 		}
 		return strings.Join(cmds, "\n"), nil
 	}
@@ -473,13 +472,13 @@ func (g *StandardGenerator) installCog() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir"
-	pipInstallLine += " " + containerPath
-	pipInstallLine += " 'pydantic>=1.9,<3'"
+	uvInstallLine := "RUN --mount=type=cache,target=/srv/r8/uv/cache,id=uv-cache uv pip install --no-cache-dir"
+	uvInstallLine += " " + containerPath
+	uvInstallLine += " 'pydantic>=1.9,<3'"
 	if g.strip {
-		pipInstallLine += " && " + StripDebugSymbolsCommand
+		uvInstallLine += " && " + StripDebugSymbolsCommand
 	}
-	lines = append(lines, CFlags, pipInstallLine, "ENV CFLAGS=")
+	lines = append(lines, CFlags, uvInstallLine, "ENV CFLAGS=")
 	return strings.Join(lines, "\n"), nil
 }
 
@@ -513,14 +512,14 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 		return "", err
 	}
 
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install -r " + containerPath
+	uvInstallLine := "RUN --mount=type=cache,target=/srv/r8/uv/cache,id=uv-cache uv pip install -r " + containerPath
 	if g.strip {
-		pipInstallLine += " && " + StripDebugSymbolsCommand
+		uvInstallLine += " && " + StripDebugSymbolsCommand
 	}
 	return strings.Join([]string{
 		copyLine[0],
 		CFlags,
-		pipInstallLine,
+		uvInstallLine,
 		"ENV CFLAGS=",
 	}, "\n"), nil
 }

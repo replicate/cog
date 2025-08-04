@@ -1,4 +1,5 @@
 import os
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Set
 
 import requests
@@ -16,6 +17,10 @@ from .useragent import get_user_agent
 log = structlog.get_logger(__name__)
 
 _response_interval = float(os.environ.get("COG_THROTTLE_RESPONSE_INTERVAL", 0.5))
+_webhook_timeout = float(
+    os.environ.get("COG_WEBHOOK_TIMEOUT", 10.0)
+)  # 10 second timeout by default
+_webhook_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="webhook")
 
 # HACK: signal that we should skip the start webhook when the response interval
 # is tuned below 100ms. This should help us get output sooner for models that
@@ -27,11 +32,40 @@ def webhook_caller_filtered(
     webhook: str,
     webhook_events_filter: Set[WebhookEvent],
 ) -> Callable[[Any, WebhookEvent], None]:
-    upstream_caller = webhook_caller(webhook)
+    # Create a session for this webhook
+    default_session = requests_session()
+    retry_session = requests_session_with_retries()
+    throttler = ResponseThrottler(response_interval=_response_interval)
+
+    def _send_webhook(response: PredictionResponse, session: requests.Session) -> None:
+        if PYDANTIC_V2:
+            dict_response = jsonable_encoder(response.model_dump(exclude_unset=True))
+        else:
+            dict_response = jsonable_encoder(response.dict(exclude_unset=True))
+
+        try:
+            session.post(webhook, json=dict_response, timeout=_webhook_timeout)
+        except requests.exceptions.Timeout:
+            log.warn("webhook request timed out", webhook=webhook)
+        except requests.exceptions.RequestException:
+            log.warn("caught exception while sending webhook", exc_info=True)
 
     def caller(response: PredictionResponse, event: WebhookEvent) -> None:
-        if event in webhook_events_filter:
-            upstream_caller(response)
+        if event not in webhook_events_filter:
+            return
+
+        if not throttler.should_send_response(response):
+            return
+
+        # Use a separate thread for webhook calls to avoid blocking
+        if Status.is_terminal(response.status):
+            # For terminal updates, retry persistently but in background
+            _webhook_executor.submit(_send_webhook, response, retry_session)
+        else:
+            # For other requests, don't retry, and ignore any errors
+            _webhook_executor.submit(_send_webhook, response, default_session)
+
+        throttler.update_last_sent_response_time()
 
     return caller
 
@@ -44,24 +78,32 @@ def webhook_caller(webhook: str) -> Callable[[Any], None]:
     default_session = requests_session()
     retry_session = requests_session_with_retries()
 
+    def _send_webhook(response: PredictionResponse, session: requests.Session) -> None:
+        if PYDANTIC_V2:
+            dict_response = jsonable_encoder(response.model_dump(exclude_unset=True))
+        else:
+            dict_response = jsonable_encoder(response.dict(exclude_unset=True))
+
+        try:
+            session.post(webhook, json=dict_response, timeout=_webhook_timeout)
+        except requests.exceptions.Timeout:
+            log.warn("webhook request timed out", webhook=webhook)
+        except requests.exceptions.RequestException:
+            log.warn("caught exception while sending webhook", exc_info=True)
+
     def caller(response: PredictionResponse) -> None:
-        if throttler.should_send_response(response):
-            if PYDANTIC_V2:
-                dict_response = jsonable_encoder(
-                    response.model_dump(exclude_unset=True)
-                )
-            else:
-                dict_response = jsonable_encoder(response.dict(exclude_unset=True))
-            if Status.is_terminal(response.status):
-                # For terminal updates, retry persistently
-                retry_session.post(webhook, json=dict_response)
-            else:
-                # For other requests, don't retry, and ignore any errors
-                try:
-                    default_session.post(webhook, json=dict_response)
-                except requests.exceptions.RequestException:
-                    log.warn("caught exception while sending webhook", exc_info=True)
-            throttler.update_last_sent_response_time()
+        if not throttler.should_send_response(response):
+            return
+
+        # Use a separate thread for webhook calls to avoid blocking
+        if Status.is_terminal(response.status):
+            # For terminal updates, retry persistently but in background
+            _webhook_executor.submit(_send_webhook, response, retry_session)
+        else:
+            # For other requests, don't retry, and ignore any errors
+            _webhook_executor.submit(_send_webhook, response, default_session)
+
+        throttler.update_last_sent_response_time()
 
     return caller
 
@@ -84,13 +126,12 @@ def requests_session() -> requests.Session:
 
 
 def requests_session_with_retries() -> requests.Session:
-    # This session will retry requests up to 12 times, with exponential
-    # backoff. In total it'll try for up to roughly 320 seconds, providing
-    # resilience through temporary networking and availability issues.
+    # This session will retry requests up to 6 times (reduced from 12), with exponential
+    # backoff. In total it'll try for up to roughly 60 seconds (reduced from 320s).
     session = requests_session()
     adapter = HTTPAdapter(
         max_retries=Retry(
-            total=12,
+            total=6,  # Reduced from 12 to avoid blocking too long
             backoff_factor=0.1,
             status_forcelist=[429, 500, 502, 503, 504],
             allowed_methods=["POST"],
