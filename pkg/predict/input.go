@@ -88,6 +88,14 @@ func NewInputs(keyVals map[string][]string, schema *openapi3.T) (Inputs, error) 
 								input[key] = Input{Float: &float}
 								continue
 							}
+						case propertySchema.Type.Is("integer"):
+							value, err := strconv.ParseInt(val, 10, 32)
+							if err != nil {
+								return input, err
+							}
+							valueInt := int32(value)
+							input[key] = Input{Int: &valueInt}
+							continue
 						}
 					}
 				}
