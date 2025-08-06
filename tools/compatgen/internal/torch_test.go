@@ -97,3 +97,83 @@ func TestIsValidPytorchVersionFormatWithOldVersion(t *testing.T) {
 	require.Equal(t, "39", pythonVersion)
 	require.Equal(t, "linux_x86_64", platform)
 }
+
+func TestIsValidPytorchAudioVersionFormat(t *testing.T) {
+	name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion("torchaudio-2.7.1+xpu-cp313-cp313t-win_amd64.whl")
+	require.NoError(t, err)
+	require.Equal(t, "2.7.1+xpu", name)
+	require.Equal(t, "2.7.1", version)
+	require.Equal(t, "xpu", variant)
+	require.Equal(t, "313", pythonVersion)
+	require.Equal(t, "win_amd64", platform)
+}
+
+func TestIsValidPytorchAudioVersionFormatBasic(t *testing.T) {
+	name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion("torchaudio-0.8.1-cp39-none-win_amd64.whl")
+	require.NoError(t, err)
+	require.Equal(t, "0.8.1", name)
+	require.Equal(t, "0.8.1", version)
+	require.Equal(t, "", variant)
+	require.Equal(t, "39", pythonVersion)
+	require.Equal(t, "win_amd64", platform)
+}
+
+func TestIsValidPytorchVisionVersionFormatPostRelease(t *testing.T) {
+	name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion("torchvision-0.4.1.post2-cp37-cp37m-macosx_10_9_x86_64.whl")
+	require.NoError(t, err)
+	require.Equal(t, "0.4.1.post2", name)
+	require.Equal(t, "0.4.1", version)
+	require.Equal(t, "", variant)
+	require.Equal(t, "37", pythonVersion)
+	require.Equal(t, "macosx_10_9_x86_64", platform)
+}
+
+func TestIsValidPytorchVisionEarlyVersion(t *testing.T) {
+	name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion("torchvision-0.14.1+cu116-cp310-cp310-linux_x86_64.whl")
+	require.NoError(t, err)
+	require.Equal(t, "0.14.1+cu116", name)
+	require.Equal(t, "0.14.1", version)
+	require.Equal(t, "cu116", variant)
+	require.Equal(t, "310", pythonVersion)
+	require.Equal(t, "linux_x86_64", platform)
+}
+
+func TestIsValidPytorchAudioEarlyVersion(t *testing.T) {
+	name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion("torchaudio-0.9.1-cp39-cp39-linux_x86_64.whl")
+	require.NoError(t, err)
+	require.Equal(t, "0.9.1", name)
+	require.Equal(t, "0.9.1", version)
+	require.Equal(t, "", variant)
+	require.Equal(t, "39", pythonVersion)
+	require.Equal(t, "linux_x86_64", platform)
+}
+
+func TestURLEncodedVersion(t *testing.T) {
+	name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion("torchtext-0.17.0%2Bcpu-cp39-cp39-win_amd64.whl")
+	require.NoError(t, err)
+	require.Equal(t, "0.17.0+cpu", name)
+	require.Equal(t, "0.17.0", version)
+	require.Equal(t, "cpu", variant)
+	require.Equal(t, "39", pythonVersion)
+	require.Equal(t, "win_amd64", platform)
+}
+
+func TestVersionUnderFolder(t *testing.T) {
+	name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion("cu111/torch-1.8.0%2Bcu111-cp36-cp36m-linux_x86_64.whl")
+	require.NoError(t, err)
+	require.Equal(t, "1.8.0+cu111", name)
+	require.Equal(t, "1.8.0", version)
+	require.Equal(t, "cu111", variant)
+	require.Equal(t, "36", pythonVersion)
+	require.Equal(t, "linux_x86_64", platform)
+}
+
+func TestPythonMVersion(t *testing.T) {
+	name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion("torchaudio-0.7.2-cp36-cp36m-linux_x86_64.whl")
+	require.NoError(t, err)
+	require.Equal(t, "0.7.2", name)
+	require.Equal(t, "0.7.2", version)
+	require.Equal(t, "", variant)
+	require.Equal(t, "36", pythonVersion)
+	require.Equal(t, "linux_x86_64", platform)
+}
