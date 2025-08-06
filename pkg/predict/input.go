@@ -22,6 +22,7 @@ type Input struct {
 	Array  *[]any
 	Json   *json.RawMessage
 	Float  *float32
+	Int    *int32
 }
 
 type Inputs map[string]Input
@@ -73,13 +74,20 @@ func NewInputs(keyVals map[string][]string, schema *openapi3.T) (Inputs, error) 
 							input[key] = Input{Array: &arr}
 							continue
 						case propertySchema.Type.Is("number"):
-							value, err := strconv.ParseFloat(val, 32)
-							if err != nil {
-								return input, err
+							value, err := strconv.ParseInt(val, 10, 32)
+							if err == nil {
+								valueInt := int32(value)
+								input[key] = Input{Int: &valueInt}
+								continue
+							} else {
+								value, err := strconv.ParseFloat(val, 32)
+								if err != nil {
+									return input, err
+								}
+								float := float32(value)
+								input[key] = Input{Float: &float}
+								continue
 							}
-							float := float32(value)
-							input[key] = Input{Float: &float}
-							continue
 						}
 					}
 				}
@@ -144,6 +152,8 @@ func (inputs *Inputs) toMap() (map[string]any, error) {
 			keyVals[key] = *input.Json
 		case input.Float != nil:
 			keyVals[key] = *input.Float
+		case input.Int != nil:
+			keyVals[key] = *input.Int
 		}
 	}
 	return keyVals, nil
