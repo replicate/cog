@@ -829,6 +829,19 @@ def test_predict_cog_runtime_float(cog_binary):
     assert result.stdout == "20\n"
 
 
+def test_predict_cog_runtime_float_negative(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/cog-runtime-float"
+    result = subprocess.run(
+        [cog_binary, "predict", "--debug", "-i", "num=-10"],
+        cwd=project_dir,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+    )
+    assert result.returncode == 0
+    assert result.stdout == "-20\n"
+
+
 def test_predict_cog_runtime_int(cog_binary):
     project_dir = Path(__file__).parent / "fixtures/cog-runtime-int"
     result = subprocess.run(
@@ -840,3 +853,29 @@ def test_predict_cog_runtime_int(cog_binary):
     )
     assert result.returncode == 0
     assert result.stdout == "20\n"
+
+
+def test_predict_cog_runtime_int_negative(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/cog-runtime-int"
+    result = subprocess.run(
+        [cog_binary, "predict", "--debug", "-i", "num=-10"],
+        cwd=project_dir,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+    )
+    assert result.returncode == 0
+    assert result.stdout == "-20\n"
+
+
+def test_predict_cog_runtime_int_with_float(cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/cog-runtime-int"
+    result = subprocess.run(
+        [cog_binary, "predict", "--debug", "-i", "num=15.0"],
+        cwd=project_dir,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+    )
+    assert result.returncode == 0
+    assert result.stdout == "30\n"
