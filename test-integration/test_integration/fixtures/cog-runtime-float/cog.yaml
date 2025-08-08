@@ -1,0 +1,4 @@
+build:
+  python_version: "3.11"
+  cog_runtime: true
+predict: "predict.py:Predictor"
