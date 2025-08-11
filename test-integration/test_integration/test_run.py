@@ -131,7 +131,7 @@ build:
 def test_run_shell_with_with_interactive_tty(tmpdir_factory, cog_binary):
     tmpdir = tmpdir_factory.mktemp("project")
     (tmpdir / "cog.yaml").write_text(
-        "build:\n  python_version: '3.13'\n",
+        "build:\n  python_version: '3.13'\n  cog_runtime: true\n",
         encoding="utf-8",
     )
 
