@@ -56,7 +56,7 @@ type Build struct {
 	CUDA               string    `json:"cuda,omitempty" yaml:"cuda,omitempty"`
 	CuDNN              string    `json:"cudnn,omitempty" yaml:"cudnn,omitempty"`
 	Fast               bool      `json:"fast,omitempty" yaml:"fast,omitempty"`
-	CogRuntime         bool      `json:"cog_runtime,omitempty" yaml:"cog_runtime,omitempty"`
+	CogRuntime         *bool     `json:"cog_runtime,omitempty" yaml:"cog_runtime,omitempty"`
 	PythonOverrides    string    `json:"python_overrides,omitempty" yaml:"python_overrides,omitempty"`
 
 	pythonRequirementsContent []string
@@ -72,6 +72,7 @@ type Example struct {
 }
 
 type Config struct {
+	filename    string
 	Build       *Build       `json:"build" yaml:"build"`
 	Image       string       `json:"image,omitempty" yaml:"image,omitempty"`
 	Predict     string       `json:"predict,omitempty" yaml:"predict"`
@@ -80,6 +81,10 @@ type Config struct {
 	Environment []string     `json:"environment,omitempty" yaml:"environment,omitempty"`
 
 	parsedEnvironment map[string]string
+}
+
+func (c *Config) Filename() string {
+	return c.filename
 }
 
 func DefaultConfig() *Config {

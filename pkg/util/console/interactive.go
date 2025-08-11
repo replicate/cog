@@ -91,7 +91,8 @@ func (i InteractiveBool) Read() (bool, error) {
 		reader := bufio.NewReader(os.Stdin)
 		text, err := reader.ReadString('\n')
 		if err != nil {
-			if err == io.EOF {
+			// Only translate error if a flag is set
+			if err == io.EOF && i.NonDefaultFlag != "" {
 				return false, fmt.Errorf("stdin is closed. If you're running in a script, you need to pass the '%s' option", i.NonDefaultFlag)
 			}
 			return false, err
