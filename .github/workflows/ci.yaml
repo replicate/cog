@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest-8-cores
     steps:
       - name: Download pre-built packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: Packages
           path: dist
@@ -81,7 +81,7 @@ jobs:
         with:
           fetch-depth: 0 # needed for goreleaser version determination
       - name: Download pre-built packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: Packages
           path: dist
@@ -108,7 +108,7 @@ jobs:
         python-version: ${{ fromJson(needs.build-python.outputs.python-versions) }}
     steps:
       - name: Download pre-built packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: Packages
           path: dist
@@ -161,7 +161,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Download pre-built packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: Packages
           path: dist
@@ -196,7 +196,7 @@ jobs:
         with:
           fetch-depth: 0 # needed for goreleaser version determination
       - name: Download pre-built packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: Packages
           path: dist

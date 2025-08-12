@@ -38,7 +38,7 @@ jobs:
     environment: test-pypi
     steps:
       - name: Download packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: Packages
           path: dist
@@ -55,7 +55,7 @@ jobs:
     environment: pypi
     steps:
       - name: Download packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: Packages
           path: dist
