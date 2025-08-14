@@ -1,4 +1,4 @@
-package migrate
+package util
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 )
 
 /*
-func TestOverwrightYAML(t *testing.T) {
+func TestOverwriteYAML(t *testing.T) {
 	var yamlData1 = `build:
     command: "build.sh"
 image: "my-image"
@@ -30,13 +30,13 @@ environment:
   - "VAR1=new_value1"
   - "VAR3=value3"
 `
-	content, err := OverwrightYAML([]byte(yamlData1), []byte(yamlData2))
+	content, err := OverwriteYAML([]byte(yamlData1), []byte(yamlData2))
 	require.NoError(t, err)
 	require.Equal(t, yamlData1, string(content))
 }
 */
 
-func TestOverwrightYAMLWithComments(t *testing.T) {
+func TestOverwriteYAMLWithComments(t *testing.T) {
 	var sourceYaml = `build:
   command: "build_new.sh"
 image: "new-image"
@@ -73,12 +73,12 @@ environment:
     - "VAR3=value3"
 `
 
-	content, err := OverwrightYAML([]byte(sourceYaml), []byte(destinationYaml))
+	content, err := OverwriteYAML([]byte(sourceYaml), []byte(destinationYaml))
 	require.NoError(t, err)
 	require.Equal(t, expected, string(content))
 }
 
-func TestOverwrightYAMLWithLineComments(t *testing.T) {
+func TestOverwriteYAMLWithLineComments(t *testing.T) {
 	var sourceYaml = `build:
   command: "build_new.sh"
 image: "new-image"
@@ -116,7 +116,7 @@ environment:
     - "VAR1=new_value1"
     - "VAR3=value3"
 `
-	content, err := OverwrightYAML([]byte(sourceYaml), []byte(destinationYaml))
+	content, err := OverwriteYAML([]byte(sourceYaml), []byte(destinationYaml))
 	require.NoError(t, err)
 	require.Equal(t, expected, string(content))
 }
@@ -177,7 +177,7 @@ build:
 # predict.py defines how predictions are run on your model
 predict: "predict.py:Predictor"
 `
-	content, err := OverwrightYAML([]byte(sourceYaml), []byte(destinationYaml))
+	content, err := OverwriteYAML([]byte(sourceYaml), []byte(destinationYaml))
 	require.NoError(t, err)
 	require.Equal(t, expected, string(content))
 }
