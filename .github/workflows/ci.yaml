@@ -176,6 +176,8 @@ jobs:
       - uses: hynek/setup-cached-uv@v2
       - name: Prepare tox
         run: uv pip install --system tox tox-uv
+      - name: UV pip freeze
+        run: uv pip freeze
       - name: Test
         run: make test-integration
         env:
