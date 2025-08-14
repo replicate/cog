@@ -51,6 +51,8 @@ const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
 
+const AskAboutCogRuntime = false
+
 type StandardGenerator struct {
 	Config *config.Config
 	Dir    string
@@ -504,6 +506,11 @@ func (g *StandardGenerator) askAboutCogRuntime() (bool, error) {
 
 	console.Warnf("Major Cog runtime upgrade available. Opt in now by setting build.cog_runtime: true in cog.yaml.")
 	console.Warnf("More: https://replicate.com/changelog/2025-07-21-cog-runtime")
+
+	// Do not ask until we're ready
+	if !AskAboutCogRuntime {
+		return false, nil
+	}
 
 	// Skip question if not in an interactive shell
 	if !term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd())) || !term.IsTerminal(int(os.Stderr.Fd())) {
