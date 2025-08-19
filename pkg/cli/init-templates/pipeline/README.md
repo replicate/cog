@@ -20,7 +20,7 @@ This will output the result to output.webp.
 
 ## Local development
 
-Download instructions for your coding agent from: https://replicate.com/docs/reference/pipelines/llms.txt:
+To get the latest coding agent instructions, run:
 
     curl -o CLAUDE.md https://replicate.com/docs/reference/pipelines/llms.txt
 
