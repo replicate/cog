@@ -12,7 +12,7 @@ import httpx
 from packaging.version import VERSION_PATTERN
 
 # From the SemVer spec: https://semver.org/
-SEMVER_PATTERN = r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9A-Za-z-]{1,9})[0-9A-Za-z-]*(?:\.[0-9A-Za-z-]+)*)?$"
+SEMVER_PATTERN = r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
 
 
 # Used to help ensure that the cog binary reports a semver version that matches
@@ -93,7 +93,7 @@ def assert_versions_match(semver_version: str, pep440_version: str):
         if semver_pre.startswith("dev"):
             assert pep440_groups["dev_l"] == "dev", "Dev build status does not match"
 
-    assert semver_groups["buildmetadata"] == pep440_groups["local"], (
+    assert pep440_groups["local"].startswith(semver_groups["buildmetadata"]), (
         f"Local/build metadata component does not match: {semver_groups['buildmetadata']} != {pep440_groups['local']}"
     )
 
