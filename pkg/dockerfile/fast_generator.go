@@ -428,6 +428,11 @@ func (g *FastGenerator) installSrc(lines []string, weights []weights.Weight) ([]
 		lines = append(lines, "RUN "+strings.Join(linkCommands, " && "))
 	}
 
+	if filepath.Base(g.Config.Filename()) != "cog.yaml" {
+		// Absolute filename doesn't work anyway, so it's always relative
+		lines = append(lines, fmt.Sprintf("RUN cp %s /src/cog.yaml", filepath.Join("/src", g.Config.Filename())))
+	}
+
 	return lines, nil
 }
 

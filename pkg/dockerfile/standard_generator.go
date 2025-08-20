@@ -228,10 +228,14 @@ func (g *StandardGenerator) GenerateDockerfileWithoutSeparateWeights(ctx context
 	if err != nil {
 		return "", err
 	}
-	return joinStringsWithoutLineSpace([]string{
+	bases := []string{
 		base,
 		`COPY . /src`,
-	}), nil
+	}
+	if m := g.cpCogYaml(); m != "" {
+		bases = append(bases, m)
+	}
+	return joinStringsWithoutLineSpace(bases), nil
 }
 
 // GenerateModelBaseWithSeparateWeights creates the Dockerfile and .dockerignore file contents for model weights
@@ -273,9 +277,20 @@ func (g *StandardGenerator) GenerateModelBaseWithSeparateWeights(ctx context.Con
 		`CMD ["python", "-m", "cog.server.http"]`,
 		`COPY . /src`,
 	)
+	if m := g.cpCogYaml(); m != "" {
+		base = append(base, m)
+	}
 
 	dockerignoreContents = makeDockerignoreForWeights(g.modelDirs, g.modelFiles)
 	return weightsBase, joinStringsWithoutLineSpace(base), dockerignoreContents, nil
+}
+
+func (g *StandardGenerator) cpCogYaml() string {
+	if filepath.Base(g.Config.Filename()) == "cog.yaml" {
+		return ""
+	}
+	// Absolute filename doesn't work anyway, so it's always relative
+	return fmt.Sprintf("RUN cp %s /src/cog.yaml", filepath.Join("/src", g.Config.Filename()))
 }
 
 func (g *StandardGenerator) generateForWeights() (string, []string, []string, error) {

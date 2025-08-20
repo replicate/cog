@@ -84,6 +84,9 @@ type Config struct {
 }
 
 func (c *Config) Filename() string {
+	if c.filename == "" {
+		return "cog.yaml"
+	}
 	return c.filename
 }
 
