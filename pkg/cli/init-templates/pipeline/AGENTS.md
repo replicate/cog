@@ -174,7 +174,7 @@ import replicate
 
 flux_dev = replicate.use("black-forest-labs/flux-dev")
 
-def main() -> None:
+def run() -> None:
     outputs = flux_dev(prompt="a cat wearing an amusing hat")
 
     for output in outputs:
@@ -188,7 +188,7 @@ import replicate
 
 claude = replicate.use("anthropic/claude-4-sonnet")
 
-def main() -> None:
+def run() -> None:
     output = claude(prompt="Give me a recipe for tasty smashed avocado on sourdough toast that could feed all of California.")
 
     print(output) # "Here's a recipe to feed all of California (about 39 million people)! ..."
@@ -202,7 +202,7 @@ import replicate
 flux_dev = replicate.use("black-forest-labs/flux-dev")
 claude = replicate.use("anthropic/claude-4-sonnet")
 
-def main() -> None:
+def run() -> None:
     images = flux_dev(prompt="a cat wearing an amusing hat")
 
     result = claude(prompt="describe this image for me", image=images[0])
@@ -220,7 +220,7 @@ import replicate
 
 claude = replicate.use("anthropic/claude-4-sonnet")
 
-def main() -> None:
+def run() -> None:
     prediction = claude.create(prompt="Give me a recipe for tasty smashed avocado on sourdough toast that could feed all of California.")
 
     prediction.logs() # get current logs (WIP)
@@ -239,7 +239,7 @@ import replicate
 
 claude = replicate.use("anthropic/claude-4-sonnet", streaming=True)
 
-def main() -> None:
+def run() -> None:
     output = claude(prompt="Give me a recipe for tasty smashed avocado on sourdough toast that could feed all of California.")
 
     for chunk in output:
@@ -260,7 +260,7 @@ from PIL import Image
 
 flux_dev = replicate.use("black-forest-labs/flux-dev")
 
-def main() -> None:
+def run() -> None:
     images = flux_dev(prompt="a cat wearing an amusing hat")
     for i, path in enumerate(images):
         with Image.open(path) as img:
@@ -275,7 +275,7 @@ import requests
 
 flux_dev = replicate.use("black-forest-labs/flux-dev")
 
-def main() -> None:
+def run() -> None:
     images = flux_dev(prompt="a cat wearing an amusing hat")
     for path in images:
         with open(path, "rb") as f:
@@ -292,7 +292,7 @@ from replicate import get_path_url
 
 flux_dev = replicate.use("black-forest-labs/flux-dev")
 
-def main() -> None:
+def run() -> None:
     outputs = flux_dev(prompt="a cat wearing an amusing hat")
 
     for output in outputs:
@@ -307,14 +307,14 @@ By default `use()` will return a function instance with a sync interface. You ca
 import asyncio
 import replicate
 
-async def main():
+async def run():
     flux_dev = replicate.use("black-forest-labs/flux-dev", use_async=True)
     outputs = await flux_dev(prompt="a cat wearing an amusing hat")
 
     for output in outputs:
         print(Path(output))
 
-asyncio.run(main())
+asyncio.run(run())
 ```
 
 When used in streaming mode then an `OutputIterator` will be returned which conforms to the `AsyncIterator` interface.
@@ -323,7 +323,7 @@ When used in streaming mode then an `OutputIterator` will be returned which conf
 import asyncio
 import replicate
 
-async def main():
+async def run():
     claude = replicate.use("anthropic/claude-3.5-haiku", streaming=True, use_async=True)
     output = await claude(prompt="say hello")
 
@@ -336,7 +336,7 @@ async def main():
     # on the model schema by looking for `x-cog-display: concatenate`.
     print(await output)
 
-asyncio.run(main())
+asyncio.run(run())
 ```
 
 ### Typing
@@ -356,7 +356,7 @@ def hint(*, prompt: str, image: Path | None = None, seed: int | None = None) -> 
 
 flux_dev = replicate.use("black-forest-labs/flux-dev", hint=hint)
 
-def main() -> None:
+def run() -> None:
     output1 = flux_dev() # will warn that `prompt` is missing
     output2 = flux_dev(prompt="str") # output2 will be typed as `str`
 ```
@@ -376,7 +376,7 @@ class FluxDev:
 
 flux_dev = replicate.use(FluxDev())
 
-def main() -> None:
+def run() -> None:
     output1 = flux_dev() # will warn that `prompt` is missing
     output2 = flux_dev(prompt="str") # output2 will be typed as `str`
 ```
@@ -762,7 +762,7 @@ from cog import Path
 
 flux_dev = replicate.use("black-forest-labs/flux-dev")
 
-def main(prompt: str) -> list[Path]:
+def run(prompt: str) -> list[Path]:
     outputs = flux_dev(prompt=prompt)
     return [Path(p) for p in outputs]
 
