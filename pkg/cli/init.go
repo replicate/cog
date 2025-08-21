@@ -121,7 +121,6 @@ func processTemplateFile(fs embed.FS, templateDir, filename, cwd string) error {
 
 	// Special handling for AGENTS.md - try to download from Replicate docs
 	if filename == "AGENTS.md" {
-		console.Infof("Downloading latest AGENTS.md from Replicate docs...")
 		downloadedContent, err := downloadAgentsFile()
 		if err != nil {
 			console.Infof("Failed to download AGENTS.md: %v", err)
