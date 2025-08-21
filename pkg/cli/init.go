@@ -151,26 +151,26 @@ func processTemplateFile(fs embed.FS, templateDir, filename, cwd string) error {
 
 func downloadAgentsFile() ([]byte, error) {
 	const agentsURL = "https://replicate.com/docs/reference/pipelines/llms.txt"
-	
+
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
-	
+
 	resp, err := client.Get(agentsURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch AGENTS.md: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to fetch AGENTS.md: HTTP %d", resp.StatusCode)
 	}
-	
+
 	content, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
-	
+
 	return content, nil
 }
 
