@@ -3,8 +3,11 @@ package cli
 import (
 	"embed"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -114,9 +117,29 @@ func processTemplateFile(fs embed.FS, templateDir, filename, cwd string) error {
 		return fmt.Errorf("Error creating directory %s: %w", dirPath, err)
 	}
 
-	content, err := fs.ReadFile(path.Join(templateDir, filename))
-	if err != nil {
-		return fmt.Errorf("Error reading %s: %w", filename, err)
+	var content []byte
+
+	// Special handling for AGENTS.md - try to download from Replicate docs
+	if filename == "AGENTS.md" {
+		console.Infof("Downloading latest AGENTS.md from Replicate docs...")
+		downloadedContent, err := downloadAgentsFile()
+		if err != nil {
+			console.Infof("Failed to download AGENTS.md: %v", err)
+			console.Infof("Using template version instead...")
+			// Fall back to template version
+			content, err = fs.ReadFile(path.Join(templateDir, filename))
+			if err != nil {
+				return fmt.Errorf("Error reading template %s: %w", filename, err)
+			}
+		} else {
+			content = downloadedContent
+		}
+	} else {
+		// Regular template file processing
+		content, err = fs.ReadFile(path.Join(templateDir, filename))
+		if err != nil {
+			return fmt.Errorf("Error reading %s: %w", filename, err)
+		}
 	}
 
 	if err := os.WriteFile(filePath, content, 0o644); err != nil {
@@ -125,6 +148,31 @@ func processTemplateFile(fs embed.FS, templateDir, filename, cwd string) error {
 
 	console.Infof("✅ Created %s", filePath)
 	return nil
+}
+
+func downloadAgentsFile() ([]byte, error) {
+	const agentsURL = "https://replicate.com/docs/reference/pipelines/llms.txt"
+	
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	
+	resp, err := client.Get(agentsURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch AGENTS.md: %w", err)
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch AGENTS.md: HTTP %d", resp.StatusCode)
+	}
+	
+	content, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	
+	return content, nil
 }
 
 func addPipelineInit(cmd *cobra.Command) {
