@@ -22,7 +22,7 @@ This will output the result to output.webp.
 
 To get the latest coding agent instructions, run:
 
-    curl -o CLAUDE.md https://replicate.com/docs/reference/pipelines/llms.txt
+    curl -o AGENTS.md https://replicate.com/docs/reference/pipelines/llms.txt
 
 A getting started guide is available at: https://replicate.com/docs/get-started/pipelines
 
