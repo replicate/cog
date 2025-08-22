@@ -158,12 +158,12 @@ func downloadAgentsFile() ([]byte, error) {
 
 	resp, err := client.Get(agentsURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch AGENTS.md: %w", err)
+		return nil, fmt.Errorf("%w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch AGENTS.md: HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
 	content, err := io.ReadAll(resp.Body)
