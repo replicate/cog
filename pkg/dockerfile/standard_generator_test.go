@@ -842,6 +842,7 @@ pandas==2.0.3`, string(requirements))
 }
 
 func TestGenerateWithCoglet(t *testing.T) {
+	t.Skip("coglet is disabled for now")
 	tmpDir := t.TempDir()
 
 	yaml := `
