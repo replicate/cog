@@ -3,21 +3,16 @@ package dockerfile
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
 
-	"golang.org/x/term"
-	"gopkg.in/yaml.v2"
-
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/registry"
-	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/slices"
 	"github.com/replicate/cog/pkg/util/version"
@@ -496,79 +491,79 @@ func (g *StandardGenerator) installCog() (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-func (g *StandardGenerator) installCogRuntime() (string, error) {
-	// We need fast-* compliant Python version to reconstruct coglet venv PYTHONPATH
-	if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
-		return "", fmt.Errorf("Python version must be <major>.<minor>")
-	}
-	m, err := NewMonobaseMatrix(http.DefaultClient)
-	if err != nil {
-		return "", err
-	}
-	cmds := []string{
-		"ENV R8_COG_VERSION=coglet",
-		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
-		"RUN pip install " + m.LatestCoglet.URL,
-	}
-	return strings.Join(cmds, "\n"), nil
-}
+// func (g *StandardGenerator) installCogRuntime() (string, error) {
+// 	// We need fast-* compliant Python version to reconstruct coglet venv PYTHONPATH
+// 	if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
+// 		return "", fmt.Errorf("Python version must be <major>.<minor>")
+// 	}
+// 	m, err := NewMonobaseMatrix(http.DefaultClient)
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	cmds := []string{
+// 		"ENV R8_COG_VERSION=coglet",
+// 		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
+// 		"RUN pip install " + m.LatestCoglet.URL,
+// 	}
+// 	return strings.Join(cmds, "\n"), nil
+// }
 
-func (g *StandardGenerator) askAboutCogRuntime() (bool, error) {
-	// Training is not supported
-	if g.Config.Train != "" {
-		return false, nil
-	}
-	// Only warn if cog_runtime is not explicitly set
-	if g.Config.Build.CogRuntime != nil {
-		return false, nil
-	}
+// func (g *StandardGenerator) askAboutCogRuntime() (bool, error) {
+// 	// Training is not supported
+// 	if g.Config.Train != "" {
+// 		return false, nil
+// 	}
+// 	// Only warn if cog_runtime is not explicitly set
+// 	if g.Config.Build.CogRuntime != nil {
+// 		return false, nil
+// 	}
 
-	console.Warnf("Major Cog runtime upgrade available. Opt in now by setting build.cog_runtime: true in cog.yaml.")
-	console.Warnf("More: https://replicate.com/changelog/2025-07-21-cog-runtime")
+// 	console.Warnf("Major Cog runtime upgrade available. Opt in now by setting build.cog_runtime: true in cog.yaml.")
+// 	console.Warnf("More: https://replicate.com/changelog/2025-07-21-cog-runtime")
 
-	// Do not ask until we're ready
-	if !AskAboutCogRuntime {
-		return false, nil
-	}
+// 	// Do not ask until we're ready
+// 	if !AskAboutCogRuntime {
+// 		return false, nil
+// 	}
 
-	// Skip question if not in an interactive shell
-	if !term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd())) || !term.IsTerminal(int(os.Stderr.Fd())) {
-		return false, nil
-	}
+// 	// Skip question if not in an interactive shell
+// 	if !term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd())) || !term.IsTerminal(int(os.Stderr.Fd())) {
+// 		return false, nil
+// 	}
 
-	interactive := &console.InteractiveBool{
-		Prompt:  "Do you want to switch to the new Cog runtime?",
-		Default: true,
-		// NonDefaultFlag is not applicable here
-	}
-	cogRuntime, err := interactive.Read()
-	if err != nil {
-		return false, fmt.Errorf("failed to read from stdin: %v", err)
-	}
-	// Only add cog_runtime: true to cog.yaml if answer is yes
-	// Otherwise leave it absent so we keep nagging
-	if !cogRuntime {
-		console.Warnf("Not switching. Add build.cog_runtime: false to disable this reminder.")
-		return false, nil
-	}
-	g.Config.Build.CogRuntime = &cogRuntime
+// 	interactive := &console.InteractiveBool{
+// 		Prompt:  "Do you want to switch to the new Cog runtime?",
+// 		Default: true,
+// 		// NonDefaultFlag is not applicable here
+// 	}
+// 	cogRuntime, err := interactive.Read()
+// 	if err != nil {
+// 		return false, fmt.Errorf("failed to read from stdin: %v", err)
+// 	}
+// 	// Only add cog_runtime: true to cog.yaml if answer is yes
+// 	// Otherwise leave it absent so we keep nagging
+// 	if !cogRuntime {
+// 		console.Warnf("Not switching. Add build.cog_runtime: false to disable this reminder.")
+// 		return false, nil
+// 	}
+// 	g.Config.Build.CogRuntime = &cogRuntime
 
-	console.Infof("Adding build.cog_runtime: true to %s", g.Config.Filename())
-	newYaml, err := yaml.Marshal(g.Config)
-	if err != nil {
-		return false, err
-	}
-	path := filepath.Join(g.Dir, g.Config.Filename())
-	oldYaml, err := os.ReadFile(path)
-	if err != nil {
-		return false, err
-	}
-	merged, err := util.OverwriteYAML(newYaml, oldYaml)
-	if err != nil {
-		return false, err
-	}
-	return true, os.WriteFile(path, merged, 0o644)
-}
+// 	console.Infof("Adding build.cog_runtime: true to %s", g.Config.Filename())
+// 	newYaml, err := yaml.Marshal(g.Config)
+// 	if err != nil {
+// 		return false, err
+// 	}
+// 	path := filepath.Join(g.Dir, g.Config.Filename())
+// 	oldYaml, err := os.ReadFile(path)
+// 	if err != nil {
+// 		return false, err
+// 	}
+// 	merged, err := util.OverwriteYAML(newYaml, oldYaml)
+// 	if err != nil {
+// 		return false, err
+// 	}
+// 	return true, os.WriteFile(path, merged, 0o644)
+// }
 
 func (g *StandardGenerator) pipInstalls() (string, error) {
 	var err error
