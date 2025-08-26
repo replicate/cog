@@ -57,6 +57,11 @@ BASE_SCHEMA = """
             "default": ["start", "output", "logs", "completed"],
             "items": { "$ref": "#/components/schemas/WebhookEvent" },
             "type": "array"
+          },
+          "quiet": {
+            "title": "Quiet",
+            "type": "boolean",
+            "default": false
           }
         },
         "title": "PredictionRequest",
