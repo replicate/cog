@@ -154,6 +154,30 @@ BASE_SCHEMA = """
         "summary": "Healthcheck"
       }
     },
+    "/ready": {
+      "get": {
+        "operationId": "readinesscheck_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "title": "Response Readinesscheck Readiness Check Get" }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": { "title": "Response Readinesscheck Readiness Check Get" }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Readiness"
+      }
+    },
     "/predictions": {
       "post": {
         "description": "Run a single prediction on the model",
