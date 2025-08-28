@@ -282,8 +282,10 @@ To publish a prerelease version, append a [SemVer prerelease identifer](https://
 
 ### Create a release
 
-To publish a new release `v0.13.12` referencing commit `fabdadbead`, for example, one would run the following in one's local checkout of cog:
+Run these commands to publish a new release `v0.13.12` referencing commit `fabdadbead`:
 
+    git checkout main
+    git fetch --all --tags
     git tag --sign --annotate --message 'Release v0.13.12' v0.13.12 fabdadbead
     git push origin v0.13.12
 
@@ -295,6 +297,15 @@ Then visit [github.com/replicate/cog/actions](https://github.com/replicate/cog/a
 The release workflow will halt until another member of the team approves the release.
 
 Ping someone on the team to review and approve the release.
+
+### Convert your git tag to a GitHub release
+
+Once the release is published, convert your git tag to a proper GitHub release:
+
+1. Visit [github.com/replicate/cog/tags](https://github.com/replicate/cog/tags)
+2. Click on your tag
+3. Click "Create release from tag"
+4. Add release notes and publish the release
 
 
 ## Troubleshooting
