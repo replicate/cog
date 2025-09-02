@@ -65,7 +65,7 @@ class IncludeAnalyzer(ast.NodeVisitor):
                 )
             elif node.args:
                 arg = node.args[0]
-                if isinstance(arg, ast.Str):
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                     self.includes.append(arg.s)
                 else:
                     raise ValueError(
