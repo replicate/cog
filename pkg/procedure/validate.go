@@ -178,7 +178,7 @@ func validateRequirements(projectDir string, client *http.Client, cfg *config.Co
 
 	if fill {
 		cfg.Build.PythonRequirements = requirementsFilePath
-		
+
 		// Also update the local requirements.txt to match the runtime requirements
 		// This ensures the local file stays in sync with what's actually available in production
 		err := updateLocalRequirementsFile(projectDir, requirementsFilePath)
@@ -261,14 +261,14 @@ func updateLocalRequirementsFile(projectDir, downloadedRequirementsPath string) 
 	if err != nil {
 		return fmt.Errorf("failed to read downloaded requirements: %w", err)
 	}
-	
+
 	// Write to local requirements.txt
 	localRequirementsPath := filepath.Join(projectDir, "requirements.txt")
 	err = os.WriteFile(localRequirementsPath, downloadedContent, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write local requirements.txt: %w", err)
 	}
-	
+
 	console.Infof("Updated local requirements.txt with runtime requirements")
 	return nil
 }
