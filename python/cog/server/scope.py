@@ -10,7 +10,7 @@ from ..types import ExperimentalFeatureWarning
 
 @frozen
 class Scope:
-    record_metric: Callable[[str, Union[float, int]], None]
+    record_metric: Callable[[str, Optional[Union[bool, float, int, str]]], None]
     context: Dict[str, str] = {}
     _tag: Optional[str] = None
 
