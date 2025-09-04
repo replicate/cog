@@ -119,6 +119,15 @@ func validateRequirements(projectDir string, client *http.Client, cfg *config.Co
 		return err
 	}
 
+	// Update local requirements.txt to match production before validation if filling
+	if fill {
+		err := updateLocalRequirementsFile(projectDir, requirementsFilePath)
+		if err != nil {
+			// Log warning but don't fail the build - the downloaded requirements will still be used
+			console.Warn(fmt.Sprintf("Failed to update local requirements.txt: %v", err))
+		}
+	}
+
 	if cfg.Build.PythonRequirements != "" {
 		pipelineRequirements, err := requirements.ReadRequirements(filepath.Join(projectDir, requirementsFilePath))
 		if err != nil {
@@ -178,14 +187,6 @@ func validateRequirements(projectDir string, client *http.Client, cfg *config.Co
 
 	if fill {
 		cfg.Build.PythonRequirements = requirementsFilePath
-
-		// Also update the local requirements.txt to match the runtime requirements
-		// This ensures the local file stays in sync with what's actually available in production
-		err := updateLocalRequirementsFile(projectDir, requirementsFilePath)
-		if err != nil {
-			// Log warning but don't fail the build - the downloaded requirements will still be used
-			console.Warn(fmt.Sprintf("Failed to update local requirements.txt: %v", err))
-		}
 	}
 
 	return nil

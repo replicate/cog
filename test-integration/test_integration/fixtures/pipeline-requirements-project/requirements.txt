@@ -1,8 +1,0 @@
-# pipelines-runtime@sha256:d1b9fbd673288453fdf12806f4cba9e9e454f0f89b187eac2db5731792f71d60
-moviepy==v2.2.1
-numpy==v2.3.2
-pillow==v11.3.0
-pydantic==v1.10.22
-replicate==v2.0.0a22
-requests==v2.32.5
-scikit-learn==v1.7.1
