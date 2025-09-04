@@ -2,6 +2,7 @@ package procedure
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -116,6 +117,15 @@ func validateRequirements(projectDir string, client *http.Client, cfg *config.Co
 	requirementsFilePath, err := downloadRequirements(projectDir, client)
 	if err != nil {
 		return err
+	}
+
+	// Update local requirements.txt to match production before validation if filling
+	if fill {
+		err := updateLocalRequirementsFile(projectDir, requirementsFilePath)
+		if err != nil {
+			// Log warning but don't fail the build - the downloaded requirements will still be used
+			console.Warn(fmt.Sprintf("Failed to update local requirements.txt: %v", err))
+		}
 	}
 
 	if cfg.Build.PythonRequirements != "" {
@@ -241,6 +251,27 @@ func downloadRequirements(projectDir string, client *http.Client) (string, error
 	}
 
 	return requirementsFilePath, nil
+}
+
+// updateLocalRequirementsFile copies the downloaded requirements to the local requirements.txt file
+// This keeps the local file in sync with what's actually available in the runtime
+func updateLocalRequirementsFile(projectDir, downloadedRequirementsPath string) error {
+	// Read the downloaded requirements
+	downloadedPath := filepath.Join(projectDir, downloadedRequirementsPath)
+	downloadedContent, err := os.ReadFile(downloadedPath)
+	if err != nil {
+		return fmt.Errorf("failed to read downloaded requirements: %w", err)
+	}
+
+	// Write to local requirements.txt
+	localRequirementsPath := filepath.Join(projectDir, "requirements.txt")
+	err = os.WriteFile(localRequirementsPath, downloadedContent, 0o644)
+	if err != nil {
+		return fmt.Errorf("failed to write local requirements.txt: %w", err)
+	}
+
+	console.Infof("Updated local requirements.txt with runtime requirements")
+	return nil
 }
 
 func requirementsURL() url.URL {

@@ -1,0 +1,4 @@
+build:
+  python_version: "3.13"
+  python_requirements: "requirements.txt"
+predict: "predict.py:Predictor"
