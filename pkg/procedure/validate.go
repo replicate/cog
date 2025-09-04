@@ -265,7 +265,7 @@ func updateLocalRequirementsFile(projectDir, downloadedRequirementsPath string) 
 
 	// Write to local requirements.txt
 	localRequirementsPath := filepath.Join(projectDir, "requirements.txt")
-	err = os.WriteFile(localRequirementsPath, downloadedContent, 0644)
+	err = os.WriteFile(localRequirementsPath, downloadedContent, 0o644)
 	if err != nil {
 		return fmt.Errorf("failed to write local requirements.txt: %w", err)
 	}

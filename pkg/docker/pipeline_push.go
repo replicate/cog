@@ -108,7 +108,7 @@ func createTarball(folder string, cfg *config.Config) (*bytes.Buffer, error) {
 	if downloadedRequirementsPath != "" {
 		header := &tar.Header{
 			Name: downloadedRequirementsPath,
-			Mode: 0644,
+			Mode: 0o644,
 			Size: int64(len(downloadedRequirementsContent)),
 		}
 

@@ -121,8 +121,10 @@ func processTemplateFile(fs embed.FS, templateDir, filename, cwd string) error {
 
 	var content []byte
 
-	// Special handling for AGENTS.md - try to download from Replicate docs
-	if filename == "AGENTS.md" {
+	// Special handling for specific template files
+	switch {
+	case filename == "AGENTS.md":
+		// Try to download from Replicate docs
 		downloadedContent, err := downloadAgentsFile()
 		if err != nil {
 			console.Infof("Failed to download AGENTS.md: %v", err)
@@ -135,7 +137,7 @@ func processTemplateFile(fs embed.FS, templateDir, filename, cwd string) error {
 		} else {
 			content = downloadedContent
 		}
-	} else if filename == "requirements.txt" && pipelineTemplate {
+	case filename == "requirements.txt" && pipelineTemplate:
 		// Special handling for requirements.txt in pipeline templates - download from runtime
 		downloadedContent, err := downloadPipelineRequirementsFile()
 		if err != nil {
@@ -149,7 +151,7 @@ func processTemplateFile(fs embed.FS, templateDir, filename, cwd string) error {
 		} else {
 			content = downloadedContent
 		}
-	} else {
+	default:
 		// Regular template file processing
 		content, err = fs.ReadFile(path.Join(templateDir, filename))
 		if err != nil {
