@@ -28,6 +28,7 @@ This document defines the API of the `cog` Python module, which is used to defin
 - [`File()`](#file)
 - [`Path()`](#path)
 - [`Secret`](#secret)
+- [`Optional`](#optional)
 - [`List`](#list)
 
 ## `BasePredictor`
@@ -356,7 +357,7 @@ The `cog.Secret` type is used to signify that an input holds sensitive informati
 like a password or API token.
 
 `cog.Secret` is a subclass of Pydantic's [`SecretStr`](https://docs.pydantic.dev/latest/api/types/#pydantic.types.SecretStr).
-Its default string representation redacts its contents to prevent accidental disclure.
+Its default string representation redacts its contents to prevent accidental disclosure.
 You can access its contents with the `get_secret_value()` method.
 
 ```python
@@ -389,6 +390,31 @@ any value passed to a `Secret` input is redacted after being sent to the model.
 > [!WARNING]  
 > Passing secret values to untrusted models can result in 
 > unintended disclosure, exfiltration, or misuse of sensitive data.
+
+## `Optional`
+
+Optional inputs should be explicitly defined as `Optional[T]` so that type checker can warn us about error-prone `None` values.
+
+For example, the following code might fail if `prompt` is not specified in the inputs:
+
+```python
+class Predictor(BasePredictor):
+    def predict(self, prompt: str=Input(description="prompt", default=None)) -> str:
+        return "hello" + prompt  # TypeError: can only concatenate str (not "NoneType") to str
+```
+
+We can improve it by making `prompt` an `Optional[str]`. Note that `default=None` is now redundant as `Optional` implies it.
+
+```python
+class Predictor(BasePredictor):
+    def predict(self, prompt: Optional[str]=Input(description="prompt")) -> str:
+        if prompt is None:  # type check can warn us if we forget this
+            return "hello"
+        else:
+            return "hello" + prompt
+```
+
+Note that the error prone usage of `prompt: str=Input(default=None)` might throw an error in a future release of Cog.
 
 ## `List`
 

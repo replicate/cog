@@ -42,10 +42,26 @@ func NewAPIClient(ctx context.Context, opts ...Option) (*apiClient, error) {
 		opt(clientOptions)
 	}
 
+	if clientOptions.host == "" {
+		host, err := determineDockerHost()
+		if err != nil {
+			return nil, fmt.Errorf("error determining docker host: %w", err)
+		}
+		clientOptions.host = host
+	}
+
 	// TODO[md]: we create a client at the top of each cli invocation, the sdk client hits an api which
 	// adds (a tiny biy of) overead. swap this with a handle that'll lazily initialize a client and ping for health.
 	// ditto for fetching registry credentials.
-	client, err := dc.NewClientWithOpts(dc.FromEnv, dc.WithAPIVersionNegotiation())
+
+	dockerClientOpts := []dc.Opt{
+		dc.WithTLSClientConfigFromEnv(),
+		dc.WithVersionFromEnv(),
+		dc.WithAPIVersionNegotiation(),
+		dc.WithHost(clientOptions.host),
+	}
+
+	client, err := dc.NewClientWithOpts(dockerClientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("error creating docker client: %w", err)
 	}
@@ -57,7 +73,7 @@ func NewAPIClient(ctx context.Context, opts ...Option) (*apiClient, error) {
 	authConfig := make(map[string]registry.AuthConfig)
 	userInfo, err := loadUserInformation(ctx, "r8.im")
 	if err != nil {
-		return nil, fmt.Errorf("error loading user information: %w", err)
+		return nil, fmt.Errorf("error loading user information: %w, you may need to authenticate using cog login", err)
 	}
 	authConfig["r8.im"] = registry.AuthConfig{
 		Username:      userInfo.Username,

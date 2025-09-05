@@ -1,0 +1,7 @@
+build:
+  gpu: true
+  cuda: "12.8"
+  python_version: "3.12"
+  python_packages:
+    - "torch==2.7.1+cu128"
+predict: "predict.py:Predictor"

@@ -95,7 +95,7 @@ func run(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	} else {
-		imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client)
+		imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client, true)
 		if err != nil {
 			return err
 		}

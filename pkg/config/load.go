@@ -29,6 +29,7 @@ func GetConfig(configFilename string) (*Config, string, error) {
 		return nil, "", err
 	}
 	err = config.ValidateAndComplete(rootDir)
+	config.filename = configFilename
 	return config, rootDir, err
 }
 

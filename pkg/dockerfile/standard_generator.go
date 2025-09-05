@@ -47,6 +47,8 @@ const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
 
+const AskAboutCogRuntime = false
+
 type StandardGenerator struct {
 	Config *config.Config
 	Dir    string
@@ -73,9 +75,10 @@ type StandardGenerator struct {
 	pythonRequirementsContents string
 	command                    command.Command
 	client                     registry.Client
+	requiresCog                bool
 }
 
-func NewStandardGenerator(config *config.Config, dir string, command command.Command, client registry.Client) (*StandardGenerator, error) {
+func NewStandardGenerator(config *config.Config, dir string, command command.Command, client registry.Client, requiresCog bool) (*StandardGenerator, error) {
 	tmpDir, err := dockercontext.BuildTempDir(dir)
 	if err != nil {
 		return nil, err
@@ -100,6 +103,7 @@ func NewStandardGenerator(config *config.Config, dir string, command command.Com
 		precompile:       false,
 		command:          command,
 		client:           client,
+		requiresCog:      requiresCog,
 	}, nil
 }
 
@@ -220,10 +224,14 @@ func (g *StandardGenerator) GenerateDockerfileWithoutSeparateWeights(ctx context
 	if err != nil {
 		return "", err
 	}
-	return joinStringsWithoutLineSpace([]string{
+	bases := []string{
 		base,
 		`COPY . /src`,
-	}), nil
+	}
+	if m := g.cpCogYaml(); m != "" {
+		bases = append(bases, m)
+	}
+	return joinStringsWithoutLineSpace(bases), nil
 }
 
 // GenerateModelBaseWithSeparateWeights creates the Dockerfile and .dockerignore file contents for model weights
@@ -265,9 +273,20 @@ func (g *StandardGenerator) GenerateModelBaseWithSeparateWeights(ctx context.Con
 		`CMD ["python", "-m", "cog.server.http"]`,
 		`COPY . /src`,
 	)
+	if m := g.cpCogYaml(); m != "" {
+		base = append(base, m)
+	}
 
 	dockerignoreContents = makeDockerignoreForWeights(g.modelDirs, g.modelFiles)
 	return weightsBase, joinStringsWithoutLineSpace(base), dockerignoreContents, nil
+}
+
+func (g *StandardGenerator) cpCogYaml() string {
+	if filepath.Base(g.Config.Filename()) == "cog.yaml" {
+		return ""
+	}
+	// Absolute filename doesn't work anyway, so it's always relative
+	return fmt.Sprintf("RUN cp %s /src/cog.yaml", filepath.Join("/src", g.Config.Filename()))
 }
 
 func (g *StandardGenerator) generateForWeights() (string, []string, []string, error) {
@@ -390,6 +409,10 @@ func (g *StandardGenerator) installPythonCUDA() (string, error) {
 	// TODO: check that python version is valid
 
 	py := g.Config.Build.PythonVersion
+	// Make sure we install 3.13.0 instead of a later version due to the GIL lock not working on packages with certain versions of Cython
+	if py == "3.13" {
+		py = "3.13.0"
+	}
 	return `ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy --no-install-recommends \
 	make \
@@ -426,9 +449,28 @@ RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /u
 }
 
 func (g *StandardGenerator) installCog() (string, error) {
+	// FIXME: remove once pipelines use cog_runtime: true
 	if g.Config.ContainsCoglet() {
 		return "", nil
 	}
+
+	// Do not install Cog in base images
+	if !g.requiresCog {
+		return "", nil
+	}
+
+	// completely disable cog-runtime since it's not compatible with non-procedure models!
+	// TODO[md]: remove this once we sort out a path forward for cog-runtime
+	// if g.Config.Build.CogRuntime != nil && *g.Config.Build.CogRuntime {
+	// 	return g.installCogRuntime()
+	// }
+	// accepted, err := g.askAboutCogRuntime()
+	// if err != nil {
+	// 	return "", err
+	// }
+	// if accepted {
+	// 	return g.installCogRuntime()
+	// }
 
 	data, filename, err := ReadWheelFile()
 	if err != nil {
@@ -447,6 +489,80 @@ func (g *StandardGenerator) installCog() (string, error) {
 	lines = append(lines, CFlags, pipInstallLine, "ENV CFLAGS=")
 	return strings.Join(lines, "\n"), nil
 }
+
+// func (g *StandardGenerator) installCogRuntime() (string, error) {
+// 	// We need fast-* compliant Python version to reconstruct coglet venv PYTHONPATH
+// 	if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
+// 		return "", fmt.Errorf("Python version must be <major>.<minor>")
+// 	}
+// 	m, err := NewMonobaseMatrix(http.DefaultClient)
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	cmds := []string{
+// 		"ENV R8_COG_VERSION=coglet",
+// 		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
+// 		"RUN pip install " + m.LatestCoglet.URL,
+// 	}
+// 	return strings.Join(cmds, "\n"), nil
+// }
+
+// func (g *StandardGenerator) askAboutCogRuntime() (bool, error) {
+// 	// Training is not supported
+// 	if g.Config.Train != "" {
+// 		return false, nil
+// 	}
+// 	// Only warn if cog_runtime is not explicitly set
+// 	if g.Config.Build.CogRuntime != nil {
+// 		return false, nil
+// 	}
+
+// 	console.Warnf("Major Cog runtime upgrade available. Opt in now by setting build.cog_runtime: true in cog.yaml.")
+// 	console.Warnf("More: https://replicate.com/changelog/2025-07-21-cog-runtime")
+
+// 	// Do not ask until we're ready
+// 	if !AskAboutCogRuntime {
+// 		return false, nil
+// 	}
+
+// 	// Skip question if not in an interactive shell
+// 	if !term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd())) || !term.IsTerminal(int(os.Stderr.Fd())) {
+// 		return false, nil
+// 	}
+
+// 	interactive := &console.InteractiveBool{
+// 		Prompt:  "Do you want to switch to the new Cog runtime?",
+// 		Default: true,
+// 		// NonDefaultFlag is not applicable here
+// 	}
+// 	cogRuntime, err := interactive.Read()
+// 	if err != nil {
+// 		return false, fmt.Errorf("failed to read from stdin: %v", err)
+// 	}
+// 	// Only add cog_runtime: true to cog.yaml if answer is yes
+// 	// Otherwise leave it absent so we keep nagging
+// 	if !cogRuntime {
+// 		console.Warnf("Not switching. Add build.cog_runtime: false to disable this reminder.")
+// 		return false, nil
+// 	}
+// 	g.Config.Build.CogRuntime = &cogRuntime
+
+// 	console.Infof("Adding build.cog_runtime: true to %s", g.Config.Filename())
+// 	newYaml, err := yaml.Marshal(g.Config)
+// 	if err != nil {
+// 		return false, err
+// 	}
+// 	path := filepath.Join(g.Dir, g.Config.Filename())
+// 	oldYaml, err := os.ReadFile(path)
+// 	if err != nil {
+// 		return false, err
+// 	}
+// 	merged, err := util.OverwriteYAML(newYaml, oldYaml)
+// 	if err != nil {
+// 		return false, err
+// 	}
+// 	return true, os.WriteFile(path, merged, 0o644)
+// }
 
 func (g *StandardGenerator) pipInstalls() (string, error) {
 	var err error
@@ -606,7 +722,7 @@ func (g *StandardGenerator) determineBaseImageName(ctx context.Context) (string,
 	torchVersion, _ := g.Config.TorchVersion()
 
 	// validate that the base image configuration exists
-	imageGenerator, err := NewBaseImageGenerator(ctx, g.client, cudaVersion, pythonVersion, torchVersion, g.command)
+	imageGenerator, err := NewBaseImageGenerator(ctx, g.client, cudaVersion, pythonVersion, torchVersion, g.command, false)
 	if err != nil {
 		return "", err
 	}

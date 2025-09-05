@@ -4,6 +4,7 @@ import "time"
 
 type BuildLogContext struct {
 	started    time.Time
-	fast       bool
+	Fast       bool
+	CogRuntime bool
 	localImage bool
 }

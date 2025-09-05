@@ -584,3 +584,25 @@ def test_python_313(tmpdir_factory, docker_image, cog_binary):
         capture_output=True,
     )
     assert build_process.returncode == 0
+
+
+def test_torch_271_cuda_128_base_image(docker_image, cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/torch-271-cuda-128"
+
+    build_process = subprocess.run(
+        [cog_binary, "build", "-t", docker_image, "--use-cog-base-image"],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode == 0
+
+
+def test_python_313_base_images(docker_image, cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/python-313"
+
+    build_process = subprocess.run(
+        [cog_binary, "build", "-t", docker_image, "--use-cog-base-image"],
+        cwd=project_dir,
+        capture_output=True,
+    )
+    assert build_process.returncode == 0

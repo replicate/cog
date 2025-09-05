@@ -74,15 +74,21 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	logClient := coglog.NewClient(client)
-	logCtx := logClient.StartBuild(buildFast, buildLocalImage)
+	logCtx := logClient.StartBuild(buildLocalImage)
 
 	cfg, projectDir, err := config.GetConfig(configFilename)
 	if err != nil {
 		logClient.EndBuild(ctx, err, logCtx)
 		return err
 	}
+	// In case one of `--x-fast` & `fast: bool` is set
 	if cfg.Build.Fast {
 		buildFast = cfg.Build.Fast
+	}
+	logCtx.Fast = buildFast
+	logCtx.CogRuntime = false
+	if cfg.Build.CogRuntime != nil {
+		logCtx.CogRuntime = *cfg.Build.CogRuntime
 	}
 
 	imageName := cfg.Image
@@ -201,8 +207,7 @@ func addLocalImage(cmd *cobra.Command) {
 }
 
 func addConfigFlag(cmd *cobra.Command) {
-	const configFlag = "f"
-	cmd.Flags().StringVar(&configFilename, configFlag, "cog.yaml", "The name of the config file.")
+	cmd.Flags().StringVarP(&configFilename, "file", "f", "cog.yaml", "The name of the config file.")
 }
 
 func checkMutuallyExclusiveFlags(cmd *cobra.Command, args []string) error {

@@ -10,18 +10,26 @@ import (
 	"strings"
 )
 
+type MonobasePackage struct {
+	Version string `json:"version"`
+	URL     string `json:"url"`
+}
+
 type MonobaseMatrix struct {
-	Id             int                 `json:"id"`
-	CudaVersions   []string            `json:"cuda_versions"`
-	CudnnVersions  []string            `json:"cudnn_versions"`
-	PythonVersions []string            `json:"python_versions"`
-	TorchVersions  []string            `json:"torch_versions"`
-	Venvs          []MonobaseVenv      `json:"venvs"`
-	TorchCUDAs     map[string][]string `json:"torch_cudas"`
+	Id               int                 `json:"id"`
+	CudaVersions     []string            `json:"cuda_versions"`
+	CudnnVersions    []string            `json:"cudnn_versions"`
+	PythonVersions   []string            `json:"python_versions"`
+	TorchVersions    []string            `json:"torch_versions"`
+	Venvs            []MonobaseVenv      `json:"venvs"`
+	TorchCUDAs       map[string][]string `json:"torch_cudas"`
+	LatestCoglet     MonobasePackage     `json:"latest_coglet"`
+	LatestHFTransfer MonobasePackage     `json:"latest_hf_transfer"`
 }
 
 func NewMonobaseMatrix(client *http.Client) (*MonobaseMatrix, error) {
-	resp, err := client.Get(MonobaseMatrixSchemeFromEnvironment() + "://" + MonobaseMatrixHostFromEnvironment() + "/replicate/monobase/refs/heads/main/matrix.json")
+	url := "https://monobase-packages.replicate.delivery/matrix.json"
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err
 	}

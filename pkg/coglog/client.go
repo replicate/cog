@@ -23,6 +23,7 @@ type buildLog struct {
 	DurationMs float32 `json:"length_ms"`
 	BuildError *string `json:"error"`
 	Fast       bool    `json:"fast"`
+	CogRuntime bool    `json:"cog_runtime"`
 	LocalImage bool    `json:"local_image"`
 }
 
@@ -30,6 +31,7 @@ type pushLog struct {
 	DurationMs float32 `json:"length_ms"`
 	BuildError *string `json:"error"`
 	Fast       bool    `json:"fast"`
+	CogRuntime bool    `json:"cog_runtime"`
 	LocalImage bool    `json:"local_image"`
 }
 
@@ -54,10 +56,9 @@ func NewClient(client *http.Client) *Client {
 	}
 }
 
-func (c *Client) StartBuild(fast bool, localImage bool) BuildLogContext {
+func (c *Client) StartBuild(localImage bool) BuildLogContext {
 	logContext := BuildLogContext{
 		started:    time.Now(),
-		fast:       fast,
 		localImage: localImage,
 	}
 	return logContext
@@ -70,9 +71,10 @@ func (c *Client) EndBuild(ctx context.Context, err error, logContext BuildLogCon
 		errorStr = &errStr
 	}
 	buildLog := buildLog{
-		DurationMs: float32(time.Now().Sub(logContext.started).Milliseconds()),
+		DurationMs: float32(time.Since(logContext.started).Milliseconds()),
 		BuildError: errorStr,
-		Fast:       logContext.fast,
+		Fast:       logContext.Fast,
+		CogRuntime: logContext.CogRuntime,
 		LocalImage: logContext.localImage,
 	}
 
@@ -91,10 +93,9 @@ func (c *Client) EndBuild(ctx context.Context, err error, logContext BuildLogCon
 	return true
 }
 
-func (c *Client) StartPush(fast bool, localImage bool) PushLogContext {
+func (c *Client) StartPush(localImage bool) PushLogContext {
 	logContext := PushLogContext{
 		started:    time.Now(),
-		fast:       fast,
 		localImage: localImage,
 	}
 	return logContext
@@ -107,9 +108,10 @@ func (c *Client) EndPush(ctx context.Context, err error, logContext PushLogConte
 		errorStr = &errStr
 	}
 	pushLog := pushLog{
-		DurationMs: float32(time.Now().Sub(logContext.started).Milliseconds()),
+		DurationMs: float32(time.Since(logContext.started).Milliseconds()),
 		BuildError: errorStr,
-		Fast:       logContext.fast,
+		Fast:       logContext.Fast,
+		CogRuntime: logContext.CogRuntime,
 		LocalImage: logContext.localImage,
 	}
 
@@ -140,7 +142,7 @@ func (c *Client) EndMigrate(ctx context.Context, err error, logContext *MigrateL
 		errorStr = &errStr
 	}
 	migrateLog := migrateLog{
-		DurationMs:          float32(time.Now().Sub(logContext.started).Milliseconds()),
+		DurationMs:          float32(time.Since(logContext.started).Milliseconds()),
 		BuildError:          errorStr,
 		Accept:              logContext.accept,
 		PythonPackageStatus: logContext.PythonPackageStatus,
@@ -178,7 +180,7 @@ func (c *Client) EndPull(ctx context.Context, err error, logContext PullLogConte
 		errorStr = &errStr
 	}
 	pushLog := pullLog{
-		DurationMs: float32(time.Now().Sub(logContext.started).Milliseconds()),
+		DurationMs: float32(time.Since(logContext.started).Milliseconds()),
 		BuildError: errorStr,
 	}
 
