@@ -46,7 +46,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: 3.12
       - uses: hynek/setup-cached-uv@v2
@@ -116,7 +116,7 @@ jobs:
         run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - uses: hynek/setup-cached-uv@v2
@@ -170,7 +170,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: 3.12
       - uses: hynek/setup-cached-uv@v2
