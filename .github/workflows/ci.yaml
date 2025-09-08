@@ -43,7 +43,7 @@ jobs:
         run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - uses: actions/setup-python@v5
@@ -87,7 +87,7 @@ jobs:
           path: dist
       - name: Set COG_WHEEL
         run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - name: Build
@@ -167,7 +167,7 @@ jobs:
           path: dist
       - name: Set COG_WHEEL
         run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - uses: actions/setup-python@v5
@@ -202,7 +202,7 @@ jobs:
           path: dist
       - name: Set COG_WHEEL
         run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - uses: goreleaser/goreleaser-action@v6
