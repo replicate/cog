@@ -13,6 +13,7 @@ import (
 	"github.com/replicate/cog/pkg/api"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/dockerignore"
+	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/procedure"
 )
 
@@ -46,7 +47,7 @@ func createTarball(folder string, cfg *config.Config) (*bytes.Buffer, error) {
 	// we need to include them in the tarball as requirements.txt
 	if cfg.Build.PythonRequirements != "" {
 		reqPath := cfg.RequirementsFile(folder)
-		if !strings.HasPrefix(reqPath, folder) || strings.Contains(reqPath, ".cog") {
+		if !strings.HasPrefix(reqPath, folder) || strings.Contains(reqPath, global.CogBuildArtifactsFolder) {
 			// This is a downloaded requirements file, read its content
 			content, err := os.ReadFile(reqPath)
 			if err != nil {
