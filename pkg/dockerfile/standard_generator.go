@@ -46,8 +46,7 @@ const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -nam
 const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
-
-const AskAboutCogRuntime = false
+const PinnedCogletURL = "https://github.com/replicate/cog-runtime/releases/download/v0.1.0-beta10/coglet-0.1.0b10-py3-none-any.whl" // Pinned coglet URL to avoid API dependency
 
 type StandardGenerator struct {
 	Config *config.Config
@@ -449,7 +448,7 @@ RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /u
 }
 
 func (g *StandardGenerator) installCog() (string, error) {
-	// FIXME: remove once pipelines use cog_runtime: true
+	// Skip installing normal cog if coglet is already in requirements
 	if g.Config.ContainsCoglet() {
 		return "", nil
 	}
@@ -459,18 +458,9 @@ func (g *StandardGenerator) installCog() (string, error) {
 		return "", nil
 	}
 
-	// completely disable cog-runtime since it's not compatible with non-procedure models!
-	// TODO[md]: remove this once we sort out a path forward for cog-runtime
-	// if g.Config.Build.CogRuntime != nil && *g.Config.Build.CogRuntime {
-	// 	return g.installCogRuntime()
-	// }
-	// accepted, err := g.askAboutCogRuntime()
-	// if err != nil {
-	// 	return "", err
-	// }
-	// if accepted {
-	// 	return g.installCogRuntime()
-	// }
+	if g.Config.Build.CogRuntime != nil && *g.Config.Build.CogRuntime {
+		return g.installCogRuntime()
+	}
 
 	data, filename, err := ReadWheelFile()
 	if err != nil {
@@ -490,79 +480,18 @@ func (g *StandardGenerator) installCog() (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-// func (g *StandardGenerator) installCogRuntime() (string, error) {
-// 	// We need fast-* compliant Python version to reconstruct coglet venv PYTHONPATH
-// 	if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
-// 		return "", fmt.Errorf("Python version must be <major>.<minor>")
-// 	}
-// 	m, err := NewMonobaseMatrix(http.DefaultClient)
-// 	if err != nil {
-// 		return "", err
-// 	}
-// 	cmds := []string{
-// 		"ENV R8_COG_VERSION=coglet",
-// 		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
-// 		"RUN pip install " + m.LatestCoglet.URL,
-// 	}
-// 	return strings.Join(cmds, "\n"), nil
-// }
-
-// func (g *StandardGenerator) askAboutCogRuntime() (bool, error) {
-// 	// Training is not supported
-// 	if g.Config.Train != "" {
-// 		return false, nil
-// 	}
-// 	// Only warn if cog_runtime is not explicitly set
-// 	if g.Config.Build.CogRuntime != nil {
-// 		return false, nil
-// 	}
-
-// 	console.Warnf("Major Cog runtime upgrade available. Opt in now by setting build.cog_runtime: true in cog.yaml.")
-// 	console.Warnf("More: https://replicate.com/changelog/2025-07-21-cog-runtime")
-
-// 	// Do not ask until we're ready
-// 	if !AskAboutCogRuntime {
-// 		return false, nil
-// 	}
-
-// 	// Skip question if not in an interactive shell
-// 	if !term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd())) || !term.IsTerminal(int(os.Stderr.Fd())) {
-// 		return false, nil
-// 	}
-
-// 	interactive := &console.InteractiveBool{
-// 		Prompt:  "Do you want to switch to the new Cog runtime?",
-// 		Default: true,
-// 		// NonDefaultFlag is not applicable here
-// 	}
-// 	cogRuntime, err := interactive.Read()
-// 	if err != nil {
-// 		return false, fmt.Errorf("failed to read from stdin: %v", err)
-// 	}
-// 	// Only add cog_runtime: true to cog.yaml if answer is yes
-// 	// Otherwise leave it absent so we keep nagging
-// 	if !cogRuntime {
-// 		console.Warnf("Not switching. Add build.cog_runtime: false to disable this reminder.")
-// 		return false, nil
-// 	}
-// 	g.Config.Build.CogRuntime = &cogRuntime
-
-// 	console.Infof("Adding build.cog_runtime: true to %s", g.Config.Filename())
-// 	newYaml, err := yaml.Marshal(g.Config)
-// 	if err != nil {
-// 		return false, err
-// 	}
-// 	path := filepath.Join(g.Dir, g.Config.Filename())
-// 	oldYaml, err := os.ReadFile(path)
-// 	if err != nil {
-// 		return false, err
-// 	}
-// 	merged, err := util.OverwriteYAML(newYaml, oldYaml)
-// 	if err != nil {
-// 		return false, err
-// 	}
-// 	return true, os.WriteFile(path, merged, 0o644)
-// }
+func (g *StandardGenerator) installCogRuntime() (string, error) {
+	// We need fast-* compliant Python version to reconstruct coglet venv PYTHONPATH
+	if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
+		return "", fmt.Errorf("Python version must be <major>.<minor>")
+	}
+	cmds := []string{
+		"ENV R8_COG_VERSION=coglet",
+		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
+		"RUN pip install " + PinnedCogletURL,
+	}
+	return strings.Join(cmds, "\n"), nil
+}
 
 func (g *StandardGenerator) pipInstalls() (string, error) {
 	var err error
