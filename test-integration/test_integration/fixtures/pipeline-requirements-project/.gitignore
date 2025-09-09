@@ -1,0 +1,4 @@
+# Ignore dynamically generated requirements.txt file during tests
+# This file is created by test_predict_pipeline_downloaded_requirements 
+# to simulate out-of-sync scenario and gets cleaned up automatically
+requirements.txt
