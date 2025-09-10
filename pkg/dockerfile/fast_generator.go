@@ -230,7 +230,7 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 	var envs []string
 
 	envs = append(envs, []string{
-		"ENV R8_COG_VERSION=" + CogletVersionFromEnvironment(),
+		"ENV R8_COG_VERSION=" + PinnedCogletURL,
 	}...)
 
 	torchVersion, ok := g.Config.TorchVersion()
@@ -426,6 +426,11 @@ func (g *FastGenerator) installSrc(lines []string, weights []weights.Weight) ([]
 			linkCommands = append(linkCommands, "ln -s \""+filepath.Join(FUSE_RPC_WEIGHTS_PATH, weight.Digest)+"\" \"/src/"+weight.Path+"\"")
 		}
 		lines = append(lines, "RUN "+strings.Join(linkCommands, " && "))
+	}
+
+	if filepath.Base(g.Config.Filename()) != "cog.yaml" {
+		// Absolute filename doesn't work anyway, so it's always relative
+		lines = append(lines, fmt.Sprintf("RUN cp %s /src/cog.yaml", filepath.Join("/src", g.Config.Filename())))
 	}
 
 	return lines, nil

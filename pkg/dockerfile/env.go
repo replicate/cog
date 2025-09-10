@@ -2,13 +2,10 @@ package dockerfile
 
 import (
 	"maps"
-	"os"
 	"slices"
 
 	"github.com/replicate/cog/pkg/config"
 )
-
-const CogletVersionEnvVarName = "R8_COGLET_VERSION"
 
 func envLineFromConfig(c *config.Config) (string, error) {
 	vars := c.ParsedEnvironment()
@@ -23,12 +20,4 @@ func envLineFromConfig(c *config.Config) (string, error) {
 	out += "\n"
 
 	return out, nil
-}
-
-func CogletVersionFromEnvironment() string {
-	host := os.Getenv(CogletVersionEnvVarName)
-	if host == "" {
-		host = "coglet"
-	}
-	return host
 }

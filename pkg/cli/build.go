@@ -207,8 +207,7 @@ func addLocalImage(cmd *cobra.Command) {
 }
 
 func addConfigFlag(cmd *cobra.Command) {
-	const configFlag = "f"
-	cmd.Flags().StringVar(&configFilename, configFlag, "cog.yaml", "The name of the config file.")
+	cmd.Flags().StringVarP(&configFilename, "file", "f", "cog.yaml", "The name of the config file.")
 }
 
 func checkMutuallyExclusiveFlags(cmd *cobra.Command, args []string) error {
