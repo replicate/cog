@@ -187,6 +187,12 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			buildFast = cfg.Build.Fast
 		}
 
+		// TODO[md]: this is a temporary hack to propagate a procedure flag through the build system without
+		// touching every function signature with another param. The cogpacks refactor addresses this.
+		if pipelinesImage {
+			cfg.Build.ProcedureMode = true
+		}
+
 		client := registry.NewRegistryClient()
 		if buildFast || pipelinesImage {
 			imageName = config.DockerImageName(projectDir)
