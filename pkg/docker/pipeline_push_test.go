@@ -90,6 +90,7 @@ func TestPipelinePush(t *testing.T) {
 }
 
 func TestPipelinePushFailWithExtraRequirements(t *testing.T) {
+	t.Skip("Skipping for now, requirements.txt is always overwritten, and hopefully we replace that with support for custom requirements, if not this test comes back")
 	// Setup mock web server for cog.replicate.com (token exchange)
 	webServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
