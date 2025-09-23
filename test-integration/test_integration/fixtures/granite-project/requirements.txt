@@ -429,7 +429,7 @@ websockets==15.0.1
     # via uvicorn
 xformers==0.0.29.post2
     # via vllm
-xgrammar==0.1.17
+xgrammar==0.1.21
     # via vllm
 yarl==1.19.0
     # via aiohttp
