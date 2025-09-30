@@ -74,7 +74,7 @@ func NewAPIClient(ctx context.Context, opts ...Option) (*apiClient, error) {
 	// Load authentication for configured registry and any other registries that might be needed
 	authConfig, err := loadRegistryAuths(ctx, global.ReplicateRegistryHost)
 	if err != nil {
-		return nil, fmt.Errorf("error loading registry auth configs: %w", err)
+		return nil, fmt.Errorf("error loading user information: %w, you may need to authenticate using cog login", err)
 	}
 
 	// Add any additional auth configs passed via options
