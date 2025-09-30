@@ -34,8 +34,6 @@ func newLoginCommand() *cobra.Command {
 	}
 
 	cmd.Flags().Bool("token-stdin", false, "Pass login token on stdin instead of opening a browser. You can find your Replicate login token at https://replicate.com/auth/token")
-	cmd.Flags().String("registry", global.ReplicateRegistryHost, "Registry host")
-	_ = cmd.Flags().MarkHidden("registry")
 
 	return cmd
 }
@@ -43,10 +41,8 @@ func newLoginCommand() *cobra.Command {
 func login(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	registryHost, err := cmd.Flags().GetString("registry")
-	if err != nil {
-		return err
-	}
+	// Use global registry host (can be set via --registry flag or COG_REGISTRY_HOST env var)
+	registryHost := global.ReplicateRegistryHost
 	tokenStdin, err := cmd.Flags().GetBool("token-stdin")
 	if err != nil {
 		return err
@@ -79,7 +75,7 @@ func login(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	console.Infof("You've successfully authenticated as %s! You can now use the '%s' registry.", username, registryHost)
+	console.Infof("You've successfully authenticated as %s! You can now use the %s registry.", username, registryHost)
 
 	return nil
 }
@@ -97,7 +93,7 @@ func readTokenInteractively(registryHost string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	console.Infof("This command will authenticate Docker with Replicate's '%s' Docker registry. You will need a Replicate account.", registryHost)
+	console.Infof("This command will authenticate Docker with Replicate's %s Docker registry. You will need a Replicate account.", registryHost)
 	console.Info("")
 
 	// TODO(bfirsh): if you have defined a registry in cog.yaml that is not r8.im, suggest to use 'docker login'
