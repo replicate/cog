@@ -25,7 +25,7 @@ type VerifyResponse struct {
 }
 
 func newLoginCommand() *cobra.Command {
-	var cmd = &cobra.Command{
+	cmd := &cobra.Command{
 		Use:        "login",
 		SuggestFor: []string{"auth", "authenticate", "authorize"},
 		Short:      "Log in to Replicate Docker registry",
@@ -75,7 +75,7 @@ func login(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	console.Infof("You've successfully authenticated as %s! You can now use the %s registry.", username, registryHost)
+	console.Infof("You've successfully authenticated as %s! You can now use the '%s' registry.", username, registryHost)
 
 	return nil
 }
@@ -93,7 +93,7 @@ func readTokenInteractively(registryHost string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	console.Infof("This command will authenticate Docker with Replicate's %s Docker registry. You will need a Replicate account.", registryHost)
+	console.Infof("This command will authenticate Docker with Replicate's '%s' Docker registry. You will need a Replicate account.", registryHost)
 	console.Info("")
 
 	// TODO(bfirsh): if you have defined a registry in cog.yaml that is not r8.im, suggest to use 'docker login'
