@@ -27,7 +27,7 @@ func TestLoadRegistryAuths_Fallback(t *testing.T) {
 			},
 		}
 
-		auth, err := tryLoadAuthForHost(conf, ctx, "registry.example.com")
+		auth, err := tryLoadAuthForHost(ctx, conf, "registry.example.com")
 		require.NoError(t, err)
 		require.NotNil(t, auth)
 		assert.Equal(t, "user1", auth.Username)
@@ -75,7 +75,7 @@ func TestLoadRegistryAuths_Fallback(t *testing.T) {
 		}
 
 		// Try loading auth for the default registry
-		auth, err := tryLoadAuthForHost(conf, ctx, global.DefaultReplicateRegistryHost)
+		auth, err := tryLoadAuthForHost(ctx, conf, global.DefaultReplicateRegistryHost)
 		require.Error(t, err, "should error when no credentials found")
 		assert.Nil(t, auth)
 		assert.Contains(t, err.Error(), "no credentials found")
@@ -97,7 +97,7 @@ func TestLoadRegistryAuths_Fallback(t *testing.T) {
 		}
 
 		// Try loading auth for the alternate registry
-		auth, err := tryLoadAuthForHost(conf, ctx, "registry.example.com")
+		auth, err := tryLoadAuthForHost(ctx, conf, "registry.example.com")
 		require.NoError(t, err)
 		require.NotNil(t, auth)
 
@@ -116,12 +116,12 @@ func TestLoadRegistryAuths_Fallback(t *testing.T) {
 		}
 
 		// Try loading auth for an alternate registry (will fail)
-		auth1, err := tryLoadAuthForHost(conf, ctx, "registry.example.com")
+		auth1, err := tryLoadAuthForHost(ctx, conf, "registry.example.com")
 		require.Error(t, err)
 		assert.Nil(t, auth1)
 
 		// Try loading auth for default registry (will also fail)
-		auth2, err := tryLoadAuthForHost(conf, ctx, global.DefaultReplicateRegistryHost)
+		auth2, err := tryLoadAuthForHost(ctx, conf, global.DefaultReplicateRegistryHost)
 		require.Error(t, err)
 		assert.Nil(t, auth2)
 
@@ -145,7 +145,7 @@ func TestTryLoadAuthForHost(t *testing.T) {
 			},
 		}
 
-		auth, err := tryLoadAuthForHost(conf, ctx, "registry.example.com")
+		auth, err := tryLoadAuthForHost(ctx, conf, "registry.example.com")
 		require.NoError(t, err)
 		require.NotNil(t, auth)
 		assert.Equal(t, "testuser", auth.Username)
@@ -160,7 +160,7 @@ func TestTryLoadAuthForHost(t *testing.T) {
 			AuthConfigs: map[string]types.AuthConfig{},
 		}
 
-		auth, err := tryLoadAuthForHost(conf, ctx, "registry.example.com")
+		auth, err := tryLoadAuthForHost(ctx, conf, "registry.example.com")
 		require.Error(t, err)
 		assert.Nil(t, auth)
 		assert.Contains(t, err.Error(), "no credentials found")

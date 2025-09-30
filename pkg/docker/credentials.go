@@ -52,7 +52,7 @@ func loadRegistryAuths(ctx context.Context, registryHosts ...string) (map[string
 
 	for _, host := range registryHosts {
 		// Try loading auth for the requested host
-		auth, err := tryLoadAuthForHost(conf, ctx, host)
+		auth, err := tryLoadAuthForHost(ctx, conf, host)
 		if err == nil && auth != nil {
 			out[host] = *auth
 			continue
@@ -61,7 +61,7 @@ func loadRegistryAuths(ctx context.Context, registryHosts ...string) (map[string
 		// FALLBACK: If requesting alternate registry and no auth found,
 		// try reusing r8.im credentials
 		if host != global.DefaultReplicateRegistryHost {
-			auth, err := tryLoadAuthForHost(conf, ctx, global.DefaultReplicateRegistryHost)
+			auth, err := tryLoadAuthForHost(ctx, conf, global.DefaultReplicateRegistryHost)
 			if err == nil && auth != nil {
 				// Reuse credentials for the alternate registry
 				auth.ServerAddress = host // Update to new host
@@ -75,7 +75,7 @@ func loadRegistryAuths(ctx context.Context, registryHosts ...string) (map[string
 	return out, nil
 }
 
-func tryLoadAuthForHost(conf *configfile.ConfigFile, ctx context.Context, host string) (*registry.AuthConfig, error) {
+func tryLoadAuthForHost(ctx context.Context, conf *configfile.ConfigFile, host string) (*registry.AuthConfig, error) {
 	// Try credentials store first (e.g., osxkeychain, pass)
 	if conf.CredentialsStore != "" {
 		credsHelper, err := loadAuthFromCredentialsStore(ctx, conf.CredentialsStore, host)
