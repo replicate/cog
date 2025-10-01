@@ -20,20 +20,42 @@ jobs:
 
 
     - name: Check for changes
+      id: changes
       run: |
         if git diff --quiet; then
           echo "No changes to llms.txt; exiting."
-          exit 0
+          echo "has_changes=false" >> $GITHUB_OUTPUT
         else
           echo "Changes detected in llms.txt."
+          echo "has_changes=true" >> $GITHUB_OUTPUT
         fi
 
-    - name: Commit and push changes
+    - name: Create PR with auto-merge
+      if: steps.changes.outputs.has_changes == 'true'
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        git config user.name "${{ github.actor }}"
-        git config user.email "${{ github.actor }}@users.noreply.github.com"
+        # Configure git
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        # Create and switch to a new branch
+        BRANCH_NAME="update-llm-docs-$(date +%Y%m%d%H%M%S)"
+        git checkout -b "$BRANCH_NAME"
+
+        # Commit changes
         git add docs/llms.txt
-        git commit -m "Update llms.txt"
-        git push origin main 
+        git commit -m "docs: update llms.txt"
+
+        # Push the branch
+        git push origin "$BRANCH_NAME"
+
+        # Create PR with auto-merge enabled
+        gh pr create \
+          --title "docs: update llms.txt" \
+          --body "This PR updates the llms.txt file with the latest documentation changes." \
+          --head "$BRANCH_NAME" \
+          --base main
+
+        # Enable auto-merge
+        gh pr merge "$BRANCH_NAME" --auto --squash 
