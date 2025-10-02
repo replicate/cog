@@ -73,7 +73,10 @@ func push(cmd *cobra.Command, args []string) error {
 		buildFast = cfg.Build.Fast
 	}
 	logCtx.Fast = buildFast
-	logCtx.CogRuntime = cfg.Build.CogRuntime
+	logCtx.CogRuntime = false
+	if cfg.Build.CogRuntime != nil {
+		logCtx.CogRuntime = *cfg.Build.CogRuntime
+	}
 
 	imageName := cfg.Image
 	if len(args) > 0 {

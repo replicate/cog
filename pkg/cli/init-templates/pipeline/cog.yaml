@@ -2,15 +2,7 @@
 # Reference: https://cog.run/yaml
 
 build:
-  # a list of ubuntu apt packages to install
-  # system_packages:
-  #   - "libgl1-mesa-glx"
-  #   - "libglib2.0-0"
-
-  # commands run after the environment is setup
-  # run:
-  #   - "echo env is ready!"
-  #   - "echo another command if needed"
-
-# main.py defines the pipeline
+  gpu: false
+  cog_runtime: true
+  python_requirements: requirements.txt
 predict: "main.py:run"

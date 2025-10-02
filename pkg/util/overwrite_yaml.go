@@ -1,4 +1,4 @@
-package migrate
+package util
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func OverwrightYAML(sourceYaml []byte, destinationYaml []byte) ([]byte, error) {
+func OverwriteYAML(sourceYaml []byte, destinationYaml []byte) ([]byte, error) {
 	var sourceNode yaml.Node
 	err := yaml.Unmarshal(sourceYaml, &sourceNode)
 	if err != nil {

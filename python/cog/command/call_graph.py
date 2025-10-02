@@ -65,7 +65,7 @@ class IncludeAnalyzer(ast.NodeVisitor):
                 )
             elif node.args:
                 arg = node.args[0]
-                if isinstance(arg, ast.Str):
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                     self.includes.append(arg.s)
                 else:
                     raise ValueError(
@@ -87,7 +87,7 @@ def analyze_python_file(
 def main(filepath: str) -> None:
     """Run the main code for determining the call graph of a pipeline."""
     includes = analyze_python_file(Path(filepath))
-    print(",".join(includes))
+    print(",".join(sorted(list(set(includes)))))
 
 
 if __name__ == "__main__":

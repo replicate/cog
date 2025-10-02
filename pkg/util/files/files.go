@@ -16,6 +16,10 @@ import (
 	"github.com/replicate/cog/pkg/util/mime"
 )
 
+var (
+	ErrorFailedToSplitDataURL = errors.New("Failed to split data URL into 2 parts")
+)
+
 func Exists(path string) (bool, error) {
 	if _, err := os.Stat(path); err == nil {
 		return true, nil
@@ -96,7 +100,17 @@ func WriteDataURLToFile(url string, destination string) (string, error) {
 	}
 	dataurlObj, err := dataurl.DecodeString(url)
 	if err != nil {
-		return "", fmt.Errorf("Failed to decode data URL: %w", err)
+		// Attempt to fallback to binary base64 file decode.
+		parts := strings.SplitN(url, ",", 2)
+		if len(parts) != 2 {
+			return "", ErrorFailedToSplitDataURL
+		}
+		base64Data := parts[1]
+		url = "data:;base64," + base64Data
+		dataurlObj, err = dataurl.DecodeString(url)
+		if err != nil {
+			return "", fmt.Errorf("Failed to decode data URL: %w", err)
+		}
 	}
 	output := dataurlObj.Data
 

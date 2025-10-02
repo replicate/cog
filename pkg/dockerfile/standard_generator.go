@@ -3,7 +3,6 @@ package dockerfile
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -47,6 +46,7 @@ const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -nam
 const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
+const PinnedCogletURL = "https://github.com/replicate/cog-runtime/releases/download/v0.1.0-beta10/coglet-0.1.0b10-py3-none-any.whl" // Pinned coglet URL to avoid API dependency
 
 type StandardGenerator struct {
 	Config *config.Config
@@ -223,10 +223,14 @@ func (g *StandardGenerator) GenerateDockerfileWithoutSeparateWeights(ctx context
 	if err != nil {
 		return "", err
 	}
-	return joinStringsWithoutLineSpace([]string{
+	bases := []string{
 		base,
 		`COPY . /src`,
-	}), nil
+	}
+	if m := g.cpCogYaml(); m != "" {
+		bases = append(bases, m)
+	}
+	return joinStringsWithoutLineSpace(bases), nil
 }
 
 // GenerateModelBaseWithSeparateWeights creates the Dockerfile and .dockerignore file contents for model weights
@@ -268,9 +272,20 @@ func (g *StandardGenerator) GenerateModelBaseWithSeparateWeights(ctx context.Con
 		`CMD ["python", "-m", "cog.server.http"]`,
 		`COPY . /src`,
 	)
+	if m := g.cpCogYaml(); m != "" {
+		base = append(base, m)
+	}
 
 	dockerignoreContents = makeDockerignoreForWeights(g.modelDirs, g.modelFiles)
 	return weightsBase, joinStringsWithoutLineSpace(base), dockerignoreContents, nil
+}
+
+func (g *StandardGenerator) cpCogYaml() string {
+	if filepath.Base(g.Config.Filename()) == "cog.yaml" {
+		return ""
+	}
+	// Absolute filename doesn't work anyway, so it's always relative
+	return fmt.Sprintf("RUN cp %s /src/cog.yaml", filepath.Join("/src", g.Config.Filename()))
 }
 
 func (g *StandardGenerator) generateForWeights() (string, []string, []string, error) {
@@ -393,6 +408,10 @@ func (g *StandardGenerator) installPythonCUDA() (string, error) {
 	// TODO: check that python version is valid
 
 	py := g.Config.Build.PythonVersion
+	// Make sure we install 3.13.0 instead of a later version due to the GIL lock not working on packages with certain versions of Cython
+	if py == "3.13" {
+		py = "3.13.0"
+	}
 	return `ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy --no-install-recommends \
 	make \
@@ -429,7 +448,7 @@ RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /u
 }
 
 func (g *StandardGenerator) installCog() (string, error) {
-	// FIXME: remove once pipelines use cog_runtime: true
+	// Skip installing normal cog if coglet is already in requirements
 	if g.Config.ContainsCoglet() {
 		return "", nil
 	}
@@ -439,24 +458,10 @@ func (g *StandardGenerator) installCog() (string, error) {
 		return "", nil
 	}
 
-	if g.Config.Build.CogRuntime {
-		if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
-			return "", fmt.Errorf("Python version must be <major>.<minor>")
-		}
-		m, err := NewMonobaseMatrix(http.DefaultClient)
-		if err != nil {
-			return "", err
-		}
-		cmds := []string{
-			"ENV R8_COG_VERSION=coglet",
-			"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
-			"RUN pip install " + m.LatestCoglet.URL,
-		}
-		return strings.Join(cmds, "\n"), nil
+	if g.Config.Build.CogRuntime != nil && *g.Config.Build.CogRuntime {
+		return g.installCogRuntime()
 	}
 
-	// FIXME: add doc URL & enable this before new release
-	// console.Warnf("A new Cog runtime implementation is avaible, set build.cog_runtime = true in cog.yaml to try it out.")
 	data, filename, err := ReadWheelFile()
 	if err != nil {
 		return "", err
@@ -473,6 +478,19 @@ func (g *StandardGenerator) installCog() (string, error) {
 	}
 	lines = append(lines, CFlags, pipInstallLine, "ENV CFLAGS=")
 	return strings.Join(lines, "\n"), nil
+}
+
+func (g *StandardGenerator) installCogRuntime() (string, error) {
+	// We need fast-* compliant Python version to reconstruct coglet venv PYTHONPATH
+	if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
+		return "", fmt.Errorf("Python version must be <major>.<minor>")
+	}
+	cmds := []string{
+		"ENV R8_COG_VERSION=coglet",
+		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
+		"RUN pip install " + PinnedCogletURL,
+	}
+	return strings.Join(cmds, "\n"), nil
 }
 
 func (g *StandardGenerator) pipInstalls() (string, error) {

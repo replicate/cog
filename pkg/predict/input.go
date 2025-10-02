@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -20,6 +21,8 @@ type Input struct {
 	File   *string
 	Array  *[]any
 	Json   *json.RawMessage
+	Float  *float32
+	Int    *int32
 }
 
 type Inputs map[string]Input
@@ -51,11 +54,12 @@ func NewInputs(keyVals map[string][]string, schema *openapi3.T) (Inputs, error) 
 					property, err := propertiesSchemas.JSONLookup(key)
 					if err == nil {
 						propertySchema := property.(*openapi3.Schema)
-						if propertySchema.Type.Is("object") {
+						switch {
+						case propertySchema.Type.Is("object"):
 							encodedVal := json.RawMessage(val)
 							input[key] = Input{Json: &encodedVal}
 							continue
-						} else if propertySchema.Type.Is("array") {
+						case propertySchema.Type.Is("array"):
 							var parsed any
 							err := json.Unmarshal([]byte(val), &parsed)
 							if err == nil {
@@ -68,6 +72,29 @@ func NewInputs(keyVals map[string][]string, schema *openapi3.T) (Inputs, error) 
 							}
 							var arr = []any{val}
 							input[key] = Input{Array: &arr}
+							continue
+						case propertySchema.Type.Is("number"):
+							value, err := strconv.ParseInt(val, 10, 32)
+							if err == nil {
+								valueInt := int32(value)
+								input[key] = Input{Int: &valueInt}
+								continue
+							} else {
+								value, err := strconv.ParseFloat(val, 32)
+								if err != nil {
+									return input, err
+								}
+								float := float32(value)
+								input[key] = Input{Float: &float}
+								continue
+							}
+						case propertySchema.Type.Is("integer"):
+							value, err := strconv.ParseInt(val, 10, 32)
+							if err != nil {
+								return input, err
+							}
+							valueInt := int32(value)
+							input[key] = Input{Int: &valueInt}
 							continue
 						}
 					}
@@ -131,6 +158,10 @@ func (inputs *Inputs) toMap() (map[string]any, error) {
 			keyVals[key] = dataURLs
 		case input.Json != nil:
 			keyVals[key] = *input.Json
+		case input.Float != nil:
+			keyVals[key] = *input.Float
+		case input.Int != nil:
+			keyVals[key] = *input.Int
 		}
 	}
 	return keyVals, nil
