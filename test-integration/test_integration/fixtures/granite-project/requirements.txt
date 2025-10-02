@@ -382,7 +382,7 @@ tqdm==4.67.1
     #   outlines
     #   transformers
     #   vllm
-transformers==4.51.1
+transformers>=4.55.2
     # via
     #   compressed-tensors
     #   vllm
