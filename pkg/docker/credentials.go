@@ -15,6 +15,7 @@ import (
 	"github.com/docker/docker/api/types/registry"
 
 	"github.com/replicate/cog/pkg/docker/command"
+	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -47,47 +48,60 @@ func loadAuthFromConfig(conf *configfile.ConfigFile, registryHost string) (types
 
 func loadRegistryAuths(ctx context.Context, registryHosts ...string) (map[string]registry.AuthConfig, error) {
 	conf := config.LoadDefaultConfigFile(os.Stderr)
-
 	out := make(map[string]registry.AuthConfig)
 
 	for _, host := range registryHosts {
-		console.Debugf("=== loadRegistryAuths %s", host)
-		// check the credentials store first if set
-		if conf.CredentialsStore != "" {
-			console.Debugf("=== loadRegistryAuths %s: credentials store set", host)
-			credsHelper, err := loadAuthFromCredentialsStore(ctx, conf.CredentialsStore, host)
-			if err != nil {
-				console.Debugf("=== loadRegistryAuths %s: error loading credentials store: %s", host, err)
-				return nil, err
-			}
-			console.Debugf("=== loadRegistryAuths %s: credentials store loaded", host)
-			out[host] = registry.AuthConfig{
-				Username:      credsHelper.Username,
-				Password:      credsHelper.Secret,
-				ServerAddress: host,
-			}
+		// Try loading auth for the requested host
+		auth, err := tryLoadAuthForHost(ctx, conf, host)
+		if err == nil && auth != nil {
+			out[host] = *auth
 			continue
 		}
 
-		// next, check if the auth config exists in the config file
-		if auth, ok := conf.AuthConfigs[host]; ok {
-			console.Debugf("=== loadRegistryAuths %s: auth config found in config file", host)
-			out[host] = registry.AuthConfig{
-				Username:      auth.Username,
-				Password:      auth.Password,
-				Auth:          auth.Auth,
-				Email:         auth.Email,
-				ServerAddress: host,
-				IdentityToken: auth.IdentityToken,
-				RegistryToken: auth.RegistryToken,
+		// FALLBACK: If requesting alternate registry and no auth found,
+		// try reusing r8.im credentials
+		if host != global.DefaultReplicateRegistryHost {
+			auth, err := tryLoadAuthForHost(ctx, conf, global.DefaultReplicateRegistryHost)
+			if err == nil && auth != nil {
+				// Reuse credentials for the alternate registry
+				auth.ServerAddress = host // Update to new host
+				out[host] = *auth
+				console.Infof("Using existing %s credentials for %s", global.DefaultReplicateRegistryHost, host)
+				continue
 			}
-			continue
 		}
-
-		console.Debugf("=== loadRegistryAuths %s: no auth config found", host)
 	}
 
 	return out, nil
+}
+
+func tryLoadAuthForHost(ctx context.Context, conf *configfile.ConfigFile, host string) (*registry.AuthConfig, error) {
+	// Try credentials store first (e.g., osxkeychain, pass)
+	if conf.CredentialsStore != "" {
+		credsHelper, err := loadAuthFromCredentialsStore(ctx, conf.CredentialsStore, host)
+		if err == nil {
+			return &registry.AuthConfig{
+				Username:      credsHelper.Username,
+				Password:      credsHelper.Secret,
+				ServerAddress: host,
+			}, nil
+		}
+	}
+
+	// Fallback to config file
+	if auth, ok := conf.AuthConfigs[host]; ok {
+		return &registry.AuthConfig{
+			Username:      auth.Username,
+			Password:      auth.Password,
+			Auth:          auth.Auth,
+			Email:         auth.Email,
+			ServerAddress: host,
+			IdentityToken: auth.IdentityToken,
+			RegistryToken: auth.RegistryToken,
+		}, nil
+	}
+
+	return nil, fmt.Errorf("no credentials found for %s", host)
 }
 
 func loadAuthFromCredentialsStore(ctx context.Context, credsStore string, registryHost string) (*CredentialHelperInput, error) {
