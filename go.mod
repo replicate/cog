@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.67
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.3
 	github.com/creack/pty v1.1.24
-	github.com/docker/cli v28.3.0+incompatible
+	github.com/docker/cli v28.5.0+incompatible
 	github.com/docker/docker v28.1.1+incompatible
 	github.com/docker/go-connections v0.5.0
 	github.com/getkin/kin-openapi v0.128.0
