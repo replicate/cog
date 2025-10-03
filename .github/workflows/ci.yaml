@@ -21,7 +21,7 @@ jobs:
     name: Build & verify python package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # needed for setuptools_scm version determination
       - uses: hynek/build-and-inspect-python-package@v2
@@ -77,7 +77,7 @@ jobs:
         new_docker_api_client: [true, false]
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # needed for goreleaser version determination
       - name: Download pre-built packages
@@ -151,7 +151,7 @@ jobs:
         new_docker_api_client: [true, false]
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # needed for goreleaser version determination
       - name: Login to Docker Hub
@@ -192,7 +192,7 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # needed for goreleaser version determination
       - name: Download pre-built packages

@@ -17,7 +17,7 @@ jobs:
     name: Build & verify package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # needed for setuptools_scm version determination
       # HACK: for now, disable local versions so we can push to Test PyPI on main
