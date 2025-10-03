@@ -546,7 +546,7 @@ def test_predict_granite_project(docker_image, cog_binary):
         timeout=DEFAULT_TIMEOUT,
     )
     assert result.returncode == 0
-    assert result.stdout == "2.11.3\n"
+    assert result.stdout == "2.11.9\n"
 
 
 def test_predict_fast_build(docker_image, cog_binary):
