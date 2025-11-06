@@ -461,6 +461,7 @@ def update_openapi_schema_for_pydantic_2(
     _extract_enum_properties(openapi_schema)
     _set_default_enumeration_description(openapi_schema)
     _restore_allof_for_prediction_id_put(openapi_schema)
+    _ensure_nullable_properties_not_required(openapi_schema)
 
 
 def _remove_webhook_events_filter_title(
@@ -593,3 +594,22 @@ def _restore_allof_for_prediction_id_put(
             ref = value["$ref"]
             del value["$ref"]
             value["allOf"] = [{"$ref": ref}]
+
+
+def _ensure_nullable_properties_not_required(openapi_schema: Dict[str, Any]) -> None:
+    schemas = openapi_schema["components"]["schemas"]
+    for key in schemas:
+        schema = schemas[key]
+        properties = schema.get("properties", {})
+        not_required = set()
+        for k, v in properties.items():
+            if v.get("nullable", False):
+                not_required.add(k)
+        required_ls = schema.get("required", [])
+        required = set(required_ls)
+        if required and not_required:
+            new_required = required - not_required
+            if new_required != required:
+                subtractions = required - new_required
+                for subtraction in subtractions:
+                    required_ls.remove(subtraction)
