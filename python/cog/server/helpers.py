@@ -598,18 +598,9 @@ def _restore_allof_for_prediction_id_put(
 
 def _ensure_nullable_properties_not_required(openapi_schema: Dict[str, Any]) -> None:
     schemas = openapi_schema["components"]["schemas"]
-    for key in schemas:
-        schema = schemas[key]
+    for schema in schemas.values():
         properties = schema.get("properties", {})
-        not_required = set()
-        for k, v in properties.items():
-            if v.get("nullable", False):
-                not_required.add(k)
-        required_ls = schema.get("required", [])
-        required = set(required_ls)
-        if required and not_required:
-            new_required = required - not_required
-            if new_required != required:
-                subtractions = required - new_required
-                for subtraction in subtractions:
-                    required_ls.remove(subtraction)
+        nullable = {k for k, v in properties.items() if v.get("nullable", False)}
+
+        if "required" in schema and nullable:
+            schema["required"] = [k for k in schema["required"] if k not in nullable]
