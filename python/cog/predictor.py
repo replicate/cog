@@ -287,6 +287,7 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
                             parameter.default.default_factory = None
                 default = parameter.default
 
+        extra: Dict[str, Any] = {}
         if PYDANTIC_V2:
             # https://github.com/pydantic/pydantic/blob/2.7/pydantic/json_schema.py#L1436-L1446
             # json_schema_extra can be a callable, but we don't set that and users shouldn't set that
@@ -300,9 +301,9 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
             # To get around this, we will reference the dictionary in the attributes_set variable and make changes to
             # json_schema_extra take effect.
             if hasattr(default, "_attributes_set"):
-                if not "json_schema_extra" in default._attributes_set:
+                if "json_schema_extra" not in default._attributes_set:  # type: ignore
                     default._attributes_set["json_schema_extra"] = {"x-order": order}
-                extra = default._attributes_set["json_schema_extra"]
+                extra = default._attributes_set["json_schema_extra"]  # type: ignore
             else:
                 extra = default.json_schema_extra  # type: ignore
         else:
