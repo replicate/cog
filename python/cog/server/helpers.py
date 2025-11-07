@@ -502,7 +502,7 @@ def _update_nullable_anyof(
             if len(non_null_items) < len(value) and not in_header:
                 openapi_schema["nullable"] = True
 
-    elif isinstance(openapi_schema, list): # type: ignore
+    elif isinstance(openapi_schema, list):  # type: ignore
         for item in openapi_schema:
             _update_nullable_anyof(item, in_header=in_header)
 
