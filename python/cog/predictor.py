@@ -282,20 +282,30 @@ def get_input_create_model_kwargs(signature: inspect.Signature) -> Dict[str, Any
                         parameter.default.default is PydanticUndefined
                         or parameter.default.default is ...
                     ):
-                        if PYDANTIC_V2:
-                            parameter.default.default = None
-                        else:
+                        parameter.default.default = None
+                        if not PYDANTIC_V2:
                             parameter.default.default_factory = None
-                            parameter.default.default = None
                 default = parameter.default
 
+        extra: Dict[str, Any] = {}
         if PYDANTIC_V2:
             # https://github.com/pydantic/pydantic/blob/2.7/pydantic/json_schema.py#L1436-L1446
             # json_schema_extra can be a callable, but we don't set that and users shouldn't set that
             if not default.json_schema_extra:  # type: ignore
-                default.json_schema_extra = {}  # type: ignore
+                default.json_schema_extra = {"x-order": order}  # type: ignore
             assert isinstance(default.json_schema_extra, dict)  # type: ignore
-            extra = default.json_schema_extra  # type: ignore
+            # In Pydantic 2.12.0 the json_schema_extra field is copied into a variable called "_attributes_set"
+            # that gets created in the constructor.
+            # This means that changes to that dictionary after the construction don't take effect during the render
+            # to openapi schema JSON.
+            # To get around this, we will reference the dictionary in the attributes_set variable and make changes to
+            # json_schema_extra take effect.
+            if hasattr(default, "_attributes_set"):
+                if "json_schema_extra" not in default._attributes_set:  # type: ignore
+                    default._attributes_set["json_schema_extra"] = {"x-order": order}
+                extra = default._attributes_set["json_schema_extra"]  # type: ignore
+            else:
+                extra = default.json_schema_extra  # type: ignore
         else:
             extra = default.extra  # type: ignore
         extra["x-order"] = order

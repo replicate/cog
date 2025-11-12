@@ -51,9 +51,9 @@ endif
 $(COG_BINARIES): $(COG_GO_SOURCE) pkg/dockerfile/embed/.wheel
 	@echo Building $@
 	@if git name-rev --name-only --tags HEAD | grep -qFx undefined; then \
-		$(GORELEASER) build --clean --snapshot --single-target --id $@ --output $@; \
+		GOFLAGS=-buildvcs=false $(GORELEASER) build --clean --snapshot --single-target --id $@ --output $@; \
 	else \
-		$(GORELEASER) build --clean --auto-snapshot --single-target --id $@ --output $@; \
+		GOFLAGS=-buildvcs=false $(GORELEASER) build --clean --auto-snapshot --single-target --id $@ --output $@; \
 	fi
 
 .PHONY: install
