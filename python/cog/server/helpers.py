@@ -461,6 +461,7 @@ def update_openapi_schema_for_pydantic_2(
     _extract_enum_properties(openapi_schema)
     _set_default_enumeration_description(openapi_schema)
     _restore_allof_for_prediction_id_put(openapi_schema)
+    _ensure_nullable_properties_not_required(openapi_schema)
 
 
 def _remove_webhook_events_filter_title(
@@ -501,7 +502,7 @@ def _update_nullable_anyof(
             if len(non_null_items) < len(value) and not in_header:
                 openapi_schema["nullable"] = True
 
-    elif isinstance(openapi_schema, list):
+    elif isinstance(openapi_schema, list):  # type: ignore
         for item in openapi_schema:
             _update_nullable_anyof(item, in_header=in_header)
 
@@ -593,3 +594,13 @@ def _restore_allof_for_prediction_id_put(
             ref = value["$ref"]
             del value["$ref"]
             value["allOf"] = [{"$ref": ref}]
+
+
+def _ensure_nullable_properties_not_required(openapi_schema: Dict[str, Any]) -> None:
+    schemas = openapi_schema["components"]["schemas"]
+    for schema in schemas.values():
+        properties = schema.get("properties", {})
+        nullable = {k for k, v in properties.items() if v.get("nullable", False)}
+
+        if "required" in schema and nullable:
+            schema["required"] = [k for k in schema["required"] if k not in nullable]
