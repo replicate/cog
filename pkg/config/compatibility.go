@@ -231,6 +231,16 @@ func latestCuDNNForCUDA(cuda string) (string, error) {
 		}
 	}
 	sort.Slice(cuDNNs, func(i, j int) bool {
+		// Starting with CUDA 12.3/12.4 (the cuDNN 9 era),
+		// NVIDIA stopped encoding the cuDNN version in
+		// the CUDA image tag. So instead of ...-cudnn8-...
+		// you now just get ...-cudnn-...
+		// (e.g. 12.8.0-cudnn-devel-ubuntu22.04). The image
+		// contains “the latest cuDNN 9.x available when
+		// the image was built,” not a fixed 9.x.y number.
+		if cuDNNs[i] == "" || cuDNNs[j] == "" {
+			return false
+		}
 		return version.Greater(cuDNNs[i], cuDNNs[j])
 	})
 	if len(cuDNNs) == 0 {

@@ -1,5 +1,47 @@
 [
   {
+    "Tag": "13.0.2-cudnn-devel-ubuntu24.04",
+    "CUDA": "13.0.2",
+    "CuDNN": "",
+    "IsDevel": true,
+    "Ubuntu": "24.04"
+  },
+  {
+    "Tag": "13.0.2-cudnn-devel-ubuntu22.04",
+    "CUDA": "13.0.2",
+    "CuDNN": "",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "13.0.1-cudnn-devel-ubuntu24.04",
+    "CUDA": "13.0.1",
+    "CuDNN": "",
+    "IsDevel": true,
+    "Ubuntu": "24.04"
+  },
+  {
+    "Tag": "13.0.1-cudnn-devel-ubuntu22.04",
+    "CUDA": "13.0.1",
+    "CuDNN": "",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "13.0.0-cudnn-devel-ubuntu24.04",
+    "CUDA": "13.0.0",
+    "CuDNN": "",
+    "IsDevel": true,
+    "Ubuntu": "24.04"
+  },
+  {
+    "Tag": "13.0.0-cudnn-devel-ubuntu22.04",
+    "CUDA": "13.0.0",
+    "CuDNN": "",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
     "Tag": "12.9.1-cudnn-devel-ubuntu24.04",
     "CUDA": "12.9.1",
     "CuDNN": "9",
