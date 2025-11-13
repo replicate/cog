@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/replicate/cog/pkg/util/version"
+
 	"github.com/hashicorp/go-version"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
@@ -297,7 +299,9 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 			require.Equal(t, "", config.Build.CuDNN)
 		} else {
 			require.NotEqual(t, "", config.Build.CUDA)
-			require.NotEqual(t, "", config.Build.CuDNN)
+			if version.MustVersion(*compat.CUDA).Less(version.MustVersion("13.0")) {
+				require.NotEqual(t, "", config.Build.CuDNN)
+			}
 		}
 	}
 }
