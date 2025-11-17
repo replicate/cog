@@ -3,6 +3,5 @@
 
 build:
   gpu: false
-  cog_runtime: true
   python_requirements: requirements.txt
 predict: "main.py:run"

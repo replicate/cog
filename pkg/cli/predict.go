@@ -187,6 +187,12 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			buildFast = cfg.Build.Fast
 		}
 
+		// TODO[md]: this is a temporary hack to propagate a procedure flag through the build system without
+		// touching every function signature with another param. The cogpacks refactor addresses this.
+		if pipelinesImage {
+			cfg.Build.ProcedureMode = true
+		}
+
 		client := registry.NewRegistryClient()
 		if buildFast || pipelinesImage {
 			imageName = config.DockerImageName(projectDir)
@@ -258,6 +264,8 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	console.Info("")
 	console.Infof("Starting Docker image %s and running setup()...", imageName)
 
+	logHandler := predict.NewLogHandler()
+
 	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
 		GPUs:    gpus,
 		Image:   imageName,
@@ -281,7 +289,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	}()
 
 	timeout := time.Duration(setupTimeout) * time.Second
-	if err := predictor.Start(ctx, os.Stderr, timeout); err != nil {
+	if err := predictor.Start(ctx, logHandler, timeout); err != nil {
 		// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
 		// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
 		if gpus == "all" && errors.Is(err, docker.ErrMissingDeviceDriver) {
@@ -297,7 +305,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 				return err
 			}
 
-			if err := predictor.Start(ctx, os.Stderr, timeout); err != nil {
+			if err := predictor.Start(ctx, logHandler, timeout); err != nil {
 				return err
 			}
 		} else {
