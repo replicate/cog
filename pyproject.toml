@@ -23,7 +23,7 @@ requires-python = ">=3.8"
 dependencies = [
   # intentionally loose. perhaps these should be vendored to not collide with user code?
   "attrs>=20.1,<24",
-  "fastapi>=0.100,<0.119.0",
+  "fastapi>=0.100,<0.122.0",
   "pydantic>=1.9,<3",
   "PyYAML",
   "requests>=2,<3",
