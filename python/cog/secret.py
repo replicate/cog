@@ -58,7 +58,7 @@ class SecretProvider:
             response.raise_for_status()
 
             plaintext_bytes = self.key.decrypt(
-                response.text,
+                response.content,
                 padding.OAEP(
                     mgf=padding.MGF1(algorithm=hashes.SHA256()),
                     algorithm=hashes.SHA256(),
