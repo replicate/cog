@@ -1,3 +1,4 @@
+import base64
 import os
 from pathlib import Path
 from typing import Optional
@@ -68,11 +69,19 @@ class SecretProvider:
                 raise ValueError("No secret URL passed")
             if self.no_public_key:
                 raise ValueError("No public key for encryption")
-            response = requests.get(f"{self._secret_url}/{secret_name}")
+            raw_secret = os.getenv(secret_name)
+            if not raw_secret:
+                raise ValueError("No matching secret")
+            response = requests.post(
+                f"{self._secret_url}",
+                data={
+                    "value": raw_secret,
+                },
+            )
             response.raise_for_status()
 
             plaintext_bytes = self.key.decrypt(
-                response.content,
+                base64.b64decode(response.text),
                 padding.OAEP(
                     mgf=padding.MGF1(algorithm=hashes.SHA256()),
                     algorithm=hashes.SHA256(),
