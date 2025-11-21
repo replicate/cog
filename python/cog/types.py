@@ -262,6 +262,7 @@ class Image(pathlib.PosixPath):  # pylint: disable=abstract-method
     The OpenAPI schema will have format="uri" with x-cog-type="image" which UIs
     can use to provide image-specific widgets like image pickers or preview functionality.
     """
+
     validate_always = True
 
     @classmethod

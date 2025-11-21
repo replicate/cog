@@ -48,6 +48,7 @@ from .types import (
     Path as CogPath,
 )
 from .types import Secret as CogSecret
+from .types import Image as CogImage
 
 if PYDANTIC_V2:
     from pydantic.fields import PydanticUndefined  # type: ignore
@@ -64,6 +65,7 @@ ALLOWED_INPUT_TYPES: List[Type[Any]] = [
     CogFile,
     CogPath,
     CogSecret,
+    CogImage,
 ]
 
 
