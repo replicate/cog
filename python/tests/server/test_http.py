@@ -271,6 +271,29 @@ def test_openapi_specification_with_custom_user_defined_output_type(
     }
 
 
+@uses_predictor("openapi_image_input")
+def test_openapi_specification_with_image_input(client):
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+
+    schema = resp.json()
+    assert schema["components"]["schemas"]["Input"] == {
+        "title": "Input",
+        "required": ["image"],
+        "type": "object",
+        "properties": {
+            "image": {
+                "title": "Image",
+                "description": "An input image",
+                "type": "string",
+                "format": "uri",
+                "x-cog-type": "image",
+                "x-order": 0,
+            },
+        },
+    }
+
+
 @uses_predictor("openapi_optional_output_type")
 def test_openapi_specification_with_optional_output_type(
     client,
