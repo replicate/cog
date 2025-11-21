@@ -196,7 +196,11 @@ class Task(ABC, Generic[T]):
 
 
 class SetupTask(Task[SetupResult]):
-    def __init__(self, _clock: Optional[Callable[[], datetime]] = None) -> None:
+    def __init__(
+        self,
+        _clock: Optional[Callable[[], datetime]] = None,
+        secrets_url: Optional[str] = None,
+    ) -> None:
         log.info("starting setup")
         self._clock = _clock
         if self._clock is None:
@@ -204,6 +208,8 @@ class SetupTask(Task[SetupResult]):
 
         self._fut: "Optional[Future[Done]]" = None
         self._result = SetupResult(started_at=self._clock())
+        if secrets_url:
+            self._secrets_url = secrets_url
 
     @property
     def result(self) -> SetupResult:
@@ -284,6 +290,7 @@ class PredictTask(Task[schema.PredictionResponse]):
         prediction_request: schema.PredictionRequest,
         is_train: bool,
         upload_url: Optional[str] = None,
+        secrets_url: Optional[str] = None,
     ) -> None:
         self._is_train = is_train
         self._log = log.bind(prediction_id=prediction_request.id)
@@ -321,6 +328,8 @@ class PredictTask(Task[schema.PredictionResponse]):
             self._file_uploader = generate_file_uploader(
                 upload_url, prediction_id=self._p.id
             )
+        if secrets_url:
+            self._secrets_url = secrets_url
 
     @property
     def result(self) -> schema.PredictionResponse:
