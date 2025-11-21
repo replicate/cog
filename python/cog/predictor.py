@@ -44,11 +44,11 @@ from .types import (
 from .types import (
     File as CogFile,
 )
+from .types import Image as CogImage
 from .types import (
     Path as CogPath,
 )
 from .types import Secret as CogSecret
-from .types import Image as CogImage
 
 if PYDANTIC_V2:
     from pydantic.fields import PydanticUndefined  # type: ignore
