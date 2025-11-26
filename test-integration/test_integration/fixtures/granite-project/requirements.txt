@@ -69,7 +69,7 @@ pygments==2.19.2
 python-json-logger==3.3.0
 python-multipart==0.0.20
 pyzmq==27.1.0
-ray==2.49.2
+ray==2.52.0
 referencing==0.36.2
 regex==2025.9.18
 rich==14.1.0
