@@ -39,7 +39,7 @@ from ..files import upload_file
 from ..json import upload_files
 from ..logging import setup_logging
 from ..mode import Mode
-from ..secret import secret_provider
+from ..secret import default_secret_provider
 from ..types import PYDANTIC_V2
 
 try:
@@ -134,7 +134,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
 ) -> MyFastAPI:
     started_at = datetime.now(tz=timezone.utc)
 
-    secret_provider.set_secret_url(secrets_url)
+    default_secret_provider.secret_url = secrets_url
 
     @asynccontextmanager
     async def lifespan(app: MyFastAPI) -> AsyncGenerator[None, None]:

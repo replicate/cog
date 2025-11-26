@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from .base_predictor import BasePredictor
 from .mimetypes_ext import install_mime_extensions
 from .secret import (
-    secret,
+    load_secret,
 )
 from .server.scope import current_scope
 from .types import (
@@ -37,6 +37,6 @@ __all__ = [
     "File",
     "Input",
     "Path",
-    "secret",
+    "load_secret",
     "Secret",
 ]
