@@ -17,7 +17,8 @@ func TestStandardPush(t *testing.T) {
 
 func TestStandardPushWithFullDockerCommand(t *testing.T) {
 	t.Setenv(DockerCommandEnvVarName, "echo")
-	command := NewDockerCommand()
-	err := StandardPush(t.Context(), "test", command)
+	command, err := NewClient(t.Context())
+	require.NoError(t, err)
+	err = StandardPush(t.Context(), "test", command)
 	require.NoError(t, err)
 }

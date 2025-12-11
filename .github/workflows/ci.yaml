@@ -74,7 +74,6 @@ jobs:
       matrix:
         # https://docs.github.com/en/free-pro-team@latest/actions/reference/specifications-for-github-hosted-runners#supported-runners-and-hardware-resources
         platform: [ubuntu-latest, macos-latest]
-        new_docker_api_client: [true, false]
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v6
@@ -94,8 +93,6 @@ jobs:
         run: make cog
       - name: Test
         run: make test-go
-        env:
-          COG_DOCKER_SDK_CLIENT: ${{ matrix.new_docker_api_client }}
 
   test-python:
     name: "Test Python ${{ matrix.python-version }} + Pydantic v${{ matrix.pydantic }}"
@@ -145,10 +142,6 @@ jobs:
     name: "Test integration Matrix"
     needs: build-python
     runs-on: ubuntu-latest-16-cores
-    strategy:
-      fail-fast: false
-      matrix:
-        new_docker_api_client: [true, false]
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
@@ -178,8 +171,6 @@ jobs:
         run: uv pip install --system tox tox-uv
       - name: Test
         run: make test-integration
-        env:
-          COG_DOCKER_SDK_CLIENT: ${{ matrix.new_docker_api_client }}
 
   release:
     name: "Release"
