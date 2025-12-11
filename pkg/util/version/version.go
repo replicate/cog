@@ -84,6 +84,14 @@ func (v *Version) GreaterOrEqual(other *Version) bool {
 	return v.Greater(other) || v.Equal(other)
 }
 
+func (v *Version) Less(other *Version) bool {
+	return other.Greater(v)
+}
+
+func (v *Version) LessOrEqual(other *Version) bool {
+	return other.GreaterOrEqual(v)
+}
+
 func (v *Version) EqualMinor(other *Version) bool {
 	return v.Major == other.Major && v.Minor == other.Minor
 }
