@@ -6,7 +6,7 @@ import string
 import pytest
 import responses
 
-from cog.types import Secret, URLFile, URLPath, get_filename
+from cog.types import Image, Secret, URLFile, URLPath, get_filename
 
 
 def test_urlfile_protocol_validation():
@@ -167,3 +167,43 @@ def test_truncate_filename_if_long():
     )
     assert url_path.filename == "waffwyyg~~.zip"
     _ = url_path.convert()
+
+
+def test_image_type_validates_urls():
+    """Test that Image type can validate HTTP/HTTPS URLs"""
+    from pathlib import Path
+
+    # Should accept HTTP URLs
+    result = Image.validate("https://example.com/image.jpg")
+    assert isinstance(result, URLPath)
+    assert str(result) == "https://example.com/image.jpg"
+
+    # Should accept local paths
+    result = Image.validate(Path("/tmp/image.png"))
+    assert isinstance(result, Path)
+
+
+def test_image_type_pydantic_schema():
+    """Test that Image type produces correct OpenAPI schema format"""
+    from cog.types import PYDANTIC_V2
+
+    if PYDANTIC_V2:
+        from pydantic import BaseModel
+
+        class TestModel(BaseModel):
+            image: Image
+
+        schema = TestModel.model_json_schema()
+        assert schema["properties"]["image"]["type"] == "string"
+        assert schema["properties"]["image"]["format"] == "uri"
+        assert schema["properties"]["image"]["x-cog-type"] == "image"
+    else:
+        from pydantic import BaseModel
+
+        class TestModel(BaseModel):
+            image: Image
+
+        schema = TestModel.schema()
+        assert schema["properties"]["image"]["type"] == "string"
+        assert schema["properties"]["image"]["format"] == "uri"
+        assert schema["properties"]["image"]["x-cog-type"] == "image"

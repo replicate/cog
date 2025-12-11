@@ -89,7 +89,7 @@ This _required_ method is where you call the model that was loaded during `setup
 
 The `predict()` method takes an arbitrary list of named arguments, where each argument name must correspond to an [`Input()`](#inputkwargs) annotation.
 
-`predict()` can return strings, numbers, [`cog.Path`](#path) objects representing files on disk, or lists or dicts of those types. You can also define a custom [`Output()`](#outputbasemodel) for more complex return types.
+`predict()` can return strings, numbers, [`cog.Path`](#path) or [`cog.Image`](#image) objects representing files on disk, or lists or dicts of those types. You can also define a custom [`Output()`](#outputbasemodel) for more complex return types.
 
 ## `async` predictors and concurrency
 
@@ -304,6 +304,7 @@ Each parameter of the `predict()` method must be annotated with a type. The meth
 - `bool`: a boolean
 - [`cog.File`](#file): a file-like object representing a file
 - [`cog.Path`](#path): a path to a file on disk
+- [`cog.Image`](#image): a path to an image file on disk
 - [`cog.Secret`](#secret): a string containing sensitive information
 
 ## `File()`
@@ -349,6 +350,31 @@ class Predictor(BasePredictor):
         output_path = Path(tempfile.mkdtemp()) / "upscaled.png"
         upscaled_image.save(output_path)
         return Path(output_path)
+```
+
+## `Image()`
+
+The `cog.Image` object is used to get image files in and out of models. It represents a _path to an image file on disk_.
+
+`cog.Image` is a subclass of `cog.Path` and works identically to it, but produces OpenAPI schemas with `format: "image"` instead of `format: "uri"`. This hints to UIs that the input or output is specifically an image, allowing them to provide image-specific widgets like image pickers or preview functionality.
+
+For models that return a `cog.Image` object, the prediction output returned by Cog's built-in HTTP server will be a URL.
+
+This example takes an input image, processes it, and returns a processed image:
+
+```python
+import tempfile
+from cog import BasePredictor, Input, Image
+
+class Predictor(BasePredictor):
+    def predict(self, image: Image = Input(description="Input image")) -> Image:
+        processed_image = do_some_processing(image)
+
+        # To output `cog.Image` objects the file needs to exist, so create a temporary file first.
+        # This file will automatically be deleted by Cog after it has been returned.
+        output_path = Image(tempfile.mkdtemp()) / "processed.png"
+        processed_image.save(output_path)
+        return Image(output_path)
 ```
 
 ## `Secret`

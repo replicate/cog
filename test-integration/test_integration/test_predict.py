@@ -294,6 +294,24 @@ def test_predict_many_inputs_with_existing_image(
     assert "falling back to slow loader" not in str(result.stderr)
 
 
+def test_predict_image_input(tmpdir_factory, cog_binary):
+    project_dir = Path(__file__).parent / "fixtures/image-input-project"
+    out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
+    shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
+    with open(out_dir / "test.jpg", "w", encoding="utf-8") as fh:
+        fh.write("fake image data")
+    cmd = [cog_binary, "predict", "-i", "image=@test.jpg"]
+
+    result = subprocess.run(
+        cmd,
+        cwd=out_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert result.stdout == "image: fake image data\n"
+
+
 def test_predict_path_list_input(tmpdir_factory, cog_binary):
     project_dir = Path(__file__).parent / "fixtures/path-list-input-project"
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
