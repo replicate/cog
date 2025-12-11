@@ -59,6 +59,8 @@ type Build struct {
 	CogRuntime         *bool     `json:"cog_runtime,omitempty" yaml:"cog_runtime,omitempty"`
 	PythonOverrides    string    `json:"python_overrides,omitempty" yaml:"python_overrides,omitempty"`
 
+	ProcedureMode bool `json:"-" yaml:"-"`
+
 	pythonRequirementsContent []string
 }
 
