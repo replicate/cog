@@ -194,7 +194,12 @@ class Result:
         elif isinstance(event, PredictionMetric):
             if self.metrics is None:
                 self.metrics = {}
-            self.metrics[event.name] = event.value
+
+            if event.value is None:
+                if event.name in self.metrics:
+                    del self.metrics[event.name]
+            else:
+                self.metrics[event.name] = event.value
         elif isinstance(event, PredictionOutput):
             assert self.output_type, "Should get output type before any output"
             if self.output_type.multi:
