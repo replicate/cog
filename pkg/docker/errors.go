@@ -15,18 +15,6 @@ func isTagNotFoundError(err error) bool {
 		strings.Contains(msg, "An image does not exist locally with the tag")
 }
 
-func isImageNotFoundError(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "image does not exist") ||
-		strings.Contains(msg, "No such image")
-}
-
-func isContainerNotFoundError(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "container does not exist") ||
-		strings.Contains(msg, "No such container")
-}
-
 func isAuthorizationFailedError(err error) bool {
 	msg := err.Error()
 
