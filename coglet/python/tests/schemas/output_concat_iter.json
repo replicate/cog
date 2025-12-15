@@ -1,0 +1,431 @@
+{
+  "openapi": "3.0.2",
+  "info": {
+    "title": "Cog",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/shutdown": {
+      "post": {
+        "summary": "Start Shutdown",
+        "operationId": "start_shutdown_shutdown_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Start Shutdown Shutdown Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "summary": "Root",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Root  Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health-check": {
+      "get": {
+        "summary": "Healthcheck",
+        "operationId": "healthcheck_health_check_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Healthcheck Health Check Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/predictions": {
+      "post": {
+        "summary": "Predict",
+        "description": "Run a single prediction on the model",
+        "operationId": "predict_predictions_post",
+        "parameters": [
+          {
+            "name": "prefer",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "title": "Prefer",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/predictions/{prediction_id}": {
+      "put": {
+        "summary": "Predict Idempotent",
+        "description": "Run a single prediction on the model (idempotent creation).",
+        "operationId": "predict_idempotent_predictions__prediction_id__put",
+        "parameters": [
+          {
+            "name": "prediction_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prediction ID"
+            }
+          },
+          {
+            "name": "prefer",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "title": "Prefer",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PredictionRequest"
+                  }
+                ],
+                "title": "Prediction Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/predictions/{prediction_id}/cancel": {
+      "post": {
+        "summary": "Cancel",
+        "description": "Cancel a running prediction",
+        "operationId": "cancel_predictions__prediction_id__cancel_post",
+        "parameters": [
+          {
+            "name": "prediction_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prediction ID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Cancel Predictions  Prediction Id  Cancel Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Input": {
+        "properties": {
+          "xs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Xs",
+            "x-order": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "xs"
+        ],
+        "title": "Input"
+      },
+      "Output": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array",
+        "title": "Output",
+        "x-cog-array-display": "concatenate",
+        "x-cog-array-type": "iterator"
+      },
+      "PredictionRequest": {
+        "properties": {
+          "input": {
+            "$ref": "#/components/schemas/Input",
+            "nullable": true
+          },
+          "id": {
+            "title": "Id",
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "context": {
+            "title": "Context",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "nullable": true
+          },
+          "output_file_prefix": {
+            "title": "Output File Prefix",
+            "type": "string",
+            "nullable": true
+          },
+          "webhook": {
+            "title": "Webhook",
+            "type": "string",
+            "maxLength": 65536,
+            "minLength": 1,
+            "format": "uri",
+            "nullable": true
+          },
+          "webhook_events_filter": {
+            "default": [
+              "start",
+              "output",
+              "logs",
+              "completed"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/WebhookEvent"
+            },
+            "type": "array",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "title": "PredictionRequest"
+      },
+      "PredictionResponse": {
+        "properties": {
+          "input": {
+            "$ref": "#/components/schemas/Input",
+            "nullable": true
+          },
+          "output": {
+            "$ref": "#/components/schemas/Output"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string",
+            "nullable": true
+          },
+          "version": {
+            "title": "Version",
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completed_at": {
+            "title": "Completed At",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "logs": {
+            "type": "string",
+            "title": "Logs",
+            "default": ""
+          },
+          "error": {
+            "title": "Error",
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status",
+            "nullable": true
+          },
+          "metrics": {
+            "title": "Metrics",
+            "additionalProperties": true,
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "title": "PredictionResponse"
+      },
+      "Status": {
+        "type": "string",
+        "enum": [
+          "starting",
+          "processing",
+          "succeeded",
+          "canceled",
+          "failed"
+        ],
+        "title": "Status",
+        "description": "An enumeration."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WebhookEvent": {
+        "type": "string",
+        "enum": [
+          "start",
+          "output",
+          "logs",
+          "completed"
+        ],
+        "title": "WebhookEvent",
+        "description": "An enumeration."
+      }
+    }
+  }
+}

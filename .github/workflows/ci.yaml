@@ -61,6 +61,8 @@ jobs:
       - test-go
       - test-python
       - test-integration
+      - test-coglet-go
+      - test-coglet-python
     runs-on: ubuntu-latest
     steps:
       - name: Check test status
@@ -126,6 +128,47 @@ jobs:
         run: rm -rf python/cog
       - name: Test
         run: python -Im tox run --installpkg "$COG_WHEEL" -e ${{ env.TOX_PYTHON }}-pydantic${{ matrix.pydantic }}-tests
+
+  # ==========================================================================
+  # Coglet tests (Go server + Python SDK for the coglet runtime)
+  # ==========================================================================
+  test-coglet-go:
+    name: "Test Coglet Go"
+    runs-on: ubuntu-latest-4-cores
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: astral-sh/setup-uv@v6
+      - name: Test coglet Go
+        run: make test-coglet-go
+
+  test-coglet-python:
+    name: "Test Coglet Python ${{ matrix.python-version }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: hynek/setup-cached-uv@v2
+      - name: Install coglet test dependencies
+        run: |
+          cd coglet
+          uv pip install --system -e ".[test]"
+      - name: Test coglet Python
+        run: |
+          cd coglet
+          python -m pytest python/tests -v
 
   # TODO[md]: This is a gross hack, remove once this is sorted out: https://github.com/replicate/cog/pull/2353
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
