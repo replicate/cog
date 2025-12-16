@@ -863,14 +863,14 @@ func (r *Runner) predict(reqID string) (chan PredictionResponse, *PredictionResp
 		return nil, nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	if err := os.WriteFile(requestPath, requestData, 0o644); err != nil { //nolint:gosec // #nosec G304 -- TODO[md]: validate requestPath is within workingdir
+	if err := os.WriteFile(requestPath, requestData, 0o644); err != nil { //nolint:gosec // #nosec G304 -- see .github/codeql-config.yml for rationale
 		return nil, nil, fmt.Errorf("failed to write request file: %w", err)
 	}
 
 	log.Tracew("wrote prediction request file", "prediction_id", reqID, "path", requestPath, "working_dir", r.runnerCtx.workingdir, "request_data", string(requestData))
 
 	// Debug: Check if file actually exists and list directory contents
-	if _, err := os.Stat(requestPath); err != nil { // #nosec G304 -- path derived from controlled workingdir via path.Join
+	if _, err := os.Stat(requestPath); err != nil { //nolint:gosec // #nosec G304 -- see .github/codeql-config.yml for rationale
 		log.Tracew("ERROR: written request file does not exist", "prediction_id", reqID, "path", requestPath, "error", err)
 	} else {
 		log.Tracew("confirmed request file exists", "prediction_id", reqID, "path", requestPath)

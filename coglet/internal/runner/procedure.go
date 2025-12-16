@@ -59,7 +59,7 @@ func PrepareProcedureSourceURL(srcURL, runnerID string) (string, error) {
 	}
 	switch u.Scheme {
 	case "file":
-		stat, err := os.Stat(u.Path) // #nosec G304 -- TODO[md]: add path validation to ensure within allowed directories
+		stat, err := os.Stat(u.Path) //nolint:gosec // #nosec G304 -- see .github/codeql-config.yml for rationale
 		if err != nil {
 			return "", err
 		}
