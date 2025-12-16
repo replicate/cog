@@ -149,7 +149,7 @@ coglet-wheel: coglet-server-binaries
 # Run coglet Go tests
 .PHONY: test-coglet-go
 test-coglet-go:
-	$(GO) tool gotestsum -- -timeout 600s ./coglet/... $(ARGS)
+	$(GO) tool gotestsum -- -timeout 600s -parallel 4 ./coglet/... $(ARGS)
 
 # Run coglet Python tests (requires coglet to be installed)
 .PHONY: test-coglet-python
