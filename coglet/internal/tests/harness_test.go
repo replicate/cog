@@ -660,10 +660,20 @@ func cleanupAllTestProcesses() {
 func killAllChildProcesses() {
 	cogletPids := findCogletProcesses()
 	ourPid := os.Getpid()
+	ourPpid := os.Getppid()
+	ourPgid, _ := syscall.Getpgid(ourPid)
 
 	for _, pid := range cogletPids {
-		// Never kill ourselves or PID 1
-		if pid == ourPid || pid == 1 {
+		// Never kill ourselves, our parent, or PID 1
+		if pid == ourPid || pid == ourPpid || pid == 1 {
+			continue
+		}
+
+		// Check if killing this process group would kill us.
+		// This is important because pgrep -f "coglet" matches our test binary path,
+		// and syscall.Kill(-pid, SIGKILL) kills the entire process group.
+		pidPgid, err := syscall.Getpgid(pid)
+		if err == nil && pidPgid == ourPgid {
 			continue
 		}
 
