@@ -234,13 +234,49 @@ func (r RunnerID) String() string {
 type RunnerContext struct {
 	id                 string
 	workingdir         string
+	workingRoot        *os.Root // Traversal-safe root for workingdir operations
 	tmpDir             string
 	uploader           *uploader
 	uid                *int     // UID used for setUID isolation, nil if not using setUID
 	cleanupDirectories []string // Directories to walk for cleanup of files owned by isolated UIDs
 }
 
+// WriteFile writes data to a file in the working directory using traversal-safe operations
+// when workingRoot is available, falling back to standard file operations otherwise.
+func (rc *RunnerContext) WriteFile(name string, data []byte, perm os.FileMode) error {
+	if rc.workingRoot != nil {
+		f, err := rc.workingRoot.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+		if err != nil {
+			return err
+		}
+		_, writeErr := f.Write(data)
+		closeErr := f.Close()
+		if writeErr != nil {
+			return writeErr
+		}
+		return closeErr
+	}
+	// Fallback for tests that don't initialize workingRoot
+	return os.WriteFile(filepath.Join(rc.workingdir, name), data, perm) //nolint:gosec // fallback for tests
+}
+
+// StatFile stats a file in the working directory using traversal-safe operations
+// when workingRoot is available, falling back to standard file operations otherwise.
+func (rc *RunnerContext) StatFile(name string) (os.FileInfo, error) {
+	if rc.workingRoot != nil {
+		return rc.workingRoot.Stat(name)
+	}
+	// Fallback for tests that don't initialize workingRoot
+	return os.Stat(filepath.Join(rc.workingdir, name)) //nolint:gosec // fallback for tests
+}
+
 func (rc *RunnerContext) Cleanup() error {
+	// Close the workingRoot if it was opened
+	if rc.workingRoot != nil {
+		rc.workingRoot.Close()
+		rc.workingRoot = nil
+	}
+
 	if rc.tmpDir != "" {
 		if err := os.RemoveAll(rc.tmpDir); err != nil {
 			return err

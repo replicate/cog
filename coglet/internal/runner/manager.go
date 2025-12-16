@@ -332,11 +332,17 @@ func (m *Manager) createDefaultRunner(ctx context.Context) (*Runner, error) {
 		uploader = newUploader(m.cfg.UploadURL)
 	}
 
+	workingRoot, err := os.OpenRoot(workingDir)
+	if err != nil {
+		runtimeCancel()
+		return nil, fmt.Errorf("failed to open working directory root: %w", err)
+	}
 	runnerCtx := RunnerContext{
-		id:         DefaultRunnerName,
-		workingdir: workingDir,
-		tmpDir:     tmpDir,
-		uploader:   uploader,
+		id:          DefaultRunnerName,
+		workingdir:  workingDir,
+		workingRoot: workingRoot,
+		tmpDir:      tmpDir,
+		uploader:    uploader,
 	}
 	runner, err := NewRunner(runtimeContext, runtimeCancel, runnerCtx, cmd, cogYaml.Concurrency.Max, m.cfg, m.baseLogger)
 	if err != nil {
@@ -729,9 +735,15 @@ func (m *Manager) createProcedureRunner(runnerName, procedureHash string) (*Runn
 		uploader = newUploader(m.cfg.UploadURL)
 	}
 
+	workingRoot, err := os.OpenRoot(workingDir)
+	if err != nil {
+		runtimeCancel()
+		return nil, fmt.Errorf("failed to open working directory root: %w", err)
+	}
 	runnerCtx := RunnerContext{
 		id:                 runnerName,
 		workingdir:         workingDir,
+		workingRoot:        workingRoot,
 		tmpDir:             tmpDir,
 		uploader:           uploader,
 		uid:                allocatedUID,
