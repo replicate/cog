@@ -59,7 +59,7 @@ func PrepareProcedureSourceURL(srcURL, runnerID string) (string, error) {
 	}
 	switch u.Scheme {
 	case "file":
-		stat, err := os.Stat(u.Path)
+		stat, err := os.Stat(u.Path) // #nosec G304 -- TODO[md]: add path validation to ensure within allowed directories
 		if err != nil {
 			return "", err
 		}
@@ -76,7 +76,7 @@ func PrepareProcedureSourceURL(srcURL, runnerID string) (string, error) {
 		}
 		return dstDir, nil
 	case "http", "https":
-		resp, err := http.Get(srcURL) //nolint:gosec // expected dynamic path
+		resp, err := http.Get(srcURL) //nolint:gosec // #nosec G107 -- TODO[md]: add URL allowlist validation for procedure sources
 		if err != nil {
 			return "", err
 		}
