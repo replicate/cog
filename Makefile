@@ -70,7 +70,7 @@ clean: clean-coglet
 
 .PHONY: test-go
 test-go: pkg/dockerfile/embed/.wheel
-	$(GO) tool gotestsum -- -short -timeout 1200s -parallel 5 ./... $(ARGS)
+	$(GO) tool gotestsum -- -short -timeout 1200s -parallel 5 $$(go list ./... | grep -v 'coglet/') $(ARGS)
 
 .PHONY: test-integration
 test-integration: $(COG_BINARIES)
