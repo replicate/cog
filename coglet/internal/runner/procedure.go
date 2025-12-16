@@ -76,7 +76,7 @@ func PrepareProcedureSourceURL(srcURL, runnerID string) (string, error) {
 		}
 		return dstDir, nil
 	case "http", "https":
-		resp, err := http.Get(srcURL) //nolint:gosec // #nosec G107 -- TODO[md]: add URL allowlist validation for procedure sources
+		resp, err := http.Get(srcURL) //nolint:gosec // TODO[md]: add SSRF protection
 		if err != nil {
 			return "", err
 		}

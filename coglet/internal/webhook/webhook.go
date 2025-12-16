@@ -54,7 +54,7 @@ func (s *DefaultSender) Send(url string, payload io.Reader) error {
 
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := s.client.Do(req) // #nosec G107 -- TODO[md]: webhook URLs come from trusted orchestration layer, consider URL validation
+	resp, err := s.client.Do(req) // TODO[md]: add SSRF protection
 	if err != nil {
 		return fmt.Errorf("failed to send webhook: %w", err)
 	}
