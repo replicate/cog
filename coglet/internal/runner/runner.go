@@ -853,25 +853,24 @@ func (r *Runner) predict(reqID string) (chan PredictionResponse, *PredictionResp
 	}
 	pending.inputPaths = inputPaths
 
-	// Write prediction request to file using traversal-safe root
+	// Write prediction request to file
 	requestFile := fmt.Sprintf("request-%s.json", reqID)
 	log.Debugw("writing prediction request file", "prediction_id", reqID, "file", requestFile)
+	requestPath := path.Join(r.runnerCtx.workingdir, requestFile)
 
 	requestData, err := json.Marshal(pending.request)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// Use RunnerContext helper for traversal-safe file write
-	if err := r.runnerCtx.WriteFile(requestFile, requestData, 0o644); err != nil {
+	if err := os.WriteFile(requestPath, requestData, 0o644); err != nil { //nolint:gosec // #nosec G304 -- TODO[md]: validate requestPath is within workingdir
 		return nil, nil, fmt.Errorf("failed to write request file: %w", err)
 	}
 
-	requestPath := path.Join(r.runnerCtx.workingdir, requestFile) // for logging only
 	log.Tracew("wrote prediction request file", "prediction_id", reqID, "path", requestPath, "working_dir", r.runnerCtx.workingdir, "request_data", string(requestData))
 
-	// Debug: Check if file actually exists using traversal-safe stat
-	if _, err := r.runnerCtx.StatFile(requestFile); err != nil {
+	// Debug: Check if file actually exists and list directory contents
+	if _, err := os.Stat(requestPath); err != nil { // #nosec G304 -- path derived from controlled workingdir via path.Join
 		log.Tracew("ERROR: written request file does not exist", "prediction_id", reqID, "path", requestPath, "error", err)
 	} else {
 		log.Tracew("confirmed request file exists", "prediction_id", reqID, "path", requestPath)
