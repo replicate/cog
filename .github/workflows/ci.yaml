@@ -143,6 +143,8 @@ jobs:
         with:
           go-version-file: go.mod
       - uses: astral-sh/setup-uv@v6
+      - name: Pre-create coglet venv
+        run: uv sync --project coglet --no-dev --extra test
       - name: Test coglet Go
         run: make test-coglet-go
 
