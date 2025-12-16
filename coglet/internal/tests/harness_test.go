@@ -247,35 +247,23 @@ func setupCogRuntimeServer(t *testing.T, cfg cogRuntimeServerConfig) (*httptest.
 		t.Logf("procedure mode")
 	}
 	t.Logf("Working directory: %s", tempDir)
-	// FIXME: This is for compatibility with the `cog_test` test harness while we migrate to in-process testing. This allows us
-	// to specify the python venvs and binary in the same way as for minimizing the blast radius of changes.
 
-	var pathEnv string
+	// Use uv to manage Python environments automatically.
+	// basePath points to coglet/, repoRoot points to the main cog repo.
+	repoRoot := path.Dir(basePath)
 
-	// SetupEnvs for downstream use
-	switch {
-	case *legacyCog && cfg.procedureMode:
-		pathEnv = path.Join(basePath, ".venv-procedure", "bin")
-		t.Logf("using legacy Cog with venv: %s", pathEnv)
-	case *legacyCog:
-		pathEnv = path.Join(basePath, ".venv-legacy", "bin")
-		t.Logf("using legacy Cog with venv: %s", pathEnv)
-	default:
-		pathEnv = path.Join(basePath, ".venv", "bin")
-		t.Logf("using cog with venv: %s", pathEnv)
-	}
-
-	pythonPathEnv := path.Join(basePath, "python")
+	// Build PythonCommand for coglet tests using uv run
+	// Use --project instead of --directory to avoid changing the working directory
+	// (the coglet runner needs to run in the tempDir where predict.py is located)
+	pythonCommand := []string{"uv", "run", "--project", basePath, "--no-dev", "--extra", "test", "python3"}
+	t.Logf("using uv with project: %s", basePath)
 
 	// NOTE(morgan): this is a special case, we need the IPCUrl which is homed on the server before we create the handler. Create a nil
 	// handler server and then set the handler after.
 	s := httptest.NewServer(nil)
 	t.Cleanup(s.Close)
 
-	envSet := map[string]string{
-		"PATH":       fmt.Sprintf("%s:%s", pathEnv, os.Getenv("PATH")),
-		"PYTHONPATH": pythonPathEnv,
-	}
+	envSet := make(map[string]string)
 	for k, v := range cfg.envSet {
 		envSet[k] = v
 	}
@@ -288,7 +276,7 @@ func setupCogRuntimeServer(t *testing.T, cfg cogRuntimeServerConfig) (*httptest.
 		IPCUrl:                    s.URL + "/_ipc",
 		EnvSet:                    envSet,
 		EnvUnset:                  cfg.envUnset,
-		PythonBinPath:             path.Join(pathEnv, "python3"),
+		PythonCommand:             pythonCommand,
 		MaxRunners:                cfg.maxRunners,
 		RunnerShutdownGracePeriod: cfg.runnerShutdownGracePeriod, // Use configured grace period or 0 for immediate cleanup
 	}
@@ -330,10 +318,10 @@ func setupCogRuntimeServer(t *testing.T, cfg cogRuntimeServerConfig) (*httptest.
 		if cfg.procedureMode {
 			t.Fatalf("procedure mode is not supported under legacy cog")
 		}
-		environ := []string{
-			fmt.Sprintf("PATH=%s", envSet["PATH"]),
-		}
-		port, err := startLegacyCogServer(t, ctx, path.Join(pathEnv, "python3"), tempDir, environ, cfg.uploadURL)
+		// Use uv run from repo root for legacy cog (the original Python cog package)
+		// Use --project instead of --directory to avoid changing the working directory
+		legacyPythonCmd := []string{"uv", "run", "--project", repoRoot, "python3"}
+		port, err := startLegacyCogServer(t, ctx, legacyPythonCmd, tempDir, cfg.uploadURL)
 		require.NoError(t, err)
 		target, _ := url.Parse(fmt.Sprintf("http://localhost:%d", port))
 		handler := httputil.NewSingleHostReverseProxy(target)
@@ -392,24 +380,21 @@ func setupCogRuntimeServer(t *testing.T, cfg cogRuntimeServerConfig) (*httptest.
 	return s, handler, svc
 }
 
-func startLegacyCogServer(t *testing.T, ctx context.Context, pythonPath, tempDir string, environ []string, uploadUrl string) (int, error) { //nolint:revive // always send T first, allow context to follow T
+func startLegacyCogServer(t *testing.T, ctx context.Context, pythonCmd []string, tempDir, uploadUrl string) (int, error) { //nolint:revive // always send T first, allow context to follow T
 	t.Helper()
-	args := []string{"-m", "cog.server.http"}
+	// pythonCmd is e.g. ["uv", "run", "--directory", "/path", "python3"]
+	// We append the Python args: -m cog.server.http [--upload-url=...]
+	pythonArgs := []string{"-m", "cog.server.http"}
 	if uploadUrl != "" {
-		args = append(args, fmt.Sprintf("--upload-url=%s", uploadUrl))
+		pythonArgs = append(pythonArgs, fmt.Sprintf("--upload-url=%s", uploadUrl))
 	}
 
-	cmd := exec.CommandContext(ctx, pythonPath, args...)
+	// Build command: pythonCmd[0] as executable, pythonCmd[1:] + pythonArgs as arguments
+	allArgs := append(pythonCmd[1:], pythonArgs...) //nolint:gocritic // intentional append to new slice
+	cmd := exec.CommandContext(ctx, pythonCmd[0], allArgs...)
 	cmd.Dir = tempDir
-	cmd.Env = environ
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
-	for _, env := range environ {
-		if strings.HasPrefix(env, "PORT=") {
-			t.Fatalf("PORT environment variable may not be set when starting legacy cog server")
-		}
-	}
-	cmd.Env = append(cmd.Env, "PORT=0", "PYTHONUNBUFFERED=1", "COG_LOG_LEVEL=DEBUG")
+	cmd.Env = append(os.Environ(), "PORT=0", "PYTHONUNBUFFERED=1", "COG_LOG_LEVEL=DEBUG")
 	stdErrLogs, err := cmd.StderrPipe()
 	require.NoError(t, err)
 	err = cmd.Start()

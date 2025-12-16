@@ -27,7 +27,7 @@ type Config struct {
 
 	// Runner configuration
 	MaxRunners                int
-	PythonBinPath             string
+	PythonCommand             []string // Command to invoke Python, e.g., ["python3"] or ["uv", "run", "--directory", "/path", "python3"]
 	RunnerShutdownGracePeriod time.Duration
 
 	// Cleanup configuration

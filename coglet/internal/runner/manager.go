@@ -124,6 +124,20 @@ func newManager(ctx context.Context, cfg config.Config, logger *logging.Logger) 
 	}
 }
 
+// buildPythonCmd constructs an exec.Cmd for invoking Python with the given arguments.
+// It uses cfg.PythonCommand if set, otherwise defaults to ["python3"].
+// The pythonArgs are appended to the command, e.g., ["-u", "-m", "coglet", ...].
+func (m *Manager) buildPythonCmd(ctx context.Context, pythonArgs []string) *exec.Cmd {
+	pythonCmd := m.cfg.PythonCommand
+	if len(pythonCmd) == 0 {
+		pythonCmd = []string{"python3"}
+	}
+
+	// Combine: pythonCmd[0] as executable, pythonCmd[1:] + pythonArgs as arguments
+	allArgs := append(pythonCmd[1:], pythonArgs...) //nolint:gocritic // intentional append to new slice
+	return exec.CommandContext(ctx, pythonCmd[0], allArgs...)
+}
+
 // Start initializes the manager
 func (m *Manager) Start(ctx context.Context) error {
 	log := m.logger.Sugar()
@@ -272,23 +286,16 @@ func (m *Manager) createDefaultRunner(ctx context.Context) (*Runner, error) {
 	log.Debugw("creating default runner",
 		"working_dir", workingDir,
 		"ipc_url", m.cfg.IPCUrl,
-		"python_bin", m.cfg.PythonBinPath,
+		"python_command", m.cfg.PythonCommand,
 	)
 
-	pythonPath := "python3"
-	if m.cfg.PythonBinPath != "" {
-		pythonPath = m.cfg.PythonBinPath
-	}
-
-	args := []string{
+	pythonArgs := []string{
 		"-u",
 		"-m", "coglet",
 		"--name", DefaultRunnerName,
 		"--ipc-url", m.cfg.IPCUrl,
 		"--working-dir", workingDir,
 	}
-
-	log.Debugw("runner command", "python_path", pythonPath, "args", args, "working_dir", workingDir)
 
 	tmpDir, err := os.MkdirTemp("", "cog-runner-tmp-")
 	if err != nil {
@@ -297,7 +304,8 @@ func (m *Manager) createDefaultRunner(ctx context.Context) (*Runner, error) {
 
 	// Derive the runtime context from the manager's context
 	runtimeContext, runtimeCancel := context.WithCancel(ctx)
-	cmd := exec.CommandContext(runtimeContext, pythonPath, args...) //nolint:gosec // expected subprocess launched with variable
+	cmd := m.buildPythonCmd(runtimeContext, pythonArgs)
+	log.Debugw("runner command", "cmd", cmd.String(), "working_dir", workingDir)
 	cmd.Dir = m.cfg.WorkingDirectory
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	env := mergeEnv(os.Environ(), m.cfg.EnvSet, m.cfg.EnvUnset)
@@ -624,12 +632,7 @@ func (m *Manager) createProcedureRunner(runnerName, procedureHash string) (*Runn
 	}
 
 	// Create subprocess command with proper env merging
-	pythonPath := "python3"
-	if m.cfg.PythonBinPath != "" {
-		pythonPath = m.cfg.PythonBinPath
-	}
-
-	args := []string{
+	pythonArgs := []string{
 		"-u",
 		"-m", "coglet",
 		"--name", runnerName,
@@ -644,7 +647,7 @@ func (m *Manager) createProcedureRunner(runnerName, procedureHash string) (*Runn
 
 	// Derive the runtime context from the manager's context
 	runtimeContext, runtimeCancel := context.WithCancel(m.ctx)
-	cmd := exec.CommandContext(runtimeContext, pythonPath, args...) //nolint:gosec // expected subprocess launched with variable
+	cmd := m.buildPythonCmd(runtimeContext, pythonArgs)
 	cmd.Dir = workingDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	env := mergeEnv(os.Environ(), m.cfg.EnvSet, m.cfg.EnvUnset)
