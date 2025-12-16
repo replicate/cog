@@ -330,7 +330,6 @@ func setupCogRuntimeServer(t *testing.T, cfg cogRuntimeServerConfig) (*httptest.
 		return s, nil, nil
 	}
 
-	// logger := NewTestLogger(t, "harness-test")
 	logger := loggingtest.NewTestLogger(t).Named("harness-test")
 
 	// Create handler with service shutdown function instead of test context cancel
@@ -390,8 +389,8 @@ func startLegacyCogServer(t *testing.T, ctx context.Context, pythonCmd []string,
 	}
 
 	// Build command: pythonCmd[0] as executable, pythonCmd[1:] + pythonArgs as arguments
-	allArgs := append(pythonCmd[1:], pythonArgs...) //nolint:gocritic // intentional append to new slice
-	cmd := exec.CommandContext(ctx, pythonCmd[0], allArgs...)
+	allArgs := append(pythonCmd[1:], pythonArgs...)           //nolint:gocritic // intentional append to new slice
+	cmd := exec.CommandContext(ctx, pythonCmd[0], allArgs...) //nolint:gosec // pythonCmd from test config
 	cmd.Dir = tempDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = append(os.Environ(), "PORT=0", "PYTHONUNBUFFERED=1", "COG_LOG_LEVEL=DEBUG")
@@ -521,7 +520,7 @@ func linkPythonModule(t *testing.T, basePath, tempDir, module string) {
 func healthCheck(t *testing.T, testServer *httptest.Server) server.HealthCheck {
 	t.Helper()
 	hcURL := testServer.URL + "/health-check"
-	resp, err := http.Get(hcURL)
+	resp, err := http.Get(hcURL) //nolint:gosec // URL from test server
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)

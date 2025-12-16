@@ -107,7 +107,7 @@ func (r *Runner) processResponseFiles(predictionID string, pending *PendingPredi
 
 		// Verify it matches the full regex pattern
 		m := ResponseRegex.FindStringSubmatch(entry.Name())
-		if m == nil || m[1] != predictionID {
+		if len(m) < 2 || m[1] != predictionID {
 			continue
 		}
 

@@ -89,45 +89,47 @@ func ProcessInputPaths(input any, doc *openapi3.T, paths *[]string, fn func(stri
 	return input, nil
 }
 
-func handlePath(json any, paths *[]string, fn func(string, *[]string) (string, error)) (any, error) {
-	if x, ok := json.(string); ok {
-		return fn(x, paths)
-	} else if xs, ok := json.([]any); ok {
-		for i, x := range xs {
+func handlePath(jsonVal any, paths *[]string, fn func(string, *[]string) (string, error)) (any, error) {
+	switch v := jsonVal.(type) {
+	case string:
+		return fn(v, paths)
+	case []any:
+		for i, x := range v {
 			if s, ok := x.(string); ok {
 				o, err := fn(s, paths)
 				if err != nil {
 					return nil, err
 				}
-				xs[i] = o
+				v[i] = o
 			} else {
-				o, err := handlePath(xs[i], paths, fn)
+				o, err := handlePath(v[i], paths, fn)
 				if err != nil {
 					return nil, err
 				}
-				xs[i] = o
+				v[i] = o
 			}
 		}
-		return xs, nil
-	} else if m, ok := json.(map[string]any); ok {
-		for key, value := range m {
+		return v, nil
+	case map[string]any:
+		for key, value := range v {
 			if s, ok := value.(string); ok {
 				o, err := fn(s, paths)
 				if err != nil {
 					return nil, err
 				}
-				m[key] = o
+				v[key] = o
 			} else {
-				o, err := handlePath(m[key], paths, fn)
+				o, err := handlePath(v[key], paths, fn)
 				if err != nil {
 					return nil, err
 				}
-				m[key] = o
+				v[key] = o
 			}
 		}
-		return m, nil
+		return v, nil
+	default:
+		return jsonVal, nil
 	}
-	return json, nil
 }
 
 // Base64ToInput converts base64 data URLs to temporary files

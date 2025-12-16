@@ -134,8 +134,8 @@ func (m *Manager) buildPythonCmd(ctx context.Context, pythonArgs []string) *exec
 	}
 
 	// Combine: pythonCmd[0] as executable, pythonCmd[1:] + pythonArgs as arguments
-	allArgs := append(pythonCmd[1:], pythonArgs...) //nolint:gocritic // intentional append to new slice
-	return exec.CommandContext(ctx, pythonCmd[0], allArgs...)
+	allArgs := append(pythonCmd[1:], pythonArgs...)           //nolint:gocritic // intentional append to new slice
+	return exec.CommandContext(ctx, pythonCmd[0], allArgs...) //nolint:gosec // pythonCmd from trusted config
 }
 
 // Start initializes the manager
