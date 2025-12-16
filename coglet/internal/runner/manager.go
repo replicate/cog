@@ -405,17 +405,21 @@ func (m *Manager) allocatePrediction(runner *Runner, req PredictionRequest) { //
 			if err := pending.response.finalizeResponse(); err != nil {
 				log.Errorw("failed to finalize response", "error", err)
 			}
+			pending.mu.Unlock()
 
-			// Send terminal webhook if prediction completed
+			// Remove from pending map BEFORE sending webhook to avoid race condition
+			// where webhook receiver starts a new prediction before cleanup completes.
+			// This ensures findRunnerWithCapacity sees accurate capacity.
+			runner.mu.Lock()
+			delete(runner.pending, req.ID)
+			runner.mu.Unlock()
+
+			// Send terminal webhook after cleanup so new predictions can be accepted
+			pending.mu.Lock()
 			if err := m.sendTerminalWebhook(pending); err != nil {
 				log.Errorw("failed to send terminal webhook", "error", err)
 			}
 			pending.mu.Unlock()
-
-			// Remove from pending map and cancel context
-			runner.mu.Lock()
-			delete(runner.pending, req.ID)
-			runner.mu.Unlock()
 
 			// In one-shot mode, stop runner after prediction completes to trigger cleanup
 			if m.cfg.OneShot {
