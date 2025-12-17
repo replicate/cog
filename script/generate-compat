@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+#
+# Regenerate CUDA/PyTorch/TensorFlow compatibility matrices.
+#
+# Usage:
+#   script/generate-compat          # regenerate all matrices
+#   script/generate-compat cuda     # regenerate CUDA base images only
+#   script/generate-compat torch    # regenerate PyTorch compatibility only
+#   script/generate-compat tensorflow  # regenerate TensorFlow compatibility only
+#
+# The generated JSON files are checked into source control and only need
+# to be regenerated when adding support for new framework versions.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+CONFIG_DIR="${ROOT_DIR}/pkg/config"
+
+generate_cuda() {
+    echo "Generating CUDA base images..."
+    go run "${ROOT_DIR}/tools/compatgen/main.go" cuda -o "${CONFIG_DIR}/cuda_base_images.json"
+}
+
+generate_torch() {
+    echo "Generating PyTorch compatibility matrix..."
+    go run "${ROOT_DIR}/tools/compatgen/main.go" torch -o "${CONFIG_DIR}/torch_compatibility_matrix.json"
+}
+
+generate_tensorflow() {
+    echo "Generating TensorFlow compatibility matrix..."
+    go run "${ROOT_DIR}/tools/compatgen/main.go" tensorflow -o "${CONFIG_DIR}/tf_compatibility_matrix.json"
+}
+
+target="${1:-all}"
+
+case "$target" in
+    cuda)
+        generate_cuda
+        ;;
+    torch)
+        generate_torch
+        ;;
+    tensorflow|tf)
+        generate_tensorflow
+        ;;
+    all)
+        generate_cuda
+        generate_torch
+        generate_tensorflow
+        ;;
+    *)
+        echo "Unknown target: $target"
+        echo "Usage: $0 [cuda|torch|tensorflow|all]"
+        exit 1
+        ;;
+esac
+
+echo "Done."
