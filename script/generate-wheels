@@ -6,25 +6,46 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 DIST_DIR="${ROOT_DIR}/dist"
 EMBED_DIR="${ROOT_DIR}/pkg/wheels"
 
-mkdir -p "${DIST_DIR}"
+mkdir -p "${DIST_DIR}" "${EMBED_DIR}"
 
-# Build cog wheel
-echo "Building cog wheel..."
-uv build --wheel --out-dir="${DIST_DIR}" "${ROOT_DIR}"
-mv "${DIST_DIR}"/cog-*.whl "${DIST_DIR}/cog.whl"
+# Resolve COG_WHEEL path (may be relative to repo root, not cwd)
+resolve_wheel_path() {
+    local wheel_path="$1"
+    if [[ -f "${wheel_path}" ]]; then
+        echo "${wheel_path}"
+    elif [[ -f "${ROOT_DIR}/${wheel_path}" ]]; then
+        echo "${ROOT_DIR}/${wheel_path}"
+    else
+        echo ""
+    fi
+}
 
-# Build coglet-server binary (linux/amd64 only)
-echo "Building coglet-server..."
-"${SCRIPT_DIR}/build-coglet-server"
+# Handle cog wheel
+COG_WHEEL_RESOLVED="$(resolve_wheel_path "${COG_WHEEL:-}")"
+if [[ -n "${COG_WHEEL_RESOLVED}" ]]; then
+    echo "Using pre-built cog wheel: ${COG_WHEEL_RESOLVED}"
+    cp "${COG_WHEEL_RESOLVED}" "${EMBED_DIR}/cog.whl"
+else
+    echo "Building cog wheel..."
+    uv build --wheel --out-dir="${DIST_DIR}" "${ROOT_DIR}"
+    mv "${DIST_DIR}"/cog-*.whl "${DIST_DIR}/cog.whl"
+    cp "${DIST_DIR}/cog.whl" "${EMBED_DIR}/"
+fi
 
-# Build coglet wheel
-echo "Building coglet wheel..."
-cd "${ROOT_DIR}/coglet" && uv build --wheel --out-dir="${DIST_DIR}" .
-mv "${DIST_DIR}"/coglet-*.whl "${DIST_DIR}/coglet.whl"
+# Handle coglet wheel
+COGLET_WHEEL_RESOLVED="$(resolve_wheel_path "${COGLET_WHEEL:-}")"
+if [[ -n "${COGLET_WHEEL_RESOLVED}" ]]; then
+    echo "Using pre-built coglet wheel: ${COGLET_WHEEL_RESOLVED}"
+    cp "${COGLET_WHEEL_RESOLVED}" "${EMBED_DIR}/coglet.whl"
+else
+    # Build coglet-server binary (linux/amd64 only)
+    echo "Building coglet-server..."
+    "${SCRIPT_DIR}/build-coglet-server"
 
-# Copy to pkg/wheels for embedding
-echo "Copying wheels for embedding..."
-cp "${DIST_DIR}/cog.whl" "${EMBED_DIR}/"
-cp "${DIST_DIR}/coglet.whl" "${EMBED_DIR}/"
+    echo "Building coglet wheel..."
+    cd "${ROOT_DIR}/coglet" && uv build --wheel --out-dir="${DIST_DIR}" .
+    mv "${DIST_DIR}"/coglet-*.whl "${DIST_DIR}/coglet.whl"
+    cp "${DIST_DIR}/coglet.whl" "${EMBED_DIR}/"
+fi
 
-echo "Done. Wheels in ${DIST_DIR}/"
+echo "Done. Wheels in ${EMBED_DIR}/"

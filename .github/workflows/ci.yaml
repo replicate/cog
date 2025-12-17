@@ -91,6 +91,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - uses: astral-sh/setup-uv@v7
       - name: Build
         run: make cog
       - name: Test
