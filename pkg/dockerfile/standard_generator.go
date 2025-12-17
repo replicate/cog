@@ -461,18 +461,18 @@ func (g *StandardGenerator) installCog() (string, error) {
 
 	// Determine which wheel to install based on COG_WHEEL env var and cog_runtime flag
 	cogRuntimeEnabled := g.Config.Build.CogRuntime != nil && *g.Config.Build.CogRuntime
-	wheelConfig := GetWheelConfig(cogRuntimeEnabled)
+	wheelConfig := wheels.GetWheelConfig(cogRuntimeEnabled)
 
 	switch wheelConfig.Source {
-	case WheelSourceCog:
+	case wheels.WheelSourceCog:
 		return g.installEmbeddedCogWheel()
-	case WheelSourceCogletEmbedded:
+	case wheels.WheelSourceCogletEmbedded:
 		return g.installEmbeddedCogletWheel()
-	case WheelSourceCogletAlpha:
+	case wheels.WheelSourceCogletAlpha:
 		return g.installCogletAlpha()
-	case WheelSourceURL:
+	case wheels.WheelSourceURL:
 		return g.installWheelFromURL(wheelConfig.URL)
-	case WheelSourceFile:
+	case wheels.WheelSourceFile:
 		return g.installWheelFromFile(wheelConfig.Path)
 	default:
 		return "", fmt.Errorf("unknown wheel source: %v", wheelConfig.Source)
