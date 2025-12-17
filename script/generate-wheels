@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+DIST_DIR="${ROOT_DIR}/dist"
+EMBED_DIR="${ROOT_DIR}/pkg/wheels"
+
+mkdir -p "${DIST_DIR}"
+
+# Build cog wheel
+echo "Building cog wheel..."
+uv build --wheel --out-dir="${DIST_DIR}" "${ROOT_DIR}"
+mv "${DIST_DIR}"/cog-*.whl "${DIST_DIR}/cog.whl"
+
+# Build coglet-server binary (linux/amd64 only)
+echo "Building coglet-server..."
+"${SCRIPT_DIR}/build-coglet-server"
+
+# Build coglet wheel
+echo "Building coglet wheel..."
+cd "${ROOT_DIR}/coglet" && uv build --wheel --out-dir="${DIST_DIR}" .
+mv "${DIST_DIR}"/coglet-*.whl "${DIST_DIR}/coglet.whl"
+
+# Copy to pkg/wheels for embedding
+echo "Copying wheels for embedding..."
+cp "${DIST_DIR}/cog.whl" "${EMBED_DIR}/"
+cp "${DIST_DIR}/coglet.whl" "${EMBED_DIR}/"
+
+echo "Done. Wheels in ${DIST_DIR}/"

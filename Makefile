@@ -15,10 +15,7 @@ GOLINT := $(GO) tool golangci-lint
 UV ?= uv
 TOX := $(UV) run tox
 
-COG_GO_SOURCE := $(shell find cmd pkg -type f)
-COG_PYTHON_SOURCE := $(shell find python/cog -type f -name '*.py')
-COGLET_GO_SOURCE := $(shell find coglet -type f -name '*.go')
-COGLET_PYTHON_SOURCE := $(shell find coglet/python -type f -name '*.py')
+COG_GO_SOURCE := $(shell find cmd pkg -type f -name '*.go')
 
 COG_BINARIES := cog base-image
 
@@ -27,30 +24,7 @@ default: all
 .PHONY: all
 all: cog
 
-.PHONY: wheel
-wheel: pkg/dockerfile/embed/.wheel
-
-ifdef COG_WHEEL
-pkg/dockerfile/embed/.wheel: $(COG_WHEEL)
-	@mkdir -p pkg/dockerfile/embed
-	@rm -f pkg/dockerfile/embed/*.whl # there can only be one embedded wheel
-	@echo "Using prebuilt COG_WHEEL $<"
-	cp $< pkg/dockerfile/embed/
-	@touch $@
-else
-pkg/dockerfile/embed/.wheel: $(COG_PYTHON_SOURCE)
-	@mkdir -p pkg/dockerfile/embed
-	@rm -f pkg/dockerfile/embed/*.whl # there can only be one embedded wheel
-	$(UV) build --wheel --out-dir=pkg/dockerfile/embed .
-	@touch $@
-
-define COG_WHEEL
-    $(shell find pkg/dockerfile/embed -type f -name '*.whl')
-endef
-
-endif
-
-$(COG_BINARIES): $(COG_GO_SOURCE) pkg/dockerfile/embed/.wheel
+$(COG_BINARIES): $(COG_GO_SOURCE) generate
 	@echo Building $@
 	@if git name-rev --name-only --tags HEAD | grep -qFx undefined; then \
 		GOFLAGS=-buildvcs=false $(GORELEASER) build --clean --snapshot --single-target --id $@ --output $@; \
@@ -65,11 +39,11 @@ install: $(COG_BINARIES)
 
 .PHONY: clean
 clean: clean-coglet
-	rm -rf .tox build dist pkg/dockerfile/embed
+	rm -rf .tox build dist pkg/wheels/*.whl
 	rm -f $(COG_BINARIES)
 
 .PHONY: test-go
-test-go: pkg/dockerfile/embed/.wheel
+test-go: generate
 	$(GO) tool gotestsum -- -short -timeout 1200s -parallel 5 $$(go list ./... | grep -v 'coglet/') $(ARGS)
 
 .PHONY: test-integration
@@ -78,8 +52,8 @@ test-integration: $(COG_BINARIES)
 	PATH="$(PWD):$(PATH)" $(TOX) -e integration
 
 .PHONY: test-python
-test-python: pkg/dockerfile/embed/.wheel
-	$(TOX) run --installpkg $(COG_WHEEL) -f tests
+test-python: generate
+	$(TOX) run --installpkg dist/cog.whl -f tests
 
 .PHONY: test
 test: test-go test-python test-integration
@@ -94,7 +68,7 @@ generate:
 	$(GO) generate ./...
 
 .PHONY: vet
-vet: pkg/dockerfile/embed/.wheel
+vet: generate
 	$(GO) vet ./...
 
 .PHONY: check-fmt
@@ -103,9 +77,9 @@ check-fmt:
 	@test -z $$($(GOIMPORTS) -l .)
 
 .PHONY: lint
-lint: pkg/dockerfile/embed/.wheel check-fmt vet
+lint: generate check-fmt vet
 	$(GOLINT) run ./...
-	$(TOX) run --installpkg $(COG_WHEEL) -e lint,typecheck-pydantic2
+	$(TOX) run --installpkg dist/cog.whl -e lint,typecheck-pydantic2
 
 .PHONY: run-docs-server
 run-docs-server:
@@ -121,30 +95,6 @@ gen-mocks:
 # =============================================================================
 # Coglet targets
 # =============================================================================
-
-COGLET_BINARY_DIR := coglet/python/cog
-
-# Build coglet-server binary for a specific OS/ARCH
-# Usage: make coglet-server-binary GOOS=linux GOARCH=amd64
-.PHONY: coglet-server-binary
-coglet-server-binary: $(COGLET_GO_SOURCE)
-	CGO_ENABLED=0 $(GO) build -o $(COGLET_BINARY_DIR)/cog-$(GOOS)-$(GOARCH) ./coglet/cmd/coglet-server
-
-# Build all coglet-server binaries (for wheel embedding)
-.PHONY: coglet-server-binaries
-coglet-server-binaries: $(COGLET_GO_SOURCE)
-	@rm -f $(COGLET_BINARY_DIR)/cog-*
-	@for os in darwin linux; do \
-		for arch in amd64 arm64; do \
-			echo "Building coglet-server for $$os/$$arch"; \
-			CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -o $(COGLET_BINARY_DIR)/cog-$$os-$$arch ./coglet/cmd/coglet-server; \
-		done; \
-	done
-
-# Build coglet wheel (includes embedded Go binaries)
-.PHONY: coglet-wheel
-coglet-wheel: coglet-server-binaries
-	cd coglet && $(UV) build --wheel --out-dir=dist .
 
 # Run coglet Go tests
 .PHONY: test-coglet-go
@@ -163,5 +113,4 @@ test-coglet: test-coglet-go test-coglet-python
 # Clean coglet build artifacts
 .PHONY: clean-coglet
 clean-coglet:
-	rm -rf coglet/dist coglet/build
-	rm -f $(COGLET_BINARY_DIR)/cog-*
+	rm -rf coglet/dist coglet/build coglet/python/cog/bin

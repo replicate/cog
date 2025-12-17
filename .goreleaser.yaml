@@ -2,7 +2,7 @@ version: 2
 before:
   hooks:
     - go mod tidy
-    - make wheel
+    - go generate ./pkg/wheels/...
 dist: ./dist/go
 env:
   - CGO_ENABLED=0

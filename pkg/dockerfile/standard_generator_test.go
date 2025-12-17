@@ -13,6 +13,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/registry/registrytest"
+	"github.com/replicate/cog/pkg/wheels"
 )
 
 func testTini() string {
@@ -29,14 +30,8 @@ ENTRYPOINT ["/sbin/tini", "--"]
 }
 
 func getWheelName() string {
-	files, err := CogEmbed.ReadDir("embed")
-	if err != nil {
-		panic(err)
-	}
-	if len(files) != 1 {
-		panic("couldn't find wheel embed or too many files in embed")
-	}
-	return files[0].Name()
+	filename, _ := wheels.ReadCogWheel()
+	return filename
 }
 
 func testInstallCog(relativeTmpDir string, stripped bool) string {
