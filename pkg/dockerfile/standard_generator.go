@@ -459,10 +459,28 @@ func (g *StandardGenerator) installCog() (string, error) {
 		return "", nil
 	}
 
-	if g.Config.Build.CogRuntime != nil && *g.Config.Build.CogRuntime {
-		return g.installCogRuntime()
-	}
+	// Determine which wheel to install based on COG_WHEEL env var and cog_runtime flag
+	cogRuntimeEnabled := g.Config.Build.CogRuntime != nil && *g.Config.Build.CogRuntime
+	wheelConfig := GetWheelConfig(cogRuntimeEnabled)
 
+	switch wheelConfig.Source {
+	case WheelSourceCog:
+		return g.installEmbeddedCogWheel()
+	case WheelSourceCogletEmbedded:
+		return g.installEmbeddedCogletWheel()
+	case WheelSourceCogletAlpha:
+		return g.installCogletAlpha()
+	case WheelSourceURL:
+		return g.installWheelFromURL(wheelConfig.URL)
+	case WheelSourceFile:
+		return g.installWheelFromFile(wheelConfig.Path)
+	default:
+		return "", fmt.Errorf("unknown wheel source: %v", wheelConfig.Source)
+	}
+}
+
+// installEmbeddedCogWheel installs the embedded cog wheel (default for cog_runtime: false)
+func (g *StandardGenerator) installEmbeddedCogWheel() (string, error) {
 	filename, data := wheels.ReadCogWheel()
 	lines, containerPath, err := g.writeTemp(filename, data)
 	if err != nil {
@@ -478,7 +496,34 @@ func (g *StandardGenerator) installCog() (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-func (g *StandardGenerator) installCogRuntime() (string, error) {
+// installEmbeddedCogletWheel installs the embedded coglet wheel (when COG_WHEEL=coglet)
+func (g *StandardGenerator) installEmbeddedCogletWheel() (string, error) {
+	// Coglet requires major.minor Python version format
+	if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
+		return "", fmt.Errorf("Python version must be <major>.<minor> for coglet")
+	}
+
+	filename, data := wheels.ReadCogletWheel()
+	lines, containerPath, err := g.writeTemp(filename, data)
+	if err != nil {
+		return "", err
+	}
+
+	cmds := []string{
+		"ENV R8_COG_VERSION=coglet",
+		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
+	}
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + containerPath
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
+	lines = append(lines, cmds...)
+	lines = append(lines, CFlags, pipInstallLine, "ENV CFLAGS=")
+	return strings.Join(lines, "\n"), nil
+}
+
+// installCogletAlpha installs coglet from the pinned URL (default for cog_runtime: true)
+func (g *StandardGenerator) installCogletAlpha() (string, error) {
 	// We need fast-* compliant Python version to reconstruct coglet venv PYTHONPATH
 	if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
 		return "", fmt.Errorf("Python version must be <major>.<minor>")
@@ -489,6 +534,62 @@ func (g *StandardGenerator) installCogRuntime() (string, error) {
 		"RUN pip install " + PinnedCogletURL,
 	}
 	return strings.Join(cmds, "\n"), nil
+}
+
+// installWheelFromURL installs a wheel from a URL (when COG_WHEEL=https://...)
+func (g *StandardGenerator) installWheelFromURL(url string) (string, error) {
+	// Set coglet env vars if this looks like a coglet wheel
+	var envLines []string
+	if strings.Contains(url, "coglet") {
+		if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
+			return "", fmt.Errorf("Python version must be <major>.<minor> for coglet")
+		}
+		envLines = []string{
+			"ENV R8_COG_VERSION=coglet",
+			"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
+		}
+	}
+
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + url
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
+
+	lines := append(envLines, CFlags, pipInstallLine, "ENV CFLAGS=")
+	return strings.Join(lines, "\n"), nil
+}
+
+// installWheelFromFile installs a wheel from a local file (when COG_WHEEL=/path/to/file.whl)
+func (g *StandardGenerator) installWheelFromFile(path string) (string, error) {
+	// Read the local wheel file
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to read wheel file %s: %w", path, err)
+	}
+
+	filename := filepath.Base(path)
+	lines, containerPath, err := g.writeTemp(filename, data)
+	if err != nil {
+		return "", err
+	}
+
+	// Set coglet env vars if this looks like a coglet wheel
+	if strings.Contains(filename, "coglet") {
+		if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
+			return "", fmt.Errorf("Python version must be <major>.<minor> for coglet")
+		}
+		lines = append(lines,
+			"ENV R8_COG_VERSION=coglet",
+			"ENV R8_PYTHON_VERSION="+g.Config.Build.PythonVersion,
+		)
+	}
+
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + containerPath
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
+	lines = append(lines, CFlags, pipInstallLine, "ENV CFLAGS=")
+	return strings.Join(lines, "\n"), nil
 }
 
 func (g *StandardGenerator) pipInstalls() (string, error) {
