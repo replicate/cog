@@ -26,6 +26,20 @@ jobs:
           fetch-depth: 0 # needed for setuptools_scm version determination
       - uses: hynek/build-and-inspect-python-package@v2
         id: baipp
+      # Build coglet wheel with embedded Go binary
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: astral-sh/setup-uv@v7
+      - name: Build coglet-server binary
+        run: script/build-coglet-server
+      - name: Build coglet wheel
+        run: uv build --wheel --out-dir=dist ./coglet
+      - name: Upload coglet wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: CogletWheel
+          path: dist/coglet-*.whl
     outputs:
       python-versions: ${{ steps.baipp.outputs.supported_python_classifiers_json_array }}
 
@@ -34,13 +48,11 @@ jobs:
     needs: build-python
     runs-on: ubuntu-latest-8-cores
     steps:
-      - name: Download pre-built packages
+      - name: Download built wheels
         uses: actions/download-artifact@v6
         with:
-          name: Packages
           path: dist
-      - name: Set COG_WHEEL
-        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
+          merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: actions/setup-go@v5
@@ -81,17 +93,14 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # needed for goreleaser version determination
-      - name: Download pre-built packages
+      - name: Download built wheels
         uses: actions/download-artifact@v6
         with:
-          name: Packages
           path: dist
-      - name: Set COG_WHEEL
-        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
+          merge-multiple: true
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: astral-sh/setup-uv@v7
       - name: Build
         run: make cog
       - name: Test
@@ -107,13 +116,11 @@ jobs:
         pydantic: ["1", "2"]
         python-version: ${{ fromJson(needs.build-python.outputs.python-versions) }}
     steps:
-      - name: Download pre-built packages
+      - name: Download built wheels
         uses: actions/download-artifact@v6
         with:
-          name: Packages
           path: dist
-      - name: Set COG_WHEEL
-        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
+          merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: actions/setup-python@v6
@@ -128,7 +135,7 @@ jobs:
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
       - name: Test
-        run: python -Im tox run --installpkg "$COG_WHEEL" -e ${{ env.TOX_PYTHON }}-pydantic${{ matrix.pydantic }}-tests
+        run: python -Im tox run --installpkg dist/cog-*.whl -e ${{ env.TOX_PYTHON }}-pydantic${{ matrix.pydantic }}-tests
 
   # ==========================================================================
   # Coglet tests (Go server + Python SDK for the coglet runtime)
@@ -199,13 +206,11 @@ jobs:
           registry: index.docker.io
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Download pre-built packages
+      - name: Download built wheels
         uses: actions/download-artifact@v6
         with:
-          name: Packages
           path: dist
-      - name: Set COG_WHEEL
-        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
+          merge-multiple: true
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -232,13 +237,11 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # needed for goreleaser version determination
-      - name: Download pre-built packages
+      - name: Download built wheels
         uses: actions/download-artifact@v6
         with:
-          name: Packages
           path: dist
-      - name: Set COG_WHEEL
-        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
+          merge-multiple: true
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod

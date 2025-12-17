@@ -37,6 +37,10 @@ install: $(COG_BINARIES)
 	$(INSTALL) -d $(DESTDIR)$(BINDIR)
 	$(INSTALL) $< $(DESTDIR)$(BINDIR)/$<
 
+.PHONY: wheel
+wheel:
+	script/build-wheels
+
 .PHONY: clean
 clean: clean-coglet
 	rm -rf .tox build dist pkg/wheels/*.whl

@@ -6,7 +6,8 @@ import (
 	"strings"
 )
 
-//go:generate ../../script/generate-wheels
+//go:generate sh -c "cp ../../dist/cog-*.whl cog.whl"
+//go:generate sh -c "cp ../../dist/coglet-*.whl coglet.whl"
 
 //go:embed cog.whl
 var cogWheel []byte
