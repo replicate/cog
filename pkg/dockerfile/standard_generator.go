@@ -555,8 +555,8 @@ func (g *StandardGenerator) installWheelFromURL(url string) (string, error) {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
 
-	lines := append(envLines, CFlags, pipInstallLine, "ENV CFLAGS=")
-	return strings.Join(lines, "\n"), nil
+	envLines = append(envLines, CFlags, pipInstallLine, "ENV CFLAGS=")
+	return strings.Join(envLines, "\n"), nil
 }
 
 // installWheelFromFile installs a wheel from a local file (when COG_WHEEL=/path/to/file.whl)
