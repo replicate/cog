@@ -1,0 +1,82 @@
+[project]
+name = 'coglet'
+dynamic = ['version']
+description = 'Minimum viable Cog runtime'
+requires-python = '>=3.9'
+classifiers = [
+  'Programming Language :: Python :: 3.9',
+  'Programming Language :: Python :: 3.10',
+  'Programming Language :: Python :: 3.11',
+  'Programming Language :: Python :: 3.12',
+  'Programming Language :: Python :: 3.13',
+]
+dependencies = ["typing_extensions>=4.15"]
+
+[project.optional-dependencies]
+dev = [
+    'build',
+    'ipython',
+    'mypy==1.16.0', # pinned to fix CI
+    'nox',
+    'ruff',
+    'setuptools',
+]
+
+test = [
+    'openai',
+    'pytest-cov',
+    'pytest',
+    'pytest-asyncio',
+    'pytest-xdist',
+    'tqdm',
+]
+
+provided = [
+    'pydantic',
+]
+
+[build-system]
+requires = ['setuptools', 'setuptools-scm']
+build-backend = 'setuptools.build_meta'
+
+[tool.check-wheel-contents]
+ignore = ['W009', 'W002']
+
+[tool.pytest.ini_options]
+addopts = [
+    '-v',
+    '--cov',
+    '--cov-report=term',
+    '--cov-report=html',
+]
+asyncio_default_fixture_loop_scope = 'function'
+filterwarnings = [
+    'ignore::ImportWarning',
+]
+testpaths = [
+    'python',
+]
+
+[tool.ruff]
+src = ['python']
+exclude = [
+    "*.pyi",
+]
+
+[tool.ruff.format]
+quote-style = 'single'
+
+[tool.ruff.lint]
+extend-select = ['I']
+
+[tool.setuptools.packages.find]
+where = ['python']
+exclude = ['tests*']
+
+[tool.setuptools.package-data]
+'cog' = ['cog-*', '**/*.pyi']
+'coglet' = ['*.pyi']
+
+[tool.setuptools_scm]
+root = '..'
+version_file = "python/coglet/_version.py"
