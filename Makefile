@@ -57,7 +57,7 @@ test-integration: $(COG_BINARIES)
 
 .PHONY: test-python
 test-python: generate
-	$(TOX) run --installpkg dist/cog.whl -f tests
+	$(TOX) run --installpkg $$(ls dist/cog-*.whl) -f tests
 
 .PHONY: test
 test: test-go test-python test-integration
@@ -83,7 +83,7 @@ check-fmt:
 .PHONY: lint
 lint: generate check-fmt vet
 	$(GOLINT) run ./...
-	$(TOX) run --installpkg dist/cog.whl -e lint,typecheck-pydantic2
+	$(TOX) run --installpkg $$(ls dist/cog-*.whl) -e lint,typecheck-pydantic2
 
 .PHONY: run-docs-server
 run-docs-server:
