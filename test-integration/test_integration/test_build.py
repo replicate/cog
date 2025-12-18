@@ -219,7 +219,7 @@ def test_python_37_deprecated(docker_image, cog_binary):
     )
     assert build_process.returncode > 0
     assert (
-        "minimum supported Python version is 3.8. requested 3.7"
+        "minimum supported Python version is 3.9. requested 3.7"
         in build_process.stderr.decode()
     )
 
