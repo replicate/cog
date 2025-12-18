@@ -192,10 +192,14 @@ jobs:
 
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-integration-matrix:
-    name: "Test integration Matrix"
+    name: "Test integration (${{ matrix.runtime }})"
     needs: build-python
     runs-on: ubuntu-latest-16-cores
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [cog, coglet]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -221,6 +225,8 @@ jobs:
       - name: Prepare tox
         run: uv pip install --system tox tox-uv
       - name: Test
+        env:
+          COG_WHEEL: ${{ matrix.runtime }}
         run: make test-integration
 
   release:
