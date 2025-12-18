@@ -1,6 +1,7 @@
 package wheels
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -8,13 +9,15 @@ import (
 
 func TestReadCogWheel(t *testing.T) {
 	filename, data := ReadCogWheel()
-	require.Equal(t, "cog.whl", filename)
+	require.True(t, strings.HasPrefix(filename, "cog-"), "filename should start with 'cog-', got: %s", filename)
+	require.True(t, strings.HasSuffix(filename, ".whl"), "filename should end with '.whl', got: %s", filename)
 	require.Greater(t, len(data), 10000)
 }
 
 func TestReadCogletWheel(t *testing.T) {
 	filename, data := ReadCogletWheel()
-	require.Equal(t, "coglet.whl", filename)
+	require.True(t, strings.HasPrefix(filename, "coglet-"), "filename should start with 'coglet-', got: %s", filename)
+	require.True(t, strings.HasSuffix(filename, ".whl"), "filename should end with '.whl', got: %s", filename)
 	require.Greater(t, len(data), 1000000)
 }
 
