@@ -27,7 +27,7 @@ def test_build_names_uses_image_option_in_cog_yaml(tmpdir, docker_image, cog_bin
         cog_yaml = f"""
 image: {docker_image}
 build:
-  python_version: 3.8
+  python_version: 3.9
 predict: predict.py:Predictor
 """
         f.write(cog_yaml)
@@ -102,7 +102,7 @@ def test_build_gpu_model_on_cpu(tmpdir, docker_image, cog_binary):
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
 build:
-  python_version: 3.8
+  python_version: 3.9
   gpu: true
 predict: predict.py:Predictor
 """
@@ -167,7 +167,7 @@ class Predictor(BasePredictor):
     assert len(labels["run.cog.version"]) > 0
     assert json.loads(labels["run.cog.config"]) == {
         "build": {
-            "python_version": "3.8",
+            "python_version": "3.9",
             "gpu": True,
             "cuda": "11.8",
             "cudnn": "8",

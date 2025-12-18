@@ -10,7 +10,7 @@ func TestValidateConfig(t *testing.T) {
 	config := &Config{
 		Build: &Build{
 			GPU:           true,
-			PythonVersion: "3.8",
+			PythonVersion: "3.9",
 			PythonPackages: []string{
 				"tensorflow==1.15.0",
 				"foo==1.0.0",
@@ -28,7 +28,7 @@ func TestValidateSuccess(t *testing.T) {
   system_packages:
     - "libgl1-mesa-glx"
     - "libglib2.0-0"
-  python_version: "3.8"
+  python_version: "3.9"
   python_packages:
     - "torch==1.8.1"`
 
@@ -56,7 +56,7 @@ func TestValidateBuildIsRequired(t *testing.T) {
   system_packages:
     - "libgl1-mesa-glx"
     - "libglib2.0-0"
-  python_version: "3.8"
+  python_version: "3.9"
   python_packages:
     - "torch==1.8.1"`
 
@@ -68,7 +68,7 @@ func TestValidateBuildIsRequired(t *testing.T) {
 func TestValidatePythonVersionIsRequired(t *testing.T) {
 	config := `build:
   gpu: true
-  python_versions: "3.8"
+  python_versions: "3.9"
   system_packages:
     - "libgl1-mesa-glx"
     - "libglib2.0-0"
@@ -83,7 +83,7 @@ func TestValidatePythonVersionIsRequired(t *testing.T) {
 func TestValidateNullListsAllowed(t *testing.T) {
 	config := `build:
   gpu: true
-  python_version: "3.8"
+  python_version: "3.9"
   system_packages:
   python_packages:
   run:`
