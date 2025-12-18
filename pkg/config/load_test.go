@@ -10,7 +10,7 @@ import (
 
 const testConfig = `
 build:
-  python_version: "3.8"
+  python_version: "3.9"
   python_requirements: requirements.txt
   system_packages:
     - libgl1-mesa-glx

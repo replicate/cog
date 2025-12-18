@@ -56,9 +56,9 @@ func (m MonobaseMatrix) DefaultCudnnVersion() string {
 }
 
 func (m MonobaseMatrix) IsSupported(python string, torch string, cuda string) bool {
+	// Python 3.8 support was removed (EOL October 2024)
+	// Config validation will reject 3.8 before we get here, but keep check for safety
 	if python == "3.8" {
-		// coglet does not support Python 3.8, so we cannot use it for fast-push
-		// even though it's in the matrix for older models
 		return false
 	}
 	if torch == "" {

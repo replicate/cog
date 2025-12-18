@@ -18,16 +18,16 @@ func TestBaseImageName(t *testing.T) {
 		torch    string
 		expected string
 	}{
-		{"", "3.8", "",
-			"r8.im/cog-base:python3.8"},
-		{"", "3.8", "2.1",
-			"r8.im/cog-base:python3.8-torch2.1.2"},
-		{"12.1", "3.8", "",
-			"r8.im/cog-base:cuda12.1-python3.8"},
-		{"12.1", "3.8", "2.1",
-			"r8.im/cog-base:cuda12.1-python3.8-torch2.1.2"},
-		{"12.1", "3.8", "2.1",
-			"r8.im/cog-base:cuda12.1-python3.8-torch2.1.2"},
+		{"", "3.9", "",
+			"r8.im/cog-base:python3.9"},
+		{"", "3.9", "2.1",
+			"r8.im/cog-base:python3.9-torch2.1.2"},
+		{"12.1", "3.9", "",
+			"r8.im/cog-base:cuda12.1-python3.9"},
+		{"12.1", "3.9", "2.1",
+			"r8.im/cog-base:cuda12.1-python3.9-torch2.1.2"},
+		{"12.1", "3.9", "2.1",
+			"r8.im/cog-base:cuda12.1-python3.9-torch2.1.2"},
 	} {
 		actual := BaseImageName(tt.cuda, tt.python, tt.torch)
 		require.Equal(t, tt.expected, actual)
@@ -36,7 +36,7 @@ func TestBaseImageName(t *testing.T) {
 
 func TestGenerateDockerfile(t *testing.T) {
 	cudaVersion := "12.1"
-	pythonVersion := "3.8"
+	pythonVersion := "3.9"
 	torchVersion := "2.1.0"
 	client := registrytest.NewMockRegistryClient()
 	client.AddMockImage(BaseImageName(cudaVersion, pythonVersion, torchVersion))
@@ -57,8 +57,8 @@ func TestGenerateDockerfile(t *testing.T) {
 }
 
 func TestBaseImageNameWithVersionModifier(t *testing.T) {
-	actual := BaseImageName("11.8", "3.8", "2.0.1+cu118")
-	require.Equal(t, "r8.im/cog-base:cuda11.8-python3.8-torch2.0.1", actual)
+	actual := BaseImageName("11.8", "3.9", "2.0.1+cu118")
+	require.Equal(t, "r8.im/cog-base:cuda11.8-python3.9-torch2.0.1", actual)
 }
 
 func TestBaseImageConfigurationExists(t *testing.T) {
@@ -86,7 +86,7 @@ func TestBaseImageConfigurationExistsNoTorch(t *testing.T) {
 
 func TestBaseImageConfigurationExistsNoCUDA(t *testing.T) {
 	cudaVersion := ""
-	pythonVersion := "3.8"
+	pythonVersion := "3.9"
 	torchVersion := "2.1"
 	client := registrytest.NewMockRegistryClient()
 	client.AddMockImage(BaseImageName(cudaVersion, pythonVersion, torchVersion))
