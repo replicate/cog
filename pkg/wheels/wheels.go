@@ -1,26 +1,42 @@
 package wheels
 
 import (
-	_ "embed"
+	"embed"
+	"fmt"
 	"os"
 	"strings"
 )
 
-//go:generate sh -c "cp ../../dist/cog-*.whl cog.whl"
-//go:generate sh -c "cp ../../dist/coglet-*.whl coglet.whl"
+//go:generate sh -c "rm -f cog-*.whl coglet-*.whl"
+//go:generate sh -c "cp ../../dist/cog-*.whl ."
+//go:generate sh -c "cp ../../dist/coglet-*.whl ."
 
-//go:embed cog.whl
-var cogWheel []byte
-
-//go:embed coglet.whl
-var cogletWheel []byte
+//go:embed cog-*.whl coglet-*.whl
+var wheelsFS embed.FS
 
 func ReadCogWheel() (string, []byte) {
-	return "cog.whl", cogWheel
+	return readWheelFromFS("cog-")
 }
 
 func ReadCogletWheel() (string, []byte) {
-	return "coglet.whl", cogletWheel
+	return readWheelFromFS("coglet-")
+}
+
+func readWheelFromFS(prefix string) (string, []byte) {
+	files, err := wheelsFS.ReadDir(".")
+	if err != nil {
+		panic(fmt.Sprintf("failed to read embedded wheels: %v", err))
+	}
+	for _, f := range files {
+		if strings.HasPrefix(f.Name(), prefix) && strings.HasSuffix(f.Name(), ".whl") {
+			data, err := wheelsFS.ReadFile(f.Name())
+			if err != nil {
+				panic(fmt.Sprintf("failed to read embedded wheel %s: %v", f.Name(), err))
+			}
+			return f.Name(), data
+		}
+	}
+	panic(fmt.Sprintf("no %s*.whl wheel found in embedded filesystem - build is broken", prefix))
 }
 
 // WheelSource represents the source type for the wheel to install

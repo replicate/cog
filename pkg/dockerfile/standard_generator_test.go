@@ -916,8 +916,9 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	// Should contain the embedded cog wheel install (filename is just cog.whl)
-	require.Contains(t, actual, "/tmp/cog.whl")
+	// Should contain the embedded cog wheel install (versioned filename like cog-0.x.x-py3-none-any.whl)
+	require.Contains(t, actual, "/tmp/cog-")
+	require.Contains(t, actual, ".whl")
 	require.Contains(t, actual, "'pydantic>=1.9,<3'")
 	// Should NOT contain coglet-specific env vars
 	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
@@ -977,8 +978,9 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	// Should contain the embedded cog wheel install (filename is just cog.whl)
-	require.Contains(t, actual, "/tmp/cog.whl")
+	// Should contain the embedded cog wheel install (versioned filename like cog-0.x.x-py3-none-any.whl)
+	require.Contains(t, actual, "/tmp/cog-")
+	require.Contains(t, actual, ".whl")
 	require.Contains(t, actual, "'pydantic>=1.9,<3'")
 	// Should NOT contain coglet-specific env vars
 	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
@@ -1008,8 +1010,9 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	// Should contain the embedded coglet wheel install (filename is just coglet.whl)
-	require.Contains(t, actual, "/tmp/coglet.whl")
+	// Should contain the embedded coglet wheel install (versioned filename like coglet-0.x.x-py3-none-any.whl)
+	require.Contains(t, actual, "/tmp/coglet-")
+	require.Contains(t, actual, ".whl")
 	require.Contains(t, actual, "ENV R8_COG_VERSION=coglet")
 	require.Contains(t, actual, "ENV R8_PYTHON_VERSION=3.11")
 }
