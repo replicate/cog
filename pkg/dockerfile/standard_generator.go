@@ -513,7 +513,10 @@ func (g *StandardGenerator) installEmbeddedCogletWheel() (string, error) {
 		"ENV R8_COG_VERSION=coglet",
 		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
 	}
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + containerPath
+	// Uninstall cog first to avoid conflicts with coglet's cog shim package.
+	// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
+	// with coglet's cog compatibility shim that provides the same module paths.
+	pipInstallLine := "RUN pip uninstall -y cog 2>/dev/null || true && pip install --no-cache-dir " + containerPath
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -531,7 +534,10 @@ func (g *StandardGenerator) installCogletAlpha() (string, error) {
 	cmds := []string{
 		"ENV R8_COG_VERSION=coglet",
 		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
-		"RUN pip install " + PinnedCogletURL,
+		// Uninstall cog first to avoid conflicts with coglet's cog shim package.
+		// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
+		// with coglet's cog compatibility shim that provides the same module paths.
+		"RUN pip uninstall -y cog 2>/dev/null || true && pip install " + PinnedCogletURL,
 	}
 	return strings.Join(cmds, "\n"), nil
 }
@@ -550,7 +556,14 @@ func (g *StandardGenerator) installWheelFromURL(url string) (string, error) {
 		}
 	}
 
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + url
+	// For coglet URLs, uninstall cog first to avoid conflicts with coglet's cog shim package.
+	// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
+	// with coglet's cog compatibility shim that provides the same module paths.
+	var pipPrefix string
+	if strings.Contains(url, "coglet") {
+		pipPrefix = "pip uninstall -y cog 2>/dev/null || true && "
+	}
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip " + pipPrefix + "pip install --no-cache-dir " + url
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -574,6 +587,7 @@ func (g *StandardGenerator) installWheelFromFile(path string) (string, error) {
 	}
 
 	// Set coglet env vars if this looks like a coglet wheel
+	var pipPrefix string
 	if strings.Contains(filename, "coglet") {
 		if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
 			return "", fmt.Errorf("Python version must be <major>.<minor> for coglet")
@@ -582,9 +596,13 @@ func (g *StandardGenerator) installWheelFromFile(path string) (string, error) {
 			"ENV R8_COG_VERSION=coglet",
 			"ENV R8_PYTHON_VERSION="+g.Config.Build.PythonVersion,
 		)
+		// Uninstall cog first to avoid conflicts with coglet's cog shim package.
+		// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
+		// with coglet's cog compatibility shim that provides the same module paths.
+		pipPrefix = "pip uninstall -y cog 2>/dev/null || true && "
 	}
 
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + containerPath
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip " + pipPrefix + "pip install --no-cache-dir " + containerPath
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}

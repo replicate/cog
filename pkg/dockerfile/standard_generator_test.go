@@ -947,8 +947,8 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	// Should contain coglet-alpha/PinnedCogletURL install
-	require.Contains(t, actual, "RUN pip install "+PinnedCogletURL)
+	// Should contain coglet-alpha/PinnedCogletURL install with cog uninstall prefix
+	require.Contains(t, actual, "RUN pip uninstall -y cog 2>/dev/null || true && pip install "+PinnedCogletURL)
 	require.Contains(t, actual, "ENV R8_COG_VERSION=coglet")
 	require.Contains(t, actual, "ENV R8_PYTHON_VERSION=3.11")
 }
@@ -1041,8 +1041,8 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	// Should contain coglet-alpha/PinnedCogletURL install
-	require.Contains(t, actual, "RUN pip install "+PinnedCogletURL)
+	// Should contain coglet-alpha/PinnedCogletURL install with cog uninstall prefix
+	require.Contains(t, actual, "RUN pip uninstall -y cog 2>/dev/null || true && pip install "+PinnedCogletURL)
 	require.Contains(t, actual, "ENV R8_COG_VERSION=coglet")
 	require.Contains(t, actual, "ENV R8_PYTHON_VERSION=3.11")
 }
@@ -1108,6 +1108,31 @@ predict: predict.py:Predictor
 	require.Contains(t, actual, "pip install --no-cache-dir "+customURL)
 	// Should NOT contain coglet-specific env vars
 	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
+}
+
+func TestCOGWheelCogletWithPython39Succeeds(t *testing.T) {
+	// COG_WHEEL=coglet with Python 3.9 should succeed
+	tmpDir := t.TempDir()
+	t.Setenv("COG_WHEEL", "coglet")
+
+	yaml := `
+build:
+  gpu: false
+  python_version: "3.9"
+predict: predict.py:Predictor
+`
+	conf, err := config.FromYAML([]byte(yaml))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
+	require.NoError(t, err)
+
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+	require.Contains(t, actual, "ENV R8_COG_VERSION=coglet")
 }
 
 func TestCOGWheelEnvFile(t *testing.T) {
