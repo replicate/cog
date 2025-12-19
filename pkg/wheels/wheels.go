@@ -14,6 +14,40 @@ import (
 //go:embed cog-*.whl coglet-*.whl
 var wheelsFS embed.FS
 
+func init() {
+	assertExactlyOneWheelPerRuntime()
+}
+
+// assertExactlyOneWheelPerRuntime ensures exactly 2 wheels are embedded (one cog, one coglet).
+// If there are more or fewer, the build is broken - likely stale wheels left in pkg/wheels/
+// or dist/, or the wheels weren't built at all. Panics on failure since this is a build-time
+// invariant that must hold for the binary to function correctly.
+func assertExactlyOneWheelPerRuntime() {
+	files, err := wheelsFS.ReadDir(".")
+	if err != nil {
+		panic(fmt.Sprintf("failed to read embedded wheels directory: %v", err))
+	}
+
+	var cogCount, cogletCount int
+	for _, f := range files {
+		name := f.Name()
+		if strings.HasSuffix(name, ".whl") {
+			if strings.HasPrefix(name, "coglet-") {
+				cogletCount++
+			} else if strings.HasPrefix(name, "cog-") {
+				cogCount++
+			}
+		}
+	}
+
+	if cogCount != 1 {
+		panic(fmt.Sprintf("expected exactly 1 cog wheel embedded, found %d - run 'make wheel' to fix", cogCount))
+	}
+	if cogletCount != 1 {
+		panic(fmt.Sprintf("expected exactly 1 coglet wheel embedded, found %d - run 'make wheel' to fix", cogletCount))
+	}
+}
+
 func ReadCogWheel() (string, []byte) {
 	return readWheelFromFS("cog-")
 }
