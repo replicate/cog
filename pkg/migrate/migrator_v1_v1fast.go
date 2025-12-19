@@ -16,11 +16,11 @@ import (
 
 	"github.com/replicate/cog/pkg/coglog"
 	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
+	"github.com/replicate/cog/pkg/wheels"
 )
 
 const CogRequirementsFile = "cog_requirements.txt"
@@ -258,10 +258,7 @@ func (g *MigratorV1ToV1Fast) checkPredictor(ctx context.Context, predictor strin
 	if predictor == "" {
 		return nil
 	}
-	zippedBytes, _, err := dockerfile.ReadWheelFile()
-	if err != nil {
-		return err
-	}
+	_, zippedBytes := wheels.ReadCogWheel()
 	reader := bytes.NewReader(zippedBytes)
 	zipReader, err := zip.NewReader(reader, int64(len(zippedBytes)))
 	if err != nil {

@@ -74,7 +74,7 @@ where = ['python']
 exclude = ['tests*']
 
 [tool.setuptools.package-data]
-'cog' = ['cog-*', '**/*.pyi']
+'cog' = ['bin/coglet-server-*', '**/*.pyi']
 'coglet' = ['*.pyi']
 
 [tool.setuptools_scm]

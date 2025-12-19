@@ -21,9 +21,9 @@ def run(subcmd: str, args: List[str]) -> None:
         print(f'Unsupported architecture: {goarch}')
         sys.exit(1)
 
-    # Binaries are bundled in python/cog
-    cmd = f'cog-{goos}-{goarch}'
-    exe = os.path.join(Path(__file__).parent.parent, cmd)
+    # Binaries are bundled in python/cog/bin
+    cmd = f'coglet-server-{goos}-{goarch}'
+    exe = os.path.join(Path(__file__).parent.parent, 'bin', cmd)
     args = [exe, subcmd] + args
     # Replicate Go logger logs to stdout in production mode
     # Use stderr instead to be consistent with legacy Cog

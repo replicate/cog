@@ -31,7 +31,7 @@ var (
 
 const (
 	MinimumMajorPythonVersion               int = 3
-	MinimumMinorPythonVersion               int = 8
+	MinimumMinorPythonVersion               int = 9 // Python 3.8 EOL October 2024
 	MinimumMinorPythonVersionForConcurrency int = 11
 	MinimumMajorCudaVersion                 int = 11
 )
