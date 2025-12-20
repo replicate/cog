@@ -25,7 +25,7 @@ func TestValidateModelPythonVersion(t *testing.T) {
 		},
 		{
 			name:          "MinimumVersion",
-			pythonVersion: "3.8",
+			pythonVersion: "3.9",
 		},
 		{
 			name:           "MinimumVersionForConcurrency",
@@ -34,9 +34,9 @@ func TestValidateModelPythonVersion(t *testing.T) {
 		},
 		{
 			name:           "TooOldForConcurrency",
-			pythonVersion:  "3.8",
+			pythonVersion:  "3.9",
 			concurrencyMax: 5,
-			expectedErr:    "when concurrency.max is set, minimum supported Python version is 3.11. requested 3.8",
+			expectedErr:    "when concurrency.max is set, minimum supported Python version is 3.11. requested 3.9",
 		},
 		{
 			name:          "FullyQualifiedVersion",
@@ -54,8 +54,8 @@ func TestValidateModelPythonVersion(t *testing.T) {
 		},
 		{
 			name:          "LessThanMinimum",
-			pythonVersion: "3.7",
-			expectedErr:   "minimum supported Python version is 3.8. requested 3.7",
+			pythonVersion: "3.8",
+			expectedErr:   "minimum supported Python version is 3.9. requested 3.8",
 		},
 	}
 
@@ -154,7 +154,7 @@ func assertMinorVersion(t *testing.T, expected, actual string) {
 func TestPythonPackagesAndRequirementsCantBeUsedTogether(t *testing.T) {
 	config := &Config{
 		Build: &Build{
-			PythonVersion: "3.8",
+			PythonVersion: "3.9",
 			PythonPackages: []string{
 				"replicate==1.0.0",
 			},
@@ -177,7 +177,7 @@ foo==1.0.0`), 0o644)
 	config := &Config{
 		Build: &Build{
 			GPU:                true,
-			PythonVersion:      "3.8",
+			PythonVersion:      "3.9",
 			PythonRequirements: "requirements.txt",
 		},
 	}
@@ -207,7 +207,7 @@ foo==1.0.0`), 0o644)
 	config := &Config{
 		Build: &Build{
 			GPU:                true,
-			PythonVersion:      "3.8",
+			PythonVersion:      "3.9",
 			PythonRequirements: "requirements.txt",
 		},
 	}
@@ -242,7 +242,7 @@ flask>0.4
 	config := &Config{
 		Build: &Build{
 			GPU:                true,
-			PythonVersion:      "3.8",
+			PythonVersion:      "3.9",
 			PythonRequirements: "requirements.txt",
 		},
 	}
@@ -264,7 +264,7 @@ func TestValidateAndCompleteCUDAForAllTF(t *testing.T) {
 		config := &Config{
 			Build: &Build{
 				GPU:           true,
-				PythonVersion: "3.8",
+				PythonVersion: "3.9",
 				PythonPackages: []string{
 					"tensorflow==" + compat.TF,
 				},
@@ -283,7 +283,7 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 		config := &Config{
 			Build: &Build{
 				GPU:           compat.CUDA != nil,
-				PythonVersion: "3.8",
+				PythonVersion: "3.9",
 				PythonPackages: []string{
 					"torch==" + compat.TorchVersion(),
 				},
@@ -315,7 +315,7 @@ func TestValidateAndCompleteCUDAForSelectedTorch(t *testing.T) {
 		config := &Config{
 			Build: &Build{
 				GPU:           true,
-				PythonVersion: "3.8",
+				PythonVersion: "3.9",
 				PythonPackages: []string{
 					"torch==" + tt.torch,
 				},
@@ -338,7 +338,7 @@ func TestUnsupportedTorch(t *testing.T) {
 	config := &Config{
 		Build: &Build{
 			GPU:           true,
-			PythonVersion: "3.8",
+			PythonVersion: "3.9",
 			PythonPackages: []string{
 				"torch==0.4.1",
 			},
@@ -375,7 +375,7 @@ func TestUnsupportedTensorflow(t *testing.T) {
 	config := &Config{
 		Build: &Build{
 			GPU:           true,
-			PythonVersion: "3.8",
+			PythonVersion: "3.9",
 			PythonPackages: []string{
 				"tensorflow==0.4.1",
 			},
@@ -389,7 +389,7 @@ func TestUnsupportedTensorflow(t *testing.T) {
 		Build: &Build{
 			GPU:           true,
 			CUDA:          "11.8",
-			PythonVersion: "3.8",
+			PythonVersion: "3.9",
 			PythonPackages: []string{
 				"tensorflow==0.4.1",
 			},
@@ -405,7 +405,7 @@ func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 	config := &Config{
 		Build: &Build{
 			GPU:           true,
-			PythonVersion: "3.8",
+			PythonVersion: "3.9",
 			PythonPackages: []string{
 				"torch==1.7.1",
 				"torchvision==0.8.2",
@@ -434,7 +434,7 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 	config := &Config{
 		Build: &Build{
 			GPU:           false,
-			PythonVersion: "3.8",
+			PythonVersion: "3.9",
 			PythonPackages: []string{
 				"torch==1.7.1",
 				"torchvision==0.8.2",
@@ -461,7 +461,7 @@ func TestPythonPackagesForArchTensorflowGPU(t *testing.T) {
 	config := &Config{
 		Build: &Build{
 			GPU:           true,
-			PythonVersion: "3.8",
+			PythonVersion: "3.9",
 			PythonPackages: []string{
 				"tensorflow==2.12.0",
 				"foo==1.0.0",
@@ -516,7 +516,7 @@ func TestCUDABaseImageTag(t *testing.T) {
 	config := &Config{
 		Build: &Build{
 			GPU:           true,
-			PythonVersion: "3.8",
+			PythonVersion: "3.9",
 			PythonPackages: []string{
 				"tensorflow==2.12.0",
 			},
@@ -640,7 +640,7 @@ func TestTorchWithExistingExtraIndexURL(t *testing.T) {
 	config := &Config{
 		Build: &Build{
 			GPU:           true,
-			PythonVersion: "3.8",
+			PythonVersion: "3.9",
 			PythonPackages: []string{
 				"torch==1.12.1 --extra-index-url=https://download.pytorch.org/whl/cu116",
 			},
@@ -670,7 +670,7 @@ func TestPythonRequirementsForArchWithAddedPackage(t *testing.T) {
 	config := &Config{
 		Build: &Build{
 			GPU:           true,
-			PythonVersion: "3.8",
+			PythonVersion: "3.9",
 			PythonPackages: []string{
 				"torch==2.4.0 --extra-index-url=https://download.pytorch.org/whl/cu116",
 			},
@@ -739,7 +739,7 @@ func TestAbsolutePathInPythonRequirements(t *testing.T) {
 	config := &Config{
 		Build: &Build{
 			GPU:                true,
-			PythonVersion:      "3.8",
+			PythonVersion:      "3.9",
 			PythonRequirements: requirementsFilePath,
 		},
 	}
