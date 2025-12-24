@@ -458,7 +458,7 @@ func (g *StandardGenerator) installCog() (string, error) {
 		return "", nil
 	}
 
-	if g.Config.Build.CogRuntime != nil && *g.Config.Build.CogRuntime {
+	if g.Config.Build.CogRuntime != nil && *g.Config.Build.CogRuntime || g.Config.Build.ProcedureMode {
 		return g.installCogRuntime()
 	}
 
@@ -485,10 +485,19 @@ func (g *StandardGenerator) installCogRuntime() (string, error) {
 	if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
 		return "", fmt.Errorf("Python version must be <major>.<minor>")
 	}
+
+	cogletURL := PinnedCogletURL
+	if g.Config.Build.ProcedureMode {
+		// if we're building a procedure, use the latest coglet release
+		if latestURL, err := GetLatestCogletWheelURL(context.TODO()); err == nil {
+			cogletURL = latestURL
+		}
+	}
+
 	cmds := []string{
 		"ENV R8_COG_VERSION=coglet",
 		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
-		"RUN pip install " + PinnedCogletURL,
+		"RUN pip install " + cogletURL,
 	}
 	return strings.Join(cmds, "\n"), nil
 }
