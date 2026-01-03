@@ -1,0 +1,19 @@
+import replicate
+
+# initialize client with your API token
+client = replicate.Client(api_token=r8_GEnGoLSP6PXLA1r9LUhSUOhwJMj28RX0VdTh4)
+
+# Call the seedream-4 model
+output = client.run(
+    "bytedance/seedream-4:054cd8c6",  # Version ID from Replicate
+    input={
+        "prompt": "A surreal painting of a futuristic city at sunset",
+        "size": "2K",        # Options: "1K" | "2K" | "4K" | "custom"
+        "aspect_ratio": "16:9",
+        "image_input": [],   # Optional reference image URLs
+        "sequential_image_generation": "disabled",
+        "max_images": 1
+    },
+)
+
+print(output)
