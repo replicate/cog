@@ -137,11 +137,11 @@ You can also download and install the latest release using our
 [install script](https://cog.run/install):
 
 ```sh
-# fish shell
-sh (curl -fsSL https://cog.run/install.sh | psub)
-
 # bash, zsh, and other shells
 sh <(curl -fsSL https://cog.run/install.sh)
+
+# fish shell
+sh (curl -fsSL https://cog.run/install.sh | psub)
 
 # download with wget and run in a separate command
 wget -qO- https://cog.run/install.sh
