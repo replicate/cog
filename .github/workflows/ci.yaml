@@ -231,11 +231,8 @@ jobs:
         run: |
           # Build cog binary
           make cog
-          # Run a subset of tests to debug faster:
-          # - test_predict_fast_build: consistently failing (APT logs in stdout)
-          # - test_build_with_model: basic build test (should pass)
-          # - test_predict_hello_world: basic predict test (should pass)
-          PATH="$(pwd):$PATH" uv run tox -e integration -- -v -k "test_predict_fast_build or test_build_with_model or test_predict_hello_world"
+          # Run full test suite with reruns for flaky tests (matches main branch)
+          PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3
 
   release:
     name: "Release"
