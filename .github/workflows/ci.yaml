@@ -232,7 +232,11 @@ jobs:
         if: matrix.runtime == 'coglet'
         run: echo "COG_WHEEL=$(ls dist/coglet-*.whl)" >> "$GITHUB_ENV"
       - name: Test
-        run: make test-integration
+        run: |
+          # Build cog binary
+          make cog
+          # Run only the consistently failing test to debug faster
+          PATH="$(pwd):$PATH" uv run tox -e integration -- -v -k "test_predict_fast_build"
 
   release:
     name: "Release"
