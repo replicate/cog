@@ -224,9 +224,13 @@ jobs:
       - uses: hynek/setup-cached-uv@v2
       - name: Prepare tox
         run: uv pip install --system tox tox-uv
+      - name: Set COG_WHEEL for cog runtime
+        if: matrix.runtime == 'cog'
+        run: echo "COG_WHEEL=$(ls dist/cog-*.whl)" >> "$GITHUB_ENV"
+      - name: Set COG_WHEEL for coglet runtime
+        if: matrix.runtime == 'coglet'
+        run: echo "COG_WHEEL=$(ls dist/coglet-*.whl)" >> "$GITHUB_ENV"
       - name: Test
-        env:
-          COG_WHEEL: ${{ matrix.runtime }}
         run: make test-integration
 
   release:
