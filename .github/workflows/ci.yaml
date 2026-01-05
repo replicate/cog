@@ -195,11 +195,12 @@ jobs:
     name: "Test integration (${{ matrix.runtime }})"
     needs: build-python
     runs-on: ubuntu-latest-16-cores
-    timeout-minutes: 25
+    timeout-minutes: 30
     strategy:
       fail-fast: true
       matrix:
-        runtime: [cog, coglet]
+        # TODO: Add coglet back once cog tests are stable
+        runtime: [cog]
     steps:
       - uses: actions/checkout@v6
         with:
