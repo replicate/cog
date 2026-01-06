@@ -199,7 +199,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runtime: [cog, coglet]
+        runtime: [cog, coglet, coglet-alpha]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -227,8 +227,8 @@ jobs:
       - name: Test
         env:
           COG_WHEEL: ${{ matrix.runtime }}
-        # coglet tests may fail due to error message differences - don't block PR
-        continue-on-error: ${{ matrix.runtime == 'coglet' }}
+        # coglet/coglet-alpha tests may fail due to error message differences - don't block PR
+        continue-on-error: ${{ matrix.runtime != 'cog' }}
         run: |
           # Build cog binary
           make cog
