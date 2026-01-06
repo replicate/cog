@@ -87,11 +87,11 @@ def _validate_input(name: str, ft: adt.FieldType, cog_in: api.FieldInfo) -> None
         if defaults:
             if cog_in.ge is not None:
                 assert all(x >= cog_in.ge for x in defaults), (
-                    f'default={def_repr} conflicts with ge={cog_in.ge} for input: {in_repr}'
+                    f'invalid default: number must be at least {cog_in.ge}'
                 )
             if cog_in.le is not None:
                 assert all(x <= cog_in.le for x in defaults), (
-                    f'default={def_repr} conflicts with le={cog_in.le} for input: {in_repr}'
+                    f'invalid default: number must be at most {cog_in.le}'
                 )
 
     if cog_in.min_length is not None or cog_in.max_length is not None:
