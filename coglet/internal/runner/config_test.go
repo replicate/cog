@@ -79,6 +79,20 @@ func TestCogYamlPredictModuleAndPredictor(t *testing.T) {
 		assert.Equal(t, "Model", predictor)
 	})
 
+	t.Run("empty predict", func(t *testing.T) {
+		t.Parallel()
+
+		cogYaml := &CogYaml{
+			Predict: "",
+		}
+
+		module, predictor, err := cogYaml.PredictModuleAndPredictor()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "Can't run predictions: 'predict' option not found")
+		assert.Empty(t, module)
+		assert.Empty(t, predictor)
+	})
+
 	t.Run("invalid predict format", func(t *testing.T) {
 		t.Parallel()
 
@@ -88,7 +102,7 @@ func TestCogYamlPredictModuleAndPredictor(t *testing.T) {
 
 		module, predictor, err := cogYaml.PredictModuleAndPredictor()
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid predict")
+		assert.Contains(t, err.Error(), "invalid predict format")
 		assert.Empty(t, module)
 		assert.Empty(t, predictor)
 	})
@@ -102,7 +116,7 @@ func TestCogYamlPredictModuleAndPredictor(t *testing.T) {
 
 		module, predictor, err := cogYaml.PredictModuleAndPredictor()
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid predict")
+		assert.Contains(t, err.Error(), "invalid predict format")
 		assert.Empty(t, module)
 		assert.Empty(t, predictor)
 	})

@@ -16,9 +16,12 @@ def test_build_without_predictor(docker_image, cog_binary):
         capture_output=True,
     )
     assert build_process.returncode > 0
+    stderr = build_process.stderr.decode()
+    # Both cog and coglet produce this message, but cog has escaped quotes (Python exception)
+    # while coglet does not (Go error)
     assert (
-        "Can\\'t run predictions: \\'predict\\' option not found"
-        in build_process.stderr.decode()
+        "Can't run predictions: 'predict' option not found" in stderr
+        or "Can\\'t run predictions: \\'predict\\' option not found" in stderr
     )
 
 

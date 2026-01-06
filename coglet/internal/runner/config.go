@@ -38,9 +38,12 @@ func ReadCogYaml(dir string) (*CogYaml, error) {
 }
 
 func (y *CogYaml) PredictModuleAndPredictor() (string, string, error) {
+	if y.Predict == "" {
+		return "", "", fmt.Errorf("Can't run predictions: 'predict' option not found in cog.yaml")
+	}
 	parts := strings.Split(y.Predict, ":")
 	if len(parts) != 2 {
-		return "", "", fmt.Errorf("invalid predict: %s", y.Predict)
+		return "", "", fmt.Errorf("invalid predict format: %s (expected module.py:ClassName)", y.Predict)
 	}
 	moduleName := strings.TrimSuffix(parts[0], ".py")
 	predictorName := parts[1]
