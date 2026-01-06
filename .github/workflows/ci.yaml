@@ -233,7 +233,12 @@ jobs:
           # Build cog binary
           make cog
           # Run full test suite with reruns for flaky tests (matches main branch)
-          PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3
+          # Use --maxfail=5 for coglet variants to get failure logs without timing out
+          if [ "$COG_WHEEL" = "cog" ]; then
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3
+          else
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3 --maxfail=5
+          fi
 
   release:
     name: "Release"
