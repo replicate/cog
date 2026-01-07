@@ -217,18 +217,7 @@ def _output_adt(tpe: type) -> adt.Output:
             'Warning: use of Any as output type is error prone and highly-discouraged'
         )
         return adt.Output(kind=adt.Kind.SINGLE, type=_any_type)  # type: ignore
-    # Check if it's a BaseModel - either coglet's or pydantic's
-    is_cog_basemodel = inspect.isclass(tpe) and _check_parent(tpe, api.BaseModel)
-    is_pydantic_basemodel = False
-    if not is_cog_basemodel and inspect.isclass(tpe):
-        try:
-            import pydantic  # type: ignore
-
-            is_pydantic_basemodel = _check_parent(tpe, pydantic.BaseModel)  # type: ignore
-        except ImportError:
-            pass
-
-    if is_cog_basemodel or is_pydantic_basemodel:
+    if inspect.isclass(tpe) and _check_parent(tpe, api.BaseModel):
         fields = {}
         for name, t in tpe.__annotations__.items():
             ft = adt.FieldType.from_type(t)
