@@ -1,3 +1,5 @@
 build:
   python_version: "3.11"
+  python_packages:
+    - "pydantic>=1.10.0"
 predict: "predict.py:Predictor"

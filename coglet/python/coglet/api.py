@@ -65,7 +65,49 @@ class CancelationException(Exception):
 
 
 class Path(pathlib.PosixPath):
-    pass
+    """Path type that works with both pydantic v1 and v2"""
+
+    @classmethod
+    def validate(cls, value: Any) -> pathlib.Path:
+        """Validator for both pydantic v1 and v2"""
+        if isinstance(value, pathlib.Path):
+            return value
+        if isinstance(value, str):
+            return pathlib.Path(value)
+        return pathlib.Path(str(value))
+
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source: Any, handler: Any) -> Any:
+        """Pydantic v2 support"""
+        try:
+            from pydantic_core import core_schema  # type: ignore
+            return core_schema.union_schema([
+                core_schema.is_instance_schema(pathlib.Path),
+                core_schema.no_info_plain_validator_function(cls.validate),
+            ])
+        except ImportError:
+            # pydantic_core not available, fall back to pydantic v1
+            return None
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema: Any, handler: Any) -> Any:
+        """Pydantic v2 JSON schema support"""
+        try:
+            json_schema = handler(core_schema)
+            json_schema.update(type="string", format="uri")
+            return json_schema
+        except Exception:
+            return {"type": "string", "format": "uri"}
+
+    @classmethod
+    def __get_validators__(cls):
+        """Pydantic v1 support"""
+        yield cls.validate
+
+    @classmethod
+    def __modify_schema__(cls, field_schema: dict) -> None:
+        """Pydantic v1 schema modification"""
+        field_schema.update(type="string", format="uri")
 
 
 @dataclass(frozen=True)
