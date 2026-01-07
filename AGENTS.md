@@ -153,3 +153,27 @@ The CLI follows a command pattern with subcommands. The main components are:
 - Always run `make wheel` after making Python changes before testing Go code
 - Both Pydantic 1.x and 2.x must pass tests (use appropriate tox environments)
 - Python 3.8-3.13 compatibility is required
+
+## Learnings
+
+When you discover something important about this codebase that would help future sessions, append it to this section.
+
+**Do add:**
+- "When modifying X, also update Y"
+- "This module uses pattern Z"
+- "Tests require running X first"
+- Cross-file dependencies not obvious from imports
+- Non-obvious error solutions
+
+**Don't add:**
+- Task-specific details (use progress.txt instead)
+- Temporary workarounds
+- Info already documented above
+
+<!-- Add learnings below this line -->
+
+### Runtime Compatibility
+
+- **Pydantic compatibility**: coglet/inspector.py must support both `coglet.api.BaseModel` and `pydantic.BaseModel` for output types. Original cog exports pydantic.BaseModel directly, so user code expects it to work.
+- **coglet vs coglet-alpha**: coglet is in `coglet/` directory (fixable), coglet-alpha uses external cog-runtime repo (requires upstream fix).
+- **Wheel rebuild**: After changing Python code in coglet/, run `make wheel` then `make cog` to rebuild. Wheel filename includes git hash, so Docker may cache old version - use `--no-cache` or remove images to force rebuild.

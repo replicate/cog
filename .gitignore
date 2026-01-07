@@ -30,3 +30,5 @@ coglet/python/coglet/_version.py
 
 # Built coglet-server binaries
 coglet/python/cog/bin/
+.devcontainer
+x
