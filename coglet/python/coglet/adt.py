@@ -362,11 +362,22 @@ class Output:
         if self.kind is Kind.OBJECT:
             # Further expand Output into dict
             tpe = type(o)
-            assert dataclasses.is_dataclass(tpe), f'{tpe} is not a dataclass'
-            r = {}
-            for f in dataclasses.fields(o):
-                r[f.name] = getattr(o, f.name)
-            return r
+            
+            # Check if it's a Pydantic model by checking for model methods
+            if hasattr(o, 'model_dump'):
+                # Pydantic v2
+                return o.model_dump()
+            elif hasattr(o, 'dict') and hasattr(tpe, '__fields__'):
+                # Pydantic v1 (has dict() method and __fields__ attribute)
+                return o.dict()
+            elif dataclasses.is_dataclass(tpe):
+                # For dataclasses, extract fields manually
+                r = {}
+                for f in dataclasses.fields(o):
+                    r[f.name] = getattr(o, f.name)
+                return r
+            else:
+                raise AssertionError(f'{tpe} is not a dataclass or Pydantic model')
         else:
             return o
 
