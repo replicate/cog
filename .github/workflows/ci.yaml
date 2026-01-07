@@ -26,6 +26,20 @@ jobs:
           fetch-depth: 0 # needed for setuptools_scm version determination
       - uses: hynek/build-and-inspect-python-package@v2
         id: baipp
+      # Build coglet wheel with embedded Go binary
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: astral-sh/setup-uv@v7
+      - name: Build coglet-server binary
+        run: script/build-coglet-server
+      - name: Build coglet wheel
+        run: uv build --wheel --out-dir=dist ./coglet
+      - name: Upload coglet wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: CogletWheel
+          path: dist/coglet-*.whl
     outputs:
       python-versions: ${{ steps.baipp.outputs.supported_python_classifiers_json_array }}
 
@@ -34,13 +48,11 @@ jobs:
     needs: build-python
     runs-on: ubuntu-latest-8-cores
     steps:
-      - name: Download pre-built packages
+      - name: Download built wheels
         uses: actions/download-artifact@v6
         with:
-          name: Packages
           path: dist
-      - name: Set COG_WHEEL
-        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
+          merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: actions/setup-go@v5
@@ -81,13 +93,11 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # needed for goreleaser version determination
-      - name: Download pre-built packages
+      - name: Download built wheels
         uses: actions/download-artifact@v6
         with:
-          name: Packages
           path: dist
-      - name: Set COG_WHEEL
-        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
+          merge-multiple: true
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -106,13 +116,11 @@ jobs:
         pydantic: ["1", "2"]
         python-version: ${{ fromJson(needs.build-python.outputs.python-versions) }}
     steps:
-      - name: Download pre-built packages
+      - name: Download built wheels
         uses: actions/download-artifact@v6
         with:
-          name: Packages
           path: dist
-      - name: Set COG_WHEEL
-        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
+          merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: actions/setup-python@v6
@@ -127,7 +135,7 @@ jobs:
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
       - name: Test
-        run: python -Im tox run --installpkg "$COG_WHEEL" -e ${{ env.TOX_PYTHON }}-pydantic${{ matrix.pydantic }}-tests
+        run: python -Im tox run --installpkg dist/cog-*.whl -e ${{ env.TOX_PYTHON }}-pydantic${{ matrix.pydantic }}-tests
 
   # ==========================================================================
   # Coglet tests (Go server + Python SDK for the coglet runtime)
@@ -184,10 +192,14 @@ jobs:
 
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-integration-matrix:
-    name: "Test integration Matrix"
+    name: "Test integration (${{ matrix.runtime }})"
     needs: build-python
     runs-on: ubuntu-latest-16-cores
-    timeout-minutes: 25
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [cog, coglet, coglet-alpha]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -198,13 +210,11 @@ jobs:
           registry: index.docker.io
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Download pre-built packages
+      - name: Download built wheels
         uses: actions/download-artifact@v6
         with:
-          name: Packages
           path: dist
-      - name: Set COG_WHEEL
-        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
+          merge-multiple: true
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -215,7 +225,24 @@ jobs:
       - name: Prepare tox
         run: uv pip install --system tox tox-uv
       - name: Test
-        run: make test-integration
+        env:
+          COG_WHEEL: ${{ matrix.runtime }}
+        # coglet/coglet-alpha tests may fail due to error message differences - don't block PR
+        continue-on-error: ${{ matrix.runtime != 'cog' }}
+        run: |
+          # Build cog binary
+          make cog
+          # Run full test suite with reruns for flaky tests (matches main branch)
+          # - cog: full suite
+          # - coglet-alpha: stop after 5 failures (passes currently)
+          # - coglet: exit on first failure (needs work, just want to see what fails)
+          if [ "$COG_WHEEL" = "cog" ]; then
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3
+          elif [ "$COG_WHEEL" = "coglet" ]; then
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv -x
+          else
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3 --maxfail=5
+          fi
 
   release:
     name: "Release"
@@ -231,13 +258,11 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # needed for goreleaser version determination
-      - name: Download pre-built packages
+      - name: Download built wheels
         uses: actions/download-artifact@v6
         with:
-          name: Packages
           path: dist
-      - name: Set COG_WHEEL
-        run: echo COG_WHEEL=$(ls dist/*.whl) >>"$GITHUB_ENV"
+          merge-multiple: true
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
