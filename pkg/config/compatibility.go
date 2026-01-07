@@ -81,17 +81,14 @@ func (i *CUDABaseImage) ImageTag() string {
 	return "nvidia/cuda:" + i.Tag
 }
 
-//go:generate go run ../../tools/compatgen/main.go cuda -o cuda_base_images.json
 //go:embed cuda_base_images.json
 var cudaBaseImagesData []byte
 var CUDABaseImages []CUDABaseImage
 
-//go:generate go run ../../tools/compatgen/main.go tensorflow -o tf_compatibility_matrix.json
 //go:embed tf_compatibility_matrix.json
 var tfCompatibilityMatrixData []byte
 var TFCompatibilityMatrix []TFCompatibility
 
-//go:generate go run ../../tools/compatgen/main.go torch -o torch_compatibility_matrix.json
 //go:embed torch_compatibility_matrix.json
 var torchCompatibilityMatrixData []byte
 var TorchCompatibilityMatrix []TorchCompatibility
