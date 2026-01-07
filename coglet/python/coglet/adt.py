@@ -176,6 +176,18 @@ class FieldType:
                 # Bare list type without type arguments, treat as List[Any]
                 elem_t = Any
             repetition = Repetition.REPEATED
+        elif origin is typing.Literal:
+            # Literal types (e.g., Literal['a', 'b']) are treated as their underlying type
+            # Most Literal types are strings, but could be int, bool, etc.
+            t_args = typing.get_args(tpe)
+            if t_args:
+                # Infer the type from the first literal value
+                first_val = t_args[0]
+                elem_t = type(first_val)
+            else:
+                # Fallback to string if no args (shouldn't happen)
+                elem_t = str
+            repetition = Repetition.REQUIRED
         elif _is_union(tpe):
             t_args = typing.get_args(tpe)
             assert len(t_args) == 2 and type(None) in t_args, (
