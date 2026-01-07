@@ -7,7 +7,7 @@ def test_config(tmpdir_factory, cog_binary):
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = """
 build:
-  python_version: "3.8"
+  python_version: "3.9"
         """
         f.write(cog_yaml)
 
