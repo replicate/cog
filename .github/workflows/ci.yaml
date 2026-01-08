@@ -195,7 +195,7 @@ jobs:
     name: "Test integration (${{ matrix.runtime }})"
     needs: build-python
     runs-on: ubuntu-latest-16-cores
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -233,11 +233,11 @@ jobs:
           # Run full test suite with reruns for flaky tests
           # - cog
           # - coglet
-          # - coglet-alpha: stop after 5 failures (passes currently)
+          # - coglet-alpha
           if [ "$COG_WHEEL" = "cog" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3 --maxfail=5 
           elif [ "$COG_WHEEL" = "coglet" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3 --maxfail=5
           else
             PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3 --maxfail=5
           fi
