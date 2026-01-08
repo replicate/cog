@@ -227,8 +227,6 @@ jobs:
       - name: Test
         env:
           COG_WHEEL: ${{ matrix.runtime }}
-        # coglet/coglet-alpha tests may fail due to error message differences - don't block PR
-        continue-on-error: ${{ matrix.runtime != 'cog' }}
         run: |
           # Build cog binary
           make cog
