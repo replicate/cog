@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 
-from cog.coder import dataclass_coder, json_coder, set_coder
+from cog.coder import dataclass_coder, json_coder, pydantic_coder, set_coder
 from coglet import api
 from coglet.util import type_name
 
@@ -109,8 +109,8 @@ class PrimitiveType(Enum):
     def python_type(self) -> str:
         return type_name(PrimitiveType._python_type()[self])
 
-    def json_type(self) -> dict[str, Any]:
-        jt: dict[str, Any] = {'type': self._json_type()[self]}
+    def json_type(self) -> Dict[str, Any]:
+        jt: Dict[str, Any] = {'type': self._json_type()[self]}
         if self is self.PATH:
             jt['format'] = 'uri'
         elif self is self.SECRET:
@@ -196,6 +196,7 @@ class FieldType:
         if cog_t is PrimitiveType.CUSTOM:
             api.Coder.register(dataclass_coder.DataclassCoder)
             api.Coder.register(json_coder.JsonCoder)
+            api.Coder.register(pydantic_coder.BaseModelCoder)
             api.Coder.register(set_coder.SetCoder)
             coder = api.Coder.lookup(elem_t)
             assert coder is not None, f'unsupported Cog type {type_name(elem_t)}'
@@ -213,7 +214,7 @@ class FieldType:
             # Should not reach here
             return value
 
-    def json_type(self) -> dict[str, Any]:
+    def json_type(self) -> Dict[str, Any]:
         if self.repetition is Repetition.REPEATED:
             return {'type': 'array', 'items': self.primitive.json_type()}
         else:
@@ -282,8 +283,8 @@ class Output:
     fields: Optional[Dict[str, FieldType]] = None
     coder: Optional[api.Coder] = None
 
-    def json_type(self) -> dict[str, Any]:
-        jt: dict[str, Any] = {'title': 'Output'}
+    def json_type(self) -> Dict[str, Any]:
+        jt: Dict[str, Any] = {'title': 'Output'}
         if self.kind is Kind.SINGLE:
             assert self.type is not None
             jt.update(self.type.json_type())
