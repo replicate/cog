@@ -1,0 +1,10 @@
+from cog import BasePredictor, Input
+
+
+class Predictor(BasePredictor):
+    test_inputs = {'items': [4, 5, 6]}
+
+    def predict(
+        self, items: list[int] = Input(default_factory=lambda: [1, 2, 3])
+    ) -> str:
+        return f'items: {items}'

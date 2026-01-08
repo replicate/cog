@@ -13,6 +13,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/registry/registrytest"
+	"github.com/replicate/cog/pkg/wheels"
 )
 
 func testTini() string {
@@ -29,14 +30,8 @@ ENTRYPOINT ["/sbin/tini", "--"]
 }
 
 func getWheelName() string {
-	files, err := CogEmbed.ReadDir("embed")
-	if err != nil {
-		panic(err)
-	}
-	if len(files) != 1 {
-		panic("couldn't find wheel embed or too many files in embed")
-	}
-	return files[0].Name()
+	filename, _ := wheels.ReadCogWheel()
+	return filename
 }
 
 func testInstallCog(relativeTmpDir string, stripped bool) string {
@@ -897,4 +892,281 @@ COPY . /src`
 torch==2.3.1
 pandas==2.0.3
 coglet @ https://github.com/replicate/cog-runtime/releases/download/v0.1.0-alpha31/coglet-0.1.0a31-py3-none-any.whl`, string(requirements))
+}
+
+func TestCOGWheelDefaultCogRuntimeFalse(t *testing.T) {
+	// Default behavior with cog_runtime: false (or not set) should use embedded cog wheel
+	tmpDir := t.TempDir()
+
+	yaml := `
+build:
+  gpu: false
+  python_version: "3.11"
+predict: predict.py:Predictor
+`
+	conf, err := config.FromYAML([]byte(yaml))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
+	require.NoError(t, err)
+
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	// Should contain the embedded cog wheel install (versioned filename like cog-0.x.x-py3-none-any.whl)
+	require.Contains(t, actual, "/tmp/cog-")
+	require.Contains(t, actual, ".whl")
+	require.Contains(t, actual, "'pydantic>=1.9,<3'")
+	// Should NOT contain coglet-specific env vars
+	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
+}
+
+func TestCOGWheelDefaultCogRuntimeTrue(t *testing.T) {
+	// Default behavior with cog_runtime: true should use coglet-alpha (PinnedCogletURL)
+	tmpDir := t.TempDir()
+
+	yaml := `
+build:
+  gpu: false
+  python_version: "3.11"
+  cog_runtime: true
+predict: predict.py:Predictor
+`
+	conf, err := config.FromYAML([]byte(yaml))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
+	require.NoError(t, err)
+
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	// Should contain coglet-alpha/PinnedCogletURL install with cog uninstall prefix
+	require.Contains(t, actual, "RUN pip uninstall -y cog 2>/dev/null || true && pip install "+PinnedCogletURL)
+	require.Contains(t, actual, "ENV R8_COG_VERSION=coglet")
+	require.Contains(t, actual, "ENV R8_PYTHON_VERSION=3.11")
+}
+
+func TestCOGWheelEnvCog(t *testing.T) {
+	// COG_WHEEL=cog should use embedded cog wheel even with cog_runtime: true
+	t.Setenv("COG_WHEEL", "cog")
+
+	tmpDir := t.TempDir()
+
+	yaml := `
+build:
+  gpu: false
+  python_version: "3.11"
+  cog_runtime: true
+predict: predict.py:Predictor
+`
+	conf, err := config.FromYAML([]byte(yaml))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
+	require.NoError(t, err)
+
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	// Should contain the embedded cog wheel install (versioned filename like cog-0.x.x-py3-none-any.whl)
+	require.Contains(t, actual, "/tmp/cog-")
+	require.Contains(t, actual, ".whl")
+	require.Contains(t, actual, "'pydantic>=1.9,<3'")
+	// Should NOT contain coglet-specific env vars
+	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
+}
+
+func TestCOGWheelEnvCoglet(t *testing.T) {
+	// COG_WHEEL=coglet should use embedded coglet wheel
+	t.Setenv("COG_WHEEL", "coglet")
+
+	tmpDir := t.TempDir()
+
+	yaml := `
+build:
+  gpu: false
+  python_version: "3.11"
+predict: predict.py:Predictor
+`
+	conf, err := config.FromYAML([]byte(yaml))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
+	require.NoError(t, err)
+
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	// Should contain the embedded coglet wheel install (versioned filename like coglet-0.x.x-py3-none-any.whl)
+	require.Contains(t, actual, "/tmp/coglet-")
+	require.Contains(t, actual, ".whl")
+	require.Contains(t, actual, "ENV R8_COG_VERSION=coglet")
+	require.Contains(t, actual, "ENV R8_PYTHON_VERSION=3.11")
+}
+
+func TestCOGWheelEnvCogletAlpha(t *testing.T) {
+	// COG_WHEEL=coglet-alpha should use PinnedCogletURL even without cog_runtime: true
+	t.Setenv("COG_WHEEL", "coglet-alpha")
+
+	tmpDir := t.TempDir()
+
+	yaml := `
+build:
+  gpu: false
+  python_version: "3.11"
+predict: predict.py:Predictor
+`
+	conf, err := config.FromYAML([]byte(yaml))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
+	require.NoError(t, err)
+
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	// Should contain coglet-alpha/PinnedCogletURL install with cog uninstall prefix
+	require.Contains(t, actual, "RUN pip uninstall -y cog 2>/dev/null || true && pip install "+PinnedCogletURL)
+	require.Contains(t, actual, "ENV R8_COG_VERSION=coglet")
+	require.Contains(t, actual, "ENV R8_PYTHON_VERSION=3.11")
+}
+
+func TestCOGWheelEnvURL(t *testing.T) {
+	// COG_WHEEL=https://... should install from URL
+	customURL := "https://example.com/custom-coglet-0.1.0.whl"
+	t.Setenv("COG_WHEEL", customURL)
+
+	tmpDir := t.TempDir()
+
+	yaml := `
+build:
+  gpu: false
+  python_version: "3.11"
+predict: predict.py:Predictor
+`
+	conf, err := config.FromYAML([]byte(yaml))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
+	require.NoError(t, err)
+
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	// Should contain pip install from custom URL
+	require.Contains(t, actual, "pip install --no-cache-dir "+customURL)
+	// Since URL contains "coglet", should also have env vars
+	require.Contains(t, actual, "ENV R8_COG_VERSION=coglet")
+	require.Contains(t, actual, "ENV R8_PYTHON_VERSION=3.11")
+}
+
+func TestCOGWheelEnvURLNonCoglet(t *testing.T) {
+	// COG_WHEEL=https://... with non-coglet URL should NOT set coglet env vars
+	customURL := "https://example.com/custom-runtime-0.1.0.whl"
+	t.Setenv("COG_WHEEL", customURL)
+
+	tmpDir := t.TempDir()
+
+	yaml := `
+build:
+  gpu: false
+  python_version: "3.11"
+predict: predict.py:Predictor
+`
+	conf, err := config.FromYAML([]byte(yaml))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
+	require.NoError(t, err)
+
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	// Should contain pip install from custom URL
+	require.Contains(t, actual, "pip install --no-cache-dir "+customURL)
+	// Should NOT contain coglet-specific env vars
+	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
+}
+
+func TestCOGWheelCogletWithPython39Succeeds(t *testing.T) {
+	// COG_WHEEL=coglet with Python 3.9 should succeed
+	tmpDir := t.TempDir()
+	t.Setenv("COG_WHEEL", "coglet")
+
+	yaml := `
+build:
+  gpu: false
+  python_version: "3.9"
+predict: predict.py:Predictor
+`
+	conf, err := config.FromYAML([]byte(yaml))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
+	require.NoError(t, err)
+
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+	require.Contains(t, actual, "ENV R8_COG_VERSION=coglet")
+}
+
+func TestCOGWheelEnvFile(t *testing.T) {
+	// COG_WHEEL=/path/to/file.whl should install from local file
+	tmpDir := t.TempDir()
+
+	// Create a mock wheel file
+	wheelPath := filepath.Join(tmpDir, "test-coglet-0.1.0-py3-none-any.whl")
+	err := os.WriteFile(wheelPath, []byte("mock wheel content"), 0o644)
+	require.NoError(t, err)
+
+	t.Setenv("COG_WHEEL", wheelPath)
+
+	yaml := `
+build:
+  gpu: false
+  python_version: "3.11"
+predict: predict.py:Predictor
+`
+	conf, err := config.FromYAML([]byte(yaml))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
+	require.NoError(t, err)
+
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	// Should contain pip install from temp path
+	require.Contains(t, actual, "pip install --no-cache-dir /tmp/test-coglet-0.1.0-py3-none-any.whl")
+	// Since filename contains "coglet", should also have env vars
+	require.Contains(t, actual, "ENV R8_COG_VERSION=coglet")
+	require.Contains(t, actual, "ENV R8_PYTHON_VERSION=3.11")
 }

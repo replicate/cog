@@ -131,7 +131,11 @@ func loadAuthFromCredentialsStore(ctx context.Context, credsStore string, regist
 	}
 	err = cmd.Wait()
 	if err != nil {
-		return nil, fmt.Errorf("exec wait error: %w", err)
+		output := strings.TrimSpace(out.String())
+		if output != "" {
+			return nil, fmt.Errorf("failed to get credentials for %q: %s", registryHost, output)
+		}
+		return nil, fmt.Errorf("failed to get credentials for %q: %w", registryHost, err)
 	}
 
 	var config CredentialHelperInput

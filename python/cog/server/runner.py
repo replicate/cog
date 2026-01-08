@@ -113,6 +113,11 @@ class PredictionRunner:
         else:
             payload = prediction.input.copy()
 
+        if prediction.context is None:
+            prediction.context = {}
+        if prediction.id is not None:
+            prediction.context["id"] = prediction.id
+
         sid = self._worker.subscribe(task.handle_event, tag=tag)
         task.track(self._worker.predict(payload, context=prediction.context, tag=tag))
         task.add_done_callback(self._task_done_callback(tag, sid))

@@ -24,25 +24,8 @@ func TestDockerClient(t *testing.T) {
 		t.Skip("skipping docker client tests in short mode")
 	}
 
-	t.Setenv("COG_DOCKER_SDK_CLIENT", "0")
-
-	client := NewDockerCommand()
-	runDockerClientTests(t, client)
-}
-
-func TestDockerAPIClient(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping docker client tests in short mode")
-	}
-
-	t.Setenv("COG_DOCKER_SDK_CLIENT", "1")
-
-	apiClient, err := NewAPIClient(t.Context())
-	require.NoError(t, err, "Failed to create docker api client")
-	runDockerClientTests(t, apiClient)
-}
-
-func runDockerClientTests(t *testing.T, dockerClient command.Command) {
+	dockerClient, err := NewClient(t.Context())
+	require.NoError(t, err, "Failed to create docker client")
 	dockerHelper := dockertest.NewHelperClient(t)
 	testRegistry := registry_testhelpers.StartTestRegistry(t)
 
@@ -357,10 +340,6 @@ func runDockerClientTests(t *testing.T, dockerClient command.Command) {
 
 		t.Run("registry with authentication", func(t *testing.T) {
 			t.Parallel()
-
-			if _, ok := dockerClient.(*DockerCommand); ok {
-				t.Skip("skipping auth tests for docker command client since we can't set auth on the host without side effects")
-			}
 
 			authReg := registry_testhelpers.StartTestRegistry(t, registry_testhelpers.WithAuth("testuser", "testpass"))
 

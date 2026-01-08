@@ -146,6 +146,28 @@ As much as possible, this is attempting to follow the [Standard Go Project Layou
 - `pkg/util/` - Various packages that aren't part of Cog. They could reasonably be separate re-usable projects.
 - `python/` - The Cog Python library.
 - `test-integration/` - High-level integration tests for Cog.
+- `tools/compatgen/` - Tool for generating CUDA/PyTorch/TensorFlow compatibility matrices.
+
+## Updating compatibility matrices
+
+The CUDA base images and framework compatibility matrices in `pkg/config/` are checked into source control and only need to be regenerated when adding support for new versions of CUDA, PyTorch, or TensorFlow.
+
+To regenerate the compatibility matrices, run:
+
+```sh
+# Regenerate all matrices
+script/generate-compat
+
+# Or regenerate specific matrices
+script/generate-compat cuda
+script/generate-compat torch
+script/generate-compat tensorflow
+```
+
+The generated files are:
+- `pkg/config/cuda_base_images.json` - Available NVIDIA CUDA base images
+- `pkg/config/torch_compatibility_matrix.json` - PyTorch/CUDA/Python compatibility
+- `pkg/config/tf_compatibility_matrix.json` - TensorFlow/CUDA/Python compatibility
 
 ## Concepts
 

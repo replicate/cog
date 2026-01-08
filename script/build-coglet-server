@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+
+OUTPUT_DIR="${ROOT_DIR}/coglet/python/cog/bin"
+
+mkdir -p "${OUTPUT_DIR}"
+rm -f "${OUTPUT_DIR}"/coglet-server-*
+
+echo "Building coglet-server for linux/amd64"
+cd "${ROOT_DIR}"
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "${OUTPUT_DIR}/coglet-server-linux-amd64" ./coglet/cmd/coglet-server
