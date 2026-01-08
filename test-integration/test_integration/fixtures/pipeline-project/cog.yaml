@@ -1,3 +1,5 @@
 build:
   python_version: "3.13"
+  python_packages:
+    - replicate
 predict: "predict.py:run"

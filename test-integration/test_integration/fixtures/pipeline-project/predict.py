@@ -1,5 +1,4 @@
-from cog import Input
-from replicate import use
+from cog import Input, use
 
 upcase = use("pipelines-beta/upcase")
 

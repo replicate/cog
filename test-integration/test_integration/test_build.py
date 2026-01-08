@@ -365,19 +365,54 @@ def test_pip_freeze(docker_image, cog_binary):
     )
     labels = image[0]["Config"]["Labels"]
     pip_freeze = labels["run.cog.pip_freeze"]
+
+    # Filter out the cog/coglet/coglet-alpha packages and fastapi/starlette
+    # Different wheels have different package names
     pip_freeze = "\n".join(
         [
             x
             for x in pip_freeze.split("\n")
             if not x.startswith("cog @")
+            and not x.startswith("coglet @")
+            and not x.startswith("coglet-alpha @")
             and not x.startswith("fastapi")
             and not x.startswith("starlette")
         ]
     )
-    assert (
-        pip_freeze
-        == "anyio==4.4.0\nattrs==23.2.0\ncertifi==2024.8.30\ncharset-normalizer==3.3.2\nclick==8.1.7\nexceptiongroup==1.2.2\nh11==0.14.0\nhttptools==0.6.1\nidna==3.8\npydantic==1.10.18\npython-dotenv==1.0.1\nPyYAML==6.0.2\nrequests==2.32.3\nsniffio==1.3.1\nstructlog==24.4.0\ntyping_extensions==4.12.2\nurllib3==2.2.2\nuvicorn==0.30.6\nuvloop==0.20.0\nwatchfiles==0.24.0\nwebsockets==13.0.1\n"
+
+    # coglet has stricter typing_extensions requirement (>=4.15) vs cog (>=4.4.0)
+    # Adjust expected version based on COG_WHEEL environment variable
+    cog_wheel = os.environ.get("COG_WHEEL", "cog")
+    if cog_wheel in ("coglet", "coglet-alpha"):
+        typing_ext_version = "4.15.0"
+    else:
+        typing_ext_version = "4.12.2"
+
+    expected_pip_freeze = (
+        "anyio==4.4.0\n"
+        "attrs==23.2.0\n"
+        "certifi==2024.8.30\n"
+        "charset-normalizer==3.3.2\n"
+        "click==8.1.7\n"
+        "exceptiongroup==1.2.2\n"
+        "h11==0.14.0\n"
+        "httptools==0.6.1\n"
+        "idna==3.8\n"
+        "pydantic==1.10.18\n"
+        "python-dotenv==1.0.1\n"
+        "PyYAML==6.0.2\n"
+        "requests==2.32.3\n"
+        "sniffio==1.3.1\n"
+        "structlog==24.4.0\n"
+        f"typing_extensions=={typing_ext_version}\n"
+        "urllib3==2.2.2\n"
+        "uvicorn==0.30.6\n"
+        "uvloop==0.20.0\n"
+        "watchfiles==0.24.0\n"
+        "websockets==13.0.1\n"
     )
+
+    assert pip_freeze == expected_pip_freeze
 
 
 def test_cog_installs_apt_packages(docker_image, cog_binary):

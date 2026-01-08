@@ -57,16 +57,17 @@ class IncludeAnalyzer(ast.NodeVisitor):
             # Handles `from replicate import include` then `include(...)`
             target = self.imports.get(node.func.id, node.func.id)
 
-        if target == 'replicate.use':
+        # Support both replicate.use (legacy) and cog.use (current)
+        if target in ('replicate.use', 'cog.use'):
             # Check scope
             if self.scope_stack:
                 raise ValueError(
-                    f'[{self.file_path}] Invalid scope at line {node.lineno}: `replicate.use(...)` must be in global scope'
+                    f'[{self.file_path}] Invalid scope at line {node.lineno}: `use(...)` must be in global scope'
                 )
             elif node.args:
                 arg = node.args[0]
                 if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                    self.includes.append(arg.s)
+                    self.includes.append(arg.value)
                 else:
                     raise ValueError(
                         f'[{self.file_path}] Unresolvable argument at line {node.lineno}: Not a string literal'
