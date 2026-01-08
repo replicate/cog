@@ -13,6 +13,7 @@ from .types import (
     Input,
     Path,
     Secret,
+    use,
 )
 
 install_mime_extensions(mimetypes)
@@ -35,4 +36,5 @@ __all__ = [
     "Input",
     "Path",
     "Secret",
+    "use",
 ]
