@@ -62,7 +62,7 @@ class IncludeAnalyzer(ast.NodeVisitor):
             # Check scope
             if self.scope_stack:
                 raise ValueError(
-                    f"[{self.file_path}] Invalid scope at line {node.lineno}: `use(...)` must be in global scope"
+                    f"[{self.file_path}] Invalid scope at line {node.lineno}: `{target}(...)` must be in global scope"
                 )
             elif node.args:
                 arg = node.args[0]
