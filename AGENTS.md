@@ -140,6 +140,12 @@ The CLI follows a command pattern with subcommands. The main components are:
 ### Updating the docs
 - Documentation is in the `docs/` directory, written in Markdown and generated into HTML using `mkdocs`.
 
+### Version consistency between Go and Python
+- Goreleaser generates semver-style version strings for the Go binary (e.g., `0.17.0-dev+g0a3f31d1.d20260108`)
+- setuptools-scm generates PEP440-style version strings for Python wheels (e.g., `0.17.0a2.dev14+g0a3f31d1.d20260108`)
+- Git hash length must be consistent: configure setuptools-scm with `git_describe_command = "git describe --dirty --tags --long --match v* --abbrev=8"` in both `pyproject.toml` and `coglet/pyproject.toml` to match goreleaser's 8-character default
+- The integration test `test_cog_install_base_image` validates version string compatibility between CLI binary and installed Python package
+
 ## Important Files
 - `cog.yaml` - User-facing model configuration
 - `pkg/config/config.go` - Go code for parsing and validating `cog.yaml`
