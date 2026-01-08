@@ -20,7 +20,7 @@ dependencies = [
 dev = [
     'build',
     'ipython',
-    'mypy==1.16.0', # pinned to fix CI
+    'mypy==1.11.2', # Last version supporting Python 3.8
     'nox',
     'ruff',
     'setuptools',
