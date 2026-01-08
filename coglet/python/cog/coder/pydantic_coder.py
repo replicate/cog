@@ -1,6 +1,6 @@
 import inspect
 import pathlib
-from typing import Any, Type
+from typing import Any, Dict, Type
 
 import pydantic
 from pydantic import BaseModel
@@ -57,8 +57,8 @@ class BaseModelCoder(api.Coder):
     def __init__(self, cls: Type[BaseModel]):
         self.cls = cls
 
-    def encode(self, x: BaseModel) -> dict[str, Any]:
+    def encode(self, x: BaseModel) -> Dict[str, Any]:
         return x.model_dump(exclude_unset=True)
 
-    def decode(self, x: dict[str, Any]) -> BaseModel:
+    def decode(self, x: Dict[str, Any]) -> BaseModel:
         return self.cls.model_construct(**x)

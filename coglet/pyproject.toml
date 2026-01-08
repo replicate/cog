@@ -2,15 +2,19 @@
 name = 'coglet'
 dynamic = ['version']
 description = 'Minimum viable Cog runtime'
-requires-python = '>=3.9'
+requires-python = '>=3.8'
 classifiers = [
+  'Programming Language :: Python :: 3.8',
   'Programming Language :: Python :: 3.9',
   'Programming Language :: Python :: 3.10',
   'Programming Language :: Python :: 3.11',
   'Programming Language :: Python :: 3.12',
   'Programming Language :: Python :: 3.13',
 ]
-dependencies = ["typing_extensions>=4.15"]
+dependencies = [
+    "typing_extensions>=4.4.0",
+    "pydantic>=1.9,<3",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -29,9 +33,6 @@ test = [
     'pytest-asyncio',
     'pytest-xdist',
     'tqdm',
-]
-
-provided = [
     'pydantic',
 ]
 
@@ -80,3 +81,4 @@ exclude = ['tests*']
 [tool.setuptools_scm]
 root = '..'
 version_file = "python/coglet/_version.py"
+git_describe_command = "git describe --dirty --tags --long --match v* --abbrev=8"

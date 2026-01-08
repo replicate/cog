@@ -199,7 +199,7 @@ class AnyType:
         return value
 
     @staticmethod
-    def json_type() -> dict[str, Any]:
+    def json_type() -> Dict[str, Any]:
         # Compat: legacy Cog does not even add {"type": "object"}
         return {}
 

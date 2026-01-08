@@ -1,5 +1,5 @@
 import typing
-from typing import Any, Optional, Set, Type
+from typing import Any, Dict, Optional, Set, Type
 
 from coglet import api
 
@@ -13,8 +13,8 @@ class SetCoder(api.Coder):
         else:
             return None
 
-    def encode(self, x: Any) -> dict[str, Any]:
+    def encode(self, x: Any) -> Dict[str, Any]:
         return {'items': list(x)}
 
-    def decode(self, x: dict[str, Any]) -> Any:
+    def decode(self, x: Dict[str, Any]) -> Any:
         return set(x['items'])

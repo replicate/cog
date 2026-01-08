@@ -1,5 +1,5 @@
 import dataclasses
-from typing import Any, Optional, Type
+from typing import Any, Dict, Optional, Type
 
 from coglet import api
 
@@ -16,12 +16,12 @@ class DataclassCoder(api.Coder):
         assert dataclasses.is_dataclass(cls)
         self.cls = cls
 
-    def encode(self, x: Any) -> dict[str, Any]:
+    def encode(self, x: Any) -> Dict[str, Any]:
         # Secret is a dataclass and dataclasses.asdict recursively converts its internals
         return self._to_dict(self.cls, x)
 
-    def _to_dict(self, cls: Type, x: Any) -> dict[str, Any]:
-        r: dict[str, Any] = {}
+    def _to_dict(self, cls: Type, x: Any) -> Dict[str, Any]:
+        r: Dict[str, Any] = {}
         for f in dataclasses.fields(cls):
             v = getattr(x, f.name)
             # Keep Path and Secret as is and let json.dumps(default=fn) handle them
@@ -34,12 +34,12 @@ class DataclassCoder(api.Coder):
             r[f.name] = v
         return r
 
-    def decode(self, x: dict[str, Any]) -> Any:
+    def decode(self, x: Dict[str, Any]) -> Any:
         kwargs = self._from_dict(self.cls, x)
         return self.cls(**kwargs)  # type: ignore
 
-    def _from_dict(self, cls: Type, x: dict[str, Any]) -> Any:
-        r: dict[str, Any] = {}
+    def _from_dict(self, cls: Type, x: Dict[str, Any]) -> Any:
+        r: Dict[str, Any] = {}
         for f in dataclasses.fields(cls):
             if f.name not in x:
                 continue
