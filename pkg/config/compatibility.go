@@ -151,6 +151,11 @@ func cudaVersionFromTorchPlusVersion(ver string) (string, string) {
 }
 
 func cudasFromTorch(ver string) ([]string, error) {
+	if ver == "" {
+		return nil, fmt.Errorf(
+			"torch version must be specified when using CUDA",
+		)
+	}
 	cudas := []string{}
 
 	// Check the version modifier on torch (such as +cu118)
