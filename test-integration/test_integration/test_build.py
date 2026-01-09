@@ -37,7 +37,7 @@ def test_build_names_uses_image_option_in_cog_yaml(tmpdir, docker_image, cog_bin
         cog_yaml = f"""
 image: {docker_image}
 build:
-  python_version: 3.8
+  python_version: 3.9
 predict: predict.py:Predictor
 """
         f.write(cog_yaml)
