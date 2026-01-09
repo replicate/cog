@@ -17,11 +17,18 @@ def test_build_without_predictor(docker_image, cog_binary):
     )
     assert build_process.returncode > 0
     stderr = build_process.stderr.decode()
-    # Both cog and coglet produce this message, but cog has escaped quotes (Python exception)
-    # while coglet does not (Go error)
+    # Different runtimes produce different error formats:
+    # - cog: escaped quotes (Python exception)
+    # - coglet: unescaped quotes (Go error)
+    # - coglet-alpha: JSON formatted error with "invalid predict" or "failed to parse predict"
     assert (
         "Can't run predictions: 'predict' option not found" in stderr
         or "Can\\'t run predictions: \\'predict\\' option not found" in stderr
+        or ("invalid predict" in stderr and "Failed to get type signature" in stderr)
+        or (
+            "failed to parse predict" in stderr
+            and "Failed to get type signature" in stderr
+        )
     )
 
 
