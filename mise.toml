@@ -36,6 +36,10 @@ run = "cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings
 description = "Check licenses and advisories with cargo-deny"
 run = "cargo deny --manifest-path crates/Cargo.toml check"
 
+[tasks."test:coglet-python"]
+description = "Run coglet-python Python tests"
+run = "cd crates/coglet-python && python -m pytest tests/ -v"
+
 [tools]
 cargo-binstall = "1.16.6"
 "cargo:cargo-deny" = "0.19.0"
