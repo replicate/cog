@@ -28,14 +28,21 @@ impl Default for ServerConfig {
 }
 
 /// Shared server state.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct AppState {
     pub health: RwLock<Health>,
 }
 
-/// Start the HTTP server.
-pub async fn serve(config: ServerConfig) -> anyhow::Result<()> {
-    let state = Arc::new(AppState::default());
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            health: RwLock::new(Health::Unknown),
+        }
+    }
+}
+
+/// Start the HTTP server with provided state.
+pub async fn serve(config: ServerConfig, state: Arc<AppState>) -> anyhow::Result<()> {
     let app = routes(state);
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
