@@ -5,7 +5,7 @@ mod predictor;
 use std::sync::Arc;
 
 use pyo3::prelude::*;
-use tokio::sync::RwLock;
+
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -13,11 +13,6 @@ use coglet_core::Health;
 use coglet_http::{serve as http_serve, AppState, ServerConfig};
 
 use crate::predictor::PythonPredictor;
-
-/// Shared state that holds the predictor.
-struct RuntimeState {
-    predictor: Option<PythonPredictor>,
-}
 
 /// Start the coglet HTTP server with a predictor.
 ///
@@ -30,7 +25,11 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16)
         .with_env_filter(EnvFilter::from_default_env())
         .try_init();
 
-    let config = ServerConfig { host, port };
+    let config = ServerConfig {
+        host,
+        port,
+        max_concurrency: 1, // Sync predictors use single slot
+    };
 
     // Load predictor if ref provided
     let predictor = if let Some(ref pred_ref) = predictor_ref {
@@ -75,9 +74,22 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16)
     };
 
     // Create app state with initial health
-    let app_state = Arc::new(AppState {
-        health: RwLock::new(initial_health),
-    });
+    // For sync predictors, max_concurrency=1 (single slot)
+    let mut app_state = AppState::new(1).with_health(initial_health);
+
+    // Create the predict function closure if we have a predictor
+    if let Some(pred) = predictor {
+        // Wrap predictor in Arc so the closure can be cloned
+        let pred = Arc::new(pred);
+        let predict_fn = Arc::new(move |input: serde_json::Value| {
+            // This runs in spawn_blocking
+            // PyO3 hands control to Python which manages GIL internally
+            pred.predict(input)
+        }) as Arc<coglet_core::PredictFn>;
+        app_state = app_state.with_predict_fn(predict_fn);
+    }
+
+    let app_state = Arc::new(app_state);
 
     // Release the GIL while running the async runtime
     py.allow_threads(|| {

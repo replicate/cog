@@ -4,10 +4,10 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use tokio::net::TcpListener;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 use tracing::info;
 
-use coglet_core::Health;
+use coglet_core::{Health, PredictFn};
 
 use crate::routes::routes;
 
@@ -16,6 +16,9 @@ use crate::routes::routes;
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
+    /// Maximum concurrent predictions (slots).
+    /// Default is 1 for sync predictors.
+    pub max_concurrency: usize,
 }
 
 impl Default for ServerConfig {
@@ -23,21 +26,47 @@ impl Default for ServerConfig {
         Self {
             host: "0.0.0.0".to_string(),
             port: 5000,
+            max_concurrency: 1,
         }
     }
 }
 
 /// Shared server state.
-#[derive(Debug)]
 pub struct AppState {
     pub health: RwLock<Health>,
+    /// Predict function wrapped in Arc for cloning into spawn_blocking tasks.
+    pub predict_fn: Option<Arc<PredictFn>>,
+    /// Semaphore controlling concurrent prediction slots.
+    /// 
+    /// This enforces max_concurrency at the HTTP layer. Even with GIL Python
+    /// (which serializes bytecode execution), this is useful because:
+    /// 1. Prevents unbounded request queuing in spawn_blocking's thread pool
+    /// 2. Allows early rejection (503) when at capacity
+    /// 3. Works correctly for free-threaded Python where GIL doesn't serialize
+    /// 4. Native extensions (torch) release GIL, so N slots can do parallel CUDA
+    ///
+    /// We use try_acquire() for immediate rejection rather than queueing.
+    /// Sync predictors get 1 slot, async predictors can have N.
+    pub slots: Semaphore,
 }
 
-impl Default for AppState {
-    fn default() -> Self {
+impl AppState {
+    pub fn new(max_concurrency: usize) -> Self {
         Self {
             health: RwLock::new(Health::Unknown),
+            predict_fn: None,
+            slots: Semaphore::new(max_concurrency),
         }
+    }
+    
+    pub fn with_predict_fn(mut self, predict_fn: Arc<PredictFn>) -> Self {
+        self.predict_fn = Some(predict_fn);
+        self
+    }
+    
+    pub fn with_health(mut self, health: Health) -> Self {
+        self.health = RwLock::new(health);
+        self
     }
 }
 

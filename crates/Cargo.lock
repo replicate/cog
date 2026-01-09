@@ -112,6 +112,8 @@ name = "coglet-core"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -134,6 +136,7 @@ dependencies = [
  "coglet-core",
  "coglet-http",
  "pyo3",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -678,6 +681,26 @@ name = "target-lexicon"
 version = "0.12.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
+
+[[package]]
+name = "thiserror"
+version = "2.0.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f63587ca0f12b72a0600bcba1d40081f830876000bb46dd2337a3051618f4fc8"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ff15c8ecd7de3849db632e14d18d2571fa09dfc5ed93479bc4485c7a517c913"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "thread_local"
