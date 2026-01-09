@@ -235,22 +235,22 @@ jobs:
           COG_WHEEL: ${{ matrix.runtime }}
           # Enable Docker BuildKit for faster builds with better caching
           DOCKER_BUILDKIT: 1
-          # Use fewer workers during debugging to see errors more clearly
-          # TODO: Increase back to 12 once tests are stable
-          PYTEST_XDIST_WORKER_COUNT: 4
+          # DEBUGGING: Run tests sequentially to see errors immediately
+          # Parallel execution delays error output until the end
+          # TODO: Re-enable parallelism once tests are stable
+          PYTEST_XDIST_WORKER_COUNT: 0
         run: |
-          # Run full test suite with reruns for flaky tests
-          # Using fewer workers (4) to see errors more clearly during debugging
-          # --tb=short shows concise tracebacks immediately
-          # --no-header reduces noise in output
-          # -v shows test names, -vv would show full diffs but is too verbose with xdist
-          # NOTE: No reruns during debugging to fail fast and see real errors
+          # DEBUGGING: Run sequentially with verbose error output
+          # This is SLOW but shows errors immediately as they happen
+          # --tb=short shows concise tracebacks immediately  
+          # -x stops at first failure so we see the error right away
+          # Once we fix the failures, re-enable parallel execution
           if [ "$COG_WHEEL" = "cog" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -v --tb=short --no-header
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -v --tb=short -x
           elif [ "$COG_WHEEL" = "coglet" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -v --tb=short --no-header
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -v --tb=short -x
           else
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -v --tb=short --no-header
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -v --tb=short -x
           fi
 
   release:
