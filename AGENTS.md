@@ -64,6 +64,8 @@ The main commands for working on the CLI are:
 ## Working on the Python SDK
 The Python SDK is developed in the `python/cog/` directory. It uses `uv` for virtual environments and `tox` for testing across multiple Python versions.
 
+**Important:** coglet-alpha requires Python >=3.9, while the original cog supports Python 3.8+. When writing tests or examples, use Python 3.9 or higher to ensure compatibility with coglet-alpha.
+
 The main commands for working on the SDK are:
 - `make wheel` - Rebuilds the Python wheel from the `python/` directory
 
