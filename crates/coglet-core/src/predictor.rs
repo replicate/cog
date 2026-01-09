@@ -111,3 +111,91 @@ pub type PredictFuture = std::pin::Pin<
 ///
 /// Takes JSON input, returns a future that resolves to output or error.
 pub type AsyncPredictFn = dyn Fn(serde_json::Value) -> PredictFuture + Send + Sync;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn prediction_output_single_is_not_stream() {
+        let output = PredictionOutput::Single(json!("hello"));
+        assert!(!output.is_stream());
+    }
+
+    #[test]
+    fn prediction_output_stream_is_stream() {
+        let output = PredictionOutput::Stream(vec![json!("a"), json!("b")]);
+        assert!(output.is_stream());
+    }
+
+    #[test]
+    fn prediction_output_single_into_values() {
+        let output = PredictionOutput::Single(json!(42));
+        let values = output.into_values();
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0], json!(42));
+    }
+
+    #[test]
+    fn prediction_output_stream_into_values() {
+        let output = PredictionOutput::Stream(vec![json!(1), json!(2), json!(3)]);
+        let values = output.into_values();
+        assert_eq!(values, vec![json!(1), json!(2), json!(3)]);
+    }
+
+    #[test]
+    fn prediction_output_single_final_value() {
+        let output = PredictionOutput::Single(json!("result"));
+        assert_eq!(output.final_value(), &json!("result"));
+    }
+
+    #[test]
+    fn prediction_output_stream_final_value() {
+        let output = PredictionOutput::Stream(vec![json!("first"), json!("last")]);
+        assert_eq!(output.final_value(), &json!("last"));
+    }
+
+    #[test]
+    fn prediction_output_empty_stream_final_value_is_null() {
+        let output = PredictionOutput::Stream(vec![]);
+        assert_eq!(output.final_value(), &serde_json::Value::Null);
+    }
+
+    #[test]
+    fn prediction_output_serializes_untagged() {
+        // Single value serializes as just the value
+        let single = PredictionOutput::Single(json!("hello"));
+        insta::assert_json_snapshot!("output_single", single);
+
+        // Stream serializes as array
+        let stream = PredictionOutput::Stream(vec![json!(1), json!(2)]);
+        insta::assert_json_snapshot!("output_stream", stream);
+    }
+
+    #[test]
+    fn prediction_guard_tracks_time() {
+        let guard = PredictionGuard::new();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let metrics = guard.finish();
+
+        assert!(metrics.predict_time.is_some());
+        let time = metrics.predict_time.unwrap();
+        // Should be at least 10ms
+        assert!(time.as_millis() >= 10);
+        // But not more than 1 second (sanity check)
+        assert!(time.as_secs() < 1);
+    }
+
+    #[test]
+    fn prediction_error_display() {
+        let err = PredictionError::Failed("something broke".to_string());
+        assert_eq!(format!("{}", err), "Prediction failed: something broke");
+
+        let err = PredictionError::InvalidInput("bad json".to_string());
+        assert_eq!(format!("{}", err), "Input validation error: bad json");
+
+        let err = PredictionError::NotReady;
+        assert_eq!(format!("{}", err), "Predictor not ready");
+    }
+}

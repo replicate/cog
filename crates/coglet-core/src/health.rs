@@ -29,3 +29,54 @@ pub enum SetupStatus {
     Succeeded,
     Failed,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn health_default_is_unknown() {
+        assert_eq!(Health::default(), Health::Unknown);
+    }
+
+    #[test]
+    fn health_serializes_screaming_snake_case() {
+        insta::assert_json_snapshot!("health_all_variants", [
+            Health::Unknown,
+            Health::Starting,
+            Health::Ready,
+            Health::Busy,
+            Health::SetupFailed,
+            Health::Defunct,
+        ]);
+    }
+
+    #[test]
+    fn health_deserializes_screaming_snake_case() {
+        assert_eq!(
+            serde_json::from_str::<Health>("\"READY\"").unwrap(),
+            Health::Ready
+        );
+        assert_eq!(
+            serde_json::from_str::<Health>("\"SETUP_FAILED\"").unwrap(),
+            Health::SetupFailed
+        );
+    }
+
+    #[test]
+    fn setup_status_serializes_lowercase() {
+        insta::assert_json_snapshot!("setup_status_all_variants", [
+            SetupStatus::Starting,
+            SetupStatus::Succeeded,
+            SetupStatus::Failed,
+        ]);
+    }
+
+    #[test]
+    fn setup_status_deserializes_lowercase() {
+        assert_eq!(
+            serde_json::from_str::<SetupStatus>("\"succeeded\"").unwrap(),
+            SetupStatus::Succeeded
+        );
+    }
+}

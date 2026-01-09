@@ -1,0 +1,8 @@
+---
+source: coglet-core/src/predictor.rs
+expression: stream
+---
+[
+  1,
+  2
+]
