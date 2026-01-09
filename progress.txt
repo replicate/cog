@@ -88,3 +88,25 @@ All three wheels (cog, coglet, coglet-alpha) specify typing_extensions>=4.4.0 in
 - Remaining high-priority: F004 (requires Docker investigation)
 - Remaining medium/unknown: F006, F008-F014 (require Docker investigation)
 
+## 2026-01-09 - Fixed F008: Python Version Compatibility in test_config
+
+**Test:** test_integration/test_config.py::test_config
+
+**Issue:** Test created temporary cog.yaml with python_version: 3.8 but coglet-alpha requires Python >=3.9
+
+**Fix:** Updated python_version from 3.8 to 3.9 in test
+
+**Status:** FIXED ✓
+
+**Files Modified:**
+- test-integration/test_integration/test_config.py:10
+- test.json (marked F008 as passes=true)
+
+**Analysis:**
+Unlike other fixtures which have separate cog.yaml files, test_config creates a temporary cog.yaml file inline. The test was creating it with python_version: 3.8, causing the same compatibility issue as the fixture-based tests.
+
+**Progress Summary:**
+- Completed: F001, F002, F003, F005, F007, F008 (6/14 tests, 43%)
+- Remaining high-priority: F004 (requires Docker investigation)
+- Remaining medium: F006, F009-F014 (likely require Docker investigation, though some may be resolved by string-project fix)
+
