@@ -25,17 +25,19 @@ use coglet_core::{PredictionError, PredictionOutput, PredictionResult};
 /// - Most ML models are NOT thread-safe (shared weights, CUDA contexts)
 /// - Still need max_concurrency=1 for sync predictors unless model is thread-safe
 ///
-/// ## Async Predictors (future work)
+/// ## Async Predictors
 /// - `async def predict()` allows Python to manage concurrency
 /// - Python's asyncio handles yielding during I/O
 /// - Can support max_concurrency > 1 safely
 ///
 /// # Current Implementation
 ///
-/// We use a single prediction slot (max_concurrency=1). The predict call holds
-/// the GIL for JSON conversion but Python/torch can release it during compute.
+/// We detect async predictors via `inspect.iscoroutinefunction()` and handle
+/// them by running them in Python's asyncio event loop.
 pub struct PythonPredictor {
     instance: PyObject,
+    /// Whether predict() is an async function.
+    is_async: bool,
 }
 
 // PyObject is Send in PyO3 0.23+
@@ -53,7 +55,32 @@ impl PythonPredictor {
         // Load the predictor class and instantiate it
         let instance: PyObject = load_fn.call1((predictor_ref,))?.unbind();
 
-        Ok(Self { instance })
+        // Check if predict() is async (coroutine or async generator)
+        let is_async = Self::detect_async(py, &instance)?;
+        if is_async {
+            tracing::info!("Detected async predict()");
+        }
+
+        Ok(Self { instance, is_async })
+    }
+
+    /// Detect if predict() is an async function.
+    fn detect_async(py: Python<'_>, instance: &PyObject) -> PyResult<bool> {
+        let inspect = py.import("inspect")?;
+        let predict = instance.bind(py).getattr("predict")?;
+        
+        // Check iscoroutinefunction OR isasyncgenfunction
+        let is_coro: bool = inspect.call_method1("iscoroutinefunction", (&predict,))?.extract()?;
+        if is_coro {
+            return Ok(true);
+        }
+        let is_async_gen: bool = inspect.call_method1("isasyncgenfunction", (&predict,))?.extract()?;
+        Ok(is_async_gen)
+    }
+
+    /// Returns true if this predictor has an async predict() method.
+    pub fn is_async(&self) -> bool {
+        self.is_async
     }
 
     /// Call setup() on the predictor, handling weights parameter if present.
