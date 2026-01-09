@@ -239,14 +239,17 @@ jobs:
           # Run full test suite with reruns for flaky tests
           # Use 12 workers instead of auto to avoid I/O contention on 16-core machine
           # --dist loadfile ensures tests from same file run on same worker (reduces Docker rebuilds)
+          # NOTE: --maxfail doesn't work properly with pytest-xdist parallel execution
+          #       Workers run independently and don't coordinate on failure counts
+          #       Job timeout (60min) acts as the safety net for runaway failures
           # - cog: more reruns due to historical flakiness
           # - coglet/coglet-alpha: fewer reruns, fail faster
           if [ "$COG_WHEEL" = "cog" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -vv --reruns 3 --maxfail=5 
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -vv --reruns 3
           elif [ "$COG_WHEEL" = "coglet" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -vv --reruns 2 --maxfail=5
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -vv --reruns 2
           else
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -vv --reruns 2 --maxfail=5
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -vv --reruns 2
           fi
 
   release:
