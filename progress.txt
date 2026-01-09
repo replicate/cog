@@ -14,3 +14,26 @@ According to test.json recommendedFixOrder, the next priority tasks are:
 1. Step 2: Fix error message format tests (F001, F002) - medium priority
 2. Step 3: Investigate test_model_dependencies (F004) - high priority
 
+## 2026-01-09 - Fixed F007: Python Version Compatibility in test_cog_install_base_image
+
+**Test:** test_integration/test_build.py::test_cog_install_base_image
+**Issue:** Test fixture used python_version: 3.8 but coglet-alpha requires Python >=3.9
+**Fix:** Updated python_version from 3.8 to 3.9 in string-project fixture
+**Status:** FIXED ✓
+**Files Modified:**
+- test-integration/test_integration/fixtures/string-project/cog.yaml:2
+- test.json (marked F007 as passes=true)
+
+**Analysis:**
+The test_cog_install_base_image test validates version string compatibility between the CLI binary (semver format) and the installed Python package (PEP440 format). The test was failing because the string-project fixture specified python_version: 3.8, but coglet-alpha requires Python >=3.9. This is the same root cause as F003, affecting a different test fixture.
+
+The test also validates that:
+- Goreleaser generates semver-style version strings (e.g., 0.17.0-dev+g154906ca.d20260109)
+- setuptools-scm generates PEP440-style version strings (e.g., 0.17.0a2.dev27+g154906ca)
+- Both use 8-character git hashes (configured via --abbrev=8 in pyproject.toml files)
+
+**Next Steps:**
+According to test.json recommendedFixOrder, the next priority tasks are:
+1. Step 2: Fix error message format tests (F001, F002) - medium priority
+2. Step 3: Investigate test_model_dependencies (F004) - high priority
+

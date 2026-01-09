@@ -78,11 +78,13 @@
     {
       "id": "F007",
       "test": "test_integration/test_build.py::test_cog_install_base_image",
-      "category": "unknown",
-      "error": "Test failed after 3 retries",
-      "rootCause": "Likely version compatibility check between CLI and Python package",
+      "category": "python_version_compatibility",
+      "error": "Test failed due to Python 3.8 in fixture but coglet-alpha requires Python >=3.9",
+      "rootCause": "Test fixture string-project uses python_version: 3.8 but coglet-alpha requires Python >=3.9",
       "priority": "high",
-      "fix": "Investigate version string format compatibility"
+      "fix": "Change python_version from 3.8 to 3.9 in test fixture",
+      "passes": true,
+      "notes": "Updated python_version from 3.8 to 3.9 in string-project fixture (test-integration/test_integration/fixtures/string-project/cog.yaml:2). This resolves the coglet-alpha Python >=3.9 requirement incompatibility. The test also validates version string compatibility between CLI binary and installed Python package using the assert_versions_match utility."
     },
     {
       "id": "F008",
