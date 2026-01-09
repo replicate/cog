@@ -56,13 +56,35 @@ impl PythonPredictor {
         Ok(Self { instance })
     }
 
-    /// Call setup() on the predictor.
+    /// Call setup() on the predictor, handling weights parameter if present.
+    ///
+    /// Uses cog.predictor helpers to detect and extract weights:
+    /// - `has_setup_weights()` checks if setup() has a weights parameter
+    /// - `extract_setup_weights()` reads from COG_WEIGHTS env or ./weights path
     pub fn setup(&self, py: Python<'_>) -> PyResult<()> {
         let instance = self.instance.bind(py);
-        // Check if setup method exists and call it
-        if instance.hasattr("setup")? {
+
+        // Check if setup method exists
+        if !instance.hasattr("setup")? {
+            return Ok(());
+        }
+
+        // Import cog.predictor helpers
+        let cog_predictor = py.import("cog.predictor")?;
+        let has_setup_weights = cog_predictor.getattr("has_setup_weights")?;
+        let extract_setup_weights = cog_predictor.getattr("extract_setup_weights")?;
+
+        // Check if setup() has a weights parameter
+        let needs_weights: bool = has_setup_weights.call1((&instance,))?.extract()?;
+
+        if needs_weights {
+            // Extract weights from COG_WEIGHTS env or ./weights path
+            let weights = extract_setup_weights.call1((&instance,))?;
+            instance.call_method1("setup", (weights,))?;
+        } else {
             instance.call_method0("setup")?;
         }
+
         Ok(())
     }
 
