@@ -9,10 +9,38 @@ use pyo3::prelude::*;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
-use coglet_core::Health;
+use coglet_core::{Health, VersionInfo};
 use coglet_http::{serve as http_serve, AppState, ServerConfig};
 
 use crate::predictor::PythonPredictor;
+
+/// Detect Python and cog SDK versions.
+fn detect_version(py: Python<'_>) -> VersionInfo {
+    let mut version = VersionInfo::new();
+
+    // Get Python version
+    if let Ok(sys) = py.import("sys") {
+        if let Ok(py_version) = sys.getattr("version") {
+            if let Ok(v) = py_version.extract::<String>() {
+                // sys.version is like "3.13.1 (main, Dec 18 2024, ...)"
+                // Take just the version number
+                let short_version = v.split_whitespace().next().unwrap_or(&v);
+                version = version.with_python(short_version.to_string());
+            }
+        }
+    }
+
+    // Get cog SDK version
+    if let Ok(cog) = py.import("cog") {
+        if let Ok(cog_version) = cog.getattr("__version__") {
+            if let Ok(v) = cog_version.extract::<String>() {
+                version = version.with_cog(v);
+            }
+        }
+    }
+
+    version
+}
 
 /// Start the coglet HTTP server with a predictor.
 ///
@@ -73,9 +101,14 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16)
         Health::Unknown
     };
 
-    // Create app state with initial health
+    // Detect version info
+    let version = detect_version(py);
+
+    // Create app state with initial health and version
     // For sync predictors, max_concurrency=1 (single slot)
-    let mut app_state = AppState::new(1).with_health(initial_health);
+    let mut app_state = AppState::new(1)
+        .with_health(initial_health)
+        .with_version(version);
 
     // Create the predict function closure if we have a predictor
     if let Some(pred) = predictor {

@@ -11,7 +11,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use coglet_core::{Health, PredictionError, PredictionGuard};
+use coglet_core::{Health, PredictionError, PredictionGuard, VersionInfo};
 
 use crate::server::AppState;
 
@@ -19,6 +19,7 @@ use crate::server::AppState;
 #[derive(Debug, Serialize)]
 pub struct HealthCheckResponse {
     pub status: Health,
+    pub version: VersionInfo,
 }
 
 /// Prediction request body.
@@ -31,7 +32,10 @@ pub struct PredictionRequest {
 /// GET /health-check
 async fn health_check(State(state): State<Arc<AppState>>) -> Json<HealthCheckResponse> {
     let health = *state.health.read().await;
-    Json(HealthCheckResponse { status: health })
+    Json(HealthCheckResponse {
+        status: health,
+        version: state.version.clone(),
+    })
 }
 
 /// POST /predictions

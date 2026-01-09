@@ -7,7 +7,7 @@ use tokio::net::TcpListener;
 use tokio::sync::{RwLock, Semaphore};
 use tracing::info;
 
-use coglet_core::{Health, PredictFn};
+use coglet_core::{Health, PredictFn, VersionInfo};
 
 use crate::routes::routes;
 
@@ -48,6 +48,8 @@ pub struct AppState {
     /// We use try_acquire() for immediate rejection rather than queueing.
     /// Sync predictors get 1 slot, async predictors can have N.
     pub slots: Semaphore,
+    /// Version information for the runtime.
+    pub version: VersionInfo,
 }
 
 impl AppState {
@@ -56,6 +58,7 @@ impl AppState {
             health: RwLock::new(Health::Unknown),
             predict_fn: None,
             slots: Semaphore::new(max_concurrency),
+            version: VersionInfo::new(),
         }
     }
     
@@ -66,6 +69,11 @@ impl AppState {
     
     pub fn with_health(mut self, health: Health) -> Self {
         self.health = RwLock::new(health);
+        self
+    }
+    
+    pub fn with_version(mut self, version: VersionInfo) -> Self {
+        self.version = version;
         self
     }
 }

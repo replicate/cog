@@ -2,6 +2,8 @@
 
 mod health;
 mod predictor;
+mod version;
 
 pub use health::{Health, SetupStatus};
 pub use predictor::{PredictFn, PredictionError, PredictionGuard, PredictionMetrics, PredictionResult};
+pub use version::{VersionInfo, COGLET_VERSION};
