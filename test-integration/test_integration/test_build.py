@@ -24,11 +24,8 @@ def test_build_without_predictor(docker_image, cog_binary):
     assert (
         "Can't run predictions: 'predict' option not found" in stderr
         or "Can\\'t run predictions: \\'predict\\' option not found" in stderr
-        or ("invalid predict" in stderr and "Failed to get type signature" in stderr)
-        or (
-            "failed to parse predict" in stderr
-            and "Failed to get type signature" in stderr
-        )
+        or "invalid predict" in stderr
+        or "failed to parse predict" in stderr
     )
 
 
@@ -104,7 +101,13 @@ def test_build_invalid_schema(docker_image, cog_binary):
         capture_output=True,
     )
     assert build_process.returncode > 0
-    assert "invalid default: number must be at least 2" in build_process.stderr.decode()
+    stderr = build_process.stderr.decode()
+    # Different runtimes produce different error formats:
+    # - cog: "invalid default: number must be at least 2"
+    # - coglet-alpha: "AssertionError: default=1 conflicts with ge=2"
+    assert "invalid default: number must be at least 2" in stderr or (
+        "default=1 conflicts with ge=2" in stderr
+    )
 
 
 @pytest.mark.skipif(os.environ.get("CI") != "true", reason="only runs in CI")

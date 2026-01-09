@@ -24,7 +24,9 @@
       "actualMessage": "{\"severity\":\"error\",\"message\":\"failed to parse predict\",\"error\":\"invalid predict: \"}",
       "rootCause": "coglet-alpha uses JSON structured logging instead of plain text error messages",
       "priority": "medium",
-      "fix": "Update test assertion to accept JSON error format with 'invalid predict' or 'failed to parse predict'"
+      "fix": "Update test assertion to accept JSON error format with 'invalid predict' or 'failed to parse predict'",
+      "passes": true,
+      "notes": "Updated test_build_without_predictor (test-integration/test_integration/test_build.py:24-29) to accept coglet-alpha's error messages. Removed requirement for 'Failed to get type signature' to be present alongside 'invalid predict' or 'failed to parse predict', making the assertion work with coglet-alpha's JSON formatted errors."
     },
     {
       "id": "F002",
@@ -35,7 +37,9 @@
       "actualMessage": "AssertionError: default=1 conflicts with ge=2 for input: num: int",
       "rootCause": "coglet-alpha uses Python AssertionError instead of formatted validation error message",
       "priority": "medium",
-      "fix": "Update test to accept AssertionError format: 'default=1 conflicts with ge=2'"
+      "fix": "Update test to accept AssertionError format: 'default=1 conflicts with ge=2'",
+      "passes": true,
+      "notes": "Updated test_build_invalid_schema (test-integration/test_integration/test_build.py:107-113) to accept both error formats. Original cog error: 'invalid default: number must be at least 2'. Coglet-alpha error: 'default=1 conflicts with ge=2'. Test now accepts either format."
     },
     {
       "id": "F003",
