@@ -160,4 +160,11 @@ The CLI follows a command pattern with subcommands. The main components are:
 - Tests use real Docker operations (no mocking Docker API)
 - Always run `make wheel` after making Python changes before testing Go code
 - Both Pydantic 1.x and 2.x must pass tests (use appropriate tox environments)
-- Python 3.8-3.13 compatibility is required
+- Python compatibility:
+  - Original cog supports Python 3.8-3.13
+  - coglet-alpha requires Python >=3.9
+  - Integration test fixtures should use Python 3.9+ to ensure compatibility with coglet-alpha
+- Coglet-alpha differences:
+  - Uses JSON structured logging for some errors instead of plain text
+  - Uses Python AssertionError messages for validation errors instead of custom formatted messages
+  - Integration tests should accept both error formats for compatibility
