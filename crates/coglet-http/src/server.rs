@@ -104,3 +104,47 @@ pub async fn serve(config: ServerConfig, state: Arc<AppState>) -> anyhow::Result
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn server_config_default() {
+        let config = ServerConfig::default();
+        assert_eq!(config.host, "0.0.0.0");
+        assert_eq!(config.port, 5000);
+        assert_eq!(config.max_concurrency, 1);
+    }
+
+    #[test]
+    fn app_state_new_defaults() {
+        let state = AppState::new(1);
+        assert!(state.predict_fn.is_none());
+        assert!(state.async_predict_fn.is_none());
+        assert!(!state.is_async());
+    }
+
+    #[test]
+    fn app_state_builder_with_health() {
+        let state = AppState::new(1).with_health(Health::Ready);
+        // Can't easily test RwLock contents without async, but we can at least verify build works
+        assert!(!state.is_async());
+    }
+
+    #[test]
+    fn app_state_is_async_true_when_async_fn_set() {
+        let state = AppState::new(10).with_async_predict_fn(Arc::new(|_| {
+            Box::pin(async { Err(coglet_core::PredictionError::NotReady) })
+        }));
+        assert!(state.is_async());
+    }
+
+    #[test]
+    fn app_state_is_async_false_when_sync_fn_set() {
+        let state = AppState::new(1).with_predict_fn(Arc::new(|_| {
+            Err(coglet_core::PredictionError::NotReady)
+        }));
+        assert!(!state.is_async());
+    }
+}

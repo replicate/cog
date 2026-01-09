@@ -153,3 +153,156 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/predictions", post(create_prediction))
         .with_state(state)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    use coglet_core::{PredictionOutput, PredictionResult};
+
+    async fn response_json(response: axum::response::Response) -> serde_json::Value {
+        let body = response.into_body();
+        let bytes = body.collect().await.unwrap().to_bytes();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn health_check_returns_status_and_version() {
+        let state = Arc::new(AppState::new(1).with_health(Health::Ready));
+        let app = routes(state);
+
+        let response = app
+            .oneshot(Request::get("/health-check").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let json = response_json(response).await;
+        assert_eq!(json["status"], "READY");
+        assert!(json["version"]["coglet"].is_string());
+    }
+
+    #[tokio::test]
+    async fn health_check_unknown_when_no_predictor() {
+        let state = Arc::new(AppState::new(1)); // Default health is Unknown
+        let app = routes(state);
+
+        let response = app
+            .oneshot(Request::get("/health-check").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        let json = response_json(response).await;
+        assert_eq!(json["status"], "UNKNOWN");
+    }
+
+    #[tokio::test]
+    async fn predictions_returns_503_when_not_ready() {
+        let state = Arc::new(AppState::new(1)); // Health is Unknown
+        let app = routes(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let json = response_json(response).await;
+        assert_eq!(json["status"], "failed");
+        assert!(json["error"].as_str().unwrap().contains("not ready"));
+    }
+
+    #[tokio::test]
+    async fn predictions_returns_503_when_no_predictor_loaded() {
+        let state = Arc::new(AppState::new(1).with_health(Health::Ready));
+        let app = routes(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let json = response_json(response).await;
+        assert_eq!(json["status"], "failed");
+        assert!(json["error"].as_str().unwrap().contains("No predictor"));
+    }
+
+    #[tokio::test]
+    async fn predictions_success_with_sync_predictor() {
+        let state = Arc::new(
+            AppState::new(1)
+                .with_health(Health::Ready)
+                .with_predict_fn(Arc::new(|input| {
+                    let name = input["name"].as_str().unwrap_or("world");
+                    Ok(PredictionResult {
+                        output: PredictionOutput::Single(serde_json::json!(format!("Hello, {}!", name))),
+                        predict_time: None,
+                    })
+                })),
+        );
+        let app = routes(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":{"name":"test"}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let json = response_json(response).await;
+        assert_eq!(json["status"], "succeeded");
+        assert_eq!(json["output"], "Hello, test!");
+        assert!(json["metrics"]["predict_time"].is_number());
+    }
+
+    #[tokio::test]
+    async fn predictions_returns_error_on_invalid_input() {
+        let state = Arc::new(
+            AppState::new(1)
+                .with_health(Health::Ready)
+                .with_predict_fn(Arc::new(|_| {
+                    Err(coglet_core::PredictionError::InvalidInput("missing required field".to_string()))
+                })),
+        );
+        let app = routes(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        let json = response_json(response).await;
+        assert_eq!(json["status"], "failed");
+        assert!(json["error"].as_str().unwrap().contains("missing required"));
+    }
+}

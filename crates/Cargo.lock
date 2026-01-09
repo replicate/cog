@@ -124,9 +124,12 @@ dependencies = [
  "anyhow",
  "axum",
  "coglet-core",
+ "http-body-util",
+ "insta",
  "serde",
  "serde_json",
  "tokio",
+ "tower",
  "tracing",
 ]
 
