@@ -237,9 +237,9 @@ jobs:
           if [ "$COG_WHEEL" = "cog" ]; then
             PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3 --maxfail=5 
           elif [ "$COG_WHEEL" = "coglet" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3 --maxfail=5
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --maxfail=5
           else
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3 --maxfail=5
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --maxfail=5
           fi
 
   release:
