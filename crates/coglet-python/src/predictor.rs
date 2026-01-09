@@ -89,10 +89,64 @@ impl PythonPredictor {
     }
 
     /// Call predict() with the given input dict, returning JSON-serializable output.
+    /// Captures stdout/stderr and logs them via tracing.
     pub fn predict_raw(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PyObject> {
         let instance = self.instance.bind(py);
-        let result = instance.call_method("predict", (), Some(input))?;
-        Ok(result.unbind())
+
+        // Import the stream redirector
+        let helpers = py.import("cog.server.helpers")?;
+        let redirector_class = helpers.getattr("SimpleStreamRedirector")?;
+
+        // Create a Python callback that logs to tracing
+        // For now, we'll collect output and log after
+        let logs: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let logs_clone = logs.clone();
+
+        // Create a simple Python function to capture logs
+        let callback = pyo3::types::PyCFunction::new_closure(
+            py,
+            None,
+            None,
+            move |args: &Bound<'_, pyo3::types::PyTuple>, _kwargs: Option<&Bound<'_, PyDict>>| -> PyResult<()> {
+                let source: String = args.get_item(0)?.extract()?;
+                let text: String = args.get_item(1)?.extract()?;
+                if let Ok(mut guard) = logs_clone.lock() {
+                    guard.push((source, text));
+                }
+                Ok(())
+            },
+        )?;
+
+        // Create redirector with tee=true so output still goes to console
+        let redirector = redirector_class.call1((callback, true))?;
+
+        // Use redirector as context manager
+        let result = redirector.call_method0("__enter__")?;
+        let _ = result; // redirector returns self
+
+        let predict_result = instance.call_method("predict", (), Some(input));
+
+        // Exit context manager (handles exceptions properly)
+        let none = py.None();
+        redirector.call_method1("__exit__", (none.bind(py), none.bind(py), none.bind(py)))?;
+
+        // Log captured output
+        if let Ok(guard) = logs.lock() {
+            for (source, text) in guard.iter() {
+                let text = text.trim_end();
+                if !text.is_empty() {
+                    // source is "<stdout>" or "<stderr>" from Python's stream.name
+                    if source.contains("stdout") {
+                        tracing::info!(target: "predict.stdout", "{}", text);
+                    } else {
+                        tracing::warn!(target: "predict.stderr", "{}", text);
+                    }
+                }
+            }
+        }
+
+        predict_result.map(|r| r.unbind())
     }
 
     /// Call predict() with JSON input, returning a PredictionResult.
