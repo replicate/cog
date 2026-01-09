@@ -1,5 +1,7 @@
 //! coglet-python: PyO3 bindings for coglet.
 
+mod predictor;
+
 use pyo3::prelude::*;
 use tracing_subscriber::EnvFilter;
 
