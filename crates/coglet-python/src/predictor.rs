@@ -152,7 +152,16 @@ impl PythonPredictor {
         let result = redirector.call_method0("__enter__")?;
         let _ = result; // redirector returns self
 
-        let predict_result = instance.call_method("predict", (), Some(input));
+        // Call predict - returns coroutine if async, result if sync
+        let predict_result = instance.call_method("predict", (), Some(input))?;
+
+        // If async, run the coroutine with asyncio.run()
+        let result = if self.is_async {
+            let asyncio = py.import("asyncio")?;
+            asyncio.call_method1("run", (&predict_result,))?
+        } else {
+            predict_result
+        };
 
         // Exit context manager (handles exceptions properly)
         let none = py.None();
@@ -173,7 +182,7 @@ impl PythonPredictor {
             }
         }
 
-        predict_result.map(|r| r.unbind())
+        Ok(result.unbind())
     }
 
     /// Call predict() with JSON input, returning a PredictionResult.
