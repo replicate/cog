@@ -11,7 +11,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use coglet_core::{Health, PredictionError};
+use coglet_core::{Health, PredictionError, PredictionGuard};
 
 use crate::server::AppState;
 
@@ -78,39 +78,54 @@ async fn create_prediction(
     let predict_fn = Arc::clone(predict_fn);
     let input = request.input;
 
-    // Run prediction in a blocking task
+    // Run prediction in a blocking task with RAII lifecycle guard
     // PyO3 hands control to Python's embedded interpreter which manages
     // GIL internally - background threads, CUDA, I/O all work normally
-    let result = tokio::task::spawn_blocking(move || predict_fn(input)).await;
+    let result = tokio::task::spawn_blocking(move || {
+        let guard = PredictionGuard::new();
+        let result = predict_fn(input);
+        let metrics = guard.finish();
+        (result, metrics)
+    })
+    .await;
     // _permit drops here, releasing the slot
 
     match result {
-        Ok(Ok(prediction)) => (
+        Ok((Ok(prediction), metrics)) => (
             StatusCode::OK,
             Json(serde_json::json!({
                 "output": prediction.output,
-                "status": "succeeded"
+                "status": "succeeded",
+                "metrics": {
+                    "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
+                }
             })),
         ),
-        Ok(Err(PredictionError::InvalidInput(msg))) => (
+        Ok((Err(PredictionError::InvalidInput(msg)), metrics)) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             Json(serde_json::json!({
                 "error": msg,
-                "status": "failed"
+                "status": "failed",
+                "metrics": {
+                    "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
+                }
             })),
         ),
-        Ok(Err(PredictionError::NotReady)) => (
+        Ok((Err(PredictionError::NotReady), _)) => (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({
                 "error": "Predictor not ready",
                 "status": "failed"
             })),
         ),
-        Ok(Err(PredictionError::Failed(msg))) => (
+        Ok((Err(PredictionError::Failed(msg)), metrics)) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({
                 "error": msg,
-                "status": "failed"
+                "status": "failed",
+                "metrics": {
+                    "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
+                }
             })),
         ),
         Err(join_err) => (

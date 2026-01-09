@@ -4,4 +4,4 @@ mod health;
 mod predictor;
 
 pub use health::{Health, SetupStatus};
-pub use predictor::{PredictFn, PredictionError, PredictionResult};
+pub use predictor::{PredictFn, PredictionError, PredictionGuard, PredictionMetrics, PredictionResult};

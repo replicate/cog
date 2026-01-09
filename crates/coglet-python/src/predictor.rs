@@ -140,7 +140,7 @@ impl PythonPredictor {
                 PredictionError::Failed(format!("Failed to parse output JSON: {}", e))
             })?;
 
-            Ok(PredictionResult { output })
+            Ok(PredictionResult { output, predict_time: None })
         })
     }
 }
