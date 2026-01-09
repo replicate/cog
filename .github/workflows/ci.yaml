@@ -235,23 +235,22 @@ jobs:
           COG_WHEEL: ${{ matrix.runtime }}
           # Enable Docker BuildKit for faster builds with better caching
           DOCKER_BUILDKIT: 1
-          # Increase pytest workers for better parallelization on 16-core machine
-          PYTEST_XDIST_WORKER_COUNT: 12
+          # Use fewer workers during debugging to see errors more clearly
+          # TODO: Increase back to 12 once tests are stable
+          PYTEST_XDIST_WORKER_COUNT: 4
         run: |
           # Run full test suite with reruns for flaky tests
-          # Use 12 workers instead of auto to avoid I/O contention on 16-core machine
-          # --dist loadfile ensures tests from same file run on same worker (reduces Docker rebuilds)
-          # NOTE: --maxfail doesn't work properly with pytest-xdist parallel execution
-          #       Workers run independently and don't coordinate on failure counts
-          #       Job timeout (30min) acts as the safety net for runaway failures
-          # - cog: more reruns due to historical flakiness
-          # - coglet/coglet-alpha: fewer reruns, fail faster
+          # Using fewer workers (4) to see errors more clearly during debugging
+          # --tb=short shows concise tracebacks immediately
+          # --no-header reduces noise in output
+          # -v shows test names, -vv would show full diffs but is too verbose with xdist
+          # NOTE: No reruns during debugging to fail fast and see real errors
           if [ "$COG_WHEEL" = "cog" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -vv --reruns 3
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -v --tb=short --no-header
           elif [ "$COG_WHEEL" = "coglet" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -vv --reruns 2
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -v --tb=short --no-header
           else
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -vv --reruns 2
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -v --tb=short --no-header
           fi
 
   release:
