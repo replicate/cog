@@ -8,6 +8,8 @@ use pyo3::types::PyDict;
 
 use coglet_core::{PredictionError, PredictionOutput, PredictionResult};
 
+use crate::input::{self, InputProcessor, Runtime};
+
 /// Type alias for Python object (Py<PyAny>).
 type PyObject = Py<PyAny>;
 
@@ -83,6 +85,14 @@ fn get_or_init_event_loop(py: Python<'_>) -> PyResult<&'static PyObject> {
 /// - Python's asyncio handles yielding during I/O
 /// - Can support max_concurrency > 1 safely
 ///
+/// # Runtime Detection
+///
+/// Predictors can come from different runtimes:
+/// - **Pydantic (cog)**: Uses Pydantic BaseModel, URLPath for file downloads
+/// - **Coglet**: Uses dataclasses and ADT types
+///
+/// We detect the runtime on load and use the appropriate input processor.
+///
 /// # Current Implementation
 ///
 /// We detect async predictors via `inspect.iscoroutinefunction()` and handle
@@ -93,6 +103,10 @@ pub struct PythonPredictor {
     is_async: bool,
     /// Whether predict() is an async generator function specifically.
     is_async_gen: bool,
+    /// The detected runtime type.
+    runtime: Runtime,
+    /// Input processor for this runtime.
+    input_processor: Box<dyn InputProcessor>,
 }
 
 // PyObject is Send in PyO3 0.23+
@@ -118,7 +132,17 @@ impl PythonPredictor {
             tracing::info!("Detected async predict()");
         }
 
-        Ok(Self { instance, is_async, is_async_gen })
+        // Detect runtime and create input processor
+        let runtime = input::detect_runtime(py, predictor_ref, &instance);
+        let input_processor = input::create_input_processor(&runtime);
+
+        Ok(Self {
+            instance,
+            is_async,
+            is_async_gen,
+            runtime,
+            input_processor,
+        })
     }
 
     /// Detect if predict() is an async function.
@@ -249,6 +273,10 @@ impl PythonPredictor {
     ///
     /// This handles the full conversion from JSON -> Python dict -> predict -> JSON.
     /// Detects generator returns and iterates them to collect all outputs.
+    ///
+    /// The input is processed through the runtime-specific input processor:
+    /// - Pydantic: validates through BaseInput, downloads URLPath files
+    /// - Coglet: uses ADT-based validation
     pub fn predict(&self, input: serde_json::Value) -> Result<PredictionResult, PredictionError> {
         Python::attach(|py| {
             // Convert JSON input to Python dict via JSON serialization
@@ -272,12 +300,18 @@ impl PythonPredictor {
 
             // Ensure input is a dict (or convert if needed)
             #[allow(deprecated)]
-            let input_dict = py_input.downcast::<PyDict>().map_err(|_| {
+            let raw_input_dict = py_input.downcast::<PyDict>().map_err(|_| {
                 PredictionError::InvalidInput("Input must be a JSON object".to_string())
             })?;
 
+            // Process input through the runtime-specific processor
+            // This handles validation, type coercion, and file downloads
+            let input_dict = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
+                PredictionError::InvalidInput(format!("Input validation failed: {}", e))
+            })?;
+
             // Call predict
-            let result = self.predict_raw(py, input_dict).map_err(|e| {
+            let result = self.predict_raw(py, &input_dict).map_err(|e| {
                 PredictionError::Failed(format!("Prediction failed: {}", e))
             })?;
 
@@ -377,14 +411,20 @@ impl PythonPredictor {
                 .map_err(|e| PredictionError::InvalidInput(format!("Invalid JSON input: {}", e)))?;
 
             #[allow(deprecated)]
-            let input_dict = py_input.downcast::<PyDict>().map_err(|_| {
+            let raw_input_dict = py_input.downcast::<PyDict>().map_err(|_| {
                 PredictionError::InvalidInput("Input must be a JSON object".to_string())
+            })?;
+
+            // Process input through the runtime-specific processor
+            // This handles validation, type coercion, and file downloads
+            let input_dict = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
+                PredictionError::InvalidInput(format!("Input validation failed: {}", e))
             })?;
 
             // Call predict - returns coroutine or async generator
             let instance = self.instance.bind(py);
             let predict_result = instance
-                .call_method("predict", (), Some(input_dict))
+                .call_method("predict", (), Some(&input_dict))
                 .map_err(|e| PredictionError::Failed(format!("Failed to call predict: {}", e)))?;
 
             // For async generators, wrap in a coroutine that collects all values

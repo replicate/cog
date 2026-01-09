@@ -251,3 +251,98 @@ class TestAsyncGeneratorPredictor:
                 "async chunk 1",
                 "async chunk 2",
             ]
+
+
+@pytest.fixture
+def path_input_predictor(tmp_path: Path) -> Path:
+    """Create a predictor that takes cog.Path input."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+from cog import BasePredictor, Path
+
+class Predictor(BasePredictor):
+    def setup(self):
+        pass
+    
+    def predict(self, file: Path) -> str:
+        # Read the file and return its contents
+        with open(file, 'r') as f:
+            return f.read().strip()
+""")
+    return predictor
+
+
+@pytest.fixture
+def path_list_input_predictor(tmp_path: Path) -> Path:
+    """Create a predictor that takes a list of cog.Path inputs."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+from cog import BasePredictor, Path
+from typing import List
+
+class Predictor(BasePredictor):
+    def setup(self):
+        pass
+    
+    def predict(self, files: List[Path]) -> str:
+        # Read all files and concatenate contents
+        contents = []
+        for file in files:
+            with open(file, 'r') as f:
+                contents.append(f.read().strip())
+        return " | ".join(contents)
+""")
+    return predictor
+
+
+class TestPathInput:
+    """Tests for cog.Path input handling."""
+
+    def test_path_from_url(self, path_input_predictor: Path, httpserver):
+        """Test that URL inputs are downloaded and passed as local paths."""
+        # Set up a mock HTTP server with test content
+        test_content = "Hello from URL!"
+        httpserver.expect_request("/test.txt").respond_with_data(test_content)
+
+        with CogletServer(path_input_predictor, port=5610) as server:
+            result = server.predict({"file": httpserver.url_for("/test.txt")})
+            if result["status"] == "failed":
+                print(f"Error: {result.get('error', 'unknown')}")
+            assert result["status"] == "succeeded", (
+                f"Failed with: {result.get('error')}"
+            )
+            assert result["output"] == test_content
+
+    def test_path_list_from_urls(self, path_list_input_predictor: Path, httpserver):
+        """Test that list of URL inputs are downloaded in parallel."""
+        # Set up mock endpoints
+        httpserver.expect_request("/file1.txt").respond_with_data("content1")
+        httpserver.expect_request("/file2.txt").respond_with_data("content2")
+        httpserver.expect_request("/file3.txt").respond_with_data("content3")
+
+        with CogletServer(path_list_input_predictor, port=5611) as server:
+            result = server.predict(
+                {
+                    "files": [
+                        httpserver.url_for("/file1.txt"),
+                        httpserver.url_for("/file2.txt"),
+                        httpserver.url_for("/file3.txt"),
+                    ]
+                }
+            )
+            assert result["status"] == "succeeded"
+            assert result["output"] == "content1 | content2 | content3"
+
+    def test_path_from_data_uri(self, path_input_predictor: Path):
+        """Test that data: URIs are handled correctly."""
+        import base64
+
+        test_content = "Hello from data URI!"
+        data_uri = (
+            f"data:text/plain;base64,{base64.b64encode(test_content.encode()).decode()}"
+        )
+
+        with CogletServer(path_input_predictor, port=5612) as server:
+            result = server.predict({"file": data_uri})
+            assert result["status"] == "succeeded"
+            assert result["output"] == test_content
