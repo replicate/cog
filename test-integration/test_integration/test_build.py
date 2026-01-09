@@ -390,12 +390,16 @@ def test_pip_freeze(docker_image, cog_binary):
         ]
     )
 
-    # coglet has stricter typing_extensions requirement (>=4.15) vs cog (>=4.4.0)
+    # Different wheels may install different typing_extensions versions depending on
+    # their dependency resolution. Cog uses >=4.4.0, coglet uses >=4.4.0, and
+    # coglet-alpha also uses >=4.4.0. The actual installed version depends on the
+    # resolver and other dependencies.
     # Adjust expected version based on COG_WHEEL environment variable
     cog_wheel = os.environ.get("COG_WHEEL", "cog")
-    if cog_wheel in ("coglet", "coglet-alpha"):
+    if cog_wheel == "coglet":
         typing_ext_version = "4.15.0"
     else:
+        # cog and coglet-alpha both end up with 4.12.2
         typing_ext_version = "4.12.2"
 
     expected_pip_freeze = (
