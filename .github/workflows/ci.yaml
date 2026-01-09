@@ -204,6 +204,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # needed for goreleaser version determination
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -224,22 +226,27 @@ jobs:
       - uses: hynek/setup-cached-uv@v2
       - name: Prepare tox
         run: uv pip install --system tox tox-uv
+      - name: Build cog binary
+        run: make cog
       - name: Test
         env:
           COG_WHEEL: ${{ matrix.runtime }}
+          # Enable Docker BuildKit for faster builds with better caching
+          DOCKER_BUILDKIT: 1
+          # Increase pytest workers for better parallelization on 16-core machine
+          PYTEST_XDIST_WORKER_COUNT: 12
         run: |
-          # Build cog binary
-          make cog
           # Run full test suite with reruns for flaky tests
-          # - cog
-          # - coglet
-          # - coglet-alpha
+          # Use 12 workers instead of auto to avoid I/O contention on 16-core machine
+          # --dist loadfile ensures tests from same file run on same worker (reduces Docker rebuilds)
+          # - cog: more reruns due to historical flakiness
+          # - coglet/coglet-alpha: fewer reruns, fail faster
           if [ "$COG_WHEEL" = "cog" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3 --maxfail=5 
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -vv --reruns 3 --maxfail=5 
           elif [ "$COG_WHEEL" = "coglet" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --maxfail=5
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -vv --reruns 2 --maxfail=5
           else
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --maxfail=5
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -n ${PYTEST_XDIST_WORKER_COUNT} --dist loadfile -vv --reruns 2 --maxfail=5
           fi
 
   release:
