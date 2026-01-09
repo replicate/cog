@@ -201,7 +201,10 @@ class Task(ABC, Generic[T]):
 
 
 class SetupTask(Task[SetupResult]):
-    def __init__(self, _clock: Optional[Callable[[], datetime]] = None) -> None:
+    def __init__(
+        self,
+        _clock: Optional[Callable[[], datetime]] = None,
+    ) -> None:
         log.info("starting setup")
         self._clock = _clock
         if self._clock is None:
