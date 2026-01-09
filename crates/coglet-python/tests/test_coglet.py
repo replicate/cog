@@ -346,3 +346,91 @@ class TestPathInput:
             result = server.predict({"file": data_uri})
             assert result["status"] == "succeeded"
             assert result["output"] == test_content
+
+
+@pytest.fixture
+def path_output_predictor(tmp_path: Path) -> Path:
+    """Create a predictor that returns cog.Path output."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+from cog import BasePredictor, Path
+import tempfile
+
+class Predictor(BasePredictor):
+    def setup(self):
+        pass
+    
+    def predict(self, text: str = "hello") -> Path:
+        # Create a temp file with the text content
+        f = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False)
+        f.write(text)
+        f.close()
+        return Path(f.name)
+""")
+    return predictor
+
+
+@pytest.fixture
+def path_list_output_predictor(tmp_path: Path) -> Path:
+    """Create a predictor that returns a list of cog.Path outputs."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+from cog import BasePredictor, Path
+from typing import List
+import tempfile
+
+class Predictor(BasePredictor):
+    def setup(self):
+        pass
+    
+    def predict(self, count: int = 2) -> List[Path]:
+        paths = []
+        for i in range(count):
+            f = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False)
+            f.write(f"file {i}")
+            f.close()
+            paths.append(Path(f.name))
+        return paths
+""")
+    return predictor
+
+
+class TestPathOutput:
+    """Tests for cog.Path output handling."""
+
+    def test_path_output_as_base64(self, path_output_predictor: Path):
+        """Test that Path outputs are converted to base64 data URLs."""
+        import base64
+
+        with CogletServer(path_output_predictor, port=5613) as server:
+            result = server.predict({"text": "hello world"})
+            assert result["status"] == "succeeded"
+
+            # Output should be a data URL
+            output = result["output"]
+            assert output.startswith("data:"), f"Expected data URL, got: {output}"
+            assert ";base64," in output
+
+            # Decode and verify content
+            _, encoded = output.split(";base64,", 1)
+            decoded = base64.b64decode(encoded).decode("utf-8")
+            assert decoded == "hello world"
+
+    def test_path_list_output_as_base64(self, path_list_output_predictor: Path):
+        """Test that list of Path outputs are converted to base64 data URLs."""
+        import base64
+
+        with CogletServer(path_list_output_predictor, port=5614) as server:
+            result = server.predict({"count": 3})
+            assert result["status"] == "succeeded"
+
+            # Output should be a list of data URLs
+            output = result["output"]
+            assert isinstance(output, list)
+            assert len(output) == 3
+
+            for i, item in enumerate(output):
+                assert item.startswith("data:"), f"Expected data URL, got: {item}"
+                _, encoded = item.split(";base64,", 1)
+                decoded = base64.b64decode(encoded).decode("utf-8")
+                assert decoded == f"file {i}"

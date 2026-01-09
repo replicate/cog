@@ -9,6 +9,7 @@ use pyo3::types::PyDict;
 use coglet_core::{PredictionError, PredictionOutput, PredictionResult};
 
 use crate::input::{self, InputProcessor, Runtime};
+use crate::output;
 
 /// Type alias for Python object (Py<PyAny>).
 type PyObject = Py<PyAny>;
@@ -333,9 +334,14 @@ impl PythonPredictor {
                         PredictionError::Failed(format!("Generator iteration error: {}", e))
                     })?;
 
-                    // Convert each item to JSON
+                    // Process output (handles Path -> base64, Pydantic models, etc.)
+                    let processed = output::process_output_item(py, &item).map_err(|e| {
+                        PredictionError::Failed(format!("Failed to process output item: {}", e))
+                    })?;
+
+                    // Convert to JSON
                     let item_str: String = json_module
-                        .call_method1("dumps", (&item,))
+                        .call_method1("dumps", (&processed,))
                         .map_err(|e| {
                             PredictionError::Failed(format!("Failed to serialize output item: {}", e))
                         })?
@@ -353,9 +359,14 @@ impl PythonPredictor {
 
                 PredictionOutput::Stream(outputs)
             } else {
+                // Process output (handles Path -> base64, Pydantic models, etc.)
+                let processed = output::process_output(py, result_bound, None).map_err(|e| {
+                    PredictionError::Failed(format!("Failed to process output: {}", e))
+                })?;
+
                 // Single value output
                 let result_str: String = json_module
-                    .call_method1("dumps", (result_bound,))
+                    .call_method1("dumps", (&processed,))
                     .map_err(|e| {
                         PredictionError::Failed(format!("Failed to serialize output: {}", e))
                     })?
@@ -483,26 +494,46 @@ async def _collect_async_gen(agen):
             let json_module = json_module.bind(py);
             let result_bound = py_result.bind(py);
 
-            let result_str: String = json_module
-                .call_method1("dumps", (result_bound,))
-                .map_err(|e| PredictionError::Failed(format!("Failed to serialize output: {}", e)))?
-                .extract()
-                .map_err(|e| PredictionError::Failed(format!("Failed to extract output: {}", e)))?;
-
-            let output_json: serde_json::Value = serde_json::from_str(&result_str)
-                .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
-
-            // For async generators, the result is already a list, wrap in Stream
-            // For regular async, it's a single value
+            // For async generators, the result is a list - process each item
+            // For regular async, process the single value
             let output = if is_async_gen {
-                // The result is a JSON array from collect_async_gen
-                if let serde_json::Value::Array(items) = output_json {
-                    PredictionOutput::Stream(items)
-                } else {
-                    // Shouldn't happen, but handle gracefully
-                    PredictionOutput::Single(output_json)
+                // result_bound is a list from _collect_async_gen
+                let mut outputs = Vec::new();
+                if let Ok(list) = result_bound.extract::<Vec<Bound<'_, PyAny>>>() {
+                    for item in list {
+                        // Process each output item (handles Path -> base64, etc.)
+                        let processed = output::process_output_item(py, &item).map_err(|e| {
+                            PredictionError::Failed(format!("Failed to process output item: {}", e))
+                        })?;
+
+                        let item_str: String = json_module
+                            .call_method1("dumps", (&processed,))
+                            .map_err(|e| PredictionError::Failed(format!("Failed to serialize output item: {}", e)))?
+                            .extract()
+                            .map_err(|e| PredictionError::Failed(format!("Failed to extract output item: {}", e)))?;
+
+                        let item_json: serde_json::Value = serde_json::from_str(&item_str)
+                            .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
+
+                        outputs.push(item_json);
+                    }
                 }
+                PredictionOutput::Stream(outputs)
             } else {
+                // Process output (handles Path -> base64, Pydantic models, etc.)
+                let processed = output::process_output(py, result_bound, None).map_err(|e| {
+                    PredictionError::Failed(format!("Failed to process output: {}", e))
+                })?;
+
+                let result_str: String = json_module
+                    .call_method1("dumps", (&processed,))
+                    .map_err(|e| PredictionError::Failed(format!("Failed to serialize output: {}", e)))?
+                    .extract()
+                    .map_err(|e| PredictionError::Failed(format!("Failed to extract output: {}", e)))?;
+
+                let output_json: serde_json::Value = serde_json::from_str(&result_str)
+                    .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
+
                 PredictionOutput::Single(output_json)
             };
 

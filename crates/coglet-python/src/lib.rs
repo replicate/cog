@@ -1,6 +1,7 @@
 //! coglet-python: PyO3 bindings for coglet.
 
 mod input;
+mod output;
 mod predictor;
 
 use std::sync::Arc;
