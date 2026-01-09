@@ -1,31 +1,51 @@
+experimental_monorepo_root = true
+
 # Activate venv for Python 3.10+
 [env]
 _.python.venv = ".venv"
 
-[tasks.build-rust]
-description = "Build Rust crates"
-run = "cargo build --manifest-path crates/Cargo.toml --workspace"
+[tasks."build:rust"]
+description = "Build Rust crates (excludes coglet-python, use build:coglet for that)"
+run = "cargo build --manifest-path crates/Cargo.toml"
 
-[tasks.build-rust-release]
-description = "Build Rust crates (release)"
-run = "cargo build --manifest-path crates/Cargo.toml --workspace --release"
+[tasks."build:rust:release"]
+description = "Build Rust crates release (excludes coglet-python)"
+run = "cargo build --manifest-path crates/Cargo.toml --release"
 
-[tasks.test-rust]
-description = "Run Rust tests"
-run = "cargo test --manifest-path crates/Cargo.toml --workspace"
+[tasks."build:coglet"]
+description = "Build coglet Python wheel (development, requires maturin)"
+run = "cd crates/coglet-python && maturin develop"
 
-[tasks.lint-rust]
-description = "Lint Rust code"
-run = "cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings"
+[tasks."test:rust"]
+description = "Run Rust tests with nextest (excludes coglet-python)"
+run = "cargo nextest run --manifest-path crates/Cargo.toml --no-tests=pass"
 
-[tasks.fmt-rust]
+[tasks."fmt:rust"]
 description = "Format Rust code"
 run = "cargo fmt --manifest-path crates/Cargo.toml --all"
 
-[tasks.fmt-rust-check]
+[tasks."fmt:rust:check"]
 description = "Check Rust formatting"
 run = "cargo fmt --manifest-path crates/Cargo.toml --all -- --check"
 
-[tasks.build-coglet]
-description = "Build coglet Python wheel (development)"
-run = "cd crates/coglet-python && maturin develop"
+[tasks.clippy]
+description = "Run clippy lints on all crates"
+run = "cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings"
+
+[tasks.deny]
+description = "Check licenses and advisories with cargo-deny"
+run = "cargo deny --manifest-path crates/Cargo.toml check"
+
+[tools]
+cargo-binstall = "1.16.6"
+"cargo:cargo-deny" = "0.19.0"
+"cargo:cargo-insta" = "1.46.0"
+"cargo:cargo-nextest" = "0.9.120"
+"cargo:maturin" = "1.11.5"
+ruff = "0.14.11"
+ty = "0.0.10"
+uv = "0.9.23"
+
+[settings]
+lockfile = true
+experimental = true

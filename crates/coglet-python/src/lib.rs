@@ -19,24 +19,22 @@ fn detect_version(py: Python<'_>) -> VersionInfo {
     let mut version = VersionInfo::new();
 
     // Get Python version
-    if let Ok(sys) = py.import("sys") {
-        if let Ok(py_version) = sys.getattr("version") {
-            if let Ok(v) = py_version.extract::<String>() {
-                // sys.version is like "3.13.1 (main, Dec 18 2024, ...)"
-                // Take just the version number
-                let short_version = v.split_whitespace().next().unwrap_or(&v);
-                version = version.with_python(short_version.to_string());
-            }
-        }
+    if let Ok(sys) = py.import("sys")
+        && let Ok(py_version) = sys.getattr("version")
+        && let Ok(v) = py_version.extract::<String>()
+    {
+        // sys.version is like "3.13.1 (main, Dec 18 2024, ...)"
+        // Take just the version number
+        let short_version = v.split_whitespace().next().unwrap_or(&v);
+        version = version.with_python(short_version.to_string());
     }
 
     // Get cog SDK version
-    if let Ok(cog) = py.import("cog") {
-        if let Ok(cog_version) = cog.getattr("__version__") {
-            if let Ok(v) = cog_version.extract::<String>() {
-                version = version.with_cog(v);
-            }
-        }
+    if let Ok(cog) = py.import("cog")
+        && let Ok(cog_version) = cog.getattr("__version__")
+        && let Ok(v) = cog_version.extract::<String>()
+    {
+        version = version.with_cog(v);
     }
 
     version
@@ -106,7 +104,7 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16)
 
     // Determine max_concurrency based on predictor type
     // Async predictors can handle multiple concurrent requests
-    let is_async_predictor = predictor.as_ref().map_or(false, |p| p.is_async());
+    let is_async_predictor = predictor.as_ref().is_some_and(|p| p.is_async());
     let max_concurrency = if is_async_predictor { 10 } else { 1 };
 
     info!(

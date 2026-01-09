@@ -3,10 +3,11 @@
 use serde::{Deserialize, Serialize};
 
 /// Health status of the coglet runtime.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Health {
     /// Just started, status unknown
+    #[default]
     Unknown,
     /// Running setup()
     Starting,
@@ -18,12 +19,6 @@ pub enum Health {
     SetupFailed,
     /// Unrecoverable error
     Defunct,
-}
-
-impl Default for Health {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 /// Status of the setup phase.

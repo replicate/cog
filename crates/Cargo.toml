@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["coglet", "coglet-core", "coglet-http", "coglet-python"]
+# coglet-python requires maturin, exclude from default workspace operations
+default-members = ["coglet", "coglet-core", "coglet-http"]
 
 [workspace.package]
 version = "0.1.0"
