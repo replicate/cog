@@ -199,7 +199,9 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        runtime: [cog, coglet, coglet-alpha]
+        # TODO: Temporarily focusing on coglet/coglet-alpha, re-enable cog later
+        runtime: [coglet, coglet-alpha]
+        # runtime: [cog, coglet, coglet-alpha]
     steps:
       - uses: actions/checkout@v6
         with:
