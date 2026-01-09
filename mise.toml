@@ -1,23 +1,31 @@
-[tools]
-go = "latest"
-uv = "latest"
-
+# Activate venv for Python 3.10+
 [env]
-_.path = './bin'
-_.file = [".env"]
+_.python.venv = ".venv"
 
-[settings]
-lockfile = true
-experimental = true
+[tasks.build-rust]
+description = "Build Rust crates"
+run = "cargo build --manifest-path crates/Cargo.toml --workspace"
 
-[tasks.test-integration]
-description = "Run Go integration tests with optional filter"
-dir = "integration-tests"
-run = """
-#!/usr/bin/env bash
-if [ -n "$1" ]; then
-  go test -v -run "TestIntegration/$1" -timeout 10m
-else
-  go test -v -timeout 10m
-fi
-"""
+[tasks.build-rust-release]
+description = "Build Rust crates (release)"
+run = "cargo build --manifest-path crates/Cargo.toml --workspace --release"
+
+[tasks.test-rust]
+description = "Run Rust tests"
+run = "cargo test --manifest-path crates/Cargo.toml --workspace"
+
+[tasks.lint-rust]
+description = "Lint Rust code"
+run = "cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings"
+
+[tasks.fmt-rust]
+description = "Format Rust code"
+run = "cargo fmt --manifest-path crates/Cargo.toml --all"
+
+[tasks.fmt-rust-check]
+description = "Check Rust formatting"
+run = "cargo fmt --manifest-path crates/Cargo.toml --all -- --check"
+
+[tasks.build-coglet]
+description = "Build coglet Python wheel (development)"
+run = "cd crates/coglet-python && maturin develop"
