@@ -195,7 +195,7 @@ jobs:
     name: "Test integration (${{ matrix.runtime }})"
     needs: build-python
     runs-on: ubuntu-latest-16-cores
-    timeout-minutes: 60
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -241,7 +241,7 @@ jobs:
           # --dist loadfile ensures tests from same file run on same worker (reduces Docker rebuilds)
           # NOTE: --maxfail doesn't work properly with pytest-xdist parallel execution
           #       Workers run independently and don't coordinate on failure counts
-          #       Job timeout (60min) acts as the safety net for runaway failures
+          #       Job timeout (30min) acts as the safety net for runaway failures
           # - cog: more reruns due to historical flakiness
           # - coglet/coglet-alpha: fewer reruns, fail faster
           if [ "$COG_WHEEL" = "cog" ]; then
