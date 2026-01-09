@@ -5,10 +5,44 @@ use std::time::{Duration, Instant};
 /// Result of a prediction.
 #[derive(Debug, Clone)]
 pub struct PredictionResult {
-    /// The output value as JSON.
-    pub output: serde_json::Value,
+    /// The output - single value or stream of values.
+    pub output: PredictionOutput,
     /// Time taken for the prediction.
     pub predict_time: Option<Duration>,
+}
+
+/// Output type from a prediction - either single value or stream of values.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(untagged)]
+pub enum PredictionOutput {
+    /// Single value output (non-generator predict).
+    Single(serde_json::Value),
+    /// Multiple values streamed (generator predict).
+    /// For HTTP, each value is sent as a chunk.
+    Stream(Vec<serde_json::Value>),
+}
+
+impl PredictionOutput {
+    /// Check if this is a streaming (multi-value) output.
+    pub fn is_stream(&self) -> bool {
+        matches!(self, PredictionOutput::Stream(_))
+    }
+
+    /// Get all output values as a vec (single wrapped in vec, stream as-is).
+    pub fn into_values(self) -> Vec<serde_json::Value> {
+        match self {
+            PredictionOutput::Single(v) => vec![v],
+            PredictionOutput::Stream(v) => v,
+        }
+    }
+
+    /// Get the final/only output value (last for stream, the value for single).
+    pub fn final_value(&self) -> &serde_json::Value {
+        match self {
+            PredictionOutput::Single(v) => v,
+            PredictionOutput::Stream(v) => v.last().unwrap_or(&serde_json::Value::Null),
+        }
+    }
 }
 
 /// Metrics collected during a prediction lifecycle.

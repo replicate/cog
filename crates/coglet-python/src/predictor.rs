@@ -3,7 +3,7 @@
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use coglet_core::{PredictionError, PredictionResult};
+use coglet_core::{PredictionError, PredictionOutput, PredictionResult};
 
 /// A loaded Python predictor instance.
 ///
@@ -152,15 +152,21 @@ impl PythonPredictor {
     /// Call predict() with JSON input, returning a PredictionResult.
     ///
     /// This handles the full conversion from JSON -> Python dict -> predict -> JSON.
+    /// Detects generator returns and iterates them to collect all outputs.
     pub fn predict(&self, input: serde_json::Value) -> Result<PredictionResult, PredictionError> {
         Python::with_gil(|py| {
             // Convert JSON input to Python dict via JSON serialization
             let json_module = py.import("json").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import json module: {}", e))
             })?;
+            let types_module = py.import("types").map_err(|e| {
+                PredictionError::Failed(format!("Failed to import types module: {}", e))
+            })?;
+            let generator_type = types_module.getattr("GeneratorType").map_err(|e| {
+                PredictionError::Failed(format!("Failed to get GeneratorType: {}", e))
+            })?;
 
             // Convert serde_json::Value to Python object via JSON string
-            // (more reliable than pythonize for complex types)
             let input_str = serde_json::to_string(&input)
                 .map_err(|e| PredictionError::InvalidInput(e.to_string()))?;
 
@@ -178,21 +184,61 @@ impl PythonPredictor {
                 PredictionError::Failed(format!("Prediction failed: {}", e))
             })?;
 
-            // Convert Python result back to JSON
             let result_bound = result.bind(py);
-            let result_str: String = json_module
-                .call_method1("dumps", (result_bound,))
-                .map_err(|e| {
-                    PredictionError::Failed(format!("Failed to serialize output: {}", e))
-                })?
-                .extract()
-                .map_err(|e| {
-                    PredictionError::Failed(format!("Failed to extract output string: {}", e))
+
+            // Check if result is a generator
+            let is_generator: bool = result_bound.is_instance(&generator_type).unwrap_or(false);
+
+            let output = if is_generator {
+                // Iterate generator and collect all outputs
+                tracing::debug!("Detected generator output, iterating...");
+                let mut outputs = Vec::new();
+                let iter = result_bound.try_iter().map_err(|e| {
+                    PredictionError::Failed(format!("Failed to iterate generator: {}", e))
                 })?;
 
-            let output: serde_json::Value = serde_json::from_str(&result_str).map_err(|e| {
-                PredictionError::Failed(format!("Failed to parse output JSON: {}", e))
-            })?;
+                for item in iter {
+                    let item = item.map_err(|e| {
+                        PredictionError::Failed(format!("Generator iteration error: {}", e))
+                    })?;
+
+                    // Convert each item to JSON
+                    let item_str: String = json_module
+                        .call_method1("dumps", (&item,))
+                        .map_err(|e| {
+                            PredictionError::Failed(format!("Failed to serialize output item: {}", e))
+                        })?
+                        .extract()
+                        .map_err(|e| {
+                            PredictionError::Failed(format!("Failed to extract output string: {}", e))
+                        })?;
+
+                    let item_json: serde_json::Value = serde_json::from_str(&item_str).map_err(|e| {
+                        PredictionError::Failed(format!("Failed to parse output JSON: {}", e))
+                    })?;
+
+                    outputs.push(item_json);
+                }
+
+                PredictionOutput::Stream(outputs)
+            } else {
+                // Single value output
+                let result_str: String = json_module
+                    .call_method1("dumps", (result_bound,))
+                    .map_err(|e| {
+                        PredictionError::Failed(format!("Failed to serialize output: {}", e))
+                    })?
+                    .extract()
+                    .map_err(|e| {
+                        PredictionError::Failed(format!("Failed to extract output string: {}", e))
+                    })?;
+
+                let output_json: serde_json::Value = serde_json::from_str(&result_str).map_err(|e| {
+                    PredictionError::Failed(format!("Failed to parse output JSON: {}", e))
+                })?;
+
+                PredictionOutput::Single(output_json)
+            };
 
             Ok(PredictionResult { output, predict_time: None })
         })
