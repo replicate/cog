@@ -167,4 +167,5 @@ The CLI follows a command pattern with subcommands. The main components are:
 - Coglet-alpha differences:
   - Uses JSON structured logging for some errors instead of plain text
   - Uses Python AssertionError messages for validation errors instead of custom formatted messages
-  - Integration tests should accept both error formats for compatibility
+  - Python 3.9+ uses fast loader without fallback to slow loader (Python 3.8 falls back)
+  - Integration tests should accept both error formats for compatibility and not assert for fast loader fallback messages when using Python 3.9+
