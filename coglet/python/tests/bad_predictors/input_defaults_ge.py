@@ -2,7 +2,7 @@ from typing import List
 
 from cog import BasePredictor, Input
 
-ERROR = 'default=[0, 100] conflicts with ge=10 for input: i: List[int]'
+ERROR = 'invalid default: number must be at least 10'
 
 
 class Predictor(BasePredictor):

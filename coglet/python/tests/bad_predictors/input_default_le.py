@@ -1,6 +1,6 @@
 from cog import BasePredictor, Input
 
-ERROR = 'default=10 conflicts with le=0 for input: i: int'
+ERROR = 'invalid default: number must be at most 0'
 
 
 class Predictor(BasePredictor):

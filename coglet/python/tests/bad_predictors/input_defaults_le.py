@@ -2,7 +2,7 @@ from typing import List
 
 from cog import BasePredictor, Input
 
-ERROR = 'default=[10, 0] conflicts with le=0 for input: i: List[int]'
+ERROR = 'invalid default: number must be at most 0'
 
 
 class Predictor(BasePredictor):

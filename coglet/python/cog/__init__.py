@@ -10,6 +10,7 @@ from coglet.api import (
     Input,
     Path,
     Secret,
+    use,
 )
 from coglet.scope import current_scope
 
@@ -27,5 +28,6 @@ __all__ = [
     'Path',
     'Secret',
     'current_scope',
+    'use',
     '__version__',
 ]

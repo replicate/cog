@@ -20,8 +20,8 @@ class JsonCoder(api.Coder):
 
         return None
 
-    def encode(self, x: Any) -> dict[str, Any]:
+    def encode(self, x: Any) -> Dict[str, Any]:
         return x
 
-    def decode(self, x: dict[str, Any]) -> Any:
+    def decode(self, x: Dict[str, Any]) -> Any:
         return x

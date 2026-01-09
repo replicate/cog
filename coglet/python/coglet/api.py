@@ -8,6 +8,7 @@ from typing import (
     Any,
     AsyncIterator,
     Callable,
+    Dict,
     Generic,
     Iterator,
     List,
@@ -47,11 +48,11 @@ class Coder:
         pass
 
     @abstractmethod
-    def encode(self, x: Any) -> dict[str, Any]:
+    def encode(self, x: Any) -> Dict[str, Any]:
         pass
 
     @abstractmethod
-    def decode(self, x: dict[str, Any]) -> Any:
+    def decode(self, x: Dict[str, Any]) -> Any:
         pass
 
 
@@ -65,7 +66,62 @@ class CancelationException(Exception):
 
 
 class Path(pathlib.PosixPath):
-    pass
+    """Path type with pydantic 1.x and 2.x compatibility."""
+
+    validate_always = True
+
+    @classmethod
+    def validate(cls, value: Any) -> pathlib.Path:
+        """Validate and convert values to Path objects."""
+        if isinstance(value, pathlib.Path):
+            return value
+        # For coglet, we just accept strings as paths
+        # (no URL download support like in main cog package)
+        return pathlib.Path(value)
+
+    # Pydantic 2.x support
+    try:
+        import pydantic
+
+        if not pydantic.__version__.startswith('1.'):
+            from pydantic import GetCoreSchemaHandler
+            from pydantic.json_schema import JsonSchemaValue
+            from pydantic_core import CoreSchema
+
+            @classmethod
+            def __get_pydantic_core_schema__(
+                cls,
+                source: Type[Any],
+                handler: 'GetCoreSchemaHandler',
+            ) -> 'CoreSchema':
+                from pydantic_core import core_schema
+
+                return core_schema.union_schema(
+                    [
+                        core_schema.is_instance_schema(pathlib.Path),
+                        core_schema.no_info_plain_validator_function(cls.validate),
+                    ]
+                )
+
+            @classmethod
+            def __get_pydantic_json_schema__(
+                cls, core_schema: 'CoreSchema', handler: Any
+            ) -> 'JsonSchemaValue':
+                json_schema = handler(core_schema)
+                json_schema.update(type='string', format='uri')
+                return json_schema
+    except ImportError:
+        pass
+
+    # Pydantic 1.x support
+    @classmethod
+    def __get_validators__(cls) -> Iterator[Any]:
+        yield cls.validate
+
+    @classmethod
+    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+        """Defines what this type should be in openapi.json"""
+        field_schema.update(type='string', format='uri')
 
 
 @dataclass(frozen=True)
@@ -400,3 +456,47 @@ class BasePredictor(ABC, Generic[P, R]):
 # https://github.com/replicate/cog/blob/main/python/cog/types.py#L41
 class ExperimentalFeatureWarning(Warning):
     pass
+
+
+########################################
+# Replicate model dependencies (pipelines)
+########################################
+
+
+class _ModelStub:
+    """Stub for a Replicate model referenced via use().
+
+    This doesn't actually call Replicate's API - it's just used for
+    static analysis to track model dependencies in cog.yaml.
+    """
+
+    def __init__(self, model_id: str) -> None:
+        self.model_id = model_id
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError(
+            f'replicate.use() is not yet implemented for runtime execution. '
+            f'Model: {self.model_id}'
+        )
+
+
+def use(model: str) -> _ModelStub:
+    """Reference a Replicate model as a dependency.
+
+    This function is used to declare that your model depends on another
+    Replicate model. The dependency will be tracked in the Docker image
+    metadata.
+
+    Example:
+        from replicate import use
+
+        upcase = use("pipelines-beta/upcase")
+        result = upcase(prompt="hello")
+
+    Args:
+        model: The Replicate model ID (e.g., "owner/model-name")
+
+    Returns:
+        A stub object representing the model (not yet executable)
+    """
+    return _ModelStub(model)

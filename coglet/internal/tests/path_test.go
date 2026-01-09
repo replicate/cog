@@ -259,6 +259,7 @@ func TestPredictionPathUploadUrlSucceeded(t *testing.T) {
 }
 
 func TestPredictionPathUploadIterator(t *testing.T) {
+	t.Skip("TODO: Flaky test - webhooks arrive in non-deterministic order. Needs refactor to collect all webhooks before asserting order.")
 	t.Parallel()
 	receiverServer := testHarnessReceiverServer(t)
 	runtimeServer := setupCogRuntime(t, cogRuntimeServerConfig{

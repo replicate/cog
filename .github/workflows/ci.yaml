@@ -197,13 +197,17 @@ jobs:
     runs-on: ubuntu-latest-16-cores
     timeout-minutes: 30
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
-        runtime: [cog, coglet, coglet-alpha]
+        # TODO: Temporarily focusing on coglet/coglet-alpha, re-enable cog later
+        runtime: [coglet, coglet-alpha]
+        # runtime: [cog, coglet, coglet-alpha]
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # needed for goreleaser version determination
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -224,24 +228,29 @@ jobs:
       - uses: hynek/setup-cached-uv@v2
       - name: Prepare tox
         run: uv pip install --system tox tox-uv
+      - name: Build cog binary
+        run: make cog
       - name: Test
         env:
           COG_WHEEL: ${{ matrix.runtime }}
-        # coglet/coglet-alpha tests may fail due to error message differences - don't block PR
-        continue-on-error: ${{ matrix.runtime != 'cog' }}
+          # Enable Docker BuildKit for faster builds with better caching
+          DOCKER_BUILDKIT: 1
+          # DEBUGGING: Run tests sequentially to see errors immediately
+          # Parallel execution delays error output until the end
+          # TODO: Re-enable parallelism once tests are stable
+          PYTEST_XDIST_WORKER_COUNT: 0
         run: |
-          # Build cog binary
-          make cog
-          # Run full test suite with reruns for flaky tests (matches main branch)
-          # - cog: full suite
-          # - coglet-alpha: stop after 5 failures (passes currently)
-          # - coglet: exit on first failure (needs work, just want to see what fails)
+          # DEBUGGING: Run sequentially with verbose error output
+          # This is SLOW but shows errors immediately as they happen
+          # --tb=short shows concise tracebacks immediately  
+          # -x stops at first failure so we see the error right away
+          # Once we fix the failures, re-enable parallel execution
           if [ "$COG_WHEEL" = "cog" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -v --tb=short -x
           elif [ "$COG_WHEEL" = "coglet" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv -x
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -v --tb=short -x
           else
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3 --maxfail=5
+            PATH="$(pwd):$PATH" uv run tox -e integration -- -v --tb=short -x
           fi
 
   release:

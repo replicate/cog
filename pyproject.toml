@@ -60,6 +60,7 @@ test = [
 
 [tool.setuptools_scm]
 write_to = "python/cog/_version.py"
+git_describe_command = "git describe --dirty --tags --long --match v* --abbrev=8"
 
 [tool.pyright]
 # TODO: remove this and bring the codebase inline with the current default

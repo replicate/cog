@@ -551,3 +551,47 @@ def _truncate_filename_bytes(s: str, length: int, encoding: str = "utf-8") -> st
     ext = ext.decode(encoding).split("?")[0].encode(encoding)
     root = root[: length - len(ext) - 1]
     return root.decode(encoding, "ignore") + "~" + ext.decode(encoding)
+
+
+########################################
+# Replicate model dependencies (pipelines)
+########################################
+
+
+class _ModelStub:
+    """Stub for a Replicate model referenced via use().
+
+    This doesn't actually call Replicate's API - it's just used for
+    static analysis to track model dependencies in cog.yaml.
+    """
+
+    def __init__(self, model_id: str) -> None:
+        self.model_id = model_id
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError(
+            f"replicate.use() is not yet implemented for runtime execution. "
+            f"Model: {self.model_id}"
+        )
+
+
+def use(model: str) -> _ModelStub:
+    """Reference a Replicate model as a dependency.
+
+    This function is used to declare that your model depends on another
+    Replicate model. The dependency will be tracked in the Docker image
+    metadata.
+
+    Example:
+        from cog import use
+
+        upcase = use("pipelines-beta/upcase")
+        result = upcase(prompt="hello")
+
+    Args:
+        model: The Replicate model ID (e.g., "owner/model-name")
+
+    Returns:
+        A stub object representing the model (not yet executable)
+    """
+    return _ModelStub(model)
