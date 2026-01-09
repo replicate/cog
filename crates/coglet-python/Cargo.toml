@@ -3,3 +3,18 @@ name = "coglet-python"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+
+[lib]
+name = "coglet"
+crate-type = ["cdylib"]
+
+[dependencies]
+coglet-core.workspace = true
+coglet-http.workspace = true
+pyo3.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[features]
+extension-module = ["pyo3/extension-module"]
