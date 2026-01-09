@@ -55,17 +55,6 @@ async fn create_prediction(
         );
     }
 
-    // Get the predict function
-    let Some(ref predict_fn) = state.predict_fn else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({
-                "error": "No predictor loaded",
-                "status": "failed"
-            })),
-        );
-    };
-
     // Try to acquire a prediction slot (non-blocking)
     // Returns 503 immediately if at capacity rather than queueing
     let Ok(_permit) = state.slots.try_acquire() else {
@@ -78,24 +67,46 @@ async fn create_prediction(
         );
     };
 
-    // Clone the Arc for the blocking task
-    let predict_fn = Arc::clone(predict_fn);
     let input = request.input;
+    let guard = PredictionGuard::new();
 
-    // Run prediction in a blocking task with RAII lifecycle guard
-    // PyO3 hands control to Python's embedded interpreter which manages
-    // GIL internally - background threads, CUDA, I/O all work normally
-    let result = tokio::task::spawn_blocking(move || {
-        let guard = PredictionGuard::new();
-        let result = predict_fn(input);
-        let metrics = guard.finish();
-        (result, metrics)
-    })
-    .await;
+    // Run prediction - async or sync path
+    let result = if let Some(ref async_predict_fn) = state.async_predict_fn {
+        // Async predictor: run directly in tokio (no spawn_blocking)
+        // This enables true concurrency - while one prediction awaits I/O,
+        // another can run
+        let predict_fn = Arc::clone(async_predict_fn);
+        predict_fn(input).await
+    } else if let Some(ref predict_fn) = state.predict_fn {
+        // Sync predictor: run in spawn_blocking to not block tokio
+        let predict_fn = Arc::clone(predict_fn);
+        match tokio::task::spawn_blocking(move || predict_fn(input)).await {
+            Ok(result) => result,
+            Err(join_err) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "error": format!("Prediction task panicked: {}", join_err),
+                        "status": "failed"
+                    })),
+                );
+            }
+        }
+    } else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "No predictor loaded",
+                "status": "failed"
+            })),
+        );
+    };
+
+    let metrics = guard.finish();
     // _permit drops here, releasing the slot
 
     match result {
-        Ok((Ok(prediction), metrics)) => (
+        Ok(prediction) => (
             StatusCode::OK,
             Json(serde_json::json!({
                 "output": prediction.output,
@@ -105,7 +116,7 @@ async fn create_prediction(
                 }
             })),
         ),
-        Ok((Err(PredictionError::InvalidInput(msg)), metrics)) => (
+        Err(PredictionError::InvalidInput(msg)) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             Json(serde_json::json!({
                 "error": msg,
@@ -115,14 +126,14 @@ async fn create_prediction(
                 }
             })),
         ),
-        Ok((Err(PredictionError::NotReady), _)) => (
+        Err(PredictionError::NotReady) => (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({
                 "error": "Predictor not ready",
                 "status": "failed"
             })),
         ),
-        Ok((Err(PredictionError::Failed(msg)), metrics)) => (
+        Err(PredictionError::Failed(msg)) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({
                 "error": msg,
@@ -130,13 +141,6 @@ async fn create_prediction(
                 "metrics": {
                     "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
                 }
-            })),
-        ),
-        Err(join_err) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "error": format!("Prediction task panicked: {}", join_err),
-                "status": "failed"
             })),
         ),
     }

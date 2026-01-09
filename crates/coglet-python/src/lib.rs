@@ -9,7 +9,7 @@ use pyo3::prelude::*;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
-use coglet_core::{Health, VersionInfo};
+use coglet_core::{Health, PredictFuture, VersionInfo};
 use coglet_http::{serve as http_serve, AppState, ServerConfig};
 
 use crate::predictor::PythonPredictor;
@@ -56,7 +56,7 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16)
     let config = ServerConfig {
         host,
         port,
-        max_concurrency: 1, // Sync predictors use single slot
+        max_concurrency: 1, // Will be overridden based on predictor type
     };
 
     // Load predictor if ref provided
@@ -104,9 +104,19 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16)
     // Detect version info
     let version = detect_version(py);
 
+    // Determine max_concurrency based on predictor type
+    // Async predictors can handle multiple concurrent requests
+    let is_async_predictor = predictor.as_ref().map_or(false, |p| p.is_async());
+    let max_concurrency = if is_async_predictor { 10 } else { 1 };
+
+    info!(
+        is_async = is_async_predictor,
+        max_concurrency = max_concurrency,
+        "Configuring predictor"
+    );
+
     // Create app state with initial health and version
-    // For sync predictors, max_concurrency=1 (single slot)
-    let mut app_state = AppState::new(1)
+    let mut app_state = AppState::new(max_concurrency)
         .with_health(initial_health)
         .with_version(version);
 
@@ -114,18 +124,28 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16)
     if let Some(pred) = predictor {
         // Wrap predictor in Arc so the closure can be cloned
         let pred = Arc::new(pred);
-        let predict_fn = Arc::new(move |input: serde_json::Value| {
-            // This runs in spawn_blocking
-            // PyO3 hands control to Python which manages GIL internally
-            pred.predict(input)
-        }) as Arc<coglet_core::PredictFn>;
-        app_state = app_state.with_predict_fn(predict_fn);
+
+        if is_async_predictor {
+            // Async predictor: use async predict function
+            let pred_clone = Arc::clone(&pred);
+            let async_predict_fn = Arc::new(move |input: serde_json::Value| -> PredictFuture {
+                let pred = Arc::clone(&pred_clone);
+                Box::pin(async move { pred.predict_async(input).await })
+            }) as Arc<coglet_core::AsyncPredictFn>;
+            app_state = app_state.with_async_predict_fn(async_predict_fn);
+        } else {
+            // Sync predictor: use sync predict function (runs in spawn_blocking)
+            let predict_fn = Arc::new(move |input: serde_json::Value| {
+                pred.predict(input)
+            }) as Arc<coglet_core::PredictFn>;
+            app_state = app_state.with_predict_fn(predict_fn);
+        }
     }
 
     let app_state = Arc::new(app_state);
 
     // Release the GIL while running the async runtime
-    py.allow_threads(|| {
+    py.detach(|| {
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 

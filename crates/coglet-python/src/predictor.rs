@@ -1,9 +1,62 @@
 //! Python predictor loading and invocation.
 
+use std::sync::OnceLock;
+use std::thread;
+
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 use coglet_core::{PredictionError, PredictionOutput, PredictionResult};
+
+/// Type alias for Python object (Py<PyAny>).
+type PyObject = Py<PyAny>;
+
+/// Global Python asyncio event loop running in a dedicated thread.
+/// This is initialized once when the first async predictor is used.
+static ASYNCIO_EVENT_LOOP: OnceLock<PyObject> = OnceLock::new();
+
+/// Initialize and start the Python asyncio event loop in a background thread.
+/// Returns a reference to the event loop that can be used with `into_future_with_locals`.
+fn get_or_init_event_loop(py: Python<'_>) -> PyResult<&'static PyObject> {
+    // Check if already initialized
+    if let Some(event_loop) = ASYNCIO_EVENT_LOOP.get() {
+        return Ok(event_loop);
+    }
+    
+    let asyncio = py.import("asyncio")?;
+    
+    // Create a new event loop
+    let event_loop = asyncio.call_method0("new_event_loop")?;
+    let event_loop_obj: PyObject = event_loop.unbind();
+    
+    // Clone for the thread (need py token for clone_ref)
+    let loop_for_thread = event_loop_obj.clone_ref(py);
+    
+    // Start the event loop in a dedicated background thread
+    thread::spawn(move || {
+        Python::attach(|py| {
+            let event_loop = loop_for_thread.bind(py);
+            
+            // Set this as the event loop for this thread
+            let asyncio = py.import("asyncio").expect("Failed to import asyncio");
+            asyncio.call_method1("set_event_loop", (event_loop,))
+                .expect("Failed to set event loop");
+            
+            // Run the event loop forever (blocks this thread)
+            tracing::debug!("Starting asyncio event loop in background thread");
+            if let Err(e) = event_loop.call_method0("run_forever") {
+                tracing::error!("Event loop error: {}", e);
+            }
+        });
+    });
+    
+    tracing::info!("Initialized asyncio event loop in background thread");
+    
+    // Store and return
+    // Race condition is fine - worst case we create an extra loop that gets dropped
+    let _ = ASYNCIO_EVENT_LOOP.set(event_loop_obj);
+    Ok(ASYNCIO_EVENT_LOOP.get().unwrap())
+}
 
 /// A loaded Python predictor instance.
 ///
@@ -36,8 +89,10 @@ use coglet_core::{PredictionError, PredictionOutput, PredictionResult};
 /// them by running them in Python's asyncio event loop.
 pub struct PythonPredictor {
     instance: PyObject,
-    /// Whether predict() is an async function.
+    /// Whether predict() is an async function (coroutine or async generator).
     is_async: bool,
+    /// Whether predict() is an async generator function specifically.
+    is_async_gen: bool,
 }
 
 // PyObject is Send in PyO3 0.23+
@@ -56,26 +111,31 @@ impl PythonPredictor {
         let instance: PyObject = load_fn.call1((predictor_ref,))?.unbind();
 
         // Check if predict() is async (coroutine or async generator)
-        let is_async = Self::detect_async(py, &instance)?;
-        if is_async {
+        let (is_async, is_async_gen) = Self::detect_async(py, &instance)?;
+        if is_async_gen {
+            tracing::info!("Detected async generator predict()");
+        } else if is_async {
             tracing::info!("Detected async predict()");
         }
 
-        Ok(Self { instance, is_async })
+        Ok(Self { instance, is_async, is_async_gen })
     }
 
     /// Detect if predict() is an async function.
-    fn detect_async(py: Python<'_>, instance: &PyObject) -> PyResult<bool> {
+    /// Returns (is_async, is_async_gen) tuple.
+    fn detect_async(py: Python<'_>, instance: &PyObject) -> PyResult<(bool, bool)> {
         let inspect = py.import("inspect")?;
         let predict = instance.bind(py).getattr("predict")?;
         
-        // Check iscoroutinefunction OR isasyncgenfunction
-        let is_coro: bool = inspect.call_method1("iscoroutinefunction", (&predict,))?.extract()?;
-        if is_coro {
-            return Ok(true);
-        }
+        // Check isasyncgenfunction first (it's more specific)
         let is_async_gen: bool = inspect.call_method1("isasyncgenfunction", (&predict,))?.extract()?;
-        Ok(is_async_gen)
+        if is_async_gen {
+            return Ok((true, true));
+        }
+        
+        // Check iscoroutinefunction
+        let is_coro: bool = inspect.call_method1("iscoroutinefunction", (&predict,))?.extract()?;
+        Ok((is_coro, false))
     }
 
     /// Returns true if this predictor has an async predict() method.
@@ -190,7 +250,7 @@ impl PythonPredictor {
     /// This handles the full conversion from JSON -> Python dict -> predict -> JSON.
     /// Detects generator returns and iterates them to collect all outputs.
     pub fn predict(&self, input: serde_json::Value) -> Result<PredictionResult, PredictionError> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             // Convert JSON input to Python dict via JSON serialization
             let json_module = py.import("json").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import json module: {}", e))
@@ -211,7 +271,8 @@ impl PythonPredictor {
                 .map_err(|e| PredictionError::InvalidInput(format!("Invalid JSON input: {}", e)))?;
 
             // Ensure input is a dict (or convert if needed)
-            let input_dict: &Bound<'_, PyDict> = py_input.downcast().map_err(|_| {
+            #[allow(deprecated)]
+            let input_dict = py_input.downcast::<PyDict>().map_err(|_| {
                 PredictionError::InvalidInput("Input must be a JSON object".to_string())
             })?;
 
@@ -277,6 +338,138 @@ impl PythonPredictor {
             };
 
             Ok(PredictionResult { output, predict_time: None })
+        })
+    }
+
+    /// Async version of predict for async predictors.
+    ///
+    /// Uses pyo3-async-runtimes to convert Python coroutine to Rust future,
+    /// enabling true concurrency via tokio. The Python asyncio event loop
+    /// runs in a dedicated background thread.
+    ///
+    /// For async generators, we wrap the iteration in a Python coroutine that
+    /// collects all yielded values into a list.
+    pub async fn predict_async(
+        &self,
+        input: serde_json::Value,
+    ) -> Result<PredictionResult, PredictionError> {
+        let is_async_gen = self.is_async_gen;
+        
+        // Prepare coroutine and schedule on the shared event loop
+        let (rust_future, json_module) = Python::attach(|py| {
+            let json_module = py.import("json").map_err(|e| {
+                PredictionError::Failed(format!("Failed to import json module: {}", e))
+            })?;
+
+            // Get or initialize the shared event loop (runs in background thread)
+            let event_loop = get_or_init_event_loop(py).map_err(|e| {
+                PredictionError::Failed(format!("Failed to get event loop: {}", e))
+            })?;
+
+            // Create TaskLocals with the shared event loop
+            let locals = pyo3_async_runtimes::TaskLocals::new(event_loop.bind(py).clone());
+
+            // Convert input to Python dict
+            let input_str = serde_json::to_string(&input)
+                .map_err(|e| PredictionError::InvalidInput(e.to_string()))?;
+            let py_input = json_module
+                .call_method1("loads", (input_str,))
+                .map_err(|e| PredictionError::InvalidInput(format!("Invalid JSON input: {}", e)))?;
+
+            #[allow(deprecated)]
+            let input_dict = py_input.downcast::<PyDict>().map_err(|_| {
+                PredictionError::InvalidInput("Input must be a JSON object".to_string())
+            })?;
+
+            // Call predict - returns coroutine or async generator
+            let instance = self.instance.bind(py);
+            let predict_result = instance
+                .call_method("predict", (), Some(input_dict))
+                .map_err(|e| PredictionError::Failed(format!("Failed to call predict: {}", e)))?;
+
+            // For async generators, wrap in a coroutine that collects all values
+            let awaitable = if is_async_gen {
+                // Create a Python coroutine that iterates the async generator
+                // and collects all values into a list using exec()
+                let collect_code = "
+async def _collect_async_gen(agen):
+    results = []
+    async for item in agen:
+        results.append(item)
+    return results
+";
+                // Execute the helper function definition using exec()
+                let builtins = py.import("builtins").map_err(|e| {
+                    PredictionError::Failed(format!("Failed to import builtins: {}", e))
+                })?;
+                let exec_fn = builtins.getattr("exec").map_err(|e| {
+                    PredictionError::Failed(format!("Failed to get exec: {}", e))
+                })?;
+                
+                let globals = PyDict::new(py);
+                exec_fn.call1((collect_code, &globals)).map_err(|e| {
+                    PredictionError::Failed(format!("Failed to define collect helper: {}", e))
+                })?;
+                
+                let collect_fn = globals.get_item("_collect_async_gen").map_err(|e| {
+                    PredictionError::Failed(format!("Failed to get collect helper: {}", e))
+                })?.ok_or_else(|| {
+                    PredictionError::Failed("_collect_async_gen not found".to_string())
+                })?;
+                
+                // Call _collect_async_gen(async_generator) to get a coroutine
+                collect_fn.call1((&predict_result,)).map_err(|e| {
+                    PredictionError::Failed(format!("Failed to wrap async generator: {}", e))
+                })?
+            } else {
+                predict_result
+            };
+
+            // Convert coroutine to Rust future - schedules on the shared event loop
+            let rust_future = pyo3_async_runtimes::into_future_with_locals(&locals, awaitable)
+                .map_err(|e| PredictionError::Failed(format!("Failed to convert coroutine: {}", e)))?;
+
+            Ok::<_, PredictionError>((rust_future, json_module.unbind()))
+        })?;
+
+        // Await the Rust future (this is where concurrency happens!)
+        // The Python coroutine runs on the background asyncio event loop
+        let py_result = rust_future.await.map_err(|e| {
+            PredictionError::Failed(format!("Async prediction failed: {}", e))
+        })?;
+
+        // Convert result to JSON
+        Python::attach(|py| {
+            let json_module = json_module.bind(py);
+            let result_bound = py_result.bind(py);
+
+            let result_str: String = json_module
+                .call_method1("dumps", (result_bound,))
+                .map_err(|e| PredictionError::Failed(format!("Failed to serialize output: {}", e)))?
+                .extract()
+                .map_err(|e| PredictionError::Failed(format!("Failed to extract output: {}", e)))?;
+
+            let output_json: serde_json::Value = serde_json::from_str(&result_str)
+                .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
+
+            // For async generators, the result is already a list, wrap in Stream
+            // For regular async, it's a single value
+            let output = if is_async_gen {
+                // The result is a JSON array from collect_async_gen
+                if let serde_json::Value::Array(items) = output_json {
+                    PredictionOutput::Stream(items)
+                } else {
+                    // Shouldn't happen, but handle gracefully
+                    PredictionOutput::Single(output_json)
+                }
+            } else {
+                PredictionOutput::Single(output_json)
+            };
+
+            Ok(PredictionResult {
+                output,
+                predict_time: None,
+            })
         })
     }
 }

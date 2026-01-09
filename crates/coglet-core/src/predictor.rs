@@ -96,8 +96,18 @@ pub enum PredictionError {
     NotReady,
 }
 
-/// A predict function trait object that can be stored in AppState.
+/// A sync predict function trait object that can be stored in AppState.
 ///
 /// Takes JSON input, returns JSON output or error.
 /// This is a trait object rather than a Box so it can be wrapped in Arc for cloning.
 pub type PredictFn = dyn Fn(serde_json::Value) -> Result<PredictionResult, PredictionError> + Send + Sync;
+
+/// Future type for async predictions.
+pub type PredictFuture = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<PredictionResult, PredictionError>> + Send>,
+>;
+
+/// An async predict function that can be stored in AppState.
+///
+/// Takes JSON input, returns a future that resolves to output or error.
+pub type AsyncPredictFn = dyn Fn(serde_json::Value) -> PredictFuture + Send + Sync;

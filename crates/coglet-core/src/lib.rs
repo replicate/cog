@@ -5,5 +5,8 @@ mod predictor;
 mod version;
 
 pub use health::{Health, SetupStatus};
-pub use predictor::{PredictFn, PredictionError, PredictionGuard, PredictionMetrics, PredictionOutput, PredictionResult};
+pub use predictor::{
+    AsyncPredictFn, PredictFn, PredictFuture, PredictionError, PredictionGuard,
+    PredictionMetrics, PredictionOutput, PredictionResult,
+};
 pub use version::{VersionInfo, COGLET_VERSION};

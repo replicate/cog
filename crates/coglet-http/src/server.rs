@@ -7,7 +7,7 @@ use tokio::net::TcpListener;
 use tokio::sync::{RwLock, Semaphore};
 use tracing::info;
 
-use coglet_core::{Health, PredictFn, VersionInfo};
+use coglet_core::{AsyncPredictFn, Health, PredictFn, VersionInfo};
 
 use crate::routes::routes;
 
@@ -34,8 +34,10 @@ impl Default for ServerConfig {
 /// Shared server state.
 pub struct AppState {
     pub health: RwLock<Health>,
-    /// Predict function wrapped in Arc for cloning into spawn_blocking tasks.
+    /// Sync predict function (for sync predictors, runs in spawn_blocking).
     pub predict_fn: Option<Arc<PredictFn>>,
+    /// Async predict function (for async predictors, runs in tokio).
+    pub async_predict_fn: Option<Arc<AsyncPredictFn>>,
     /// Semaphore controlling concurrent prediction slots.
     /// 
     /// This enforces max_concurrency at the HTTP layer. Even with GIL Python
@@ -57,24 +59,35 @@ impl AppState {
         Self {
             health: RwLock::new(Health::Unknown),
             predict_fn: None,
+            async_predict_fn: None,
             slots: Semaphore::new(max_concurrency),
             version: VersionInfo::new(),
         }
     }
-    
+
     pub fn with_predict_fn(mut self, predict_fn: Arc<PredictFn>) -> Self {
         self.predict_fn = Some(predict_fn);
         self
     }
-    
+
+    pub fn with_async_predict_fn(mut self, predict_fn: Arc<AsyncPredictFn>) -> Self {
+        self.async_predict_fn = Some(predict_fn);
+        self
+    }
+
     pub fn with_health(mut self, health: Health) -> Self {
         self.health = RwLock::new(health);
         self
     }
-    
+
     pub fn with_version(mut self, version: VersionInfo) -> Self {
         self.version = version;
         self
+    }
+    
+    /// Returns true if this predictor is async.
+    pub fn is_async(&self) -> bool {
+        self.async_predict_fn.is_some()
     }
 }
 
