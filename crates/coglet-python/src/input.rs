@@ -303,17 +303,10 @@ fn try_pydantic_runtime(py: Python<'_>, instance: &PyObject) -> Option<Runtime> 
     // get_input_type returns the Pydantic input model class
     let input_type = get_input_type.call1((instance.bind(py),)).ok()?;
 
-    // Verify it's a BaseInput subclass
+    // Verify it's a BaseInput subclass using issubclass()
     let base_input = py.import("cog.base_input").ok()?;
     let base_input_class = base_input.getattr("BaseInput").ok()?;
 
-    let is_base_input: bool = input_type
-        .call_method1("__subclasscheck__", (&base_input_class,))
-        .ok()
-        .and_then(|r| r.extract().ok())
-        .unwrap_or(false);
-
-    // Alternative check using issubclass
     let builtins = py.import("builtins").ok()?;
     let issubclass = builtins.getattr("issubclass").ok()?;
     let is_subclass: bool = issubclass
@@ -322,7 +315,7 @@ fn try_pydantic_runtime(py: Python<'_>, instance: &PyObject) -> Option<Runtime> 
         .and_then(|r| r.extract().ok())
         .unwrap_or(false);
 
-    if is_subclass || is_base_input {
+    if is_subclass {
         Some(Runtime::Pydantic {
             input_type: input_type.unbind(),
         })

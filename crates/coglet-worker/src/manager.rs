@@ -50,28 +50,56 @@ pub struct Worker {
     reader: FramedRead<ChildStdout, JsonCodec<WorkerResponse>>,
 }
 
+/// Configuration for spawning workers.
+#[derive(Clone)]
+pub struct SpawnConfig {
+    /// Python executable to use (defaults to "python3")
+    pub python_exe: String,
+    /// Extra environment variables to set
+    pub env: Vec<(String, String)>,
+}
+
+impl Default for SpawnConfig {
+    fn default() -> Self {
+        Self {
+            python_exe: "python3".to_string(),
+            env: vec![],
+        }
+    }
+}
+
 impl Worker {
     /// Spawn a new worker process.
     ///
-    /// The worker runs the same binary with `--worker` flag.
+    /// The worker is spawned as a Python process running `coglet._run_worker()`.
     /// It will load the predictor and send `Ready` when initialized.
     pub async fn spawn(
         predictor_ref: &str,
         ready_timeout: Duration,
+        config: &SpawnConfig,
     ) -> Result<Self, WorkerError> {
-        let exe = std::env::current_exe()?;
+        // Spawn Python running coglet._run_worker(predictor_ref)
+        let code = format!(
+            "import coglet; coglet._run_worker('{}')",
+            predictor_ref.replace('\'', "\\'")
+        );
 
-        tracing::debug!(?exe, predictor_ref, "Spawning worker");
+        tracing::debug!(python = %config.python_exe, predictor_ref, "Spawning worker");
 
-        let mut child = Command::new(&exe)
-            .arg("--worker")
-            .arg("--predictor")
-            .arg(predictor_ref)
+        let mut cmd = Command::new(&config.python_exe);
+        cmd.arg("-c")
+            .arg(&code)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit()) // Let stderr pass through for debugging
-            .kill_on_drop(true)
-            .spawn()?;
+            .kill_on_drop(true);
+
+        // Add extra environment variables
+        for (key, value) in &config.env {
+            cmd.env(key, value);
+        }
+
+        let mut child = cmd.spawn()?;
 
         let stdin = child.stdin.take().expect("stdin was piped");
         let stdout = child.stdout.take().expect("stdout was piped");

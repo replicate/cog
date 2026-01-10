@@ -9,8 +9,10 @@ name = "coglet"
 crate-type = ["cdylib"]
 
 [dependencies]
+async-trait = "0.1.89"
 coglet-core.workspace = true
 coglet-http.workspace = true
+coglet-worker = { path = "../coglet-worker" }
 pyo3.workspace = true
 pyo3-async-runtimes.workspace = true
 serde_json.workspace = true

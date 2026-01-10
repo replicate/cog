@@ -4,6 +4,7 @@ mod cancel;
 mod input;
 mod output;
 mod predictor;
+mod worker_bridge;
 
 use std::sync::Arc;
 
@@ -167,10 +168,41 @@ fn _is_cancelable() -> bool {
     cancel::is_cancelable()
 }
 
+/// Run as a worker subprocess.
+///
+/// This function is called when coglet is spawned as a worker.
+/// It reads requests from stdin, runs predictions, writes responses to stdout.
+/// Exits when stdin closes (parent died) or shutdown requested.
+#[pyfunction]
+fn _run_worker(predictor_ref: String) -> PyResult<()> {
+    // Initialize tracing
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_writer(std::io::stderr) // Log to stderr, stdout is for protocol
+        .try_init();
+
+    info!("Worker starting with predictor: {}", predictor_ref);
+
+    // Create handler
+    let handler = worker_bridge::PythonPredictHandler::new(predictor_ref);
+    let config = coglet_worker::WorkerConfig::default();
+
+    // Run worker event loop
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+
+    rt.block_on(async {
+        coglet_worker::run_worker(handler, config)
+            .await
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    })
+}
+
 /// coglet Python module.
 #[pymodule]
 fn coglet(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(serve, m)?)?;
     m.add_function(wrap_pyfunction!(_is_cancelable, m)?)?;
+    m.add_function(wrap_pyfunction!(_run_worker, m)?)?;
     Ok(())
 }

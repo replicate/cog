@@ -225,41 +225,45 @@ impl PythonPredictor {
     }
 
     /// Call predict() with the given input dict, returning JSON-serializable output.
-    /// Captures stdout/stderr and logs them via tracing.
-    pub fn predict_raw(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PyObject> {
+    ///
+    /// If `redirect_output` is true, captures stdout/stderr and logs via tracing.
+    /// Set to false when running in worker mode (stdout is used for protocol).
+    pub fn predict_raw(&self, py: Python<'_>, input: &Bound<'_, PyDict>, redirect_output: bool) -> PyResult<PyObject> {
         let instance = self.instance.bind(py);
 
-        // Import the stream redirector
-        let helpers = py.import("cog.server.helpers")?;
-        let redirector_class = helpers.getattr("SimpleStreamRedirector")?;
+        // Optionally set up stream redirection
+        let redirector = if redirect_output {
+            // Import the stream redirector
+            let helpers = py.import("cog.server.helpers")?;
+            let redirector_class = helpers.getattr("SimpleStreamRedirector")?;
 
-        // Create a Python callback that logs to tracing
-        // For now, we'll collect output and log after
-        let logs: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>> =
-            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let logs_clone = logs.clone();
+            // Create a Python callback that logs to tracing
+            let logs: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>> =
+                std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let logs_clone = logs.clone();
 
-        // Create a simple Python function to capture logs
-        let callback = pyo3::types::PyCFunction::new_closure(
-            py,
-            None,
-            None,
-            move |args: &Bound<'_, pyo3::types::PyTuple>, _kwargs: Option<&Bound<'_, PyDict>>| -> PyResult<()> {
-                let source: String = args.get_item(0)?.extract()?;
-                let text: String = args.get_item(1)?.extract()?;
-                if let Ok(mut guard) = logs_clone.lock() {
-                    guard.push((source, text));
-                }
-                Ok(())
-            },
-        )?;
+            // Create a simple Python function to capture logs
+            let callback = pyo3::types::PyCFunction::new_closure(
+                py,
+                None,
+                None,
+                move |args: &Bound<'_, pyo3::types::PyTuple>, _kwargs: Option<&Bound<'_, PyDict>>| -> PyResult<()> {
+                    let source: String = args.get_item(0)?.extract()?;
+                    let text: String = args.get_item(1)?.extract()?;
+                    if let Ok(mut guard) = logs_clone.lock() {
+                        guard.push((source, text));
+                    }
+                    Ok(())
+                },
+            )?;
 
-        // Create redirector with tee=true so output still goes to console
-        let redirector = redirector_class.call1((callback, true))?;
-
-        // Use redirector as context manager
-        let result = redirector.call_method0("__enter__")?;
-        let _ = result; // redirector returns self
+            // Create redirector with tee=true so output still goes to console
+            let redir = redirector_class.call1((callback, true))?;
+            redir.call_method0("__enter__")?;
+            Some((redir.unbind(), logs))
+        } else {
+            None
+        };
 
         // For sync predictors, enter cancelable state so SIGUSR1 can interrupt
         // The guard clears the flag on drop (even if we panic or error)
@@ -283,20 +287,23 @@ impl PythonPredictor {
         // Drop the cancelable guard now that predict is done
         drop(_cancelable_guard);
 
-        // Exit context manager (handles exceptions properly)
-        let none = py.None();
-        redirector.call_method1("__exit__", (none.bind(py), none.bind(py), none.bind(py)))?;
+        // Clean up redirector if used
+        if let Some((redir, logs)) = redirector {
+            let redir = redir.bind(py);
+            let none = py.None();
+            redir.call_method1("__exit__", (none.bind(py), none.bind(py), none.bind(py)))?;
 
-        // Log captured output
-        if let Ok(guard) = logs.lock() {
-            for (source, text) in guard.iter() {
-                let text = text.trim_end();
-                if !text.is_empty() {
-                    // source is "<stdout>" or "<stderr>" from Python's stream.name
-                    if source.contains("stdout") {
-                        tracing::info!(target: "predict.stdout", "{}", text);
-                    } else {
-                        tracing::warn!(target: "predict.stderr", "{}", text);
+            // Log captured output
+            if let Ok(guard) = logs.lock() {
+                for (source, text) in guard.iter() {
+                    let text = text.trim_end();
+                    if !text.is_empty() {
+                        // source is "<stdout>" or "<stderr>" from Python's stream.name
+                        if source.contains("stdout") {
+                            tracing::info!(target: "predict.stdout", "{}", text);
+                        } else {
+                            tracing::warn!(target: "predict.stderr", "{}", text);
+                        }
                     }
                 }
             }
@@ -347,7 +354,8 @@ impl PythonPredictor {
             })?;
 
             // Call predict - check for CancelationException
-            let result = self.predict_raw(py, &input_dict).map_err(|e| {
+            // Use redirect_output=true for the serve() path (not worker mode)
+            let result = self.predict_raw(py, &input_dict, true).map_err(|e| {
                 // Check if this is a CancelationException
                 if is_cancelation_exception(py, &e) {
                     return PredictionError::Cancelled;
@@ -421,6 +429,101 @@ impl PythonPredictor {
                 let output_json: serde_json::Value = serde_json::from_str(&result_str).map_err(|e| {
                     PredictionError::Failed(format!("Failed to parse output JSON: {}", e))
                 })?;
+
+                PredictionOutput::Single(output_json)
+            };
+
+            Ok(PredictionResult { output, predict_time: None })
+        })
+    }
+
+    /// Worker mode predict - does not redirect stdout/stderr.
+    ///
+    /// Use this when running in a subprocess worker where stdout is used
+    /// for the protocol (not for capturing logs).
+    pub fn predict_worker(&self, input: serde_json::Value) -> Result<PredictionResult, PredictionError> {
+        Python::attach(|py| {
+            let json_module = py.import("json").map_err(|e| {
+                PredictionError::Failed(format!("Failed to import json module: {}", e))
+            })?;
+            let types_module = py.import("types").map_err(|e| {
+                PredictionError::Failed(format!("Failed to import types module: {}", e))
+            })?;
+            let generator_type = types_module.getattr("GeneratorType").map_err(|e| {
+                PredictionError::Failed(format!("Failed to get GeneratorType: {}", e))
+            })?;
+
+            let input_str = serde_json::to_string(&input)
+                .map_err(|e| PredictionError::InvalidInput(e.to_string()))?;
+
+            let py_input = json_module
+                .call_method1("loads", (input_str,))
+                .map_err(|e| PredictionError::InvalidInput(format!("Invalid JSON input: {}", e)))?;
+
+            #[allow(deprecated)]
+            let raw_input_dict = py_input.downcast::<PyDict>().map_err(|_| {
+                PredictionError::InvalidInput("Input must be a JSON object".to_string())
+            })?;
+
+            let input_dict = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
+                PredictionError::InvalidInput(format!("Input validation failed: {}", e))
+            })?;
+
+            // redirect_output=false for worker mode
+            let result = self.predict_raw(py, &input_dict, false).map_err(|e| {
+                if is_cancelation_exception(py, &e) {
+                    return PredictionError::Cancelled;
+                }
+                PredictionError::Failed(format!("Prediction failed: {}", e))
+            })?;
+
+            let result_bound = result.bind(py);
+            let is_generator: bool = result_bound.is_instance(&generator_type).unwrap_or(false);
+
+            let output = if is_generator {
+                let mut outputs = Vec::new();
+                let iter = result_bound.try_iter().map_err(|e| {
+                    PredictionError::Failed(format!("Failed to iterate generator: {}", e))
+                })?;
+
+                for item in iter {
+                    let item = item.map_err(|e| {
+                        if is_cancelation_exception(py, &e) {
+                            return PredictionError::Cancelled;
+                        }
+                        PredictionError::Failed(format!("Generator iteration error: {}", e))
+                    })?;
+
+                    let processed = output::process_output_item(py, &item).map_err(|e| {
+                        PredictionError::Failed(format!("Failed to process output item: {}", e))
+                    })?;
+
+                    let item_str: String = json_module
+                        .call_method1("dumps", (&processed,))
+                        .map_err(|e| PredictionError::Failed(format!("Failed to serialize output item: {}", e)))?
+                        .extract()
+                        .map_err(|e| PredictionError::Failed(format!("Failed to extract output string: {}", e)))?;
+
+                    let item_json: serde_json::Value = serde_json::from_str(&item_str)
+                        .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
+
+                    outputs.push(item_json);
+                }
+
+                PredictionOutput::Stream(outputs)
+            } else {
+                let processed = output::process_output(py, result_bound, None).map_err(|e| {
+                    PredictionError::Failed(format!("Failed to process output: {}", e))
+                })?;
+
+                let result_str: String = json_module
+                    .call_method1("dumps", (&processed,))
+                    .map_err(|e| PredictionError::Failed(format!("Failed to serialize output: {}", e)))?
+                    .extract()
+                    .map_err(|e| PredictionError::Failed(format!("Failed to extract output string: {}", e)))?;
+
+                let output_json: serde_json::Value = serde_json::from_str(&result_str)
+                    .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
 
                 PredictionOutput::Single(output_json)
             };
