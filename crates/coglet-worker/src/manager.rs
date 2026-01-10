@@ -105,6 +105,9 @@ impl Worker {
     }
 
     /// Send a prediction request and wait for the response.
+    /// 
+    /// WARNING: This can block forever if the worker hangs.
+    /// Use `predict_with_timeout` for safety.
     pub async fn predict(
         &mut self,
         id: String,
@@ -118,6 +121,43 @@ impl Worker {
             .map_err(|e| WorkerError::Protocol(format!("Failed to send request: {}", e)))?;
 
         // Read responses until we get a terminal one
+        self.read_until_terminal().await
+    }
+
+    /// Send a prediction request with timeout.
+    /// 
+    /// If timeout expires, attempts to cancel then kill the worker.
+    /// This is the SAFE way to run predictions.
+    pub async fn predict_with_timeout(
+        &mut self,
+        id: String,
+        input: serde_json::Value,
+        timeout: Duration,
+        kill_grace: Duration,
+    ) -> Result<WorkerResponse, WorkerError> {
+        match tokio::time::timeout(timeout, self.predict(id.clone(), input)).await {
+            Ok(result) => result,
+            Err(_) => {
+                // Timeout! Try to cancel first
+                tracing::warn!(id = %id, "Prediction timed out, attempting cancel");
+                let _ = self.cancel(id.clone()).await;
+                
+                // Give it a moment to respond to cancel
+                match tokio::time::timeout(Duration::from_secs(1), self.read_until_terminal()).await {
+                    Ok(Ok(resp)) => return Ok(resp),
+                    _ => {
+                        // Cancel didn't work, kill escalation
+                        tracing::error!(id = %id, "Cancel failed, killing worker");
+                        self.kill(kill_grace).await;
+                        return Err(WorkerError::Died("Killed after timeout".to_string()));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Read responses until we get a terminal one.
+    async fn read_until_terminal(&mut self) -> Result<WorkerResponse, WorkerError> {
         loop {
             match self.reader.next().await {
                 Some(Ok(resp)) => {
@@ -148,6 +188,7 @@ impl Worker {
                     return Err(WorkerError::Protocol(format!("Read error: {}", e)));
                 }
                 None => {
+                    // Worker died or closed pipe
                     return Err(WorkerError::ConnectionLost);
                 }
             }
@@ -213,7 +254,5 @@ impl Worker {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // Integration tests would go here - need actual worker binary
 }

@@ -12,7 +12,9 @@
 mod codec;
 mod manager;
 mod protocol;
+mod worker;
 
 pub use codec::JsonCodec;
 pub use manager::{Worker, WorkerError};
 pub use protocol::{PredictionStatus, WorkerRequest, WorkerResponse};
+pub use worker::{run_worker, PredictHandler, PredictResult, PredictionSlot, WorkerConfig};
