@@ -6,7 +6,7 @@ mod version;
 
 pub use health::{Health, SetupStatus};
 pub use predictor::{
-    AsyncPredictFn, PredictFn, PredictFuture, PredictionError, PredictionGuard,
+    AsyncPredictFn, CancellationToken, PredictFn, PredictFuture, PredictionError, PredictionGuard,
     PredictionMetrics, PredictionOutput, PredictionResult,
 };
 pub use version::{VersionInfo, COGLET_VERSION};

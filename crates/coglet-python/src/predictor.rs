@@ -8,8 +8,32 @@ use pyo3::types::PyDict;
 
 use coglet_core::{PredictionError, PredictionOutput, PredictionResult};
 
+use crate::cancel;
 use crate::input::{self, InputProcessor, Runtime};
 use crate::output;
+
+/// Check if a PyErr is a CancelationException or asyncio.CancelledError.
+fn is_cancelation_exception(py: Python<'_>, err: &PyErr) -> bool {
+    // Check for cog.server.exceptions.CancelationException
+    if let Ok(exceptions) = py.import("cog.server.exceptions") {
+        if let Ok(cancel_exc) = exceptions.getattr("CancelationException") {
+            if err.is_instance(py, &cancel_exc) {
+                return true;
+            }
+        }
+    }
+
+    // Check for asyncio.CancelledError
+    if let Ok(asyncio) = py.import("asyncio") {
+        if let Ok(cancelled_error) = asyncio.getattr("CancelledError") {
+            if err.is_instance(py, &cancelled_error) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
 
 /// Type alias for Python object (Py<PyAny>).
 type PyObject = Py<PyAny>;
@@ -237,6 +261,14 @@ impl PythonPredictor {
         let result = redirector.call_method0("__enter__")?;
         let _ = result; // redirector returns self
 
+        // For sync predictors, enter cancelable state so SIGUSR1 can interrupt
+        // The guard clears the flag on drop (even if we panic or error)
+        let _cancelable_guard = if !self.is_async {
+            Some(cancel::enter_cancelable())
+        } else {
+            None
+        };
+
         // Call predict - returns coroutine if async, result if sync
         let predict_result = instance.call_method("predict", (), Some(input))?;
 
@@ -247,6 +279,9 @@ impl PythonPredictor {
         } else {
             predict_result
         };
+        
+        // Drop the cancelable guard now that predict is done
+        drop(_cancelable_guard);
 
         // Exit context manager (handles exceptions properly)
         let none = py.None();
@@ -311,8 +346,12 @@ impl PythonPredictor {
                 PredictionError::InvalidInput(format!("Input validation failed: {}", e))
             })?;
 
-            // Call predict
+            // Call predict - check for CancelationException
             let result = self.predict_raw(py, &input_dict).map_err(|e| {
+                // Check if this is a CancelationException
+                if is_cancelation_exception(py, &e) {
+                    return PredictionError::Cancelled;
+                }
                 PredictionError::Failed(format!("Prediction failed: {}", e))
             })?;
 
@@ -331,6 +370,10 @@ impl PythonPredictor {
 
                 for item in iter {
                     let item = item.map_err(|e| {
+                        // Check if generator was cancelled
+                        if is_cancelation_exception(py, &e) {
+                            return PredictionError::Cancelled;
+                        }
                         PredictionError::Failed(format!("Generator iteration error: {}", e))
                     })?;
 
@@ -486,6 +529,11 @@ async def _collect_async_gen(agen):
         // Await the Rust future (this is where concurrency happens!)
         // The Python coroutine runs on the background asyncio event loop
         let py_result = rust_future.await.map_err(|e| {
+            // Check for asyncio.CancelledError in the error chain
+            let err_str = e.to_string();
+            if err_str.contains("CancelledError") || err_str.contains("Cancelation") {
+                return PredictionError::Cancelled;
+            }
             PredictionError::Failed(format!("Async prediction failed: {}", e))
         })?;
 

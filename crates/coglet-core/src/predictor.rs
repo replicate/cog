@@ -2,6 +2,8 @@
 
 use std::time::{Duration, Instant};
 
+pub use tokio_util::sync::CancellationToken;
+
 /// Result of a prediction.
 #[derive(Debug, Clone)]
 pub struct PredictionResult {
@@ -56,9 +58,14 @@ pub struct PredictionMetrics {
 ///
 /// Tracks timing and ensures cleanup on drop.
 /// Create with `PredictionGuard::new()`, call `finish()` when done.
+///
+/// Also provides a cancellation token that can be used to cancel the prediction
+/// from another task (e.g., via HTTP cancel endpoint or signal handler).
 pub struct PredictionGuard {
     start_time: Instant,
     metrics: PredictionMetrics,
+    /// Token for cancelling this prediction.
+    cancel_token: CancellationToken,
 }
 
 impl PredictionGuard {
@@ -67,7 +74,28 @@ impl PredictionGuard {
         Self {
             start_time: Instant::now(),
             metrics: PredictionMetrics::default(),
+            cancel_token: CancellationToken::new(),
         }
+    }
+
+    /// Get a clone of the cancellation token for this prediction.
+    ///
+    /// The token can be used to:
+    /// - `cancel()` - trigger cancellation
+    /// - `is_cancelled()` - check if cancelled
+    /// - `cancelled()` - async wait for cancellation
+    pub fn cancel_token(&self) -> CancellationToken {
+        self.cancel_token.clone()
+    }
+
+    /// Check if this prediction has been cancelled.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel_token.is_cancelled()
+    }
+
+    /// Cancel this prediction.
+    pub fn cancel(&self) {
+        self.cancel_token.cancel();
     }
 
     /// Finish the prediction, computing final metrics.
@@ -94,6 +122,9 @@ pub enum PredictionError {
 
     #[error("Predictor not ready")]
     NotReady,
+
+    #[error("Prediction was cancelled")]
+    Cancelled,
 }
 
 /// A sync predict function trait object that can be stored in AppState.

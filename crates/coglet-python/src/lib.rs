@@ -1,5 +1,6 @@
 //! coglet-python: PyO3 bindings for coglet.
 
+mod cancel;
 mod input;
 mod output;
 mod predictor;
@@ -52,6 +53,9 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16)
     let _ = tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .try_init();
+
+    // Install signal handler for sync predictor cancellation
+    cancel::install_signal_handler(py)?;
 
     let config = ServerConfig {
         host,
@@ -157,9 +161,16 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16)
     })
 }
 
+/// Check if we're in a cancelable section (called from Python signal handler).
+#[pyfunction]
+fn _is_cancelable() -> bool {
+    cancel::is_cancelable()
+}
+
 /// coglet Python module.
 #[pymodule]
 fn coglet(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(serve, m)?)?;
+    m.add_function(wrap_pyfunction!(_is_cancelable, m)?)?;
     Ok(())
 }

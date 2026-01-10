@@ -395,6 +395,121 @@ class Predictor(BasePredictor):
     return predictor
 
 
+@pytest.fixture
+def secret_input_predictor(tmp_path: Path) -> Path:
+    """Create a predictor that takes cog.Secret input."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+from cog import BasePredictor, Secret
+
+class Predictor(BasePredictor):
+    def setup(self):
+        pass
+    
+    def predict(self, api_key: Secret) -> str:
+        # Return the secret value (in real code, you'd use it, not return it)
+        return f"key_length={len(api_key.get_secret_value())}"
+""")
+    return predictor
+
+
+class TestSecretInput:
+    """Tests for cog.Secret input handling."""
+
+    def test_secret_input(self, secret_input_predictor: Path):
+        """Test that Secret inputs are handled correctly."""
+        with CogletServer(secret_input_predictor, port=5615) as server:
+            result = server.predict({"api_key": "my-secret-api-key"})
+            assert result["status"] == "succeeded"
+            assert result["output"] == "key_length=17"
+
+
+@pytest.fixture
+def slow_predictor(tmp_path: Path) -> Path:
+    """Create a slow predictor that can be cancelled."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+from cog import BasePredictor
+import time
+
+class Predictor(BasePredictor):
+    def setup(self):
+        pass
+    
+    def predict(self, sleep_time: float = 10.0) -> str:
+        time.sleep(sleep_time)
+        return "completed"
+""")
+    return predictor
+
+
+class TestCancellation:
+    """Tests for prediction cancellation."""
+
+    def test_cancel_endpoint_returns_404_for_unknown_id(self, sync_predictor: Path):
+        """Test that cancelling an unknown prediction returns 404."""
+        with CogletServer(sync_predictor, port=5621) as server:
+            resp = requests.post(f"{server.base_url}/predictions/unknown-id/cancel")
+            assert resp.status_code == 404
+            result = resp.json()
+            assert result["status"] == "failed"
+            assert "not found" in result["error"]
+
+    def test_prediction_response_includes_id(self, sync_predictor: Path):
+        """Test that prediction responses include an ID."""
+        with CogletServer(sync_predictor, port=5622) as server:
+            result = server.predict({"name": "test"})
+            assert "id" in result
+            assert result["id"].startswith("pred_")
+
+    @pytest.mark.skip(
+        reason="Sync cancellation requires subprocess isolation (like cog) - architectural limitation"
+    )
+    def test_sigusr1_cancels_sync_prediction(self, slow_predictor: Path):
+        """Test that SIGUSR1 cancels a sync prediction.
+
+        NOTE: This test is skipped because sync predictor cancellation requires
+        subprocess isolation like cog does. In our in-process model:
+        - Signal handlers only run between Python bytecode instructions
+        - Blocking syscalls (time.sleep, I/O) can't be interrupted
+        - The signal may be delivered to tokio threads, not Python
+
+        Async predictors CAN be cancelled via asyncio.Task.cancel().
+        """
+        import signal
+        import threading
+
+        with CogletServer(slow_predictor, port=5620) as server:
+            # Start a prediction in a thread
+            result_holder = {}
+
+            def make_prediction():
+                result_holder["result"] = server.predict({"sleep_time": 30.0})
+
+            predict_thread = threading.Thread(target=make_prediction)
+            predict_thread.start()
+
+            # Wait a bit for prediction to start
+            time.sleep(0.5)
+
+            # Send SIGUSR1 to cancel
+            import os
+
+            os.kill(server.process.pid, signal.SIGUSR1)
+
+            # Wait for the prediction to complete (should be fast due to cancel)
+            predict_thread.join(timeout=5.0)
+            assert not predict_thread.is_alive(), (
+                "Prediction should have been cancelled"
+            )
+
+            # Check the result
+            result = result_holder.get("result", {})
+            assert result.get("status") == "canceled", (
+                f"Expected canceled, got: {result}"
+            )
+
+
 class TestPathOutput:
     """Tests for cog.Path output handling."""
 

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::{get, post},
@@ -25,8 +25,20 @@ pub struct HealthCheckResponse {
 /// Prediction request body.
 #[derive(Debug, Deserialize)]
 pub struct PredictionRequest {
+    /// Optional prediction ID (generated if not provided).
+    pub id: Option<String>,
     /// Input to the predictor.
     pub input: serde_json::Value,
+}
+
+/// Generate a unique prediction ID.
+fn generate_prediction_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    format!("pred_{:x}", timestamp)
 }
 
 /// GET /health-check
@@ -68,7 +80,12 @@ async fn create_prediction(
     };
 
     let input = request.input;
+    let prediction_id = request.id.unwrap_or_else(generate_prediction_id);
     let guard = PredictionGuard::new();
+    let cancel_token = guard.cancel_token();
+    
+    // Register the prediction for cancellation
+    state.register_prediction(prediction_id.clone(), cancel_token.clone()).await;
 
     // Run prediction - async or sync path
     let result = if let Some(ref async_predict_fn) = state.async_predict_fn {
@@ -103,12 +120,16 @@ async fn create_prediction(
     };
 
     let metrics = guard.finish();
+    
+    // Unregister the prediction now that it's done
+    state.unregister_prediction(&prediction_id).await;
     // _permit drops here, releasing the slot
 
     match result {
         Ok(prediction) => (
             StatusCode::OK,
             Json(serde_json::json!({
+                "id": prediction_id,
                 "output": prediction.output,
                 "status": "succeeded",
                 "metrics": {
@@ -119,6 +140,7 @@ async fn create_prediction(
         Err(PredictionError::InvalidInput(msg)) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             Json(serde_json::json!({
+                "id": prediction_id,
                 "error": msg,
                 "status": "failed",
                 "metrics": {
@@ -129,6 +151,7 @@ async fn create_prediction(
         Err(PredictionError::NotReady) => (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({
+                "id": prediction_id,
                 "error": "Predictor not ready",
                 "status": "failed"
             })),
@@ -136,8 +159,19 @@ async fn create_prediction(
         Err(PredictionError::Failed(msg)) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({
+                "id": prediction_id,
                 "error": msg,
                 "status": "failed",
+                "metrics": {
+                    "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
+                }
+            })),
+        ),
+        Err(PredictionError::Cancelled) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "id": prediction_id,
+                "status": "canceled",
                 "metrics": {
                     "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
                 }
@@ -146,11 +180,36 @@ async fn create_prediction(
     }
 }
 
+/// POST /predictions/{id}/cancel
+async fn cancel_prediction(
+    State(state): State<Arc<AppState>>,
+    Path(prediction_id): Path<String>,
+) -> impl IntoResponse {
+    if state.cancel_prediction(&prediction_id).await {
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "id": prediction_id,
+                "status": "canceling"
+            })),
+        )
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": format!("Prediction {} not found or already completed", prediction_id),
+                "status": "failed"
+            })),
+        )
+    }
+}
+
 /// Build the router with all routes.
 pub fn routes(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/health-check", get(health_check))
         .route("/predictions", post(create_prediction))
+        .route("/predictions/{id}/cancel", post(cancel_prediction))
         .with_state(state)
 }
 

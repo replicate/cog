@@ -1,13 +1,14 @@
 //! HTTP server implementation.
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use tokio::net::TcpListener;
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::{Mutex, RwLock, Semaphore};
 use tracing::info;
 
-use coglet_core::{AsyncPredictFn, Health, PredictFn, VersionInfo};
+use coglet_core::{AsyncPredictFn, CancellationToken, Health, PredictFn, VersionInfo};
 
 use crate::routes::routes;
 
@@ -52,6 +53,9 @@ pub struct AppState {
     pub slots: Semaphore,
     /// Version information for the runtime.
     pub version: VersionInfo,
+    /// In-flight predictions mapped by ID to their cancellation token.
+    /// Used by the cancel endpoint to trigger cancellation.
+    pub predictions: Mutex<HashMap<String, CancellationToken>>,
 }
 
 impl AppState {
@@ -62,6 +66,30 @@ impl AppState {
             async_predict_fn: None,
             slots: Semaphore::new(max_concurrency),
             version: VersionInfo::new(),
+            predictions: Mutex::new(HashMap::new()),
+        }
+    }
+    
+    /// Register a prediction with its cancellation token.
+    pub async fn register_prediction(&self, id: String, token: CancellationToken) {
+        let mut predictions = self.predictions.lock().await;
+        predictions.insert(id, token);
+    }
+    
+    /// Unregister a prediction (called when prediction completes).
+    pub async fn unregister_prediction(&self, id: &str) {
+        let mut predictions = self.predictions.lock().await;
+        predictions.remove(id);
+    }
+    
+    /// Cancel a prediction by ID. Returns true if found and cancelled.
+    pub async fn cancel_prediction(&self, id: &str) -> bool {
+        let predictions = self.predictions.lock().await;
+        if let Some(token) = predictions.get(id) {
+            token.cancel();
+            true
+        } else {
+            false
         }
     }
 
