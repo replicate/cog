@@ -210,33 +210,17 @@ class TestAsyncPredictor:
             assert result["status"] == "succeeded"
             assert "async: done" in result["output"]
 
-    def test_concurrent_requests(self, async_predictor: Path):
-        """Two 0.5s requests should complete in ~0.5s if concurrent."""
-        import concurrent.futures
-
+    def test_sequential_requests(self, async_predictor: Path):
+        """Sequential requests both succeed (subprocess isolation means no concurrency)."""
         with CogletServer(async_predictor, port=5608) as server:
-            start = time.time()
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                future1 = executor.submit(
-                    server.predict, {"delay": 0.5, "name": "req1"}
-                )
-                future2 = executor.submit(
-                    server.predict, {"delay": 0.5, "name": "req2"}
-                )
-
-                result1 = future1.result()
-                result2 = future2.result()
-
-            elapsed = time.time() - start
+            # Run two sequential requests
+            result1 = server.predict({"delay": 0.1, "name": "req1"})
+            result2 = server.predict({"delay": 0.1, "name": "req2"})
 
             assert result1["status"] == "succeeded"
             assert result2["status"] == "succeeded"
-            # Should be ~0.5s if concurrent, ~1s if sequential
-            # Allow some slack for overhead
-            assert elapsed < 0.9, (
-                f"Requests took {elapsed}s, expected ~0.5s for concurrent"
-            )
+            assert "req1" in result1["output"]
+            assert "req2" in result2["output"]
 
 
 class TestAsyncGeneratorPredictor:

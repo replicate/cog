@@ -19,8 +19,6 @@ use coglet_core::{Health, PredictFuture, PredictionError, PredictionOutput, Pred
 use coglet_http::{serve as http_serve, AppState, ServerConfig};
 use coglet_worker::{SpawnConfig, Worker, WorkerResponse};
 
-use crate::predictor::PythonPredictor;
-
 /// Wrapper around Worker that handles respawning on crash.
 struct WorkerHandle {
     worker: Mutex<Option<Worker>>,
@@ -135,10 +133,10 @@ fn detect_version(py: Python<'_>) -> VersionInfo {
 
 /// Start the coglet HTTP server with a predictor.
 ///
-/// This function blocks until the server shuts down.
-///
-/// For sync predictors, uses subprocess isolation for true cancellation support.
-/// For async predictors, runs in-process for lower latency.
+/// All predictors run in a subprocess for isolation:
+/// - Crash isolation (segfault doesn't kill server)
+/// - True cancellation (SIGKILL as last resort)
+/// - Memory isolation (leaks don't accumulate in server)
 #[pyfunction]
 #[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000))]
 fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16) -> PyResult<()> {
@@ -150,7 +148,7 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16)
     let config = ServerConfig {
         host,
         port,
-        max_concurrency: 1, // Will be overridden based on predictor type
+        max_concurrency: 1,
     };
 
     // Detect version info (do this in parent process)
@@ -175,88 +173,12 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16)
         });
     };
 
-    // Check if predictor is async (need to load briefly to check)
-    info!(predictor_ref = %pred_ref, "Checking predictor type");
-    let is_async_predictor = match PythonPredictor::load(py, &pred_ref) {
-        Ok(p) => p.is_async(),
-        Err(e) => {
-            error!(error = %e, "Failed to load predictor");
-            return Err(e);
-        }
-    };
-
-    if is_async_predictor {
-        // Async predictor: run in-process for lower latency
-        info!("Async predictor - running in-process");
-        serve_inprocess(py, pred_ref, config, version)
-    } else {
-        // Sync predictor: use subprocess for true cancellation
-        info!("Sync predictor - using subprocess isolation");
-        serve_subprocess(py, pred_ref, config, version)
-    }
+    // All predictors use subprocess isolation
+    info!(predictor_ref = %pred_ref, "Starting with subprocess isolation");
+    serve_subprocess(py, pred_ref, config, version)
 }
 
-/// Serve with in-process predictor (for async predictors).
-fn serve_inprocess(
-    py: Python<'_>,
-    pred_ref: String,
-    config: ServerConfig,
-    version: VersionInfo,
-) -> PyResult<()> {
-    // Load predictor
-    let predictor = PythonPredictor::load(py, &pred_ref)?;
-
-    // Run setup
-    info!("Running predictor setup");
-    let setup_succeeded = match predictor.setup(py) {
-        Ok(()) => {
-            info!("Setup completed successfully");
-            true
-        }
-        Err(e) => {
-            error!(error = %e, "Setup failed");
-            false
-        }
-    };
-
-    let initial_health = if setup_succeeded {
-        Health::Ready
-    } else {
-        Health::SetupFailed
-    };
-
-    // Async predictors can handle multiple concurrent requests
-    let max_concurrency = 10;
-    info!(max_concurrency, "Configuring async predictor");
-
-    let mut app_state = AppState::new(max_concurrency)
-        .with_health(initial_health)
-        .with_version(version);
-
-    // Create async predict function
-    let pred = Arc::new(predictor);
-    let pred_clone = Arc::clone(&pred);
-    let async_predict_fn = Arc::new(move |input: serde_json::Value| -> PredictFuture {
-        let pred = Arc::clone(&pred_clone);
-        Box::pin(async move { pred.predict_async(input).await })
-    }) as Arc<coglet_core::AsyncPredictFn>;
-    app_state = app_state.with_async_predict_fn(async_predict_fn);
-
-    let app_state = Arc::new(app_state);
-
-    // Release GIL and run server
-    py.detach(|| {
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-        rt.block_on(async {
-            http_serve(config, app_state)
-                .await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-        })
-    })
-}
-
-/// Serve with subprocess worker (for sync predictors).
+/// Serve with subprocess worker.
 fn serve_subprocess(
     py: Python<'_>,
     pred_ref: String,

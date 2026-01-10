@@ -73,45 +73,28 @@ impl PredictHandler for PythonPredictHandler {
         // Run prediction
         let start = std::time::Instant::now();
         
-        // Check if async or sync predictor
-        let result = if pred.is_async() {
-            // Async prediction
-            match pred.predict_async(input).await {
-                Ok(r) => PredictResult::success(
-                    output_to_json(r.output),
-                    String::new(),
-                    start.elapsed().as_secs_f64(),
-                ),
-                Err(e) => {
-                    if matches!(e, coglet_core::PredictionError::Cancelled) {
-                        PredictResult::cancelled(String::new(), start.elapsed().as_secs_f64())
-                    } else {
-                        PredictResult::failed(
-                            e.to_string(),
-                            String::new(),
-                            start.elapsed().as_secs_f64(),
-                        )
-                    }
-                }
-            }
+        // Use worker-mode predict (no stdout redirection, sync execution)
+        let predict_result = if pred.is_async() {
+            pred.predict_async_worker(input)
         } else {
-            // Sync prediction - use predict_worker to avoid stdout redirection
-            match pred.predict_worker(input) {
-                Ok(r) => PredictResult::success(
-                    output_to_json(r.output),
-                    String::new(),
-                    start.elapsed().as_secs_f64(),
-                ),
-                Err(e) => {
-                    if matches!(e, coglet_core::PredictionError::Cancelled) {
-                        PredictResult::cancelled(String::new(), start.elapsed().as_secs_f64())
-                    } else {
-                        PredictResult::failed(
-                            e.to_string(),
-                            String::new(),
-                            start.elapsed().as_secs_f64(),
-                        )
-                    }
+            pred.predict_worker(input)
+        };
+
+        let result = match predict_result {
+            Ok(r) => PredictResult::success(
+                output_to_json(r.output),
+                String::new(),
+                start.elapsed().as_secs_f64(),
+            ),
+            Err(e) => {
+                if matches!(e, coglet_core::PredictionError::Cancelled) {
+                    PredictResult::cancelled(String::new(), start.elapsed().as_secs_f64())
+                } else {
+                    PredictResult::failed(
+                        e.to_string(),
+                        String::new(),
+                        start.elapsed().as_secs_f64(),
+                    )
                 }
             }
         };
