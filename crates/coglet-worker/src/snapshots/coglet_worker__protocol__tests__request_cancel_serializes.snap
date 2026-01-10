@@ -1,0 +1,8 @@
+---
+source: coglet-worker/src/protocol.rs
+expression: req
+---
+{
+  "type": "cancel",
+  "id": "pred_123"
+}

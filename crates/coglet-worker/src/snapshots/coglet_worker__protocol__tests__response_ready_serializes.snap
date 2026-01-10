@@ -1,0 +1,7 @@
+---
+source: coglet-worker/src/protocol.rs
+expression: resp
+---
+{
+  "type": "ready"
+}

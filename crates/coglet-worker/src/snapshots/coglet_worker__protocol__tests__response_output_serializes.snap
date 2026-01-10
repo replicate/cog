@@ -1,0 +1,11 @@
+---
+source: coglet-worker/src/protocol.rs
+expression: resp
+---
+{
+  "type": "output",
+  "id": "pred_123",
+  "output": "hello world",
+  "status": "succeeded",
+  "predict_time": 0.123
+}

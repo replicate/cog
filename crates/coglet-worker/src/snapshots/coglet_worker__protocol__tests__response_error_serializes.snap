@@ -1,0 +1,10 @@
+---
+source: coglet-worker/src/protocol.rs
+expression: resp
+---
+{
+  "type": "error",
+  "id": "pred_123",
+  "error": "something went wrong",
+  "logs": "traceback here"
+}
