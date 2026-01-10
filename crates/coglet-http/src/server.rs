@@ -117,6 +117,12 @@ impl AppState {
     pub fn is_async(&self) -> bool {
         self.async_predict_fn.is_some()
     }
+
+    /// Set health state.
+    pub async fn set_health(&self, health: Health) {
+        let mut guard = self.health.write().await;
+        *guard = health;
+    }
 }
 
 /// Start the HTTP server with provided state.
