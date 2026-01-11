@@ -304,6 +304,9 @@ class PredictTask(Task[schema.PredictionResponse]):
         else:
             request_dict = prediction_request.dict()
 
+        if prediction_request.quiet:
+            request_dict.pop("input", None)
+            
         self._p = schema.PredictionResponse(**request_dict)
         self._p.status = schema.Status.PROCESSING
         self._output_type_multi = None
