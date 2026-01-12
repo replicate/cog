@@ -132,6 +132,9 @@ pub struct PythonPredictor {
     has_train: bool,
     /// Whether train() is an async function (if has_train is true).
     is_train_async: bool,
+    /// Whether the instance is a standalone function (not a class instance).
+    /// Used for standalone train functions like `train.py:train`.
+    is_standalone_function: bool,
     /// The detected runtime type.
     runtime: Runtime,
     /// Input processor for this runtime.
@@ -153,8 +156,19 @@ impl PythonPredictor {
         // Load the predictor class and instantiate it
         let instance: PyObject = load_fn.call1((predictor_ref,))?.unbind();
 
-        // Check if predict() is async (coroutine or async generator)
-        let (is_async, is_async_gen) = Self::detect_async(py, &instance, "predict")?;
+        // Check if this is a standalone function (train mode) or a Predictor instance
+        let inspect = py.import("inspect")?;
+        let is_function: bool = inspect
+            .call_method1("isfunction", (instance.bind(py),))?
+            .extract()?;
+
+        // For standalone functions (like train functions), detect async on the function itself
+        // For Predictor instances, detect async on the predict() method
+        let (is_async, is_async_gen) = if is_function {
+            Self::detect_async(py, &instance, "")?  // Empty string means check the function itself
+        } else {
+            Self::detect_async(py, &instance, "predict")?
+        };
         if is_async_gen {
             tracing::info!("Detected async generator predict()");
         } else if is_async {
@@ -185,6 +199,7 @@ impl PythonPredictor {
             is_async_gen,
             has_train,
             is_train_async,
+            is_standalone_function: is_function,
             runtime,
             input_processor,
         })
@@ -192,18 +207,26 @@ impl PythonPredictor {
 
     /// Detect if a method is an async function.
     /// Returns (is_async, is_async_gen) tuple.
+    /// 
+    /// If method_name is empty, checks the instance itself (for standalone functions).
     fn detect_async(py: Python<'_>, instance: &PyObject, method_name: &str) -> PyResult<(bool, bool)> {
         let inspect = py.import("inspect")?;
-        let method = instance.bind(py).getattr(method_name)?;
+        
+        // If method_name is empty, check the instance itself (standalone function)
+        let target = if method_name.is_empty() {
+            instance.bind(py).clone()
+        } else {
+            instance.bind(py).getattr(method_name)?
+        };
         
         // Check isasyncgenfunction first (it's more specific)
-        let is_async_gen: bool = inspect.call_method1("isasyncgenfunction", (&method,))?.extract()?;
+        let is_async_gen: bool = inspect.call_method1("isasyncgenfunction", (&target,))?.extract()?;
         if is_async_gen {
             return Ok((true, true));
         }
         
         // Check iscoroutinefunction
-        let is_coro: bool = inspect.call_method1("iscoroutinefunction", (&method,))?.extract()?;
+        let is_coro: bool = inspect.call_method1("iscoroutinefunction", (&target,))?.extract()?;
         Ok((is_coro, false))
     }
 
@@ -345,16 +368,32 @@ impl PythonPredictor {
     ///
     /// If `redirect_output` is true, captures stdout/stderr and logs via tracing.
     /// Set to false when running in worker mode (stdout is used for protocol).
+    /// 
+    /// For standalone functions (is_standalone_function=true), calls the function directly.
+    /// This handles the case where a training function is loaded and called via predict
+    /// due to bug-for-bug compatibility with cog mainline.
     pub fn predict_raw(&self, py: Python<'_>, input: &Bound<'_, PyDict>, redirect_output: bool) -> PyResult<PyObject> {
-        self.call_method_raw(py, "predict", self.is_async, input, redirect_output)
+        // For standalone functions, use empty method_name to call directly
+        let method_name = if self.is_standalone_function { "" } else { "predict" };
+        self.call_method_raw(py, method_name, self.is_async, input, redirect_output)
     }
 
     /// Call train() with the given input dict, returning JSON-serializable output.
     ///
     /// If `redirect_output` is true, captures stdout/stderr and logs via tracing.
     /// Set to false when running in worker mode (stdout is used for protocol).
+    /// 
+    /// For standalone train functions (is_standalone_function=true), calls the function directly.
+    /// For Predictor classes with a train() method, calls instance.train().
     pub fn train_raw(&self, py: Python<'_>, input: &Bound<'_, PyDict>, redirect_output: bool) -> PyResult<PyObject> {
-        self.call_method_raw(py, "train", self.is_train_async, input, redirect_output)
+        // For standalone functions, use empty method_name to call directly
+        // and use is_async (the function's async status) instead of is_train_async
+        let (method_name, is_async) = if self.is_standalone_function {
+            ("", self.is_async)
+        } else {
+            ("train", self.is_train_async)
+        };
+        self.call_method_raw(py, method_name, is_async, input, redirect_output)
     }
 
     /// Internal helper to call a method (predict or train) on the predictor.
@@ -411,7 +450,12 @@ impl PythonPredictor {
         };
 
         // Call the method - returns coroutine if async, result if sync
-        let method_result = instance.call_method(method_name, (), Some(input))?;
+        // If method_name is empty, call the instance directly (standalone function)
+        let method_result = if method_name.is_empty() {
+            instance.call((), Some(input))?
+        } else {
+            instance.call_method(method_name, (), Some(input))?
+        };
 
         // If async, run the coroutine with asyncio.run()
         let result = if is_async {
@@ -1103,10 +1147,13 @@ async def _collect_async_gen(agen):
             })?;
 
             // Call train - returns coroutine
+            // For standalone functions, call directly; for classes, call .train() method
             let instance = self.instance.bind(py);
-            let coro = instance
-                .call_method("train", (), Some(&input_dict))
-                .map_err(|e| PredictionError::Failed(format!("Failed to call train: {}", e)))?;
+            let coro = if self.is_standalone_function {
+                instance.call((), Some(&input_dict))
+            } else {
+                instance.call_method("train", (), Some(&input_dict))
+            }.map_err(|e| PredictionError::Failed(format!("Failed to call train: {}", e)))?;
 
             // Run coroutine synchronously
             let result = asyncio.call_method1("run", (&coro,)).map_err(|e| {

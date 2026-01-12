@@ -179,7 +179,7 @@ dependencies = [
 
 [[package]]
 name = "coglet"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "coglet-core",
  "coglet-transport",
@@ -187,7 +187,7 @@ dependencies = [
 
 [[package]]
 name = "coglet-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "insta",
@@ -204,7 +204,7 @@ dependencies = [
 
 [[package]]
 name = "coglet-python"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "coglet-core",
@@ -221,7 +221,7 @@ dependencies = [
 
 [[package]]
 name = "coglet-transport"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -237,7 +237,7 @@ dependencies = [
 
 [[package]]
 name = "coglet-worker"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "bytes",
