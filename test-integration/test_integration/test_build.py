@@ -212,6 +212,14 @@ def test_build_with_cog_init_templates(tmpdir, docker_image, cog_binary):
     assert "Image built as cog-" in build_process.stderr.decode()
 
 
+@pytest.mark.skipif(
+    os.environ.get("COG_WHEEL") == "coglet-alpha",
+    reason="Pinned coglet-alpha version does not support custom Pydantic output models",
+)
+@pytest.mark.skipif(
+    os.environ.get("COG_WHEEL") == "coglet-alpha",
+    reason="Pinned coglet-alpha version does not support custom Pydantic output models",
+)
 def test_build_with_complex_output(tmpdir, docker_image, cog_binary):
     project_dir = Path(__file__).parent / "fixtures/complex_output_project"
     build_process = subprocess.run(

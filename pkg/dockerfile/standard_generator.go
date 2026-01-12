@@ -47,7 +47,7 @@ const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -nam
 const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
-const PinnedCogletURL = "https://github.com/replicate/cog-runtime/releases/download/v0.1.0-beta10/coglet-0.1.0b10-py3-none-any.whl" // Pinned coglet URL to avoid API dependency
+const PinnedCogletURL = "https://github.com/replicate/cog-runtime/releases/download/v0.5.0-alpha18/coglet-0.5.0a18-py3-none-any.whl" // Pinned coglet URL to avoid API dependency
 
 type StandardGenerator struct {
 	Config *config.Config
@@ -516,7 +516,7 @@ func (g *StandardGenerator) installEmbeddedCogletWheel() (string, error) {
 	// Uninstall cog first to avoid conflicts with coglet's cog shim package.
 	// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
 	// with coglet's cog compatibility shim that provides the same module paths.
-	pipInstallLine := "RUN pip uninstall -y cog 2>/dev/null || true && pip install --no-cache-dir " + containerPath
+	pipInstallLine := "RUN pip uninstall -y cog 2>/dev/null || true && pip install --no-cache-dir " + containerPath + " 'pydantic>=1.9,<3'"
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -537,7 +537,7 @@ func (g *StandardGenerator) installCogletAlpha() (string, error) {
 		// Uninstall cog first to avoid conflicts with coglet's cog shim package.
 		// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
 		// with coglet's cog compatibility shim that provides the same module paths.
-		"RUN pip uninstall -y cog 2>/dev/null || true && pip install " + PinnedCogletURL,
+		"RUN pip uninstall -y cog 2>/dev/null || true && pip install " + PinnedCogletURL + " 'pydantic>=1.9,<3'",
 	}
 	return strings.Join(cmds, "\n"), nil
 }
@@ -560,10 +560,12 @@ func (g *StandardGenerator) installWheelFromURL(url string) (string, error) {
 	// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
 	// with coglet's cog compatibility shim that provides the same module paths.
 	var pipPrefix string
+	var pydanticSuffix string
 	if strings.Contains(url, "coglet") {
 		pipPrefix = "pip uninstall -y cog 2>/dev/null || true && "
+		pydanticSuffix = " 'pydantic>=1.9,<3'"
 	}
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip " + pipPrefix + "pip install --no-cache-dir " + url
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip " + pipPrefix + "pip install --no-cache-dir " + url + pydanticSuffix
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -588,6 +590,7 @@ func (g *StandardGenerator) installWheelFromFile(path string) (string, error) {
 
 	// Set coglet env vars if this looks like a coglet wheel
 	var pipPrefix string
+	var pydanticSuffix string
 	if strings.Contains(filename, "coglet") {
 		if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
 			return "", fmt.Errorf("Python version must be <major>.<minor> for coglet")
@@ -600,9 +603,10 @@ func (g *StandardGenerator) installWheelFromFile(path string) (string, error) {
 		// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
 		// with coglet's cog compatibility shim that provides the same module paths.
 		pipPrefix = "pip uninstall -y cog 2>/dev/null || true && "
+		pydanticSuffix = " 'pydantic>=1.9,<3'"
 	}
 
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip " + pipPrefix + "pip install --no-cache-dir " + containerPath
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip " + pipPrefix + "pip install --no-cache-dir " + containerPath + pydanticSuffix
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
