@@ -600,6 +600,10 @@ def test_secrets(tmpdir_factory, docker_image, cog_binary):
     assert build_process.returncode == 0
 
 
+@pytest.mark.skipif(
+    os.environ.get("COG_WHEEL") == "coglet-alpha",
+    reason="Pinned coglet-alpha version does not support the 'use' function for model dependencies",
+)
 def test_model_dependencies(docker_image, cog_binary):
     project_dir = Path(__file__).parent / "fixtures/pipeline-project"
     subprocess.run(
