@@ -139,7 +139,7 @@ def test_run_shell_with_with_interactive_tty(tmpdir_factory, cog_binary):
         str(cog_binary) + " run /bin/bash",
         cwd=str(tmpdir),
         encoding="utf-8",
-        timeout=20,
+        timeout=120,  # Increased timeout to allow for Docker build
     )
     child.expect(r"#")  # wait for bash prompt
     child.sendline("echo OK")
