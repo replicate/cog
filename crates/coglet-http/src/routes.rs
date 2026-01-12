@@ -250,10 +250,18 @@ async fn cancel_prediction(
     }
 }
 
+/// POST /shutdown
+async fn shutdown(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    tracing::info!("Shutdown requested via HTTP");
+    state.trigger_shutdown();
+    (StatusCode::OK, Json(serde_json::json!({})))
+}
+
 /// Build the router with all routes.
 pub fn routes(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/health-check", get(health_check))
+        .route("/shutdown", post(shutdown))
         .route("/predictions", post(create_prediction))
         .route("/predictions/{id}/cancel", post(cancel_prediction))
         .with_state(state)

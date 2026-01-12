@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use tokio::net::TcpListener;
-use tokio::sync::{Mutex, RwLock, Semaphore};
+use tokio::sync::{watch, Mutex, RwLock, Semaphore};
 use tracing::info;
 
 use coglet_core::{AsyncPredictFn, CancellationToken, Health, PredictFn, SetupResult, VersionInfo};
@@ -62,10 +62,15 @@ pub struct AppState {
     /// In-flight predictions mapped by ID to their cancellation token.
     /// Used by the cancel endpoint to trigger cancellation.
     pub predictions: Mutex<HashMap<String, CancellationToken>>,
+    /// Shutdown signal sender (for /shutdown endpoint).
+    shutdown_tx: watch::Sender<bool>,
+    /// Shutdown signal receiver (for graceful shutdown).
+    pub shutdown_rx: watch::Receiver<bool>,
 }
 
 impl AppState {
     pub fn new(max_concurrency: usize) -> Self {
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Self {
             health: RwLock::new(Health::Unknown),
             setup_result: RwLock::new(None),
@@ -74,7 +79,14 @@ impl AppState {
             slots: Semaphore::new(max_concurrency),
             version: VersionInfo::new(),
             predictions: Mutex::new(HashMap::new()),
+            shutdown_tx,
+            shutdown_rx,
         }
+    }
+
+    /// Trigger shutdown (called from /shutdown endpoint).
+    pub fn trigger_shutdown(&self) {
+        let _ = self.shutdown_tx.send(true);
     }
     
     /// Register a prediction with its cancellation token.
@@ -148,6 +160,7 @@ impl AppState {
 /// Handles SIGTERM and SIGINT for graceful shutdown.
 /// If `await_explicit_shutdown` is true, SIGTERM is ignored.
 pub async fn serve(config: ServerConfig, state: Arc<AppState>) -> anyhow::Result<()> {
+    let shutdown_rx = state.shutdown_rx.clone();
     let app = routes(state);
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
@@ -156,21 +169,21 @@ pub async fn serve(config: ServerConfig, state: Arc<AppState>) -> anyhow::Result
 
     let listener = TcpListener::bind(addr).await?;
     
-    // Set up graceful shutdown on SIGTERM/SIGINT
+    // Set up graceful shutdown on SIGTERM/SIGINT or /shutdown endpoint
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal(config.await_explicit_shutdown))
+        .with_graceful_shutdown(shutdown_signal(config.await_explicit_shutdown, shutdown_rx))
         .await?;
 
     info!("Server shutdown complete");
     Ok(())
 }
 
-/// Wait for shutdown signal (SIGTERM or SIGINT).
+/// Wait for shutdown signal (SIGTERM, SIGINT, or /shutdown endpoint).
 /// 
 /// If `await_explicit_shutdown` is true, SIGTERM is ignored and only
-/// SIGINT triggers shutdown. This allows Kubernetes to drain connections
-/// before the pod is terminated.
-async fn shutdown_signal(await_explicit_shutdown: bool) {
+/// SIGINT or /shutdown triggers shutdown. This allows Kubernetes to drain 
+/// connections before the pod is terminated.
+async fn shutdown_signal(await_explicit_shutdown: bool, mut shutdown_rx: watch::Receiver<bool>) {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -194,12 +207,25 @@ async fn shutdown_signal(await_explicit_shutdown: bool) {
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
 
+    let explicit_shutdown = async {
+        // Wait for /shutdown endpoint to be called
+        while !*shutdown_rx.borrow() {
+            if shutdown_rx.changed().await.is_err() {
+                // Channel closed, wait forever
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+
     tokio::select! {
         _ = ctrl_c => {
             info!("Received SIGINT, shutting down...");
         }
         _ = terminate => {
             info!("Received SIGTERM, shutting down...");
+        }
+        _ = explicit_shutdown => {
+            info!("Shutdown requested via /shutdown endpoint...");
         }
     }
 }
