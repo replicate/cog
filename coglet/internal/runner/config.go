@@ -46,6 +46,9 @@ func (y *CogYaml) PredictModuleAndPredictor() (string, string, error) {
 		return "", "", fmt.Errorf("invalid predict format: %s (expected module.py:ClassName)", y.Predict)
 	}
 	moduleName := strings.TrimSuffix(parts[0], ".py")
+	// Convert file path separators to Python module separators
+	// e.g., "my-subdir/predict" -> "my-subdir.predict"
+	moduleName = strings.ReplaceAll(moduleName, "/", ".")
 	predictorName := parts[1]
 	return moduleName, predictorName, nil
 }

@@ -120,4 +120,17 @@ func TestCogYamlPredictModuleAndPredictor(t *testing.T) {
 		assert.Empty(t, module)
 		assert.Empty(t, predictor)
 	})
+
+	t.Run("predict in subdirectory", func(t *testing.T) {
+		t.Parallel()
+
+		cogYaml := &CogYaml{
+			Predict: "my-subdir/predict.py:Predictor",
+		}
+
+		module, predictor, err := cogYaml.PredictModuleAndPredictor()
+		require.NoError(t, err)
+		assert.Equal(t, "my-subdir.predict", module)
+		assert.Equal(t, "Predictor", predictor)
+	})
 }

@@ -55,13 +55,13 @@
     {
       "id": "F004",
       "test": "test_integration/test_build.py::test_model_dependencies",
-      "category": "build_failure",
-      "error": "Command returned non-zero exit status 1 during build",
-      "rootCause": "Unknown - need to examine full build logs",
+      "category": "test_environment",
+      "error": "PermissionError: [Errno 13] Permission denied when COG_BINARY was set incorrectly",
+      "rootCause": "Test was failing because COG_BINARY was set to a directory instead of the binary file. Once set to absolute path /Users/mphelps/workspace/cog/cog, test passes.",
       "priority": "high",
-      "fix": "Investigate build failure logs",
-      "passes": false,
-      "notes": "Requires Docker to run. Cannot be debugged without Docker daemon running. Test fails with: 'Cannot connect to the Docker daemon at unix:///Users/mphelps/.docker/run/docker.sock. Is the docker daemon running?'"
+      "fix": "Ensure COG_BINARY points to the binary file, not the directory",
+      "passes": true,
+      "notes": "Test passes when run with correct COG_BINARY=/Users/mphelps/workspace/cog/cog (absolute path to binary). No code changes needed."
     },
     {
       "id": "F005",
@@ -77,13 +77,13 @@
     {
       "id": "F006",
       "test": "test_integration/test_build.py::test_build_with_complex_output",
-      "category": "unknown",
-      "error": "Test failed after 3 retries",
-      "rootCause": "Need to examine detailed logs",
+      "category": "test_environment",
+      "error": "Test was failing due to incorrect COG_BINARY path",
+      "rootCause": "Same as F004 - COG_BINARY was set to directory instead of binary file",
       "priority": "medium",
-      "fix": "Investigate failure reason",
-      "passes": false,
-      "notes": "Requires Docker to run. Cannot be debugged without Docker daemon running."
+      "fix": "Ensure COG_BINARY points to the binary file",
+      "passes": true,
+      "notes": "Test passes when run with correct COG_BINARY=/Users/mphelps/workspace/cog/cog. No code changes needed."
     },
     {
       "id": "F007",
@@ -132,13 +132,13 @@
     {
       "id": "F011",
       "test": "test_integration/test_predict.py::test_predict_in_subdirectory_with_imports",
-      "category": "unknown",
-      "error": "Test failed after 3 retries",
-      "rootCause": "Need to examine detailed logs",
+      "category": "coglet_architecture_limitation",
+      "error": "Coglet-alpha cannot load predictors from subdirectories with hyphens in the path",
+      "rootCause": "Coglet-alpha uses importlib.import_module() which requires valid Python module names. The test uses 'my-subdir/predict.py' which contains a hyphen. Original cog uses spec_from_file_location() which can load any file path.",
       "priority": "medium",
-      "fix": "Investigate failure reason",
+      "fix": "Requires architectural change: coglet-alpha needs to use spec_from_file_location() instead of import_module() for loading predictors, or test fixture needs to be updated to use valid Python module names (no hyphens)",
       "passes": false,
-      "notes": "Requires Docker to run. Cannot be debugged without Docker daemon running."
+      "notes": "Partial fix applied: PredictModuleAndPredictor() now converts '/' to '.' in module names (coglet/internal/runner/config.go). However, this doesn't solve the hyphen problem. Full fix requires changes to coglet Python code (coglet/python/coglet/inspector.py) to use spec_from_file_location() like original cog does."
     },
     {
       "id": "F012",
@@ -154,24 +154,24 @@
     {
       "id": "F013",
       "test": "test_integration/test_predict.py::test_predict_many_inputs",
-      "category": "unknown",
-      "error": "Test failed after 3 retries",
-      "rootCause": "Need to examine detailed logs",
+      "category": "coglet_file_input_handling",
+      "error": "Failed to predict: open image.jpg: no such file or directory",
+      "rootCause": "Coglet-alpha handles file inputs (@filename syntax) differently than original cog. Test passes with COG_WHEEL=cog but fails with COG_WHEEL=coglet.",
       "priority": "medium",
-      "fix": "Investigate failure reason",
+      "fix": "Investigate how coglet-alpha processes file input parameters and fix file path resolution",
       "passes": false,
-      "notes": "Requires Docker to run. Cannot be debugged without Docker daemon running."
+      "notes": "Coglet-alpha fails to find files specified with @ syntax. This appears to be a difference in how file inputs are handled between cog and coglet-alpha implementations."
     },
     {
       "id": "F014",
       "test": "test_integration/test_predict.py::test_predict_many_inputs_with_existing_image",
-      "category": "unknown",
-      "error": "Test failed after 3 retries",
-      "rootCause": "Need to examine detailed logs",
+      "category": "coglet_file_input_handling",
+      "error": "Failed to get type signature: container exited with status 1",
+      "rootCause": "Related to F013 - likely same file input handling issue in coglet-alpha",
       "priority": "medium",
-      "fix": "Investigate failure reason",
+      "fix": "Same as F013 - fix file input handling in coglet-alpha",
       "passes": false,
-      "notes": "Requires Docker to run. Cannot be debugged without Docker daemon running."
+      "notes": "Test uses same many-inputs fixture as F013. Likely fails for the same reason - coglet-alpha file input handling."
     }
   ],
   "categorizedFailures": {
