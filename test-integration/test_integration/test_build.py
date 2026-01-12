@@ -322,6 +322,10 @@ def test_precompile(docker_image, cog_binary):
     assert build_process.returncode == 0
 
 
+@pytest.mark.skipif(
+    os.environ.get("COG_WHEEL") == "coglet-alpha",
+    reason="Pinned coglet-alpha version (0.5.0) does not match current binary version",
+)
 def test_cog_install_base_image(docker_image, cog_binary):
     project_dir = Path(__file__).parent / "fixtures/string-project"
     build_process = subprocess.run(
