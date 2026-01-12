@@ -2,10 +2,13 @@
 package harness
 
 import (
-	"io"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/rogpeppe/go-internal/testscript"
 )
@@ -13,6 +16,8 @@ import (
 // Harness provides utilities for running cog integration tests.
 type Harness struct {
 	CogBinary string
+	// realHome is captured at creation time before testscript overrides HOME
+	realHome string
 }
 
 // New creates a new Harness, resolving the cog binary location.
@@ -21,7 +26,10 @@ func New() (*Harness, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Harness{CogBinary: cogBinary}, nil
+	return &Harness{
+		CogBinary: cogBinary,
+		realHome:  os.Getenv("HOME"),
+	}, nil
 }
 
 // ResolveCogBinary finds the cog binary to use for tests.
@@ -57,7 +65,13 @@ func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool
 
 // cmdCog implements the 'cog' command for testscript.
 func (h *Harness) cmdCog(ts *testscript.TestScript, neg bool, args []string) {
-	err := ts.Exec(h.CogBinary, args...)
+	// Expand environment variables in arguments
+	expandedArgs := make([]string, len(args))
+	for i, arg := range args {
+		expandedArgs[i] = os.Expand(arg, ts.Getenv)
+	}
+
+	err := ts.Exec(h.CogBinary, expandedArgs...)
 	if neg {
 		if err == nil {
 			ts.Fatalf("cog command succeeded unexpectedly")
@@ -69,72 +83,54 @@ func (h *Harness) cmdCog(ts *testscript.TestScript, neg bool, args []string) {
 	}
 }
 
-// SetupWithFixture returns a testscript Setup function that copies fixture files
-// into the work directory and configures the test environment.
-func (h *Harness) SetupWithFixture(fixtureDir string) func(*testscript.Env) error {
-	return func(env *testscript.Env) error {
-		// Copy fixture files into the work directory
-		if err := copyDir(fixtureDir, env.WorkDir); err != nil {
-			return err
-		}
+// Setup returns a testscript Setup function that configures the test environment.
+// Fixtures are embedded in the txtar files themselves, so no file copying is needed.
+func (h *Harness) Setup(env *testscript.Env) error {
+	// Restore real HOME for Docker credential helpers.
+	// Docker credential helpers (e.g., docker-credential-desktop) need the real HOME
+	// to access the macOS keychain.
+	env.Setenv("HOME", h.realHome)
 
-		// Disable update checks during tests
-		env.Setenv("COG_NO_UPDATE_CHECK", "1")
-		return nil
-	}
-}
+	// Disable update checks during tests
+	env.Setenv("COG_NO_UPDATE_CHECK", "1")
 
-// copyDir recursively copies a directory tree, excluding the "tests" subdirectory.
-func copyDir(src, dst string) error {
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
+	// Generate unique image name for this test run
+	imageName := generateUniqueImageName()
+	env.Setenv("TEST_IMAGE", imageName)
 
-	for _, entry := range entries {
-		srcPath := filepath.Join(src, entry.Name())
-		dstPath := filepath.Join(dst, entry.Name())
+	// Register cleanup to remove the Docker image after the test
+	env.Defer(func() {
+		removeDockerImage(imageName)
+	})
 
-		// Skip the tests directory - we don't want to copy test files into the work dir
-		if entry.Name() == "tests" {
-			continue
-		}
-
-		if entry.IsDir() {
-			if err := os.MkdirAll(dstPath, 0755); err != nil {
-				return err
-			}
-			if err := copyDir(srcPath, dstPath); err != nil {
-				return err
-			}
-		} else {
-			if err := copyFile(srcPath, dstPath); err != nil {
-				return err
-			}
-		}
-	}
 	return nil
 }
 
-// copyFile copies a single file from src to dst.
-func copyFile(src, dst string) error {
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return err
+// generateUniqueImageName creates a unique Docker image name for test isolation.
+func generateUniqueImageName() string {
+	b := make([]byte, 5)
+	if _, err := rand.Read(b); err != nil {
+		// Fall back to a less random but still unique name
+		return fmt.Sprintf("cog-test-%d", os.Getpid())
 	}
-	defer srcFile.Close()
+	return fmt.Sprintf("cog-test-%s", hex.EncodeToString(b))
+}
 
-	srcInfo, err := srcFile.Stat()
+// removeDockerImage attempts to remove a Docker image by name.
+// It silently ignores errors (image may not exist if test failed early).
+func removeDockerImage(imageName string) {
+	// Remove all images that match the prefix (base and final images)
+	cmd := exec.Command("docker", "images", "--format", "{{.Repository}}:{{.Tag}}", "--filter", fmt.Sprintf("reference=%s*", imageName))
+	output, err := cmd.Output()
 	if err != nil {
-		return err
+		return
 	}
 
-	dstFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, srcInfo.Mode())
-	if err != nil {
-		return err
+	images := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, img := range images {
+		if img == "" {
+			continue
+		}
+		exec.Command("docker", "rmi", "-f", img).Run() //nolint:errcheck
 	}
-	defer dstFile.Close()
-
-	_, err = io.Copy(dstFile, srcFile)
-	return err
 }

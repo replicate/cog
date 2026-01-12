@@ -1,3 +1,0 @@
-build:
-  python_version: "3.12"
-predict: "predict.py:Predictor"
