@@ -1,8 +1,8 @@
 package integration_test
 
 import (
-	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/rogpeppe/go-internal/testscript"
@@ -16,23 +16,41 @@ func TestIntegration(t *testing.T) {
 		t.Fatalf("failed to create harness: %v", err)
 	}
 
-	testscript.Run(t, testscript.Params{
-		Dir:       "tests",
-		Setup:     h.Setup,
-		Cmds:      h.Commands(),
-		Condition: condition,
-	})
-}
-
-// condition provides custom conditions for testscript.
-// Supported conditions:
-//   - slow: marks a test as slow. Use [slow] skip to skip when COG_TEST_FAST=1 is set.
-func condition(cond string) (bool, error) {
-	switch cond {
-	case "slow":
-		// slow is true when we should skip slow tests (i.e., when COG_TEST_FAST=1)
-		// Usage: [slow] skip 'reason' to skip slow tests in fast mode
-		return os.Getenv("COG_TEST_FAST") == "1", nil
+	// Find all fixtures
+	fixturesDir := "fixtures"
+	fixtures, err := os.ReadDir(fixturesDir)
+	if err != nil {
+		t.Fatalf("failed to read fixtures directory: %v", err)
 	}
-	return false, fmt.Errorf("unknown condition: %s", cond)
+
+	for _, fixture := range fixtures {
+		if !fixture.IsDir() {
+			continue
+		}
+
+		fixtureName := fixture.Name()
+		fixtureDir := filepath.Join(fixturesDir, fixtureName)
+		testsDir := filepath.Join(fixtureDir, "tests")
+
+		// Skip fixtures without a tests directory
+		if _, err := os.Stat(testsDir); os.IsNotExist(err) {
+			continue
+		}
+
+		// Get absolute path for fixture directory
+		absFixtureDir, err := filepath.Abs(fixtureDir)
+		if err != nil {
+			t.Fatalf("failed to get absolute path for fixture %s: %v", fixtureName, err)
+		}
+
+		t.Run(fixtureName, func(t *testing.T) {
+			t.Parallel()
+
+			testscript.Run(t, testscript.Params{
+				Dir:   testsDir,
+				Setup: h.SetupWithFixture(absFixtureDir),
+				Cmds:  h.Commands(),
+			})
+		})
+	}
 }
