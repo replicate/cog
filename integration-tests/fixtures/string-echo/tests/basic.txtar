@@ -1,3 +1,0 @@
-# Test basic string prediction
-cog predict -i s=world
-stdout 'hello world'
