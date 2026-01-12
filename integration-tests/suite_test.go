@@ -1,10 +1,8 @@
 package integration_test
 
 import (
-	"fmt"
 	"os"
-	"runtime"
-	"strings"
+	"path/filepath"
 	"testing"
 
 	"github.com/rogpeppe/go-internal/testscript"
@@ -18,41 +16,41 @@ func TestIntegration(t *testing.T) {
 		t.Fatalf("failed to create harness: %v", err)
 	}
 
-	testscript.Run(t, testscript.Params{
-		Dir:       "tests",
-		Setup:     h.Setup,
-		Cmds:      h.Commands(),
-		Condition: condition,
-	})
-}
-
-// condition provides custom conditions for testscript.
-// Supported conditions:
-//   - fast: true when COG_TEST_FAST=1 is set. Use [fast] skip to skip slow tests in fast mode.
-//   - linux/linux_amd64/amd64: platform guards for specialized tests.
-func condition(cond string) (bool, error) {
-	negated := false
-	for strings.HasPrefix(cond, "!") {
-		negated = !negated
-		cond = cond[1:]
+	// Find all fixtures
+	fixturesDir := "fixtures"
+	fixtures, err := os.ReadDir(fixturesDir)
+	if err != nil {
+		t.Fatalf("failed to read fixtures directory: %v", err)
 	}
 
-	var value bool
-	switch cond {
-	case "fast":
-		value = os.Getenv("COG_TEST_FAST") == "1"
-	case "linux":
-		value = runtime.GOOS == "linux"
-	case "amd64":
-		value = runtime.GOARCH == "amd64"
-	case "linux_amd64":
-		value = runtime.GOOS == "linux" && runtime.GOARCH == "amd64"
-	default:
-		return false, fmt.Errorf("unknown condition: %s", cond)
-	}
+	for _, fixture := range fixtures {
+		if !fixture.IsDir() {
+			continue
+		}
 
-	if negated {
-		value = !value
+		fixtureName := fixture.Name()
+		fixtureDir := filepath.Join(fixturesDir, fixtureName)
+		testsDir := filepath.Join(fixtureDir, "tests")
+
+		// Skip fixtures without a tests directory
+		if _, err := os.Stat(testsDir); os.IsNotExist(err) {
+			continue
+		}
+
+		// Get absolute path for fixture directory
+		absFixtureDir, err := filepath.Abs(fixtureDir)
+		if err != nil {
+			t.Fatalf("failed to get absolute path for fixture %s: %v", fixtureName, err)
+		}
+
+		t.Run(fixtureName, func(t *testing.T) {
+			t.Parallel()
+
+			testscript.Run(t, testscript.Params{
+				Dir:   testsDir,
+				Setup: h.SetupWithFixture(absFixtureDir),
+				Cmds:  h.Commands(),
+			})
+		})
 	}
-	return value, nil
 }
