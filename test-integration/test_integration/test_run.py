@@ -62,12 +62,7 @@ def test_run_fast_build(cog_binary):
         text=True,
     )
     assert result.returncode == 0
-    # In fast build mode, the output should end with the command output.
-    # Some runtimes may include build logs in stdout, so we check for the
-    # expected output at the end rather than requiring exact equality.
-    assert result.stdout.endswith("hello world\n"), (
-        f"Expected stdout to end with 'hello world\\n', but got: {result.stdout!r}"
-    )
+    assert result.stdout == "hello world\n"
 
 
 def test_run_with_unconsumed_piped_stdin(tmpdir_factory, cog_binary):
