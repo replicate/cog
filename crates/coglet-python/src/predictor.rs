@@ -12,6 +12,117 @@ use crate::cancel;
 use crate::input::{self, InputProcessor, Runtime};
 use crate::output;
 
+/// RAII guard that captures Python stdout/stderr using StringIO.
+/// 
+/// In worker mode, stdout is used for the binary protocol. This guard replaces
+/// stdout/stderr with StringIO objects to capture user print() statements,
+/// preventing them from corrupting the protocol.
+struct LogCaptureGuard {
+    /// Original stdout object (restored on finish).
+    original_stdout: PyObject,
+    /// Original stderr object (restored on finish).
+    original_stderr: PyObject,
+    /// StringIO capturing stdout.
+    stdout_capture: PyObject,
+    /// StringIO capturing stderr.
+    stderr_capture: PyObject,
+}
+
+impl LogCaptureGuard {
+    /// Set up log capture, returning None if setup fails.
+    /// 
+    /// Replaces sys.stdout and sys.stderr with StringIO objects.
+    fn new(py: Python<'_>) -> Option<Self> {
+        let sys = py.import("sys").ok()?;
+        let io = py.import("io").ok()?;
+        let string_io_class = io.getattr("StringIO").ok()?;
+        
+        // Save original streams
+        let original_stdout = sys.getattr("stdout").ok()?.unbind();
+        let original_stderr = sys.getattr("stderr").ok()?.unbind();
+        
+        // Create StringIO objects for capture
+        let stdout_capture = string_io_class.call0().ok()?.unbind();
+        let stderr_capture = string_io_class.call0().ok()?.unbind();
+        
+        // Replace streams
+        sys.setattr("stdout", stdout_capture.bind(py)).ok()?;
+        sys.setattr("stderr", stderr_capture.bind(py)).ok()?;
+        
+        Some(Self {
+            original_stdout,
+            original_stderr,
+            stdout_capture,
+            stderr_capture,
+        })
+    }
+
+    /// Finish capture and return the collected logs as a string.
+    fn finish(self, py: Python<'_>) -> String {
+        let sys = py.import("sys").ok();
+        
+        // Restore original streams
+        if let Some(sys) = &sys {
+            let _ = sys.setattr("stdout", self.original_stdout.bind(py));
+            let _ = sys.setattr("stderr", self.original_stderr.bind(py));
+        }
+        
+        // Get captured output
+        let mut logs = String::new();
+        
+        if let Ok(stdout_val) = self.stdout_capture.bind(py).call_method0("getvalue") {
+            if let Ok(s) = stdout_val.extract::<String>() {
+                logs.push_str(&s);
+            }
+        }
+        
+        if let Ok(stderr_val) = self.stderr_capture.bind(py).call_method0("getvalue") {
+            if let Ok(s) = stderr_val.extract::<String>() {
+                logs.push_str(&s);
+            }
+        }
+        
+        logs
+    }
+
+    /// Finish capture, write logs to original stderr, and return them.
+    /// 
+    /// Use this for setup() where logs should be visible immediately on stderr
+    /// (not returned through the protocol).
+    fn finish_to_stderr(self, py: Python<'_>) -> String {
+        let sys = py.import("sys").ok();
+        
+        // Get captured output before restoring streams
+        let mut logs = String::new();
+        
+        if let Ok(stdout_val) = self.stdout_capture.bind(py).call_method0("getvalue") {
+            if let Ok(s) = stdout_val.extract::<String>() {
+                logs.push_str(&s);
+            }
+        }
+        
+        if let Ok(stderr_val) = self.stderr_capture.bind(py).call_method0("getvalue") {
+            if let Ok(s) = stderr_val.extract::<String>() {
+                logs.push_str(&s);
+            }
+        }
+        
+        // Restore original streams
+        if let Some(sys) = &sys {
+            let _ = sys.setattr("stdout", self.original_stdout.bind(py));
+            let _ = sys.setattr("stderr", self.original_stderr.bind(py));
+        }
+        
+        // Write logs to original stderr (not stdout - that's for the protocol)
+        if !logs.is_empty() {
+            let _ = self.original_stderr.bind(py).call_method1("write", (logs.as_str(),));
+            let _ = self.original_stderr.bind(py).call_method0("flush");
+        }
+        
+        logs
+    }
+}
+
 /// Check if a PyErr is a CancelationException or asyncio.CancelledError.
 fn is_cancelation_exception(py: Python<'_>, err: &PyErr) -> bool {
     // Check for cog.server.exceptions.CancelationException
@@ -175,9 +286,18 @@ impl PythonPredictor {
             tracing::info!("Detected async predict()");
         }
 
-        // Check if train() method exists and if it's async
-        let has_train = instance.bind(py).hasattr("train")?;
-        let is_train_async = if has_train {
+        // Check if train() method exists and if it's async.
+        // For standalone functions (is_function=true), the function itself IS the train
+        // function, so we consider has_train=true and use is_async for train_async.
+        let has_train = if is_function {
+            true  // Standalone function is the train function
+        } else {
+            instance.bind(py).hasattr("train")?
+        };
+        let is_train_async = if is_function {
+            // For standalone functions, async status was already detected above
+            is_async
+        } else if has_train {
             let (train_async, _) = Self::detect_async(py, &instance, "train")?;
             if train_async {
                 tracing::info!("Detected async train()");
@@ -337,6 +457,9 @@ impl PythonPredictor {
     /// Uses cog.predictor helpers to detect and extract weights:
     /// - `has_setup_weights()` checks if setup() has a weights parameter
     /// - `extract_setup_weights()` reads from COG_WEIGHTS env or ./weights path
+    ///
+    /// In worker mode, stdout/stderr are captured to protect the protocol.
+    /// Setup logs are currently discarded (TODO: return them separately).
     pub fn setup(&self, py: Python<'_>) -> PyResult<()> {
         let instance = self.instance.bind(py);
 
@@ -344,6 +467,10 @@ impl PythonPredictor {
         if !instance.hasattr("setup")? {
             return Ok(());
         }
+
+        // Capture stdout/stderr during setup to protect the protocol.
+        // TODO: Return setup logs separately for inclusion in setup result.
+        let log_capture = LogCaptureGuard::new(py);
 
         // Import cog.predictor helpers
         let cog_predictor = py.import("cog.predictor")?;
@@ -359,6 +486,11 @@ impl PythonPredictor {
             instance.call_method1("setup", (weights,))?;
         } else {
             instance.call_method0("setup")?;
+        }
+
+        // Finish log capture - write to stderr so they're visible
+        if let Some(guard) = log_capture {
+            guard.finish_to_stderr(py);
         }
 
         Ok(())
@@ -614,14 +746,15 @@ impl PythonPredictor {
                 PredictionOutput::Single(output_json)
             };
 
-            Ok(PredictionResult { output, predict_time: None })
+            Ok(PredictionResult { output, predict_time: None, logs: String::new() })
         })
     }
 
-    /// Worker mode predict - does not redirect stdout/stderr.
+    /// Worker mode predict - captures stdout/stderr and returns them as logs.
     ///
-    /// Use this when running in a subprocess worker where stdout is used
-    /// for the protocol (not for capturing logs).
+    /// In worker mode, stdout is used for the binary protocol between parent and
+    /// child processes. This method captures user print() statements into logs
+    /// that are returned through the protocol, preventing protocol corruption.
     pub fn predict_worker(&self, input: serde_json::Value) -> Result<PredictionResult, PredictionError> {
         Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
@@ -650,13 +783,23 @@ impl PythonPredictor {
                 PredictionError::InvalidInput(format!("Input validation failed: {}", e))
             })?;
 
-            // redirect_output=false for worker mode
-            let result = self.predict_raw(py, &input_dict, false).map_err(|e| {
-                if is_cancelation_exception(py, &e) {
-                    return PredictionError::Cancelled;
+            // Set up log capture - captures stdout/stderr to return through protocol
+            let log_capture = LogCaptureGuard::new(py);
+
+            // redirect_output=false because LogCaptureGuard handles it
+            let result = self.predict_raw(py, &input_dict, false);
+            
+            // Handle errors - need to finish log capture before returning
+            let result = match result {
+                Ok(r) => r,
+                Err(e) => {
+                    let logs = log_capture.map(|g| g.finish(py)).unwrap_or_default();
+                    if is_cancelation_exception(py, &e) {
+                        return Err(PredictionError::Cancelled);
+                    }
+                    return Err(PredictionError::Failed(format!("Prediction failed: {}\n{}", e, logs)));
                 }
-                PredictionError::Failed(format!("Prediction failed: {}", e))
-            })?;
+            };
 
             let result_bound = result.bind(py);
             let is_generator: bool = result_bound.is_instance(&generator_type).unwrap_or(false);
@@ -709,14 +852,18 @@ impl PythonPredictor {
                 PredictionOutput::Single(output_json)
             };
 
-            Ok(PredictionResult { output, predict_time: None })
+            // Finish log capture and get collected logs
+            let logs = log_capture.map(|g| g.finish(py)).unwrap_or_default();
+
+            Ok(PredictionResult { output, predict_time: None, logs })
         })
     }
 
     /// Worker mode async predict - runs synchronously via asyncio.run().
     ///
     /// Use this in worker subprocess where we don't need true async concurrency
-    /// (the worker handles one request at a time anyway).
+    /// (the worker handles one request at a time anyway). Captures stdout/stderr
+    /// and returns them as logs to protect the binary protocol on stdout.
     pub fn predict_async_worker(&self, input: serde_json::Value) -> Result<PredictionResult, PredictionError> {
         Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
@@ -743,6 +890,9 @@ impl PythonPredictor {
             let input_dict = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
                 PredictionError::InvalidInput(format!("Input validation failed: {}", e))
             })?;
+
+            // Set up log capture - captures stdout/stderr to return through protocol
+            let log_capture = LogCaptureGuard::new(py);
 
             // Call predict - returns coroutine
             let instance = self.instance.bind(py);
@@ -853,7 +1003,10 @@ async def _collect_async_gen(agen):
                 }
             };
 
-            Ok(PredictionResult { output, predict_time: None })
+            // Finish log capture and get collected logs
+            let logs = log_capture.map(|g| g.finish(py)).unwrap_or_default();
+
+            Ok(PredictionResult { output, predict_time: None, logs })
         })
     }
 
@@ -1016,14 +1169,16 @@ async def _collect_async_gen(agen):
             Ok(PredictionResult {
                 output,
                 predict_time: None,
+                logs: String::new(),
             })
         })
     }
 
-    /// Worker mode train - does not redirect stdout/stderr.
+    /// Worker mode train - captures stdout/stderr and returns them as logs.
     ///
-    /// Use this when running in a subprocess worker where stdout is used
-    /// for the protocol (not for capturing logs).
+    /// In worker mode, stdout is used for the binary protocol between parent and
+    /// child processes. This method captures user print() statements into logs
+    /// that are returned through the protocol, preventing protocol corruption.
     pub fn train_worker(&self, input: serde_json::Value) -> Result<PredictionResult, PredictionError> {
         Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
@@ -1052,13 +1207,23 @@ async def _collect_async_gen(agen):
                 PredictionError::InvalidInput(format!("Input validation failed: {}", e))
             })?;
 
-            // redirect_output=false for worker mode, call train() instead of predict()
-            let result = self.train_raw(py, &input_dict, false).map_err(|e| {
-                if is_cancelation_exception(py, &e) {
-                    return PredictionError::Cancelled;
+            // Set up log capture - captures stdout/stderr to return through protocol
+            let log_capture = LogCaptureGuard::new(py);
+
+            // redirect_output=false because LogCaptureGuard handles it
+            let result = self.train_raw(py, &input_dict, false);
+            
+            // Handle errors - need to finish log capture before returning
+            let result = match result {
+                Ok(r) => r,
+                Err(e) => {
+                    let logs = log_capture.map(|g| g.finish(py)).unwrap_or_default();
+                    if is_cancelation_exception(py, &e) {
+                        return Err(PredictionError::Cancelled);
+                    }
+                    return Err(PredictionError::Failed(format!("Training failed: {}\n{}", e, logs)));
                 }
-                PredictionError::Failed(format!("Training failed: {}", e))
-            })?;
+            };
 
             let result_bound = result.bind(py);
             let is_generator: bool = result_bound.is_instance(&generator_type).unwrap_or(false);
@@ -1111,14 +1276,18 @@ async def _collect_async_gen(agen):
                 PredictionOutput::Single(output_json)
             };
 
-            Ok(PredictionResult { output, predict_time: None })
+            // Finish log capture and get collected logs
+            let logs = log_capture.map(|g| g.finish(py)).unwrap_or_default();
+
+            Ok(PredictionResult { output, predict_time: None, logs })
         })
     }
 
     /// Worker mode async train - runs synchronously via asyncio.run().
     ///
     /// Use this in worker subprocess where we don't need true async concurrency
-    /// (the worker handles one request at a time anyway).
+    /// (the worker handles one request at a time anyway). Captures stdout/stderr
+    /// and returns them as logs to protect the binary protocol on stdout.
     pub fn train_async_worker(&self, input: serde_json::Value) -> Result<PredictionResult, PredictionError> {
         Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
@@ -1145,6 +1314,9 @@ async def _collect_async_gen(agen):
             let input_dict = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
                 PredictionError::InvalidInput(format!("Input validation failed: {}", e))
             })?;
+
+            // Set up log capture - captures stdout/stderr to return through protocol
+            let log_capture = LogCaptureGuard::new(py);
 
             // Call train - returns coroutine
             // For standalone functions, call directly; for classes, call .train() method
@@ -1205,7 +1377,10 @@ async def _collect_async_gen(agen):
                 PredictionOutput::Single(output_json)
             };
 
-            Ok(PredictionResult { output, predict_time: None })
+            // Finish log capture and get collected logs
+            let logs = log_capture.map(|g| g.finish(py)).unwrap_or_default();
+
+            Ok(PredictionResult { output, predict_time: None, logs })
         })
     }
 }

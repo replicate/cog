@@ -11,6 +11,8 @@ pub struct PredictionResult {
     pub output: PredictionOutput,
     /// Time taken for the prediction.
     pub predict_time: Option<Duration>,
+    /// Captured logs (stdout/stderr) during prediction.
+    pub logs: String,
 }
 
 /// Output type from a prediction - either single value or stream of values.

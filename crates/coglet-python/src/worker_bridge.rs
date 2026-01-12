@@ -133,7 +133,7 @@ impl PredictHandler for PythonPredictHandler {
         match result {
             Ok(r) => PredictResult::success(
                 output_to_json(r.output),
-                String::new(),
+                r.logs,  // Pass captured logs through protocol
                 start.elapsed().as_secs_f64(),
             ),
             Err(e) => {
@@ -142,7 +142,7 @@ impl PredictHandler for PythonPredictHandler {
                 } else {
                     PredictResult::failed(
                         e.to_string(),
-                        String::new(),
+                        String::new(),  // Logs already included in error message
                         start.elapsed().as_secs_f64(),
                     )
                 }

@@ -83,6 +83,7 @@ impl WorkerHandle {
                         PredictionStatus::Succeeded => Ok(PredictionResult {
                             output: PredictionOutput::Single(output),
                             predict_time: None,
+                            logs: String::new(),
                         }),
                         PredictionStatus::Canceled => Err(PredictionError::Cancelled),
                         _ => Err(PredictionError::Failed(format!("Prediction status: {:?}", status))),
@@ -146,9 +147,10 @@ fn detect_version(py: Python<'_>) -> VersionInfo {
 ///     host: Host to bind to (default "0.0.0.0")
 ///     port: Port to listen on (default 5000)
 ///     await_explicit_shutdown: If True, ignore SIGTERM and wait for SIGINT or /shutdown
+///     is_train: If True, call train() instead of predict() for predictions
 #[pyfunction]
-#[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000, await_explicit_shutdown=false))]
-fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16, await_explicit_shutdown: bool) -> PyResult<()> {
+#[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000, await_explicit_shutdown=false, is_train=false))]
+fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16, await_explicit_shutdown: bool, is_train: bool) -> PyResult<()> {
     // Initialize tracing (ignore if already initialized)
     let _ = tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
@@ -192,8 +194,8 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16,
     };
 
     // All predictors use subprocess isolation
-    info!(predictor_ref = %pred_ref, "Starting with subprocess isolation");
-    serve_subprocess(py, pred_ref, config, version)
+    info!(predictor_ref = %pred_ref, is_train, "Starting with subprocess isolation");
+    serve_subprocess(py, pred_ref, config, version, is_train)
 }
 
 /// Serve with subprocess worker.
@@ -202,6 +204,7 @@ fn serve_subprocess(
     pred_ref: String,
     config: ServerConfig,
     version: VersionInfo,
+    is_train: bool,
 ) -> PyResult<()> {
     // Get Python executable for worker subprocess
     let python_exe = std::env::var("COG_PYTHON_EXE")
@@ -214,9 +217,13 @@ fn serve_subprocess(
         })
         .unwrap_or_else(|_| "python3".to_string());
 
+    let mut env = vec![];
+    if is_train {
+        env.push(("COGLET_IS_TRAIN".to_string(), "true".to_string()));
+    }
     let spawn_config = SpawnConfig {
         python_exe,
-        env: vec![],
+        env,
     };
 
     // Create worker handle
@@ -291,6 +298,9 @@ fn _is_cancelable() -> bool {
 /// This function is called when coglet is spawned as a worker.
 /// It reads requests from stdin, runs predictions, writes responses to stdout.
 /// Exits when stdin closes (parent died) or shutdown requested.
+///
+/// Environment variables:
+/// - COGLET_IS_TRAIN: If "true", call train() instead of predict()
 #[pyfunction]
 fn _run_worker(predictor_ref: String) -> PyResult<()> {
     // Initialize tracing
@@ -299,10 +309,19 @@ fn _run_worker(predictor_ref: String) -> PyResult<()> {
         .with_writer(std::io::stderr) // Log to stderr, stdout is for protocol
         .try_init();
 
-    info!("Worker starting with predictor: {}", predictor_ref);
+    // Check if we're in training mode
+    let is_train = std::env::var("COGLET_IS_TRAIN")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
 
-    // Create handler
-    let handler = worker_bridge::PythonPredictHandler::new(predictor_ref);
+    info!(predictor_ref = %predictor_ref, is_train, "Worker starting");
+
+    // Create handler in appropriate mode
+    let handler = if is_train {
+        worker_bridge::PythonPredictHandler::new_train(predictor_ref)
+    } else {
+        worker_bridge::PythonPredictHandler::new(predictor_ref)
+    };
     let config = coglet_worker::WorkerConfig::default();
 
     // Run worker event loop
