@@ -16,7 +16,7 @@ use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 use coglet_core::{Health, PredictFuture, PredictionError, PredictionOutput, PredictionResult, SetupResult, VersionInfo};
-use coglet_http::{serve as http_serve, AppState, ServerConfig};
+use coglet_transport::{serve as http_serve, AppState, ServerConfig};
 use coglet_worker::{SpawnConfig, Worker, WorkerResponse};
 
 /// Wrapper around Worker that handles respawning on crash.

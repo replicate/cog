@@ -6,4 +6,4 @@ license.workspace = true
 
 [dependencies]
 coglet-core.workspace = true
-coglet-http.workspace = true
+coglet-transport.workspace = true

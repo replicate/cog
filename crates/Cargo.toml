@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["coglet", "coglet-core", "coglet-http", "coglet-python", "coglet-worker"]
+members = ["coglet", "coglet-core", "coglet-transport", "coglet-python", "coglet-worker"]
 # coglet-python requires maturin, exclude from default workspace operations
-default-members = ["coglet", "coglet-core", "coglet-http", "coglet-worker"]
+default-members = ["coglet", "coglet-core", "coglet-transport", "coglet-worker"]
 
 [workspace.package]
 version = "0.1.0"
@@ -42,4 +42,4 @@ insta = { version = "1", features = ["json"] }
 
 # Internal crates
 coglet-core = { path = "coglet-core" }
-coglet-http = { path = "coglet-http" }
+coglet-transport = { path = "coglet-transport" }

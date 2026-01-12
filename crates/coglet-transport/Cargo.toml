@@ -1,5 +1,5 @@
 [package]
-name = "coglet-http"
+name = "coglet-transport"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

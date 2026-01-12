@@ -1,4 +1,4 @@
-//! coglet-http: HTTP transport for coglet using axum.
+//! coglet-transport: HTTP transport for coglet using axum.
 
 mod routes;
 mod server;

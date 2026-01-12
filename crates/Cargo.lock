@@ -166,7 +166,7 @@ name = "coglet"
 version = "0.1.0"
 dependencies = [
  "coglet-core",
- "coglet-http",
+ "coglet-transport",
 ]
 
 [[package]]
@@ -182,7 +182,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "coglet-http"
+name = "coglet-python"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "coglet-core",
+ "coglet-transport",
+ "coglet-worker",
+ "libc",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "coglet-transport"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -196,23 +213,6 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
-]
-
-[[package]]
-name = "coglet-python"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "coglet-core",
- "coglet-http",
- "coglet-worker",
- "libc",
- "pyo3",
- "pyo3-async-runtimes",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
