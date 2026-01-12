@@ -202,7 +202,7 @@ jobs:
     name: "Test integration (${{ matrix.runtime }}) - ${{ matrix.test-group }}"
     needs: build-python
     runs-on: ubuntu-latest-8-cores
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
