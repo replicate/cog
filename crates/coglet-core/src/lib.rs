@@ -4,7 +4,7 @@ mod health;
 mod predictor;
 mod version;
 
-pub use health::{Health, SetupStatus};
+pub use health::{Health, SetupResult, SetupStatus};
 pub use predictor::{
     AsyncPredictFn, CancellationToken, PredictFn, PredictFuture, PredictionError, PredictionGuard,
     PredictionMetrics, PredictionOutput, PredictionResult,

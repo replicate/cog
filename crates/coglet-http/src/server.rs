@@ -8,7 +8,7 @@ use tokio::net::TcpListener;
 use tokio::sync::{Mutex, RwLock, Semaphore};
 use tracing::info;
 
-use coglet_core::{AsyncPredictFn, CancellationToken, Health, PredictFn, VersionInfo};
+use coglet_core::{AsyncPredictFn, CancellationToken, Health, PredictFn, SetupResult, VersionInfo};
 
 use crate::routes::routes;
 
@@ -35,6 +35,8 @@ impl Default for ServerConfig {
 /// Shared server state.
 pub struct AppState {
     pub health: RwLock<Health>,
+    /// Setup result (started_at, completed_at, status, logs).
+    pub setup_result: RwLock<Option<SetupResult>>,
     /// Sync predict function (for sync predictors, runs in spawn_blocking).
     pub predict_fn: Option<Arc<PredictFn>>,
     /// Async predict function (for async predictors, runs in tokio).
@@ -62,6 +64,7 @@ impl AppState {
     pub fn new(max_concurrency: usize) -> Self {
         Self {
             health: RwLock::new(Health::Unknown),
+            setup_result: RwLock::new(None),
             predict_fn: None,
             async_predict_fn: None,
             slots: Semaphore::new(max_concurrency),
@@ -122,6 +125,17 @@ impl AppState {
     pub async fn set_health(&self, health: Health) {
         let mut guard = self.health.write().await;
         *guard = health;
+    }
+
+    /// Set setup result.
+    pub async fn set_setup_result(&self, result: SetupResult) {
+        let mut guard = self.setup_result.write().await;
+        *guard = Some(result);
+    }
+
+    /// Get setup result.
+    pub async fn get_setup_result(&self) -> Option<SetupResult> {
+        self.setup_result.read().await.clone()
     }
 }
 

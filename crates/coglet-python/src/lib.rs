@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
-use coglet_core::{Health, PredictFuture, PredictionError, PredictionOutput, PredictionResult, VersionInfo};
+use coglet_core::{Health, PredictFuture, PredictionError, PredictionOutput, PredictionResult, SetupResult, VersionInfo};
 use coglet_http::{serve as http_serve, AppState, ServerConfig};
 use coglet_worker::{SpawnConfig, Worker, WorkerResponse};
 
@@ -231,15 +231,21 @@ fn serve_subprocess(
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
         rt.block_on(async {
+            // Track setup timing
+            let setup_result = SetupResult::starting();
+            app_state_clone.set_setup_result(setup_result.clone()).await;
+
             // Initialize worker (spawns subprocess, runs setup)
             match worker.init().await {
                 Ok(()) => {
                     info!("Worker initialized, server ready");
                     app_state_clone.set_health(Health::Ready).await;
+                    app_state_clone.set_setup_result(setup_result.succeeded()).await;
                 }
                 Err(e) => {
                     error!(error = %e, "Worker initialization failed");
                     app_state_clone.set_health(Health::SetupFailed).await;
+                    app_state_clone.set_setup_result(setup_result.failed(e.clone())).await;
                 }
             }
 

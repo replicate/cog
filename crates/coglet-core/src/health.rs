@@ -30,6 +30,49 @@ pub enum SetupStatus {
     Failed,
 }
 
+/// Result of the setup phase.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetupResult {
+    /// When setup started (ISO 8601 format).
+    pub started_at: String,
+    /// When setup completed (ISO 8601 format), if finished.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<String>,
+    /// Status of setup.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<SetupStatus>,
+    /// Captured logs during setup.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub logs: String,
+}
+
+impl SetupResult {
+    /// Create a new SetupResult with the current time as started_at.
+    pub fn starting() -> Self {
+        Self {
+            started_at: chrono::Utc::now().to_rfc3339(),
+            completed_at: None,
+            status: Some(SetupStatus::Starting),
+            logs: String::new(),
+        }
+    }
+
+    /// Mark setup as succeeded.
+    pub fn succeeded(mut self) -> Self {
+        self.completed_at = Some(chrono::Utc::now().to_rfc3339());
+        self.status = Some(SetupStatus::Succeeded);
+        self
+    }
+
+    /// Mark setup as failed.
+    pub fn failed(mut self, logs: String) -> Self {
+        self.completed_at = Some(chrono::Utc::now().to_rfc3339());
+        self.status = Some(SetupStatus::Failed);
+        self.logs = logs;
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

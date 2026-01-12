@@ -11,7 +11,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use coglet_core::{Health, PredictionError, PredictionGuard, VersionInfo};
+use coglet_core::{Health, PredictionError, PredictionGuard, SetupResult, VersionInfo};
 
 use crate::server::AppState;
 
@@ -19,6 +19,8 @@ use crate::server::AppState;
 #[derive(Debug, Serialize)]
 pub struct HealthCheckResponse {
     pub status: Health,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub setup: Option<SetupResult>,
     pub version: VersionInfo,
 }
 
@@ -55,11 +57,43 @@ async fn health_check(State(state): State<Arc<AppState>>) -> Json<HealthCheckRes
     } else {
         base_health
     };
+
+    // Write K8s readiness file if ready and running in Kubernetes
+    if health == Health::Ready {
+        write_readiness_file();
+    }
+
+    let setup = state.get_setup_result().await;
     
     Json(HealthCheckResponse {
         status: health,
+        setup,
         version: state.version.clone(),
     })
+}
+
+/// Write /var/run/cog/ready for K8s readiness probe.
+/// Only writes if KUBERNETES_SERVICE_HOST is set.
+fn write_readiness_file() {
+    if std::env::var("KUBERNETES_SERVICE_HOST").is_err() {
+        return;
+    }
+    
+    let dir = std::path::Path::new("/var/run/cog");
+    let file = dir.join("ready");
+    
+    if file.exists() {
+        return;
+    }
+    
+    if let Err(e) = std::fs::create_dir_all(dir) {
+        tracing::warn!(error = %e, "Failed to create /var/run/cog directory");
+        return;
+    }
+    
+    if let Err(e) = std::fs::write(&file, b"") {
+        tracing::warn!(error = %e, "Failed to write readiness file");
+    }
 }
 
 /// POST /predictions
