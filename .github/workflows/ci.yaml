@@ -197,7 +197,7 @@ jobs:
     runs-on: ubuntu-latest-16-cores
     timeout-minutes: 30
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         # TODO: Temporarily focusing on coglet/coglet-alpha, re-enable cog later
         runtime: [coglet, coglet-alpha]
