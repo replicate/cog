@@ -359,10 +359,24 @@ async fn shutdown(State(service): State<Arc<PredictionService>>) -> impl IntoRes
     (StatusCode::OK, Json(serde_json::json!({})))
 }
 
+/// GET /openapi.json
+async fn openapi_schema(State(service): State<Arc<PredictionService>>) -> impl IntoResponse {
+    match service.schema().await {
+        Some(schema) => (StatusCode::OK, Json(schema)),
+        None => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "OpenAPI schema not available"
+            })),
+        ),
+    }
+}
+
 /// Build the router with all routes.
 pub fn routes(service: Arc<PredictionService>) -> Router {
     Router::new()
         .route("/health-check", get(health_check))
+        .route("/openapi.json", get(openapi_schema))
         .route("/shutdown", post(shutdown))
         .route("/predictions", post(create_prediction))
         .route("/predictions/{id}", put(create_prediction_idempotent))
@@ -538,5 +552,42 @@ mod tests {
         let json = response_json(response).await;
         assert_eq!(json["status"], "failed");
         assert!(json["error"].as_str().unwrap().contains("missing required"));
+    }
+
+    #[tokio::test]
+    async fn openapi_returns_503_when_schema_not_available() {
+        let service = Arc::new(PredictionService::new(1));
+        let app = routes(service);
+
+        let response = app
+            .oneshot(Request::get("/openapi.json").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let json = response_json(response).await;
+        assert!(json["error"].as_str().unwrap().contains("not available"));
+    }
+
+    #[tokio::test]
+    async fn openapi_returns_schema_when_available() {
+        let service = Arc::new(PredictionService::new(1));
+        service.set_schema(serde_json::json!({
+            "openapi": "3.0.2",
+            "info": {"title": "Cog", "version": "0.1.0"}
+        })).await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(Request::get("/openapi.json").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let json = response_json(response).await;
+        assert_eq!(json["openapi"], "3.0.2");
+        assert_eq!(json["info"]["title"], "Cog");
     }
 }

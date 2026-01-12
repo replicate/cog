@@ -48,6 +48,9 @@ pub struct Worker {
 
     /// Framed reader to receive responses.
     reader: FramedRead<ChildStdout, JsonCodec<WorkerResponse>>,
+
+    /// OpenAPI schema from the predictor (captured at spawn time).
+    schema: Option<serde_json::Value>,
 }
 
 /// Configuration for spawning workers.
@@ -111,9 +114,13 @@ impl Worker {
         let ready = tokio::time::timeout(ready_timeout, reader.next()).await;
 
         match ready {
-            Ok(Some(Ok(WorkerResponse::Ready))) => {
-                tracing::info!("Worker ready");
-                Ok(Self { child, writer, reader })
+            Ok(Some(Ok(WorkerResponse::Ready { schema }))) => {
+                if schema.is_some() {
+                    tracing::info!("Worker ready with OpenAPI schema");
+                } else {
+                    tracing::info!("Worker ready");
+                }
+                Ok(Self { child, writer, reader, schema })
             }
             Ok(Some(Ok(other))) => {
                 Err(WorkerError::Protocol(format!("Expected Ready, got {:?}", other)))
@@ -244,6 +251,12 @@ impl Worker {
     /// Get the process ID of the worker.
     pub fn pid(&self) -> Option<u32> {
         self.child.id()
+    }
+
+    /// Get the OpenAPI schema (if available).
+    /// Schema is captured once when the worker starts.
+    pub fn schema(&self) -> Option<&serde_json::Value> {
+        self.schema.as_ref()
     }
 
     /// Kill the worker process with escalation.

@@ -96,10 +96,10 @@ mod tests {
         let mut codec = JsonCodec::<WorkerResponse>::new();
         let mut buf = BytesMut::new();
 
-        let resp = WorkerResponse::Ready;
+        let resp = WorkerResponse::Ready { schema: None };
         codec.encode(resp, &mut buf).unwrap();
         let decoded = codec.decode(&mut buf).unwrap().unwrap();
 
-        assert!(matches!(decoded, WorkerResponse::Ready));
+        assert!(matches!(decoded, WorkerResponse::Ready { schema: None }));
     }
 }

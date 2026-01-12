@@ -90,6 +90,9 @@ pub struct PredictionService {
     
     /// Version information.
     version: VersionInfo,
+    
+    /// OpenAPI schema (cached, generated once at setup).
+    schema: RwLock<Option<serde_json::Value>>,
 }
 
 impl PredictionService {
@@ -107,6 +110,7 @@ impl PredictionService {
             shutdown_tx,
             shutdown_rx,
             version: VersionInfo::new(),
+            schema: RwLock::new(None),
         }
     }
     
@@ -162,6 +166,16 @@ impl PredictionService {
     /// Set the setup result.
     pub async fn set_setup_result(&self, result: SetupResult) {
         *self.setup_result.write().await = Some(result);
+    }
+    
+    /// Set the OpenAPI schema.
+    pub async fn set_schema(&self, schema: serde_json::Value) {
+        *self.schema.write().await = Some(schema);
+    }
+    
+    /// Get the OpenAPI schema.
+    pub async fn schema(&self) -> Option<serde_json::Value> {
+        self.schema.read().await.clone()
     }
     
     /// Create a new prediction, acquiring a slot.

@@ -38,10 +38,12 @@ impl WorkerHandle {
     }
 
     /// Initialize the worker (spawn subprocess, wait for ready).
-    async fn init(&self) -> Result<(), String> {
+    /// Returns the OpenAPI schema if available.
+    async fn init(&self) -> Result<Option<serde_json::Value>, String> {
         let mut guard = self.worker.lock().await;
         if guard.is_some() {
-            return Ok(()); // Already initialized
+            // Already initialized, return cached schema
+            return Ok(guard.as_ref().and_then(|w| w.schema().cloned()));
         }
 
         info!(predictor_ref = %self.predictor_ref, "Spawning worker subprocess");
@@ -49,8 +51,9 @@ impl WorkerHandle {
             .await
             .map_err(|e| format!("Failed to spawn worker: {}", e))?;
         
+        let schema = worker.schema().cloned();
         *guard = Some(worker);
-        Ok(())
+        Ok(schema)
     }
 
     /// Run a prediction, respawning worker if needed.
@@ -154,7 +157,6 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16,
     let config = ServerConfig {
         host,
         port,
-        max_concurrency: 1,
         await_explicit_shutdown,
     };
 
@@ -253,10 +255,16 @@ fn serve_subprocess(
 
             // Initialize worker (spawns subprocess, runs setup)
             match worker.init().await {
-                Ok(()) => {
+                Ok(schema) => {
                     info!("Worker initialized, server ready");
                     service_clone.set_health(Health::Ready).await;
                     service_clone.set_setup_result(setup_result.succeeded()).await;
+                    
+                    // Set OpenAPI schema if available
+                    if let Some(s) = schema {
+                        info!("Setting OpenAPI schema from worker");
+                        service_clone.set_schema(s).await;
+                    }
                 }
                 Err(e) => {
                     error!(error = %e, "Worker initialization failed");

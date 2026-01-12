@@ -192,6 +192,93 @@ impl PythonPredictor {
         self.is_async
     }
 
+    /// Generate OpenAPI schema for this predictor.
+    ///
+    /// Uses coglet.schemas.to_json_schema() which returns the full OpenAPI spec
+    /// with Input/Output schemas populated from the predictor's type annotations.
+    ///
+    /// Returns None if schema generation fails (best-effort).
+    pub fn schema(&self) -> Option<serde_json::Value> {
+        Python::attach(|py| {
+            // Try coglet schema generation first (works for both runtimes)
+            let result: PyResult<serde_json::Value> = (|| {
+                let json_module = py.import("json")?;
+                
+                // For Coglet runtime, we have the ADT predictor directly
+                // For Pydantic runtime, we need to create the ADT predictor from the class
+                let adt_predictor = match &self.runtime {
+                    Runtime::Coglet { adt_predictor } => {
+                        adt_predictor.bind(py).clone()
+                    }
+                    Runtime::Pydantic { input_type: _ } => {
+                        // For Pydantic, we need to introspect the predictor class
+                        // Use coglet.inspector.create_predictor equivalent
+                        // This is complex, so for now just use cog's FastAPI schema
+                        return self.schema_via_fastapi(py, &json_module.as_any());
+                    }
+                };
+
+                // Use coglet.schemas.to_json_schema(adt_predictor)
+                let schemas_module = py.import("coglet.schemas")?;
+                let to_json_schema = schemas_module.getattr("to_json_schema")?;
+                let schema = to_json_schema.call1((&adt_predictor,))?;
+
+                // Convert to JSON string then parse to serde_json::Value
+                let schema_str: String = json_module
+                    .call_method1("dumps", (&schema,))?
+                    .extract()?;
+
+                let schema_value: serde_json::Value = serde_json::from_str(&schema_str)
+                    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
+                Ok(schema_value)
+            })();
+
+            match result {
+                Ok(schema) => Some(schema),
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to generate OpenAPI schema");
+                    None
+                }
+            }
+        })
+    }
+
+    /// Generate schema via FastAPI (fallback for Pydantic predictors).
+    fn schema_via_fastapi(&self, py: Python<'_>, json_module: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
+        // For Pydantic runtime, use cog's FastAPI app to generate schema
+        // This is what cog.command.openapi_schema does
+        let cog_server_http = py.import("cog.server.http")?;
+        let create_app = cog_server_http.getattr("create_app")?;
+        
+        // Need to pass a Config - try to load from cog.yaml
+        let cog_config_module = py.import("cog.config")?;
+        let config_class = cog_config_module.getattr("Config")?;
+        let config = config_class.call0()?;
+        
+        // Create app with is_build=True to skip actual setup
+        let kwargs = pyo3::types::PyDict::new(py);
+        kwargs.set_item("cog_config", &config)?;
+        kwargs.set_item("shutdown_event", py.None())?;
+        kwargs.set_item("is_build", true)?;
+        
+        let app = create_app.call((), Some(&kwargs))?;
+        
+        // Get OpenAPI schema from app
+        let openapi_method = app.getattr("openapi")?;
+        let schema = openapi_method.call0()?;
+        
+        // Convert to JSON string then parse
+        let schema_str: String = json_module
+            .call_method1("dumps", (&schema,))?
+            .extract()?;
+        
+        let schema_value: serde_json::Value = serde_json::from_str(&schema_str)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        
+        Ok(schema_value)
+    }
+
     /// Call setup() on the predictor, handling weights parameter if present.
     ///
     /// Uses cog.predictor helpers to detect and extract weights:

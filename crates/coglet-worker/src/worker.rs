@@ -34,6 +34,12 @@ pub trait PredictHandler: Send + Sync {
 
     /// Request cancellation of current prediction.
     fn cancel(&self);
+
+    /// Get OpenAPI schema for the predictor.
+    /// Called once after setup, result is cached and sent with Ready message.
+    fn schema(&self) -> Option<serde_json::Value> {
+        None
+    }
 }
 
 /// Result of a prediction.
@@ -145,9 +151,15 @@ pub async fn run_worker<H: PredictHandler>(handler: H, config: WorkerConfig) -> 
         return Ok(());
     }
 
-    // Send Ready
+    // Get schema (generated once, cached by handler)
+    let schema = handler.schema();
+    if schema.is_some() {
+        tracing::info!("OpenAPI schema generated");
+    }
+
+    // Send Ready with schema
     tracing::info!(max_concurrency = config.max_concurrency, "Worker ready");
-    writer.send(WorkerResponse::Ready).await?;
+    writer.send(WorkerResponse::Ready { schema }).await?;
 
     // Main loop - exits on stdin EOF (parent death) or error
     loop {

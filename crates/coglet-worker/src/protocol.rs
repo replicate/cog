@@ -32,7 +32,11 @@ pub enum WorkerRequest {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WorkerResponse {
     /// Worker is ready to accept predictions.
-    Ready,
+    Ready {
+        /// OpenAPI schema for the predictor (generated once at setup).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        schema: Option<serde_json::Value>,
+    },
 
     /// Prediction output (intermediate for streaming, or final).
     Output {
@@ -116,7 +120,18 @@ mod tests {
 
     #[test]
     fn response_ready_serializes() {
-        let resp = WorkerResponse::Ready;
+        let resp = WorkerResponse::Ready { schema: None };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn response_ready_with_schema_serializes() {
+        let resp = WorkerResponse::Ready {
+            schema: Some(json!({
+                "openapi": "3.0.2",
+                "info": {"title": "Cog", "version": "0.1.0"}
+            })),
+        };
         insta::assert_json_snapshot!(resp);
     }
 

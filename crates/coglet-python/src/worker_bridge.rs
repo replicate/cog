@@ -106,6 +106,11 @@ impl PredictHandler for PythonPredictHandler {
         self.cancelled.store(true, Ordering::SeqCst);
         // TODO: Also send SIGUSR1 for sync predictors?
     }
+
+    fn schema(&self) -> Option<serde_json::Value> {
+        let guard = self.predictor.lock().unwrap();
+        guard.as_ref().and_then(|pred| pred.schema())
+    }
 }
 
 /// Convert PredictionOutput to serde_json::Value
