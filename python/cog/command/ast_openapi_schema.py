@@ -307,8 +307,10 @@ OPENAPI_TYPES = {
     "list": "array",
     "cog.Path": "string",
     "cog.File": "string",
+    "cog.Image": "string",
     "Path": "string",
     "File": "string",
+    "Image": "string",
 }
 
 
@@ -446,7 +448,7 @@ def parse_class(classdef: ast.AST) -> "JSONDict":
 # cog.File: a file-like object representing a file
 # cog.Path: a path to a file on disk
 
-BASE_TYPES = ["str", "int", "float", "bool", "File", "Path"]
+BASE_TYPES = ["str", "int", "float", "bool", "File", "Path", "Image"]
 
 
 def resolve_name(node: ast.expr) -> str:
@@ -490,7 +492,12 @@ For example:
     if isinstance(annotation, ast.Subscript):
         # forget about other subscripts like Optional, and assume otherlib.File will still be an uri
         slice = resolve_name(annotation.slice)  # pylint: disable=redefined-builtin
-        format = {"format": "uri"} if slice in ("Path", "File") else {}  # pylint: disable=redefined-builtin
+        if slice == "Image":
+            format = {"format": "uri", "x-cog-type": "image"}  # pylint: disable=redefined-builtin
+        elif slice in ("Path", "File"):
+            format = {"format": "uri"}  # pylint: disable=redefined-builtin
+        else:
+            format = {}  # pylint: disable=redefined-builtin
         array_type = {"x-cog-array-type": "iterator"} if "Iterator" in name else {}
         display_type = (
             {"x-cog-array-display": "concatenate"} if "Concatenate" in name else {}
@@ -507,7 +514,12 @@ For example:
         }
     if name in BASE_TYPES:
         # otherwise figure this out...
-        format = {"format": "uri"} if name in ("Path", "File") else {}
+        if name == "Image":
+            format = {"format": "uri", "x-cog-type": "image"}
+        elif name in ("Path", "File"):
+            format = {"format": "uri"}
+        else:
+            format = {}
         return {}, {"title": "Output", "type": OPENAPI_TYPES.get(name, name), **format}
     # it must be a custom object
     schema: JSONDict = {name: parse_class(find(tree, name))}
@@ -548,7 +560,10 @@ def extract_info(code: str) -> "JSONDict":  # pylint: disable=too-many-branches,
 
         annotation = get_annotation(arg.annotation)
         arg_type = OPENAPI_TYPES.get(annotation, "string")
-        if annotation in ("Path", "File"):
+        if annotation == "Image":
+            input["format"] = "uri"
+            input["x-cog-type"] = "image"
+        elif annotation in ("Path", "File"):
             input["format"] = "uri"
         elif annotation.startswith("Literal["):
             input["enum"] = list(

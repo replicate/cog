@@ -254,6 +254,72 @@ class Path(pathlib.PosixPath):  # pylint: disable=abstract-method
             field_schema.update(type="string", format="uri")
 
 
+class Image(pathlib.PosixPath):  # pylint: disable=abstract-method
+    """
+    Image represents an image file. It's a subclass of pathlib.Path that
+    accepts URLs (http://, https://, data:) or local file paths.
+
+    The OpenAPI schema will have format="uri" with x-cog-type="image" which UIs
+    can use to provide image-specific widgets like image pickers or preview functionality.
+    """
+
+    validate_always = True
+
+    @classmethod
+    def validate(cls, value: Any) -> pathlib.Path:
+        if isinstance(value, pathlib.Path):
+            return value
+
+        return URLPath(
+            source=value,
+            filename=get_filename(value),
+            fileobj=File.validate(value),
+        )
+
+    if PYDANTIC_V2:
+        from pydantic import GetCoreSchemaHandler
+        from pydantic.json_schema import JsonSchemaValue
+        from pydantic_core import CoreSchema
+
+        @classmethod
+        def __get_pydantic_core_schema__(
+            cls,
+            source: Type[Any],  # pylint: disable=unused-argument
+            handler: "pydantic.GetCoreSchemaHandler",  # pylint: disable=unused-argument
+        ) -> "CoreSchema":
+            from pydantic_core import (  # pylint: disable=import-outside-toplevel
+                core_schema,
+            )
+
+            return core_schema.union_schema(
+                [
+                    core_schema.is_instance_schema(pathlib.Path),
+                    core_schema.no_info_plain_validator_function(cls.validate),
+                ]
+            )
+
+        @classmethod
+        def __get_pydantic_json_schema__(
+            cls, core_schema: "CoreSchema", handler: "pydantic.GetJsonSchemaHandler"
+        ) -> "JsonSchemaValue":  # type: ignore # noqa: F821
+            json_schema = handler(core_schema)
+            json_schema.update(type="string", format="uri")
+            json_schema["x-cog-type"] = "image"
+            return json_schema
+
+    else:
+
+        @classmethod
+        def __get_validators__(cls) -> Iterator[Any]:
+            yield cls.validate
+
+        @classmethod
+        def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+            """Defines what this type should be in openapi.json"""
+            field_schema.update(type="string", format="uri")
+            field_schema["x-cog-type"] = "image"
+
+
 class URLPath(pathlib.PosixPath):  # pylint: disable=abstract-method
     """
     URLPath is a nasty hack to ensure that we can defer the downloading of a

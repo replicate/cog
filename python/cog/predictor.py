@@ -44,6 +44,7 @@ from .types import (
 from .types import (
     File as CogFile,
 )
+from .types import Image as CogImage
 from .types import (
     Path as CogPath,
 )
@@ -64,6 +65,7 @@ ALLOWED_INPUT_TYPES: List[Type[Any]] = [
     CogFile,
     CogPath,
     CogSecret,
+    CogImage,
 ]
 
 
