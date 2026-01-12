@@ -1,9 +1,20 @@
+import os
 import pathlib
 import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
 
+
+# Coglet does not support training mode (--x-mode train flag is not implemented)
+_skip_coglet = pytest.mark.skipif(
+    os.environ.get("COG_WHEEL") in ("coglet", "coglet-alpha"),
+    reason="Coglet does not support training mode",
+)
+
+
+@_skip_coglet
 def test_train_takes_input_and_produces_weights(tmpdir_factory, cog_binary):
     project_dir = Path(__file__).parent / "fixtures/train-project"
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
@@ -21,6 +32,7 @@ def test_train_takes_input_and_produces_weights(tmpdir_factory, cog_binary):
     assert "falling back to slow loader" not in str(result.stderr)
 
 
+@_skip_coglet
 def test_train_pydantic2(tmpdir_factory, cog_binary):
     project_dir = Path(__file__).parent / "fixtures/pydantic2-output"
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
@@ -34,6 +46,7 @@ def test_train_pydantic2(tmpdir_factory, cog_binary):
     assert result.returncode == 0
 
 
+@_skip_coglet
 def test_training_setup_project(tmpdir_factory, cog_binary):
     project_dir = Path(__file__).parent / "fixtures/training-setup-project"
     out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
