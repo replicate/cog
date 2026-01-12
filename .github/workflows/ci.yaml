@@ -36,7 +36,7 @@ jobs:
       - name: Build coglet wheel
         run: uv build --wheel --out-dir=dist ./coglet
       - name: Upload coglet wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: CogletWheel
           path: dist/coglet-*.whl
