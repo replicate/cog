@@ -169,3 +169,8 @@ The CLI follows a command pattern with subcommands. The main components are:
   - Uses Python AssertionError messages for validation errors instead of custom formatted messages
   - Python 3.9+ uses fast loader without fallback to slow loader (Python 3.8 falls back)
   - Integration tests should accept both error formats for compatibility and not assert for fast loader fallback messages when using Python 3.9+
+  
+- Coglet-alpha architectural limitations (as of Jan 2026):
+  - **Predictor loading:** Uses `importlib.import_module()` which requires valid Python module names. Original cog uses `spec_from_file_location()` which can load any file path. This means coglet-alpha cannot load predictors from directories with hyphens or other non-Python-identifier characters in the path (e.g., `my-subdir/predict.py`).
+  - **File input handling:** File inputs using `@filename` syntax are processed differently than original cog. May fail to resolve file paths in some scenarios.
+  - **Path separator conversion:** coglet-alpha converts `/` to `.` in module paths (e.g., `subdir/predict.py` → `subdir.predict`), but this doesn't solve the identifier validation issue for directory names with special characters
