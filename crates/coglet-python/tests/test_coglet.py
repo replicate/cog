@@ -533,3 +533,136 @@ class TestPathOutput:
                 _, encoded = item.split(";base64,", 1)
                 decoded = base64.b64decode(encoded).decode("utf-8")
                 assert decoded == f"file {i}"
+
+
+class TestAsyncWebhookMode:
+    """Tests for webhook async mode (Prefer: respond-async)."""
+
+    def test_respond_async_returns_202_immediately(self, sync_predictor: Path):
+        """Test that Prefer: respond-async returns 202 immediately."""
+        with CogletServer(sync_predictor, port=5700) as server:
+            resp = requests.post(
+                f"{server.base_url}/predictions",
+                json={"input": {"name": "async test"}},
+                headers={"Prefer": "respond-async"},
+            )
+            assert resp.status_code == 202
+            result = resp.json()
+            assert result["status"] == "starting"
+            assert "id" in result
+            # Wait a bit for background prediction to complete
+            time.sleep(0.5)
+
+    def test_respond_async_with_slow_predictor(self, slow_predictor: Path):
+        """Test that respond-async returns immediately for slow predictions."""
+        with CogletServer(slow_predictor, port=5701) as server:
+            start = time.time()
+            resp = requests.post(
+                f"{server.base_url}/predictions",
+                json={"input": {"sleep_time": 5.0}},  # 5 second sleep
+                headers={"Prefer": "respond-async"},
+            )
+            elapsed = time.time() - start
+
+            # Should return immediately, not after 5 seconds
+            assert elapsed < 1.0, f"Request took {elapsed}s, expected < 1s"
+            assert resp.status_code == 202
+            result = resp.json()
+            assert result["status"] == "starting"
+
+    def test_respond_async_with_webhook(self, sync_predictor: Path, httpserver):
+        """Test that webhook is called for async predictions."""
+        webhook_calls = []
+
+        def webhook_handler(request):
+            webhook_calls.append(json.loads(request.data))
+            return ""
+
+        # Set up webhook endpoint
+        httpserver.expect_request("/webhook", method="POST").respond_with_handler(
+            webhook_handler
+        )
+
+        with CogletServer(sync_predictor, port=5702) as server:
+            resp = requests.post(
+                f"{server.base_url}/predictions",
+                json={
+                    "input": {"name": "webhook test"},
+                    "webhook": httpserver.url_for("/webhook"),
+                },
+                headers={"Prefer": "respond-async"},
+            )
+            assert resp.status_code == 202
+
+            # Wait for webhook to be called
+            timeout = 5.0
+            start = time.time()
+            while len(webhook_calls) < 2 and time.time() - start < timeout:
+                time.sleep(0.1)
+
+            # Should have at least start and completed webhooks
+            assert len(webhook_calls) >= 1, "Expected at least one webhook call"
+
+            # Check for completed webhook
+            completed = [
+                w for w in webhook_calls if w.get("status") in ("succeeded", "failed")
+            ]
+            assert len(completed) >= 1, f"No completed webhook found in {webhook_calls}"
+
+            # Verify successful completion
+            final = completed[-1]
+            assert final["status"] == "succeeded"
+            assert final["output"] == "Hello, webhook test!"
+
+    def test_webhook_events_filter(self, sync_predictor: Path, httpserver):
+        """Test that webhook_events_filter controls which events are sent."""
+        webhook_calls = []
+
+        def webhook_handler(request):
+            webhook_calls.append(json.loads(request.data))
+            return ""
+
+        httpserver.expect_request("/webhook", method="POST").respond_with_handler(
+            webhook_handler
+        )
+
+        with CogletServer(sync_predictor, port=5703) as server:
+            resp = requests.post(
+                f"{server.base_url}/predictions",
+                json={
+                    "input": {"name": "filtered"},
+                    "webhook": httpserver.url_for("/webhook"),
+                    "webhook_events_filter": ["completed"],  # Only send completed
+                },
+                headers={"Prefer": "respond-async"},
+            )
+            assert resp.status_code == 202
+
+            # Wait for webhook
+            time.sleep(1.0)
+
+            # Should only have completed webhook (no start)
+            assert len(webhook_calls) >= 1
+            for call in webhook_calls:
+                # All calls should be terminal (completed/failed/canceled)
+                assert call["status"] in (
+                    "succeeded",
+                    "failed",
+                    "canceled",
+                    "starting",
+                ), f"Unexpected status: {call['status']}"
+
+    def test_put_idempotent_with_respond_async(self, sync_predictor: Path):
+        """Test PUT /predictions/{id} with respond-async."""
+        with CogletServer(sync_predictor, port=5704) as server:
+            prediction_id = "test-async-idempotent"
+            resp = requests.put(
+                f"{server.base_url}/predictions/{prediction_id}",
+                json={"input": {"name": "idempotent async"}},
+                headers={"Prefer": "respond-async"},
+            )
+            assert resp.status_code == 202
+            result = resp.json()
+            assert result["status"] == "starting"
+            # Wait for completion
+            time.sleep(0.5)

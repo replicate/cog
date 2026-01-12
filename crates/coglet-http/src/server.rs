@@ -56,7 +56,9 @@ pub struct AppState {
     ///
     /// We use try_acquire() for immediate rejection rather than queueing.
     /// Sync predictors get 1 slot, async predictors can have N.
-    pub slots: Semaphore,
+    /// 
+    /// Wrapped in Arc to allow try_acquire_owned() for moving permit into async tasks.
+    pub slots: Arc<Semaphore>,
     /// Version information for the runtime.
     pub version: VersionInfo,
     /// In-flight predictions mapped by ID to their cancellation token.
@@ -76,7 +78,7 @@ impl AppState {
             setup_result: RwLock::new(None),
             predict_fn: None,
             async_predict_fn: None,
-            slots: Semaphore::new(max_concurrency),
+            slots: Arc::new(Semaphore::new(max_concurrency)),
             version: VersionInfo::new(),
             predictions: Mutex::new(HashMap::new()),
             shutdown_tx,

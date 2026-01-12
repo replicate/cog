@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json},
     routing::{get, post, put},
     Router,
@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use coglet_core::{Health, PredictionError, PredictionGuard, SetupResult, VersionInfo};
 
 use crate::server::AppState;
+use crate::webhook::{WebhookConfig, WebhookEvent, WebhookSender};
 
 /// Health check response.
 #[derive(Debug, Serialize)]
@@ -24,6 +25,22 @@ pub struct HealthCheckResponse {
     pub version: VersionInfo,
 }
 
+/// Webhook events filter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WebhookEventFilter {
+    Start,
+    Output,
+    Logs,
+    Completed,
+}
+
+impl Default for WebhookEventFilter {
+    fn default() -> Self {
+        Self::Completed
+    }
+}
+
 /// Prediction request body.
 #[derive(Debug, Deserialize)]
 pub struct PredictionRequest {
@@ -31,6 +48,21 @@ pub struct PredictionRequest {
     pub id: Option<String>,
     /// Input to the predictor.
     pub input: serde_json::Value,
+    /// Webhook URL to send prediction updates to.
+    pub webhook: Option<String>,
+    /// Filter for which webhook events to send.
+    /// Defaults to all events: ["start", "output", "logs", "completed"]
+    #[serde(default = "default_webhook_events_filter")]
+    pub webhook_events_filter: Vec<WebhookEventFilter>,
+}
+
+fn default_webhook_events_filter() -> Vec<WebhookEventFilter> {
+    vec![
+        WebhookEventFilter::Start,
+        WebhookEventFilter::Output,
+        WebhookEventFilter::Logs,
+        WebhookEventFilter::Completed,
+    ]
 }
 
 /// Generate a unique prediction ID.
@@ -96,19 +128,31 @@ fn write_readiness_file() {
     }
 }
 
+/// Check if the request should be handled asynchronously.
+fn should_respond_async(headers: &HeaderMap) -> bool {
+    headers
+        .get("prefer")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v == "respond-async")
+        .unwrap_or(false)
+}
+
 /// POST /predictions
 async fn create_prediction(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(request): Json<PredictionRequest>,
 ) -> impl IntoResponse {
     let prediction_id = request.id.unwrap_or_else(generate_prediction_id);
-    create_prediction_with_id(state, prediction_id, request.input).await
+    let respond_async = should_respond_async(&headers);
+    create_prediction_with_id(state, prediction_id, request.input, request.webhook, request.webhook_events_filter, respond_async).await
 }
 
 /// PUT /predictions/{id} - idempotent prediction creation
 async fn create_prediction_idempotent(
     State(state): State<Arc<AppState>>,
     Path(prediction_id): Path<String>,
+    headers: HeaderMap,
     Json(request): Json<PredictionRequest>,
 ) -> impl IntoResponse {
     // If request has ID, it must match URL
@@ -143,7 +187,27 @@ async fn create_prediction_idempotent(
     }
 
     // Not running, create new prediction with the specified ID
-    create_prediction_with_id(state, prediction_id, request.input).await
+    let respond_async = should_respond_async(&headers);
+    create_prediction_with_id(state, prediction_id, request.input, request.webhook, request.webhook_events_filter, respond_async).await
+}
+
+/// Build a webhook sender if webhook URL is provided.
+fn build_webhook_sender(
+    webhook: Option<String>,
+    events_filter: Vec<WebhookEventFilter>,
+) -> Option<WebhookSender> {
+    let webhook_url = webhook?;
+    
+    // Convert filter to HashSet for O(1) lookup
+    let events: std::collections::HashSet<_> = events_filter.into_iter().collect();
+    
+    Some(WebhookSender::new(
+        webhook_url,
+        WebhookConfig {
+            events_filter: events,
+            ..Default::default()
+        },
+    ))
 }
 
 /// Shared logic for creating predictions (used by both POST and PUT)
@@ -151,6 +215,9 @@ async fn create_prediction_with_id(
     state: Arc<AppState>,
     prediction_id: String,
     input: serde_json::Value,
+    webhook: Option<String>,
+    webhook_events_filter: Vec<WebhookEventFilter>,
+    respond_async: bool,
 ) -> (StatusCode, Json<serde_json::Value>) {
     // Check if predictor is ready
     let health = *state.health.read().await;
@@ -165,14 +232,17 @@ async fn create_prediction_with_id(
     }
 
     // Try to acquire a prediction slot
-    let Ok(_permit) = state.slots.try_acquire() else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({
-                "error": "At capacity - all prediction slots busy",
-                "status": "failed"
-            })),
-        );
+    let permit = match Arc::clone(&state.slots).try_acquire_owned() {
+        Ok(p) => p,
+        Err(_) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "error": "At capacity - all prediction slots busy",
+                    "status": "failed"
+                })),
+            );
+        }
     };
 
     let guard = PredictionGuard::new();
@@ -180,7 +250,55 @@ async fn create_prediction_with_id(
     
     state.register_prediction(prediction_id.clone(), cancel_token.clone()).await;
 
-    // Run prediction
+    // Build webhook sender if webhook URL provided
+    let webhook_sender = build_webhook_sender(webhook, webhook_events_filter);
+
+    // If respond_async, return immediately and run prediction in background
+    if respond_async {
+        let state_clone = Arc::clone(&state);
+        let prediction_id_clone = prediction_id.clone();
+        
+        // Send start webhook if configured
+        if let Some(ref ws) = webhook_sender {
+            ws.send(WebhookEvent::Start, &serde_json::json!({
+                "id": prediction_id,
+                "status": "starting",
+                "input": input,
+            }));
+        }
+        
+        tokio::spawn(async move {
+            run_prediction_with_webhook(
+                state_clone,
+                prediction_id_clone,
+                input,
+                guard,
+                webhook_sender,
+                permit,
+            ).await;
+        });
+        
+        return (
+            StatusCode::ACCEPTED,
+            Json(serde_json::json!({
+                "id": prediction_id,
+                "status": "starting"
+            })),
+        );
+    }
+
+    // Synchronous mode - run and wait for result
+    run_prediction_sync(state, prediction_id, input, guard, permit).await
+}
+
+/// Run prediction synchronously and return result.
+async fn run_prediction_sync(
+    state: Arc<AppState>,
+    prediction_id: String,
+    input: serde_json::Value,
+    guard: PredictionGuard,
+    _permit: tokio::sync::OwnedSemaphorePermit,
+) -> (StatusCode, Json<serde_json::Value>) {
     let result = if let Some(ref async_predict_fn) = state.async_predict_fn {
         let predict_fn = Arc::clone(async_predict_fn);
         predict_fn(input).await
@@ -189,6 +307,7 @@ async fn create_prediction_with_id(
         match tokio::task::spawn_blocking(move || predict_fn(input)).await {
             Ok(result) => result,
             Err(join_err) => {
+                state.unregister_prediction(&prediction_id).await;
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(serde_json::json!({
@@ -199,6 +318,7 @@ async fn create_prediction_with_id(
             }
         }
     } else {
+        state.unregister_prediction(&prediction_id).await;
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({
@@ -263,6 +383,96 @@ async fn create_prediction_with_id(
                 }
             })),
         ),
+    }
+}
+
+/// Run prediction with webhook notifications (for async mode).
+async fn run_prediction_with_webhook(
+    state: Arc<AppState>,
+    prediction_id: String,
+    input: serde_json::Value,
+    guard: PredictionGuard,
+    webhook_sender: Option<WebhookSender>,
+    _permit: tokio::sync::OwnedSemaphorePermit,
+) {
+    let result = if let Some(ref async_predict_fn) = state.async_predict_fn {
+        let predict_fn = Arc::clone(async_predict_fn);
+        predict_fn(input.clone()).await
+    } else if let Some(ref predict_fn) = state.predict_fn {
+        let predict_fn = Arc::clone(predict_fn);
+        match tokio::task::spawn_blocking(move || predict_fn(input.clone())).await {
+            Ok(result) => result,
+            Err(join_err) => {
+                let response = serde_json::json!({
+                    "id": prediction_id,
+                    "error": format!("Prediction task panicked: {}", join_err),
+                    "status": "failed"
+                });
+                if let Some(ref ws) = webhook_sender {
+                    ws.send_terminal(WebhookEvent::Completed, &response).await;
+                }
+                state.unregister_prediction(&prediction_id).await;
+                return;
+            }
+        }
+    } else {
+        let response = serde_json::json!({
+            "id": prediction_id,
+            "error": "No predictor loaded",
+            "status": "failed"
+        });
+        if let Some(ref ws) = webhook_sender {
+            ws.send_terminal(WebhookEvent::Completed, &response).await;
+        }
+        state.unregister_prediction(&prediction_id).await;
+        return;
+    };
+
+    let metrics = guard.finish();
+    state.unregister_prediction(&prediction_id).await;
+
+    let response = match result {
+        Ok(prediction) => serde_json::json!({
+            "id": prediction_id,
+            "output": prediction.output,
+            "status": "succeeded",
+            "metrics": {
+                "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
+            }
+        }),
+        Err(PredictionError::InvalidInput(msg)) => serde_json::json!({
+            "id": prediction_id,
+            "error": msg,
+            "status": "failed",
+            "metrics": {
+                "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
+            }
+        }),
+        Err(PredictionError::NotReady) => serde_json::json!({
+            "id": prediction_id,
+            "error": "Predictor not ready",
+            "status": "failed"
+        }),
+        Err(PredictionError::Failed(msg)) => serde_json::json!({
+            "id": prediction_id,
+            "error": msg,
+            "status": "failed",
+            "metrics": {
+                "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
+            }
+        }),
+        Err(PredictionError::Cancelled) => serde_json::json!({
+            "id": prediction_id,
+            "status": "canceled",
+            "metrics": {
+                "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
+            }
+        }),
+    };
+
+    // Send completed webhook (with retries for terminal state)
+    if let Some(ref ws) = webhook_sender {
+        ws.send_terminal(WebhookEvent::Completed, &response).await;
     }
 }
 
