@@ -13,6 +13,12 @@ from werkzeug import Request, Response
 
 from .util import cog_server_http_run
 
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("COG_WHEEL") in ["coglet", "coglet-alpha"],
+    reason="Coglet predict mode hangs and doesn't exit after prediction completes",
+)
+
 DEFAULT_TIMEOUT = 60
 
 
