@@ -101,7 +101,8 @@ func CreateTarFile(ctx context.Context, dockerClient command.Command, image stri
 		},
 	}
 
-	if err := dockerClient.Run(ctx, opts); err != nil {
+	// Redirect stdout to stderr so build output doesn't pollute command output
+	if err := RunWithIO(ctx, dockerClient, opts, os.Stdin, os.Stderr, os.Stderr); err != nil {
 		return "", err
 	}
 
@@ -133,7 +134,8 @@ func CreateAptTarFile(ctx context.Context, dockerClient command.Command, tmpDir 
 		},
 	}
 
-	if err := dockerClient.Run(ctx, opts); err != nil {
+	// Redirect stdout to stderr so build output doesn't pollute command output
+	if err := RunWithIO(ctx, dockerClient, opts, os.Stdin, os.Stderr, os.Stderr); err != nil {
 		return "", err
 	}
 
