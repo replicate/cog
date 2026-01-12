@@ -229,6 +229,102 @@ impl WebhookSender {
             }
         }
     }
+    
+    /// Send a terminal webhook synchronously with retries.
+    /// 
+    /// This uses `ureq` (blocking HTTP) instead of `reqwest`, making it safe to call
+    /// from `Drop` implementations or non-async contexts. The retry logic mirrors
+    /// `send_terminal` but uses `std::thread::sleep` instead of `tokio::time::sleep`.
+    pub fn send_terminal_sync(&self, payload: &serde_json::Value) {
+        if !self.config.events_filter.contains(&WebhookEventFilter::Completed) {
+            return;
+        }
+        
+        // Build ureq agent
+        let agent = ureq::Agent::config_builder()
+            .timeout_global(Some(Duration::from_secs(30)))
+            .build()
+            .new_agent();
+        
+        let auth_header = std::env::var("WEBHOOK_AUTH_TOKEN")
+            .ok()
+            .map(|token| format!("Bearer {}", token));
+        
+        let user_agent = format!("coglet/{}", env!("CARGO_PKG_VERSION"));
+        
+        let mut attempt = 0;
+        loop {
+            let mut request = agent.post(&self.url)
+                .header("Content-Type", "application/json")
+                .header("User-Agent", &user_agent);
+            
+            if let Some(ref auth) = auth_header {
+                request = request.header("Authorization", auth);
+            }
+            
+            let result = request.send_json(payload);
+            
+            match result {
+                Ok(response) => {
+                    let status = response.status().as_u16();
+                    if (200..300).contains(&status) {
+                        tracing::debug!(status = %status, "Terminal webhook (sync) sent successfully");
+                        return;
+                    }
+                    
+                    // Check if we should retry this status
+                    if self.config.retry_status_codes.contains(&status) {
+                        attempt += 1;
+                        if attempt > self.config.max_retries {
+                            tracing::error!(
+                                status = %status,
+                                attempts = attempt,
+                                "Terminal webhook (sync) failed after max retries"
+                            );
+                            return;
+                        }
+                        
+                        let backoff = self.config.backoff_base * (1 << attempt.min(10));
+                        tracing::warn!(
+                            status = %status,
+                            attempt = attempt,
+                            backoff_ms = backoff.as_millis(),
+                            "Terminal webhook (sync) failed, retrying"
+                        );
+                        std::thread::sleep(backoff);
+                        continue;
+                    }
+                    
+                    // Non-retryable error status
+                    tracing::error!(
+                        status = %status,
+                        "Terminal webhook (sync) failed with non-retryable status"
+                    );
+                    return;
+                }
+                Err(e) => {
+                    attempt += 1;
+                    if attempt > self.config.max_retries {
+                        tracing::error!(
+                            error = %e,
+                            attempts = attempt,
+                            "Terminal webhook (sync) failed after max retries"
+                        );
+                        return;
+                    }
+                    
+                    let backoff = self.config.backoff_base * (1 << attempt.min(10));
+                    tracing::warn!(
+                        error = %e,
+                        attempt = attempt,
+                        backoff_ms = backoff.as_millis(),
+                        "Terminal webhook (sync) request error, retrying"
+                    );
+                    std::thread::sleep(backoff);
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -402,5 +498,51 @@ mod tests {
         sender.send(WebhookEvent::Output, &serde_json::json!({"output": "2"}));
         
         tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    
+    #[tokio::test]
+    async fn send_terminal_sync_posts_json_payload() {
+        let server = MockServer::start().await;
+        
+        Mock::given(method("POST"))
+            .and(path("/webhook"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+        
+        let url = format!("{}/webhook", server.uri());
+        let sender = WebhookSender::new(url, test_config());
+        
+        // Call sync method - safe because wiremock server runs in background
+        sender.send_terminal_sync(&serde_json::json!({
+            "id": "pred_123",
+            "status": "succeeded"
+        }));
+    }
+    
+    #[tokio::test]
+    async fn send_terminal_sync_retries_on_500() {
+        let server = MockServer::start().await;
+        
+        // First fails, second succeeds
+        Mock::given(method("POST"))
+            .and(path("/webhook"))
+            .respond_with(ResponseTemplate::new(500))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        
+        Mock::given(method("POST"))
+            .and(path("/webhook"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+        
+        let url = format!("{}/webhook", server.uri());
+        let sender = WebhookSender::new(url, test_config());
+        
+        sender.send_terminal_sync(&serde_json::json!({"status": "succeeded"}));
     }
 }

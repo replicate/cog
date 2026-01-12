@@ -13,6 +13,7 @@ serde_json.workspace = true
 tracing.workspace = true
 anyhow.workspace = true
 reqwest.workspace = true
+ureq = { version = "3", features = ["json"] }
 
 [dev-dependencies]
 insta.workspace = true
