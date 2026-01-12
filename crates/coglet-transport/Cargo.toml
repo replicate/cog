@@ -18,3 +18,4 @@ reqwest.workspace = true
 insta.workspace = true
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+wiremock = "0.6"

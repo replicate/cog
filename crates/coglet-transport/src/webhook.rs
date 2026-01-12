@@ -234,6 +234,8 @@ impl WebhookSender {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
     
     #[test]
     fn webhook_config_defaults() {
@@ -252,5 +254,153 @@ mod tests {
         assert!(!WebhookEvent::Output.is_terminal());
         assert!(!WebhookEvent::Logs.is_terminal());
         assert!(WebhookEvent::Completed.is_terminal());
+    }
+    
+    /// Helper to create a WebhookConfig for tests (no throttling, fast retries).
+    fn test_config() -> WebhookConfig {
+        WebhookConfig {
+            response_interval: Duration::ZERO,
+            max_retries: 2,
+            backoff_base: Duration::from_millis(1),
+            ..Default::default()
+        }
+    }
+    
+    #[tokio::test]
+    async fn send_terminal_posts_json_payload() {
+        let server = MockServer::start().await;
+        
+        Mock::given(method("POST"))
+            .and(path("/webhook"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+        
+        let url = format!("{}/webhook", server.uri());
+        let sender = WebhookSender::new(url, test_config());
+        
+        let payload = serde_json::json!({
+            "id": "pred_123",
+            "status": "succeeded",
+            "output": "hello"
+        });
+        
+        sender.send_terminal(WebhookEvent::Completed, &payload).await;
+        
+        // wiremock verifies expect(1) on drop
+    }
+    
+    #[tokio::test]
+    async fn send_terminal_retries_on_500() {
+        let server = MockServer::start().await;
+        
+        // First request fails with 500, second succeeds
+        // up_to_n_times(1) makes the mock deactivate after one match
+        Mock::given(method("POST"))
+            .and(path("/webhook"))
+            .respond_with(ResponseTemplate::new(500))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        
+        Mock::given(method("POST"))
+            .and(path("/webhook"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+        
+        let url = format!("{}/webhook", server.uri());
+        let sender = WebhookSender::new(url, test_config());
+        
+        sender.send_terminal(WebhookEvent::Completed, &serde_json::json!({"status": "succeeded"})).await;
+    }
+    
+    #[tokio::test]
+    async fn send_terminal_does_not_retry_on_400() {
+        let server = MockServer::start().await;
+        
+        // 400 is not in retry_status_codes, should not retry
+        Mock::given(method("POST"))
+            .and(path("/webhook"))
+            .respond_with(ResponseTemplate::new(400))
+            .expect(1)
+            .mount(&server)
+            .await;
+        
+        let url = format!("{}/webhook", server.uri());
+        let sender = WebhookSender::new(url, test_config());
+        
+        sender.send_terminal(WebhookEvent::Completed, &serde_json::json!({"status": "succeeded"})).await;
+    }
+    
+    #[tokio::test]
+    async fn send_terminal_respects_event_filter() {
+        let server = MockServer::start().await;
+        
+        // Should NOT be called - Completed is filtered out
+        Mock::given(method("POST"))
+            .and(path("/webhook"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0)
+            .mount(&server)
+            .await;
+        
+        let url = format!("{}/webhook", server.uri());
+        let config = WebhookConfig {
+            events_filter: [WebhookEventFilter::Start].into_iter().collect(), // Only Start, not Completed
+            ..test_config()
+        };
+        let sender = WebhookSender::new(url, config);
+        
+        sender.send_terminal(WebhookEvent::Completed, &serde_json::json!({"status": "succeeded"})).await;
+    }
+    
+    #[tokio::test]
+    async fn send_non_terminal_fires_and_forgets() {
+        let server = MockServer::start().await;
+        
+        Mock::given(method("POST"))
+            .and(path("/webhook"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+        
+        let url = format!("{}/webhook", server.uri());
+        let sender = WebhookSender::new(url, test_config());
+        
+        sender.send(WebhookEvent::Start, &serde_json::json!({"status": "starting"}));
+        
+        // Give the spawned task time to complete
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    
+    #[tokio::test]
+    async fn send_non_terminal_throttled() {
+        let server = MockServer::start().await;
+        
+        // Only expect 1 call due to throttling
+        Mock::given(method("POST"))
+            .and(path("/webhook"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+        
+        let url = format!("{}/webhook", server.uri());
+        let config = WebhookConfig {
+            response_interval: Duration::from_secs(10), // Long throttle
+            ..test_config()
+        };
+        let sender = WebhookSender::new(url, config);
+        
+        // First should send
+        sender.send(WebhookEvent::Output, &serde_json::json!({"output": "1"}));
+        // Second should be throttled
+        sender.send(WebhookEvent::Output, &serde_json::json!({"output": "2"}));
+        
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }
