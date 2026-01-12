@@ -20,6 +20,9 @@ pub struct ServerConfig {
     /// Maximum concurrent predictions (slots).
     /// Default is 1 for sync predictors.
     pub max_concurrency: usize,
+    /// If true, ignore SIGTERM and wait for explicit /shutdown or SIGINT.
+    /// Used in Kubernetes to allow graceful draining.
+    pub await_explicit_shutdown: bool,
 }
 
 impl Default for ServerConfig {
@@ -28,6 +31,7 @@ impl Default for ServerConfig {
             host: "0.0.0.0".to_string(),
             port: 5000,
             max_concurrency: 1,
+            await_explicit_shutdown: false,
         }
     }
 }
@@ -140,6 +144,9 @@ impl AppState {
 }
 
 /// Start the HTTP server with provided state.
+/// 
+/// Handles SIGTERM and SIGINT for graceful shutdown.
+/// If `await_explicit_shutdown` is true, SIGTERM is ignored.
 pub async fn serve(config: ServerConfig, state: Arc<AppState>) -> anyhow::Result<()> {
     let app = routes(state);
 
@@ -148,9 +155,53 @@ pub async fn serve(config: ServerConfig, state: Arc<AppState>) -> anyhow::Result
     info!("Starting coglet server on {}", addr);
 
     let listener = TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    
+    // Set up graceful shutdown on SIGTERM/SIGINT
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal(config.await_explicit_shutdown))
+        .await?;
 
+    info!("Server shutdown complete");
     Ok(())
+}
+
+/// Wait for shutdown signal (SIGTERM or SIGINT).
+/// 
+/// If `await_explicit_shutdown` is true, SIGTERM is ignored and only
+/// SIGINT triggers shutdown. This allows Kubernetes to drain connections
+/// before the pod is terminated.
+async fn shutdown_signal(await_explicit_shutdown: bool) {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        if await_explicit_shutdown {
+            // Ignore SIGTERM - wait forever (until SIGINT or explicit shutdown)
+            tracing::info!("await_explicit_shutdown enabled, ignoring SIGTERM");
+            std::future::pending::<()>().await
+        } else {
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("failed to install SIGTERM handler")
+                .recv()
+                .await;
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            info!("Received SIGINT, shutting down...");
+        }
+        _ = terminate => {
+            info!("Received SIGTERM, shutting down...");
+        }
+    }
 }
 
 #[cfg(test)]

@@ -137,9 +137,15 @@ fn detect_version(py: Python<'_>) -> VersionInfo {
 /// - Crash isolation (segfault doesn't kill server)
 /// - True cancellation (SIGKILL as last resort)
 /// - Memory isolation (leaks don't accumulate in server)
+/// 
+/// Args:
+///     predictor_ref: Path to predictor like "predict.py:Predictor"
+///     host: Host to bind to (default "0.0.0.0")
+///     port: Port to listen on (default 5000)
+///     await_explicit_shutdown: If True, ignore SIGTERM and wait for SIGINT or /shutdown
 #[pyfunction]
-#[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000))]
-fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16) -> PyResult<()> {
+#[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000, await_explicit_shutdown=false))]
+fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16, await_explicit_shutdown: bool) -> PyResult<()> {
     // Initialize tracing (ignore if already initialized)
     let _ = tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
@@ -149,7 +155,17 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16)
         host,
         port,
         max_concurrency: 1,
+        await_explicit_shutdown,
     };
+
+    // If await_explicit_shutdown, install Python signal handler to ignore SIGTERM
+    if await_explicit_shutdown {
+        let signal_module = py.import("signal")?;
+        let sigterm = signal_module.getattr("SIGTERM")?;
+        let sig_ign = signal_module.getattr("SIG_IGN")?;
+        signal_module.call_method1("signal", (sigterm, sig_ign))?;
+        info!("await_explicit_shutdown: installed SIGTERM ignore handler");
+    }
 
     // Detect version info (do this in parent process)
     let version = detect_version(py);
