@@ -9,7 +9,7 @@ use tracing::info;
 
 use coglet_core::PredictionService;
 
-use crate::routes::routes;
+use super::routes::routes;
 
 /// Server configuration.
 #[derive(Debug, Clone)]

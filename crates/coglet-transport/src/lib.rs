@@ -1,9 +1,11 @@
-//! coglet-transport: HTTP transport for coglet using axum.
+//! coglet-transport: Transport layer for coglet.
+//!
+//! Currently provides HTTP transport via axum. Future transports
+//! (gRPC, bnet) will be added as separate submodules.
 
-mod routes;
-mod server;
+pub mod http;
 
-pub use server::{serve, ServerConfig};
+pub use http::{serve, ServerConfig};
 
 // Re-export core types for convenience
 pub use coglet_core::{
