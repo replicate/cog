@@ -43,7 +43,19 @@ fn generate_prediction_id() -> String {
 
 /// GET /health-check
 async fn health_check(State(state): State<Arc<AppState>>) -> Json<HealthCheckResponse> {
-    let health = *state.health.read().await;
+    let base_health = *state.health.read().await;
+    
+    // If we're READY, check if we're actually BUSY (no slots available)
+    let health = if base_health == Health::Ready {
+        if state.slots.available_permits() == 0 {
+            Health::Busy
+        } else {
+            Health::Ready
+        }
+    } else {
+        base_health
+    };
+    
     Json(HealthCheckResponse {
         status: health,
         version: state.version.clone(),
@@ -258,6 +270,24 @@ mod tests {
 
         let json = response_json(response).await;
         assert_eq!(json["status"], "UNKNOWN");
+    }
+
+    #[tokio::test]
+    async fn health_check_returns_busy_when_at_capacity() {
+        let state = Arc::new(AppState::new(1).with_health(Health::Ready));
+        
+        // Acquire the only slot
+        let _permit = state.slots.acquire().await.unwrap();
+        
+        let app = routes(Arc::clone(&state));
+
+        let response = app
+            .oneshot(Request::get("/health-check").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        let json = response_json(response).await;
+        assert_eq!(json["status"], "BUSY");
     }
 
     #[tokio::test]
