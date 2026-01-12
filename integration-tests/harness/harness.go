@@ -35,7 +35,7 @@ func New() (*Harness, error) {
 // ResolveCogBinary finds the cog binary to use for tests.
 // It checks (in order):
 // 1. COG_BINARY environment variable
-// 2. "cog" in PATH
+// 2. Build from source (if in cog repository)
 func ResolveCogBinary() (string, error) {
 	if cogBinary := os.Getenv("COG_BINARY"); cogBinary != "" {
 		if !filepath.IsAbs(cogBinary) {
@@ -48,12 +48,92 @@ func ResolveCogBinary() (string, error) {
 		return cogBinary, nil
 	}
 
-	// Fall back to cog in PATH
-	cogPath, err := exec.LookPath("cog")
+	// Build from source
+	return buildCogBinary()
+}
+
+// buildCogBinary builds the cog binary from source.
+// It finds the repository root, builds wheels if needed, and compiles the binary.
+// If the binary already exists, it returns the cached path.
+func buildCogBinary() (string, error) {
+	// Find repository root (where go.mod with module github.com/replicate/cog exists)
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return "", fmt.Errorf("failed to find cog repository root: %w", err)
+	}
+
+	// Check if binary already exists
+	binPath := filepath.Join(repoRoot, "integration-tests", ".bin", "cog")
+	if _, err := os.Stat(binPath); err == nil {
+		fmt.Printf("Using cached cog binary: %s\n", binPath)
+		return binPath, nil
+	}
+
+	// Check if wheels exist, build if not
+	wheelsDir := filepath.Join(repoRoot, "pkg", "wheels")
+	cogWheelExists, _ := filepath.Glob(filepath.Join(wheelsDir, "cog-*.whl"))
+	cogletWheelExists, _ := filepath.Glob(filepath.Join(wheelsDir, "coglet-*.whl"))
+
+	if len(cogWheelExists) == 0 || len(cogletWheelExists) == 0 {
+		fmt.Println("Building Python wheels...")
+		if err := runCommand(repoRoot, "make", "wheel"); err != nil {
+			return "", fmt.Errorf("failed to build wheels: %w", err)
+		}
+
+		fmt.Println("Generating wheel embeds...")
+		if err := runCommand(repoRoot, "go", "generate", "./pkg/wheels"); err != nil {
+			return "", fmt.Errorf("failed to generate wheel embeds: %w", err)
+		}
+	}
+
+	// Build the cog binary
+	if err := os.MkdirAll(filepath.Dir(binPath), 0755); err != nil {
+		return "", fmt.Errorf("failed to create bin directory: %w", err)
+	}
+
+	fmt.Println("Building cog binary...")
+	if err := runCommand(repoRoot, "go", "build", "-o", binPath, "./cmd/cog"); err != nil {
+		return "", fmt.Errorf("failed to build cog: %w", err)
+	}
+
+	return binPath, nil
+}
+
+// findRepoRoot finds the cog repository root by looking for go.mod with the main module
+func findRepoRoot() (string, error) {
+	// Start from current working directory
+	dir, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-	return cogPath, nil
+
+	for {
+		goMod := filepath.Join(dir, "go.mod")
+		if _, err := os.Stat(goMod); err == nil {
+			// Verify it's the main cog repo (not a submodule like integration-tests)
+			content, err := os.ReadFile(goMod)
+			if err == nil && strings.Contains(string(content), "module github.com/replicate/cog\n") {
+				return dir, nil
+			}
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	return "", fmt.Errorf("could not find cog repository root")
+}
+
+// runCommand runs a command in the specified directory
+func runCommand(dir string, name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 // Commands returns the custom testscript commands provided by this harness.
