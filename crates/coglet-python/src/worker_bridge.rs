@@ -10,18 +10,46 @@ use coglet_worker::{PredictHandler, PredictResult};
 use crate::predictor::PythonPredictor;
 
 /// Wraps PythonPredictor to implement the PredictHandler trait.
+/// 
+/// The `is_train` flag determines whether predict() calls the Python
+/// predict() or train() method. This is set at construction time.
+/// 
+/// BUG-FOR-BUG COMPATIBILITY: In cog mainline, training routes use a worker
+/// that was created with is_train=false, so training routes actually call
+/// predict() instead of train(). We replicate this by always creating the
+/// handler with is_train=false. To fix this bug, pass is_train=true when
+/// creating a handler for training routes.
 pub struct PythonPredictHandler {
     predictor_ref: String,
     predictor: std::sync::Mutex<Option<Arc<PythonPredictor>>>,
     cancelled: AtomicBool,
+    /// If true, predict() calls train() instead of predict().
+    /// BUG: cog mainline always sets this to false, even for training routes.
+    is_train: bool,
 }
 
 impl PythonPredictHandler {
+    /// Create a handler in prediction mode.
     pub fn new(predictor_ref: String) -> Self {
         Self {
             predictor_ref,
             predictor: std::sync::Mutex::new(None),
             cancelled: AtomicBool::new(false),
+            is_train: false,
+        }
+    }
+
+    /// Create a handler in training mode.
+    /// 
+    /// NOTE: For bug-for-bug compatibility with cog mainline, use new() instead.
+    /// Cog mainline's training routes incorrectly use a predict-mode worker.
+    #[allow(dead_code)]
+    pub fn new_train(predictor_ref: String) -> Self {
+        Self {
+            predictor_ref,
+            predictor: std::sync::Mutex::new(None),
+            cancelled: AtomicBool::new(false),
+            is_train: true,
         }
     }
 }
@@ -70,17 +98,39 @@ impl PredictHandler for PythonPredictHandler {
             }
         };
 
-        // Run prediction
+        // Run prediction or training based on is_train mode.
+        // 
+        // BUG-FOR-BUG: In cog mainline, is_train is set at worker creation time,
+        // not per-request. Training routes use a worker created with is_train=false,
+        // so they incorrectly call predict() instead of train(). We replicate this
+        // by always creating handlers with is_train=false (see new()).
         let start = std::time::Instant::now();
         
-        // Use worker-mode predict (no stdout redirection, sync execution)
-        let predict_result = if pred.is_async() {
-            pred.predict_async_worker(input)
+        let result = if self.is_train {
+            // Training mode - check if train() exists
+            if !pred.has_train() {
+                return PredictResult::failed(
+                    "Training not supported by this predictor".to_string(),
+                    String::new(),
+                    0.0,
+                );
+            }
+            // Use worker-mode train (no stdout redirection, sync execution)
+            if pred.is_train_async() {
+                pred.train_async_worker(input)
+            } else {
+                pred.train_worker(input)
+            }
         } else {
-            pred.predict_worker(input)
+            // Prediction mode
+            if pred.is_async() {
+                pred.predict_async_worker(input)
+            } else {
+                pred.predict_worker(input)
+            }
         };
 
-        let result = match predict_result {
+        match result {
             Ok(r) => PredictResult::success(
                 output_to_json(r.output),
                 String::new(),
@@ -97,9 +147,7 @@ impl PredictHandler for PythonPredictHandler {
                     )
                 }
             }
-        };
-
-        result
+        }
     }
 
     fn cancel(&self) {

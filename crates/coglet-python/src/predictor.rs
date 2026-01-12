@@ -128,6 +128,10 @@ pub struct PythonPredictor {
     is_async: bool,
     /// Whether predict() is an async generator function specifically.
     is_async_gen: bool,
+    /// Whether this predictor has a train() method.
+    has_train: bool,
+    /// Whether train() is an async function (if has_train is true).
+    is_train_async: bool,
     /// The detected runtime type.
     runtime: Runtime,
     /// Input processor for this runtime.
@@ -150,12 +154,26 @@ impl PythonPredictor {
         let instance: PyObject = load_fn.call1((predictor_ref,))?.unbind();
 
         // Check if predict() is async (coroutine or async generator)
-        let (is_async, is_async_gen) = Self::detect_async(py, &instance)?;
+        let (is_async, is_async_gen) = Self::detect_async(py, &instance, "predict")?;
         if is_async_gen {
             tracing::info!("Detected async generator predict()");
         } else if is_async {
             tracing::info!("Detected async predict()");
         }
+
+        // Check if train() method exists and if it's async
+        let has_train = instance.bind(py).hasattr("train")?;
+        let is_train_async = if has_train {
+            let (train_async, _) = Self::detect_async(py, &instance, "train")?;
+            if train_async {
+                tracing::info!("Detected async train()");
+            } else {
+                tracing::info!("Detected sync train()");
+            }
+            train_async
+        } else {
+            false
+        };
 
         // Detect runtime and create input processor
         let runtime = input::detect_runtime(py, predictor_ref, &instance);
@@ -165,31 +183,43 @@ impl PythonPredictor {
             instance,
             is_async,
             is_async_gen,
+            has_train,
+            is_train_async,
             runtime,
             input_processor,
         })
     }
 
-    /// Detect if predict() is an async function.
+    /// Detect if a method is an async function.
     /// Returns (is_async, is_async_gen) tuple.
-    fn detect_async(py: Python<'_>, instance: &PyObject) -> PyResult<(bool, bool)> {
+    fn detect_async(py: Python<'_>, instance: &PyObject, method_name: &str) -> PyResult<(bool, bool)> {
         let inspect = py.import("inspect")?;
-        let predict = instance.bind(py).getattr("predict")?;
+        let method = instance.bind(py).getattr(method_name)?;
         
         // Check isasyncgenfunction first (it's more specific)
-        let is_async_gen: bool = inspect.call_method1("isasyncgenfunction", (&predict,))?.extract()?;
+        let is_async_gen: bool = inspect.call_method1("isasyncgenfunction", (&method,))?.extract()?;
         if is_async_gen {
             return Ok((true, true));
         }
         
         // Check iscoroutinefunction
-        let is_coro: bool = inspect.call_method1("iscoroutinefunction", (&predict,))?.extract()?;
+        let is_coro: bool = inspect.call_method1("iscoroutinefunction", (&method,))?.extract()?;
         Ok((is_coro, false))
     }
 
     /// Returns true if this predictor has an async predict() method.
     pub fn is_async(&self) -> bool {
         self.is_async
+    }
+
+    /// Returns true if this predictor has a train() method.
+    pub fn has_train(&self) -> bool {
+        self.has_train
+    }
+
+    /// Returns true if the train() method is async.
+    pub fn is_train_async(&self) -> bool {
+        self.is_train_async
     }
 
     /// Generate OpenAPI schema for this predictor.
@@ -316,6 +346,26 @@ impl PythonPredictor {
     /// If `redirect_output` is true, captures stdout/stderr and logs via tracing.
     /// Set to false when running in worker mode (stdout is used for protocol).
     pub fn predict_raw(&self, py: Python<'_>, input: &Bound<'_, PyDict>, redirect_output: bool) -> PyResult<PyObject> {
+        self.call_method_raw(py, "predict", self.is_async, input, redirect_output)
+    }
+
+    /// Call train() with the given input dict, returning JSON-serializable output.
+    ///
+    /// If `redirect_output` is true, captures stdout/stderr and logs via tracing.
+    /// Set to false when running in worker mode (stdout is used for protocol).
+    pub fn train_raw(&self, py: Python<'_>, input: &Bound<'_, PyDict>, redirect_output: bool) -> PyResult<PyObject> {
+        self.call_method_raw(py, "train", self.is_train_async, input, redirect_output)
+    }
+
+    /// Internal helper to call a method (predict or train) on the predictor.
+    fn call_method_raw(
+        &self, 
+        py: Python<'_>, 
+        method_name: &str, 
+        is_async: bool,
+        input: &Bound<'_, PyDict>, 
+        redirect_output: bool
+    ) -> PyResult<PyObject> {
         let instance = self.instance.bind(py);
 
         // Optionally set up stream redirection
@@ -352,26 +402,26 @@ impl PythonPredictor {
             None
         };
 
-        // For sync predictors, enter cancelable state so SIGUSR1 can interrupt
+        // For sync methods, enter cancelable state so SIGUSR1 can interrupt
         // The guard clears the flag on drop (even if we panic or error)
-        let _cancelable_guard = if !self.is_async {
+        let _cancelable_guard = if !is_async {
             Some(cancel::enter_cancelable())
         } else {
             None
         };
 
-        // Call predict - returns coroutine if async, result if sync
-        let predict_result = instance.call_method("predict", (), Some(input))?;
+        // Call the method - returns coroutine if async, result if sync
+        let method_result = instance.call_method(method_name, (), Some(input))?;
 
         // If async, run the coroutine with asyncio.run()
-        let result = if self.is_async {
+        let result = if is_async {
             let asyncio = py.import("asyncio")?;
-            asyncio.call_method1("run", (&predict_result,))?
+            asyncio.call_method1("run", (&method_result,))?
         } else {
-            predict_result
+            method_result
         };
         
-        // Drop the cancelable guard now that predict is done
+        // Drop the cancelable guard now that the call is done
         drop(_cancelable_guard);
 
         // Clean up redirector if used
@@ -923,6 +973,192 @@ async def _collect_async_gen(agen):
                 output,
                 predict_time: None,
             })
+        })
+    }
+
+    /// Worker mode train - does not redirect stdout/stderr.
+    ///
+    /// Use this when running in a subprocess worker where stdout is used
+    /// for the protocol (not for capturing logs).
+    pub fn train_worker(&self, input: serde_json::Value) -> Result<PredictionResult, PredictionError> {
+        Python::attach(|py| {
+            let json_module = py.import("json").map_err(|e| {
+                PredictionError::Failed(format!("Failed to import json module: {}", e))
+            })?;
+            let types_module = py.import("types").map_err(|e| {
+                PredictionError::Failed(format!("Failed to import types module: {}", e))
+            })?;
+            let generator_type = types_module.getattr("GeneratorType").map_err(|e| {
+                PredictionError::Failed(format!("Failed to get GeneratorType: {}", e))
+            })?;
+
+            let input_str = serde_json::to_string(&input)
+                .map_err(|e| PredictionError::InvalidInput(e.to_string()))?;
+
+            let py_input = json_module
+                .call_method1("loads", (input_str,))
+                .map_err(|e| PredictionError::InvalidInput(format!("Invalid JSON input: {}", e)))?;
+
+            #[allow(deprecated)]
+            let raw_input_dict = py_input.downcast::<PyDict>().map_err(|_| {
+                PredictionError::InvalidInput("Input must be a JSON object".to_string())
+            })?;
+
+            let input_dict = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
+                PredictionError::InvalidInput(format!("Input validation failed: {}", e))
+            })?;
+
+            // redirect_output=false for worker mode, call train() instead of predict()
+            let result = self.train_raw(py, &input_dict, false).map_err(|e| {
+                if is_cancelation_exception(py, &e) {
+                    return PredictionError::Cancelled;
+                }
+                PredictionError::Failed(format!("Training failed: {}", e))
+            })?;
+
+            let result_bound = result.bind(py);
+            let is_generator: bool = result_bound.is_instance(&generator_type).unwrap_or(false);
+
+            let output = if is_generator {
+                let mut outputs = Vec::new();
+                let iter = result_bound.try_iter().map_err(|e| {
+                    PredictionError::Failed(format!("Failed to iterate generator: {}", e))
+                })?;
+
+                for item in iter {
+                    let item = item.map_err(|e| {
+                        if is_cancelation_exception(py, &e) {
+                            return PredictionError::Cancelled;
+                        }
+                        PredictionError::Failed(format!("Generator iteration error: {}", e))
+                    })?;
+
+                    let processed = output::process_output_item(py, &item).map_err(|e| {
+                        PredictionError::Failed(format!("Failed to process output item: {}", e))
+                    })?;
+
+                    let item_str: String = json_module
+                        .call_method1("dumps", (&processed,))
+                        .map_err(|e| PredictionError::Failed(format!("Failed to serialize output item: {}", e)))?
+                        .extract()
+                        .map_err(|e| PredictionError::Failed(format!("Failed to extract output string: {}", e)))?;
+
+                    let item_json: serde_json::Value = serde_json::from_str(&item_str)
+                        .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
+
+                    outputs.push(item_json);
+                }
+
+                PredictionOutput::Stream(outputs)
+            } else {
+                let processed = output::process_output(py, result_bound, None).map_err(|e| {
+                    PredictionError::Failed(format!("Failed to process output: {}", e))
+                })?;
+
+                let result_str: String = json_module
+                    .call_method1("dumps", (&processed,))
+                    .map_err(|e| PredictionError::Failed(format!("Failed to serialize output: {}", e)))?
+                    .extract()
+                    .map_err(|e| PredictionError::Failed(format!("Failed to extract output string: {}", e)))?;
+
+                let output_json: serde_json::Value = serde_json::from_str(&result_str)
+                    .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
+
+                PredictionOutput::Single(output_json)
+            };
+
+            Ok(PredictionResult { output, predict_time: None })
+        })
+    }
+
+    /// Worker mode async train - runs synchronously via asyncio.run().
+    ///
+    /// Use this in worker subprocess where we don't need true async concurrency
+    /// (the worker handles one request at a time anyway).
+    pub fn train_async_worker(&self, input: serde_json::Value) -> Result<PredictionResult, PredictionError> {
+        Python::attach(|py| {
+            let json_module = py.import("json").map_err(|e| {
+                PredictionError::Failed(format!("Failed to import json module: {}", e))
+            })?;
+            let asyncio = py.import("asyncio").map_err(|e| {
+                PredictionError::Failed(format!("Failed to import asyncio: {}", e))
+            })?;
+            let types_module = py.import("types").map_err(|e| {
+                PredictionError::Failed(format!("Failed to import types module: {}", e))
+            })?;
+
+            let input_str = serde_json::to_string(&input)
+                .map_err(|e| PredictionError::InvalidInput(e.to_string()))?;
+            let py_input = json_module
+                .call_method1("loads", (input_str,))
+                .map_err(|e| PredictionError::InvalidInput(format!("Invalid JSON input: {}", e)))?;
+
+            #[allow(deprecated)]
+            let raw_input_dict = py_input.downcast::<PyDict>().map_err(|_| {
+                PredictionError::InvalidInput("Input must be a JSON object".to_string())
+            })?;
+
+            let input_dict = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
+                PredictionError::InvalidInput(format!("Input validation failed: {}", e))
+            })?;
+
+            // Call train - returns coroutine
+            let instance = self.instance.bind(py);
+            let coro = instance
+                .call_method("train", (), Some(&input_dict))
+                .map_err(|e| PredictionError::Failed(format!("Failed to call train: {}", e)))?;
+
+            // Run coroutine synchronously
+            let result = asyncio.call_method1("run", (&coro,)).map_err(|e| {
+                if e.to_string().contains("CancelledError") {
+                    return PredictionError::Cancelled;
+                }
+                PredictionError::Failed(format!("Async training failed: {}", e))
+            })?;
+
+            // Process output - check if it's a generator
+            let generator_type = types_module.getattr("GeneratorType").map_err(|e| {
+                PredictionError::Failed(format!("Failed to get GeneratorType: {}", e))
+            })?;
+            let is_generator: bool = result.is_instance(&generator_type).unwrap_or(false);
+
+            let output = if is_generator {
+                let mut outputs = Vec::new();
+                let iter = result.try_iter().map_err(|e| {
+                    PredictionError::Failed(format!("Failed to iterate generator: {}", e))
+                })?;
+                for item in iter {
+                    let item = item.map_err(|e| {
+                        PredictionError::Failed(format!("Generator iteration error: {}", e))
+                    })?;
+                    let processed = output::process_output_item(py, &item).map_err(|e| {
+                        PredictionError::Failed(format!("Failed to process output item: {}", e))
+                    })?;
+                    let item_str: String = json_module
+                        .call_method1("dumps", (&processed,))
+                        .map_err(|e| PredictionError::Failed(format!("Failed to serialize: {}", e)))?
+                        .extract()
+                        .map_err(|e| PredictionError::Failed(format!("Failed to extract: {}", e)))?;
+                    let item_json: serde_json::Value = serde_json::from_str(&item_str)
+                        .map_err(|e| PredictionError::Failed(format!("Failed to parse: {}", e)))?;
+                    outputs.push(item_json);
+                }
+                PredictionOutput::Stream(outputs)
+            } else {
+                let processed = output::process_output(py, &result, None).map_err(|e| {
+                    PredictionError::Failed(format!("Failed to process output: {}", e))
+                })?;
+                let result_str: String = json_module
+                    .call_method1("dumps", (&processed,))
+                    .map_err(|e| PredictionError::Failed(format!("Failed to serialize: {}", e)))?
+                    .extract()
+                    .map_err(|e| PredictionError::Failed(format!("Failed to extract: {}", e)))?;
+                let output_json: serde_json::Value = serde_json::from_str(&result_str)
+                    .map_err(|e| PredictionError::Failed(format!("Failed to parse: {}", e)))?;
+                PredictionOutput::Single(output_json)
+            };
+
+            Ok(PredictionResult { output, predict_time: None })
         })
     }
 }

@@ -9,7 +9,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WorkerRequest {
-    /// Run a prediction.
+    /// Run a prediction (or training, depending on worker mode).
+    /// 
+    /// NOTE: Whether this calls predict() or train() is determined by the
+    /// worker's is_train flag set at creation time, NOT by this request.
+    /// This matches cog mainline behavior (which is arguably a bug - training
+    /// routes use the same worker that was created for predictions).
     Predict {
         /// Unique prediction ID.
         id: String,
@@ -17,9 +22,9 @@ pub enum WorkerRequest {
         input: serde_json::Value,
     },
 
-    /// Cancel an in-flight prediction.
+    /// Cancel an in-flight prediction/training.
     Cancel {
-        /// ID of prediction to cancel.
+        /// ID of prediction/training to cancel.
         id: String,
     },
 

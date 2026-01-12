@@ -24,15 +24,21 @@ use crate::protocol::{PredictionStatus, WorkerRequest, WorkerResponse};
 /// Trait for the prediction handler - abstracts the Python integration.
 ///
 /// This allows testing the worker loop without actual Python.
+/// 
+/// NOTE: Whether predict() calls the Python predict() or train() method
+/// is determined by the handler's is_train flag set at construction time.
+/// This matches cog mainline behavior where the worker mode is fixed at startup.
 #[async_trait::async_trait]
 pub trait PredictHandler: Send + Sync {
     /// Initialize the predictor (load model, run setup).
     async fn setup(&self) -> Result<(), String>;
 
-    /// Run a prediction with the given input.
+    /// Run a prediction (or training, if is_train mode).
+    /// 
+    /// The actual Python method called depends on how the handler was created.
     async fn predict(&self, input: serde_json::Value) -> PredictResult;
 
-    /// Request cancellation of current prediction.
+    /// Request cancellation of current prediction/training.
     fn cancel(&self);
 
     /// Get OpenAPI schema for the predictor.

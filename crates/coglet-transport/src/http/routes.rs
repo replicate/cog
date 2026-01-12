@@ -372,15 +372,58 @@ async fn openapi_schema(State(service): State<Arc<PredictionService>>) -> impl I
     }
 }
 
+// =============================================================================
+// Training routes
+// 
+// BUG-FOR-BUG COMPATIBILITY: In cog mainline, training routes use the same
+// worker/service that was created for predictions with is_train=false. This
+// means training routes actually call predict() instead of train(). We
+// replicate this bug by routing /trainings to the same handlers as /predictions.
+// =============================================================================
+
+/// POST /trainings - same as POST /predictions (bug-for-bug)
+async fn create_training(
+    State(service): State<Arc<PredictionService>>,
+    headers: HeaderMap,
+    Json(request): Json<PredictionRequest>,
+) -> impl IntoResponse {
+    // BUG: This calls predict(), not train(), matching cog mainline behavior
+    create_prediction(State(service), headers, Json(request)).await
+}
+
+/// PUT /trainings/{id} - same as PUT /predictions/{id} (bug-for-bug)
+async fn create_training_idempotent(
+    State(service): State<Arc<PredictionService>>,
+    Path(training_id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<PredictionRequest>,
+) -> impl IntoResponse {
+    // BUG: This calls predict(), not train(), matching cog mainline behavior
+    create_prediction_idempotent(State(service), Path(training_id), headers, Json(request)).await
+}
+
+/// POST /trainings/{id}/cancel - same as POST /predictions/{id}/cancel
+async fn cancel_training(
+    State(service): State<Arc<PredictionService>>,
+    Path(training_id): Path<String>,
+) -> impl IntoResponse {
+    cancel_prediction(State(service), Path(training_id)).await
+}
+
 /// Build the router with all routes.
 pub fn routes(service: Arc<PredictionService>) -> Router {
     Router::new()
         .route("/health-check", get(health_check))
         .route("/openapi.json", get(openapi_schema))
         .route("/shutdown", post(shutdown))
+        // Prediction routes
         .route("/predictions", post(create_prediction))
         .route("/predictions/{id}", put(create_prediction_idempotent))
         .route("/predictions/{id}/cancel", post(cancel_prediction))
+        // Training routes (BUG: these call predict(), not train(), matching cog mainline)
+        .route("/trainings", post(create_training))
+        .route("/trainings/{id}", put(create_training_idempotent))
+        .route("/trainings/{id}/cancel", post(cancel_training))
         .with_state(service)
 }
 
