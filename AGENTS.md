@@ -64,8 +64,6 @@ The main commands for working on the CLI are:
 ## Working on the Python SDK
 The Python SDK is developed in the `python/cog/` directory. It uses `uv` for virtual environments and `tox` for testing across multiple Python versions.
 
-**Important:** coglet-alpha requires Python >=3.9, while the original cog supports Python 3.8+. When writing tests or examples, use Python 3.9 or higher to ensure compatibility with coglet-alpha.
-
 The main commands for working on the SDK are:
 - `make wheel` - Rebuilds the Python wheel from the `python/` directory
 
@@ -142,12 +140,6 @@ The CLI follows a command pattern with subcommands. The main components are:
 ### Updating the docs
 - Documentation is in the `docs/` directory, written in Markdown and generated into HTML using `mkdocs`.
 
-### Version consistency between Go and Python
-- Goreleaser generates semver-style version strings for the Go binary (e.g., `0.17.0-dev+g0a3f31d1.d20260108`)
-- setuptools-scm generates PEP440-style version strings for Python wheels (e.g., `0.17.0a2.dev14+g0a3f31d1.d20260108`)
-- Git hash length must be consistent: configure setuptools-scm with `git_describe_command = "git describe --dirty --tags --long --match v* --abbrev=8"` in both `pyproject.toml` and `coglet/pyproject.toml` to match goreleaser's 8-character default
-- The integration test `test_cog_install_base_image` validates version string compatibility between CLI binary and installed Python package
-
 ## Important Files
 - `cog.yaml` - User-facing model configuration
 - `pkg/config/config.go` - Go code for parsing and validating `cog.yaml`
@@ -160,17 +152,4 @@ The CLI follows a command pattern with subcommands. The main components are:
 - Tests use real Docker operations (no mocking Docker API)
 - Always run `make wheel` after making Python changes before testing Go code
 - Both Pydantic 1.x and 2.x must pass tests (use appropriate tox environments)
-- Python compatibility:
-  - Original cog supports Python 3.8-3.13
-  - coglet-alpha requires Python >=3.9
-  - Integration test fixtures should use Python 3.9+ to ensure compatibility with coglet-alpha
-- Coglet-alpha differences:
-  - Uses JSON structured logging for some errors instead of plain text
-  - Uses Python AssertionError messages for validation errors instead of custom formatted messages
-  - Python 3.9+ uses fast loader without fallback to slow loader (Python 3.8 falls back)
-  - Integration tests should accept both error formats for compatibility and not assert for fast loader fallback messages when using Python 3.9+
-  
-- Coglet-alpha architectural limitations (as of Jan 2026):
-  - **Predictor loading:** Uses `importlib.import_module()` which requires valid Python module names. Original cog uses `spec_from_file_location()` which can load any file path. This means coglet-alpha cannot load predictors from directories with hyphens or other non-Python-identifier characters in the path (e.g., `my-subdir/predict.py`).
-  - **File input handling:** File inputs using `@filename` syntax are processed differently than original cog. May fail to resolve file paths in some scenarios.
-  - **Path separator conversion:** coglet-alpha converts `/` to `.` in module paths (e.g., `subdir/predict.py` → `subdir.predict`), but this doesn't solve the identifier validation issue for directory names with special characters
+- Python 3.8-3.13 compatibility is required

@@ -190,11 +190,18 @@ jobs:
       - name: Check test status
         run: echo "All tests passed successfully!"
 
+  # Integration tests are split by test file for maximum parallelization:
+  # - Each test file runs in its own job (6 files x 2 runtimes = 12 parallel jobs)
+  # - Within each job, pytest-xdist runs tests in parallel across CPU cores
+  # - Reduced to 8-core runners since work is distributed across more jobs
+  # - --maxfail=3 provides quick failure feedback without running all tests
+  # - --tb=short gives concise, readable error messages
+  # - fail-fast: false ensures all test groups run even if some fail
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
   test-integration-matrix:
-    name: "Test integration (${{ matrix.runtime }})"
+    name: "Test integration (${{ matrix.runtime }}) - ${{ matrix.test-group }}"
     needs: build-python
-    runs-on: ubuntu-latest-16-cores
+    runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -202,6 +209,14 @@ jobs:
         # TODO: Temporarily focusing on coglet/coglet-alpha, re-enable cog later
         runtime: [coglet, coglet-alpha]
         # runtime: [cog, coglet, coglet-alpha]
+        # Split tests by file for parallel execution
+        test-group:
+          - test_build.py
+          - test_config.py
+          - test_migrate.py
+          - test_predict.py
+          - test_run.py
+          - test_train.py
     steps:
       - uses: actions/checkout@v6
         with:
@@ -235,23 +250,21 @@ jobs:
           COG_WHEEL: ${{ matrix.runtime }}
           # Enable Docker BuildKit for faster builds with better caching
           DOCKER_BUILDKIT: 1
-          # DEBUGGING: Run tests sequentially to see errors immediately
-          # Parallel execution delays error output until the end
-          # TODO: Re-enable parallelism once tests are stable
-          PYTEST_XDIST_WORKER_COUNT: 0
+          # Use pytest-xdist for parallel execution within each test file
+          # -n auto uses all available CPU cores
+          PYTEST_XDIST_WORKER_COUNT: auto
         run: |
-          # DEBUGGING: Run sequentially with verbose error output
-          # This is SLOW but shows errors immediately as they happen
-          # --tb=short shows concise tracebacks immediately  
-          # -x stops at first failure so we see the error right away
-          # Once we fix the failures, re-enable parallel execution
-          if [ "$COG_WHEEL" = "cog" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -v --tb=short -x
-          elif [ "$COG_WHEEL" = "coglet" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -v --tb=short -x
-          else
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -v --tb=short -x
-          fi
+          # Run tests in parallel with immediate error reporting
+          # --tb=short: Concise tracebacks for quick error identification
+          # --maxfail=3: Stop after 3 failures to get quick feedback
+          # -v: Verbose output shows which tests are running/failing
+          # -n auto: Parallel execution using all available cores
+          PATH="$(pwd):$PATH" uv run tox -e integration -- \
+            test_integration/${{ matrix.test-group }} \
+            -v \
+            --tb=short \
+            --maxfail=3 \
+            -n auto
 
   release:
     name: "Release"
