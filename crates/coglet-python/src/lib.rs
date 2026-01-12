@@ -15,8 +15,8 @@ use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
-use coglet_core::{Health, PredictFuture, PredictionError, PredictionOutput, PredictionResult, SetupResult, VersionInfo};
-use coglet_transport::{serve as http_serve, AppState, ServerConfig};
+use coglet_core::{Health, PredictFuture, PredictionError, PredictionOutput, PredictionResult, PredictionService, SetupResult, VersionInfo};
+use coglet_transport::{serve as http_serve, ServerConfig};
 use coglet_worker::{SpawnConfig, Worker, WorkerResponse};
 
 /// Wrapper around Worker that handles respawning on crash.
@@ -173,8 +173,8 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16,
     // If no predictor, just serve health endpoints
     let Some(pred_ref) = predictor_ref else {
         info!("No predictor specified, serving health endpoints only");
-        let app_state = Arc::new(
-            AppState::new(1)
+        let service = Arc::new(
+            PredictionService::new(1)
                 .with_health(Health::Unknown)
                 .with_version(version)
         );
@@ -182,7 +182,7 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16,
             let rt = tokio::runtime::Runtime::new()
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
             rt.block_on(async {
-                http_serve(config, app_state)
+                http_serve(config, service)
                     .await
                     .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
             })
@@ -225,7 +225,7 @@ fn serve_subprocess(
     info!(max_concurrency, "Configuring sync predictor with subprocess");
 
     // Start with Starting health - will become Ready after worker init
-    let app_state = AppState::new(max_concurrency)
+    let service = PredictionService::new(max_concurrency)
         .with_health(Health::Starting)
         .with_version(version);
 
@@ -238,10 +238,10 @@ fn serve_subprocess(
         Box::pin(async move { worker.predict(id, input).await })
     }) as Arc<coglet_core::AsyncPredictFn>;
 
-    let app_state = Arc::new(app_state.with_async_predict_fn(async_predict_fn));
+    let service = Arc::new(service.with_async_predict_fn(async_predict_fn));
 
     // Release GIL and run server
-    let app_state_clone = Arc::clone(&app_state);
+    let service_clone = Arc::clone(&service);
     py.detach(|| {
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
@@ -249,23 +249,23 @@ fn serve_subprocess(
         rt.block_on(async {
             // Track setup timing
             let setup_result = SetupResult::starting();
-            app_state_clone.set_setup_result(setup_result.clone()).await;
+            service_clone.set_setup_result(setup_result.clone()).await;
 
             // Initialize worker (spawns subprocess, runs setup)
             match worker.init().await {
                 Ok(()) => {
                     info!("Worker initialized, server ready");
-                    app_state_clone.set_health(Health::Ready).await;
-                    app_state_clone.set_setup_result(setup_result.succeeded()).await;
+                    service_clone.set_health(Health::Ready).await;
+                    service_clone.set_setup_result(setup_result.succeeded()).await;
                 }
                 Err(e) => {
                     error!(error = %e, "Worker initialization failed");
-                    app_state_clone.set_health(Health::SetupFailed).await;
-                    app_state_clone.set_setup_result(setup_result.failed(e.clone())).await;
+                    service_clone.set_health(Health::SetupFailed).await;
+                    service_clone.set_setup_result(setup_result.failed(e.clone())).await;
                 }
             }
 
-            http_serve(config, app_state_clone)
+            http_serve(config, service_clone)
                 .await
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
         })

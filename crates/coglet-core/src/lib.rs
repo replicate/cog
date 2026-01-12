@@ -3,6 +3,7 @@
 mod health;
 mod prediction;
 mod predictor;
+mod service;
 mod version;
 pub mod webhook;
 
@@ -12,5 +13,6 @@ pub use predictor::{
     AsyncPredictFn, CancellationToken, PredictFn, PredictFuture, PredictionError, PredictionGuard,
     PredictionMetrics, PredictionOutput, PredictionResult,
 };
+pub use service::{CreatePredictionError, HealthSnapshot, PredictionService};
 pub use version::{VersionInfo, COGLET_VERSION};
 pub use webhook::{WebhookConfig, WebhookEventType, WebhookSender};

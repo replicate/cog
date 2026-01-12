@@ -12,11 +12,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use coglet_core::{
-    Health, PredictionError, PredictionGuard, SetupResult, VersionInfo,
-    WebhookConfig, WebhookEventType, WebhookSender,
+    CreatePredictionError, Health, HealthSnapshot, PredictionError, PredictionService,
+    SetupResult, VersionInfo, WebhookConfig, WebhookEventType, WebhookSender,
 };
-
-use crate::server::AppState;
 
 /// Health check response.
 #[derive(Debug, Serialize)]
@@ -25,6 +23,23 @@ pub struct HealthCheckResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub setup: Option<SetupResult>,
     pub version: VersionInfo,
+}
+
+impl From<HealthSnapshot> for HealthCheckResponse {
+    fn from(snapshot: HealthSnapshot) -> Self {
+        // If ready but at capacity, report BUSY
+        let status = if snapshot.is_busy() {
+            Health::Busy
+        } else {
+            snapshot.state
+        };
+        
+        Self {
+            status,
+            setup: snapshot.setup_result,
+            version: snapshot.version,
+        }
+    }
 }
 
 /// Prediction request body.
@@ -62,32 +77,15 @@ fn generate_prediction_id() -> String {
 }
 
 /// GET /health-check
-async fn health_check(State(state): State<Arc<AppState>>) -> Json<HealthCheckResponse> {
-    let base_health = *state.health.read().await;
+async fn health_check(State(service): State<Arc<PredictionService>>) -> Json<HealthCheckResponse> {
+    let snapshot = service.health().await;
     
-    // If we're READY, check if we're actually BUSY (no slots available)
-    let health = if base_health == Health::Ready {
-        if state.slots.available_permits() == 0 {
-            Health::Busy
-        } else {
-            Health::Ready
-        }
-    } else {
-        base_health
-    };
-
-    // Write K8s readiness file if ready and running in Kubernetes
-    if health == Health::Ready {
+    // Write K8s readiness file if ready
+    if snapshot.is_ready() && !snapshot.is_busy() {
         write_readiness_file();
     }
-
-    let setup = state.get_setup_result().await;
     
-    Json(HealthCheckResponse {
-        status: health,
-        setup,
-        version: state.version.clone(),
-    })
+    Json(snapshot.into())
 }
 
 /// Write /var/run/cog/ready for K8s readiness probe.
@@ -125,18 +123,25 @@ fn should_respond_async(headers: &HeaderMap) -> bool {
 
 /// POST /predictions
 async fn create_prediction(
-    State(state): State<Arc<AppState>>,
+    State(service): State<Arc<PredictionService>>,
     headers: HeaderMap,
     Json(request): Json<PredictionRequest>,
 ) -> impl IntoResponse {
     let prediction_id = request.id.unwrap_or_else(generate_prediction_id);
     let respond_async = should_respond_async(&headers);
-    create_prediction_with_id(state, prediction_id, request.input, request.webhook, request.webhook_events_filter, respond_async).await
+    create_prediction_with_id(
+        service,
+        prediction_id,
+        request.input,
+        request.webhook,
+        request.webhook_events_filter,
+        respond_async,
+    ).await
 }
 
 /// PUT /predictions/{id} - idempotent prediction creation
 async fn create_prediction_idempotent(
-    State(state): State<Arc<AppState>>,
+    State(service): State<Arc<PredictionService>>,
     Path(prediction_id): Path<String>,
     headers: HeaderMap,
     Json(request): Json<PredictionRequest>,
@@ -158,23 +163,26 @@ async fn create_prediction_idempotent(
     }
 
     // Check if prediction with this ID is already in-flight
-    {
-        let predictions = state.predictions.lock().await;
-        if predictions.contains_key(&prediction_id) {
-            // Already running - return 202 with current state
-            return (
-                StatusCode::ACCEPTED,
-                Json(serde_json::json!({
-                    "id": prediction_id,
-                    "status": "processing"
-                })),
-            );
-        }
+    if service.prediction_exists(&prediction_id).await {
+        return (
+            StatusCode::ACCEPTED,
+            Json(serde_json::json!({
+                "id": prediction_id,
+                "status": "processing"
+            })),
+        );
     }
 
     // Not running, create new prediction with the specified ID
     let respond_async = should_respond_async(&headers);
-    create_prediction_with_id(state, prediction_id, request.input, request.webhook, request.webhook_events_filter, respond_async).await
+    create_prediction_with_id(
+        service,
+        prediction_id,
+        request.input,
+        request.webhook,
+        request.webhook_events_filter,
+        respond_async,
+    ).await
 }
 
 /// Build a webhook sender if webhook URL is provided.
@@ -183,8 +191,6 @@ fn build_webhook_sender(
     events_filter: Vec<WebhookEventType>,
 ) -> Option<WebhookSender> {
     let webhook_url = webhook?;
-    
-    // Convert filter to HashSet for O(1) lookup
     let events: std::collections::HashSet<_> = events_filter.into_iter().collect();
     
     Some(WebhookSender::new(
@@ -198,29 +204,32 @@ fn build_webhook_sender(
 
 /// Shared logic for creating predictions (used by both POST and PUT)
 async fn create_prediction_with_id(
-    state: Arc<AppState>,
+    service: Arc<PredictionService>,
     prediction_id: String,
     input: serde_json::Value,
     webhook: Option<String>,
     webhook_events_filter: Vec<WebhookEventType>,
     respond_async: bool,
 ) -> (StatusCode, Json<serde_json::Value>) {
-    // Check if predictor is ready
-    let health = *state.health.read().await;
-    if health != Health::Ready {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({
-                "error": "Predictor not ready",
-                "status": "failed"
-            })),
-        );
-    }
-
-    // Try to acquire a prediction slot
-    let permit = match Arc::clone(&state.slots).try_acquire_owned() {
+    // Build webhook sender for async start notification
+    let start_webhook_sender = build_webhook_sender(webhook.clone(), webhook_events_filter.clone());
+    
+    // Build webhook sender for the prediction (will be used in Drop)
+    let prediction_webhook = build_webhook_sender(webhook, webhook_events_filter);
+    
+    // Try to create prediction (acquires slot, checks health)
+    let mut prediction = match service.create_prediction(prediction_id.clone(), prediction_webhook).await {
         Ok(p) => p,
-        Err(_) => {
+        Err(CreatePredictionError::NotReady) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "error": "Predictor not ready",
+                    "status": "failed"
+                })),
+            );
+        }
+        Err(CreatePredictionError::AtCapacity) => {
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(serde_json::json!({
@@ -229,23 +238,21 @@ async fn create_prediction_with_id(
                 })),
             );
         }
+        Err(CreatePredictionError::AlreadyExists(id)) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({
+                    "error": format!("Prediction {} already exists", id),
+                    "status": "failed"
+                })),
+            );
+        }
     };
 
-    let guard = PredictionGuard::new();
-    let cancel_token = guard.cancel_token();
-    
-    state.register_prediction(prediction_id.clone(), cancel_token.clone()).await;
-
-    // Build webhook sender if webhook URL provided
-    let webhook_sender = build_webhook_sender(webhook, webhook_events_filter);
-
-    // If respond_async, return immediately and run prediction in background
+    // If respond_async, spawn background task and return immediately
     if respond_async {
-        let state_clone = Arc::clone(&state);
-        let prediction_id_clone = prediction_id.clone();
-        
-        // Send start webhook if configured
-        if let Some(ref ws) = webhook_sender {
+        // Send start webhook
+        if let Some(ref ws) = start_webhook_sender {
             ws.send(WebhookEventType::Start, &serde_json::json!({
                 "id": prediction_id,
                 "status": "starting",
@@ -253,15 +260,11 @@ async fn create_prediction_with_id(
             }));
         }
         
+        let service_clone = Arc::clone(&service);
         tokio::spawn(async move {
-            run_prediction_with_webhook(
-                state_clone,
-                prediction_id_clone,
-                input,
-                guard,
-                webhook_sender,
-                permit,
-            ).await;
+            let _ = service_clone.predict(&mut prediction, input).await;
+            service_clone.unregister_prediction(prediction.id()).await;
+            // prediction drops here, sending terminal webhook
         });
         
         return (
@@ -274,59 +277,18 @@ async fn create_prediction_with_id(
     }
 
     // Synchronous mode - run and wait for result
-    run_prediction_sync(state, prediction_id, input, guard, permit).await
-}
-
-/// Run prediction synchronously and return result.
-async fn run_prediction_sync(
-    state: Arc<AppState>,
-    prediction_id: String,
-    input: serde_json::Value,
-    guard: PredictionGuard,
-    _permit: tokio::sync::OwnedSemaphorePermit,
-) -> (StatusCode, Json<serde_json::Value>) {
-    let result = if let Some(ref async_predict_fn) = state.async_predict_fn {
-        let predict_fn = Arc::clone(async_predict_fn);
-        predict_fn(input).await
-    } else if let Some(ref predict_fn) = state.predict_fn {
-        let predict_fn = Arc::clone(predict_fn);
-        match tokio::task::spawn_blocking(move || predict_fn(input)).await {
-            Ok(result) => result,
-            Err(join_err) => {
-                state.unregister_prediction(&prediction_id).await;
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::json!({
-                        "error": format!("Prediction task panicked: {}", join_err),
-                        "status": "failed"
-                    })),
-                );
-            }
-        }
-    } else {
-        state.unregister_prediction(&prediction_id).await;
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({
-                "error": "No predictor loaded",
-                "status": "failed"
-            })),
-        );
-    };
-
-    let metrics = guard.finish();
-    state.unregister_prediction(&prediction_id).await;
+    let result = service.predict(&mut prediction, input).await;
+    let predict_time = prediction.elapsed().as_secs_f64();
+    service.unregister_prediction(&prediction_id).await;
 
     match result {
-        Ok(prediction) => (
+        Ok(r) => (
             StatusCode::OK,
             Json(serde_json::json!({
                 "id": prediction_id,
-                "output": prediction.output,
+                "output": r.output,
                 "status": "succeeded",
-                "metrics": {
-                    "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
-                }
+                "metrics": { "predict_time": predict_time }
             })),
         ),
         Err(PredictionError::InvalidInput(msg)) => (
@@ -335,9 +297,7 @@ async fn run_prediction_sync(
                 "id": prediction_id,
                 "error": msg,
                 "status": "failed",
-                "metrics": {
-                    "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
-                }
+                "metrics": { "predict_time": predict_time }
             })),
         ),
         Err(PredictionError::NotReady) => (
@@ -354,9 +314,7 @@ async fn run_prediction_sync(
                 "id": prediction_id,
                 "error": msg,
                 "status": "failed",
-                "metrics": {
-                    "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
-                }
+                "metrics": { "predict_time": predict_time }
             })),
         ),
         Err(PredictionError::Cancelled) => (
@@ -364,110 +322,18 @@ async fn run_prediction_sync(
             Json(serde_json::json!({
                 "id": prediction_id,
                 "status": "canceled",
-                "metrics": {
-                    "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
-                }
+                "metrics": { "predict_time": predict_time }
             })),
         ),
     }
 }
 
-/// Run prediction with webhook notifications (for async mode).
-async fn run_prediction_with_webhook(
-    state: Arc<AppState>,
-    prediction_id: String,
-    input: serde_json::Value,
-    guard: PredictionGuard,
-    webhook_sender: Option<WebhookSender>,
-    _permit: tokio::sync::OwnedSemaphorePermit,
-) {
-    let result = if let Some(ref async_predict_fn) = state.async_predict_fn {
-        let predict_fn = Arc::clone(async_predict_fn);
-        predict_fn(input.clone()).await
-    } else if let Some(ref predict_fn) = state.predict_fn {
-        let predict_fn = Arc::clone(predict_fn);
-        match tokio::task::spawn_blocking(move || predict_fn(input.clone())).await {
-            Ok(result) => result,
-            Err(join_err) => {
-                let response = serde_json::json!({
-                    "id": prediction_id,
-                    "error": format!("Prediction task panicked: {}", join_err),
-                    "status": "failed"
-                });
-                if let Some(ref ws) = webhook_sender {
-                    ws.send_terminal(WebhookEventType::Completed, &response).await;
-                }
-                state.unregister_prediction(&prediction_id).await;
-                return;
-            }
-        }
-    } else {
-        let response = serde_json::json!({
-            "id": prediction_id,
-            "error": "No predictor loaded",
-            "status": "failed"
-        });
-        if let Some(ref ws) = webhook_sender {
-            ws.send_terminal(WebhookEventType::Completed, &response).await;
-        }
-        state.unregister_prediction(&prediction_id).await;
-        return;
-    };
-
-    let metrics = guard.finish();
-    state.unregister_prediction(&prediction_id).await;
-
-    let response = match result {
-        Ok(prediction) => serde_json::json!({
-            "id": prediction_id,
-            "output": prediction.output,
-            "status": "succeeded",
-            "metrics": {
-                "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
-            }
-        }),
-        Err(PredictionError::InvalidInput(msg)) => serde_json::json!({
-            "id": prediction_id,
-            "error": msg,
-            "status": "failed",
-            "metrics": {
-                "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
-            }
-        }),
-        Err(PredictionError::NotReady) => serde_json::json!({
-            "id": prediction_id,
-            "error": "Predictor not ready",
-            "status": "failed"
-        }),
-        Err(PredictionError::Failed(msg)) => serde_json::json!({
-            "id": prediction_id,
-            "error": msg,
-            "status": "failed",
-            "metrics": {
-                "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
-            }
-        }),
-        Err(PredictionError::Cancelled) => serde_json::json!({
-            "id": prediction_id,
-            "status": "canceled",
-            "metrics": {
-                "predict_time": metrics.predict_time.map(|d| d.as_secs_f64())
-            }
-        }),
-    };
-
-    // Send completed webhook (with retries for terminal state)
-    if let Some(ref ws) = webhook_sender {
-        ws.send_terminal(WebhookEventType::Completed, &response).await;
-    }
-}
-
 /// POST /predictions/{id}/cancel
 async fn cancel_prediction(
-    State(state): State<Arc<AppState>>,
+    State(service): State<Arc<PredictionService>>,
     Path(prediction_id): Path<String>,
 ) -> impl IntoResponse {
-    if state.cancel_prediction(&prediction_id).await {
+    if service.cancel(&prediction_id).await {
         (
             StatusCode::OK,
             Json(serde_json::json!({
@@ -487,21 +353,21 @@ async fn cancel_prediction(
 }
 
 /// POST /shutdown
-async fn shutdown(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+async fn shutdown(State(service): State<Arc<PredictionService>>) -> impl IntoResponse {
     tracing::info!("Shutdown requested via HTTP");
-    state.trigger_shutdown();
+    service.trigger_shutdown();
     (StatusCode::OK, Json(serde_json::json!({})))
 }
 
 /// Build the router with all routes.
-pub fn routes(state: Arc<AppState>) -> Router {
+pub fn routes(service: Arc<PredictionService>) -> Router {
     Router::new()
         .route("/health-check", get(health_check))
         .route("/shutdown", post(shutdown))
         .route("/predictions", post(create_prediction))
         .route("/predictions/{id}", put(create_prediction_idempotent))
         .route("/predictions/{id}/cancel", post(cancel_prediction))
-        .with_state(state)
+        .with_state(service)
 }
 
 #[cfg(test)]
@@ -522,8 +388,8 @@ mod tests {
 
     #[tokio::test]
     async fn health_check_returns_status_and_version() {
-        let state = Arc::new(AppState::new(1).with_health(Health::Ready));
-        let app = routes(state);
+        let service = Arc::new(PredictionService::new(1).with_health(Health::Ready));
+        let app = routes(service);
 
         let response = app
             .oneshot(Request::get("/health-check").body(Body::empty()).unwrap())
@@ -539,8 +405,8 @@ mod tests {
 
     #[tokio::test]
     async fn health_check_unknown_when_no_predictor() {
-        let state = Arc::new(AppState::new(1)); // Default health is Unknown
-        let app = routes(state);
+        let service = Arc::new(PredictionService::new(1)); // Default health is Unknown
+        let app = routes(service);
 
         let response = app
             .oneshot(Request::get("/health-check").body(Body::empty()).unwrap())
@@ -553,12 +419,12 @@ mod tests {
 
     #[tokio::test]
     async fn health_check_returns_busy_when_at_capacity() {
-        let state = Arc::new(AppState::new(1).with_health(Health::Ready));
+        let service = Arc::new(PredictionService::new(1).with_health(Health::Ready));
         
-        // Acquire the only slot
-        let _permit = state.slots.acquire().await.unwrap();
+        // Take the only slot
+        let _pred = service.create_prediction("busy".to_string(), None).await.unwrap();
         
-        let app = routes(Arc::clone(&state));
+        let app = routes(Arc::clone(&service));
 
         let response = app
             .oneshot(Request::get("/health-check").body(Body::empty()).unwrap())
@@ -571,8 +437,8 @@ mod tests {
 
     #[tokio::test]
     async fn predictions_returns_503_when_not_ready() {
-        let state = Arc::new(AppState::new(1)); // Health is Unknown
-        let app = routes(state);
+        let service = Arc::new(PredictionService::new(1)); // Health is Unknown
+        let app = routes(service);
 
         let response = app
             .oneshot(
@@ -593,8 +459,8 @@ mod tests {
 
     #[tokio::test]
     async fn predictions_returns_503_when_no_predictor_loaded() {
-        let state = Arc::new(AppState::new(1).with_health(Health::Ready));
-        let app = routes(state);
+        let service = Arc::new(PredictionService::new(1).with_health(Health::Ready));
+        let app = routes(service);
 
         let response = app
             .oneshot(
@@ -610,13 +476,13 @@ mod tests {
 
         let json = response_json(response).await;
         assert_eq!(json["status"], "failed");
-        assert!(json["error"].as_str().unwrap().contains("No predictor"));
+        assert!(json["error"].as_str().unwrap().contains("not ready"));
     }
 
     #[tokio::test]
     async fn predictions_success_with_sync_predictor() {
-        let state = Arc::new(
-            AppState::new(1)
+        let service = Arc::new(
+            PredictionService::new(1)
                 .with_health(Health::Ready)
                 .with_predict_fn(Arc::new(|input| {
                     let name = input["name"].as_str().unwrap_or("world");
@@ -626,7 +492,7 @@ mod tests {
                     })
                 })),
         );
-        let app = routes(state);
+        let app = routes(service);
 
         let response = app
             .oneshot(
@@ -648,14 +514,14 @@ mod tests {
 
     #[tokio::test]
     async fn predictions_returns_error_on_invalid_input() {
-        let state = Arc::new(
-            AppState::new(1)
+        let service = Arc::new(
+            PredictionService::new(1)
                 .with_health(Health::Ready)
                 .with_predict_fn(Arc::new(|_| {
-                    Err(coglet_core::PredictionError::InvalidInput("missing required field".to_string()))
+                    Err(PredictionError::InvalidInput("missing required field".to_string()))
                 })),
         );
-        let app = routes(state);
+        let app = routes(service);
 
         let response = app
             .oneshot(
