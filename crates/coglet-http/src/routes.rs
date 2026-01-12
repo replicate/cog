@@ -6,7 +6,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json},
-    routing::{get, post},
+    routing::{get, post, put},
     Router,
 };
 use serde::{Deserialize, Serialize};
@@ -101,6 +101,57 @@ async fn create_prediction(
     State(state): State<Arc<AppState>>,
     Json(request): Json<PredictionRequest>,
 ) -> impl IntoResponse {
+    let prediction_id = request.id.unwrap_or_else(generate_prediction_id);
+    create_prediction_with_id(state, prediction_id, request.input).await
+}
+
+/// PUT /predictions/{id} - idempotent prediction creation
+async fn create_prediction_idempotent(
+    State(state): State<Arc<AppState>>,
+    Path(prediction_id): Path<String>,
+    Json(request): Json<PredictionRequest>,
+) -> impl IntoResponse {
+    // If request has ID, it must match URL
+    if let Some(ref req_id) = request.id {
+        if req_id != &prediction_id {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(serde_json::json!({
+                    "detail": [{
+                        "loc": ["body", "id"],
+                        "msg": "prediction ID must match the ID supplied in the URL",
+                        "type": "value_error"
+                    }]
+                })),
+            );
+        }
+    }
+
+    // Check if prediction with this ID is already in-flight
+    {
+        let predictions = state.predictions.lock().await;
+        if predictions.contains_key(&prediction_id) {
+            // Already running - return 202 with current state
+            return (
+                StatusCode::ACCEPTED,
+                Json(serde_json::json!({
+                    "id": prediction_id,
+                    "status": "processing"
+                })),
+            );
+        }
+    }
+
+    // Not running, create new prediction with the specified ID
+    create_prediction_with_id(state, prediction_id, request.input).await
+}
+
+/// Shared logic for creating predictions (used by both POST and PUT)
+async fn create_prediction_with_id(
+    state: Arc<AppState>,
+    prediction_id: String,
+    input: serde_json::Value,
+) -> (StatusCode, Json<serde_json::Value>) {
     // Check if predictor is ready
     let health = *state.health.read().await;
     if health != Health::Ready {
@@ -113,8 +164,7 @@ async fn create_prediction(
         );
     }
 
-    // Try to acquire a prediction slot (non-blocking)
-    // Returns 503 immediately if at capacity rather than queueing
+    // Try to acquire a prediction slot
     let Ok(_permit) = state.slots.try_acquire() else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -125,23 +175,16 @@ async fn create_prediction(
         );
     };
 
-    let input = request.input;
-    let prediction_id = request.id.unwrap_or_else(generate_prediction_id);
     let guard = PredictionGuard::new();
     let cancel_token = guard.cancel_token();
     
-    // Register the prediction for cancellation
     state.register_prediction(prediction_id.clone(), cancel_token.clone()).await;
 
-    // Run prediction - async or sync path
+    // Run prediction
     let result = if let Some(ref async_predict_fn) = state.async_predict_fn {
-        // Async predictor: run directly in tokio (no spawn_blocking)
-        // This enables true concurrency - while one prediction awaits I/O,
-        // another can run
         let predict_fn = Arc::clone(async_predict_fn);
         predict_fn(input).await
     } else if let Some(ref predict_fn) = state.predict_fn {
-        // Sync predictor: run in spawn_blocking to not block tokio
         let predict_fn = Arc::clone(predict_fn);
         match tokio::task::spawn_blocking(move || predict_fn(input)).await {
             Ok(result) => result,
@@ -166,10 +209,7 @@ async fn create_prediction(
     };
 
     let metrics = guard.finish();
-    
-    // Unregister the prediction now that it's done
     state.unregister_prediction(&prediction_id).await;
-    // _permit drops here, releasing the slot
 
     match result {
         Ok(prediction) => (
@@ -263,6 +303,7 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/health-check", get(health_check))
         .route("/shutdown", post(shutdown))
         .route("/predictions", post(create_prediction))
+        .route("/predictions/{id}", put(create_prediction_idempotent))
         .route("/predictions/{id}/cancel", post(cancel_prediction))
         .with_state(state)
 }
