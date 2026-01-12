@@ -863,29 +863,41 @@ func (r *Runner) predict(reqID string) (chan PredictionResponse, *PredictionResp
 		return nil, nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	if err := os.WriteFile(requestPath, requestData, 0o644); err != nil { //nolint:gosec // #nosec G304 -- TODO[md]: validate requestPath is within workingdir
-		return nil, nil, fmt.Errorf("failed to write request file: %w", err)
+	// Use explicit file operations to ensure proper writing
+	f, err := os.OpenFile(requestPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644) //nolint:gosec // #nosec G304 -- path derived from workingdir
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open request file for writing: %w", err)
+	}
+	n, err := f.Write(requestData)
+	if err != nil {
+		f.Close()
+		return nil, nil, fmt.Errorf("failed to write request data: %w", err)
+	}
+	if n != len(requestData) {
+		f.Close()
+		return nil, nil, fmt.Errorf("incomplete write: wrote %d of %d bytes", n, len(requestData))
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return nil, nil, fmt.Errorf("failed to sync request file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return nil, nil, fmt.Errorf("failed to close request file: %w", err)
 	}
 
-	log.Tracew("wrote prediction request file", "prediction_id", reqID, "path", requestPath, "working_dir", r.runnerCtx.workingdir, "request_data", string(requestData))
-
-	// Debug: Check if file actually exists and list directory contents
-	if _, err := os.Stat(requestPath); err != nil { // #nosec G304 -- path derived from controlled workingdir via path.Join
-		log.Tracew("ERROR: written request file does not exist", "prediction_id", reqID, "path", requestPath, "error", err)
+	// Sync the parent directory to ensure the new file entry is visible to other processes
+	// This is critical for Docker Desktop for Mac where VirtioFS may cache directory entries
+	dir, err := os.Open(r.runnerCtx.workingdir)
+	if err != nil {
+		log.Warnw("failed to open working directory for sync", "error", err)
 	} else {
-		log.Tracew("confirmed request file exists", "prediction_id", reqID, "path", requestPath)
-	}
-
-	// Debug: List all files in working directory
-	if entries, err := os.ReadDir(r.runnerCtx.workingdir); err == nil {
-		fileNames := make([]string, len(entries))
-		for i, entry := range entries {
-			fileNames[i] = entry.Name()
+		if err := dir.Sync(); err != nil {
+			log.Warnw("failed to sync working directory", "error", err)
 		}
-		log.Tracew("working directory contents after write", "prediction_id", reqID, "working_dir", r.runnerCtx.workingdir, "files", fileNames)
+		dir.Close()
 	}
 
-	log.Tracew("returning prediction channel", "prediction_id", reqID)
+	log.Tracew("wrote prediction request file", "prediction_id", reqID, "path", requestPath, "working_dir", r.runnerCtx.workingdir, "request_data_len", len(requestData), "bytes_written", n)
 	initialResponse := &PredictionResponse{
 		Status: PredictionStarting,
 	}

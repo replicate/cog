@@ -4,6 +4,7 @@ import logging
 import os
 import pathlib
 import re
+import shutil
 import signal
 import tempfile
 import urllib.request
@@ -142,6 +143,15 @@ class FileRunner:
                 scope.flush_all_buffers()
                 return 0
 
+            # Force directory cache invalidation for Docker Desktop on macOS
+            # by opening and syncing the directory before listing
+            try:
+                fd = os.open(self.working_dir, os.O_RDONLY | os.O_DIRECTORY)
+                os.fsync(fd)
+                os.close(fd)
+            except OSError:
+                pass
+
             for entry in os.listdir(self.working_dir):
                 m = self.CANCEL_RE.match(entry)
                 if m is not None:
@@ -273,15 +283,16 @@ class FileRunner:
                 resp['metrics'] = {}
             resp['metrics'].update(m)
 
-        # Write to a temp file and atomically rename to avoid Go server picking up an incomplete file
-        (_, temp_path) = tempfile.mkstemp(
-            suffix='.json', prefix=f'response-{pid}-{epoch}'
-        )
-        with open(temp_path, 'w') as f:
-            json.dump(resp, f, default=util.output_json)
+        # Write to a temp file in the same directory and atomically rename
+        # Using the same directory avoids cross-device move issues with mounted volumes
         resp_path = os.path.join(
             self.working_dir, self.RESPONSE_FMT.format(pid=pid, epoch=epoch)
         )
+        temp_path = resp_path + '.tmp'
+        with open(temp_path, 'w') as f:
+            json.dump(resp, f, default=util.output_json)
+            f.flush()
+            os.fsync(f.fileno())
         os.rename(temp_path, resp_path)
 
         self._send_ipc(FileRunner.IPC_OUTPUT)
