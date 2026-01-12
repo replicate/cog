@@ -11,10 +11,12 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use coglet_core::{Health, PredictionError, PredictionGuard, SetupResult, VersionInfo};
+use coglet_core::{
+    Health, PredictionError, PredictionGuard, SetupResult, VersionInfo,
+    WebhookConfig, WebhookEventType, WebhookSender,
+};
 
 use crate::server::AppState;
-use crate::webhook::{WebhookConfig, WebhookEvent, WebhookSender};
 
 /// Health check response.
 #[derive(Debug, Serialize)]
@@ -23,22 +25,6 @@ pub struct HealthCheckResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub setup: Option<SetupResult>,
     pub version: VersionInfo,
-}
-
-/// Webhook events filter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum WebhookEventFilter {
-    Start,
-    Output,
-    Logs,
-    Completed,
-}
-
-impl Default for WebhookEventFilter {
-    fn default() -> Self {
-        Self::Completed
-    }
 }
 
 /// Prediction request body.
@@ -53,15 +39,15 @@ pub struct PredictionRequest {
     /// Filter for which webhook events to send.
     /// Defaults to all events: ["start", "output", "logs", "completed"]
     #[serde(default = "default_webhook_events_filter")]
-    pub webhook_events_filter: Vec<WebhookEventFilter>,
+    pub webhook_events_filter: Vec<WebhookEventType>,
 }
 
-fn default_webhook_events_filter() -> Vec<WebhookEventFilter> {
+fn default_webhook_events_filter() -> Vec<WebhookEventType> {
     vec![
-        WebhookEventFilter::Start,
-        WebhookEventFilter::Output,
-        WebhookEventFilter::Logs,
-        WebhookEventFilter::Completed,
+        WebhookEventType::Start,
+        WebhookEventType::Output,
+        WebhookEventType::Logs,
+        WebhookEventType::Completed,
     ]
 }
 
@@ -194,7 +180,7 @@ async fn create_prediction_idempotent(
 /// Build a webhook sender if webhook URL is provided.
 fn build_webhook_sender(
     webhook: Option<String>,
-    events_filter: Vec<WebhookEventFilter>,
+    events_filter: Vec<WebhookEventType>,
 ) -> Option<WebhookSender> {
     let webhook_url = webhook?;
     
@@ -216,7 +202,7 @@ async fn create_prediction_with_id(
     prediction_id: String,
     input: serde_json::Value,
     webhook: Option<String>,
-    webhook_events_filter: Vec<WebhookEventFilter>,
+    webhook_events_filter: Vec<WebhookEventType>,
     respond_async: bool,
 ) -> (StatusCode, Json<serde_json::Value>) {
     // Check if predictor is ready
@@ -260,7 +246,7 @@ async fn create_prediction_with_id(
         
         // Send start webhook if configured
         if let Some(ref ws) = webhook_sender {
-            ws.send(WebhookEvent::Start, &serde_json::json!({
+            ws.send(WebhookEventType::Start, &serde_json::json!({
                 "id": prediction_id,
                 "status": "starting",
                 "input": input,
@@ -409,7 +395,7 @@ async fn run_prediction_with_webhook(
                     "status": "failed"
                 });
                 if let Some(ref ws) = webhook_sender {
-                    ws.send_terminal(WebhookEvent::Completed, &response).await;
+                    ws.send_terminal(WebhookEventType::Completed, &response).await;
                 }
                 state.unregister_prediction(&prediction_id).await;
                 return;
@@ -422,7 +408,7 @@ async fn run_prediction_with_webhook(
             "status": "failed"
         });
         if let Some(ref ws) = webhook_sender {
-            ws.send_terminal(WebhookEvent::Completed, &response).await;
+            ws.send_terminal(WebhookEventType::Completed, &response).await;
         }
         state.unregister_prediction(&prediction_id).await;
         return;
@@ -472,7 +458,7 @@ async fn run_prediction_with_webhook(
 
     // Send completed webhook (with retries for terminal state)
     if let Some(ref ws) = webhook_sender {
-        ws.send_terminal(WebhookEvent::Completed, &response).await;
+        ws.send_terminal(WebhookEventType::Completed, &response).await;
     }
 }
 

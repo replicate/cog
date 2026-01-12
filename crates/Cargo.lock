@@ -191,10 +191,15 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "insta",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "tokio-util",
+ "tracing",
+ "ureq",
+ "wiremock",
 ]
 
 [[package]]
@@ -223,14 +228,11 @@ dependencies = [
  "coglet-core",
  "http-body-util",
  "insta",
- "reqwest",
  "serde",
  "serde_json",
  "tokio",
  "tower",
  "tracing",
- "ureq",
- "wiremock",
 ]
 
 [[package]]

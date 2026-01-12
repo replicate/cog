@@ -1,5 +1,8 @@
 //! Webhook sender for async predictions.
 //!
+//! This module is transport-agnostic - webhooks are always outbound HTTP
+//! regardless of the inbound transport (HTTP, gRPC, etc.).
+//!
 //! Implements the cog webhook protocol:
 //! - Throttling (default 500ms between non-terminal updates)
 //! - Terminal webhooks are retried with exponential backoff
@@ -10,31 +13,39 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use crate::routes::WebhookEventFilter;
+use serde::{Deserialize, Serialize};
 
-/// Webhook event types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum WebhookEvent {
+use crate::version::COGLET_VERSION;
+
+/// Webhook event types for filtering.
+///
+/// Used both internally and in HTTP request parsing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WebhookEventType {
     Start,
     Output,
     Logs,
     Completed,
 }
 
-impl WebhookEvent {
+impl WebhookEventType {
     /// Check if this is a terminal event.
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Completed)
     }
     
-    /// Convert to filter type for comparison.
-    fn to_filter(&self) -> WebhookEventFilter {
-        match self {
-            Self::Start => WebhookEventFilter::Start,
-            Self::Output => WebhookEventFilter::Output,
-            Self::Logs => WebhookEventFilter::Logs,
-            Self::Completed => WebhookEventFilter::Completed,
-        }
+    /// Get all event types.
+    pub fn all() -> HashSet<WebhookEventType> {
+        [Self::Start, Self::Output, Self::Logs, Self::Completed]
+            .into_iter()
+            .collect()
+    }
+}
+
+impl Default for WebhookEventType {
+    fn default() -> Self {
+        Self::Completed
     }
 }
 
@@ -44,7 +55,7 @@ pub struct WebhookConfig {
     /// Minimum interval between non-terminal webhooks (default 500ms).
     pub response_interval: Duration,
     /// Events to send (default: all).
-    pub events_filter: HashSet<WebhookEventFilter>,
+    pub events_filter: HashSet<WebhookEventType>,
     /// Maximum retries for terminal webhooks (default 12).
     pub max_retries: u32,
     /// Base backoff factor for retries (default 100ms).
@@ -63,12 +74,7 @@ impl Default for WebhookConfig {
                     .map(|s| (s * 1000.0) as u64)
                     .unwrap_or(500)
             ),
-            events_filter: [
-                WebhookEventFilter::Start,
-                WebhookEventFilter::Output,
-                WebhookEventFilter::Logs,
-                WebhookEventFilter::Completed,
-            ].into_iter().collect(),
+            events_filter: WebhookEventType::all(),
             max_retries: 12,
             backoff_base: Duration::from_millis(100),
             retry_status_codes: vec![429, 500, 502, 503, 504],
@@ -97,7 +103,7 @@ impl WebhookSender {
         }
         
         // Add user agent
-        let user_agent = format!("coglet/{}", env!("CARGO_PKG_VERSION"));
+        let user_agent = format!("coglet/{}", COGLET_VERSION);
         if let Ok(value) = reqwest::header::HeaderValue::from_str(&user_agent) {
             headers.insert(reqwest::header::USER_AGENT, value);
         }
@@ -116,10 +122,15 @@ impl WebhookSender {
         }
     }
     
+    /// Get the webhook URL.
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+    
     /// Check if this event should be sent based on filter and throttling.
-    fn should_send(&self, event: WebhookEvent) -> bool {
+    fn should_send(&self, event: WebhookEventType) -> bool {
         // Check event filter
-        if !self.config.events_filter.contains(&event.to_filter()) {
+        if !self.config.events_filter.contains(&event) {
             return false;
         }
         
@@ -140,7 +151,7 @@ impl WebhookSender {
     }
     
     /// Send a non-terminal webhook (no retry, errors ignored).
-    pub fn send(&self, event: WebhookEvent, payload: &serde_json::Value) {
+    pub fn send(&self, event: WebhookEventType, payload: &serde_json::Value) {
         if !self.should_send(event) {
             return;
         }
@@ -159,9 +170,9 @@ impl WebhookSender {
         });
     }
     
-    /// Send a terminal webhook with retries.
-    pub async fn send_terminal(&self, event: WebhookEvent, payload: &serde_json::Value) {
-        if !self.config.events_filter.contains(&event.to_filter()) {
+    /// Send a terminal webhook with retries (async version).
+    pub async fn send_terminal(&self, event: WebhookEventType, payload: &serde_json::Value) {
+        if !self.config.events_filter.contains(&event) {
             return;
         }
         
@@ -236,7 +247,7 @@ impl WebhookSender {
     /// from `Drop` implementations or non-async contexts. The retry logic mirrors
     /// `send_terminal` but uses `std::thread::sleep` instead of `tokio::time::sleep`.
     pub fn send_terminal_sync(&self, payload: &serde_json::Value) {
-        if !self.config.events_filter.contains(&WebhookEventFilter::Completed) {
+        if !self.config.events_filter.contains(&WebhookEventType::Completed) {
             return;
         }
         
@@ -250,7 +261,7 @@ impl WebhookSender {
             .ok()
             .map(|token| format!("Bearer {}", token));
         
-        let user_agent = format!("coglet/{}", env!("CARGO_PKG_VERSION"));
+        let user_agent = format!("coglet/{}", COGLET_VERSION);
         
         let mut attempt = 0;
         loop {
@@ -338,18 +349,18 @@ mod tests {
         let config = WebhookConfig::default();
         assert_eq!(config.response_interval, Duration::from_millis(500));
         assert_eq!(config.max_retries, 12);
-        assert!(config.events_filter.contains(&WebhookEventFilter::Start));
-        assert!(config.events_filter.contains(&WebhookEventFilter::Output));
-        assert!(config.events_filter.contains(&WebhookEventFilter::Logs));
-        assert!(config.events_filter.contains(&WebhookEventFilter::Completed));
+        assert!(config.events_filter.contains(&WebhookEventType::Start));
+        assert!(config.events_filter.contains(&WebhookEventType::Output));
+        assert!(config.events_filter.contains(&WebhookEventType::Logs));
+        assert!(config.events_filter.contains(&WebhookEventType::Completed));
     }
     
     #[test]
     fn webhook_event_is_terminal() {
-        assert!(!WebhookEvent::Start.is_terminal());
-        assert!(!WebhookEvent::Output.is_terminal());
-        assert!(!WebhookEvent::Logs.is_terminal());
-        assert!(WebhookEvent::Completed.is_terminal());
+        assert!(!WebhookEventType::Start.is_terminal());
+        assert!(!WebhookEventType::Output.is_terminal());
+        assert!(!WebhookEventType::Logs.is_terminal());
+        assert!(WebhookEventType::Completed.is_terminal());
     }
     
     /// Helper to create a WebhookConfig for tests (no throttling, fast retries).
@@ -382,17 +393,13 @@ mod tests {
             "output": "hello"
         });
         
-        sender.send_terminal(WebhookEvent::Completed, &payload).await;
-        
-        // wiremock verifies expect(1) on drop
+        sender.send_terminal(WebhookEventType::Completed, &payload).await;
     }
     
     #[tokio::test]
     async fn send_terminal_retries_on_500() {
         let server = MockServer::start().await;
         
-        // First request fails with 500, second succeeds
-        // up_to_n_times(1) makes the mock deactivate after one match
         Mock::given(method("POST"))
             .and(path("/webhook"))
             .respond_with(ResponseTemplate::new(500))
@@ -410,14 +417,13 @@ mod tests {
         let url = format!("{}/webhook", server.uri());
         let sender = WebhookSender::new(url, test_config());
         
-        sender.send_terminal(WebhookEvent::Completed, &serde_json::json!({"status": "succeeded"})).await;
+        sender.send_terminal(WebhookEventType::Completed, &serde_json::json!({"status": "succeeded"})).await;
     }
     
     #[tokio::test]
     async fn send_terminal_does_not_retry_on_400() {
         let server = MockServer::start().await;
         
-        // 400 is not in retry_status_codes, should not retry
         Mock::given(method("POST"))
             .and(path("/webhook"))
             .respond_with(ResponseTemplate::new(400))
@@ -428,14 +434,13 @@ mod tests {
         let url = format!("{}/webhook", server.uri());
         let sender = WebhookSender::new(url, test_config());
         
-        sender.send_terminal(WebhookEvent::Completed, &serde_json::json!({"status": "succeeded"})).await;
+        sender.send_terminal(WebhookEventType::Completed, &serde_json::json!({"status": "succeeded"})).await;
     }
     
     #[tokio::test]
     async fn send_terminal_respects_event_filter() {
         let server = MockServer::start().await;
         
-        // Should NOT be called - Completed is filtered out
         Mock::given(method("POST"))
             .and(path("/webhook"))
             .respond_with(ResponseTemplate::new(200))
@@ -445,12 +450,12 @@ mod tests {
         
         let url = format!("{}/webhook", server.uri());
         let config = WebhookConfig {
-            events_filter: [WebhookEventFilter::Start].into_iter().collect(), // Only Start, not Completed
+            events_filter: [WebhookEventType::Start].into_iter().collect(),
             ..test_config()
         };
         let sender = WebhookSender::new(url, config);
         
-        sender.send_terminal(WebhookEvent::Completed, &serde_json::json!({"status": "succeeded"})).await;
+        sender.send_terminal(WebhookEventType::Completed, &serde_json::json!({"status": "succeeded"})).await;
     }
     
     #[tokio::test]
@@ -467,9 +472,8 @@ mod tests {
         let url = format!("{}/webhook", server.uri());
         let sender = WebhookSender::new(url, test_config());
         
-        sender.send(WebhookEvent::Start, &serde_json::json!({"status": "starting"}));
+        sender.send(WebhookEventType::Start, &serde_json::json!({"status": "starting"}));
         
-        // Give the spawned task time to complete
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     
@@ -477,7 +481,6 @@ mod tests {
     async fn send_non_terminal_throttled() {
         let server = MockServer::start().await;
         
-        // Only expect 1 call due to throttling
         Mock::given(method("POST"))
             .and(path("/webhook"))
             .respond_with(ResponseTemplate::new(200))
@@ -487,15 +490,13 @@ mod tests {
         
         let url = format!("{}/webhook", server.uri());
         let config = WebhookConfig {
-            response_interval: Duration::from_secs(10), // Long throttle
+            response_interval: Duration::from_secs(10),
             ..test_config()
         };
         let sender = WebhookSender::new(url, config);
         
-        // First should send
-        sender.send(WebhookEvent::Output, &serde_json::json!({"output": "1"}));
-        // Second should be throttled
-        sender.send(WebhookEvent::Output, &serde_json::json!({"output": "2"}));
+        sender.send(WebhookEventType::Output, &serde_json::json!({"output": "1"}));
+        sender.send(WebhookEventType::Output, &serde_json::json!({"output": "2"}));
         
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
@@ -514,7 +515,6 @@ mod tests {
         let url = format!("{}/webhook", server.uri());
         let sender = WebhookSender::new(url, test_config());
         
-        // Call sync method - safe because wiremock server runs in background
         sender.send_terminal_sync(&serde_json::json!({
             "id": "pred_123",
             "status": "succeeded"
@@ -525,7 +525,6 @@ mod tests {
     async fn send_terminal_sync_retries_on_500() {
         let server = MockServer::start().await;
         
-        // First fails, second succeeds
         Mock::given(method("POST"))
             .and(path("/webhook"))
             .respond_with(ResponseTemplate::new(500))

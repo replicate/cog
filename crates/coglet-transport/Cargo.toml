@@ -12,11 +12,8 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 anyhow.workspace = true
-reqwest.workspace = true
-ureq = { version = "3", features = ["json"] }
 
 [dev-dependencies]
 insta.workspace = true
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
-wiremock = "0.6"

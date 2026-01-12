@@ -2,7 +2,8 @@
 
 mod routes;
 mod server;
-mod webhook;
 
 pub use server::{serve, AppState, ServerConfig};
-pub use webhook::{WebhookConfig, WebhookEvent, WebhookSender};
+
+// Re-export webhook types from coglet-core for convenience
+pub use coglet_core::{WebhookConfig, WebhookEventType, WebhookSender};
