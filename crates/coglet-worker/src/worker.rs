@@ -221,25 +221,31 @@ pub async fn run_worker<H: PredictHandler>(handler: Arc<H>, config: WorkerConfig
         slot_writers.insert(*slot_id, FramedWrite::new(write_half, JsonCodec::new()));
     }
 
-    // For sync predictor (single slot), use a simpler inline loop
-    if num_slots == 1 {
-        let slot_id = slot_ids[0];
-        let reader = slot_readers.remove(&slot_id);
-        let writer = slot_writers.remove(&slot_id);
-        return run_sync_worker(
-            handler,
-            ctrl_reader,
-            ctrl_writer,
-            slot_id,
-            reader,
-            writer,
-        ).await;
-    }
+    // Channel for incoming slot requests (from reader tasks)
+    let (request_tx, mut request_rx) = mpsc::channel::<(SlotId, SlotRequest)>(num_slots);
 
-    // Multi-slot async worker loop
+    // Spawn a reader task for each slot
+    // Each task reads from its socket and forwards to the shared request channel
+    for (slot_id, reader) in slot_readers {
+        let tx = request_tx.clone();
+        tokio::spawn(async move {
+            slot_reader_task(slot_id, reader, tx).await;
+        });
+    }
+    drop(request_tx); // Drop our copy so channel closes when all readers done
+
+    // Wrap writers in Arc<Mutex> for sharing with prediction tasks
+    let slot_writers: HashMap<SlotId, Arc<tokio::sync::Mutex<FramedWrite<tokio::net::unix::OwnedWriteHalf, JsonCodec<SlotResponse>>>>> = 
+        slot_writers.into_iter()
+            .map(|(id, w)| (id, Arc::new(tokio::sync::Mutex::new(w))))
+            .collect();
+
+    // Main event loop - unified for both sync (1 slot) and async (N slots)
     loop {
         tokio::select! {
-            // Control channel messages
+            biased; // Prefer control messages, then completions, then new requests
+
+            // Control channel messages (highest priority)
             ctrl_msg = ctrl_reader.next() => {
                 match ctrl_msg {
                     Some(Ok(ControlRequest::Cancel { slot })) => {
@@ -256,20 +262,18 @@ pub async fn run_worker<H: PredictHandler>(handler: Arc<H>, config: WorkerConfig
                         break;
                     }
                     None => {
-                        // Parent closed control channel - exit
                         tracing::warn!("Control channel closed (parent died?), exiting");
                         break;
                     }
                 }
             }
 
-            // Slot completions from async tasks
+            // Slot completions from prediction tasks
             Some(completion) = completion_rx.recv() => {
                 let slot = completion.outcome.slot_id();
                 slot_busy.insert(slot, false);
 
                 // Update poisoned state and send response
-                // SlotOutcome ensures we can't send Idle for a poisoned slot
                 if completion.outcome.is_poisoned() {
                     slot_poisoned.insert(slot, true);
                 }
@@ -281,140 +285,135 @@ pub async fn run_worker<H: PredictHandler>(handler: Arc<H>, config: WorkerConfig
                     break;
                 }
             }
-        }
 
-        // TODO: For async multi-slot, need to poll all slot sockets
-        // This is deferred - async concurrent predictions are a future task
+            // New prediction requests from slot sockets
+            Some((slot_id, request)) = request_rx.recv() => {
+                // Skip if slot is busy or poisoned
+                if slot_busy.get(&slot_id).copied().unwrap_or(false) {
+                    tracing::warn!(%slot_id, "Request received for busy slot, ignoring");
+                    continue;
+                }
+                if slot_poisoned.get(&slot_id).copied().unwrap_or(false) {
+                    tracing::warn!(%slot_id, "Request received for poisoned slot, ignoring");
+                    continue;
+                }
+
+                match request {
+                    SlotRequest::Predict { id, input } => {
+                        tracing::debug!(%slot_id, %id, "Prediction request received");
+                        slot_busy.insert(slot_id, true);
+
+                        // Get writer for this slot
+                        let writer = match slot_writers.get(&slot_id) {
+                            Some(w) => Arc::clone(w),
+                            None => {
+                                tracing::error!(%slot_id, "No writer for slot");
+                                continue;
+                            }
+                        };
+
+                        // Spawn prediction task
+                        let handler = Arc::clone(&handler);
+                        let completion_tx = completion_tx.clone();
+                        tokio::spawn(async move {
+                            let completion = run_prediction(
+                                slot_id,
+                                id,
+                                input,
+                                handler,
+                                writer,
+                            ).await;
+                            let _ = completion_tx.send(completion).await;
+                        });
+                    }
+                }
+            }
+        }
     }
 
     tracing::info!("Worker exiting");
     Ok(())
 }
 
-/// Run sync worker with single slot (inline prediction).
-///
-/// For sync predictors, we run predictions inline rather than spawning tasks.
-/// This is simpler and avoids the overhead of task spawning.
-async fn run_sync_worker<H: PredictHandler>(
-    handler: Arc<H>,
-    mut ctrl_reader: FramedRead<tokio::io::Stdin, JsonCodec<ControlRequest>>,
-    mut ctrl_writer: FramedWrite<tokio::io::Stdout, JsonCodec<ControlResponse>>,
+/// Task that reads from a slot socket and forwards requests to the main loop.
+async fn slot_reader_task(
     slot_id: SlotId,
-    slot_reader: Option<FramedRead<tokio::net::unix::OwnedReadHalf, JsonCodec<SlotRequest>>>,
-    slot_writer: Option<FramedWrite<tokio::net::unix::OwnedWriteHalf, JsonCodec<SlotResponse>>>,
-) -> io::Result<()> {
-    let mut slot_reader = slot_reader.ok_or_else(|| {
-        io::Error::new(io::ErrorKind::NotFound, format!("No slot socket for {}", slot_id))
-    })?;
-    let mut slot_writer = slot_writer.ok_or_else(|| {
-        io::Error::new(io::ErrorKind::NotFound, format!("No slot socket for {}", slot_id))
-    })?;
-
+    mut reader: FramedRead<tokio::net::unix::OwnedReadHalf, JsonCodec<SlotRequest>>,
+    tx: mpsc::Sender<(SlotId, SlotRequest)>,
+) {
     loop {
-        // Wait for either a control message or a prediction request
-        tokio::select! {
-            biased;  // Prefer control messages
-
-            ctrl_msg = ctrl_reader.next() => {
-                match ctrl_msg {
-                    Some(Ok(ControlRequest::Cancel { slot })) => {
-                        tracing::debug!(%slot, "Cancel requested (sync worker)");
-                        handler.cancel(slot);
-                    }
-                    Some(Ok(ControlRequest::Shutdown)) => {
-                        tracing::info!("Shutdown requested");
-                        let _ = ctrl_writer.send(ControlResponse::ShuttingDown).await;
-                        break;
-                    }
-                    Some(Err(e)) => {
-                        tracing::error!(error = %e, "Control channel error");
-                        break;
-                    }
-                    None => {
-                        tracing::warn!("Control channel closed, exiting");
-                        break;
-                    }
+        match reader.next().await {
+            Some(Ok(request)) => {
+                if tx.send((slot_id, request)).await.is_err() {
+                    // Main loop shut down
+                    break;
                 }
             }
-
-            slot_msg = slot_reader.next() => {
-                match slot_msg {
-                    Some(Ok(SlotRequest::Predict { id, input })) => {
-                        tracing::debug!(id = %id, %slot_id, "Prediction request received");
-
-                        // Create channel for log streaming
-                        let (log_tx, mut log_rx) = mpsc::unbounded_channel::<SlotResponse>();
-                        let slot_sender = Arc::new(SlotSender::new(log_tx));
-
-                        // Run prediction and forward logs concurrently
-                        let handler_clone = Arc::clone(&handler);
-                        let predict_fut = handler_clone.predict(slot_id, id.clone(), input, slot_sender);
-
-                        // Drive prediction while forwarding logs
-                        let result = tokio::select! {
-                            result = predict_fut => result,
-                            // This branch drains logs while prediction runs
-                            // (won't complete until channel closes)
-                            _ = async {
-                                while let Some(msg) = log_rx.recv().await {
-                                    if let Err(e) = slot_writer.send(msg).await {
-                                        tracing::warn!(error = %e, "Failed to send log");
-                                    }
-                                }
-                            } => unreachable!(),
-                        };
-
-                        // Drain any remaining logs
-                        while let Ok(msg) = log_rx.try_recv() {
-                            let _ = slot_writer.send(msg).await;
-                        }
-
-                        // Send result on slot socket
-                        let response = if result.success {
-                            SlotResponse::Done {
-                                id,
-                                output: Some(result.output),
-                                predict_time: result.predict_time,
-                            }
-                        } else if result.error.as_deref() == Some("Cancelled") {
-                            SlotResponse::Cancelled { id }
-                        } else {
-                            SlotResponse::Failed {
-                                id,
-                                error: result.error.unwrap_or_else(|| "Unknown error".to_string()),
-                            }
-                        };
-
-                        if let Err(e) = slot_writer.send(response).await {
-                            tracing::error!(error = %e, "Failed to send response");
-                            // Socket write failed - slot is poisoned
-                            let outcome = SlotOutcome::poisoned(slot_id, format!("Socket write error: {}", e));
-                            let _ = ctrl_writer.send(outcome.into_control_response()).await;
-                            break;
-                        }
-
-                        // Signal slot is idle (prediction completed normally)
-                        let outcome = SlotOutcome::idle(slot_id);
-                        let _ = ctrl_writer.send(outcome.into_control_response()).await;
-                    }
-                    Some(Err(e)) => {
-                        tracing::error!(error = %e, "Slot socket error");
-                        // Socket read failed - slot is poisoned
-                        let outcome = SlotOutcome::poisoned(slot_id, format!("Socket read error: {}", e));
-                        let _ = ctrl_writer.send(outcome.into_control_response()).await;
-                        break;
-                    }
-                    None => {
-                        tracing::warn!("Slot socket closed");
-                        break;
-                    }
-                }
+            Some(Err(e)) => {
+                tracing::error!(%slot_id, error = %e, "Slot reader error");
+                break;
+            }
+            None => {
+                tracing::debug!(%slot_id, "Slot socket closed");
+                break;
             }
         }
     }
+}
 
-    tracing::info!("Sync worker exiting");
-    Ok(())
+/// Run a single prediction and return the completion.
+async fn run_prediction<H: PredictHandler>(
+    slot_id: SlotId,
+    prediction_id: String,
+    input: serde_json::Value,
+    handler: Arc<H>,
+    writer: Arc<tokio::sync::Mutex<FramedWrite<tokio::net::unix::OwnedWriteHalf, JsonCodec<SlotResponse>>>>,
+) -> SlotCompletion {
+    // Create channel for log streaming
+    let (log_tx, mut log_rx) = mpsc::unbounded_channel::<SlotResponse>();
+    let slot_sender = Arc::new(SlotSender::new(log_tx));
+
+    // Spawn task to forward logs to slot socket
+    let writer_for_logs = Arc::clone(&writer);
+    let log_forwarder = tokio::spawn(async move {
+        while let Some(msg) = log_rx.recv().await {
+            let mut w = writer_for_logs.lock().await;
+            if let Err(e) = w.send(msg).await {
+                tracing::warn!(error = %e, "Failed to forward log");
+                break;
+            }
+        }
+    });
+
+    // Run prediction
+    let result = handler.predict(slot_id, prediction_id.clone(), input, slot_sender).await;
+
+    // Wait for log forwarder to finish (channel closes when SlotSender dropped)
+    let _ = log_forwarder.await;
+
+    // Send result on slot socket
+    let response = if result.success {
+        SlotResponse::Done {
+            id: prediction_id.clone(),
+            output: Some(result.output),
+            predict_time: result.predict_time,
+        }
+    } else if result.error.as_deref() == Some("Cancelled") {
+        SlotResponse::Cancelled { id: prediction_id.clone() }
+    } else {
+        SlotResponse::Failed {
+            id: prediction_id.clone(),
+            error: result.error.clone().unwrap_or_else(|| "Unknown error".to_string()),
+        }
+    };
+
+    let mut w = writer.lock().await;
+    if let Err(e) = w.send(response).await {
+        tracing::error!(error = %e, "Failed to send prediction response");
+        return SlotCompletion::poisoned(slot_id, format!("Socket write error: {}", e));
+    }
+
+    SlotCompletion::idle(slot_id)
 }
 
 #[cfg(test)]
