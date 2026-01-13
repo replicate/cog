@@ -102,6 +102,8 @@ jobs:
       matrix:
         pydantic: ["1", "2"]
         python-version: ${{ fromJson(needs.build-python.outputs.python-versions) }}
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     steps:
       - name: Download built wheels
         uses: actions/download-artifact@v6
@@ -110,19 +112,13 @@ jobs:
           merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python-version }}
-      - uses: hynek/setup-cached-uv@v2
-      - name: Prepare tox
-        run: |
-          echo TOX_PYTHON=py$(echo "${{ matrix.python-version }}" | tr -d .) >>$GITHUB_ENV
-          uv pip install --system tox
-      - run: uv pip install --system tox-uv
+      - uses: jdx/mise-action@v2
+      - name: Compute tox env name
+        run: echo TOX_PYTHON=py$(echo "${{ matrix.python-version }}" | tr -d .) >>$GITHUB_ENV
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
       - name: Test
-        run: python -Im tox run --installpkg dist/cog-*.whl -e ${{ env.TOX_PYTHON }}-pydantic${{ matrix.pydantic }}-tests
+        run: uvx --with tox-uv tox run --installpkg dist/cog-*.whl -e ${{ env.TOX_PYTHON }}-pydantic${{ matrix.pydantic }}-tests
 
   # ==========================================================================
   # Coglet tests (Go server + Python SDK for the coglet runtime)
