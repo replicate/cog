@@ -1,11 +1,13 @@
 # Test that local wheel files can be installed via requirements.txt
 
-# Create a minimal wheel package
+# Create a minimal wheel package with proper structure
 exec mkdir -p my_package
 exec sh -c 'echo "# placeholder" > my_package/__init__.py'
 exec mkdir -p my_package-0.1.dist-info
-exec sh -c 'printf "Metadata-Version: 2.1\nName: my_package\nVersion: 0.1\n" > my_package-0.1.dist-info/METADATA'
-exec sh -c 'printf "my_package\nmy_package-0.1.dist-info\n" > my_package-0.1.dist-info/RECORD'
+exec sh -c 'printf "Metadata-Version: 2.1\nName: my-package\nVersion: 0.1\n" > my_package-0.1.dist-info/METADATA'
+exec sh -c 'printf "Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: true\nTag: py2-none-any\nTag: py3-none-any\n" > my_package-0.1.dist-info/WHEEL'
+exec sh -c 'printf "my_package\n" > my_package-0.1.dist-info/top_level.txt'
+exec sh -c 'printf "my_package/__init__.py,,\nmy_package-0.1.dist-info/METADATA,,\nmy_package-0.1.dist-info/WHEEL,,\nmy_package-0.1.dist-info/top_level.txt,,\nmy_package-0.1.dist-info/RECORD,,\n" > my_package-0.1.dist-info/RECORD'
 exec sh -c 'zip -r my_package-0.1-py2.py3-none-any.whl my_package my_package-0.1.dist-info'
 
 # Build the image with local wheel
