@@ -36,6 +36,28 @@ integration-tests/
 
 Tests are `.txtar` files in the `tests/` directory. Each file is a self-contained test with embedded fixtures.
 
+### Editor Support
+
+For syntax highlighting of `.txtar` files:
+
+**VS Code:**
+- [testscript](https://marketplace.visualstudio.com/items?itemName=twpayne.vscode-testscript) by twpayne - Syntax highlighting with embedded file support
+- [txtar](https://github.com/brody715/vscode-txtar) by brody715 - Alternative txtar extension
+
+Install via VS Code:
+```
+ext install twpayne.vscode-testscript
+```
+
+**Zed:**
+- [zed-txtar](https://github.com/FollowTheProcess/zed-txtar) - Syntax highlighting for txtar files
+
+Install via Zed extensions panel or add to your extensions.
+
+**Vim/Neovim:**
+- Use [tree-sitter-go-template](https://github.com/ngalaiko/tree-sitter-go-template) for basic support
+- Or set filetype manually: `:set ft=conf` for basic highlighting
+
 ### Basic Test Structure
 
 ```txtar
