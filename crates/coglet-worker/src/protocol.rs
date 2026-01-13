@@ -42,8 +42,16 @@ impl Default for SlotId {
 
 impl std::fmt::Display for SlotId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Use short form for logging: first 8 chars of UUID
-        write!(f, "slot-{}", &self.0.to_string()[..8])
+        // Full UUID for serialization/parsing roundtrip
+        write!(f, "{}", self.0)
+    }
+}
+
+impl SlotId {
+    /// Parse a SlotId from string (UUID format).
+    pub fn parse(s: &str) -> Result<Self, uuid::Error> {
+        let uuid = uuid::Uuid::parse_str(s)?;
+        Ok(Self(uuid))
     }
 }
 

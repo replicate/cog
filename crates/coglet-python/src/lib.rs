@@ -433,12 +433,16 @@ fn _is_cancelable() -> bool {
 /// Environment variables:
 /// - COGLET_IS_TRAIN: If "true", call train() instead of predict()
 #[pyfunction]
-fn _run_worker(predictor_ref: String) -> PyResult<()> {
+fn _run_worker(py: Python<'_>, predictor_ref: String) -> PyResult<()> {
     // Initialize tracing
     let _ = tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_writer(std::io::stderr) // Log to stderr, stdout is for protocol
         .try_init();
+
+    // Install SlotLogWriters for ContextVar-based log routing
+    // This replaces sys.stdout/stderr with our writers that route via SlotId
+    log_writer::install_slot_log_writers(py)?;
 
     // Check if we're in training mode
     let is_train = std::env::var("COGLET_IS_TRAIN")

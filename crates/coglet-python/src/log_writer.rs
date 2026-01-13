@@ -1,32 +1,129 @@
-//! SlotLogWriter - captures Python stdout/stderr and sends through slot socket.
+//! SlotLogWriter - captures Python stdout/stderr and routes via Rust-owned ContextVar.
 //!
-//! This module provides a PyO3 class that replaces sys.stdout/stderr during predictions.
-//! Writes are immediately sent as framed SlotResponse::Log messages through the slot socket.
-//! This allows per-slot log streaming without head-of-line blocking.
+//! Architecture:
+//! - Rust owns a ContextVar that holds the current SlotId
+//! - Rust maintains a registry mapping SlotId → SlotSender
+//! - SlotLogWriter is a singleton that reads the ContextVar to route logs
+//! - User code cannot bypass this - even if they replace sys.stdout, we control the ContextVar
+//!
+//! This design supports:
+//! - Async predictions with proper per-task isolation (ContextVar is task-local)
+//! - Free-threaded Python (ContextVar is thread-safe)
+//! - Future interactive channels (same routing mechanism)
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use pyo3::prelude::*;
 
-use coglet_worker::{LogSource, SlotSender};
+use coglet_worker::{LogSource, SlotId, SlotSender};
 
 // ============================================================================
-// SlotLogWriter - PyO3 class implementing Python file protocol
+// Rust-owned ContextVar for slot routing
 // ============================================================================
 
-/// A Python file-like object that sends writes to a slot socket.
+/// The Rust-owned ContextVar instance. Created once, lives forever.
+/// User code cannot replace this - we hold the only reference.
+static SLOT_CONTEXTVAR: OnceLock<Py<PyAny>> = OnceLock::new();
+
+/// Registry mapping SlotId → SlotSender.
+/// When a prediction starts, we register the sender.
+/// When SlotLogWriter.write() is called, we look up the sender here.
+static SLOT_REGISTRY: OnceLock<Mutex<HashMap<SlotId, Arc<SlotSender>>>> = OnceLock::new();
+
+fn get_registry() -> &'static Mutex<HashMap<SlotId, Arc<SlotSender>>> {
+    SLOT_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Get or create the Rust-owned ContextVar.
+fn get_slot_contextvar(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
+    if let Some(cv) = SLOT_CONTEXTVAR.get() {
+        return Ok(cv);
+    }
+
+    let contextvars = py.import("contextvars")?;
+    let cv = contextvars.call_method1("ContextVar", ("_coglet_slot_id",))?;
+    
+    // Try to store it. Race is fine - worst case we create an extra that gets dropped.
+    let _ = SLOT_CONTEXTVAR.set(cv.unbind());
+    Ok(SLOT_CONTEXTVAR.get().unwrap())
+}
+
+/// Register a SlotSender for a SlotId.
+/// Called when starting a prediction.
+pub fn register_slot(slot_id: SlotId, sender: Arc<SlotSender>) {
+    let mut registry = get_registry().lock().unwrap();
+    registry.insert(slot_id, sender);
+}
+
+/// Unregister a SlotId.
+/// Called when prediction completes.
+pub fn unregister_slot(slot_id: SlotId) {
+    let mut registry = get_registry().lock().unwrap();
+    registry.remove(&slot_id);
+}
+
+/// Get the SlotSender for a SlotId.
+fn get_slot_sender(slot_id: SlotId) -> Option<Arc<SlotSender>> {
+    let registry = get_registry().lock().unwrap();
+    registry.get(&slot_id).cloned()
+}
+
+/// Set the current slot ID in the ContextVar.
+/// Returns a token that can be used to reset.
+pub fn set_current_slot(py: Python<'_>, slot_id: SlotId) -> PyResult<Py<PyAny>> {
+    let cv = get_slot_contextvar(py)?;
+    let slot_id_str = slot_id.to_string();
+    let token = cv.call_method1(py, "set", (slot_id_str,))?;
+    Ok(token)
+}
+
+/// Reset the current slot ID using a token from set_current_slot.
+pub fn reset_current_slot(py: Python<'_>, token: &Py<PyAny>) -> PyResult<()> {
+    let cv = get_slot_contextvar(py)?;
+    cv.call_method1(py, "reset", (token,))?;
+    Ok(())
+}
+
+/// Get the current slot ID from the ContextVar.
+/// Returns None if not set (outside prediction context).
+fn get_current_slot_id(py: Python<'_>) -> PyResult<Option<SlotId>> {
+    let cv = get_slot_contextvar(py)?;
+    
+    // Try to get the value - returns the value or raises LookupError
+    match cv.call_method0(py, "get") {
+        Ok(val) => {
+            let slot_id_str: String = val.extract(py)?;
+            let slot_id = SlotId::parse(&slot_id_str).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Invalid SlotId: {}", e))
+            })?;
+            Ok(Some(slot_id))
+        }
+        Err(e) if e.is_instance_of::<pyo3::exceptions::PyLookupError>(py) => {
+            // ContextVar not set - outside prediction context
+            Ok(None)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+// ============================================================================
+// SlotLogWriter - singleton that routes via ContextVar
+// ============================================================================
+
+/// A Python file-like object that routes writes via the Rust-owned ContextVar.
 ///
-/// Replaces sys.stdout or sys.stderr during predictions. Each write is
-/// immediately sent as a SlotResponse::Log message, enabling real-time
-/// log streaming.
+/// This is installed as sys.stdout/stderr once at worker startup.
+/// Each write looks up the current SlotId from the ContextVar and routes
+/// to the appropriate SlotSender.
 ///
-/// Implements the Python file protocol (write, flush, readable, writable, seekable).
+/// If no SlotId is set (outside prediction), writes go to the original stream.
 #[pyclass]
 pub struct SlotLogWriter {
     /// Which stream this captures (stdout or stderr).
     source: LogSource,
-    /// Handle for sending to the slot socket (from coglet-worker).
-    sender: Arc<SlotSender>,
+    /// Original stream to fall back to when outside prediction context.
+    original: Py<PyAny>,
     /// Whether writes should be ignored (used after errors).
     #[pyo3(get)]
     closed: bool,
@@ -34,27 +131,41 @@ pub struct SlotLogWriter {
 
 #[pymethods]
 impl SlotLogWriter {
-    /// Write data to the slot socket.
+    /// Write data, routing via ContextVar.
     ///
-    /// Returns the number of characters written (always the full string).
-    /// Empty writes are ignored (Python sometimes writes empty strings).
-    fn write(&self, data: &str) -> PyResult<usize> {
+    /// If inside a prediction (ContextVar set), routes to the slot's sender.
+    /// Otherwise, writes to the original stream.
+    fn write(&self, py: Python<'_>, data: &str) -> PyResult<usize> {
         if self.closed || data.is_empty() {
             return Ok(data.len());
         }
 
-        // Use SlotSender from coglet-worker
-        self.sender.send_log(self.source, data).map_err(|e| {
-            pyo3::exceptions::PyIOError::new_err(e.to_string())
-        })?;
+        // Try to get current slot from ContextVar
+        match get_current_slot_id(py)? {
+            Some(slot_id) => {
+                // Inside prediction - route to slot
+                if let Some(sender) = get_slot_sender(slot_id) {
+                    sender.send_log(self.source, data).map_err(|e| {
+                        pyo3::exceptions::PyIOError::new_err(e.to_string())
+                    })?;
+                } else {
+                    // Slot not registered (shouldn't happen) - fall back to original
+                    self.write_to_original(py, data)?;
+                }
+            }
+            None => {
+                // Outside prediction - write to original stream
+                self.write_to_original(py, data)?;
+            }
+        }
 
         Ok(data.len())
     }
 
     /// Flush the stream.
-    ///
-    /// This is a no-op because writes are sent immediately.
-    fn flush(&self) -> PyResult<()> {
+    fn flush(&self, py: Python<'_>) -> PyResult<()> {
+        // Flush the original stream
+        self.original.call_method0(py, "flush")?;
         Ok(())
     }
 
@@ -74,15 +185,17 @@ impl SlotLogWriter {
     }
 
     /// Return whether the stream is a TTY.
-    fn isatty(&self) -> bool {
-        false
+    fn isatty(&self, py: Python<'_>) -> PyResult<bool> {
+        // Delegate to original
+        let result = self.original.call_method0(py, "isatty")?;
+        result.extract(py)
     }
 
-    /// Return the file number (not applicable).
-    fn fileno(&self) -> PyResult<i32> {
-        Err(pyo3::exceptions::PyOSError::new_err(
-            "SlotLogWriter does not have a file descriptor",
-        ))
+    /// Return the file number.
+    fn fileno(&self, py: Python<'_>) -> PyResult<i32> {
+        // Delegate to original - needed for some libraries
+        let result = self.original.call_method0(py, "fileno")?;
+        result.extract(py)
     }
 
     /// Close the stream.
@@ -102,97 +215,140 @@ impl SlotLogWriter {
         _exc_val: Option<&Bound<'_, PyAny>>,
         _exc_tb: Option<&Bound<'_, PyAny>>,
     ) -> bool {
-        self.closed = true;
         false // Don't suppress exceptions
+    }
+
+    /// Encoding property - needed for compatibility.
+    #[getter]
+    fn encoding(&self, py: Python<'_>) -> PyResult<Option<String>> {
+        match self.original.getattr(py, "encoding") {
+            Ok(enc) => enc.extract(py),
+            Err(_) => Ok(Some("utf-8".to_string())),
+        }
+    }
+
+    /// Newlines property - needed for compatibility.
+    #[getter]
+    fn newlines(&self) -> Option<String> {
+        None
+    }
+
+    /// Buffer property - some code checks for this.
+    #[getter]
+    fn buffer(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        // Return original's buffer if it has one, otherwise return self
+        match self.original.getattr(py, "buffer") {
+            Ok(buf) => Ok(buf),
+            Err(_) => Ok(self.original.clone_ref(py)),
+        }
     }
 }
 
 impl SlotLogWriter {
-    /// Create a new stdout writer for a slot.
-    pub fn stdout(sender: Arc<SlotSender>) -> Self {
+    /// Create a new stdout writer with fallback to original.
+    pub fn new_stdout(original: Py<PyAny>) -> Self {
         Self {
             source: LogSource::Stdout,
-            sender,
+            original,
             closed: false,
         }
     }
 
-    /// Create a new stderr writer for a slot.
-    pub fn stderr(sender: Arc<SlotSender>) -> Self {
+    /// Create a new stderr writer with fallback to original.
+    pub fn new_stderr(original: Py<PyAny>) -> Self {
         Self {
             source: LogSource::Stderr,
-            sender,
+            original,
             closed: false,
         }
+    }
+
+    /// Write to the original stream.
+    fn write_to_original(&self, py: Python<'_>, data: &str) -> PyResult<()> {
+        self.original.call_method1(py, "write", (data,))?;
+        Ok(())
     }
 }
 
 // ============================================================================
-// SlotLogGuard - RAII guard for stdout/stderr replacement
+// Installation - called once at worker startup
 // ============================================================================
 
-/// RAII guard that replaces sys.stdout/stderr with SlotLogWriters.
+/// Install SlotLogWriters as sys.stdout/stderr.
+/// Called once at worker startup. The writers persist for the lifetime of the process.
+/// Returns true if installation succeeded.
+pub fn install_slot_log_writers(py: Python<'_>) -> PyResult<bool> {
+    let sys = py.import("sys")?;
+
+    // Get originals
+    let original_stdout = sys.getattr("stdout")?.unbind();
+    let original_stderr = sys.getattr("stderr")?.unbind();
+
+    // Create writers
+    let stdout_writer = SlotLogWriter::new_stdout(original_stdout);
+    let stderr_writer = SlotLogWriter::new_stderr(original_stderr);
+
+    // Install
+    sys.setattr("stdout", stdout_writer.into_pyobject(py)?)?;
+    sys.setattr("stderr", stderr_writer.into_pyobject(py)?)?;
+
+    // Initialize the ContextVar
+    get_slot_contextvar(py)?;
+
+    tracing::debug!("Installed SlotLogWriters with ContextVar routing");
+    Ok(true)
+}
+
+// ============================================================================
+// SlotLogGuard - RAII guard for prediction context
+// ============================================================================
+
+/// RAII guard that sets the current slot in the ContextVar.
 ///
-/// On creation, saves the original stdout/stderr and installs SlotLogWriters.
-/// On drop, restores the original streams.
-///
-/// This ensures Python prints and logging go through the slot socket during
-/// prediction, without leaking to the control channel.
+/// On creation, registers the SlotSender and sets the ContextVar.
+/// On drop, resets the ContextVar and unregisters the sender.
 pub struct SlotLogGuard {
-    original_stdout: Py<PyAny>,
-    original_stderr: Py<PyAny>,
+    slot_id: SlotId,
+    token: Py<PyAny>,
 }
 
 impl SlotLogGuard {
-    /// Install slot log writers, returning a guard that restores originals on drop.
+    /// Enter prediction context for a slot.
     ///
-    /// Returns None if installation fails (shouldn't happen in practice).
-    pub fn install(py: Python<'_>, sender: Arc<SlotSender>) -> Option<Self> {
-        let sys = py.import("sys").ok()?;
+    /// Registers the sender and sets the ContextVar.
+    pub fn enter(py: Python<'_>, slot_id: SlotId, sender: Arc<SlotSender>) -> PyResult<Self> {
+        // Register sender in global registry
+        register_slot(slot_id, sender);
 
-        // Save originals
-        let original_stdout = sys.getattr("stdout").ok()?.unbind();
-        let original_stderr = sys.getattr("stderr").ok()?.unbind();
+        // Set ContextVar
+        let token = set_current_slot(py, slot_id)?;
 
-        // Create slot writers
-        let stdout_writer = SlotLogWriter::stdout(sender.clone());
-        let stderr_writer = SlotLogWriter::stderr(sender);
-
-        // Install them
-        sys.setattr("stdout", stdout_writer.into_pyobject(py).ok()?)
-            .ok()?;
-        sys.setattr("stderr", stderr_writer.into_pyobject(py).ok()?)
-            .ok()?;
-
-        Some(Self {
-            original_stdout,
-            original_stderr,
-        })
+        Ok(Self { slot_id, token })
     }
 
-    /// Restore original stdout/stderr.
+    /// Exit prediction context.
     ///
-    /// Called automatically on drop, but can be called explicitly.
-    pub fn restore(self, py: Python<'_>) {
-        self.restore_impl(py);
-    }
+    /// Resets the ContextVar and unregisters the sender.
+    pub fn exit(self, py: Python<'_>) -> PyResult<()> {
+        // Reset ContextVar
+        reset_current_slot(py, &self.token)?;
 
-    fn restore_impl(&self, py: Python<'_>) {
-        if let Ok(sys) = py.import("sys") {
-            let _ = sys.setattr("stdout", self.original_stdout.bind(py));
-            let _ = sys.setattr("stderr", self.original_stderr.bind(py));
-        }
+        // Unregister sender
+        unregister_slot(self.slot_id);
+
+        Ok(())
     }
 }
 
 impl Drop for SlotLogGuard {
     fn drop(&mut self) {
-        // Try to restore - this requires the GIL
-        // In async context, we may not have the GIL on drop
-        // Caller should explicitly call restore() when possible
-        Python::attach(|py| {
-            self.restore_impl(py);
-        });
+        // Best-effort cleanup
+        unregister_slot(self.slot_id);
+        
+        // Note: We can't reset the ContextVar here without the GIL.
+        // The caller should call exit() explicitly in async contexts.
+        // For sync predictions, the ContextVar reset happens naturally
+        // when the task ends.
     }
 }
 
@@ -205,6 +361,21 @@ mod tests {
     use super::*;
     use coglet_worker::SlotResponse;
     use tokio::sync::mpsc;
+
+    #[test]
+    fn registry_operations() {
+        let slot_id = SlotId::new();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let sender = Arc::new(SlotSender::new(tx));
+
+        // Register
+        register_slot(slot_id, sender.clone());
+        assert!(get_slot_sender(slot_id).is_some());
+
+        // Unregister
+        unregister_slot(slot_id);
+        assert!(get_slot_sender(slot_id).is_none());
+    }
 
     #[test]
     fn slot_sender_sends_log() {

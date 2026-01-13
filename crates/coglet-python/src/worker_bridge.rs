@@ -145,10 +145,17 @@ impl PredictHandler for PythonPredictHandler {
             }
         };
 
-        // Install SlotLogGuard to capture stdout/stderr and stream to slot socket
-        let _log_guard = Python::attach(|py| {
-            crate::log_writer::SlotLogGuard::install(py, slot_sender)
+        // Enter prediction context - sets ContextVar for log routing
+        let log_guard = Python::attach(|py| {
+            crate::log_writer::SlotLogGuard::enter(py, slot, slot_sender)
         });
+        let log_guard = match log_guard {
+            Ok(g) => Some(g),
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to enter prediction context");
+                None
+            }
+        };
 
         // Run prediction or training based on is_train mode.
         // 
@@ -183,7 +190,15 @@ impl PredictHandler for PythonPredictHandler {
         };
 
         self.finish_prediction(slot);
-        // _log_guard dropped here, restores original stdout/stderr
+        
+        // Exit prediction context - resets ContextVar
+        if let Some(guard) = log_guard {
+            Python::attach(|py| {
+                if let Err(e) = guard.exit(py) {
+                    tracing::warn!(error = %e, "Failed to exit prediction context");
+                }
+            });
+        }
 
         match result {
             Ok(r) => {
