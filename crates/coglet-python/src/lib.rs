@@ -1,6 +1,7 @@
 //! coglet-python: PyO3 bindings for coglet.
 
 mod async_runtime;
+mod audit;
 mod cancel;
 mod input;
 mod log_writer;
@@ -8,7 +9,8 @@ mod output;
 mod predictor;
 mod worker_bridge;
 
-pub use log_writer::{SlotLogGuard, SlotLogWriter};
+pub use audit::TeeWriter;
+pub use log_writer::{PredictionLogGuard, SlotLogWriter};
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -425,23 +427,7 @@ fn _is_cancelable() -> bool {
     cancel::is_cancelable()
 }
 
-/// Set the current slot context (ContextVar) for log routing.
-/// Called by our async wrapper before running user's coroutine.
-/// Returns a token for resetting.
-#[pyfunction]
-fn _set_slot_context(py: Python<'_>, slot_id_str: String) -> PyResult<Py<PyAny>> {
-    let slot_id = coglet_worker::SlotId::parse(&slot_id_str).map_err(|e| {
-        pyo3::exceptions::PyValueError::new_err(format!("Invalid SlotId: {}", e))
-    })?;
-    log_writer::set_current_slot(py, slot_id)
-}
 
-/// Reset the slot context using a token from _set_slot_context.
-/// Called by our async wrapper after user's coroutine completes.
-#[pyfunction]
-fn _reset_slot_context(py: Python<'_>, token: Py<PyAny>) -> PyResult<()> {
-    log_writer::reset_current_slot(py, &token)
-}
 
 /// Run as a worker subprocess.
 ///
@@ -462,6 +448,12 @@ fn _run_worker(py: Python<'_>, predictor_ref: String) -> PyResult<()> {
     // Install SlotLogWriters for ContextVar-based log routing
     // This replaces sys.stdout/stderr with our writers that route via SlotId
     log_writer::install_slot_log_writers(py)?;
+
+    // Install audit hook to protect stdout/stderr from user replacement
+    // If user code replaces them, we tee to both our routing and their stream
+    if let Err(e) = audit::install_audit_hook(py) {
+        warn!(error = %e, "Failed to install audit hook, stdout/stderr protection disabled");
+    }
 
     // Install SIGUSR1 signal handler for sync predictor cancellation
     // This allows cancel requests to interrupt blocking Python code
@@ -501,8 +493,13 @@ fn coglet(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(serve, m)?)?;
     m.add_function(wrap_pyfunction!(_is_cancelable, m)?)?;
     m.add_function(wrap_pyfunction!(_run_worker, m)?)?;
-    // Context management for async predictions (internal use)
-    m.add_function(wrap_pyfunction!(_set_slot_context, m)?)?;
-    m.add_function(wrap_pyfunction!(_reset_slot_context, m)?)?;
+    // Audit hook helpers for stdout/stderr protection (internal use by audit hook)
+    m.add_function(wrap_pyfunction!(audit::_is_slot_log_writer, m)?)?;
+    m.add_function(wrap_pyfunction!(audit::_is_tee_writer, m)?)?;
+    m.add_function(wrap_pyfunction!(audit::_get_inner_writer, m)?)?;
+    m.add_function(wrap_pyfunction!(audit::_create_tee_writer, m)?)?;
+    // Export classes (needed for isinstance checks in audit hook)
+    m.add_class::<log_writer::SlotLogWriter>()?;
+    m.add_class::<audit::TeeWriter>()?;
     Ok(())
 }

@@ -138,7 +138,7 @@ impl PredictHandler for PythonPredictHandler {
     async fn predict(
         &self,
         slot: SlotId,
-        _id: String,
+        id: String,
         input: serde_json::Value,
         slot_sender: Arc<SlotSender>,
     ) -> PredictResult {
@@ -165,9 +165,10 @@ impl PredictHandler for PythonPredictHandler {
             return PredictResult::cancelled(0.0);
         }
 
-        // Enter prediction context - sets ContextVar for log routing
+        // Enter prediction context - sets cog_prediction_id ContextVar for log routing
+        let prediction_id = id.clone();
         let log_guard = Python::attach(|py| {
-            crate::log_writer::SlotLogGuard::enter(py, slot, slot_sender)
+            crate::log_writer::PredictionLogGuard::enter(py, prediction_id.clone(), slot_sender)
         });
         let log_guard = match log_guard {
             Ok(g) => Some(g),
@@ -215,14 +216,9 @@ impl PredictHandler for PythonPredictHandler {
 
         self.finish_prediction(slot);
         
-        // Exit prediction context - resets ContextVar
-        if let Some(guard) = log_guard {
-            Python::attach(|py| {
-                if let Err(e) = guard.exit(py) {
-                    tracing::warn!(error = %e, "Failed to exit prediction context");
-                }
-            });
-        }
+        // Exit prediction context - unregisters prediction from routing
+        // (ContextVar reset is automatic when task ends for async)
+        drop(log_guard);
 
         match result {
             Ok(r) => {

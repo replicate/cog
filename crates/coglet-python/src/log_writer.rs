@@ -1,103 +1,103 @@
-//! SlotLogWriter - captures Python stdout/stderr and routes via Rust-owned ContextVar.
+//! Log routing via prediction_id ContextVar.
 //!
 //! Architecture:
-//! - Rust owns a ContextVar that holds the current SlotId
-//! - Rust maintains a registry mapping SlotId → SlotSender
-//! - SlotLogWriter is a singleton that reads the ContextVar to route logs
-//! - User code cannot bypass this - even if they replace sys.stdout, we control the ContextVar
+//! - Rust owns a ContextVar `_coglet_prediction_id` that holds the current prediction ID
+//! - Rust maintains a registry mapping prediction_id → SlotSender
+//! - SlotLogWriter reads the ContextVar to route logs to the correct sender
 //!
 //! This design supports:
 //! - Async predictions with proper per-task isolation (ContextVar is task-local)
-//! - Free-threaded Python (ContextVar is thread-safe)
-//! - Future interactive channels (same routing mechanism)
+//! - Orphan task detection (prediction completed but task still running)
+//! - Slot reuse safety (new prediction = new ID, old tasks can't pollute)
+//!
+//! The ContextVar is private (`_coglet_` prefix). Users who need the prediction ID
+//! should use the public API (e.g., `cog.current_prediction_id()`) which we'll
+//! inject onto the cog namespace later.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use pyo3::prelude::*;
 
-use coglet_worker::{LogSource, SlotId, SlotSender};
+use coglet_worker::{LogSource, SlotSender};
 
 // ============================================================================
-// Rust-owned ContextVar for slot routing
+// Rust-owned ContextVar for prediction routing
 // ============================================================================
 
 /// The Rust-owned ContextVar instance. Created once, lives forever.
-/// User code cannot replace this - we hold the only reference.
-static SLOT_CONTEXTVAR: OnceLock<Py<PyAny>> = OnceLock::new();
+/// Named `cog_prediction_id` - documented as internal, don't modify.
+static PREDICTION_CONTEXTVAR: OnceLock<Py<PyAny>> = OnceLock::new();
 
-/// Registry mapping SlotId → SlotSender.
+/// Registry mapping prediction_id → SlotSender.
 /// When a prediction starts, we register the sender.
 /// When SlotLogWriter.write() is called, we look up the sender here.
-static SLOT_REGISTRY: OnceLock<Mutex<HashMap<SlotId, Arc<SlotSender>>>> = OnceLock::new();
+static PREDICTION_REGISTRY: OnceLock<Mutex<HashMap<String, Arc<SlotSender>>>> = OnceLock::new();
 
-fn get_registry() -> &'static Mutex<HashMap<SlotId, Arc<SlotSender>>> {
-    SLOT_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+fn get_registry() -> &'static Mutex<HashMap<String, Arc<SlotSender>>> {
+    PREDICTION_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// Get or create the Rust-owned ContextVar.
-fn get_slot_contextvar(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
-    if let Some(cv) = SLOT_CONTEXTVAR.get() {
+fn get_prediction_contextvar(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
+    if let Some(cv) = PREDICTION_CONTEXTVAR.get() {
         return Ok(cv);
     }
 
     let contextvars = py.import("contextvars")?;
-    let cv = contextvars.call_method1("ContextVar", ("_coglet_slot_id",))?;
-    
+    let cv = contextvars.call_method1("ContextVar", ("_coglet_prediction_id",))?;
+
     // Try to store it. Race is fine - worst case we create an extra that gets dropped.
-    let _ = SLOT_CONTEXTVAR.set(cv.unbind());
-    Ok(SLOT_CONTEXTVAR.get().unwrap())
+    let _ = PREDICTION_CONTEXTVAR.set(cv.unbind());
+    Ok(PREDICTION_CONTEXTVAR.get().unwrap())
 }
 
-/// Register a SlotSender for a SlotId.
+/// Register a SlotSender for a prediction ID.
 /// Called when starting a prediction.
-pub fn register_slot(slot_id: SlotId, sender: Arc<SlotSender>) {
+pub fn register_prediction(prediction_id: String, sender: Arc<SlotSender>) {
     let mut registry = get_registry().lock().unwrap();
-    registry.insert(slot_id, sender);
+    registry.insert(prediction_id, sender);
 }
 
-/// Unregister a SlotId.
+/// Unregister a prediction ID.
 /// Called when prediction completes.
-pub fn unregister_slot(slot_id: SlotId) {
+pub fn unregister_prediction(prediction_id: &str) {
     let mut registry = get_registry().lock().unwrap();
-    registry.remove(&slot_id);
+    registry.remove(prediction_id);
 }
 
-/// Get the SlotSender for a SlotId.
-fn get_slot_sender(slot_id: SlotId) -> Option<Arc<SlotSender>> {
+/// Get the SlotSender for a prediction ID.
+fn get_prediction_sender(prediction_id: &str) -> Option<Arc<SlotSender>> {
     let registry = get_registry().lock().unwrap();
-    registry.get(&slot_id).cloned()
+    registry.get(prediction_id).cloned()
 }
 
-/// Set the current slot ID in the ContextVar.
-/// Returns a token that can be used to reset.
-pub fn set_current_slot(py: Python<'_>, slot_id: SlotId) -> PyResult<Py<PyAny>> {
-    let cv = get_slot_contextvar(py)?;
-    let slot_id_str = slot_id.to_string();
-    let token = cv.call_method1(py, "set", (slot_id_str,))?;
+/// Set the current prediction ID in the ContextVar.
+/// Returns a token that can be used to reset (for explicit cleanup).
+pub fn set_current_prediction(py: Python<'_>, prediction_id: &str) -> PyResult<Py<PyAny>> {
+    let cv = get_prediction_contextvar(py)?;
+    let token = cv.call_method1(py, "set", (prediction_id,))?;
     Ok(token)
 }
 
-/// Reset the current slot ID using a token from set_current_slot.
-pub fn reset_current_slot(py: Python<'_>, token: &Py<PyAny>) -> PyResult<()> {
-    let cv = get_slot_contextvar(py)?;
+/// Reset the current prediction ID using a token from set_current_prediction.
+/// Optional - ContextVar resets naturally when task ends for async.
+pub fn reset_current_prediction(py: Python<'_>, token: &Py<PyAny>) -> PyResult<()> {
+    let cv = get_prediction_contextvar(py)?;
     cv.call_method1(py, "reset", (token,))?;
     Ok(())
 }
 
-/// Get the current slot ID from the ContextVar.
+/// Get the current prediction ID from the ContextVar.
 /// Returns None if not set (outside prediction context).
-fn get_current_slot_id(py: Python<'_>) -> PyResult<Option<SlotId>> {
-    let cv = get_slot_contextvar(py)?;
-    
+fn get_current_prediction_id(py: Python<'_>) -> PyResult<Option<String>> {
+    let cv = get_prediction_contextvar(py)?;
+
     // Try to get the value - returns the value or raises LookupError
     match cv.call_method0(py, "get") {
         Ok(val) => {
-            let slot_id_str: String = val.extract(py)?;
-            let slot_id = SlotId::parse(&slot_id_str).map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid SlotId: {}", e))
-            })?;
-            Ok(Some(slot_id))
+            let prediction_id: String = val.extract(py)?;
+            Ok(Some(prediction_id))
         }
         Err(e) if e.is_instance_of::<pyo3::exceptions::PyLookupError>(py) => {
             // ContextVar not set - outside prediction context
@@ -108,16 +108,17 @@ fn get_current_slot_id(py: Python<'_>) -> PyResult<Option<SlotId>> {
 }
 
 // ============================================================================
-// SlotLogWriter - singleton that routes via ContextVar
+// SlotLogWriter - routes via ContextVar lookup
 // ============================================================================
 
-/// A Python file-like object that routes writes via the Rust-owned ContextVar.
+/// A Python file-like object that routes writes via the prediction_id ContextVar.
 ///
 /// This is installed as sys.stdout/stderr once at worker startup.
-/// Each write looks up the current SlotId from the ContextVar and routes
+/// Each write looks up the current prediction_id from the ContextVar and routes
 /// to the appropriate SlotSender.
 ///
-/// If no SlotId is set (outside prediction), writes go to the original stream.
+/// If no prediction_id is set, or the prediction has completed (orphan task),
+/// writes go to the original stream.
 #[pyclass]
 pub struct SlotLogWriter {
     /// Which stream this captures (stdout or stderr).
@@ -133,28 +134,30 @@ pub struct SlotLogWriter {
 impl SlotLogWriter {
     /// Write data, routing via ContextVar.
     ///
-    /// If inside a prediction (ContextVar set), routes to the slot's sender.
-    /// Otherwise, writes to the original stream.
+    /// If inside a prediction (ContextVar set and prediction active), routes to sender.
+    /// Otherwise (no ContextVar, or orphan task), writes to the original stream.
     fn write(&self, py: Python<'_>, data: &str) -> PyResult<usize> {
         if self.closed || data.is_empty() {
             return Ok(data.len());
         }
 
-        // Try to get current slot from ContextVar
-        match get_current_slot_id(py)? {
-            Some(slot_id) => {
-                // Inside prediction - route to slot
-                if let Some(sender) = get_slot_sender(slot_id) {
+        // Try to get current prediction from ContextVar
+        match get_current_prediction_id(py)? {
+            Some(prediction_id) => {
+                // Have prediction ID - check if still active
+                if let Some(sender) = get_prediction_sender(&prediction_id) {
+                    // Active prediction - route to slot
                     sender.send_log(self.source, data).map_err(|e| {
                         pyo3::exceptions::PyIOError::new_err(e.to_string())
                     })?;
                 } else {
-                    // Slot not registered (shouldn't happen) - fall back to original
+                    // Orphan task - prediction completed but task still running
+                    // Fall back to original stream (typically stderr)
                     self.write_to_original(py, data)?;
                 }
             }
             None => {
-                // Outside prediction - write to original stream
+                // Outside prediction context - write to original stream
                 self.write_to_original(py, data)?;
             }
         }
@@ -293,62 +296,55 @@ pub fn install_slot_log_writers(py: Python<'_>) -> PyResult<bool> {
     sys.setattr("stderr", stderr_writer.into_pyobject(py)?)?;
 
     // Initialize the ContextVar
-    get_slot_contextvar(py)?;
+    get_prediction_contextvar(py)?;
 
-    tracing::debug!("Installed SlotLogWriters with ContextVar routing");
+    tracing::debug!("Installed SlotLogWriters with prediction_id routing");
     Ok(true)
 }
 
 // ============================================================================
-// SlotLogGuard - RAII guard for prediction context
+// PredictionLogGuard - RAII guard for prediction context
 // ============================================================================
 
-/// RAII guard that sets the current slot in the ContextVar.
+/// RAII guard that sets the current prediction in the ContextVar.
 ///
 /// On creation, registers the SlotSender and sets the ContextVar.
-/// On drop, resets the ContextVar and unregisters the sender.
-pub struct SlotLogGuard {
-    slot_id: SlotId,
+/// On drop, unregisters the prediction (but ContextVar reset is automatic for async).
+pub struct PredictionLogGuard {
+    prediction_id: String,
+    #[allow(dead_code)]
     token: Py<PyAny>,
 }
 
-impl SlotLogGuard {
-    /// Enter prediction context for a slot.
+impl PredictionLogGuard {
+    /// Enter prediction context.
     ///
     /// Registers the sender and sets the ContextVar.
-    pub fn enter(py: Python<'_>, slot_id: SlotId, sender: Arc<SlotSender>) -> PyResult<Self> {
+    pub fn enter(py: Python<'_>, prediction_id: String, sender: Arc<SlotSender>) -> PyResult<Self> {
         // Register sender in global registry
-        register_slot(slot_id, sender);
+        register_prediction(prediction_id.clone(), sender);
 
         // Set ContextVar
-        let token = set_current_slot(py, slot_id)?;
+        let token = set_current_prediction(py, &prediction_id)?;
 
-        Ok(Self { slot_id, token })
+        Ok(Self { prediction_id, token })
     }
 
-    /// Exit prediction context.
-    ///
-    /// Resets the ContextVar and unregisters the sender.
-    pub fn exit(self, py: Python<'_>) -> PyResult<()> {
-        // Reset ContextVar
-        reset_current_slot(py, &self.token)?;
-
-        // Unregister sender
-        unregister_slot(self.slot_id);
-
-        Ok(())
+    /// Get the prediction ID.
+    pub fn prediction_id(&self) -> &str {
+        &self.prediction_id
     }
 }
 
-impl Drop for SlotLogGuard {
+impl Drop for PredictionLogGuard {
     fn drop(&mut self) {
-        // Best-effort cleanup
-        unregister_slot(self.slot_id);
-        
-        // Note: We can't reset the ContextVar here without the GIL.
-        // The caller should call exit() explicitly in async contexts.
-        // For sync predictions, the ContextVar reset happens naturally
-        // when the task ends.
+        // Unregister prediction - this makes orphan tasks fall back to stderr
+        unregister_prediction(&self.prediction_id);
+
+        // Note: We don't reset the ContextVar here because:
+        // 1. For sync: the context resets naturally when the function returns
+        // 2. For async: each task has its own ContextVar copy, no reset needed
+        // The token is kept just in case we need explicit reset in the future.
     }
 }
 
@@ -364,17 +360,17 @@ mod tests {
 
     #[test]
     fn registry_operations() {
-        let slot_id = SlotId::new();
+        let prediction_id = "pred_123".to_string();
         let (tx, _rx) = mpsc::unbounded_channel();
         let sender = Arc::new(SlotSender::new(tx));
 
         // Register
-        register_slot(slot_id, sender.clone());
-        assert!(get_slot_sender(slot_id).is_some());
+        register_prediction(prediction_id.clone(), sender.clone());
+        assert!(get_prediction_sender(&prediction_id).is_some());
 
         // Unregister
-        unregister_slot(slot_id);
-        assert!(get_slot_sender(slot_id).is_none());
+        unregister_prediction(&prediction_id);
+        assert!(get_prediction_sender(&prediction_id).is_none());
     }
 
     #[test]

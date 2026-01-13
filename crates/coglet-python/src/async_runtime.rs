@@ -1,10 +1,9 @@
 //! Rust-owned async runtime for predictions.
 //!
-//! Matches cog mainline's asyncio.TaskGroup pattern but with Rust controlling
-//! the critical pieces:
-//! - Task creation and tracking (by SlotId)
-//! - Task cancellation
-//! - Completion notification
+//! Handles async predictor execution with:
+//! - Task tracking by SlotId (for cancellation)
+//! - ContextVar setup for log routing (by prediction_id)
+//! - Proper cancellation handling (uncancel for cleanup)
 //!
 //! User code provides coroutines. We schedule them. They don't control the loop.
 
@@ -18,6 +17,7 @@ use coglet_worker::SlotId;
 
 /// Registry of active async tasks by SlotId.
 /// Rust owns this - user code cannot access it.
+/// Used for cancellation lookup.
 static TASK_REGISTRY: OnceLock<Mutex<HashMap<SlotId, Py<PyAny>>>> = OnceLock::new();
 
 fn get_task_registry() -> &'static Mutex<HashMap<SlotId, Py<PyAny>>> {
@@ -62,24 +62,37 @@ pub fn cancel_task(py: Python<'_>, slot_id: SlotId) -> PyResult<bool> {
 }
 
 /// Create the async wrapper code that:
-/// 1. Sets up ContextVar for log routing
+/// 1. Sets up ContextVar for log routing (prediction_id)
 /// 2. Runs the user's coroutine
 /// 3. Handles cancellation properly (uncancel for cleanup)
 /// 4. Returns result or error
 ///
-/// This is defined once and reused for all predictions.
+/// The wrapper receives the prediction_id and sets the _coglet_prediction_id ContextVar.
+/// This propagates to all subtasks automatically.
 static WRAPPER_CODE: &str = r#"
 import asyncio
-import sys
+import contextvars
 
-async def _coglet_run_prediction(coro, slot_id_str, set_slot_context, reset_slot_context):
+# Get the _coglet_prediction_id ContextVar (created by Rust)
+# We look it up by name from the current context
+def _get_prediction_contextvar():
+    for var in contextvars.copy_context():
+        if var.name == "_coglet_prediction_id":
+            return var
+    # Create if not found (shouldn't happen, but defensive)
+    return contextvars.ContextVar("_coglet_prediction_id")
+
+_COGLET_PREDICTION_ID = _get_prediction_contextvar()
+
+async def _coglet_run_prediction(coro, prediction_id):
     """
     Wrapper that runs a prediction coroutine with proper context management.
     
+    Sets _coglet_prediction_id ContextVar before running user's coroutine.
     This is called by Rust. User code cannot call this directly.
     """
-    # Set up log routing context
-    token = set_slot_context(slot_id_str)
+    # Set up log routing context - this propagates to all subtasks
+    token = _COGLET_PREDICTION_ID.set(prediction_id)
     
     try:
         # Run the user's coroutine
@@ -94,31 +107,36 @@ async def _coglet_run_prediction(coro, slot_id_str, set_slot_context, reset_slot
     except Exception as e:
         return ("error", str(e))
     finally:
-        # Always reset context
-        reset_slot_context(token)
+        # Reset context (optional - task ending cleans up anyway)
+        _COGLET_PREDICTION_ID.reset(token)
 "#;
 
 /// Get or create the wrapper function.
 fn get_wrapper_fn(py: Python<'_>) -> PyResult<Py<PyAny>> {
     static WRAPPER_FN: OnceLock<Py<PyAny>> = OnceLock::new();
-    
+
     if let Some(fn_obj) = WRAPPER_FN.get() {
         return Ok(fn_obj.clone_ref(py));
     }
-    
+
+    // Ensure the ContextVar exists before running wrapper code
+    // This creates it if needed, so the wrapper can find it
+    let contextvars = py.import("contextvars")?;
+    let _ = contextvars.call_method1("ContextVar", ("_coglet_prediction_id",))?;
+
     // Execute the wrapper code to define the function
     let globals = PyDict::new(py);
     let builtins = py.import("builtins")?;
     let exec_fn = builtins.getattr("exec")?;
     exec_fn.call1((WRAPPER_CODE, &globals))?;
-    
+
     let wrapper_fn = globals
         .get_item("_coglet_run_prediction")?
         .ok_or_else(|| {
             pyo3::exceptions::PyRuntimeError::new_err("Failed to create wrapper function")
         })?
         .unbind();
-    
+
     // Store it (race is fine)
     let _ = WRAPPER_FN.set(wrapper_fn.clone_ref(py));
     Ok(wrapper_fn)
@@ -127,55 +145,45 @@ fn get_wrapper_fn(py: Python<'_>) -> PyResult<Py<PyAny>> {
 /// Wrap a user's coroutine with our context management.
 ///
 /// Returns a new coroutine that:
-/// - Sets ContextVar before running
+/// - Sets cog_prediction_id ContextVar before running
 /// - Handles CancelledError properly
-/// - Resets ContextVar after completion
+/// - Resets ContextVar after completion (optional cleanup)
 pub fn wrap_prediction_coro(
     py: Python<'_>,
     coro: &Bound<'_, PyAny>,
-    slot_id: SlotId,
+    prediction_id: &str,
 ) -> PyResult<Py<PyAny>> {
     let wrapper_fn = get_wrapper_fn(py)?;
-    
-    // Get our context management functions
-    let set_slot_context = py
-        .import("coglet")?
-        .getattr("_set_slot_context")?;
-    let reset_slot_context = py
-        .import("coglet")?
-        .getattr("_reset_slot_context")?;
-    
+
     // Call wrapper to create wrapped coroutine
-    let slot_id_str = slot_id.to_string();
-    let wrapped = wrapper_fn.call1(
-        py,
-        (coro, slot_id_str, set_slot_context, reset_slot_context),
-    )?;
-    
+    let wrapped = wrapper_fn.call1(py, (coro, prediction_id))?;
+
     Ok(wrapped)
 }
 
 /// Create an asyncio.Task for a prediction.
 ///
-/// The task is tracked in our registry by SlotId.
+/// The task is tracked in our registry by SlotId (for cancellation).
+/// The ContextVar is set with prediction_id (for log routing).
 /// Returns the task object (for internal use only).
 pub fn create_prediction_task(
     py: Python<'_>,
     coro: &Bound<'_, PyAny>,
     slot_id: SlotId,
+    prediction_id: &str,
 ) -> PyResult<Py<PyAny>> {
     let asyncio = py.import("asyncio")?;
-    
+
     // Wrap the coroutine with our context management
-    let wrapped_coro = wrap_prediction_coro(py, coro, slot_id)?;
-    
+    let wrapped_coro = wrap_prediction_coro(py, coro, prediction_id)?;
+
     // Create task using asyncio.create_task()
     let task = asyncio.call_method1("create_task", (wrapped_coro,))?;
-    
-    // Register in our task registry
+
+    // Register in our task registry (keyed by slot for cancellation)
     register_task(slot_id, task.clone().unbind());
-    
-    tracing::debug!(%slot_id, "Created async prediction task");
+
+    tracing::debug!(%slot_id, %prediction_id, "Created async prediction task");
     Ok(task.unbind())
 }
 
@@ -186,11 +194,11 @@ mod tests {
     #[test]
     fn task_registry_operations() {
         let slot_id = SlotId::new();
-        
+
         // Initially no task in registry
         let registry = get_task_registry().lock().unwrap();
         assert!(!registry.contains_key(&slot_id));
-        
+
         // Would need Python to create actual task objects for full test
     }
 }
