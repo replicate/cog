@@ -153,7 +153,7 @@ jobs:
       - name: Install coglet test dependencies
         run: uv sync --project coglet --extra test
       - name: Test coglet Python
-        run: uv run --project coglet pytest python/tests -v
+        run: uv run --project coglet pytest coglet/python/tests -v
 
   # TODO[md]: This is a gross hack, remove once this is sorted out: https://github.com/replicate/cog/pull/2353
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
