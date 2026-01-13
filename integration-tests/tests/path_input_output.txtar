@@ -1,0 +1,37 @@
+# Test Path input and output with setup method
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict with text and path input, returns path output
+cog predict $TEST_IMAGE -i text=bar -i path=@input.txt
+
+# Verify output file was created and contains expected content
+exec test -f output.txt
+exec grep -q foobarbaz output.txt
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: predict.py:Predictor
+
+-- predict.py --
+import tempfile
+
+from cog import BasePredictor, Path
+
+
+class Predictor(BasePredictor):
+    def setup(self):
+        self.foo = "foo"
+
+    def predict(self, text: str, path: Path) -> Path:
+        with open(path) as f:
+            output = self.foo + text + f.read()
+        tmpdir = Path(tempfile.mkdtemp())
+        with open(tmpdir / "output.txt", "w") as fh:
+            fh.write(output)
+        return tmpdir / "output.txt"
+
+-- input.txt --
+baz

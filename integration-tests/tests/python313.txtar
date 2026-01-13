@@ -1,0 +1,22 @@
+# Test Python 3.13 support
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict with Python 3.13
+cog predict $TEST_IMAGE -i num=5
+stdout '10'
+
+-- cog.yaml --
+build:
+  gpu: false
+  python_version: "3.13"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, num: int) -> int:
+        return num * 2
