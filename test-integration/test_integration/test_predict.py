@@ -1,5 +1,8 @@
 import asyncio
 import os
+import pathlib
+import shutil
+import subprocess
 import time
 from pathlib import Path
 
@@ -10,8 +13,6 @@ from werkzeug import Request, Response
 
 from .util import cog_server_http_run
 
-<<<<<<< HEAD
-=======
 DEFAULT_TIMEOUT = 60
 
 
@@ -156,53 +157,8 @@ def test_predict_many_inputs_with_existing_image(
     assert "falling back to slow loader" not in str(result.stderr)
 
 
-@pytest.mark.parametrize(
-    ("fixture_name",),
-    [
-        ("simple",),
-        ("double-fork",),
-        ("double-fork-http",),
-        ("multiprocessing",),
-    ],
-)
-def test_predict_with_subprocess_in_setup(fixture_name, cog_binary):
-    project_dir = (
-        Path(__file__).parent / "fixtures" / f"setup-subprocess-{fixture_name}-project"
-    )
-
-    with cog_server_http_run(project_dir, cog_binary) as addr:
-        busy_count = 0
-
-        for i in range(100):
-            response = httpx.post(
-                f"{addr}/predictions",
-                json={"input": {"s": f"friendo{i}"}},
-            )
-            if response.status_code == 409:
-                busy_count += 1
-                continue
-
-            assert response.status_code == 200, str(response)
-
-        assert busy_count < 10
-
->>>>>>> 51d4cd09 (Remove Python integration tests that are now ported to Go)
-
 @pytest.mark.asyncio
-async def test_concurrent_predictions(cog_binary: str) -> None:
-    """Test that concurrent async predictions complete properly with server shutdown.
-
-    This test verifies:
-    1. Multiple predictions can run concurrently
-    2. Server shutdown waits for running predictions to complete
-    3. All predictions return correct results
-
-    This test is kept in Python because it requires:
-    - Async HTTP client (httpx.AsyncClient)
-    - asyncio.TaskGroup for concurrent requests
-    - Precise timing verification
-    """
-
+async def test_concurrent_predictions(cog_binary):
     async def make_request(i: int) -> httpx.Response:
         return await client.post(
             f"{addr}/predictions",
@@ -213,8 +169,7 @@ async def test_concurrent_predictions(cog_binary: str) -> None:
         )
 
     with cog_server_http_run(
-        str(Path(__file__).parent / "fixtures" / "async-sleep-project"),
-        cog_binary,
+        Path(__file__).parent / "fixtures" / "async-sleep-project", cog_binary
     ) as addr:
         async with httpx.AsyncClient() as client:
             tasks = []
@@ -233,16 +188,6 @@ async def test_concurrent_predictions(cog_binary: str) -> None:
                 assert task.result().json()["output"] == f"wake up sleepyhead{i}"
 
 
-<<<<<<< HEAD
-def test_predict_pipeline_downloaded_requirements(cog_binary: str) -> None:
-    """Test that pipeline builds download runtime requirements and make dependencies available.
-
-    This test is kept in Python because it requires:
-    - pytest_httpserver for mock HTTP server
-    - Complex environment variable setup
-    - Verification of downloaded requirements content
-    """
-=======
 def test_predict_with_fast_build_with_local_image(fixture, docker_image, cog_binary):
     project_dir = fixture("fast-build")
     weights_file = os.path.join(project_dir, "weights.h5")
@@ -493,11 +438,12 @@ def test_predict_pipeline(cog_binary):
 
 def test_predict_pipeline_downloaded_requirements(cog_binary):
     """Test that pipeline builds download runtime requirements and make dependencies available"""
->>>>>>> 51d4cd09 (Remove Python integration tests that are now ported to Go)
     project_dir = Path(__file__).parent / "fixtures/pipeline-requirements-project"
 
     # Create initial local requirements.txt that differs from what mock server will return
     # This simulates the out-of-sync scenario
+    # TODO[md]: remove this stuff once tests are ported to go and each test
+    # has an isolated temp dir so we don't need to care about temp files polluting the work tree
     initial_local_requirements = """# pipelines-runtime@sha256:d1b9fbd673288453fdf12806f4cba9e9e454f0f89b187eac2db5731792f71d60
 moviepy==v2.2.1
 numpy==v2.3.2
@@ -542,8 +488,6 @@ urllib3==2.0.4
             server_host = f"127.0.0.1:{httpserver.port}"
 
             # Run prediction with pipeline flag and mock server
-            import subprocess
-
             env = os.environ.copy()
             env["R8_PIPELINES_RUNTIME_HOST"] = server_host
             env["R8_SCHEME"] = "http"  # Use HTTP instead of HTTPS for testing
@@ -561,6 +505,7 @@ urllib3==2.0.4
             assert result.returncode == 0
 
             # The output should list all installed packages (one per line)
+            # No header since predict function was simplified to just return package list
             assert (
                 len(result.stdout.strip().split("\n")) > 10
             )  # Should have many packages
@@ -574,6 +519,7 @@ urllib3==2.0.4
             assert "requests==2.32.5" in result.stderr
 
             # Verify that specific versions from mock are present in the installed packages list
+            # This proves the mock requirements were actually installed and used
             assert "requests==2.32.5" in result.stdout
             assert (
                 "urllib3==" in result.stdout
