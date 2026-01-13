@@ -9,13 +9,9 @@ cog build -t $TEST_IMAGE
 # Start the server
 cog serve
 
-# Wait for the forked HTTP server to be ready
-# The child process will respond on port 7777 once ready
-wait-for http http://127.0.0.1:7777/ping 200 60s
-
 # Make predictions that communicate with forked HTTP server
-# Use retry logic for the first request in case of initialization delays
-retry-curl POST /predictions '{"input":{"s":"friendo1"}}' 10 1s
+# Use generous retries since setup spawns a double-forked HTTP server
+retry-curl POST /predictions '{"input":{"s":"friendo1"}}' 30 1s
 stdout '"output":"hello friendo1"'
 
 retry-curl POST /predictions '{"input":{"s":"friendo2"}}' 10 500ms

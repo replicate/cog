@@ -9,15 +9,11 @@ cog build -t $TEST_IMAGE
 # Start the server
 cog serve
 
-# Wait for the multiprocessing child to signal it's ready
-# The ponger process creates .ponger-ready when initialization completes
-wait-for file .ponger-ready 60s
-
 # Make a prediction that communicates via multiprocessing.Pipe
 # Note: The background process closes the connection after first use,
 # so we only test one prediction
-# Use retry logic to handle any multiprocessing initialization delays
-retry-curl POST /predictions '{"input":{"s":"friendo1"}}' 15 1s
+# Use generous retries since setup spawns a multiprocessing.Process
+retry-curl POST /predictions '{"input":{"s":"friendo1"}}' 30 1s
 stdout '"output":'
 stdout 'cog-test-integration-out'
 stdout '.tmp"'
@@ -107,10 +103,6 @@ def ponger(
         time.sleep(0.001 + (0.001 * (i + 1)))
 
     print("ITS PONGIN TIME")
-    
-    # Signal that ponger is ready
-    with open(".ponger-ready", "w") as f:
-        f.write(f"ponger {os.getpid()} ready\n")
 
     pid = os.getpid()
 

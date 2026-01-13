@@ -9,13 +9,9 @@ cog build -t $TEST_IMAGE
 # Start the server
 cog serve
 
-# Wait for the forked process to signal it's ready
-# The forker.py script creates .forked-ready when child process is running
-wait-for file .forked-ready 60s
-
 # Make predictions that communicate via file system with forked process
-# Use retry logic to handle any remaining initialization delays
-retry-curl POST /predictions '{"input":{"s":"friendo1"}}' 15 1s
+# Use generous retries since setup spawns a double-forked process
+retry-curl POST /predictions '{"input":{"s":"friendo1"}}' 30 1s
 stdout '"output":"hello friendo1"'
 
 retry-curl POST /predictions '{"input":{"s":"friendo2"}}' 10 500ms
@@ -110,14 +106,6 @@ def main():
 
     pid = os.getpid()
     was_pinged = False
-
-    # Signal that the fork is complete and child is ready
-    if is_child:
-        # Give child process time to fully initialize
-        time.sleep(0.5)
-        with open(".forked-ready", "w") as f:
-            f.write(f"child {pid} ready\n")
-        print(f"---> CHILD ({pid}) ready and signaled")
 
     while True:
         if os.path.exists(".inbox") and is_child:
