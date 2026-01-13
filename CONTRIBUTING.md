@@ -96,11 +96,10 @@ Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the fu
 We use the ["scripts to rule them all"](https://github.blog/engineering/engineering-principles/scripts-to-rule-them-all/) philosophy to manage common tasks across the project. These are mostly backed by a Makefile that contains the implementation.
 
 You'll need the following dependencies installed to build Cog locally:
-- [Go](https://golang.org/doc/install): We're targeting 1.24, but you can install the latest version since Go is backwards compatible. If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
-- [uv](https://docs.astral.sh/uv/): Python versions and dependencies are managed by uv.
+- [mise](https://mise.jdx.dev/getting-started.html): Manages Go and uv (which in turn manages Python)
 - [Docker](https://docs.docker.com/desktop) or [OrbStack](https://orbstack.dev)
 
-Install the Python dependencies:
+Set up your development environment:
 
     script/setup
 
@@ -202,7 +201,7 @@ script/test-python # see also: make test-python
 ```
 
 > [!INFO]
-> Note that this will run the Python test suite using only the current version of Python defined in .python-version. To run a more comprehensive Python test suite then use `make test-python`.
+> This runs the Python test suite using the default Python version. To run a more comprehensive test across multiple Python versions, use `make test-python`.
 
 **To run just the integration tests:**
 
