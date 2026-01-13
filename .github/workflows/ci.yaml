@@ -98,9 +98,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
+      - uses: jdx/mise-action@v2
       - name: Build
         run: make cog
       - name: Test
@@ -263,9 +261,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
+      - uses: jdx/mise-action@v2
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: '~> v2'
