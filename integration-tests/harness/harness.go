@@ -4,7 +4,9 @@ package harness
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -295,6 +297,10 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 	}
 	cmd.Env = env
 
+	// Capture server output for debugging
+	cmd.Stdout = ts.Stdout()
+	cmd.Stderr = ts.Stderr()
+
 	if err := cmd.Start(); err != nil {
 		ts.Fatalf("failed to start server: %v", err)
 	}
@@ -306,7 +312,7 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 	serverURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	ts.Setenv("SERVER_URL", serverURL)
 
-	if !waitForServer(serverURL, 30*time.Second) {
+	if !waitForServer(serverURL, 60*time.Second) {
 		// Try to get server output for debugging
 		cmd.Process.Kill()
 		ts.Fatalf("server did not become healthy within timeout")
@@ -427,20 +433,53 @@ func allocatePort() (int, error) {
 	return listener.Addr().(*net.TCPAddr).Port, nil
 }
 
-// waitForServer polls the server's health-check endpoint until it returns 200.
+// healthCheckResponse represents the JSON response from /health-check
+type healthCheckResponse struct {
+	Status string `json:"status"`
+}
+
+// waitForServer polls the server's health-check endpoint until it returns READY status.
+// The server may return HTTP 200 while still in STARTING state (during setup),
+// so we must check the actual status field in the response.
 func waitForServer(serverURL string, timeout time.Duration) bool {
-	client := &http.Client{Timeout: 1 * time.Second}
+	client := &http.Client{Timeout: 5 * time.Second}
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
 		resp, err := client.Get(serverURL + "/health-check")
-		if err == nil && resp.StatusCode == 200 {
-			resp.Body.Close()
-			return true
+		if err != nil {
+			time.Sleep(200 * time.Millisecond)
+			continue
 		}
-		if resp != nil {
+
+		if resp.StatusCode == 200 {
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+
+			var health healthCheckResponse
+			if err := json.Unmarshal(body, &health); err != nil {
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+
+			// Only return success when the server is actually READY
+			// (setup has completed successfully)
+			if health.Status == "READY" {
+				return true
+			}
+
+			// If setup failed, no point waiting
+			if health.Status == "SETUP_FAILED" || health.Status == "DEFUNCT" {
+				return false
+			}
+		} else {
 			resp.Body.Close()
 		}
+
 		time.Sleep(200 * time.Millisecond)
 	}
 

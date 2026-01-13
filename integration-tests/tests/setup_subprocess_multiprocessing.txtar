@@ -15,8 +15,10 @@ cog serve
 # Use generous retries since setup spawns a multiprocessing.Process
 retry-curl POST /predictions '{"input":{"s":"friendo1"}}' 30 1s
 stdout '"output":'
-stdout 'cog-test-integration-out'
-stdout '.tmp"'
+stdout '"status":"succeeded"'
+# Check the logs show the background process communication worked
+stdout 'sending ping to background job'
+stdout 'received .* from background job'
 
 -- cog.yaml --
 build:
@@ -39,7 +41,8 @@ from bg import ponger
 
 def cleanup():
     for tmp in pathlib.Path("./").glob("*.tmp"):
-        tmp.unlink(missing_ok=True)
+        if tmp.is_file():
+            tmp.unlink(missing_ok=True)
 
 
 atexit.register(cleanup)
