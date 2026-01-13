@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use pyo3::prelude::*;
 
-use coglet_worker::{PredictHandler, PredictResult, SlotSender};
+use coglet_worker::{PredictHandler, PredictResult, SlotId, SlotSender};
 
 use crate::predictor::PythonPredictor;
 
@@ -13,15 +13,12 @@ use crate::predictor::PythonPredictor;
 struct SlotState {
     /// Whether this slot has been cancelled.
     cancelled: bool,
-    /// Current prediction ID (for logging).
-    prediction_id: Option<String>,
 }
 
 impl Default for SlotState {
     fn default() -> Self {
         Self {
             cancelled: false,
-            prediction_id: None,
         }
     }
 }
@@ -39,8 +36,8 @@ impl Default for SlotState {
 pub struct PythonPredictHandler {
     predictor_ref: String,
     predictor: Mutex<Option<Arc<PythonPredictor>>>,
-    /// Per-slot cancellation state.
-    slots: Mutex<HashMap<usize, SlotState>>,
+    /// Per-slot cancellation state (keyed by SlotId).
+    slots: Mutex<HashMap<SlotId, SlotState>>,
     /// If true, predict() calls train() instead of predict().
     /// BUG: cog mainline always sets this to false, even for training routes.
     is_train: bool,
@@ -72,7 +69,7 @@ impl PythonPredictHandler {
     }
 
     /// Check and clear the cancelled flag for a slot.
-    fn take_cancelled(&self, slot: usize) -> bool {
+    fn take_cancelled(&self, slot: SlotId) -> bool {
         let mut slots = self.slots.lock().unwrap();
         let state = slots.entry(slot).or_default();
         let was_cancelled = state.cancelled;
@@ -81,19 +78,16 @@ impl PythonPredictHandler {
     }
 
     /// Mark a slot as having a prediction in progress.
-    fn start_prediction(&self, slot: usize, id: &str) {
+    fn start_prediction(&self, slot: SlotId) {
         let mut slots = self.slots.lock().unwrap();
         let state = slots.entry(slot).or_default();
-        state.prediction_id = Some(id.to_string());
         state.cancelled = false;
     }
 
     /// Clear prediction state for a slot.
-    fn finish_prediction(&self, slot: usize) {
-        let mut slots = self.slots.lock().unwrap();
-        if let Some(state) = slots.get_mut(&slot) {
-            state.prediction_id = None;
-        }
+    fn finish_prediction(&self, slot: SlotId) {
+        // Currently a no-op, but kept for symmetry
+        let _ = slot;
     }
 }
 
@@ -123,13 +117,13 @@ impl PredictHandler for PythonPredictHandler {
 
     async fn predict(
         &self,
-        slot: usize,
+        slot: SlotId,
         id: String,
         input: serde_json::Value,
         slot_sender: Arc<SlotSender>,
     ) -> PredictResult {
         // Track that we're starting a prediction on this slot
-        self.start_prediction(slot, &id);
+        self.start_prediction(slot);
 
         // Check cancellation first (in case cancel was called before we started)
         if self.take_cancelled(slot) {
@@ -212,12 +206,12 @@ impl PredictHandler for PythonPredictHandler {
         }
     }
 
-    fn cancel(&self, slot: usize) {
+    fn cancel(&self, slot: SlotId) {
         let mut slots = self.slots.lock().unwrap();
         let state = slots.entry(slot).or_default();
         state.cancelled = true;
         // TODO: Also send SIGUSR1 for sync predictors?
-        tracing::debug!(slot, "Cancellation requested");
+        tracing::debug!(%slot, "Cancellation requested");
     }
 
     fn schema(&self) -> Option<serde_json::Value> {

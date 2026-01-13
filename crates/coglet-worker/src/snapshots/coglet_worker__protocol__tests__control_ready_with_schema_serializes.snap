@@ -1,10 +1,12 @@
 ---
 source: coglet-worker/src/protocol.rs
-assertion_line: 167
 expression: resp
 ---
 {
   "type": "ready",
+  "slots": [
+    "550e8400-e29b-41d4-a716-446655440000"
+  ],
   "schema": {
     "info": {
       "title": "Cog",

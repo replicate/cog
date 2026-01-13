@@ -22,7 +22,7 @@ mod worker;
 pub use codec::JsonCodec;
 pub use manager::{SpawnConfig, Worker, WorkerError};
 pub use protocol::{
-    ControlRequest, ControlResponse, LogSource, SlotRequest, SlotResponse,
+    ControlRequest, ControlResponse, LogSource, SlotId, SlotOutcome, SlotRequest, SlotResponse,
 };
 pub use transport::{
     connect_transport, create_transport, get_transport_info_from_env, ChildTransportInfo,

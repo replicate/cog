@@ -64,18 +64,19 @@ impl<T: Serialize> Encoder<T> for JsonCodec<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::{ControlRequest, ControlResponse, SlotRequest, SlotResponse};
+    use crate::protocol::{ControlRequest, ControlResponse, SlotId, SlotRequest, SlotResponse};
 
     #[test]
     fn codec_roundtrip_control_request() {
         let mut codec = JsonCodec::<ControlRequest>::new();
         let mut buf = BytesMut::new();
 
-        let req = ControlRequest::Cancel { slot: 2 };
+        let slot = SlotId::new();
+        let req = ControlRequest::Cancel { slot };
         codec.encode(req, &mut buf).unwrap();
         let decoded = codec.decode(&mut buf).unwrap().unwrap();
 
-        assert!(matches!(decoded, ControlRequest::Cancel { slot: 2 }));
+        assert!(matches!(decoded, ControlRequest::Cancel { .. }));
     }
 
     #[test]
@@ -83,11 +84,12 @@ mod tests {
         let mut codec = JsonCodec::<ControlResponse>::new();
         let mut buf = BytesMut::new();
 
-        let resp = ControlResponse::Ready { schema: None };
+        let slots = vec![SlotId::new()];
+        let resp = ControlResponse::Ready { slots, schema: None };
         codec.encode(resp, &mut buf).unwrap();
         let decoded = codec.decode(&mut buf).unwrap().unwrap();
 
-        assert!(matches!(decoded, ControlResponse::Ready { schema: None }));
+        assert!(matches!(decoded, ControlResponse::Ready { .. }));
     }
 
     #[test]

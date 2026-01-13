@@ -14,8 +14,10 @@ use futures::{SinkExt, StreamExt};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio_util::codec::{FramedRead, FramedWrite};
 
+use std::collections::HashMap;
+
 use crate::codec::JsonCodec;
-use crate::protocol::{ControlRequest, ControlResponse, SlotRequest, SlotResponse};
+use crate::protocol::{ControlRequest, ControlResponse, SlotId, SlotRequest, SlotResponse};
 use crate::transport::{create_transport, SlotTransport, TRANSPORT_INFO_ENV};
 
 /// Error from worker operations.
@@ -37,7 +39,7 @@ pub enum WorkerError {
     Protocol(String),
 
     #[error("Slot {0} is poisoned")]
-    SlotPoisoned(usize),
+    SlotPoisoned(SlotId),
 
     #[error("All slots poisoned")]
     AllSlotsPoisoned,
@@ -57,11 +59,11 @@ pub struct Worker {
     /// Slot transport (platform-specific sockets).
     transport: SlotTransport,
 
-    /// Number of slots.
-    num_slots: usize,
+    /// Slot IDs (ordered by socket index).
+    slot_ids: Vec<SlotId>,
 
-    /// Which slots are poisoned.
-    poisoned: Vec<bool>,
+    /// Which slots are poisoned (keyed by SlotId).
+    poisoned: HashMap<SlotId, bool>,
 
     /// OpenAPI schema from the predictor.
     schema: Option<serde_json::Value>,
@@ -146,15 +148,16 @@ impl Worker {
         let ready = tokio::time::timeout(ready_timeout, ctrl_reader.next()).await;
 
         match ready {
-            Ok(Some(Ok(ControlResponse::Ready { schema }))) => {
-                tracing::info!(num_slots, "Worker ready");
+            Ok(Some(Ok(ControlResponse::Ready { slots, schema }))) => {
+                tracing::info!(num_slots, ?slots, "Worker ready");
+                let poisoned: HashMap<SlotId, bool> = slots.iter().map(|id| (*id, false)).collect();
                 Ok(Self {
                     child,
                     ctrl_writer,
                     ctrl_reader,
                     transport,
-                    num_slots,
-                    poisoned: vec![false; num_slots],
+                    slot_ids: slots,
+                    poisoned,
                     schema,
                 })
             }
@@ -186,38 +189,50 @@ impl Worker {
 
     /// Number of slots.
     pub fn num_slots(&self) -> usize {
-        self.num_slots
+        self.slot_ids.len()
+    }
+
+    /// Get all slot IDs.
+    pub fn slot_ids(&self) -> &[SlotId] {
+        &self.slot_ids
+    }
+
+    /// Get slot ID by index.
+    pub fn slot_id(&self, index: usize) -> Option<SlotId> {
+        self.slot_ids.get(index).copied()
     }
 
     /// Check if a slot is poisoned.
-    pub fn is_poisoned(&self, slot: usize) -> bool {
-        self.poisoned.get(slot).copied().unwrap_or(true)
+    pub fn is_poisoned(&self, slot: SlotId) -> bool {
+        self.poisoned.get(&slot).copied().unwrap_or(true)
     }
 
     /// Mark a slot as poisoned.
-    pub fn poison_slot(&mut self, slot: usize) {
-        if slot < self.poisoned.len() {
-            self.poisoned[slot] = true;
-        }
+    pub fn poison_slot(&mut self, slot: SlotId) {
+        self.poisoned.insert(slot, true);
     }
 
     /// Check if all slots are poisoned.
     pub fn all_poisoned(&self) -> bool {
-        self.poisoned.iter().all(|&p| p)
+        self.poisoned.values().all(|&p| p)
     }
 
-    /// Send a prediction request on a slot.
+    /// Send a prediction request on a slot (by index).
     pub async fn send_predict(
         &mut self,
-        slot: usize,
+        index: usize,
         id: String,
         input: serde_json::Value,
     ) -> Result<(), WorkerError> {
+        let slot = self.slot_ids.get(index)
+            .copied()
+            .ok_or_else(|| WorkerError::Protocol(format!("Invalid slot index {}", index)))?;
+        
         if self.is_poisoned(slot) {
             return Err(WorkerError::SlotPoisoned(slot));
         }
 
-        let socket = self.transport.slot_socket(slot)
+        let socket = self.transport.slot_socket(index)
             .ok_or_else(|| WorkerError::Protocol(format!("No socket for slot {}", slot)))?;
 
         let request = SlotRequest::Predict { id, input };
@@ -228,9 +243,12 @@ impl Worker {
             .map_err(|e| WorkerError::Protocol(format!("Failed to send predict: {}", e)))
     }
 
-    /// Read next response from a slot.
-    pub async fn recv_slot(&mut self, slot: usize) -> Result<SlotResponse, WorkerError> {
-        let socket = self.transport.slot_socket(slot)
+    /// Read next response from a slot (by index).
+    pub async fn recv_slot(&mut self, index: usize) -> Result<SlotResponse, WorkerError> {
+        let slot = self.slot_ids.get(index)
+            .ok_or_else(|| WorkerError::Protocol(format!("Invalid slot index {}", index)))?;
+        
+        let socket = self.transport.slot_socket(index)
             .ok_or_else(|| WorkerError::Protocol(format!("No socket for slot {}", slot)))?;
 
         let mut reader = FramedRead::new(socket, JsonCodec::<SlotResponse>::new());
@@ -242,7 +260,7 @@ impl Worker {
     }
 
     /// Send cancel request for a slot.
-    pub async fn cancel(&mut self, slot: usize) -> Result<(), WorkerError> {
+    pub async fn cancel(&mut self, slot: SlotId) -> Result<(), WorkerError> {
         let request = ControlRequest::Cancel { slot };
         self.ctrl_writer
             .send(request)

@@ -1,10 +1,9 @@
 ---
 source: coglet-worker/src/protocol.rs
-assertion_line: 188
 expression: resp
 ---
 {
   "type": "failed",
-  "slot": 3,
+  "slot": "550e8400-e29b-41d4-a716-446655440000",
   "error": "segfault"
 }

@@ -14,6 +14,7 @@ tokio.workspace = true
 tokio-util = { workspace = true, features = ["codec"] }
 thiserror.workspace = true
 tracing.workspace = true
+uuid.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.30.1", features = ["signal"] }
