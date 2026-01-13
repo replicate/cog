@@ -5,10 +5,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/rogpeppe/go-internal/testscript"
 )
@@ -18,6 +22,8 @@ type Harness struct {
 	CogBinary string
 	// realHome is captured at creation time before testscript overrides HOME
 	realHome string
+	// serverProcs tracks background cog serve processes for cleanup
+	serverProcs map[*testscript.TestScript]*exec.Cmd
 }
 
 // New creates a new Harness, resolving the cog binary location.
@@ -27,8 +33,9 @@ func New() (*Harness, error) {
 		return nil, err
 	}
 	return &Harness{
-		CogBinary: cogBinary,
-		realHome:  os.Getenv("HOME"),
+		CogBinary:   cogBinary,
+		realHome:    os.Getenv("HOME"),
+		serverProcs: make(map[*testscript.TestScript]*exec.Cmd),
 	}, nil
 }
 
@@ -142,7 +149,9 @@ func runCommand(dir string, name string, args ...string) error {
 // Commands returns the custom testscript commands provided by this harness.
 func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool, args []string) {
 	return map[string]func(ts *testscript.TestScript, neg bool, args []string){
-		"cog": h.cmdCog,
+		"cog":   h.cmdCog,
+		"serve": h.cmdServe,
+		"curl":  h.cmdCurl,
 	}
 }
 
@@ -184,8 +193,12 @@ func (h *Harness) Setup(env *testscript.Env) error {
 	imageName := generateUniqueImageName()
 	env.Setenv("TEST_IMAGE", imageName)
 
-	// Register cleanup to remove the Docker image after the test
+	// Register cleanup to remove the Docker image and stop any servers after the test
 	env.Defer(func() {
+		// Stop any running servers
+		for ts := range h.serverProcs {
+			h.StopServer(ts)
+		}
 		removeDockerImage(imageName)
 	})
 
@@ -219,4 +232,199 @@ func removeDockerImage(imageName string) {
 		}
 		exec.Command("docker", "rmi", "-f", img).Run() //nolint:errcheck
 	}
+}
+
+// cmdServe implements the 'serve' command for testscript.
+// It starts a cog serve process in the background and waits for it to be healthy.
+// Usage: serve [flags]
+// Exports $SERVER_URL environment variable with the server address.
+func (h *Harness) cmdServe(ts *testscript.TestScript, neg bool, args []string) {
+	if neg {
+		ts.Fatalf("serve command does not support negation")
+	}
+
+	// Check if server is already running
+	if _, exists := h.serverProcs[ts]; exists {
+		ts.Fatalf("server already running")
+	}
+
+	// Allocate a random available port
+	port, err := allocatePort()
+	if err != nil {
+		ts.Fatalf("failed to allocate port: %v", err)
+	}
+
+	// Build command arguments
+	cmdArgs := []string{"serve", "-p", strconv.Itoa(port)}
+	cmdArgs = append(cmdArgs, args...)
+
+	// Expand environment variables in arguments
+	expandedArgs := make([]string, len(cmdArgs))
+	for i, arg := range cmdArgs {
+		expandedArgs[i] = os.Expand(arg, ts.Getenv)
+	}
+
+	// Start the server process
+	cmd := exec.Command(h.CogBinary, expandedArgs...)
+	cmd.Dir = ts.Getenv("WORK")
+
+	// Build environment from testscript
+	var env []string
+	for _, key := range []string{"HOME", "PATH", "COG_NO_UPDATE_CHECK", "BUILDKIT_PROGRESS", "TEST_IMAGE"} {
+		if val := ts.Getenv(key); val != "" {
+			env = append(env, fmt.Sprintf("%s=%s", key, val))
+		}
+	}
+	cmd.Env = env
+
+	if err := cmd.Start(); err != nil {
+		ts.Fatalf("failed to start server: %v", err)
+	}
+
+	// Store the process for cleanup
+	h.serverProcs[ts] = cmd
+
+	// Wait for server to be healthy
+	serverURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	ts.Setenv("SERVER_URL", serverURL)
+
+	if !waitForServer(serverURL, 30*time.Second) {
+		// Try to get server output for debugging
+		cmd.Process.Kill()
+		ts.Fatalf("server did not become healthy within timeout")
+	}
+}
+
+// cmdCurl implements the 'curl' command for testscript.
+// It makes HTTP requests to the server started with 'serve'.
+// Usage: curl [method] [path] [body]
+// Examples:
+//
+//	curl GET /health-check
+//	curl POST /predictions '{"input":{"s":"hello"}}'
+func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
+	if len(args) < 2 {
+		ts.Fatalf("curl: usage: curl [method] [path] [body]")
+	}
+
+	serverURL := ts.Getenv("SERVER_URL")
+	if serverURL == "" {
+		ts.Fatalf("curl: SERVER_URL not set (did you call 'serve' first?)")
+	}
+
+	method := args[0]
+	path := args[1]
+	var body string
+	if len(args) > 2 {
+		body = args[2]
+	}
+
+	// Make the HTTP request
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest(method, serverURL+path, strings.NewReader(body))
+	if err != nil {
+		ts.Fatalf("curl: failed to create request: %v", err)
+	}
+
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		if neg {
+			// Expected to fail
+			return
+		}
+		ts.Fatalf("curl: request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	var respBodyBuilder strings.Builder
+	buf := make([]byte, 4096)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			respBodyBuilder.Write(buf[:n])
+		}
+		if err != nil {
+			if err.Error() != "EOF" {
+				ts.Fatalf("curl: failed to read response: %v", err)
+			}
+			break
+		}
+	}
+	respBody := respBodyBuilder.String()
+
+	// Check status code expectations
+	statusOK := resp.StatusCode >= 200 && resp.StatusCode < 300
+	if neg {
+		if statusOK {
+			ts.Fatalf("curl: expected failure but got status %d", resp.StatusCode)
+		}
+	} else {
+		if !statusOK {
+			// For error responses, try to show detailed error from JSON
+			errorMsg := respBody
+			if len(errorMsg) > 500 {
+				errorMsg = errorMsg[:500] + "..."
+			}
+			ts.Logf("curl: full response body: %s", respBody)
+			ts.Fatalf("curl: request failed with status %d: %s", resp.StatusCode, errorMsg)
+		}
+	}
+
+	// Write response body to stdout for assertions
+	ts.Stdout().Write([]byte(respBody))
+}
+
+// StopServer stops the background server process for a test script.
+func (h *Harness) StopServer(ts *testscript.TestScript) {
+	if cmd, exists := h.serverProcs[ts]; exists {
+		// Try graceful shutdown first
+		serverURL := ts.Getenv("SERVER_URL")
+		if serverURL != "" {
+			client := &http.Client{Timeout: 5 * time.Second}
+			client.Post(serverURL+"/shutdown", "application/json", nil) //nolint:errcheck
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		// Force kill if still running
+		if cmd.Process != nil {
+			cmd.Process.Kill()
+		}
+		cmd.Wait()
+		delete(h.serverProcs, ts)
+	}
+}
+
+// allocatePort finds an available TCP port.
+func allocatePort() (int, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer listener.Close()
+	return listener.Addr().(*net.TCPAddr).Port, nil
+}
+
+// waitForServer polls the server's health-check endpoint until it returns 200.
+func waitForServer(serverURL string, timeout time.Duration) bool {
+	client := &http.Client{Timeout: 1 * time.Second}
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(serverURL + "/health-check")
+		if err == nil && resp.StatusCode == 200 {
+			resp.Body.Close()
+			return true
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	return false
 }

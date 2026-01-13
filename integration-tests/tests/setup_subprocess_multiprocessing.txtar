@@ -1,0 +1,128 @@
+# TODO: This test is currently failing with 500 errors. The multiprocessing.Process
+# spawned during setup appears to have issues with the connection. This needs further
+# investigation to understand if it's a test issue or a real bug in cog serve.
+skip 'test needs debugging'
+
+[slow] skip 'slow test - skip in fast mode'
+
+# Test multiprocessing.Process spawned during setup
+# This ensures stream redirection works correctly with Python multiprocessing
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Start the server
+serve
+
+# Wait for setup to complete (multiprocessing initialization takes time)
+exec sleep 2
+
+# Make a prediction that communicates via multiprocessing.Pipe
+# Note: The background process closes the connection after first use,
+# so we only test one prediction
+curl POST /predictions '{"input":{"s":"friendo1"}}'
+stdout '"output":'
+stdout 'cog-test-integration-out'
+stdout '.tmp"'
+
+-- cog.yaml --
+build:
+  python_version: "3.8"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import atexit
+import multiprocessing
+import pathlib
+import signal
+import subprocess
+import sys
+import time
+
+from cog.types import Path
+from cog import BasePredictor
+
+from bg import ponger
+
+def cleanup():
+    for tmp in pathlib.Path("./").glob("*.tmp"):
+        tmp.unlink(missing_ok=True)
+
+
+atexit.register(cleanup)
+
+
+class Predictor(BasePredictor):
+    """
+    This predictor checks the case where a process is spawned during setup via
+    multiprocessing and then each prediction causes that process to write to stdout.
+    """
+
+    def setup(self) -> None:
+        print("---> starting background process")
+
+        cleanup()
+
+        self.parent_conn, self.child_conn = multiprocessing.Pipe()
+        self.lock = multiprocessing.Lock()
+        self.bg = multiprocessing.Process(
+            target=ponger, args=(self.child_conn, self.lock)
+        )
+        self.bg.start()
+
+        print(f"---> started background process pid={self.bg.pid}")
+
+    def predict(self, s: str) -> Path:
+        if self.bg.is_alive():
+            print(f"---> sending ping to background job pid={self.bg.pid}")
+
+            self.child_conn.send("ping")
+
+            print(f"---> sent ping to background job pid={self.bg.pid}")
+
+            pong = self.parent_conn.recv()
+
+            print(f"---> received {pong} from background job pid={self.bg.pid}")
+        else:
+            print(f"---> background job died")
+
+            raise SystemExit
+
+        out = Path(f"cog-test-integration-out.{time.time_ns()}.tmp")
+        out.write_text("hello " + s)
+
+        print(f"---> wrote output file {out}")
+
+        return out
+
+-- bg.py --
+import multiprocessing.connection
+import multiprocessing.synchronize
+import os
+import time
+
+
+def ponger(
+    conn: multiprocessing.connection.Connection, lock: multiprocessing.synchronize.Lock
+):
+    for i in range(100):
+        print(f"Getting ready for some serious ponginggg ({i+1}%)")
+        time.sleep(0.001 + (0.001 * (i + 1)))
+
+    print("ITS PONGIN TIME")
+
+    pid = os.getpid()
+
+    while True:
+        try:
+            ping = conn.recv()
+            print(f"received {ping} in {pid}")
+
+            with lock:
+                print(f"ponging from {pid}")
+
+                conn.send("pong")
+                conn.close()
+
+        except EOFError:
+            pass

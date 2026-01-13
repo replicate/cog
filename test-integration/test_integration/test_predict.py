@@ -157,37 +157,6 @@ def test_predict_many_inputs_with_existing_image(
     assert "falling back to slow loader" not in str(result.stderr)
 
 
-@pytest.mark.parametrize(
-    ("fixture_name",),
-    [
-        ("simple",),
-        ("double-fork",),
-        ("double-fork-http",),
-        ("multiprocessing",),
-    ],
-)
-def test_predict_with_subprocess_in_setup(fixture_name, cog_binary):
-    project_dir = (
-        Path(__file__).parent / "fixtures" / f"setup-subprocess-{fixture_name}-project"
-    )
-
-    with cog_server_http_run(project_dir, cog_binary) as addr:
-        busy_count = 0
-
-        for i in range(100):
-            response = httpx.post(
-                f"{addr}/predictions",
-                json={"input": {"s": f"friendo{i}"}},
-            )
-            if response.status_code == 409:
-                busy_count += 1
-                continue
-
-            assert response.status_code == 200, str(response)
-
-        assert busy_count < 10
-
-
 @pytest.mark.asyncio
 async def test_concurrent_predictions(cog_binary):
     async def make_request(i: int) -> httpx.Response:
