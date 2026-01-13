@@ -1,5 +1,6 @@
 ---
 source: coglet-worker/src/protocol.rs
+assertion_line: 167
 expression: resp
 ---
 {

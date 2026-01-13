@@ -1,8 +1,8 @@
 ---
 source: coglet-worker/src/protocol.rs
+assertion_line: 150
 expression: req
 ---
 {
-  "type": "cancel",
-  "id": "pred_123"
+  "type": "shutdown"
 }

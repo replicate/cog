@@ -1,0 +1,9 @@
+---
+source: coglet-worker/src/protocol.rs
+assertion_line: 179
+expression: resp
+---
+{
+  "type": "cancelled",
+  "slot": 0
+}

@@ -1,0 +1,10 @@
+---
+source: coglet-worker/src/protocol.rs
+assertion_line: 207
+expression: resp
+---
+{
+  "type": "log",
+  "source": "stdout",
+  "data": "Processing..."
+}

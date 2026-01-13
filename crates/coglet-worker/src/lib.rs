@@ -21,9 +21,11 @@ mod worker;
 
 pub use codec::JsonCodec;
 pub use manager::{SpawnConfig, Worker, WorkerError};
-pub use protocol::{PredictionStatus, WorkerRequest, WorkerResponse};
+pub use protocol::{
+    ControlRequest, ControlResponse, LogSource, SlotRequest, SlotResponse,
+};
 pub use transport::{
     connect_transport, create_transport, get_transport_info_from_env, ChildTransportInfo,
     NamedSocketTransport, SlotTransport, TRANSPORT_INFO_ENV,
 };
-pub use worker::{run_worker, PredictHandler, PredictResult, PredictionSlot, WorkerConfig};
+pub use worker::{run_worker, PredictHandler, PredictResult, WorkerConfig};

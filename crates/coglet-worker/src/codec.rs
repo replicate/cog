@@ -64,14 +64,38 @@ impl<T: Serialize> Encoder<T> for JsonCodec<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::{WorkerRequest, WorkerResponse};
+    use crate::protocol::{ControlRequest, ControlResponse, SlotRequest, SlotResponse};
 
     #[test]
-    fn codec_roundtrip_request() {
-        let mut codec = JsonCodec::<WorkerRequest>::new();
+    fn codec_roundtrip_control_request() {
+        let mut codec = JsonCodec::<ControlRequest>::new();
         let mut buf = BytesMut::new();
 
-        let req = WorkerRequest::Predict {
+        let req = ControlRequest::Cancel { slot: 2 };
+        codec.encode(req, &mut buf).unwrap();
+        let decoded = codec.decode(&mut buf).unwrap().unwrap();
+
+        assert!(matches!(decoded, ControlRequest::Cancel { slot: 2 }));
+    }
+
+    #[test]
+    fn codec_roundtrip_control_response() {
+        let mut codec = JsonCodec::<ControlResponse>::new();
+        let mut buf = BytesMut::new();
+
+        let resp = ControlResponse::Ready { schema: None };
+        codec.encode(resp, &mut buf).unwrap();
+        let decoded = codec.decode(&mut buf).unwrap().unwrap();
+
+        assert!(matches!(decoded, ControlResponse::Ready { schema: None }));
+    }
+
+    #[test]
+    fn codec_roundtrip_slot_request() {
+        let mut codec = JsonCodec::<SlotRequest>::new();
+        let mut buf = BytesMut::new();
+
+        let req = SlotRequest::Predict {
             id: "test".to_string(),
             input: serde_json::json!({"x": 1}),
         };
@@ -81,25 +105,35 @@ mod tests {
 
         match (req, decoded) {
             (
-                WorkerRequest::Predict { id: id1, input: input1 },
-                WorkerRequest::Predict { id: id2, input: input2 },
+                SlotRequest::Predict { id: id1, input: input1 },
+                SlotRequest::Predict { id: id2, input: input2 },
             ) => {
                 assert_eq!(id1, id2);
                 assert_eq!(input1, input2);
             }
-            _ => panic!("mismatch"),
         }
     }
 
     #[test]
-    fn codec_roundtrip_response() {
-        let mut codec = JsonCodec::<WorkerResponse>::new();
+    fn codec_roundtrip_slot_response() {
+        let mut codec = JsonCodec::<SlotResponse>::new();
         let mut buf = BytesMut::new();
 
-        let resp = WorkerResponse::Ready { schema: None };
+        let resp = SlotResponse::Done {
+            id: "test".to_string(),
+            output: Some(serde_json::json!("result")),
+            predict_time: 1.5,
+        };
         codec.encode(resp, &mut buf).unwrap();
         let decoded = codec.decode(&mut buf).unwrap().unwrap();
 
-        assert!(matches!(decoded, WorkerResponse::Ready { schema: None }));
+        match decoded {
+            SlotResponse::Done { id, output, predict_time } => {
+                assert_eq!(id, "test");
+                assert_eq!(output, Some(serde_json::json!("result")));
+                assert!((predict_time - 1.5).abs() < 0.001);
+            }
+            _ => panic!("wrong variant"),
+        }
     }
 }

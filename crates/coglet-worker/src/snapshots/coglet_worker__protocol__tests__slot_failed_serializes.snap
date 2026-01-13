@@ -1,10 +1,10 @@
 ---
 source: coglet-worker/src/protocol.rs
+assertion_line: 234
 expression: resp
 ---
 {
-  "type": "error",
+  "type": "failed",
   "id": "pred_123",
-  "error": "something went wrong",
-  "logs": "traceback here"
+  "error": "ValueError: invalid input"
 }

@@ -1,0 +1,9 @@
+---
+source: coglet-worker/src/protocol.rs
+assertion_line: 173
+expression: resp
+---
+{
+  "type": "idle",
+  "slot": 1
+}

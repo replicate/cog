@@ -1,104 +1,135 @@
 //! Wire protocol types for parent-worker communication.
 //!
-//! Uses serde for serialization. Currently JSON for debuggability,
-//! can swap to bincode later if performance matters.
+//! Two channels:
+//! - **Control channel** (stdin/stdout): ControlRequest/ControlResponse
+//!   - Cancel, Shutdown, Ready, Idle signals
+//! - **Slot sockets**: SlotRequest/SlotResponse
+//!   - Prediction data, streaming logs (per-slot, avoids HOL blocking)
+//!
+//! Uses serde JSON for debuggability. Can swap to bincode if needed.
 
 use serde::{Deserialize, Serialize};
 
-/// Request from parent to worker.
+// ============================================================================
+// Control channel protocol (stdin/stdout)
+// ============================================================================
+
+/// Control messages from parent to worker.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum WorkerRequest {
-    /// Run a prediction (or training, depending on worker mode).
-    /// 
-    /// NOTE: Whether this calls predict() or train() is determined by the
-    /// worker's is_train flag set at creation time, NOT by this request.
-    /// This matches cog mainline behavior (which is arguably a bug - training
-    /// routes use the same worker that was created for predictions).
-    Predict {
-        /// Unique prediction ID.
-        id: String,
-        /// Input to the predictor (JSON object).
-        input: serde_json::Value,
-    },
-
-    /// Cancel an in-flight prediction/training.
+pub enum ControlRequest {
+    /// Cancel prediction on a slot.
     Cancel {
-        /// ID of prediction/training to cancel.
-        id: String,
+        /// Slot index to cancel.
+        slot: usize,
     },
 
     /// Graceful shutdown - finish current work and exit.
     Shutdown,
 }
 
-/// Response from worker to parent.
+/// Control messages from worker to parent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum WorkerResponse {
+pub enum ControlResponse {
     /// Worker is ready to accept predictions.
     Ready {
-        /// OpenAPI schema for the predictor (generated once at setup).
+        /// OpenAPI schema for the predictor.
         #[serde(skip_serializing_if = "Option::is_none")]
         schema: Option<serde_json::Value>,
     },
 
-    /// Prediction output (intermediate for streaming, or final).
-    Output {
-        /// Prediction ID this output belongs to.
-        id: String,
-        /// The output value.
-        output: serde_json::Value,
-        /// Status of the prediction.
-        status: PredictionStatus,
-        /// Captured logs (stdout/stderr).
-        #[serde(default, skip_serializing_if = "String::is_empty")]
-        logs: String,
-        /// Prediction time in seconds (only set when status is terminal).
-        #[serde(skip_serializing_if = "Option::is_none")]
-        predict_time: Option<f64>,
+    /// Slot is now idle (prediction completed, ready for next).
+    Idle {
+        /// Slot index that became idle.
+        slot: usize,
     },
 
-    /// Prediction was cancelled.
+    /// Slot prediction was cancelled.
     Cancelled {
-        /// Prediction ID that was cancelled.
-        id: String,
+        /// Slot index that was cancelled.
+        slot: usize,
     },
 
-    /// Prediction failed with error.
-    Error {
-        /// Prediction ID that failed.
-        id: String,
+    /// Slot failed (poisoned, will not accept more predictions).
+    Failed {
+        /// Slot index that failed.
+        slot: usize,
         /// Error message.
         error: String,
-        /// Captured logs up to the error.
-        #[serde(default, skip_serializing_if = "String::is_empty")]
-        logs: String,
     },
 
     /// Worker is shutting down.
     ShuttingDown,
 }
 
-/// Prediction status.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PredictionStatus {
-    /// Still running, more output coming (for generators).
-    Processing,
-    /// Completed successfully.
-    Succeeded,
-    /// Failed with error.
-    Failed,
-    /// Was cancelled.
-    Canceled,
+// ============================================================================
+// Slot socket protocol (per-slot data channel)
+// ============================================================================
+
+/// Messages from parent to worker on slot socket.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SlotRequest {
+    /// Run a prediction.
+    Predict {
+        /// Unique prediction ID.
+        id: String,
+        /// Input to the predictor (JSON object).
+        input: serde_json::Value,
+    },
 }
 
-impl PredictionStatus {
-    /// Is this a terminal status?
-    pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Succeeded | Self::Failed | Self::Canceled)
-    }
+/// Messages from worker to parent on slot socket.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SlotResponse {
+    /// Log output during prediction (streaming).
+    Log {
+        /// Log source.
+        source: LogSource,
+        /// Log data.
+        data: String,
+    },
+
+    /// Streaming output (for generators).
+    Output {
+        /// The output value.
+        output: serde_json::Value,
+    },
+
+    /// Prediction completed successfully.
+    Done {
+        /// Prediction ID.
+        id: String,
+        /// Final output (for non-generators, or None if already streamed).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        output: Option<serde_json::Value>,
+        /// Prediction time in seconds.
+        predict_time: f64,
+    },
+
+    /// Prediction failed.
+    Failed {
+        /// Prediction ID.
+        id: String,
+        /// Error message.
+        error: String,
+    },
+
+    /// Prediction was cancelled.
+    Cancelled {
+        /// Prediction ID.
+        id: String,
+    },
+}
+
+/// Log source for streaming logs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LogSource {
+    Stdout,
+    Stderr,
 }
 
 #[cfg(test)]
@@ -106,32 +137,28 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    // Control channel tests
     #[test]
-    fn request_predict_serializes() {
-        let req = WorkerRequest::Predict {
-            id: "pred_123".to_string(),
-            input: json!({"text": "hello"}),
-        };
+    fn control_cancel_serializes() {
+        let req = ControlRequest::Cancel { slot: 2 };
         insta::assert_json_snapshot!(req);
     }
 
     #[test]
-    fn request_cancel_serializes() {
-        let req = WorkerRequest::Cancel {
-            id: "pred_123".to_string(),
-        };
+    fn control_shutdown_serializes() {
+        let req = ControlRequest::Shutdown;
         insta::assert_json_snapshot!(req);
     }
 
     #[test]
-    fn response_ready_serializes() {
-        let resp = WorkerResponse::Ready { schema: None };
+    fn control_ready_serializes() {
+        let resp = ControlResponse::Ready { schema: None };
         insta::assert_json_snapshot!(resp);
     }
 
     #[test]
-    fn response_ready_with_schema_serializes() {
-        let resp = WorkerResponse::Ready {
+    fn control_ready_with_schema_serializes() {
+        let resp = ControlResponse::Ready {
             schema: Some(json!({
                 "openapi": "3.0.2",
                 "info": {"title": "Cog", "version": "0.1.0"}
@@ -141,32 +168,77 @@ mod tests {
     }
 
     #[test]
-    fn response_output_serializes() {
-        let resp = WorkerResponse::Output {
+    fn control_idle_serializes() {
+        let resp = ControlResponse::Idle { slot: 1 };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn control_cancelled_serializes() {
+        let resp = ControlResponse::Cancelled { slot: 0 };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn control_failed_serializes() {
+        let resp = ControlResponse::Failed {
+            slot: 3,
+            error: "segfault".to_string(),
+        };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    // Slot socket tests
+    #[test]
+    fn slot_predict_serializes() {
+        let req = SlotRequest::Predict {
             id: "pred_123".to_string(),
-            output: json!("hello world"),
-            status: PredictionStatus::Succeeded,
-            logs: "".to_string(),
-            predict_time: Some(0.123),
+            input: json!({"text": "hello"}),
+        };
+        insta::assert_json_snapshot!(req);
+    }
+
+    #[test]
+    fn slot_log_serializes() {
+        let resp = SlotResponse::Log {
+            source: LogSource::Stdout,
+            data: "Processing...".to_string(),
         };
         insta::assert_json_snapshot!(resp);
     }
 
     #[test]
-    fn response_error_serializes() {
-        let resp = WorkerResponse::Error {
-            id: "pred_123".to_string(),
-            error: "something went wrong".to_string(),
-            logs: "traceback here".to_string(),
+    fn slot_output_serializes() {
+        let resp = SlotResponse::Output {
+            output: json!("chunk 1"),
         };
         insta::assert_json_snapshot!(resp);
     }
 
     #[test]
-    fn prediction_status_terminal() {
-        assert!(!PredictionStatus::Processing.is_terminal());
-        assert!(PredictionStatus::Succeeded.is_terminal());
-        assert!(PredictionStatus::Failed.is_terminal());
-        assert!(PredictionStatus::Canceled.is_terminal());
+    fn slot_done_serializes() {
+        let resp = SlotResponse::Done {
+            id: "pred_123".to_string(),
+            output: Some(json!("final result")),
+            predict_time: 1.234,
+        };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn slot_failed_serializes() {
+        let resp = SlotResponse::Failed {
+            id: "pred_123".to_string(),
+            error: "ValueError: invalid input".to_string(),
+        };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn slot_cancelled_serializes() {
+        let resp = SlotResponse::Cancelled {
+            id: "pred_123".to_string(),
+        };
+        insta::assert_json_snapshot!(resp);
     }
 }

@@ -1,0 +1,9 @@
+---
+source: coglet-worker/src/protocol.rs
+assertion_line: 144
+expression: req
+---
+{
+  "type": "cancel",
+  "slot": 2
+}

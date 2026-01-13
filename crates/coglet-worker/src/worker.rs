@@ -1,277 +1,204 @@
 //! Worker-side code - runs in the subprocess.
 //!
-//! Receives requests over stdin, runs Python predictions, sends responses to stdout.
-//! This is the child process counterpart to manager.rs.
+//! Architecture:
+//! - Control channel (stdin/stdout): Cancel, Shutdown signals + Ready, Idle responses
+//! - Slot sockets: Prediction data + streaming logs
 //!
-//! CRITICAL: This code must NEVER allow zombie or hanging processes.
-//! - Parent death detection via stdin EOF
-//! - Prediction timeouts
-//! - Panic handling with permit release
-//! - Heartbeat/keepalive (optional)
+//! Each slot runs predictions independently. Idle sent on control channel when
+//! prediction completes.
 
 use std::io;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use futures::{SinkExt, StreamExt};
 use tokio::io::{stdin, stdout};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
 use crate::codec::JsonCodec;
-use crate::protocol::{PredictionStatus, WorkerRequest, WorkerResponse};
+use crate::protocol::{ControlRequest, ControlResponse, LogSource, SlotRequest, SlotResponse};
+use crate::transport::{connect_transport, get_transport_info_from_env, SlotTransport};
 
 /// Trait for the prediction handler - abstracts the Python integration.
-///
-/// This allows testing the worker loop without actual Python.
-/// 
-/// NOTE: Whether predict() calls the Python predict() or train() method
-/// is determined by the handler's is_train flag set at construction time.
-/// This matches cog mainline behavior where the worker mode is fixed at startup.
 #[async_trait::async_trait]
-pub trait PredictHandler: Send + Sync {
+pub trait PredictHandler: Send + Sync + 'static {
     /// Initialize the predictor (load model, run setup).
     async fn setup(&self) -> Result<(), String>;
 
-    /// Run a prediction (or training, if is_train mode).
-    /// 
-    /// The actual Python method called depends on how the handler was created.
-    async fn predict(&self, input: serde_json::Value) -> PredictResult;
+    /// Run a prediction. Called with slot index and prediction ID.
+    async fn predict(&self, slot: usize, id: String, input: serde_json::Value) -> PredictResult;
 
-    /// Request cancellation of current prediction/training.
-    fn cancel(&self);
+    /// Request cancellation of prediction on a slot.
+    fn cancel(&self, slot: usize);
 
     /// Get OpenAPI schema for the predictor.
-    /// Called once after setup, result is cached and sent with Ready message.
     fn schema(&self) -> Option<serde_json::Value> {
         None
     }
 }
 
 /// Result of a prediction.
+#[derive(Debug)]
 pub struct PredictResult {
     pub output: serde_json::Value,
-    pub status: PredictionStatus,
-    pub logs: String,
+    pub success: bool,
+    pub error: Option<String>,
     pub predict_time: f64,
 }
 
 impl PredictResult {
-    pub fn success(output: serde_json::Value, logs: String, predict_time: f64) -> Self {
+    pub fn success(output: serde_json::Value, predict_time: f64) -> Self {
         Self {
             output,
-            status: PredictionStatus::Succeeded,
-            logs,
+            success: true,
+            error: None,
             predict_time,
         }
     }
 
-    pub fn failed(error: String, logs: String, predict_time: f64) -> Self {
+    pub fn failed(error: String, predict_time: f64) -> Self {
         Self {
             output: serde_json::Value::Null,
-            status: PredictionStatus::Failed,
-            logs: format!("{}\n{}", logs, error),
+            success: false,
+            error: Some(error),
             predict_time,
         }
     }
 
-    pub fn cancelled(logs: String, predict_time: f64) -> Self {
+    pub fn cancelled(predict_time: f64) -> Self {
         Self {
             output: serde_json::Value::Null,
-            status: PredictionStatus::Canceled,
-            logs,
+            success: false,
+            error: Some("Cancelled".to_string()),
             predict_time,
         }
-    }
-}
-
-/// RAII guard for a prediction slot.
-/// 
-/// Holds a semaphore permit that is released when dropped.
-/// This ensures the slot is returned even on panic/error.
-pub struct PredictionSlot {
-    _permit: OwnedSemaphorePermit,
-    pub id: String,
-}
-
-impl PredictionSlot {
-    fn new(permit: OwnedSemaphorePermit, id: String) -> Self {
-        Self { _permit: permit, id }
     }
 }
 
 /// Worker configuration.
 pub struct WorkerConfig {
-    /// Maximum concurrent predictions (slots).
-    pub max_concurrency: usize,
-    /// Maximum time to wait for a prediction before force-killing.
-    /// None = no timeout (dangerous, but matches cog behavior).
-    pub predict_timeout: Option<Duration>,
-    /// How long to wait for graceful shutdown before exiting.
-    pub shutdown_timeout: Duration,
+    /// Number of concurrent prediction slots.
+    pub num_slots: usize,
 }
 
 impl Default for WorkerConfig {
     fn default() -> Self {
-        Self {
-            max_concurrency: 1,
-            predict_timeout: None, // No timeout by default (model inference can be slow)
-            shutdown_timeout: Duration::from_secs(30),
-        }
+        Self { num_slots: 1 }
     }
+}
+
+/// Completion message from a slot task.
+struct SlotCompletion {
+    slot: usize,
+    id: String,
+    result: PredictResult,
+    poisoned: bool,
 }
 
 /// Run the worker event loop.
 ///
-/// Reads requests from stdin, processes them, writes responses to stdout.
-/// 
-/// EXITS WHEN:
-/// - stdin closes (parent died or disconnected) 
-/// - Shutdown request received
-/// - Unrecoverable error
-///
-/// CRITICAL SAFETY:
-/// - stdin EOF = parent gone = EXIT IMMEDIATELY (no orphans)
-/// - Prediction timeout = return error, don't hang
-/// - Panic in handler = permit still released via RAII
-/// - All paths lead to exit, no infinite loops
-pub async fn run_worker<H: PredictHandler>(handler: H, config: WorkerConfig) -> io::Result<()> {
-    let mut reader = FramedRead::new(stdin(), JsonCodec::<WorkerRequest>::new());
-    let mut writer = FramedWrite::new(stdout(), JsonCodec::<WorkerResponse>::new());
-    
-    // Semaphore for concurrency control
-    let slots = Arc::new(Semaphore::new(config.max_concurrency));
+/// Reads control messages from stdin, prediction requests from slot sockets.
+/// Spawns async tasks for concurrent predictions.
+pub async fn run_worker<H: PredictHandler>(handler: Arc<H>, config: WorkerConfig) -> io::Result<()> {
+    let num_slots = config.num_slots;
+
+    // Connect to slot sockets (transport info from env, set by parent)
+    let child_info = get_transport_info_from_env()?;
+    let mut transport = connect_transport(child_info).await?;
+
+    // Control channel
+    let mut ctrl_reader = FramedRead::new(stdin(), JsonCodec::<ControlRequest>::new());
+    let mut ctrl_writer = FramedWrite::new(stdout(), JsonCodec::<ControlResponse>::new());
 
     // Run setup
     tracing::info!("Worker starting setup");
     if let Err(e) = handler.setup().await {
         tracing::error!(error = %e, "Setup failed");
-        // Send error and exit - don't hang around
-        let _ = writer
-            .send(WorkerResponse::Error {
-                id: "setup".to_string(),
-                error: e,
-                logs: String::new(),
+        let _ = ctrl_writer
+            .send(ControlResponse::Failed {
+                slot: 0,
+                error: format!("Setup failed: {}", e),
             })
             .await;
         return Ok(());
     }
 
-    // Get schema (generated once, cached by handler)
-    let schema = handler.schema();
-    if schema.is_some() {
-        tracing::info!("OpenAPI schema generated");
-    }
-
     // Send Ready with schema
-    tracing::info!(max_concurrency = config.max_concurrency, "Worker ready");
-    writer.send(WorkerResponse::Ready { schema }).await?;
+    let schema = handler.schema();
+    tracing::info!(num_slots, "Worker ready");
+    ctrl_writer.send(ControlResponse::Ready { schema }).await?;
 
-    // Main loop - exits on stdin EOF (parent death) or error
+    // Channel for slot completions
+    let (completion_tx, mut completion_rx) = mpsc::channel::<SlotCompletion>(num_slots);
+
+    // Track slot state
+    let mut slot_busy = vec![false; num_slots];
+    let mut slot_poisoned = vec![false; num_slots];
+
     loop {
-        // Read next request - None means stdin closed (PARENT DIED)
-        let request = match reader.next().await {
-            Some(Ok(r)) => r,
-            Some(Err(e)) => {
-                tracing::error!(error = %e, "Failed to read request, exiting");
-                break;
-            }
-            None => {
-                // CRITICAL: stdin closed = parent is gone
-                // Exit immediately to avoid orphan process
-                tracing::warn!("stdin closed (parent died?), exiting immediately");
-                break;
-            }
-        };
-
-        match request {
-            WorkerRequest::Predict { id, input } => {
-                // Acquire a slot with timeout to prevent infinite blocking
-                let permit = match tokio::time::timeout(
-                    Duration::from_secs(5),
-                    slots.clone().acquire_owned()
-                ).await {
-                    Ok(Ok(p)) => p,
-                    Ok(Err(_)) => {
-                        tracing::error!("Semaphore closed, exiting");
+        tokio::select! {
+            // Control channel messages
+            ctrl_msg = ctrl_reader.next() => {
+                match ctrl_msg {
+                    Some(Ok(ControlRequest::Cancel { slot })) => {
+                        tracing::debug!(slot, "Cancel requested");
+                        handler.cancel(slot);
+                    }
+                    Some(Ok(ControlRequest::Shutdown)) => {
+                        tracing::info!("Shutdown requested");
+                        let _ = ctrl_writer.send(ControlResponse::ShuttingDown).await;
                         break;
                     }
-                    Err(_) => {
-                        // Timeout acquiring slot - something is very wrong
-                        tracing::error!(id = %id, "Timeout acquiring prediction slot");
-                        let _ = writer.send(WorkerResponse::Error {
-                            id,
-                            error: "Worker busy - timeout acquiring slot".to_string(),
-                            logs: String::new(),
-                        }).await;
-                        continue;
+                    Some(Err(e)) => {
+                        tracing::error!(error = %e, "Control channel error");
+                        break;
                     }
-                };
-                
-                // RAII slot - permit released on drop, even on panic
-                let slot = PredictionSlot::new(permit, id.clone());
-                
-                tracing::debug!(id = %slot.id, "Starting prediction");
-                let start = Instant::now();
-
-                // Run prediction with optional timeout
-                let result = if let Some(timeout) = config.predict_timeout {
-                    match tokio::time::timeout(timeout, handler.predict(input)).await {
-                        Ok(r) => r,
-                        Err(_) => {
-                            tracing::error!(id = %slot.id, timeout = ?timeout, "Prediction timed out");
-                            PredictResult::failed(
-                                format!("Prediction timed out after {:?}", timeout),
-                                String::new(),
-                                start.elapsed().as_secs_f64(),
-                            )
-                        }
+                    None => {
+                        // Parent closed control channel - exit
+                        tracing::warn!("Control channel closed (parent died?), exiting");
+                        break;
                     }
-                } else {
-                    handler.predict(input).await
-                };
-                
-                let elapsed = start.elapsed().as_secs_f64();
-
-                let response = match result.status {
-                    PredictionStatus::Succeeded | PredictionStatus::Processing => {
-                        WorkerResponse::Output {
-                            id: slot.id.clone(),
-                            output: result.output,
-                            status: result.status,
-                            logs: result.logs,
-                            predict_time: Some(elapsed),
-                        }
-                    }
-                    PredictionStatus::Failed => WorkerResponse::Error {
-                        id: slot.id.clone(),
-                        error: result.logs.clone(),
-                        logs: result.logs,
-                    },
-                    PredictionStatus::Canceled => WorkerResponse::Cancelled { id: slot.id.clone() },
-                };
-
-                // slot drops here, releasing permit (RAII guarantee)
-                drop(slot);
-
-                // Send response - if this fails, parent is probably dead
-                if let Err(e) = writer.send(response).await {
-                    tracing::error!(error = %e, "Failed to send response (parent dead?), exiting");
-                    break;
                 }
             }
 
-            WorkerRequest::Cancel { id } => {
-                tracing::debug!(id = %id, "Cancellation requested");
-                handler.cancel();
-                // The predict loop will detect cancellation and return Cancelled status
+            // Slot completions
+            Some(completion) = completion_rx.recv() => {
+                let slot = completion.slot;
+                slot_busy[slot] = false;
+
+                if completion.poisoned {
+                    slot_poisoned[slot] = true;
+                    let _ = ctrl_writer.send(ControlResponse::Failed {
+                        slot,
+                        error: completion.result.error.unwrap_or_default(),
+                    }).await;
+                } else {
+                    let _ = ctrl_writer.send(ControlResponse::Idle { slot }).await;
+                }
+
+                // Check if all slots poisoned
+                if slot_poisoned.iter().all(|&p| p) {
+                    tracing::error!("All slots poisoned, exiting");
+                    break;
+                }
+            }
+        }
+
+        // Check for new prediction requests on idle slots
+        for slot in 0..num_slots {
+            if slot_busy[slot] || slot_poisoned[slot] {
+                continue;
             }
 
-            WorkerRequest::Shutdown => {
-                tracing::info!("Shutdown requested, exiting gracefully");
-                let _ = writer.send(WorkerResponse::ShuttingDown).await;
-                break;
-            }
+            // Try to read from this slot (non-blocking check)
+            let socket = match transport.slot_socket(slot) {
+                Some(s) => s,
+                None => continue,
+            };
+
+            // TODO: properly poll slot sockets for new requests
+            // For now, this is a placeholder - need async select over slot sockets
         }
     }
 
@@ -282,55 +209,30 @@ pub async fn run_worker<H: PredictHandler>(handler: H, config: WorkerConfig) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
-
-    /// Mock handler for testing.
-    struct MockHandler {
-        setup_fail: bool,
-        predict_result: serde_json::Value,
-        cancelled: Arc<AtomicBool>,
-    }
-
-    #[async_trait::async_trait]
-    impl PredictHandler for MockHandler {
-        async fn setup(&self) -> Result<(), String> {
-            if self.setup_fail {
-                Err("Setup failed".to_string())
-            } else {
-                Ok(())
-            }
-        }
-
-        async fn predict(&self, _input: serde_json::Value) -> PredictResult {
-            if self.cancelled.load(Ordering::SeqCst) {
-                PredictResult::cancelled(String::new(), 0.0)
-            } else {
-                PredictResult::success(self.predict_result.clone(), String::new(), 0.1)
-            }
-        }
-
-        fn cancel(&self) {
-            self.cancelled.store(true, Ordering::SeqCst);
-        }
-    }
 
     #[test]
     fn predict_result_success() {
-        let r = PredictResult::success(serde_json::json!("hello"), "log".into(), 0.5);
-        assert_eq!(r.status, PredictionStatus::Succeeded);
-        assert_eq!(r.output, serde_json::json!("hello"));
+        let r = PredictResult::success(serde_json::json!("hello"), 0.5);
+        assert!(r.success);
+        assert!(r.error.is_none());
     }
 
     #[test]
     fn predict_result_failed() {
-        let r = PredictResult::failed("oops".into(), "log".into(), 0.5);
-        assert_eq!(r.status, PredictionStatus::Failed);
+        let r = PredictResult::failed("oops".into(), 0.5);
+        assert!(!r.success);
+        assert_eq!(r.error, Some("oops".to_string()));
     }
 
     #[test]
     fn predict_result_cancelled() {
-        let r = PredictResult::cancelled("log".into(), 0.5);
-        assert_eq!(r.status, PredictionStatus::Canceled);
+        let r = PredictResult::cancelled(0.5);
+        assert!(!r.success);
+    }
+
+    #[test]
+    fn worker_config_default() {
+        let config = WorkerConfig::default();
+        assert_eq!(config.num_slots, 1);
     }
 }
