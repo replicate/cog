@@ -1,5 +1,0 @@
-build:
-  python_version: "3.11"
-predict: "predict.py:Predictor"
-concurrency:
-  max: 5
