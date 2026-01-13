@@ -27,10 +27,7 @@ jobs:
       - uses: hynek/build-and-inspect-python-package@v2
         id: baipp
       # Build coglet wheel with embedded Go binary
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - uses: astral-sh/setup-uv@v7
+      - uses: jdx/mise-action@v2
       - name: Build coglet-server binary
         run: script/build-coglet-server
       - name: Build coglet wheel
