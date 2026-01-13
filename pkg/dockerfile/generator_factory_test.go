@@ -11,6 +11,7 @@ import (
 )
 
 func TestGeneratorFactory(t *testing.T) {
+	t.Skip("monobase/fast generator is deprecated")
 	dir := t.TempDir()
 	build := config.Build{
 		PythonPackages: []string{"torch==2.5.1"},

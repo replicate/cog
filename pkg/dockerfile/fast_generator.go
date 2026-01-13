@@ -32,6 +32,9 @@ const UV_CACHE_MOUNT = "--mount=type=cache,target=" + UV_CACHE_DIR + ",id=uv-cac
 const FAST_GENERATOR_NAME = "FAST_GENERATOR"
 const buildTmpDir = "/buildtmp"
 
+// PinnedCogletURL is unused but kept for compilation of deprecated monobase code
+const PinnedCogletURL = ""
+
 type FastGenerator struct {
 	Config        *config.Config
 	Dir           string

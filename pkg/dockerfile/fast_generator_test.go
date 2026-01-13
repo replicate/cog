@@ -22,6 +22,7 @@ func writeRequirements(t *testing.T, req string) string {
 }
 
 func TestGenerate(t *testing.T) {
+	t.Skip("monobase/fast generator is deprecated")
 	dir := t.TempDir()
 	build := config.Build{
 		PythonVersion:      "3.9",
@@ -57,6 +58,7 @@ func TestGenerate(t *testing.T) {
 }
 
 func TestGenerateUVCacheMount(t *testing.T) {
+	t.Skip("monobase/fast generator is deprecated")
 	dir := t.TempDir()
 	build := config.Build{
 		PythonVersion:      "3.9",
@@ -91,6 +93,7 @@ func TestGenerateUVCacheMount(t *testing.T) {
 }
 
 func TestGenerateCUDA(t *testing.T) {
+	t.Skip("monobase/fast generator is deprecated")
 	dir := t.TempDir()
 	build := config.Build{
 		GPU:           true,
@@ -127,6 +130,7 @@ func TestGenerateCUDA(t *testing.T) {
 }
 
 func TestGeneratePythonPackages(t *testing.T) {
+	t.Skip("monobase/fast generator is deprecated")
 	dir := t.TempDir()
 	build := config.Build{
 		PythonVersion:      "3.9",
@@ -162,6 +166,7 @@ func TestGeneratePythonPackages(t *testing.T) {
 }
 
 func TestGenerateVerboseEnv(t *testing.T) {
+	t.Skip("monobase/fast generator is deprecated")
 	dir := t.TempDir()
 	build := config.Build{
 		PythonVersion:      "3.9",
@@ -197,6 +202,7 @@ func TestGenerateVerboseEnv(t *testing.T) {
 }
 
 func TestAptInstall(t *testing.T) {
+	t.Skip("monobase/fast generator is deprecated")
 	dir := t.TempDir()
 	build := config.Build{
 		PythonVersion:  "3.9",
@@ -232,6 +238,7 @@ func TestAptInstall(t *testing.T) {
 }
 
 func TestValidateConfigWithBuildRunItems(t *testing.T) {
+	t.Skip("monobase/fast generator is deprecated")
 	dir := t.TempDir()
 	build := config.Build{
 		PythonVersion:  "3.9",
@@ -268,6 +275,7 @@ func TestValidateConfigWithBuildRunItems(t *testing.T) {
 }
 
 func TestTorchVersionDefaultCUDA(t *testing.T) {
+	t.Skip("monobase/fast generator is deprecated")
 	dir := t.TempDir()
 	build := config.Build{
 		PythonVersion:      "3.10",

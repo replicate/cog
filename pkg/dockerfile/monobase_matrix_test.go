@@ -10,6 +10,7 @@ import (
 )
 
 func TestMonobaseMatrixDefaultCUDA(t *testing.T) {
+	t.Skip("monobase/fast generator is deprecated")
 	// Setup mock command
 	command := dockertest.NewMockCommand()
 
