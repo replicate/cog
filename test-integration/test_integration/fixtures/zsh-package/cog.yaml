@@ -1,7 +1,0 @@
-build:
-  python_version: "3.12"
-  fast: true
-  system_packages:
-    - "zsh"
-  python_requirements: requirements.txt
-predict: "predict.py:Predictor"
