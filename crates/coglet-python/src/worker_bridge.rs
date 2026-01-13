@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use pyo3::prelude::*;
 
-use coglet_worker::{PredictHandler, PredictResult};
+use coglet_worker::{PredictHandler, PredictResult, SlotSender};
 
 use crate::predictor::PythonPredictor;
 
@@ -121,7 +121,13 @@ impl PredictHandler for PythonPredictHandler {
         })
     }
 
-    async fn predict(&self, slot: usize, id: String, input: serde_json::Value) -> PredictResult {
+    async fn predict(
+        &self,
+        slot: usize,
+        id: String,
+        input: serde_json::Value,
+        slot_sender: Arc<SlotSender>,
+    ) -> PredictResult {
         // Track that we're starting a prediction on this slot
         self.start_prediction(slot, &id);
 
@@ -145,6 +151,11 @@ impl PredictHandler for PythonPredictHandler {
             }
         };
 
+        // Install SlotLogGuard to capture stdout/stderr and stream to slot socket
+        let _log_guard = Python::attach(|py| {
+            crate::log_writer::SlotLogGuard::install(py, slot_sender)
+        });
+
         // Run prediction or training based on is_train mode.
         // 
         // BUG-FOR-BUG: In cog mainline, is_train is set at worker creation time,
@@ -162,8 +173,7 @@ impl PredictHandler for PythonPredictHandler {
                     0.0,
                 );
             }
-            // Use worker-mode train (no stdout redirection, sync execution)
-            // TODO: Use SlotLogWriter for log capture instead of StringIO
+            // Use worker-mode train
             if pred.is_train_async() {
                 pred.train_async_worker(input)
             } else {
@@ -171,7 +181,6 @@ impl PredictHandler for PythonPredictHandler {
             }
         } else {
             // Prediction mode
-            // TODO: Use SlotLogWriter for log capture instead of StringIO
             if pred.is_async() {
                 pred.predict_async_worker(input)
             } else {
@@ -180,11 +189,11 @@ impl PredictHandler for PythonPredictHandler {
         };
 
         self.finish_prediction(slot);
+        // _log_guard dropped here, restores original stdout/stderr
 
         match result {
             Ok(r) => {
-                // TODO: Logs are now streamed via SlotLogWriter, not captured here
-                // r.logs will be empty once we switch to SlotLogWriter
+                // Logs already streamed via SlotLogWriter
                 PredictResult::success(
                     output_to_json(r.output),
                     start.elapsed().as_secs_f64(),

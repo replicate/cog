@@ -28,4 +28,4 @@ pub use transport::{
     connect_transport, create_transport, get_transport_info_from_env, ChildTransportInfo,
     NamedSocketTransport, SlotTransport, TRANSPORT_INFO_ENV,
 };
-pub use worker::{run_worker, PredictHandler, PredictResult, WorkerConfig};
+pub use worker::{run_worker, PredictHandler, PredictResult, SlotSender, WorkerConfig};

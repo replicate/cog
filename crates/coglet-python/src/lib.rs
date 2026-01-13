@@ -7,7 +7,7 @@ mod output;
 mod predictor;
 mod worker_bridge;
 
-pub use log_writer::{SlotLogGuard, SlotLogWriter, SlotSender};
+pub use log_writer::{SlotLogGuard, SlotLogWriter};
 
 use std::sync::Arc;
 use std::time::Duration;

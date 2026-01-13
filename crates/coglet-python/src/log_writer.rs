@@ -4,58 +4,11 @@
 //! Writes are immediately sent as framed SlotResponse::Log messages through the slot socket.
 //! This allows per-slot log streaming without head-of-line blocking.
 
-use std::io;
 use std::sync::Arc;
 
 use pyo3::prelude::*;
-use tokio::sync::mpsc;
 
-use coglet_worker::{LogSource, SlotResponse};
-
-// ============================================================================
-// SlotSender - sends messages on slot socket
-// ============================================================================
-
-/// Handle for sending messages on a slot socket.
-///
-/// This is cloned for each SlotLogWriter (stdout, stderr) on a slot.
-/// Thread-safe via tokio mpsc channel.
-#[derive(Clone)]
-pub struct SlotSender {
-    /// Channel sender for slot responses.
-    tx: mpsc::UnboundedSender<SlotResponse>,
-}
-
-impl SlotSender {
-    /// Create a new slot sender with the given channel.
-    pub fn new(tx: mpsc::UnboundedSender<SlotResponse>) -> Self {
-        Self { tx }
-    }
-
-    /// Send a log message.
-    pub fn send_log(&self, source: LogSource, data: &str) -> io::Result<()> {
-        if data.is_empty() {
-            return Ok(());
-        }
-
-        let msg = SlotResponse::Log {
-            source,
-            data: data.to_string(),
-        };
-
-        self.tx.send(msg).map_err(|_| {
-            io::Error::new(io::ErrorKind::BrokenPipe, "slot socket closed")
-        })
-    }
-
-    /// Send a streaming output value.
-    pub fn send_output(&self, output: serde_json::Value) -> io::Result<()> {
-        let msg = SlotResponse::Output { output };
-        self.tx.send(msg).map_err(|_| {
-            io::Error::new(io::ErrorKind::BrokenPipe, "slot socket closed")
-        })
-    }
-}
+use coglet_worker::{LogSource, SlotSender};
 
 // ============================================================================
 // SlotLogWriter - PyO3 class implementing Python file protocol
@@ -72,7 +25,7 @@ impl SlotSender {
 pub struct SlotLogWriter {
     /// Which stream this captures (stdout or stderr).
     source: LogSource,
-    /// Handle for sending to the slot socket.
+    /// Handle for sending to the slot socket (from coglet-worker).
     sender: Arc<SlotSender>,
     /// Whether writes should be ignored (used after errors).
     #[pyo3(get)]
@@ -90,6 +43,7 @@ impl SlotLogWriter {
             return Ok(data.len());
         }
 
+        // Use SlotSender from coglet-worker
         self.sender.send_log(self.source, data).map_err(|e| {
             pyo3::exceptions::PyIOError::new_err(e.to_string())
         })?;
@@ -249,6 +203,7 @@ impl Drop for SlotLogGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use coglet_worker::SlotResponse;
     use tokio::sync::mpsc;
 
     #[test]

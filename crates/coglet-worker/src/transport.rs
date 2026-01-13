@@ -168,6 +168,14 @@ impl NamedSocketTransport {
         self.sockets.get_mut(slot)
     }
 
+    /// Drain all sockets from the transport.
+    ///
+    /// Returns owned sockets for splitting into read/write halves.
+    /// After this call, the transport has no sockets.
+    pub fn drain_sockets(&mut self) -> Vec<UnixStream> {
+        std::mem::take(&mut self.sockets)
+    }
+
     /// Get the socket directory path.
     pub fn dir(&self) -> &PathBuf {
         &self.dir
@@ -283,6 +291,11 @@ impl AbstractSocketTransport {
         self.sockets.get_mut(slot)
     }
 
+    /// Drain all sockets from the transport.
+    pub fn drain_sockets(&mut self) -> Vec<UnixStream> {
+        std::mem::take(&mut self.sockets)
+    }
+
     /// Number of slots.
     pub fn num_slots(&self) -> usize {
         self.sockets.len()
@@ -303,6 +316,15 @@ impl SlotTransport {
             Self::Named(t) => t.slot_socket(slot),
             #[cfg(target_os = "linux")]
             Self::Abstract(t) => t.slot_socket(slot),
+        }
+    }
+
+    /// Drain all sockets from the transport.
+    pub fn drain_sockets(&mut self) -> Vec<UnixStream> {
+        match self {
+            Self::Named(t) => t.drain_sockets(),
+            #[cfg(target_os = "linux")]
+            Self::Abstract(t) => t.drain_sockets(),
         }
     }
 
