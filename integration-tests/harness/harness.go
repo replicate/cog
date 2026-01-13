@@ -39,11 +39,14 @@ func New() (*Harness, error) {
 func ResolveCogBinary() (string, error) {
 	if cogBinary := os.Getenv("COG_BINARY"); cogBinary != "" {
 		if !filepath.IsAbs(cogBinary) {
-			cwd, err := os.Getwd()
+			// Resolve relative paths from repo root, not cwd.
+			// This handles the case where tests run from integration-tests/
+			// but COG_BINARY is set relative to repo root (e.g., "./cog").
+			repoRoot, err := findRepoRoot()
 			if err != nil {
 				return "", err
 			}
-			cogBinary = filepath.Join(cwd, cogBinary)
+			cogBinary = filepath.Join(repoRoot, cogBinary)
 		}
 		return cogBinary, nil
 	}
