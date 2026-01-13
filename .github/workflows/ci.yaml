@@ -52,15 +52,7 @@ jobs:
           merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - uses: actions/setup-python@v6
-        with:
-          python-version: 3.12
-      - uses: hynek/setup-cached-uv@v2
-      - name: Prepare tox
-        run: uv pip install --system tox tox-uv
+      - uses: jdx/mise-action@v2
       - name: Lint
         run: make lint
 
@@ -210,15 +202,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - uses: actions/setup-python@v6
-        with:
-          python-version: 3.12
-      - uses: hynek/setup-cached-uv@v2
-      - name: Prepare tox
-        run: uv pip install --system tox tox-uv
+      - uses: jdx/mise-action@v2
       - name: Test
         env:
           COG_WHEEL: ${{ matrix.runtime }}
