@@ -6,15 +6,24 @@
 //! - Clean cancellation (SIGKILL as last resort)
 //! - Memory isolation (runaway prediction can't OOM server)
 //!
-//! Communication uses LengthDelimitedCodec over pipes with serde_json.
-//! The codec works over any AsyncRead/AsyncWrite (pipes, sockets, etc).
+//! Architecture:
+//! - Control pipe (stdin/stdout): Control messages (Cancel, Shutdown, Ready, Idle)
+//! - Slot sockets: One per slot, for prediction request/response + logs
+//!   - Platform-specific transport (abstract sockets on Linux, named on macOS)
+//!
+//! Communication uses LengthDelimitedCodec with serde_json.
 
 mod codec;
 mod manager;
 mod protocol;
+mod transport;
 mod worker;
 
 pub use codec::JsonCodec;
 pub use manager::{SpawnConfig, Worker, WorkerError};
 pub use protocol::{PredictionStatus, WorkerRequest, WorkerResponse};
+pub use transport::{
+    connect_transport, create_transport, get_transport_info_from_env, ChildTransportInfo,
+    NamedSocketTransport, SlotTransport, TRANSPORT_INFO_ENV,
+};
 pub use worker::{run_worker, PredictHandler, PredictResult, PredictionSlot, WorkerConfig};
