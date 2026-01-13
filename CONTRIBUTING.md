@@ -271,11 +271,11 @@ class Predictor(BasePredictor):
         return "hello " + s
 ```
 
-For testing `cog serve`, use the `serve` and `curl` commands:
+For testing `cog serve`, use `cog serve` and the `curl` command:
 
 ```txtar
 cog build -t $TEST_IMAGE
-serve
+cog serve
 curl POST /predictions '{"input":{"s":"test"}}'
 stdout '"output":"hello test"'
 ```

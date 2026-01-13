@@ -7,7 +7,7 @@
 cog build -t $TEST_IMAGE
 
 # Start the server
-serve
+cog serve
 
 # Wait for setup to complete (double fork + HTTP server startup takes time)
 exec sleep 3
