@@ -1,3 +1,4 @@
+/.direnv
 /cog
 .ipynb_checkpoints/
 Untitled*.ipynb
@@ -31,4 +32,5 @@ coglet/python/coglet/_version.py
 coglet/python/cog/bin/
 
 # Local planning files
+x
 docs/plans/**
