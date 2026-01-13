@@ -608,7 +608,63 @@ def _cpu_count() -> int:
         return os.cpu_count() or 1
 
 
+def _run_coglet_server() -> bool:
+    """
+    Try to run the Rust coglet server if available.
+    Returns True if coglet handled the request, False if we should fall back to Python.
+    """
+    try:
+        import coglet
+    except ImportError:
+        return False
+
+    # Coglet is available - use Rust HTTP server
+    # Parse args to get the settings we need
+    parser = argparse.ArgumentParser(description="Cog HTTP server (coglet)")
+    parser.add_argument("-v", "--version", action="store_true")
+    parser.add_argument("--host", dest="host", type=str, default="0.0.0.0")
+    parser.add_argument(
+        "--await-explicit-shutdown",
+        dest="await_explicit_shutdown",
+        type=bool,
+        default=False,
+    )
+    parser.add_argument("--x-mode", dest="mode", type=str, default="predict")
+    # Accept but ignore Python-specific args
+    parser.add_argument("--threads", dest="threads", type=int, default=None)
+    parser.add_argument("--upload-url", dest="upload_url", type=str, default=None)
+    args = parser.parse_args()
+
+    if args.version:
+        print(f"coglet {coglet.__version__}")
+        sys.exit(0)
+
+    cog_config = Config()
+    is_train = args.mode == "train"
+    if is_train:
+        predictor_ref = cog_config.predictor_train_ref
+    else:
+        predictor_ref = cog_config.predictor_predict_ref
+
+    port = int(os.environ.get("PORT", "5000"))
+    host = args.host
+
+    coglet.serve(
+        predictor_ref=predictor_ref,
+        host=host,
+        port=port,
+        await_explicit_shutdown=args.await_explicit_shutdown,
+        is_train=is_train,
+    )
+    return True
+
+
 if __name__ == "__main__":
+    # If coglet (Rust runtime) is installed, use it instead of Python FastAPI
+    if _run_coglet_server():
+        sys.exit(0)
+
+    # Fall back to Python FastAPI server
     parser = argparse.ArgumentParser(description="Cog HTTP server")
     parser.add_argument(
         "-v", "--version", action="store_true", help="Show version and exit"

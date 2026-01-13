@@ -77,12 +77,10 @@ func readWheelFromFS(prefix string) (string, []byte) {
 type WheelSource int
 
 const (
-	// WheelSourceCog uses the embedded cog wheel (default when cog_runtime: false)
+	// WheelSourceCog uses the embedded cog wheel (default)
 	WheelSourceCog WheelSource = iota
-	// WheelSourceCogletEmbedded uses the embedded coglet wheel
-	WheelSourceCogletEmbedded
-	// WheelSourceCogletAlpha uses the PinnedCogletURL (default when cog_runtime: true)
-	WheelSourceCogletAlpha
+	// WheelSourceCoglet uses the embedded Rust coglet wheel + cog wheel
+	WheelSourceCoglet
 	// WheelSourceURL uses a custom URL
 	WheelSourceURL
 	// WheelSourceFile uses a local file path
@@ -94,10 +92,8 @@ func (s WheelSource) String() string {
 	switch s {
 	case WheelSourceCog:
 		return "cog"
-	case WheelSourceCogletEmbedded:
+	case WheelSourceCoglet:
 		return "coglet"
-	case WheelSourceCogletAlpha:
-		return "coglet-alpha"
 	case WheelSourceURL:
 		return "url"
 	case WheelSourceFile:
@@ -122,9 +118,8 @@ const CogWheelEnvVar = "COG_WHEEL"
 
 // ParseCogWheel parses a COG_WHEEL value and returns the appropriate WheelConfig.
 // Supported values:
-//   - "cog" - Embedded cog wheel
-//   - "coglet" - Embedded coglet wheel
-//   - "coglet-alpha" - PinnedCogletURL
+//   - "cog" - Embedded cog wheel only (default)
+//   - "coglet" - Embedded Rust coglet wheel + cog wheel, uses Rust HTTP server
 //   - "https://..." or "http://..." - Direct wheel URL
 //   - "/path/to/file.whl" or "./path/to/file.whl" - Local wheel file
 //
@@ -139,9 +134,7 @@ func ParseCogWheel(value string) *WheelConfig {
 	case "cog":
 		return &WheelConfig{Source: WheelSourceCog}
 	case "coglet":
-		return &WheelConfig{Source: WheelSourceCogletEmbedded}
-	case "coglet-alpha":
-		return &WheelConfig{Source: WheelSourceCogletAlpha}
+		return &WheelConfig{Source: WheelSourceCoglet}
 	}
 
 	// Check for URL (http:// or https://)
@@ -153,20 +146,16 @@ func ParseCogWheel(value string) *WheelConfig {
 	return &WheelConfig{Source: WheelSourceFile, Path: value}
 }
 
-// GetWheelConfig returns the WheelConfig based on COG_WHEEL env var and cog_runtime flag.
+// GetWheelConfig returns the WheelConfig based on COG_WHEEL env var.
 // Priority:
 //  1. COG_WHEEL env var (if set, overrides everything)
-//  2. cog_runtime: true -> coglet-alpha (PinnedCogletURL)
-//  3. cog_runtime: false (default) -> embedded cog wheel
-func GetWheelConfig(cogRuntimeEnabled bool) *WheelConfig {
+//  2. Default: embedded cog wheel
+func GetWheelConfig() *WheelConfig {
 	envValue := os.Getenv(CogWheelEnvVar)
 	if config := ParseCogWheel(envValue); config != nil {
 		return config
 	}
 
-	// Default based on cog_runtime flag
-	if cogRuntimeEnabled {
-		return &WheelConfig{Source: WheelSourceCogletAlpha}
-	}
+	// Default to cog wheel
 	return &WheelConfig{Source: WheelSourceCog}
 }
