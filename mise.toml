@@ -1,0 +1,11 @@
+[tools]
+go = "latest"
+uv = "latest"
+
+[env]
+_.path = './bin'
+_.file = [".env"]
+
+[settings]
+lockfile = true
+experimental = true
