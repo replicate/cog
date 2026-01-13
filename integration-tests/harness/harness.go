@@ -149,8 +149,10 @@ func runCommand(dir string, name string, args ...string) error {
 // Commands returns the custom testscript commands provided by this harness.
 func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool, args []string) {
 	return map[string]func(ts *testscript.TestScript, neg bool, args []string){
-		"cog":  h.cmdCog,
-		"curl": h.cmdCurl,
+		"cog":        h.cmdCog,
+		"curl":       h.cmdCurl,
+		"wait-for":   h.cmdWaitFor,
+		"retry-curl": h.cmdRetryCurl,
 	}
 }
 
@@ -441,4 +443,211 @@ func waitForServer(serverURL string, timeout time.Duration) bool {
 	}
 
 	return false
+}
+
+// cmdWaitFor implements the 'wait-for' command for testscript.
+// It waits for a specific condition to become true with retries.
+// Usage:
+//
+//	wait-for file <path> [timeout]           - Wait for file to exist
+//	wait-for http <url> [status] [timeout]   - Wait for HTTP endpoint
+//	wait-for not-empty <file> [timeout]      - Wait for file with content
+func (h *Harness) cmdWaitFor(ts *testscript.TestScript, neg bool, args []string) {
+	if len(args) < 2 {
+		ts.Fatalf("wait-for: usage: wait-for [file|http|not-empty] <arg> [timeout]")
+	}
+
+	condition := args[0]
+	target := args[1]
+
+	// Default timeout of 30 seconds, can be overridden
+	timeout := 30 * time.Second
+	if len(args) > 2 {
+		if duration, err := time.ParseDuration(args[len(args)-1]); err == nil {
+			timeout = duration
+		}
+	}
+
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		var conditionMet bool
+
+		switch condition {
+		case "file":
+			// Wait for file to exist
+			targetPath := filepath.Join(ts.Getenv("WORK"), target)
+			_, err := os.Stat(targetPath)
+			conditionMet = err == nil
+
+		case "not-empty":
+			// Wait for file to exist with non-empty content
+			targetPath := filepath.Join(ts.Getenv("WORK"), target)
+			data, err := os.ReadFile(targetPath)
+			conditionMet = err == nil && len(data) > 0
+
+		case "http":
+			// Wait for HTTP endpoint to return expected status
+			expectedStatus := 200
+			if len(args) > 2 {
+				if status, err := strconv.Atoi(args[2]); err == nil {
+					expectedStatus = status
+				}
+			}
+
+			client := &http.Client{Timeout: 2 * time.Second}
+			resp, err := client.Get(target)
+			if err == nil {
+				conditionMet = resp.StatusCode == expectedStatus
+				resp.Body.Close()
+			}
+
+		default:
+			ts.Fatalf("wait-for: unknown condition: %s", condition)
+		}
+
+		if neg {
+			// For negation, we want the condition to remain false
+			if !conditionMet {
+				return
+			}
+		} else {
+			// Normal case: condition should become true
+			if conditionMet {
+				return
+			}
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	if neg {
+		ts.Fatalf("wait-for: condition became true (expected to remain false)")
+	} else {
+		ts.Fatalf("wait-for: timeout waiting for condition: %s %s", condition, target)
+	}
+}
+
+// cmdRetryCurl implements the 'retry-curl' command for testscript.
+// It's like curl but retries on failure, useful for waiting for subprocess initialization.
+// Usage: retry-curl [method] [path] [body] [max-attempts] [retry-delay]
+// Examples:
+//
+//	retry-curl POST /predictions '{"input":{"s":"hello"}}' 10 1s
+func (h *Harness) cmdRetryCurl(ts *testscript.TestScript, neg bool, args []string) {
+	if len(args) < 2 {
+		ts.Fatalf("retry-curl: usage: retry-curl [method] [path] [body] [max-attempts] [retry-delay]")
+	}
+
+	serverURL := ts.Getenv("SERVER_URL")
+	if serverURL == "" {
+		ts.Fatalf("retry-curl: SERVER_URL not set (did you call 'cog serve' first?)")
+	}
+
+	method := args[0]
+	path := args[1]
+	var body string
+	if len(args) > 2 && args[2] != "" && args[2][0] == '{' {
+		body = args[2]
+	}
+
+	// Parse max attempts (default: 10)
+	maxAttempts := 10
+	if len(args) > 3 {
+		if attempts, err := strconv.Atoi(args[3]); err == nil {
+			maxAttempts = attempts
+		}
+	}
+
+	// Parse retry delay (default: 1s)
+	retryDelay := 1 * time.Second
+	if len(args) > 4 {
+		if duration, err := time.ParseDuration(args[4]); err == nil {
+			retryDelay = duration
+		}
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	var lastErr error
+	var lastStatus int
+	var lastBody string
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		req, err := http.NewRequest(method, serverURL+path, strings.NewReader(body))
+		if err != nil {
+			lastErr = err
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		// Read response body
+		var respBodyBuilder strings.Builder
+		buf := make([]byte, 4096)
+		for {
+			n, readErr := resp.Body.Read(buf)
+			if n > 0 {
+				respBodyBuilder.Write(buf[:n])
+			}
+			if readErr != nil {
+				if readErr.Error() != "EOF" {
+					ts.Fatalf("retry-curl: failed to read response: %v", readErr)
+				}
+				break
+			}
+		}
+		respBody := respBodyBuilder.String()
+		resp.Body.Close()
+
+		lastStatus = resp.StatusCode
+		lastBody = respBody
+
+		// Check if this is a successful response
+		statusOK := resp.StatusCode >= 200 && resp.StatusCode < 300
+
+		if neg {
+			if !statusOK {
+				// Expected to fail - success!
+				return
+			}
+		} else {
+			if statusOK {
+				// Success - write body to stdout
+				ts.Stdout().Write([]byte(respBody))
+				return
+			}
+		}
+
+		// If this isn't the last attempt, wait before retrying
+		if attempt < maxAttempts {
+			time.Sleep(retryDelay)
+		}
+	}
+
+	// All attempts failed
+	if neg {
+		ts.Fatalf("retry-curl: expected failure but got status %d after %d attempts", lastStatus, maxAttempts)
+	} else {
+		if lastErr != nil {
+			ts.Fatalf("retry-curl: all %d attempts failed with error: %v", maxAttempts, lastErr)
+		} else {
+			errorMsg := lastBody
+			if len(errorMsg) > 500 {
+				errorMsg = errorMsg[:500] + "..."
+			}
+			ts.Logf("retry-curl: full response body: %s", lastBody)
+			ts.Fatalf("retry-curl: all %d attempts failed with status %d: %s", maxAttempts, lastStatus, errorMsg)
+		}
+	}
 }

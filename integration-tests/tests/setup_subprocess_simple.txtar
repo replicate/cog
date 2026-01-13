@@ -10,22 +10,19 @@ cog build -t $TEST_IMAGE
 # Start the server
 cog serve
 
-# Wait for setup to complete (subprocess spawning takes time)
-exec sleep 2
+# Wait for the background subprocess to signal it's ready
+# The child.sh script creates .ready when setup completes
+wait-for file .ready 60s
 
-# Make predictions with delays to avoid 409 conflicts
+# Make predictions with retry logic to handle subprocess initialization
 # The subprocess writes to stdout when it receives SIGUSR1
-curl POST /predictions '{"input":{"s":"friendo1"}}'
+retry-curl POST /predictions '{"input":{"s":"friendo1"}}' 10 500ms
 stdout '"output":"hello friendo1"'
 
-exec sleep 1
-
-curl POST /predictions '{"input":{"s":"friendo2"}}'
+retry-curl POST /predictions '{"input":{"s":"friendo2"}}' 10 500ms
 stdout '"output":"hello friendo2"'
 
-exec sleep 1
-
-curl POST /predictions '{"input":{"s":"friendo3"}}'
+retry-curl POST /predictions '{"input":{"s":"friendo3"}}' 10 500ms
 stdout '"output":"hello friendo3"'
 
 -- cog.yaml --
@@ -97,6 +94,9 @@ for i in $(seq 100); do
   echo "${0} ($$) SETTING UP (${i}/100)"
   sleep 0.01
 done
+
+# Signal that setup is complete
+echo "${0} ($$) READY" > .ready
 
 # This loop simulates periodic writes to stdout while the background process is running
 # for the purpose of ensuring the file descriptor is still usable.

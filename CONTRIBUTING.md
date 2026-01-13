@@ -279,7 +279,56 @@ curl POST /predictions '{"input":{"s":"test"}}'
 stdout '"output":"hello test"'
 ```
 
-See existing tests in `integration-tests/tests/` for more examples.
+#### Advanced Test Commands
+
+For tests that require subprocess initialization or async operations, use these additional commands:
+
+**`wait-for` - Wait for a condition with timeout:**
+
+```txtar
+# Wait for file to exist (useful for subprocess readiness signals)
+wait-for file .ready 60s
+
+# Wait for HTTP endpoint (useful for forked web servers)
+wait-for http http://127.0.0.1:7777/ping 200 60s
+
+# Wait for file with content
+wait-for not-empty output.txt 30s
+```
+
+**`retry-curl` - HTTP request with automatic retries:**
+
+```txtar
+# Make HTTP request with retry logic (useful for subprocess initialization delays)
+# retry-curl [method] [path] [body] [max-attempts] [retry-delay]
+retry-curl POST /predictions '{"input":{"s":"test"}}' 10 1s
+stdout '"output":"hello test"'
+```
+
+**Example: Testing subprocess with readiness signal**
+
+```txtar
+cog build -t $TEST_IMAGE
+cog serve
+
+# Wait for subprocess to signal it's ready
+wait-for file .ready 60s
+
+# Make request with retry logic
+retry-curl POST /predictions '{"input":{"s":"test"}}' 10 500ms
+stdout '"output":"hello test"'
+
+-- predict.py --
+class Predictor(BasePredictor):
+    def setup(self):
+        self.process = subprocess.Popen(["./background.sh"])
+        # background.sh creates .ready file when initialization completes
+    
+    def predict(self, s: str) -> str:
+        return "hello " + s
+```
+
+See existing tests in `integration-tests/tests/`, especially `setup_subprocess_*.txtar`, for more examples.
 
 ## Running the docs server
 

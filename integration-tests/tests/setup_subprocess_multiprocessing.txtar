@@ -1,8 +1,3 @@
-# TODO: This test is currently failing with 500 errors. The multiprocessing.Process
-# spawned during setup appears to have issues with the connection. This needs further
-# investigation to understand if it's a test issue or a real bug in cog serve.
-skip 'test needs debugging'
-
 [slow] skip 'slow test - skip in fast mode'
 
 # Test multiprocessing.Process spawned during setup
@@ -14,13 +9,15 @@ cog build -t $TEST_IMAGE
 # Start the server
 cog serve
 
-# Wait for setup to complete (multiprocessing initialization takes time)
-exec sleep 2
+# Wait for the multiprocessing child to signal it's ready
+# The ponger process creates .ponger-ready when initialization completes
+wait-for file .ponger-ready 60s
 
 # Make a prediction that communicates via multiprocessing.Pipe
 # Note: The background process closes the connection after first use,
 # so we only test one prediction
-curl POST /predictions '{"input":{"s":"friendo1"}}'
+# Use retry logic to handle any multiprocessing initialization delays
+retry-curl POST /predictions '{"input":{"s":"friendo1"}}' 15 1s
 stdout '"output":'
 stdout 'cog-test-integration-out'
 stdout '.tmp"'
@@ -110,6 +107,10 @@ def ponger(
         time.sleep(0.001 + (0.001 * (i + 1)))
 
     print("ITS PONGIN TIME")
+    
+    # Signal that ponger is ready
+    with open(".ponger-ready", "w") as f:
+        f.write(f"ponger {os.getpid()} ready\n")
 
     pid = os.getpid()
 

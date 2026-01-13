@@ -1,8 +1,3 @@
-# TODO: This test is flaky in CI - connection refused errors suggest the
-# double forked process doesn't start reliably in CI environment. The test
-# passes locally but fails consistently in CI. Needs investigation.
-skip 'flaky in CI - connection refused'
-
 [slow] skip 'slow test - skip in fast mode'
 
 # Test double fork subprocess spawned during setup
@@ -14,22 +9,19 @@ cog build -t $TEST_IMAGE
 # Start the server
 cog serve
 
-# Wait for setup to complete (double fork takes time)
-# Give extra time in CI for the forked process to fully start
-exec sleep 5
+# Wait for the forked process to signal it's ready
+# The forker.py script creates .forked-ready when child process is running
+wait-for file .forked-ready 60s
 
 # Make predictions that communicate via file system with forked process
-curl POST /predictions '{"input":{"s":"friendo1"}}'
+# Use retry logic to handle any remaining initialization delays
+retry-curl POST /predictions '{"input":{"s":"friendo1"}}' 15 1s
 stdout '"output":"hello friendo1"'
 
-exec sleep 1
-
-curl POST /predictions '{"input":{"s":"friendo2"}}'
+retry-curl POST /predictions '{"input":{"s":"friendo2"}}' 10 500ms
 stdout '"output":"hello friendo2"'
 
-exec sleep 1
-
-curl POST /predictions '{"input":{"s":"friendo3"}}'
+retry-curl POST /predictions '{"input":{"s":"friendo3"}}' 10 500ms
 stdout '"output":"hello friendo3"'
 
 -- cog.yaml --
@@ -118,6 +110,14 @@ def main():
 
     pid = os.getpid()
     was_pinged = False
+
+    # Signal that the fork is complete and child is ready
+    if is_child:
+        # Give child process time to fully initialize
+        time.sleep(0.5)
+        with open(".forked-ready", "w") as f:
+            f.write(f"child {pid} ready\n")
+        print(f"---> CHILD ({pid}) ready and signaled")
 
     while True:
         if os.path.exists(".inbox") and is_child:
