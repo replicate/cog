@@ -96,10 +96,11 @@ Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the fu
 We use the ["scripts to rule them all"](https://github.blog/engineering/engineering-principles/scripts-to-rule-them-all/) philosophy to manage common tasks across the project. These are mostly backed by a Makefile that contains the implementation.
 
 You'll need the following dependencies installed to build Cog locally:
-- [mise](https://mise.jdx.dev/getting-started.html): Manages Go and uv (which in turn manages Python)
+- [Go](https://golang.org/doc/install): We're targeting 1.24, but you can install the latest version since Go is backwards compatible. If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
+- [uv](https://docs.astral.sh/uv/): Python versions and dependencies are managed by uv.
 - [Docker](https://docs.docker.com/desktop) or [OrbStack](https://orbstack.dev)
 
-Set up your development environment:
+Install the Python dependencies:
 
     script/setup
 
@@ -204,7 +205,7 @@ script/test-python # see also: make test-python
 ```
 
 > [!INFO]
-> This runs the Python test suite using the default Python version. To run a more comprehensive test across multiple Python versions, use `make test-python`.
+> Note that this will run the Python test suite using only the current version of Python defined in .python-version. To run a more comprehensive Python test suite then use `make test-python`.
 
 ### Integration Tests
 
@@ -272,98 +273,16 @@ class Predictor(BasePredictor):
         return "hello " + s
 ```
 
-For testing `cog serve`, use `cog serve` and the `curl` command:
+For testing `cog serve`, use the `serve` and `curl` commands:
 
 ```txtar
 cog build -t $TEST_IMAGE
-cog serve
+serve
 curl POST /predictions '{"input":{"s":"test"}}'
 stdout '"output":"hello test"'
 ```
 
-#### Advanced Test Commands
-
-For tests that require subprocess initialization or async operations, use `retry-curl`:
-
-**`retry-curl` - HTTP request with automatic retries:**
-
-```txtar
-# Make HTTP request with retry logic (useful for subprocess initialization delays)
-# retry-curl [method] [path] [body] [max-attempts] [retry-delay]
-retry-curl POST /predictions '{"input":{"s":"test"}}' 30 1s
-stdout '"output":"hello test"'
-```
-
-**Example: Testing predictor with subprocess in setup**
-
-```txtar
-cog build -t $TEST_IMAGE
-cog serve
-
-# Use generous retries since setup spawns a background process
-retry-curl POST /predictions '{"input":{"s":"test"}}' 30 1s
-stdout '"output":"hello test"'
-
--- predict.py --
-class Predictor(BasePredictor):
-    def setup(self):
-        self.process = subprocess.Popen(["./background.sh"])
-    
-    def predict(self, s: str) -> str:
-        return "hello " + s
-```
-
-#### Test Conditions
-
-Use conditions to control when tests run based on environment:
-
-**`[fast]` - Skip slow tests in fast mode:**
-
-```txtar
-[fast] skip 'requires GPU or long build time'
-
-cog build -t $TEST_IMAGE
-# ... rest of test
-```
-
-Run with `COG_TEST_FAST=1` to skip these tests.
-
-**`[linux]` / `[!linux]` - Platform-specific tests:**
-
-```txtar
-[!linux] skip 'requires Linux'
-
-# Linux-specific test
-cog build -t $TEST_IMAGE
-```
-
-**`[amd64]` / `[!amd64]` - Architecture-specific tests:**
-
-```txtar
-[!amd64] skip 'requires amd64 architecture'
-
-# amd64-specific test
-cog build -t $TEST_IMAGE
-```
-
-**`[linux_amd64]` - Combined platform and architecture:**
-
-```txtar
-[!linux_amd64] skip 'requires Linux on amd64'
-
-# Test that requires both Linux and amd64
-cog build -t $TEST_IMAGE
-```
-
-**Combining conditions:**
-
-Conditions can be negated with `!`. Examples:
-- `[fast]` - True when `COG_TEST_FAST=1` is set (skip this test in fast mode)
-- `[!fast]` - True when `COG_TEST_FAST` is NOT set (only run this in full test mode)
-- `[!linux]` - True when NOT on Linux
-- `[linux_amd64]` - True when on Linux AND amd64
-
-See existing tests in `integration-tests/tests/`, especially `setup_subprocess_*.txtar`, for more examples.
+See existing tests in `integration-tests/tests/` for more examples.
 
 ## Running the docs server
 
