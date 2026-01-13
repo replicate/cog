@@ -67,6 +67,9 @@ pub struct Worker {
 
     /// OpenAPI schema from the predictor.
     schema: Option<serde_json::Value>,
+
+    /// Logs captured during setup.
+    setup_logs: String,
 }
 
 /// Configuration for spawning workers.
@@ -144,35 +147,55 @@ impl Worker {
         // Wait for child to connect to slot sockets
         transport.accept_connections(num_slots).await?;
 
-        // Wait for Ready message
-        let ready = tokio::time::timeout(ready_timeout, ctrl_reader.next()).await;
-
-        match ready {
-            Ok(Some(Ok(ControlResponse::Ready { slots, schema }))) => {
-                tracing::info!(num_slots, ?slots, "Worker ready");
-                let poisoned: HashMap<SlotId, bool> = slots.iter().map(|id| (*id, false)).collect();
-                Ok(Self {
-                    child,
-                    ctrl_writer,
-                    ctrl_reader,
-                    transport,
-                    slot_ids: slots,
-                    poisoned,
-                    schema,
-                })
-            }
-            Ok(Some(Ok(other))) => {
-                Err(WorkerError::Protocol(format!("Expected Ready, got {:?}", other)))
-            }
-            Ok(Some(Err(e))) => {
-                Err(WorkerError::Protocol(format!("Failed to read Ready: {}", e)))
-            }
-            Ok(None) => {
-                Err(WorkerError::Died("Worker closed before Ready".to_string()))
-            }
-            Err(_) => {
+        // Collect setup logs and wait for Ready message
+        let mut setup_logs = String::new();
+        let deadline = tokio::time::Instant::now() + ready_timeout;
+        
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
                 let _ = child.kill().await;
-                Err(WorkerError::ReadyTimeout)
+                return Err(WorkerError::ReadyTimeout);
+            }
+            
+            let msg = tokio::time::timeout(remaining, ctrl_reader.next()).await;
+            
+            match msg {
+                Ok(Some(Ok(ControlResponse::Log { source: _, data }))) => {
+                    // Emit setup logs with [coglet] prefix via tracing
+                    for line in data.lines() {
+                        tracing::info!(target: "coglet", "{}", line);
+                    }
+                    // Accumulate for health-check
+                    setup_logs.push_str(&data);
+                }
+                Ok(Some(Ok(ControlResponse::Ready { slots, schema }))) => {
+                    tracing::info!(num_slots, ?slots, "Worker ready");
+                    let poisoned: HashMap<SlotId, bool> = slots.iter().map(|id| (*id, false)).collect();
+                    return Ok(Self {
+                        child,
+                        ctrl_writer,
+                        ctrl_reader,
+                        transport,
+                        slot_ids: slots,
+                        poisoned,
+                        schema,
+                        setup_logs,
+                    });
+                }
+                Ok(Some(Ok(other))) => {
+                    return Err(WorkerError::Protocol(format!("Expected Ready or Log, got {:?}", other)));
+                }
+                Ok(Some(Err(e))) => {
+                    return Err(WorkerError::Protocol(format!("Failed to read control message: {}", e)));
+                }
+                Ok(None) => {
+                    return Err(WorkerError::Died("Worker closed before Ready".to_string()));
+                }
+                Err(_) => {
+                    let _ = child.kill().await;
+                    return Err(WorkerError::ReadyTimeout);
+                }
             }
         }
     }
@@ -180,6 +203,11 @@ impl Worker {
     /// Get the OpenAPI schema.
     pub fn schema(&self) -> Option<&serde_json::Value> {
         self.schema.as_ref()
+    }
+
+    /// Get setup logs (accumulated during setup phase).
+    pub fn setup_logs(&self) -> &str {
+        &self.setup_logs
     }
 
     /// Get process ID.

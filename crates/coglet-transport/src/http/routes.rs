@@ -287,6 +287,7 @@ async fn create_prediction_with_id(
             Json(serde_json::json!({
                 "id": prediction_id,
                 "output": r.output,
+                "logs": r.logs,
                 "status": "succeeded",
                 "metrics": { "predict_time": predict_time }
             })),
@@ -296,6 +297,7 @@ async fn create_prediction_with_id(
             Json(serde_json::json!({
                 "id": prediction_id,
                 "error": msg,
+                "logs": "",
                 "status": "failed",
                 "metrics": { "predict_time": predict_time }
             })),
@@ -305,6 +307,7 @@ async fn create_prediction_with_id(
             Json(serde_json::json!({
                 "id": prediction_id,
                 "error": "Predictor not ready",
+                "logs": "",
                 "status": "failed"
             })),
         ),
@@ -313,6 +316,7 @@ async fn create_prediction_with_id(
             Json(serde_json::json!({
                 "id": prediction_id,
                 "error": msg,
+                "logs": "",
                 "status": "failed",
                 "metrics": { "predict_time": predict_time }
             })),
@@ -321,6 +325,7 @@ async fn create_prediction_with_id(
             StatusCode::OK,
             Json(serde_json::json!({
                 "id": prediction_id,
+                "logs": "",
                 "status": "canceled",
                 "metrics": { "predict_time": predict_time }
             })),

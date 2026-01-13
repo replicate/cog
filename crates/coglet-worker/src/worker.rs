@@ -133,15 +133,28 @@ impl PredictResult {
     }
 }
 
+/// Callback type for setup log registration.
+/// 
+/// The worker calls this before setup() with a sender that routes logs to the control channel.
+/// The callback should register the sender globally so SlotLogWriter can use it.
+/// Returns a cleanup function that unregisters the sender.
+pub type SetupLogHook = Box<dyn FnOnce(tokio::sync::mpsc::UnboundedSender<ControlResponse>) -> Box<dyn FnOnce() + Send> + Send>;
+
 /// Worker configuration.
 pub struct WorkerConfig {
     /// Number of concurrent prediction slots.
     pub num_slots: usize,
+    /// Optional hook for setup log routing.
+    /// If provided, called before setup() to register a sender for logs.
+    pub setup_log_hook: Option<SetupLogHook>,
 }
 
 impl Default for WorkerConfig {
     fn default() -> Self {
-        Self { num_slots: 1 }
+        Self { 
+            num_slots: 1,
+            setup_log_hook: None,
+        }
     }
 }
 
@@ -175,20 +188,58 @@ pub async fn run_worker<H: PredictHandler>(handler: Arc<H>, config: WorkerConfig
     let child_info = get_transport_info_from_env()?;
     let mut transport = connect_transport(child_info).await?;
 
-    // Control channel
+    // Control channel - wrap in Arc<Mutex> for sharing with log forwarder
     let mut ctrl_reader = FramedRead::new(stdin(), JsonCodec::<ControlRequest>::new());
-    let mut ctrl_writer = FramedWrite::new(stdout(), JsonCodec::<ControlResponse>::new());
+    let ctrl_writer = Arc::new(tokio::sync::Mutex::new(
+        FramedWrite::new(stdout(), JsonCodec::<ControlResponse>::new())
+    ));
 
     // Generate unique SlotIds for each socket
     let slot_ids: Vec<SlotId> = (0..num_slots).map(|_| SlotId::new()).collect();
     
+    // Set up log forwarding for setup phase
+    let (setup_log_tx, mut setup_log_rx) = tokio::sync::mpsc::unbounded_channel::<ControlResponse>();
+    
+    // Call the setup log hook if provided (registers the sender globally)
+    let setup_cleanup = config.setup_log_hook.map(|hook| hook(setup_log_tx.clone()));
+    
+    // Spawn task to forward setup logs to control channel
+    let ctrl_writer_for_logs = Arc::clone(&ctrl_writer);
+    let log_forwarder = tokio::spawn(async move {
+        while let Some(msg) = setup_log_rx.recv().await {
+            let mut w = ctrl_writer_for_logs.lock().await;
+            if let Err(e) = w.send(msg).await {
+                tracing::warn!(error = %e, "Failed to forward setup log");
+                break;
+            }
+        }
+    });
+    
     // Run setup
     tracing::info!("Worker starting setup");
-    if let Err(e) = handler.setup().await {
+    let setup_result = handler.setup().await;
+    tracing::debug!("Setup handler returned");
+    
+    // Clean up setup log forwarding
+    // IMPORTANT: Must unregister the sender BEFORE waiting for forwarder,
+    // because the sender holds a channel clone that keeps forwarder alive
+    if let Some(cleanup) = setup_cleanup {
+        tracing::debug!("Running cleanup (unregistering setup sender)");
+        cleanup(); // Unregister the global sender, drops channel clone
+        tracing::debug!("Cleanup done");
+    }
+    drop(setup_log_tx); // Drop our copy too
+    tracing::debug!("Waiting for log forwarder to finish");
+    let _ = log_forwarder.await; // Now forwarder can exit
+    tracing::debug!("Log forwarder finished");
+    
+    // Handle setup failure
+    if let Err(e) = setup_result {
         tracing::error!(error = %e, "Setup failed");
         // Use first slot ID for setup failure
         let slot = slot_ids.first().copied().unwrap_or_else(SlotId::new);
-        let _ = ctrl_writer
+        let mut w = ctrl_writer.lock().await;
+        let _ = w
             .send(ControlResponse::Failed {
                 slot,
                 error: format!("Setup failed: {}", e),
@@ -200,7 +251,10 @@ pub async fn run_worker<H: PredictHandler>(handler: Arc<H>, config: WorkerConfig
     // Send Ready with slot IDs and schema
     let schema = handler.schema();
     tracing::info!(num_slots, ?slot_ids, "Worker ready");
-    ctrl_writer.send(ControlResponse::Ready { slots: slot_ids.clone(), schema }).await?;
+    {
+        let mut w = ctrl_writer.lock().await;
+        w.send(ControlResponse::Ready { slots: slot_ids.clone(), schema }).await?;
+    }
 
     // Channel for slot completions (used by async prediction tasks)
     let (completion_tx, mut completion_rx) = mpsc::channel::<SlotCompletion>(num_slots);
@@ -254,7 +308,8 @@ pub async fn run_worker<H: PredictHandler>(handler: Arc<H>, config: WorkerConfig
                     }
                     Some(Ok(ControlRequest::Shutdown)) => {
                         tracing::info!("Shutdown requested");
-                        let _ = ctrl_writer.send(ControlResponse::ShuttingDown).await;
+                        let mut w = ctrl_writer.lock().await;
+                        let _ = w.send(ControlResponse::ShuttingDown).await;
                         break;
                     }
                     Some(Err(e)) => {
@@ -277,7 +332,10 @@ pub async fn run_worker<H: PredictHandler>(handler: Arc<H>, config: WorkerConfig
                 if completion.outcome.is_poisoned() {
                     slot_poisoned.insert(slot, true);
                 }
-                let _ = ctrl_writer.send(completion.outcome.into_control_response()).await;
+                {
+                    let mut w = ctrl_writer.lock().await;
+                    let _ = w.send(completion.outcome.into_control_response()).await;
+                }
 
                 // Check if all slots poisoned
                 if slot_poisoned.values().all(|&p| p) {
@@ -369,6 +427,8 @@ async fn run_prediction<H: PredictHandler>(
     handler: Arc<H>,
     writer: Arc<tokio::sync::Mutex<FramedWrite<tokio::net::unix::OwnedWriteHalf, JsonCodec<SlotResponse>>>>,
 ) -> SlotCompletion {
+    tracing::debug!(%slot_id, %prediction_id, "run_prediction starting");
+    
     // Create channel for log streaming
     let (log_tx, mut log_rx) = mpsc::unbounded_channel::<SlotResponse>();
     let slot_sender = Arc::new(SlotSender::new(log_tx));
@@ -383,13 +443,18 @@ async fn run_prediction<H: PredictHandler>(
                 break;
             }
         }
+        tracing::debug!("Prediction log forwarder exiting");
     });
 
     // Run prediction
+    tracing::debug!(%slot_id, %prediction_id, "About to call handler.predict");
     let result = handler.predict(slot_id, prediction_id.clone(), input, slot_sender).await;
+    tracing::debug!(%slot_id, %prediction_id, success = result.success, "handler.predict returned");
 
     // Wait for log forwarder to finish (channel closes when SlotSender dropped)
+    tracing::debug!(%slot_id, %prediction_id, "Waiting for log forwarder");
     let _ = log_forwarder.await;
+    tracing::debug!(%slot_id, %prediction_id, "Log forwarder done");
 
     // Send result on slot socket
     let response = if result.success {

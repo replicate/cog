@@ -10,7 +10,7 @@ mod predictor;
 mod worker_bridge;
 
 pub use audit::TeeWriter;
-pub use log_writer::{PredictionLogGuard, SlotLogWriter};
+pub use log_writer::{PredictionLogGuard, SetupLogSender, SlotLogWriter};
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,7 +23,7 @@ use tracing_subscriber::EnvFilter;
 
 use coglet_core::{Health, PredictFuture, PredictionError, PredictionOutput, PredictionResult, PredictionService, SetupResult, VersionInfo};
 use coglet_transport::{serve as http_serve, ServerConfig};
-use coglet_worker::{SlotResponse, SpawnConfig, Worker};
+use coglet_worker::{ControlResponse, SlotResponse, SpawnConfig, Worker};
 
 use predictor::PythonPredictor;
 
@@ -96,7 +96,11 @@ impl WorkerHandle {
         loop {
             match worker.recv_slot(slot).await {
                 Ok(SlotResponse::Log { data, .. }) => {
-                    // Accumulate logs (streamed during prediction)
+                    // Emit logs with prediction ID prefix via tracing
+                    for line in data.lines() {
+                        tracing::info!(target: "coglet", prediction_id = %id, "{}", line);
+                    }
+                    // Accumulate for response
                     logs.push_str(&data);
                 }
                 Ok(SlotResponse::Output { output }) => {
@@ -438,7 +442,7 @@ fn _is_cancelable() -> bool {
 /// Environment variables:
 /// - COGLET_IS_TRAIN: If "true", call train() instead of predict()
 #[pyfunction]
-fn _run_worker(py: Python<'_>, predictor_ref: String) -> PyResult<()> {
+fn _run_worker(py: Python<'_>, predictor_ref: String, num_slots: usize) -> PyResult<()> {
     // Initialize tracing
     let _ = tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -466,7 +470,7 @@ fn _run_worker(py: Python<'_>, predictor_ref: String) -> PyResult<()> {
         .map(|v| v == "true" || v == "1")
         .unwrap_or(false);
 
-    info!(predictor_ref = %predictor_ref, is_train, "Worker starting");
+    info!(predictor_ref = %predictor_ref, is_train, num_slots, "Worker starting");
 
     // Create handler in appropriate mode
     let handler = Arc::new(if is_train {
@@ -474,22 +478,39 @@ fn _run_worker(py: Python<'_>, predictor_ref: String) -> PyResult<()> {
     } else {
         worker_bridge::PythonPredictHandler::new(predictor_ref)
     });
-    let config = coglet_worker::WorkerConfig::default();
+    
+    // Setup log hook: registers a global sender so SlotLogWriter can route setup logs
+    let setup_log_hook: coglet_worker::SetupLogHook = Box::new(|tx| {
+        let sender = Arc::new(SetupLogSender::new(tx));
+        log_writer::register_setup_sender(sender);
+        Box::new(|| log_writer::unregister_setup_sender())
+    });
+    
+    let config = coglet_worker::WorkerConfig { 
+        num_slots,
+        setup_log_hook: Some(setup_log_hook),
+    };
 
     // Run worker event loop
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+    // IMPORTANT: Release the GIL before blocking, so spawned tasks can acquire it
+    py.allow_threads(|| {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
-    rt.block_on(async {
-        coglet_worker::run_worker(handler, config)
-            .await
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+        rt.block_on(async {
+            coglet_worker::run_worker(handler, config)
+                .await
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+        })
     })
 }
 
 /// coglet Python module.
 #[pymodule]
 fn coglet(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Version from Cargo.toml
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    
     m.add_function(wrap_pyfunction!(serve, m)?)?;
     m.add_function(wrap_pyfunction!(_is_cancelable, m)?)?;
     m.add_function(wrap_pyfunction!(_run_worker, m)?)?;

@@ -506,8 +506,8 @@ func (g *StandardGenerator) installEmbeddedCogletWheel() (string, error) {
 		return "", fmt.Errorf("Python version must be <major>.<minor> for coglet")
 	}
 
-	// Get both wheels
-	cogletFilename, cogletData := wheels.ReadCogletWheel()
+	// Get both wheels - use manylinux wheel for Docker builds
+	cogletFilename, cogletData := wheels.ReadCogletWheelForPlatform("manylinux")
 	cogFilename, cogData := wheels.ReadCogWheel()
 
 	// Write coglet wheel to temp

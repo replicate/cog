@@ -203,6 +203,11 @@ func (h *Harness) Setup(env *testscript.Env) error {
 	// Use plain Docker build progress to reduce output noise in test logs
 	env.Setenv("BUILDKIT_PROGRESS", "plain")
 
+	// Pass through COG_WHEEL if set (for testing coglet runtime)
+	if cogWheel := os.Getenv("COG_WHEEL"); cogWheel != "" {
+		env.Setenv("COG_WHEEL", cogWheel)
+	}
+
 	// Generate unique image name for this test run
 	imageName := generateUniqueImageName()
 	env.Setenv("TEST_IMAGE", imageName)

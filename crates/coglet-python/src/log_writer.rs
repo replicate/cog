@@ -9,6 +9,7 @@
 //! - Async predictions with proper per-task isolation (ContextVar is task-local)
 //! - Orphan task detection (prediction completed but task still running)
 //! - Slot reuse safety (new prediction = new ID, old tasks can't pollute)
+//! - Setup logs routed through control channel before predictions start
 //!
 //! The ContextVar is private (`_coglet_` prefix). Users who need the prediction ID
 //! should use the public API (e.g., `cog.current_prediction_id()`) which we'll
@@ -34,8 +35,66 @@ static PREDICTION_CONTEXTVAR: OnceLock<Py<PyAny>> = OnceLock::new();
 /// When SlotLogWriter.write() is called, we look up the sender here.
 static PREDICTION_REGISTRY: OnceLock<Mutex<HashMap<String, Arc<SlotSender>>>> = OnceLock::new();
 
+/// Setup log sender - used when outside prediction context during setup.
+/// Set by worker before setup(), cleared after setup completes.
+static SETUP_LOG_SENDER: OnceLock<Mutex<Option<Arc<SetupLogSender>>>> = OnceLock::new();
+
 fn get_registry() -> &'static Mutex<HashMap<String, Arc<SlotSender>>> {
     PREDICTION_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn get_setup_sender_slot() -> &'static Mutex<Option<Arc<SetupLogSender>>> {
+    SETUP_LOG_SENDER.get_or_init(|| Mutex::new(None))
+}
+
+// ============================================================================
+// SetupLogSender - sends logs via control channel during setup
+// ============================================================================
+
+use tokio::sync::mpsc::UnboundedSender;
+use coglet_worker::ControlResponse;
+
+/// Sender for logs during setup (before slots are active).
+/// Sends through the control channel.
+pub struct SetupLogSender {
+    tx: UnboundedSender<ControlResponse>,
+}
+
+impl SetupLogSender {
+    /// Create a new setup log sender.
+    pub fn new(tx: UnboundedSender<ControlResponse>) -> Self {
+        Self { tx }
+    }
+
+    /// Send a log message.
+    pub fn send_log(&self, source: LogSource, data: &str) -> Result<(), String> {
+        self.tx
+            .send(ControlResponse::Log {
+                source,
+                data: data.to_string(),
+            })
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// Register the setup log sender.
+/// Called by worker before setup().
+pub fn register_setup_sender(sender: Arc<SetupLogSender>) {
+    let mut slot = get_setup_sender_slot().lock().unwrap();
+    *slot = Some(sender);
+}
+
+/// Unregister the setup log sender.
+/// Called by worker after setup() completes.
+pub fn unregister_setup_sender() {
+    let mut slot = get_setup_sender_slot().lock().unwrap();
+    *slot = None;
+}
+
+/// Get the setup log sender if registered.
+fn get_setup_sender() -> Option<Arc<SetupLogSender>> {
+    let slot = get_setup_sender_slot().lock().unwrap();
+    slot.clone()
 }
 
 /// Get or create the Rust-owned ContextVar.
@@ -118,13 +177,16 @@ fn get_current_prediction_id(py: Python<'_>) -> PyResult<Option<String>> {
 /// to the appropriate SlotSender.
 ///
 /// If no prediction_id is set, or the prediction has completed (orphan task),
-/// writes go to the original stream.
+/// writes go to the fallback stream (always stderr, since stdout is the control protocol).
 #[pyclass]
 pub struct SlotLogWriter {
     /// Which stream this captures (stdout or stderr).
     source: LogSource,
-    /// Original stream to fall back to when outside prediction context.
+    /// Original stream (used for delegation of methods like isatty, fileno).
     original: Py<PyAny>,
+    /// Fallback stream for writes outside prediction context (always stderr).
+    /// This is separate from original because stdout's original is the control pipe.
+    fallback: Py<PyAny>,
     /// Whether writes should be ignored (used after errors).
     #[pyo3(get)]
     closed: bool,
@@ -132,10 +194,12 @@ pub struct SlotLogWriter {
 
 #[pymethods]
 impl SlotLogWriter {
-    /// Write data, routing via ContextVar.
+    /// Write data, routing to the appropriate destination.
     ///
-    /// If inside a prediction (ContextVar set and prediction active), routes to sender.
-    /// Otherwise (no ContextVar, or orphan task), writes to the original stream.
+    /// Priority:
+    /// 1. If inside a prediction (ContextVar set), route to slot sender
+    /// 2. If setup sender registered, route to control channel  
+    /// 3. Fall back to stderr (for orphan tasks or unexpected cases)
     fn write(&self, py: Python<'_>, data: &str) -> PyResult<usize> {
         if self.closed || data.is_empty() {
             return Ok(data.len());
@@ -152,13 +216,14 @@ impl SlotLogWriter {
                     })?;
                 } else {
                     // Orphan task - prediction completed but task still running
-                    // Fall back to original stream (typically stderr)
-                    self.write_to_original(py, data)?;
+                    // Try setup sender, then fallback to stderr
+                    self.write_outside_prediction(py, data)?;
                 }
             }
             None => {
-                // Outside prediction context - write to original stream
-                self.write_to_original(py, data)?;
+                // Outside prediction context
+                // Try setup sender (for setup logs), then fallback to stderr
+                self.write_outside_prediction(py, data)?;
             }
         }
 
@@ -248,27 +313,55 @@ impl SlotLogWriter {
 }
 
 impl SlotLogWriter {
-    /// Create a new stdout writer with fallback to original.
-    pub fn new_stdout(original: Py<PyAny>) -> Self {
+    /// Create a new stdout writer.
+    /// 
+    /// The original is the piped stdout (for method delegation).
+    /// The fallback is stderr (for writes outside prediction context).
+    pub fn new_stdout(original: Py<PyAny>, fallback: Py<PyAny>) -> Self {
         Self {
             source: LogSource::Stdout,
             original,
+            fallback,
             closed: false,
         }
     }
 
-    /// Create a new stderr writer with fallback to original.
-    pub fn new_stderr(original: Py<PyAny>) -> Self {
+    /// Create a new stderr writer.
+    /// 
+    /// Both original and fallback point to stderr.
+    pub fn new_stderr(py: Python<'_>, original: Py<PyAny>) -> Self {
+        let fallback = original.clone_ref(py);
         Self {
             source: LogSource::Stderr,
             original,
+            fallback,
             closed: false,
         }
     }
 
-    /// Write to the original stream.
-    fn write_to_original(&self, py: Python<'_>, data: &str) -> PyResult<()> {
-        self.original.call_method1(py, "write", (data,))?;
+    /// Write to the fallback stream (always stderr).
+    fn write_to_fallback(&self, py: Python<'_>, data: &str) -> PyResult<()> {
+        self.fallback.call_method1(py, "write", (data,))?;
+        Ok(())
+    }
+
+    /// Write when outside prediction context.
+    /// 
+    /// During setup: routes to control channel (for health-check).
+    /// Otherwise: emits via tracing to stderr locally (not shipped).
+    fn write_outside_prediction(&self, _py: Python<'_>, data: &str) -> PyResult<()> {
+        // Try setup sender (registered during setup phase)
+        if let Some(sender) = get_setup_sender() {
+            if sender.send_log(self.source, data).is_ok() {
+                return Ok(());
+            }
+            // If send fails, fall through to tracing
+        }
+        // Outside setup - just emit via tracing locally
+        // Don't ship these, just log to stderr
+        for line in data.lines() {
+            tracing::info!(target: "coglet", "{}", line);
+        }
         Ok(())
     }
 }
@@ -288,8 +381,10 @@ pub fn install_slot_log_writers(py: Python<'_>) -> PyResult<bool> {
     let original_stderr = sys.getattr("stderr")?.unbind();
 
     // Create writers
-    let stdout_writer = SlotLogWriter::new_stdout(original_stdout);
-    let stderr_writer = SlotLogWriter::new_stderr(original_stderr);
+    // For stdout: original is the pipe (for method delegation), fallback is stderr
+    // For stderr: both original and fallback are stderr
+    let stdout_writer = SlotLogWriter::new_stdout(original_stdout, original_stderr.clone_ref(py));
+    let stderr_writer = SlotLogWriter::new_stderr(py, original_stderr);
 
     // Install
     sys.setattr("stdout", stdout_writer.into_pyobject(py)?)?;
@@ -321,12 +416,15 @@ impl PredictionLogGuard {
     ///
     /// Registers the sender and sets the ContextVar.
     pub fn enter(py: Python<'_>, prediction_id: String, sender: Arc<SlotSender>) -> PyResult<Self> {
+        tracing::debug!(%prediction_id, "PredictionLogGuard::enter - registering sender");
         // Register sender in global registry
         register_prediction(prediction_id.clone(), sender);
 
+        tracing::debug!(%prediction_id, "PredictionLogGuard::enter - setting ContextVar");
         // Set ContextVar
         let token = set_current_prediction(py, &prediction_id)?;
 
+        tracing::debug!(%prediction_id, "PredictionLogGuard::enter - done");
         Ok(Self { prediction_id, token })
     }
 

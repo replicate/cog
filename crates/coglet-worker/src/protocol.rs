@@ -87,6 +87,14 @@ pub enum ControlResponse {
         schema: Option<serde_json::Value>,
     },
 
+    /// Log message (used during setup before slots are active).
+    Log {
+        /// Log source (stdout or stderr).
+        source: LogSource,
+        /// Log data.
+        data: String,
+    },
+
     /// Slot is now idle (prediction completed, ready for next).
     Idle {
         /// Unique slot ID that became idle.

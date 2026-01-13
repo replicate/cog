@@ -142,6 +142,8 @@ impl PredictHandler for PythonPredictHandler {
         input: serde_json::Value,
         slot_sender: Arc<SlotSender>,
     ) -> PredictResult {
+        tracing::debug!(%slot, %id, "PythonPredictHandler::predict starting");
+        
         // Get predictor and determine if async
         let (pred, is_async) = {
             let guard = self.predictor.lock().unwrap();
@@ -155,6 +157,7 @@ impl PredictHandler for PythonPredictHandler {
                 }
             }
         };
+        tracing::debug!(%slot, %id, is_async, "Got predictor");
 
         // Track that we're starting a prediction on this slot
         self.start_prediction(slot, is_async);
@@ -166,9 +169,12 @@ impl PredictHandler for PythonPredictHandler {
         }
 
         // Enter prediction context - sets cog_prediction_id ContextVar for log routing
+        tracing::debug!(%slot, %id, "Entering prediction context");
         let prediction_id = id.clone();
+        let slot_sender_clone = slot_sender.clone();
         let log_guard = Python::attach(|py| {
-            crate::log_writer::PredictionLogGuard::enter(py, prediction_id.clone(), slot_sender)
+            tracing::debug!(%slot, %id, "Got GIL, calling PredictionLogGuard::enter");
+            crate::log_writer::PredictionLogGuard::enter(py, prediction_id.clone(), slot_sender_clone)
         });
         let log_guard = match log_guard {
             Ok(g) => Some(g),
@@ -177,6 +183,7 @@ impl PredictHandler for PythonPredictHandler {
                 None
             }
         };
+        tracing::debug!(%slot, %id, "Prediction context entered");
 
         // Run prediction or training based on is_train mode.
         // 
@@ -205,14 +212,19 @@ impl PredictHandler for PythonPredictHandler {
             }
         } else {
             // Prediction mode
+            tracing::debug!(%slot, %id, is_async = pred.is_async(), "Running prediction");
             if pred.is_async() {
                 pred.predict_async_worker(input)
             } else {
                 // Sync predict - wrap in cancelable guard for SIGUSR1 handling
                 let _cancelable = crate::cancel::enter_cancelable();
-                pred.predict_worker(input)
+                tracing::debug!(%slot, %id, "Calling predict_worker");
+                let r = pred.predict_worker(input);
+                tracing::debug!(%slot, %id, "predict_worker returned");
+                r
             }
         };
+        tracing::debug!(%slot, %id, "Prediction completed");
 
         self.finish_prediction(slot);
         

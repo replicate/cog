@@ -15,14 +15,13 @@ import (
 var wheelsFS embed.FS
 
 func init() {
-	assertExactlyOneWheelPerRuntime()
+	assertWheelsEmbedded()
 }
 
-// assertExactlyOneWheelPerRuntime ensures exactly 2 wheels are embedded (one cog, one coglet).
-// If there are more or fewer, the build is broken - likely stale wheels left in pkg/wheels/
-// or dist/, or the wheels weren't built at all. Panics on failure since this is a build-time
-// invariant that must hold for the binary to function correctly.
-func assertExactlyOneWheelPerRuntime() {
+// assertWheelsEmbedded ensures wheels are embedded:
+// - exactly 1 cog wheel (pure Python, platform-independent)
+// - at least 1 coglet wheel (platform-specific, we embed multiple)
+func assertWheelsEmbedded() {
 	files, err := wheelsFS.ReadDir(".")
 	if err != nil {
 		panic(fmt.Sprintf("failed to read embedded wheels directory: %v", err))
@@ -43,24 +42,51 @@ func assertExactlyOneWheelPerRuntime() {
 	if cogCount != 1 {
 		panic(fmt.Sprintf("expected exactly 1 cog wheel embedded, found %d - run 'make wheel' to fix", cogCount))
 	}
-	if cogletCount != 1 {
-		panic(fmt.Sprintf("expected exactly 1 coglet wheel embedded, found %d - run 'make wheel' to fix", cogletCount))
+	if cogletCount < 1 {
+		panic(fmt.Sprintf("expected at least 1 coglet wheel embedded, found %d - run 'make wheel' to fix", cogletCount))
 	}
 }
 
 func ReadCogWheel() (string, []byte) {
-	return readWheelFromFS("cog-")
+	return readWheelFromFS("cog-", "")
 }
 
+// ReadCogletWheel reads the coglet wheel for the specified platform.
+// platform should be "linux_x86_64", "linux_aarch64", "macosx_arm64", etc.
+// If platform is empty, returns the first coglet wheel found.
 func ReadCogletWheel() (string, []byte) {
-	return readWheelFromFS("coglet-")
+	return readWheelFromFS("coglet-", "")
 }
 
-func readWheelFromFS(prefix string) (string, []byte) {
+// ReadCogletWheelForPlatform reads the coglet wheel matching the target platform.
+// platform examples: "manylinux" (for any linux), "linux_x86_64", "linux_aarch64", "macosx"
+func ReadCogletWheelForPlatform(platform string) (string, []byte) {
+	return readWheelFromFS("coglet-", platform)
+}
+
+func readWheelFromFS(prefix string, platformHint string) (string, []byte) {
 	files, err := wheelsFS.ReadDir(".")
 	if err != nil {
 		panic(fmt.Sprintf("failed to read embedded wheels: %v", err))
 	}
+
+	// First pass: look for exact platform match
+	if platformHint != "" {
+		for _, f := range files {
+			name := f.Name()
+			if strings.HasPrefix(name, prefix) && strings.HasSuffix(name, ".whl") {
+				if strings.Contains(name, platformHint) {
+					data, err := wheelsFS.ReadFile(name)
+					if err != nil {
+						panic(fmt.Sprintf("failed to read embedded wheel %s: %v", name, err))
+					}
+					return name, data
+				}
+			}
+		}
+	}
+
+	// Second pass: return first match
 	for _, f := range files {
 		if strings.HasPrefix(f.Name(), prefix) && strings.HasSuffix(f.Name(), ".whl") {
 			data, err := wheelsFS.ReadFile(f.Name())

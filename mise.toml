@@ -17,8 +17,24 @@ description = "Build coglet Python wheel (development, requires maturin)"
 run = "cd crates/coglet-python && maturin develop"
 
 [tasks."build:coglet:wheel"]
-description = "Build coglet Python wheel for distribution"
+description = "Build coglet Python wheel for development (native platform only)"
 run = "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml"
+
+[tasks."build:coglet:wheel:all"]
+description = "Build coglet Python wheels for all platforms (Linux x86_64 + macOS)"
+run = """
+maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-unknown-linux-gnu --zig
+maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml
+"""
+
+# To build aarch64-linux, first run: rustup target add aarch64-unknown-linux-gnu
+[tasks."build:coglet:wheel:all-arch"]
+description = "Build coglet wheels for all platforms including aarch64-linux (requires rustup target)"
+run = """
+maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-unknown-linux-gnu --zig
+maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target aarch64-unknown-linux-gnu --zig
+maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml
+"""
 
 [tasks."test:rust"]
 description = "Run Rust tests with nextest (excludes coglet-python)"
