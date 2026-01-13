@@ -303,25 +303,6 @@ def test_predict_fast_build(docker_image, cog_binary):
     assert result.stdout == "hello world\n"
 
 
-def test_predict_tensorflow_project(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/tensorflow-project"
-
-    result = subprocess.run(
-        [
-            cog_binary,
-            "predict",
-            "--debug",
-        ],
-        cwd=project_dir,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=120.0,
-    )
-    assert result.returncode == 0
-    assert result.stdout == "2.11.1\n"
-
-
 def test_predict_json_input(cog_binary):
     project_dir = Path(__file__).parent / "fixtures/string-project"
 

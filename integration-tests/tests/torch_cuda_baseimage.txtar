@@ -1,0 +1,20 @@
+[!slow] skip 'slow test - run without COG_TEST_FAST=1'
+
+# Test Torch 2.0.1+cu118 with --use-cog-base-image flag
+cog build -t $TEST_IMAGE --use-cog-base-image
+
+-- cog.yaml --
+build:
+  gpu: true
+  python_version: "3.9"
+  python_packages:
+    - "torch==2.0.1+cu118"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s
