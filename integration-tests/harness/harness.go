@@ -177,6 +177,9 @@ func (h *Harness) Setup(env *testscript.Env) error {
 	// Disable update checks during tests
 	env.Setenv("COG_NO_UPDATE_CHECK", "1")
 
+	// Use plain Docker build progress to reduce output noise in test logs
+	env.Setenv("BUILDKIT_PROGRESS", "plain")
+
 	// Generate unique image name for this test run
 	imageName := generateUniqueImageName()
 	env.Setenv("TEST_IMAGE", imageName)
