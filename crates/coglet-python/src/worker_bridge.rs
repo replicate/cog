@@ -9,16 +9,22 @@ use coglet_worker::{PredictHandler, PredictResult, SlotId, SlotSender};
 
 use crate::predictor::PythonPredictor;
 
-/// Per-slot state for cancellation tracking.
+/// Per-slot state for cancellation and tracking.
 struct SlotState {
     /// Whether this slot has been cancelled.
     cancelled: bool,
+    /// Whether a prediction is currently in progress on this slot.
+    in_progress: bool,
+    /// Whether the current prediction is async (for cancel routing).
+    is_async: bool,
 }
 
 impl Default for SlotState {
     fn default() -> Self {
         Self {
             cancelled: false,
+            in_progress: false,
+            is_async: false,
         }
     }
 }
@@ -78,16 +84,30 @@ impl PythonPredictHandler {
     }
 
     /// Mark a slot as having a prediction in progress.
-    fn start_prediction(&self, slot: SlotId) {
+    fn start_prediction(&self, slot: SlotId, is_async: bool) {
         let mut slots = self.slots.lock().unwrap();
         let state = slots.entry(slot).or_default();
         state.cancelled = false;
+        state.in_progress = true;
+        state.is_async = is_async;
     }
 
     /// Clear prediction state for a slot.
     fn finish_prediction(&self, slot: SlotId) {
-        // Currently a no-op, but kept for symmetry
-        let _ = slot;
+        let mut slots = self.slots.lock().unwrap();
+        if let Some(state) = slots.get_mut(&slot) {
+            state.in_progress = false;
+            state.is_async = false;
+        }
+        
+        // Also unregister from async task registry (no-op if not async)
+        crate::async_runtime::unregister_task(slot);
+    }
+    
+    /// Check if a slot's prediction is async.
+    fn is_slot_async(&self, slot: SlotId) -> bool {
+        let slots = self.slots.lock().unwrap();
+        slots.get(&slot).map(|s| s.is_async).unwrap_or(false)
     }
 }
 
@@ -118,25 +138,16 @@ impl PredictHandler for PythonPredictHandler {
     async fn predict(
         &self,
         slot: SlotId,
-        id: String,
+        _id: String,
         input: serde_json::Value,
         slot_sender: Arc<SlotSender>,
     ) -> PredictResult {
-        // Track that we're starting a prediction on this slot
-        self.start_prediction(slot);
-
-        // Check cancellation first (in case cancel was called before we started)
-        if self.take_cancelled(slot) {
-            self.finish_prediction(slot);
-            return PredictResult::cancelled(0.0);
-        }
-
-        let pred = {
+        // Get predictor and determine if async
+        let (pred, is_async) = {
             let guard = self.predictor.lock().unwrap();
             match guard.as_ref() {
-                Some(p) => Arc::clone(p),
+                Some(p) => (Arc::clone(p), p.is_async()),
                 None => {
-                    self.finish_prediction(slot);
                     return PredictResult::failed(
                         "Predictor not initialized".to_string(),
                         0.0,
@@ -144,6 +155,15 @@ impl PredictHandler for PythonPredictHandler {
                 }
             }
         };
+
+        // Track that we're starting a prediction on this slot
+        self.start_prediction(slot, is_async);
+
+        // Check cancellation first (in case cancel was called before we started)
+        if self.take_cancelled(slot) {
+            self.finish_prediction(slot);
+            return PredictResult::cancelled(0.0);
+        }
 
         // Enter prediction context - sets ContextVar for log routing
         let log_guard = Python::attach(|py| {
@@ -178,6 +198,8 @@ impl PredictHandler for PythonPredictHandler {
             if pred.is_train_async() {
                 pred.train_async_worker(input)
             } else {
+                // Sync train - wrap in cancelable guard for SIGUSR1 handling
+                let _cancelable = crate::cancel::enter_cancelable();
                 pred.train_worker(input)
             }
         } else {
@@ -185,6 +207,8 @@ impl PredictHandler for PythonPredictHandler {
             if pred.is_async() {
                 pred.predict_async_worker(input)
             } else {
+                // Sync predict - wrap in cancelable guard for SIGUSR1 handling
+                let _cancelable = crate::cancel::enter_cancelable();
                 pred.predict_worker(input)
             }
         };
@@ -222,11 +246,28 @@ impl PredictHandler for PythonPredictHandler {
     }
 
     fn cancel(&self, slot: SlotId) {
-        let mut slots = self.slots.lock().unwrap();
-        let state = slots.entry(slot).or_default();
-        state.cancelled = true;
-        // TODO: Also send SIGUSR1 for sync predictors?
-        tracing::debug!(%slot, "Cancellation requested");
+        let is_async = self.is_slot_async(slot);
+        
+        // Set cancelled flag (checked by sync predictors between operations)
+        {
+            let mut slots = self.slots.lock().unwrap();
+            let state = slots.entry(slot).or_default();
+            state.cancelled = true;
+        }
+        
+        if is_async {
+            // Async: cancel the Python asyncio task
+            Python::attach(|py| {
+                if let Err(e) = crate::async_runtime::cancel_task(py, slot) {
+                    tracing::warn!(%slot, error = %e, "Failed to cancel async task");
+                }
+            });
+        } else {
+            // Sync: send SIGUSR1 to interrupt blocking Python code
+            if let Err(e) = crate::cancel::send_cancel_signal() {
+                tracing::warn!(%slot, error = %e, "Failed to send cancel signal");
+            }
+        }
     }
 
     fn schema(&self) -> Option<serde_json::Value> {

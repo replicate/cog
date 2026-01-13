@@ -1,5 +1,6 @@
 //! coglet-python: PyO3 bindings for coglet.
 
+mod async_runtime;
 mod cancel;
 mod input;
 mod log_writer;
@@ -424,6 +425,24 @@ fn _is_cancelable() -> bool {
     cancel::is_cancelable()
 }
 
+/// Set the current slot context (ContextVar) for log routing.
+/// Called by our async wrapper before running user's coroutine.
+/// Returns a token for resetting.
+#[pyfunction]
+fn _set_slot_context(py: Python<'_>, slot_id_str: String) -> PyResult<Py<PyAny>> {
+    let slot_id = coglet_worker::SlotId::parse(&slot_id_str).map_err(|e| {
+        pyo3::exceptions::PyValueError::new_err(format!("Invalid SlotId: {}", e))
+    })?;
+    log_writer::set_current_slot(py, slot_id)
+}
+
+/// Reset the slot context using a token from _set_slot_context.
+/// Called by our async wrapper after user's coroutine completes.
+#[pyfunction]
+fn _reset_slot_context(py: Python<'_>, token: Py<PyAny>) -> PyResult<()> {
+    log_writer::reset_current_slot(py, &token)
+}
+
 /// Run as a worker subprocess.
 ///
 /// This function is called when coglet is spawned as a worker.
@@ -443,6 +462,12 @@ fn _run_worker(py: Python<'_>, predictor_ref: String) -> PyResult<()> {
     // Install SlotLogWriters for ContextVar-based log routing
     // This replaces sys.stdout/stderr with our writers that route via SlotId
     log_writer::install_slot_log_writers(py)?;
+
+    // Install SIGUSR1 signal handler for sync predictor cancellation
+    // This allows cancel requests to interrupt blocking Python code
+    if let Err(e) = cancel::install_signal_handler(py) {
+        warn!(error = %e, "Failed to install signal handler, cancellation may not work");
+    }
 
     // Check if we're in training mode
     let is_train = std::env::var("COGLET_IS_TRAIN")
@@ -476,5 +501,8 @@ fn coglet(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(serve, m)?)?;
     m.add_function(wrap_pyfunction!(_is_cancelable, m)?)?;
     m.add_function(wrap_pyfunction!(_run_worker, m)?)?;
+    // Context management for async predictions (internal use)
+    m.add_function(wrap_pyfunction!(_set_slot_context, m)?)?;
+    m.add_function(wrap_pyfunction!(_reset_slot_context, m)?)?;
     Ok(())
 }
