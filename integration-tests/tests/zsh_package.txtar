@@ -1,0 +1,21 @@
+# Test that zsh system package is installed and available in /bin
+cog build -t $TEST_IMAGE
+
+cog predict $TEST_IMAGE
+stdout ',sh,'
+stdout ',zsh,'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+  system_packages:
+    - "zsh"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+import os
+
+class Predictor(BasePredictor):
+    def predict(self) -> str:
+        return "hello " + ",".join(os.listdir("/bin"))

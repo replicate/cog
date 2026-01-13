@@ -1,0 +1,19 @@
+# Test that build fails with proper error when .cog is in .dockerignore
+! cog build -t $TEST_IMAGE
+stderr 'The .cog tmp path cannot be ignored by docker in .dockerignore'
+
+-- cog.yaml --
+build:
+  gpu: true
+  python_version: "3.9"
+predict: "predict.py:Predictor"
+
+-- .dockerignore --
+.cog
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s

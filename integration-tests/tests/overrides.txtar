@@ -1,0 +1,30 @@
+# Test that python_overrides can override package versions
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict and verify the overridden numpy version is used
+cog predict $TEST_IMAGE
+stdout 'hello 1.26.4'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+  python_requirements: requirements.txt
+  fast: true
+  python_overrides: overrides.txt
+predict: "predict.py:Predictor"
+
+-- requirements.txt --
+numpy==1.26.3
+
+-- overrides.txt --
+numpy==1.26.4
+
+-- predict.py --
+from cog import BasePredictor
+import numpy as np
+
+class Predictor(BasePredictor):
+    def predict(self) -> str:
+        return "hello " + np.__version__
