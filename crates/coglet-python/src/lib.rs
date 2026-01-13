@@ -2,9 +2,12 @@
 
 mod cancel;
 mod input;
+mod log_writer;
 mod output;
 mod predictor;
 mod worker_bridge;
+
+pub use log_writer::{SlotLogGuard, SlotLogWriter, SlotSender};
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,7 +20,7 @@ use tracing_subscriber::EnvFilter;
 
 use coglet_core::{Health, PredictFuture, PredictionError, PredictionOutput, PredictionResult, PredictionService, SetupResult, VersionInfo};
 use coglet_transport::{serve as http_serve, ServerConfig};
-use coglet_worker::{SpawnConfig, Worker, WorkerResponse};
+use coglet_worker::{SlotResponse, SpawnConfig, Worker};
 
 use predictor::PythonPredictor;
 
@@ -59,6 +62,8 @@ impl WorkerHandle {
     }
 
     /// Run a prediction, respawning worker if needed.
+    /// 
+    /// Uses slot 0 since sync predictors only have one slot.
     async fn predict(&self, id: String, input: serde_json::Value) -> Result<PredictionResult, PredictionError> {
         let mut guard = self.worker.lock().await;
         
@@ -72,40 +77,53 @@ impl WorkerHandle {
         }
 
         let worker = guard.as_mut().unwrap();
+        let slot = 0; // Sync predictors use single slot
 
-        // Send prediction to worker
-        // Use generous timeout for predictions (model inference can be slow)
-        let response = worker.predict(id.clone(), input).await;
+        // Send prediction request on slot socket
+        if let Err(e) = worker.send_predict(slot, id.clone(), input).await {
+            error!(error = %e, "Failed to send prediction");
+            *guard = None;
+            return Err(PredictionError::Failed(format!("Worker error: {}", e)));
+        }
 
-        match response {
-            Ok(resp) => match resp {
-                WorkerResponse::Output { output, status, .. } => {
-                    use coglet_worker::PredictionStatus;
-                    match status {
-                        PredictionStatus::Succeeded => Ok(PredictionResult {
-                            output: PredictionOutput::Single(output),
-                            predict_time: None,
-                            logs: String::new(),
-                        }),
-                        PredictionStatus::Canceled => Err(PredictionError::Cancelled),
-                        _ => Err(PredictionError::Failed(format!("Prediction status: {:?}", status))),
+        // Collect logs and wait for completion
+        let mut logs = String::new();
+        let mut final_output = None;
+
+        loop {
+            match worker.recv_slot(slot).await {
+                Ok(SlotResponse::Log { data, .. }) => {
+                    // Accumulate logs (streamed during prediction)
+                    logs.push_str(&data);
+                }
+                Ok(SlotResponse::Output { output }) => {
+                    // Streaming output (for generators)
+                    // For now, just keep the last one
+                    final_output = Some(output);
+                }
+                Ok(SlotResponse::Done { output, predict_time, .. }) => {
+                    // Prediction completed successfully
+                    if let Some(o) = output {
+                        final_output = Some(o);
                     }
+                    return Ok(PredictionResult {
+                        output: PredictionOutput::Single(final_output.unwrap_or(serde_json::Value::Null)),
+                        predict_time: Some(Duration::from_secs_f64(predict_time)),
+                        logs,
+                    });
                 }
-                WorkerResponse::Error { error, .. } => {
-                    Err(PredictionError::Failed(error))
+                Ok(SlotResponse::Failed { error, .. }) => {
+                    return Err(PredictionError::Failed(error));
                 }
-                WorkerResponse::Cancelled { .. } => {
-                    Err(PredictionError::Cancelled)
+                Ok(SlotResponse::Cancelled { .. }) => {
+                    return Err(PredictionError::Cancelled);
                 }
-                other => {
-                    Err(PredictionError::Failed(format!("Unexpected response: {:?}", other)))
+                Err(e) => {
+                    // Worker might have crashed - mark for respawn
+                    error!(error = %e, "Worker error, will respawn on next request");
+                    *guard = None;
+                    return Err(PredictionError::Failed(format!("Worker error: {}", e)));
                 }
-            },
-            Err(e) => {
-                // Worker might have crashed - mark for respawn
-                error!(error = %e, "Worker error, will respawn on next request");
-                *guard = None;
-                Err(PredictionError::Failed(format!("Worker error: {}", e)))
             }
         }
     }
@@ -335,6 +353,7 @@ fn serve_subprocess(
     }
     let spawn_config = SpawnConfig {
         python_exe,
+        max_concurrency: 1, // Sync predictors use single slot
         env,
     };
 
@@ -429,11 +448,11 @@ fn _run_worker(predictor_ref: String) -> PyResult<()> {
     info!(predictor_ref = %predictor_ref, is_train, "Worker starting");
 
     // Create handler in appropriate mode
-    let handler = if is_train {
+    let handler = Arc::new(if is_train {
         worker_bridge::PythonPredictHandler::new_train(predictor_ref)
     } else {
         worker_bridge::PythonPredictHandler::new(predictor_ref)
-    };
+    });
     let config = coglet_worker::WorkerConfig::default();
 
     // Run worker event loop
