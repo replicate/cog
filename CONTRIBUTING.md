@@ -145,7 +145,8 @@ As much as possible, this is attempting to follow the [Standard Go Project Layou
 - `pkg/predict/` - Runs predictions on models.
 - `pkg/util/` - Various packages that aren't part of Cog. They could reasonably be separate re-usable projects.
 - `python/` - The Cog Python library.
-- `test-integration/` - High-level integration tests for Cog.
+- `integration-tests/` - Go-based integration tests using testscript (primary test suite).
+- `test-integration/` - Legacy Python integration tests (supplementary - CLI flags and tooling).
 - `tools/compatgen/` - Tool for generating CUDA/PyTorch/TensorFlow compatibility matrices.
 
 ## Updating compatibility matrices
@@ -189,7 +190,7 @@ There are a few concepts used throughout Cog that might be helpful to understand
 script/test # see also: make test
 ```
 
-**To run just the Golang tests:**
+**To run just the Go unit tests:**
 
 ```sh
 script/test-go # see also: make test-go
@@ -204,38 +205,82 @@ script/test-python # see also: make test-python
 > [!INFO]
 > Note that this will run the Python test suite using only the current version of Python defined in .python-version. To run a more comprehensive Python test suite then use `make test-python`.
 
-**To run just the integration tests:**
+### Integration Tests
+
+Cog has two integration test suites that are complementary:
+
+**Go integration tests (primary - 60 tests):**
+
+Tests core predictor functionality using [testscript](https://pkg.go.dev/github.com/rogpeppe/go-internal/testscript). Each test is a self-contained `.txtar` file in `integration-tests/tests/`.
 
 ```sh
+# Run all Go integration tests
+make test-integration-go
+
+# Run fast tests only (skip slow GPU/framework tests)
+COG_TEST_FAST=1 make test-integration-go
+
+# Run a specific test
+cd integration-tests && go test -v -run TestIntegration/string_predictor
+
+# Run with a custom cog binary
+COG_BINARY=/path/to/cog make test-integration-go
+```
+
+**Python integration tests (supplementary - 37 tests):**
+
+Tests CLI flags, `cog run`, and other tooling features using pytest.
+
+```sh
+# Run all Python integration tests
 make test-integration
+
+# Run a specific Python integration test
+cd test-integration && uv run tox -e integration -- test_integration/test_build.py::test_build_gpu_model_on_cpu
 ```
 
-**To run a specific Python test:**
+**Integration test coverage:**
+- **Go tests**: Core predictors, types, builds, training, subprocess behavior, HTTP server testing
+- **Python tests**: CLI flags (`--json`, `-o`), commands (`cog run`, `cog init`), edge cases
 
-```sh
-script/test-python python/tests/server/test_http.py::test_openapi_specification_with_yield
+### Writing Integration Tests
+
+When adding new functionality, prefer adding Go integration tests in `integration-tests/tests/`. They are:
+- Self-contained (embedded fixtures in `.txtar` files)
+- Faster to run (parallel execution with automatic cleanup)
+- Easier to read and write (simple command script format)
+
+Example test structure:
+
+```txtar
+# Test string predictor
+cog build -t $TEST_IMAGE
+cog predict $TEST_IMAGE -i s=world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s
 ```
 
-**To run a specific Python test under a specific environment**
+For testing `cog serve`, use the `serve` and `curl` commands:
 
-```sh
-uv run tox -e py312-pydantic2-tests -- python/tests/server/test_http.py::test_openapi_specification_with_yield
+```txtar
+cog build -t $TEST_IMAGE
+serve
+curl POST /predictions '{"input":{"s":"test"}}'
+stdout '"output":"hello test"'
 ```
 
-_You can see all the available test environments under `env_list` in the tox.ini file_
-
-**To stand up a server for one of the integration tests:**
-
-```sh
-make install
-pip install -r requirements-dev.txt
-make test
-cd test-integration/test_integration/fixtures/file-project
-cog build
-docker run -p 5001:5000 --init --platform=linux/amd64 cog-file-project
-```
-
-Then visit [localhost:5001](http://localhost:5001) in your browser.
+See existing tests in `integration-tests/tests/` for more examples.
 
 ## Running the docs server
 
