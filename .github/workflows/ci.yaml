@@ -215,8 +215,7 @@ jobs:
         env:
           COG_WHEEL: ${{ matrix.runtime }}
           COG_BINARY: ./cog
-        # coglet-alpha tests may fail due to error message differences - don't block PR
-        continue-on-error: ${{ matrix.runtime != 'cog' }}
+          TEST_PARALLEL: 8
         run: make test-integration-go
 
   # TODO[md]: This is a gross hack, remove once this is sorted out: https://github.com/replicate/cog/pull/2353
