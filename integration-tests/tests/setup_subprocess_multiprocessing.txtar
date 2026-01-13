@@ -12,7 +12,7 @@ skip 'test needs debugging'
 cog build -t $TEST_IMAGE
 
 # Start the server
-serve
+cog serve
 
 # Wait for setup to complete (multiprocessing initialization takes time)
 exec sleep 2

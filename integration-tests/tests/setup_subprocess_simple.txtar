@@ -8,7 +8,7 @@
 cog build -t $TEST_IMAGE
 
 # Start the server
-serve
+cog serve
 
 # Wait for setup to complete (subprocess spawning takes time)
 exec sleep 2

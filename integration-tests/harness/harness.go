@@ -149,15 +149,29 @@ func runCommand(dir string, name string, args ...string) error {
 // Commands returns the custom testscript commands provided by this harness.
 func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool, args []string) {
 	return map[string]func(ts *testscript.TestScript, neg bool, args []string){
-		"cog":   h.cmdCog,
-		"serve": h.cmdServe,
-		"curl":  h.cmdCurl,
+		"cog":  h.cmdCog,
+		"curl": h.cmdCurl,
 	}
 }
 
 // cmdCog implements the 'cog' command for testscript.
+// It handles all cog subcommands, with special handling for certain commands.
 func (h *Harness) cmdCog(ts *testscript.TestScript, neg bool, args []string) {
-	// Expand environment variables in arguments
+	// Check for subcommands that need special handling
+	if len(args) > 0 {
+		switch args[0] {
+		case "serve":
+			// Special handling for 'cog serve' - run in background
+			h.cmdCogServe(ts, neg, args[1:])
+			return
+			// Add more special subcommands here as needed:
+			// case "run":
+			//     h.cmdCogRun(ts, neg, args[1:])
+			//     return
+		}
+	}
+
+	// Default: run cog command normally
 	expandedArgs := make([]string, len(args))
 	for i, arg := range args {
 		expandedArgs[i] = os.Expand(arg, ts.Getenv)
@@ -234,11 +248,11 @@ func removeDockerImage(imageName string) {
 	}
 }
 
-// cmdServe implements the 'serve' command for testscript.
+// cmdCogServe implements background 'cog serve' for testscript.
 // It starts a cog serve process in the background and waits for it to be healthy.
-// Usage: serve [flags]
+// Usage: cog serve [flags]
 // Exports $SERVER_URL environment variable with the server address.
-func (h *Harness) cmdServe(ts *testscript.TestScript, neg bool, args []string) {
+func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string) {
 	if neg {
 		ts.Fatalf("serve command does not support negation")
 	}
