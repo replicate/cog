@@ -55,6 +55,12 @@ test-integration: $(COG_BINARIES)
 	$(GO) test ./pkg/docker/...
 	PATH="$(PWD):$(PATH)" $(TOX) -e integration
 
+# Run Go-based integration tests (testscript)
+# Use -parallel to control concurrency (default 4 to avoid Docker overload)
+.PHONY: test-integration-go
+test-integration-go:
+	cd integration-tests && $(GO) test -v -parallel 4 -timeout 30m $(ARGS) .
+
 .PHONY: test-python
 test-python: generate
 	$(TOX) run --installpkg $$(ls dist/cog-*.whl) -f tests

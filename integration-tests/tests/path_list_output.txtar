@@ -1,0 +1,37 @@
+# Test List[Path] output (multiple file outputs)
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict writes multiple files
+cog predict $TEST_IMAGE
+
+# Verify files were created with expected content
+exec cat output.0.txt
+stdout 'foo'
+exec cat output.1.txt
+stdout 'bar'
+exec cat output.2.txt
+stdout 'baz'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from typing import List
+
+from cog import BasePredictor, Path
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> List[Path]:
+        predictions = ["foo", "bar", "baz"]
+        output = []
+        for i, prediction in enumerate(predictions):
+            out_path = Path(f"/tmp/out-{i}.txt")
+            with out_path.open("w") as f:
+                f.write(prediction)
+            output.append(out_path)
+        return output
