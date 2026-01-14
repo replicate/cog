@@ -28,11 +28,40 @@ def train(n: int=Input(description='Dimension of weights to generate')) -> Train
 
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
 def test_predict_many_inputs():
-    with open(
-        f"{g_module_dir}/../../test-integration/test_integration/fixtures/many-inputs-project/predict.py",
-        encoding="utf-8",
-    ) as file:
-        source_code = file.read()
+    source_code = """
+from cog import BasePredictor, Input, Path
+
+
+class Predictor(BasePredictor):
+    def predict(
+        self,
+        no_default: str,
+        default_without_input: str = "default",
+        input_with_default: int = Input(default=10),
+        path: Path = Input(description="Some path"),
+        image: Path = Input(description="Some path"),
+        choices: str = Input(choices=["foo", "bar"]),
+        int_choices: int = Input(description="hello", choices=[3, 4, 5]),
+    ) -> str:
+        with path.open() as f:
+            path_contents = f.read()
+        image_extension = str(image).split(".")[-1]
+        return (
+            no_default
+            + " "
+            + default_without_input
+            + " "
+            + str(input_with_default)
+            + " "
+            + path_contents
+            + " "
+            + image_extension
+            + " "
+            + choices
+            + " "
+            + str(int_choices * 2)
+        )
+"""
 
     new_source = strip_model_source_code(source_code, ["Predictor"], ["predict"])
     expected_source = """
@@ -48,11 +77,22 @@ class Predictor(BasePredictor):
 
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
 def test_predict_output_path_model():
-    with open(
-        f"{g_module_dir}/../../test-integration/test_integration/fixtures/path-output-project/predict.py",
-        encoding="utf-8",
-    ) as file:
-        source_code = file.read()
+    source_code = """
+import os
+import tempfile
+
+from cog import BasePredictor, Path
+from PIL import Image
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> Path:
+        temp_dir = tempfile.mkdtemp()
+        temp_path = os.path.join(temp_dir, "prediction.bmp")
+        img = Image.new("RGB", (255, 255), "red")
+        img.save(temp_path)
+        return Path(temp_path)
+"""
 
     new_source = strip_model_source_code(source_code, ["Predictor"], ["predict"])
     expected_source = """
