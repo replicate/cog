@@ -35,6 +35,16 @@ static PREDICTION_CONTEXTVAR: OnceLock<Py<PyAny>> = OnceLock::new();
 /// When SlotLogWriter.write() is called, we look up the sender here.
 static PREDICTION_REGISTRY: OnceLock<Mutex<HashMap<String, Arc<SlotSender>>>> = OnceLock::new();
 
+/// Current sync prediction ID.
+/// For sync predictions (single slot, blocking), there's exactly one active prediction.
+/// ContextVars don't work across separate Python::attach calls, so we use this.
+/// Protected by mutex since it's accessed from Python callbacks.
+static SYNC_PREDICTION_ID: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+fn get_sync_prediction_id_slot() -> &'static Mutex<Option<String>> {
+    SYNC_PREDICTION_ID.get_or_init(|| Mutex::new(None))
+}
+
 /// Setup log sender - used when outside prediction context during setup.
 /// Set by worker before setup(), cleared after setup completes.
 static SETUP_LOG_SENDER: OnceLock<Mutex<Option<Arc<SetupLogSender>>>> = OnceLock::new();
@@ -115,6 +125,7 @@ fn get_prediction_contextvar(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
 /// Called when starting a prediction.
 pub fn register_prediction(prediction_id: String, sender: Arc<SlotSender>) {
     let mut registry = get_registry().lock().unwrap();
+    tracing::trace!(%prediction_id, "Registering prediction sender");
     registry.insert(prediction_id, sender);
 }
 
@@ -123,6 +134,12 @@ pub fn register_prediction(prediction_id: String, sender: Arc<SlotSender>) {
 pub fn unregister_prediction(prediction_id: &str) {
     let mut registry = get_registry().lock().unwrap();
     registry.remove(prediction_id);
+    
+    // Clear sync prediction ID if it matches
+    let mut slot = get_sync_prediction_id_slot().lock().unwrap();
+    if slot.as_deref() == Some(prediction_id) {
+        *slot = None;
+    }
 }
 
 /// Get the SlotSender for a prediction ID.
@@ -131,12 +148,20 @@ fn get_prediction_sender(prediction_id: &str) -> Option<Arc<SlotSender>> {
     registry.get(prediction_id).cloned()
 }
 
-/// Set the current prediction ID in the ContextVar.
+/// Set the current prediction ID in the ContextVar (for async).
 /// Returns a token that can be used to reset (for explicit cleanup).
 pub fn set_current_prediction(py: Python<'_>, prediction_id: &str) -> PyResult<Py<PyAny>> {
+    // Set ContextVar for async predictions
     let cv = get_prediction_contextvar(py)?;
     let token = cv.call_method1(py, "set", (prediction_id,))?;
     Ok(token)
+}
+
+/// Set the current sync prediction ID (for sync predictions only).
+/// Call this before running a sync prediction, clear after.
+pub fn set_sync_prediction_id(prediction_id: Option<&str>) {
+    let mut slot = get_sync_prediction_id_slot().lock().unwrap();
+    *slot = prediction_id.map(|s| s.to_string());
 }
 
 /// Reset the current prediction ID using a token from set_current_prediction.
@@ -147,19 +172,31 @@ pub fn reset_current_prediction(py: Python<'_>, token: &Py<PyAny>) -> PyResult<(
     Ok(())
 }
 
-/// Get the current prediction ID from the ContextVar.
+/// Get the current prediction ID from sync static or ContextVar.
 /// Returns None if not set (outside prediction context).
 fn get_current_prediction_id(py: Python<'_>) -> PyResult<Option<String>> {
+    // First check sync prediction static (works for sync predictions)
+    {
+        let slot = get_sync_prediction_id_slot().lock().unwrap();
+        if let Some(ref prediction_id) = *slot {
+            tracing::trace!(%prediction_id, "Sync prediction ID found");
+            return Ok(Some(prediction_id.clone()));
+        }
+    }
+    
+    // Fall back to ContextVar (works for async predictions)
     let cv = get_prediction_contextvar(py)?;
 
     // Try to get the value - returns the value or raises LookupError
     match cv.call_method0(py, "get") {
         Ok(val) => {
             let prediction_id: String = val.extract(py)?;
+            tracing::trace!(%prediction_id, "ContextVar lookup succeeded");
             Ok(Some(prediction_id))
         }
         Err(e) if e.is_instance_of::<pyo3::exceptions::PyLookupError>(py) => {
             // ContextVar not set - outside prediction context
+            tracing::trace!("No prediction context (sync static and ContextVar both empty)");
             Ok(None)
         }
         Err(e) => Err(e),

@@ -206,9 +206,14 @@ impl PredictHandler for PythonPredictHandler {
             if pred.is_train_async() {
                 pred.train_async_worker(input)
             } else {
-                // Sync train - wrap in cancelable guard for SIGUSR1 handling
+                // Sync train - set sync prediction ID for log routing
+                crate::log_writer::set_sync_prediction_id(Some(&id));
+                // Wrap in cancelable guard for SIGUSR1 handling
                 let _cancelable = crate::cancel::enter_cancelable();
-                pred.train_worker(input)
+                let r = pred.train_worker(input);
+                // Clear sync prediction ID
+                crate::log_writer::set_sync_prediction_id(None);
+                r
             }
         } else {
             // Prediction mode
@@ -216,11 +221,15 @@ impl PredictHandler for PythonPredictHandler {
             if pred.is_async() {
                 pred.predict_async_worker(input)
             } else {
-                // Sync predict - wrap in cancelable guard for SIGUSR1 handling
+                // Sync predict - set sync prediction ID for log routing
+                crate::log_writer::set_sync_prediction_id(Some(&id));
+                // Wrap in cancelable guard for SIGUSR1 handling
                 let _cancelable = crate::cancel::enter_cancelable();
                 tracing::debug!(%slot, %id, "Calling predict_worker");
                 let r = pred.predict_worker(input);
                 tracing::debug!(%slot, %id, "predict_worker returned");
+                // Clear sync prediction ID
+                crate::log_writer::set_sync_prediction_id(None);
                 r
             }
         };
