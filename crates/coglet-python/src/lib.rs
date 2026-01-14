@@ -19,13 +19,63 @@ use pyo3::prelude::*;
 use tokio::sync::Mutex;
 
 use tracing::{error, info, warn};
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{fmt, EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use coglet_core::{Health, PredictFuture, PredictionError, PredictionOutput, PredictionResult, PredictionService, SetupResult, VersionInfo};
 use coglet_transport::{serve as http_serve, ServerConfig};
 use coglet_worker::{ControlResponse, SlotResponse, SpawnConfig, Worker};
 
 use predictor::PythonPredictor;
+
+/// Initialize tracing with COG_LOG and LOG_FORMAT support.
+///
+/// Environment variables:
+/// - `COG_LOG`: Sets log level for coglet targets (info/debug). No trace support.
+/// - `LOG_FORMAT`: Set to "json" for JSON output format.
+/// - `RUST_LOG`: Standard tracing filter, takes precedence for granular control.
+///
+/// Opt-in only targets (require explicit RUST_LOG to enable):
+/// - `coglet_worker::schema` - Full OpenAPI schema dump
+/// - `coglet_worker::protocol` - Raw protocol frame logging
+fn init_tracing(_to_stderr: bool) {
+    // Check if RUST_LOG is set - if so, use it directly for full control
+    let filter = if std::env::var("RUST_LOG").is_ok() {
+        EnvFilter::from_default_env()
+    } else {
+        // Build filter from COG_LOG
+        let base_level = match std::env::var("COG_LOG").as_deref() {
+            Ok("debug") => "debug",
+            Ok("warn") | Ok("warning") => "warn",
+            Ok("error") => "error",
+            _ => "info", // default
+        };
+        
+        // Build filter: coglet and coglet_worker at the configured level,
+        // but opt-in targets are off by default
+        let filter_str = format!(
+            "coglet={level},coglet_worker={level},coglet_worker::schema=off,coglet_worker::protocol=off",
+            level = base_level
+        );
+        
+        EnvFilter::new(filter_str)
+    };
+
+    // Check if JSON format requested
+    let use_json = std::env::var("LOG_FORMAT").as_deref() == Ok("json");
+
+    // Build subscriber - always write to stderr (stdout may be protocol pipe)
+    if use_json {
+        let subscriber = tracing_subscriber::registry()
+            .with(filter)
+            .with(fmt::layer().json().with_writer(std::io::stderr));
+        let _ = subscriber.try_init();
+    } else {
+        let subscriber = tracing_subscriber::registry()
+            .with(filter)
+            .with(fmt::layer().with_writer(std::io::stderr));
+        let _ = subscriber.try_init();
+    }
+}
 
 /// Wrapper around Worker that handles respawning on crash.
 struct WorkerHandle {
@@ -205,10 +255,8 @@ fn read_max_concurrency(py: Python<'_>) -> usize {
 #[pyfunction]
 #[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000, await_explicit_shutdown=false, is_train=false))]
 fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16, await_explicit_shutdown: bool, is_train: bool) -> PyResult<()> {
-    // Initialize tracing (ignore if already initialized)
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .try_init();
+    // Initialize tracing with COG_LOG and LOG_FORMAT support
+    init_tracing(false);
 
     let config = ServerConfig {
         host,
@@ -443,11 +491,9 @@ fn _is_cancelable() -> bool {
 /// - COGLET_IS_TRAIN: If "true", call train() instead of predict()
 #[pyfunction]
 fn _run_worker(py: Python<'_>, predictor_ref: String, num_slots: usize) -> PyResult<()> {
-    // Initialize tracing
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_writer(std::io::stderr) // Log to stderr, stdout is for protocol
-        .try_init();
+    // Initialize tracing with COG_LOG and LOG_FORMAT support
+    // Always writes to stderr since stdout is the protocol pipe
+    init_tracing(true);
 
     // Install SlotLogWriters for ContextVar-based log routing
     // This replaces sys.stdout/stderr with our writers that route via SlotId
