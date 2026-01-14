@@ -257,6 +257,9 @@ fn read_max_concurrency(py: Python<'_>) -> usize {
 fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16, await_explicit_shutdown: bool, is_train: bool) -> PyResult<()> {
     // Initialize tracing with COG_LOG and LOG_FORMAT support
     init_tracing(false);
+    
+    // Log version at startup
+    info!("coglet {}", env!("CARGO_PKG_VERSION"));
 
     let config = ServerConfig {
         host,
