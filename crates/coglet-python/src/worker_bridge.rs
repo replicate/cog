@@ -100,14 +100,7 @@ impl PythonPredictHandler {
             state.is_async = false;
         }
         
-        // Also unregister from async task registry (no-op if not async)
-        crate::async_runtime::unregister_task(slot);
-    }
-    
-    /// Check if a slot's prediction is async.
-    fn is_slot_async(&self, slot: SlotId) -> bool {
-        let slots = self.slots.lock().unwrap();
-        slots.get(&slot).map(|s| s.is_async).unwrap_or(false)
+
     }
 }
 
@@ -263,8 +256,6 @@ impl PredictHandler for PythonPredictHandler {
     }
 
     fn cancel(&self, slot: SlotId) {
-        let is_async = self.is_slot_async(slot);
-        
         // Set cancelled flag (checked by sync predictors between operations)
         {
             let mut slots = self.slots.lock().unwrap();
@@ -272,18 +263,10 @@ impl PredictHandler for PythonPredictHandler {
             state.cancelled = true;
         }
         
-        if is_async {
-            // Async: cancel the Python asyncio task
-            Python::attach(|py| {
-                if let Err(e) = crate::async_runtime::cancel_task(py, slot) {
-                    tracing::warn!(%slot, error = %e, "Failed to cancel async task");
-                }
-            });
-        } else {
-            // Sync: send SIGUSR1 to interrupt blocking Python code
-            if let Err(e) = crate::cancel::send_cancel_signal() {
-                tracing::warn!(%slot, error = %e, "Failed to send cancel signal");
-            }
+        // Send SIGUSR1 to interrupt Python code (works for both sync and async)
+        // For async, this will raise CancelledError in the running coroutine
+        if let Err(e) = crate::cancel::send_cancel_signal() {
+            tracing::warn!(%slot, error = %e, "Failed to send cancel signal");
         }
     }
 

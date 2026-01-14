@@ -50,6 +50,7 @@ pub trait InputProcessor: Send + Sync {
     ///
     /// For Pydantic: deletes temporary files created by URLPath downloads.
     /// For Coglet: may be a no-op or runtime-specific cleanup.
+    #[allow(dead_code)]
     fn cleanup(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<()>;
 }
 

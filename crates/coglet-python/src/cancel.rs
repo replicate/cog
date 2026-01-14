@@ -113,11 +113,4 @@ pub fn send_cancel_signal() -> std::io::Result<()> {
     }
 }
 
-/// Cancel an async prediction by cancelling its asyncio task.
-///
-/// Takes the task object returned by asyncio.create_task() or similar.
-pub fn cancel_async_task(py: Python<'_>, task: &Bound<'_, PyAny>) -> PyResult<()> {
-    task.call_method0("cancel")?;
-    tracing::debug!("Cancelled asyncio task");
-    Ok(())
-}
+

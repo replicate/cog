@@ -1,6 +1,5 @@
 //! coglet-python: PyO3 bindings for coglet.
 
-mod async_runtime;
 mod audit;
 mod cancel;
 mod input;

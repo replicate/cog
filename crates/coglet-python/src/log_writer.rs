@@ -164,14 +164,6 @@ pub fn set_sync_prediction_id(prediction_id: Option<&str>) {
     *slot = prediction_id.map(|s| s.to_string());
 }
 
-/// Reset the current prediction ID using a token from set_current_prediction.
-/// Optional - ContextVar resets naturally when task ends for async.
-pub fn reset_current_prediction(py: Python<'_>, token: &Py<PyAny>) -> PyResult<()> {
-    let cv = get_prediction_contextvar(py)?;
-    cv.call_method1(py, "reset", (token,))?;
-    Ok(())
-}
-
 /// Get the current prediction ID from sync static or ContextVar.
 /// Returns None if not set (outside prediction context).
 fn get_current_prediction_id(py: Python<'_>) -> PyResult<Option<String>> {
@@ -214,16 +206,13 @@ fn get_current_prediction_id(py: Python<'_>) -> PyResult<Option<String>> {
 /// to the appropriate SlotSender.
 ///
 /// If no prediction_id is set, or the prediction has completed (orphan task),
-/// writes go to the fallback stream (always stderr, since stdout is the control protocol).
+/// writes go to tracing (logged as orphan).
 #[pyclass]
 pub struct SlotLogWriter {
     /// Which stream this captures (stdout or stderr).
     source: LogSource,
     /// Original stream (used for delegation of methods like isatty, fileno).
     original: Py<PyAny>,
-    /// Fallback stream for writes outside prediction context (always stderr).
-    /// This is separate from original because stdout's original is the control pipe.
-    fallback: Py<PyAny>,
     /// Whether writes should be ignored (used after errors).
     #[pyo3(get)]
     closed: bool,
@@ -361,35 +350,21 @@ impl SlotLogWriter {
 
 impl SlotLogWriter {
     /// Create a new stdout writer.
-    /// 
-    /// The original is the piped stdout (for method delegation).
-    /// The fallback is stderr (for writes outside prediction context).
-    pub fn new_stdout(original: Py<PyAny>, fallback: Py<PyAny>) -> Self {
+    pub fn new_stdout(original: Py<PyAny>) -> Self {
         Self {
             source: LogSource::Stdout,
             original,
-            fallback,
             closed: false,
         }
     }
 
     /// Create a new stderr writer.
-    /// 
-    /// Both original and fallback point to stderr.
-    pub fn new_stderr(py: Python<'_>, original: Py<PyAny>) -> Self {
-        let fallback = original.clone_ref(py);
+    pub fn new_stderr(original: Py<PyAny>) -> Self {
         Self {
             source: LogSource::Stderr,
             original,
-            fallback,
             closed: false,
         }
-    }
-
-    /// Write to the fallback stream (always stderr).
-    fn write_to_fallback(&self, py: Python<'_>, data: &str) -> PyResult<()> {
-        self.fallback.call_method1(py, "write", (data,))?;
-        Ok(())
     }
 
     /// Write when outside prediction context.
@@ -433,10 +408,8 @@ pub fn install_slot_log_writers(py: Python<'_>) -> PyResult<bool> {
     let original_stderr = sys.getattr("stderr")?.unbind();
 
     // Create writers
-    // For stdout: original is the pipe (for method delegation), fallback is stderr
-    // For stderr: both original and fallback are stderr
-    let stdout_writer = SlotLogWriter::new_stdout(original_stdout, original_stderr.clone_ref(py));
-    let stderr_writer = SlotLogWriter::new_stderr(py, original_stderr);
+    let stdout_writer = SlotLogWriter::new_stdout(original_stdout);
+    let stderr_writer = SlotLogWriter::new_stderr(original_stderr);
 
     // Install
     sys.setattr("stdout", stdout_writer.into_pyobject(py)?)?;
