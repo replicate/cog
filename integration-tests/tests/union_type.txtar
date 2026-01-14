@@ -1,0 +1,29 @@
+# Test new-style union type annotation (str | None)
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict with input
+cog predict $TEST_IMAGE -i text=world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Input
+
+
+class Predictor(BasePredictor):
+    def setup(self):
+        self.prefix = "hello"
+
+    def predict(
+        self,
+        text: str | None = Input(
+            description="Text to prefix with 'hello '", default=None
+        ),
+    ) -> str:
+        return self.prefix + " " + text

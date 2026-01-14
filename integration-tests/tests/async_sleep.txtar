@@ -1,0 +1,24 @@
+# Test async predictor with sleep
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Async prediction with sleep works
+cog predict $TEST_IMAGE -i s=sleepyhead -i sleep=0.1
+stdout 'wake up sleepyhead'
+
+-- cog.yaml --
+build:
+  python_version: "3.11"
+predict: "predict.py:Predictor"
+concurrency:
+  max: 5
+
+-- predict.py --
+import asyncio
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    async def predict(self, s: str, sleep: float) -> str:
+        await asyncio.sleep(sleep)
+        return f"wake up {s}"

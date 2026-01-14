@@ -1,0 +1,26 @@
+# Test that Pydantic 2 is not clobbered to a <2 version
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict and verify pydantic version is preserved
+cog predict $TEST_IMAGE
+stdout '2.11.9'
+
+-- cog.yaml --
+build:
+  python_version: "3.11"
+  python_requirements: requirements.txt
+predict: "predict.py:Predictor"
+
+-- requirements.txt --
+pydantic==2.11.9
+
+-- predict.py --
+from cog import BasePredictor
+import pydantic
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> str:
+        return pydantic.__version__

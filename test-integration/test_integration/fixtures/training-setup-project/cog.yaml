@@ -1,4 +1,0 @@
-build:
-  python_version: "3.12"
-train: "train.py:Trainer"
-predict: "predict.py:Predictor"

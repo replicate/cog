@@ -1,5 +1,4 @@
 import asyncio
-
 from cog import BasePredictor
 
 

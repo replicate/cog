@@ -1,0 +1,22 @@
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Basic prediction works
+cog predict $TEST_IMAGE -i s=world
+stdout 'hello world'
+
+# Missing required input fails
+! cog predict $TEST_IMAGE -i wrong=value
+stderr 's: Field required'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s

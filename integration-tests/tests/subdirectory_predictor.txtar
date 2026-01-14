@@ -1,0 +1,26 @@
+# Test predictor in subdirectory with imports from parent
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict using predictor in subdirectory
+cog predict $TEST_IMAGE -i s=world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "my-subdir/predict.py:Predictor"
+
+-- mylib.py --
+def concat(a, b):
+    return a + " " + b
+
+-- my-subdir/predict.py --
+from cog import BasePredictor
+from mylib import concat
+
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return concat("hello", s)

@@ -1,0 +1,21 @@
+# Test list[str] input type
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict with list input
+cog predict $TEST_IMAGE -i s=world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Input
+
+
+class Predictor(BasePredictor):
+    def predict(self, s: list[str] = Input(description="A list of strings to print.")) -> str:
+        return "hello " + "|".join(s)

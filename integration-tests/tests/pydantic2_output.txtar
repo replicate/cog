@@ -1,0 +1,71 @@
+# Test Pydantic 2 output types work correctly with train command
+
+# Train with input
+cog train -i some_input="hello"
+
+# Verify weights file was created
+exec test -f dummy_output.txt
+
+-- cog.yaml --
+build:
+  gpu: false
+  python_version: "3.12"
+  python_packages:
+    - "pydantic==2.10.6"
+predict: "predict.py:Predictor"
+train: "train.py:train"
+
+-- predict.py --
+from cog import BasePredictor, Input, Path
+
+
+class Predictor(BasePredictor):
+    def setup(self) -> None:
+        pass
+
+    def predict(
+        self,
+        image: Path = Input(description="Grayscale input image"),
+        scale: float = Input(
+            description="Factor to scale image by", ge=0, le=10, default=1.5
+        ),
+    ) -> Path:
+        return Path(".")
+
+-- train.py --
+from typing import Optional
+
+from cog import BaseModel, Input, Path as CogPath, Secret
+
+
+class TrainingOutput(BaseModel):
+    weights: CogPath
+
+
+def train(
+    some_input: str = Input(
+        description="A basic string input to satisfy minimum requirements.",
+        default="default value",
+    ),
+    hf_repo_id: Optional[str] = Input(
+        description="String with None default - this causes issues.",
+        default=None,
+    ),
+    hf_token: Optional[Secret] = Input(
+        description="Secret with None default - this also causes issues.",
+        default=None,
+    ),
+    working_repo_id: str = Input(
+        description="String with empty string default - this works.",
+        default="",
+    ),
+    working_token: Secret = Input(
+        description="Secret with empty string default - this works.",
+        default="",
+    ),
+) -> TrainingOutput:
+    print("\n=== Minimal Cog Secret Test ===")
+    output_path = "dummy_output.txt"
+    with open(output_path, "w") as f:
+        f.write("This is a dummy output file.")
+    return TrainingOutput(weights=CogPath(output_path))
