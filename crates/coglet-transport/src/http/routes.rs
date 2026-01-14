@@ -3,17 +3,17 @@
 use std::sync::Arc;
 
 use axum::{
+    Router,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json},
     routing::{get, post, put},
-    Router,
 };
 use serde::{Deserialize, Serialize};
 
 use coglet_core::{
-    CreatePredictionError, Health, HealthSnapshot, PredictionError, PredictionService,
-    SetupResult, VersionInfo, WebhookConfig, WebhookEventType, WebhookSender,
+    CreatePredictionError, Health, HealthSnapshot, PredictionError, PredictionService, SetupResult,
+    VersionInfo, WebhookConfig, WebhookEventType, WebhookSender,
 };
 
 /// Health check response.
@@ -33,7 +33,7 @@ impl From<HealthSnapshot> for HealthCheckResponse {
         } else {
             snapshot.state
         };
-        
+
         Self {
             status,
             setup: snapshot.setup_result,
@@ -79,12 +79,12 @@ fn generate_prediction_id() -> String {
 /// GET /health-check
 async fn health_check(State(service): State<Arc<PredictionService>>) -> Json<HealthCheckResponse> {
     let snapshot = service.health().await;
-    
+
     // Write K8s readiness file if ready
     if snapshot.is_ready() && !snapshot.is_busy() {
         write_readiness_file();
     }
-    
+
     Json(snapshot.into())
 }
 
@@ -94,19 +94,19 @@ fn write_readiness_file() {
     if std::env::var("KUBERNETES_SERVICE_HOST").is_err() {
         return;
     }
-    
+
     let dir = std::path::Path::new("/var/run/cog");
     let file = dir.join("ready");
-    
+
     if file.exists() {
         return;
     }
-    
+
     if let Err(e) = std::fs::create_dir_all(dir) {
         tracing::warn!(error = %e, "Failed to create /var/run/cog directory");
         return;
     }
-    
+
     if let Err(e) = std::fs::write(&file, b"") {
         tracing::warn!(error = %e, "Failed to write readiness file");
     }
@@ -136,7 +136,8 @@ async fn create_prediction(
         request.webhook,
         request.webhook_events_filter,
         respond_async,
-    ).await
+    )
+    .await
 }
 
 /// PUT /predictions/{id} - idempotent prediction creation
@@ -147,19 +148,19 @@ async fn create_prediction_idempotent(
     Json(request): Json<PredictionRequest>,
 ) -> impl IntoResponse {
     // If request has ID, it must match URL
-    if let Some(ref req_id) = request.id {
-        if req_id != &prediction_id {
-            return (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(serde_json::json!({
-                    "detail": [{
-                        "loc": ["body", "id"],
-                        "msg": "prediction ID must match the ID supplied in the URL",
-                        "type": "value_error"
-                    }]
-                })),
-            );
-        }
+    if let Some(ref req_id) = request.id
+        && req_id != &prediction_id
+    {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(serde_json::json!({
+                "detail": [{
+                    "loc": ["body", "id"],
+                    "msg": "prediction ID must match the ID supplied in the URL",
+                    "type": "value_error"
+                }]
+            })),
+        );
     }
 
     // Check if prediction with this ID is already in-flight
@@ -182,7 +183,8 @@ async fn create_prediction_idempotent(
         request.webhook,
         request.webhook_events_filter,
         respond_async,
-    ).await
+    )
+    .await
 }
 
 /// Build a webhook sender if webhook URL is provided.
@@ -192,7 +194,7 @@ fn build_webhook_sender(
 ) -> Option<WebhookSender> {
     let webhook_url = webhook?;
     let events: std::collections::HashSet<_> = events_filter.into_iter().collect();
-    
+
     Some(WebhookSender::new(
         webhook_url,
         WebhookConfig {
@@ -213,12 +215,15 @@ async fn create_prediction_with_id(
 ) -> (StatusCode, Json<serde_json::Value>) {
     // Build webhook sender for async start notification
     let start_webhook_sender = build_webhook_sender(webhook.clone(), webhook_events_filter.clone());
-    
+
     // Build webhook sender for the prediction (will be used in Drop)
     let prediction_webhook = build_webhook_sender(webhook, webhook_events_filter);
-    
+
     // Try to create prediction (acquires slot, checks health)
-    let mut prediction = match service.create_prediction(prediction_id.clone(), prediction_webhook).await {
+    let mut prediction = match service
+        .create_prediction(prediction_id.clone(), prediction_webhook)
+        .await
+    {
         Ok(p) => p,
         Err(CreatePredictionError::NotReady) => {
             return (
@@ -253,20 +258,23 @@ async fn create_prediction_with_id(
     if respond_async {
         // Send start webhook
         if let Some(ref ws) = start_webhook_sender {
-            ws.send(WebhookEventType::Start, &serde_json::json!({
-                "id": prediction_id,
-                "status": "starting",
-                "input": input,
-            }));
+            ws.send(
+                WebhookEventType::Start,
+                &serde_json::json!({
+                    "id": prediction_id,
+                    "status": "starting",
+                    "input": input,
+                }),
+            );
         }
-        
+
         let service_clone = Arc::clone(&service);
         tokio::spawn(async move {
             let _ = service_clone.predict(&mut prediction, input).await;
             service_clone.unregister_prediction(prediction.id()).await;
             // prediction drops here, sending terminal webhook
         });
-        
+
         return (
             StatusCode::ACCEPTED,
             Json(serde_json::json!({
@@ -379,7 +387,7 @@ async fn openapi_schema(State(service): State<Arc<PredictionService>>) -> impl I
 
 // =============================================================================
 // Training routes
-// 
+//
 // BUG-FOR-BUG COMPATIBILITY: In cog mainline, training routes use the same
 // worker/service that was created for predictions with is_train=false. This
 // means training routes actually call predict() instead of train(). We
@@ -482,10 +490,13 @@ mod tests {
     #[tokio::test]
     async fn health_check_returns_busy_when_at_capacity() {
         let service = Arc::new(PredictionService::new(1).with_health(Health::Ready));
-        
+
         // Take the only slot
-        let _pred = service.create_prediction("busy".to_string(), None).await.unwrap();
-        
+        let _pred = service
+            .create_prediction("busy".to_string(), None)
+            .await
+            .unwrap();
+
         let app = routes(Arc::clone(&service));
 
         let response = app
@@ -549,7 +560,10 @@ mod tests {
                 .with_predict_fn(Arc::new(|input| {
                     let name = input["name"].as_str().unwrap_or("world");
                     Ok(PredictionResult {
-                        output: PredictionOutput::Single(serde_json::json!(format!("Hello, {}!", name))),
+                        output: PredictionOutput::Single(serde_json::json!(format!(
+                            "Hello, {}!",
+                            name
+                        ))),
                         predict_time: None,
                     })
                 })),
@@ -580,7 +594,9 @@ mod tests {
             PredictionService::new(1)
                 .with_health(Health::Ready)
                 .with_predict_fn(Arc::new(|_| {
-                    Err(PredictionError::InvalidInput("missing required field".to_string()))
+                    Err(PredictionError::InvalidInput(
+                        "missing required field".to_string(),
+                    ))
                 })),
         );
         let app = routes(service);
@@ -621,10 +637,12 @@ mod tests {
     #[tokio::test]
     async fn openapi_returns_schema_when_available() {
         let service = Arc::new(PredictionService::new(1));
-        service.set_schema(serde_json::json!({
-            "openapi": "3.0.2",
-            "info": {"title": "Cog", "version": "0.1.0"}
-        })).await;
+        service
+            .set_schema(serde_json::json!({
+                "openapi": "3.0.2",
+                "info": {"title": "Cog", "version": "0.1.0"}
+            }))
+            .await;
         let app = routes(service);
 
         let response = app

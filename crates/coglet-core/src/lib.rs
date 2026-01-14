@@ -14,5 +14,5 @@ pub use predictor::{
     PredictionMetrics, PredictionOutput, PredictionResult,
 };
 pub use service::{CreatePredictionError, HealthSnapshot, PredictionService};
-pub use version::{VersionInfo, COGLET_VERSION};
+pub use version::{COGLET_VERSION, VersionInfo};
 pub use webhook::{WebhookConfig, WebhookEventType, WebhookSender};

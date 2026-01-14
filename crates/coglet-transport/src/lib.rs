@@ -5,9 +5,7 @@
 
 pub mod http;
 
-pub use http::{serve, ServerConfig};
+pub use http::{ServerConfig, serve};
 
 // Re-export core types for convenience
-pub use coglet_core::{
-    PredictionService, WebhookConfig, WebhookEventType, WebhookSender,
-};
+pub use coglet_core::{PredictionService, WebhookConfig, WebhookEventType, WebhookSender};

@@ -84,14 +84,17 @@ mod tests {
 
     #[test]
     fn health_serializes_screaming_snake_case() {
-        insta::assert_json_snapshot!("health_all_variants", [
-            Health::Unknown,
-            Health::Starting,
-            Health::Ready,
-            Health::Busy,
-            Health::SetupFailed,
-            Health::Defunct,
-        ]);
+        insta::assert_json_snapshot!(
+            "health_all_variants",
+            [
+                Health::Unknown,
+                Health::Starting,
+                Health::Ready,
+                Health::Busy,
+                Health::SetupFailed,
+                Health::Defunct,
+            ]
+        );
     }
 
     #[test]
@@ -108,11 +111,14 @@ mod tests {
 
     #[test]
     fn setup_status_serializes_lowercase() {
-        insta::assert_json_snapshot!("setup_status_all_variants", [
-            SetupStatus::Starting,
-            SetupStatus::Succeeded,
-            SetupStatus::Failed,
-        ]);
+        insta::assert_json_snapshot!(
+            "setup_status_all_variants",
+            [
+                SetupStatus::Starting,
+                SetupStatus::Succeeded,
+                SetupStatus::Failed,
+            ]
+        );
     }
 
     #[test]

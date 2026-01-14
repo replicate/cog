@@ -17,8 +17,8 @@
 //! Our slot routing ContextVar is critical infrastructure. If user code tries
 //! to access or modify it, we raise an exception. No tampering allowed.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -49,10 +49,10 @@ pub fn install_audit_hook(py: Python<'_>) -> PyResult<()> {
 
     // Store our SlotLogWriter type for isinstance checks
     // We need to get this from the coglet module
-    if let Ok(coglet) = py.import("coglet") {
-        if let Ok(writer_type) = coglet.getattr("SlotLogWriter") {
-            let _ = SLOT_LOG_WRITER_TYPE.set(writer_type.unbind());
-        }
+    if let Ok(coglet) = py.import("coglet")
+        && let Ok(writer_type) = coglet.getattr("SlotLogWriter")
+    {
+        let _ = SLOT_LOG_WRITER_TYPE.set(writer_type.unbind());
     }
 
     // Define the audit hook in Python
@@ -251,21 +251,19 @@ impl TeeWriter {
 #[pyfunction]
 pub fn _is_slot_log_writer(py: Python<'_>, value: &Bound<'_, PyAny>) -> bool {
     // Check by type reference
-    if let Some(writer_type) = SLOT_LOG_WRITER_TYPE.get() {
-        if let Ok(is_instance) = value.is_instance(writer_type.bind(py)) {
-            if is_instance {
-                return true;
-            }
-        }
+    if let Some(writer_type) = SLOT_LOG_WRITER_TYPE.get()
+        && let Ok(true) = value.is_instance(writer_type.bind(py))
+    {
+        return true;
     }
-    
+
     // Fallback to class name
-    if let Ok(type_name) = value.get_type().name() {
-        if type_name == "SlotLogWriter" {
-            return true;
-        }
+    if let Ok(type_name) = value.get_type().name()
+        && type_name == "SlotLogWriter"
+    {
+        return true;
     }
-    
+
     false
 }
 
@@ -275,14 +273,14 @@ pub fn _is_tee_writer(_py: Python<'_>, value: &Bound<'_, PyAny>) -> bool {
     if value.is_instance_of::<TeeWriter>() {
         return true;
     }
-    
+
     // Fallback to class name
-    if let Ok(type_name) = value.get_type().name() {
-        if type_name == "TeeWriter" {
-            return true;
-        }
+    if let Ok(type_name) = value.get_type().name()
+        && type_name == "TeeWriter"
+    {
+        return true;
     }
-    
+
     false
 }
 
@@ -293,12 +291,12 @@ pub fn _get_inner_writer(py: Python<'_>, tee: &Bound<'_, PyAny>) -> PyResult<Py<
     if let Ok(tee_writer) = tee.extract::<PyRef<'_, TeeWriter>>() {
         return Ok(tee_writer.inner.clone_ref(py));
     }
-    
+
     // Fallback: try to get .inner attribute
     if let Ok(inner) = tee.getattr("inner") {
         return Ok(inner.unbind());
     }
-    
+
     Err(pyo3::exceptions::PyTypeError::new_err(
         "Expected TeeWriter with inner attribute",
     ))

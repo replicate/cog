@@ -220,9 +220,6 @@ pub struct AbstractSocketTransport {
 impl AbstractSocketTransport {
     /// Create transport on parent side.
     pub async fn create(num_slots: usize) -> io::Result<(Self, ChildTransportInfo)> {
-        use std::os::linux::net::SocketAddrExt;
-        use std::os::unix::net::UnixListener as StdUnixListener;
-
         let prefix = format!("coglet-{}", std::process::id());
 
         tracing::info!(transport_type = "abstract", prefix = %prefix, num_slots, "Created slot transport");
@@ -409,7 +406,7 @@ mod tests {
         };
         let json = serde_json::to_string(&info).unwrap();
         let parsed: ChildTransportInfo = serde_json::from_str(&json).unwrap();
-        
+
         match parsed {
             ChildTransportInfo::NamedSockets { dir, num_slots } => {
                 assert_eq!(dir, PathBuf::from("/tmp/coglet-123"));
@@ -429,7 +426,7 @@ mod tests {
         };
         let json = serde_json::to_string(&info).unwrap();
         let parsed: ChildTransportInfo = serde_json::from_str(&json).unwrap();
-        
+
         match parsed {
             ChildTransportInfo::AbstractSockets { prefix, num_slots } => {
                 assert_eq!(prefix, "coglet-456");

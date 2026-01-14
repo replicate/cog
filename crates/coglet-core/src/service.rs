@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tokio::sync::{watch, Mutex, RwLock, Semaphore};
+use tokio::sync::{Mutex, RwLock, Semaphore, watch};
 
 use crate::health::{Health, SetupResult};
 use crate::prediction::Prediction;
@@ -52,7 +52,7 @@ impl HealthSnapshot {
     pub fn is_ready(&self) -> bool {
         self.state == Health::Ready
     }
-    
+
     /// Check if the service is at capacity (BUSY).
     pub fn is_busy(&self) -> bool {
         self.state == Health::Ready && self.available_slots == 0
@@ -69,28 +69,28 @@ pub struct PredictionService {
     predict_fn: Option<Arc<PredictFn>>,
     /// Async predict function.
     async_predict_fn: Option<Arc<AsyncPredictFn>>,
-    
+
     /// Semaphore for slot management.
     slots: Arc<Semaphore>,
     /// Total number of slots.
     max_slots: usize,
-    
+
     /// Current health state.
     health: RwLock<Health>,
     /// Setup result.
     setup_result: RwLock<Option<SetupResult>>,
-    
+
     /// In-flight predictions (ID -> CancellationToken).
     predictions: Mutex<HashMap<String, CancellationToken>>,
-    
+
     /// Shutdown signal sender.
     shutdown_tx: watch::Sender<bool>,
     /// Shutdown signal receiver.
     shutdown_rx: watch::Receiver<bool>,
-    
+
     /// Version information.
     version: VersionInfo,
-    
+
     /// OpenAPI schema (cached, generated once at setup).
     schema: RwLock<Option<serde_json::Value>>,
 }
@@ -113,42 +113,42 @@ impl PredictionService {
             schema: RwLock::new(None),
         }
     }
-    
+
     /// Set the sync predict function.
     pub fn with_predict_fn(mut self, f: Arc<PredictFn>) -> Self {
         self.predict_fn = Some(f);
         self
     }
-    
+
     /// Set the async predict function.
     pub fn with_async_predict_fn(mut self, f: Arc<AsyncPredictFn>) -> Self {
         self.async_predict_fn = Some(f);
         self
     }
-    
+
     /// Set the initial health state.
     pub fn with_health(mut self, health: Health) -> Self {
         self.health = RwLock::new(health);
         self
     }
-    
+
     /// Set version information.
     pub fn with_version(mut self, version: VersionInfo) -> Self {
         self.version = version;
         self
     }
-    
+
     /// Check if this service uses an async predictor.
     pub fn is_async(&self) -> bool {
         self.async_predict_fn.is_some()
     }
-    
+
     /// Get the current health snapshot.
     pub async fn health(&self) -> HealthSnapshot {
         let state = *self.health.read().await;
         let setup_result = self.setup_result.read().await.clone();
         let available_slots = self.slots.available_permits();
-        
+
         HealthSnapshot {
             state,
             available_slots,
@@ -157,27 +157,27 @@ impl PredictionService {
             version: self.version.clone(),
         }
     }
-    
+
     /// Set the health state.
     pub async fn set_health(&self, health: Health) {
         *self.health.write().await = health;
     }
-    
+
     /// Set the setup result.
     pub async fn set_setup_result(&self, result: SetupResult) {
         *self.setup_result.write().await = Some(result);
     }
-    
+
     /// Set the OpenAPI schema.
     pub async fn set_schema(&self, schema: serde_json::Value) {
         *self.schema.write().await = Some(schema);
     }
-    
+
     /// Get the OpenAPI schema.
     pub async fn schema(&self) -> Option<serde_json::Value> {
         self.schema.read().await.clone()
     }
-    
+
     /// Create a new prediction, acquiring a slot.
     ///
     /// Returns a `Prediction` that owns the slot permit and will send
@@ -192,7 +192,7 @@ impl PredictionService {
         if health != Health::Ready {
             return Err(CreatePredictionError::NotReady);
         }
-        
+
         // Check if ID already exists
         {
             let predictions = self.predictions.lock().await;
@@ -200,28 +200,31 @@ impl PredictionService {
                 return Err(CreatePredictionError::AlreadyExists(id));
             }
         }
-        
+
         // Try to acquire slot
-        let permit = self.slots.clone().try_acquire_owned()
+        let permit = self
+            .slots
+            .clone()
+            .try_acquire_owned()
             .map_err(|_| CreatePredictionError::AtCapacity)?;
-        
+
         // Create prediction
         let prediction = Prediction::new(id.clone(), permit, webhook);
-        
+
         // Register for cancellation
         {
             let mut predictions = self.predictions.lock().await;
             predictions.insert(id, prediction.cancel_token());
         }
-        
+
         Ok(prediction)
     }
-    
+
     /// Check if a prediction with the given ID exists.
     pub async fn prediction_exists(&self, id: &str) -> bool {
         self.predictions.lock().await.contains_key(id)
     }
-    
+
     /// Run a prediction to completion.
     ///
     /// This runs the predictor function (sync or async) and updates the
@@ -233,7 +236,7 @@ impl PredictionService {
         input: serde_json::Value,
     ) -> Result<PredictionResult, PredictionError> {
         prediction.set_processing();
-        
+
         let result = if let Some(ref async_fn) = self.async_predict_fn {
             let f = Arc::clone(async_fn);
             f(input).await
@@ -245,17 +248,17 @@ impl PredictionService {
         } else {
             return Err(PredictionError::NotReady);
         };
-        
+
         // Update prediction status based on result
         match &result {
             Ok(r) => prediction.set_succeeded(r.output.clone()),
             Err(PredictionError::Cancelled) => prediction.set_canceled(),
             Err(e) => prediction.set_failed(e.to_string()),
         }
-        
+
         result
     }
-    
+
     /// Cancel a prediction by ID.
     ///
     /// Returns true if the prediction was found and cancelled.
@@ -268,7 +271,7 @@ impl PredictionService {
             false
         }
     }
-    
+
     /// Unregister a prediction (called when prediction completes).
     ///
     /// This is typically called by the transport after the prediction
@@ -276,12 +279,12 @@ impl PredictionService {
     pub async fn unregister_prediction(&self, id: &str) {
         self.predictions.lock().await.remove(id);
     }
-    
+
     /// Trigger shutdown.
     pub fn trigger_shutdown(&self) {
         let _ = self.shutdown_tx.send(true);
     }
-    
+
     /// Get the shutdown signal receiver.
     ///
     /// Transports can select on this to know when to shut down.
@@ -296,112 +299,127 @@ mod tests {
     use crate::prediction::PredictionStatus;
     use crate::predictor::PredictionOutput;
     use serde_json::json;
-    
+
     #[tokio::test]
     async fn service_new_defaults() {
         let svc = PredictionService::new(1);
         let health = svc.health().await;
-        
+
         assert_eq!(health.state, Health::Unknown);
         assert_eq!(health.total_slots, 1);
         assert_eq!(health.available_slots, 1);
         assert!(!svc.is_async());
     }
-    
+
     #[tokio::test]
     async fn service_with_builders() {
         let svc = PredictionService::new(4)
             .with_health(Health::Ready)
-            .with_predict_fn(Arc::new(|_| Ok(PredictionResult {
-                output: PredictionOutput::Single(json!("test")),
-                predict_time: None,
-            })));
-        
+            .with_predict_fn(Arc::new(|_| {
+                Ok(PredictionResult {
+                    output: PredictionOutput::Single(json!("test")),
+                    predict_time: None,
+                })
+            }));
+
         let health = svc.health().await;
         assert_eq!(health.state, Health::Ready);
         assert_eq!(health.total_slots, 4);
         assert!(!svc.is_async());
     }
-    
+
     #[tokio::test]
     async fn service_is_async_with_async_fn() {
-        let svc = PredictionService::new(1)
-            .with_async_predict_fn(Arc::new(|_| {
-                Box::pin(async { Ok(PredictionResult {
+        let svc = PredictionService::new(1).with_async_predict_fn(Arc::new(|_| {
+            Box::pin(async {
+                Ok(PredictionResult {
                     output: PredictionOutput::Single(json!("test")),
                     predict_time: None,
-                })})
-            }));
-        
+                })
+            })
+        }));
+
         assert!(svc.is_async());
     }
-    
+
     #[tokio::test]
     async fn create_prediction_fails_when_not_ready() {
         let svc = PredictionService::new(1); // Health is Unknown
-        
+
         let result = svc.create_prediction("test".to_string(), None).await;
         assert!(matches!(result, Err(CreatePredictionError::NotReady)));
     }
-    
+
     #[tokio::test]
     async fn create_prediction_succeeds_when_ready() {
         let svc = PredictionService::new(1).with_health(Health::Ready);
-        
+
         let result = svc.create_prediction("test".to_string(), None).await;
         assert!(result.is_ok());
-        
+
         let pred = result.unwrap();
         assert_eq!(pred.id(), "test");
         assert_eq!(pred.status(), PredictionStatus::Starting);
     }
-    
+
     #[tokio::test]
     async fn create_prediction_fails_at_capacity() {
         let svc = PredictionService::new(1).with_health(Health::Ready);
-        
+
         // First succeeds
         let _pred1 = svc.create_prediction("p1".to_string(), None).await.unwrap();
-        
+
         // Second fails - at capacity
         let result = svc.create_prediction("p2".to_string(), None).await;
         assert!(matches!(result, Err(CreatePredictionError::AtCapacity)));
     }
-    
+
     #[tokio::test]
     async fn create_prediction_fails_duplicate_id() {
         let svc = PredictionService::new(2).with_health(Health::Ready);
-        
-        let _pred1 = svc.create_prediction("same_id".to_string(), None).await.unwrap();
-        
+
+        let _pred1 = svc
+            .create_prediction("same_id".to_string(), None)
+            .await
+            .unwrap();
+
         let result = svc.create_prediction("same_id".to_string(), None).await;
-        assert!(matches!(result, Err(CreatePredictionError::AlreadyExists(_))));
+        assert!(matches!(
+            result,
+            Err(CreatePredictionError::AlreadyExists(_))
+        ));
     }
-    
+
     #[tokio::test]
     async fn prediction_exists_works() {
         let svc = PredictionService::new(1).with_health(Health::Ready);
-        
+
         assert!(!svc.prediction_exists("test").await);
-        
-        let _pred = svc.create_prediction("test".to_string(), None).await.unwrap();
+
+        let _pred = svc
+            .create_prediction("test".to_string(), None)
+            .await
+            .unwrap();
         assert!(svc.prediction_exists("test").await);
     }
-    
+
     #[tokio::test]
     async fn cancel_prediction_works() {
         let svc = PredictionService::new(1).with_health(Health::Ready);
-        
-        let pred = svc.create_prediction("test".to_string(), None).await.unwrap();
+
+        let pred = svc
+            .create_prediction("test".to_string(), None)
+            .await
+            .unwrap();
         assert!(!pred.is_canceled());
-        
+
         assert!(svc.cancel("test").await);
         assert!(pred.is_canceled());
-        
+
         // Cancel non-existent returns false
         assert!(!svc.cancel("nonexistent").await);
     }
-    
+
     #[tokio::test]
     async fn predict_with_sync_fn() {
         let svc = PredictionService::new(1)
@@ -413,16 +431,19 @@ mod tests {
                     predict_time: None,
                 })
             }));
-        
-        let mut pred = svc.create_prediction("test".to_string(), None).await.unwrap();
+
+        let mut pred = svc
+            .create_prediction("test".to_string(), None)
+            .await
+            .unwrap();
         let result = svc.predict(&mut pred, json!({"name": "Rust"})).await;
-        
+
         assert!(result.is_ok());
         let r = result.unwrap();
         assert_eq!(r.output.final_value(), &json!("Hello, Rust!"));
         assert_eq!(pred.status(), PredictionStatus::Succeeded);
     }
-    
+
     #[tokio::test]
     async fn predict_with_async_fn() {
         let svc = PredictionService::new(1)
@@ -436,14 +457,17 @@ mod tests {
                     })
                 })
             }));
-        
-        let mut pred = svc.create_prediction("test".to_string(), None).await.unwrap();
+
+        let mut pred = svc
+            .create_prediction("test".to_string(), None)
+            .await
+            .unwrap();
         let result = svc.predict(&mut pred, json!({"x": 21})).await;
-        
+
         assert!(result.is_ok());
         assert_eq!(result.unwrap().output.final_value(), &json!(42));
     }
-    
+
     #[tokio::test]
     async fn predict_sets_failed_status_on_error() {
         let svc = PredictionService::new(1)
@@ -451,38 +475,44 @@ mod tests {
             .with_predict_fn(Arc::new(|_| {
                 Err(PredictionError::Failed("oops".to_string()))
             }));
-        
-        let mut pred = svc.create_prediction("test".to_string(), None).await.unwrap();
+
+        let mut pred = svc
+            .create_prediction("test".to_string(), None)
+            .await
+            .unwrap();
         let result = svc.predict(&mut pred, json!({})).await;
-        
+
         assert!(result.is_err());
         assert_eq!(pred.status(), PredictionStatus::Failed);
     }
-    
+
     #[tokio::test]
     async fn health_snapshot_is_busy() {
         let svc = PredictionService::new(1).with_health(Health::Ready);
-        
+
         let health = svc.health().await;
         assert!(!health.is_busy());
-        
+
         // Take the slot
-        let _pred = svc.create_prediction("test".to_string(), None).await.unwrap();
-        
+        let _pred = svc
+            .create_prediction("test".to_string(), None)
+            .await
+            .unwrap();
+
         let health = svc.health().await;
         assert!(health.is_busy());
     }
-    
+
     #[tokio::test]
     async fn shutdown_signal_works() {
         let svc = PredictionService::new(1);
         let mut rx = svc.shutdown_rx();
-        
+
         assert!(!*rx.borrow());
-        
+
         svc.trigger_shutdown();
         rx.changed().await.unwrap();
-        
+
         assert!(*rx.borrow());
     }
 }

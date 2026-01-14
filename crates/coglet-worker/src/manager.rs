@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 use crate::codec::JsonCodec;
 use crate::protocol::{ControlRequest, ControlResponse, SlotId, SlotRequest, SlotResponse};
-use crate::transport::{create_transport, SlotTransport, TRANSPORT_INFO_ENV};
+use crate::transport::{SlotTransport, TRANSPORT_INFO_ENV, create_transport};
 
 /// Error from worker operations.
 #[derive(Debug, thiserror::Error)]
@@ -106,8 +106,9 @@ impl Worker {
 
         // Create transport (platform-specific sockets)
         let (mut transport, child_info) = create_transport(num_slots).await?;
-        let child_info_json = serde_json::to_string(&child_info)
-            .map_err(|e| WorkerError::Protocol(format!("Failed to serialize transport info: {}", e)))?;
+        let child_info_json = serde_json::to_string(&child_info).map_err(|e| {
+            WorkerError::Protocol(format!("Failed to serialize transport info: {}", e))
+        })?;
 
         // Spawn Python worker
         let code = format!(
@@ -150,16 +151,16 @@ impl Worker {
         // Collect setup logs and wait for Ready message
         let mut setup_logs = String::new();
         let deadline = tokio::time::Instant::now() + ready_timeout;
-        
+
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
                 let _ = child.kill().await;
                 return Err(WorkerError::ReadyTimeout);
             }
-            
+
             let msg = tokio::time::timeout(remaining, ctrl_reader.next()).await;
-            
+
             match msg {
                 Ok(Some(Ok(ControlResponse::Log { source: _, data }))) => {
                     // Emit setup logs via tracing
@@ -171,19 +172,18 @@ impl Worker {
                 }
                 Ok(Some(Ok(ControlResponse::Ready { slots, schema }))) => {
                     tracing::info!(num_slots, ?slots, "Worker ready");
-                    
+
                     // Log schema info
-                    if schema.is_some() {
+                    if let Some(ref s) = schema {
                         tracing::info!(target: "coglet::schema", "Setting OpenAPI schema from worker");
                         // Full schema dump - opt-in only (requires explicit RUST_LOG=coglet_worker::schema=trace)
-                        if let Some(ref s) = schema {
-                            if let Ok(json) = serde_json::to_string_pretty(s) {
-                                tracing::trace!(target: "coglet_worker::schema", schema = %json, "OpenAPI schema content");
-                            }
+                        if let Ok(json) = serde_json::to_string_pretty(s) {
+                            tracing::trace!(target: "coglet_worker::schema", schema = %json, "OpenAPI schema content");
                         }
                     }
-                    
-                    let poisoned: HashMap<SlotId, bool> = slots.iter().map(|id| (*id, false)).collect();
+
+                    let poisoned: HashMap<SlotId, bool> =
+                        slots.iter().map(|id| (*id, false)).collect();
                     return Ok(Self {
                         child,
                         ctrl_writer,
@@ -196,10 +196,16 @@ impl Worker {
                     });
                 }
                 Ok(Some(Ok(other))) => {
-                    return Err(WorkerError::Protocol(format!("Expected Ready or Log, got {:?}", other)));
+                    return Err(WorkerError::Protocol(format!(
+                        "Expected Ready or Log, got {:?}",
+                        other
+                    )));
                 }
                 Ok(Some(Err(e))) => {
-                    return Err(WorkerError::Protocol(format!("Failed to read control message: {}", e)));
+                    return Err(WorkerError::Protocol(format!(
+                        "Failed to read control message: {}",
+                        e
+                    )));
                 }
                 Ok(None) => {
                     return Err(WorkerError::Died("Worker closed before Ready".to_string()));
@@ -264,15 +270,19 @@ impl Worker {
         id: String,
         input: serde_json::Value,
     ) -> Result<(), WorkerError> {
-        let slot = self.slot_ids.get(index)
+        let slot = self
+            .slot_ids
+            .get(index)
             .copied()
             .ok_or_else(|| WorkerError::Protocol(format!("Invalid slot index {}", index)))?;
-        
+
         if self.is_poisoned(slot) {
             return Err(WorkerError::SlotPoisoned(slot));
         }
 
-        let socket = self.transport.slot_socket(index)
+        let socket = self
+            .transport
+            .slot_socket(index)
             .ok_or_else(|| WorkerError::Protocol(format!("No socket for slot {}", slot)))?;
 
         tracing::debug!(%slot, %id, "Dispatching prediction to slot");
@@ -286,16 +296,23 @@ impl Worker {
 
     /// Read next response from a slot (by index).
     pub async fn recv_slot(&mut self, index: usize) -> Result<SlotResponse, WorkerError> {
-        let slot = self.slot_ids.get(index)
+        let slot = self
+            .slot_ids
+            .get(index)
             .ok_or_else(|| WorkerError::Protocol(format!("Invalid slot index {}", index)))?;
-        
-        let socket = self.transport.slot_socket(index)
+
+        let socket = self
+            .transport
+            .slot_socket(index)
             .ok_or_else(|| WorkerError::Protocol(format!("No socket for slot {}", slot)))?;
 
         let mut reader = FramedRead::new(socket, JsonCodec::<SlotResponse>::new());
         match reader.next().await {
             Some(Ok(resp)) => Ok(resp),
-            Some(Err(e)) => Err(WorkerError::Protocol(format!("Slot {} read error: {}", slot, e))),
+            Some(Err(e)) => Err(WorkerError::Protocol(format!(
+                "Slot {} read error: {}",
+                slot, e
+            ))),
             None => Err(WorkerError::ConnectionLost),
         }
     }
@@ -331,7 +348,7 @@ impl Worker {
     /// Kill the worker process.
     #[cfg(unix)]
     pub async fn kill(&mut self, grace_period: Duration) {
-        use nix::sys::signal::{kill, Signal};
+        use nix::sys::signal::{Signal, kill};
         use nix::unistd::Pid;
 
         if let Some(pid) = self.child.id() {

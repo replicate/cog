@@ -61,8 +61,8 @@ fn get_setup_sender_slot() -> &'static Mutex<Option<Arc<SetupLogSender>>> {
 // SetupLogSender - sends logs via control channel during setup
 // ============================================================================
 
-use tokio::sync::mpsc::UnboundedSender;
 use coglet_worker::ControlResponse;
+use tokio::sync::mpsc::UnboundedSender;
 
 /// Sender for logs during setup (before slots are active).
 /// Sends through the control channel.
@@ -134,7 +134,7 @@ pub fn register_prediction(prediction_id: String, sender: Arc<SlotSender>) {
 pub fn unregister_prediction(prediction_id: &str) {
     let mut registry = get_registry().lock().unwrap();
     registry.remove(prediction_id);
-    
+
     // Clear sync prediction ID if it matches
     let mut slot = get_sync_prediction_id_slot().lock().unwrap();
     if slot.as_deref() == Some(prediction_id) {
@@ -175,7 +175,7 @@ fn get_current_prediction_id(py: Python<'_>) -> PyResult<Option<String>> {
             return Ok(Some(prediction_id.clone()));
         }
     }
-    
+
     // Fall back to ContextVar (works for async predictions)
     let cv = get_prediction_contextvar(py)?;
 
@@ -243,9 +243,9 @@ impl SlotLogWriter {
                         bytes = data.len(),
                         "Log routed to slot"
                     );
-                    sender.send_log(self.source, data).map_err(|e| {
-                        pyo3::exceptions::PyIOError::new_err(e.to_string())
-                    })?;
+                    sender
+                        .send_log(self.source, data)
+                        .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
                 } else {
                     // Orphan task - prediction completed but task still running
                     tracing::trace!(
@@ -368,21 +368,20 @@ impl SlotLogWriter {
     }
 
     /// Write when outside prediction context.
-    /// 
+    ///
     /// During setup: routes to control channel (for health-check).
     /// Otherwise: emits via tracing to stderr locally (not shipped).
     fn write_outside_prediction(&self, _py: Python<'_>, data: &str) -> PyResult<()> {
         // Try setup sender (registered during setup phase)
-        if let Some(sender) = get_setup_sender() {
-            if sender.send_log(self.source, data).is_ok() {
-                tracing::trace!(
-                    source = ?self.source,
-                    bytes = data.len(),
-                    "Log routed via control channel (setup)"
-                );
-                return Ok(());
-            }
-            // If send fails, fall through to tracing
+        if let Some(sender) = get_setup_sender()
+            && sender.send_log(self.source, data).is_ok()
+        {
+            tracing::trace!(
+                source = ?self.source,
+                bytes = data.len(),
+                "Log routed via control channel (setup)"
+            );
+            return Ok(());
         }
         // Outside setup/prediction context - orphan log
         // This happens with orphan tasks or edge cases
@@ -450,7 +449,10 @@ impl PredictionLogGuard {
         let token = set_current_prediction(py, &prediction_id)?;
 
         tracing::debug!(%prediction_id, "PredictionLogGuard::enter - done");
-        Ok(Self { prediction_id, token })
+        Ok(Self {
+            prediction_id,
+            token,
+        })
     }
 
     /// Get the prediction ID.

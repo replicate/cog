@@ -12,21 +12,19 @@ use crate::output;
 /// Check if a PyErr is a CancelationException or asyncio.CancelledError.
 fn is_cancelation_exception(py: Python<'_>, err: &PyErr) -> bool {
     // Check for cog.server.exceptions.CancelationException
-    if let Ok(exceptions) = py.import("cog.server.exceptions") {
-        if let Ok(cancel_exc) = exceptions.getattr("CancelationException") {
-            if err.is_instance(py, &cancel_exc) {
-                return true;
-            }
-        }
+    if let Ok(exceptions) = py.import("cog.server.exceptions")
+        && let Ok(cancel_exc) = exceptions.getattr("CancelationException")
+        && err.is_instance(py, &cancel_exc)
+    {
+        return true;
     }
 
     // Check for asyncio.CancelledError
-    if let Ok(asyncio) = py.import("asyncio") {
-        if let Ok(cancelled_error) = asyncio.getattr("CancelledError") {
-            if err.is_instance(py, &cancelled_error) {
-                return true;
-            }
-        }
+    if let Ok(asyncio) = py.import("asyncio")
+        && let Ok(cancelled_error) = asyncio.getattr("CancelledError")
+        && err.is_instance(py, &cancelled_error)
+    {
+        return true;
     }
 
     false
@@ -115,7 +113,7 @@ impl PythonPredictor {
         // For standalone functions (like train functions), detect async on the function itself
         // For Predictor instances, detect async on the predict() method
         let (is_async, is_async_gen) = if is_function {
-            Self::detect_async(py, &instance, "")?  // Empty string means check the function itself
+            Self::detect_async(py, &instance, "")? // Empty string means check the function itself
         } else {
             Self::detect_async(py, &instance, "predict")?
         };
@@ -129,7 +127,7 @@ impl PythonPredictor {
         // For standalone functions (is_function=true), the function itself IS the train
         // function, so we consider has_train=true and use is_async for train_async.
         let has_train = if is_function {
-            true  // Standalone function is the train function
+            true // Standalone function is the train function
         } else {
             instance.bind(py).hasattr("train")?
         };
@@ -166,26 +164,34 @@ impl PythonPredictor {
 
     /// Detect if a method is an async function.
     /// Returns (is_async, is_async_gen) tuple.
-    /// 
+    ///
     /// If method_name is empty, checks the instance itself (for standalone functions).
-    fn detect_async(py: Python<'_>, instance: &PyObject, method_name: &str) -> PyResult<(bool, bool)> {
+    fn detect_async(
+        py: Python<'_>,
+        instance: &PyObject,
+        method_name: &str,
+    ) -> PyResult<(bool, bool)> {
         let inspect = py.import("inspect")?;
-        
+
         // If method_name is empty, check the instance itself (standalone function)
         let target = if method_name.is_empty() {
             instance.bind(py).clone()
         } else {
             instance.bind(py).getattr(method_name)?
         };
-        
+
         // Check isasyncgenfunction first (it's more specific)
-        let is_async_gen: bool = inspect.call_method1("isasyncgenfunction", (&target,))?.extract()?;
+        let is_async_gen: bool = inspect
+            .call_method1("isasyncgenfunction", (&target,))?
+            .extract()?;
         if is_async_gen {
             return Ok((true, true));
         }
-        
+
         // Check iscoroutinefunction
-        let is_coro: bool = inspect.call_method1("iscoroutinefunction", (&target,))?.extract()?;
+        let is_coro: bool = inspect
+            .call_method1("iscoroutinefunction", (&target,))?
+            .extract()?;
         Ok((is_coro, false))
     }
 
@@ -215,18 +221,16 @@ impl PythonPredictor {
             // Try coglet schema generation first (works for both runtimes)
             let result: PyResult<serde_json::Value> = (|| {
                 let json_module = py.import("json")?;
-                
+
                 // For Coglet runtime, we have the ADT predictor directly
                 // For Pydantic runtime, we need to create the ADT predictor from the class
                 let adt_predictor = match &self.runtime {
-                    Runtime::Coglet { adt_predictor } => {
-                        adt_predictor.bind(py).clone()
-                    }
+                    Runtime::Coglet { adt_predictor } => adt_predictor.bind(py).clone(),
                     Runtime::Pydantic { input_type: _ } => {
                         // For Pydantic, we need to introspect the predictor class
                         // Use coglet.inspector.create_predictor equivalent
                         // This is complex, so for now just use cog's FastAPI schema
-                        return self.schema_via_fastapi(py, &json_module.as_any());
+                        return self.schema_via_fastapi(py, json_module.as_any());
                     }
                 };
 
@@ -236,9 +240,8 @@ impl PythonPredictor {
                 let schema = to_json_schema.call1((&adt_predictor,))?;
 
                 // Convert to JSON string then parse to serde_json::Value
-                let schema_str: String = json_module
-                    .call_method1("dumps", (&schema,))?
-                    .extract()?;
+                let schema_str: String =
+                    json_module.call_method1("dumps", (&schema,))?.extract()?;
 
                 let schema_value: serde_json::Value = serde_json::from_str(&schema_str)
                     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
@@ -257,37 +260,39 @@ impl PythonPredictor {
     }
 
     /// Generate schema via FastAPI (fallback for Pydantic predictors).
-    fn schema_via_fastapi(&self, py: Python<'_>, json_module: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
+    fn schema_via_fastapi(
+        &self,
+        py: Python<'_>,
+        json_module: &Bound<'_, PyAny>,
+    ) -> PyResult<serde_json::Value> {
         // For Pydantic runtime, use cog's FastAPI app to generate schema
         // This is what cog.command.openapi_schema does
         let cog_server_http = py.import("cog.server.http")?;
         let create_app = cog_server_http.getattr("create_app")?;
-        
+
         // Need to pass a Config - try to load from cog.yaml
         let cog_config_module = py.import("cog.config")?;
         let config_class = cog_config_module.getattr("Config")?;
         let config = config_class.call0()?;
-        
+
         // Create app with is_build=True to skip actual setup
         let kwargs = pyo3::types::PyDict::new(py);
         kwargs.set_item("cog_config", &config)?;
         kwargs.set_item("shutdown_event", py.None())?;
         kwargs.set_item("is_build", true)?;
-        
+
         let app = create_app.call((), Some(&kwargs))?;
-        
+
         // Get OpenAPI schema from app
         let openapi_method = app.getattr("openapi")?;
         let schema = openapi_method.call0()?;
-        
+
         // Convert to JSON string then parse
-        let schema_str: String = json_module
-            .call_method1("dumps", (&schema,))?
-            .extract()?;
-        
+        let schema_str: String = json_module.call_method1("dumps", (&schema,))?.extract()?;
+
         let schema_value: serde_json::Value = serde_json::from_str(&schema_str)
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-        
+
         Ok(schema_value)
     }
 
@@ -333,13 +338,22 @@ impl PythonPredictor {
     ///
     /// If `redirect_output` is true, captures stdout/stderr and logs via tracing.
     /// Set to false when running in worker mode (stdout is used for protocol).
-    /// 
+    ///
     /// For standalone functions (is_standalone_function=true), calls the function directly.
     /// This handles the case where a training function is loaded and called via predict
     /// due to bug-for-bug compatibility with cog mainline.
-    pub fn predict_raw(&self, py: Python<'_>, input: &Bound<'_, PyDict>, redirect_output: bool) -> PyResult<PyObject> {
+    pub fn predict_raw(
+        &self,
+        py: Python<'_>,
+        input: &Bound<'_, PyDict>,
+        redirect_output: bool,
+    ) -> PyResult<PyObject> {
         // For standalone functions, use empty method_name to call directly
-        let method_name = if self.is_standalone_function { "" } else { "predict" };
+        let method_name = if self.is_standalone_function {
+            ""
+        } else {
+            "predict"
+        };
         self.call_method_raw(py, method_name, self.is_async, input, redirect_output)
     }
 
@@ -347,10 +361,15 @@ impl PythonPredictor {
     ///
     /// If `redirect_output` is true, captures stdout/stderr and logs via tracing.
     /// Set to false when running in worker mode (stdout is used for protocol).
-    /// 
+    ///
     /// For standalone train functions (is_standalone_function=true), calls the function directly.
     /// For Predictor classes with a train() method, calls instance.train().
-    pub fn train_raw(&self, py: Python<'_>, input: &Bound<'_, PyDict>, redirect_output: bool) -> PyResult<PyObject> {
+    pub fn train_raw(
+        &self,
+        py: Python<'_>,
+        input: &Bound<'_, PyDict>,
+        redirect_output: bool,
+    ) -> PyResult<PyObject> {
         // For standalone functions, use empty method_name to call directly
         // and use is_async (the function's async status) instead of is_train_async
         let (method_name, is_async) = if self.is_standalone_function {
@@ -363,12 +382,12 @@ impl PythonPredictor {
 
     /// Internal helper to call a method (predict or train) on the predictor.
     fn call_method_raw(
-        &self, 
-        py: Python<'_>, 
-        method_name: &str, 
+        &self,
+        py: Python<'_>,
+        method_name: &str,
         is_async: bool,
-        input: &Bound<'_, PyDict>, 
-        redirect_output: bool
+        input: &Bound<'_, PyDict>,
+        redirect_output: bool,
     ) -> PyResult<PyObject> {
         let instance = self.instance.bind(py);
 
@@ -388,7 +407,9 @@ impl PythonPredictor {
                 py,
                 None,
                 None,
-                move |args: &Bound<'_, pyo3::types::PyTuple>, _kwargs: Option<&Bound<'_, PyDict>>| -> PyResult<()> {
+                move |args: &Bound<'_, pyo3::types::PyTuple>,
+                      _kwargs: Option<&Bound<'_, PyDict>>|
+                      -> PyResult<()> {
                     let source: String = args.get_item(0)?.extract()?;
                     let text: String = args.get_item(1)?.extract()?;
                     if let Ok(mut guard) = logs_clone.lock() {
@@ -429,7 +450,7 @@ impl PythonPredictor {
         } else {
             method_result
         };
-        
+
         // Drop the cancelable guard now that the call is done
         drop(_cancelable_guard);
 
@@ -463,7 +484,10 @@ impl PythonPredictor {
     /// In worker mode, stdout is used for the binary protocol between parent and
     /// child processes. This method captures user print() statements into logs
     /// that are returned through the protocol, preventing protocol corruption.
-    pub fn predict_worker(&self, input: serde_json::Value) -> Result<PredictionResult, PredictionError> {
+    pub fn predict_worker(
+        &self,
+        input: serde_json::Value,
+    ) -> Result<PredictionResult, PredictionError> {
         Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import json module: {}", e))
@@ -488,15 +512,18 @@ impl PythonPredictor {
             })?;
 
             // PreparedInput cleans up temp files on drop (RAII)
-            let prepared = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
-                PredictionError::InvalidInput(format!("Input validation failed: {}", e))
-            })?;
+            let prepared = self
+                .input_processor
+                .prepare(py, raw_input_dict)
+                .map_err(|e| {
+                    PredictionError::InvalidInput(format!("Input validation failed: {}", e))
+                })?;
             let input_dict = prepared.dict(py);
 
             // Logs flow through SlotLogWriter - streamed via slot socket, accumulated by parent.
             // redirect_output=false since SlotLogWriter is already installed.
             let result = self.predict_raw(py, &input_dict, false);
-            
+
             // Handle errors (prepared drops here, cleaning up temp files)
             let result = match result {
                 Ok(r) => r,
@@ -532,12 +559,24 @@ impl PythonPredictor {
 
                     let item_str: String = json_module
                         .call_method1("dumps", (&processed,))
-                        .map_err(|e| PredictionError::Failed(format!("Failed to serialize output item: {}", e)))?
+                        .map_err(|e| {
+                            PredictionError::Failed(format!(
+                                "Failed to serialize output item: {}",
+                                e
+                            ))
+                        })?
                         .extract()
-                        .map_err(|e| PredictionError::Failed(format!("Failed to extract output string: {}", e)))?;
+                        .map_err(|e| {
+                            PredictionError::Failed(format!(
+                                "Failed to extract output string: {}",
+                                e
+                            ))
+                        })?;
 
-                    let item_json: serde_json::Value = serde_json::from_str(&item_str)
-                        .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
+                    let item_json: serde_json::Value =
+                        serde_json::from_str(&item_str).map_err(|e| {
+                            PredictionError::Failed(format!("Failed to parse output JSON: {}", e))
+                        })?;
 
                     outputs.push(item_json);
                 }
@@ -550,12 +589,18 @@ impl PythonPredictor {
 
                 let result_str: String = json_module
                     .call_method1("dumps", (&processed,))
-                    .map_err(|e| PredictionError::Failed(format!("Failed to serialize output: {}", e)))?
+                    .map_err(|e| {
+                        PredictionError::Failed(format!("Failed to serialize output: {}", e))
+                    })?
                     .extract()
-                    .map_err(|e| PredictionError::Failed(format!("Failed to extract output string: {}", e)))?;
+                    .map_err(|e| {
+                        PredictionError::Failed(format!("Failed to extract output string: {}", e))
+                    })?;
 
-                let output_json: serde_json::Value = serde_json::from_str(&result_str)
-                    .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
+                let output_json: serde_json::Value =
+                    serde_json::from_str(&result_str).map_err(|e| {
+                        PredictionError::Failed(format!("Failed to parse output JSON: {}", e))
+                    })?;
 
                 PredictionOutput::Single(output_json)
             };
@@ -564,7 +609,11 @@ impl PythonPredictor {
             drop(prepared);
 
             // Logs already streamed via SlotLogWriter, accumulated by parent
-            Ok(PredictionResult { output, predict_time: None, logs: String::new() })
+            Ok(PredictionResult {
+                output,
+                predict_time: None,
+                logs: String::new(),
+            })
         })
     }
 
@@ -586,9 +635,9 @@ impl PythonPredictor {
             let json_module = py.import("json").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import json module: {}", e))
             })?;
-            let asyncio = py.import("asyncio").map_err(|e| {
-                PredictionError::Failed(format!("Failed to import asyncio: {}", e))
-            })?;
+            let asyncio = py
+                .import("asyncio")
+                .map_err(|e| PredictionError::Failed(format!("Failed to import asyncio: {}", e)))?;
 
             let input_str = serde_json::to_string(&input)
                 .map_err(|e| PredictionError::InvalidInput(e.to_string()))?;
@@ -601,9 +650,12 @@ impl PythonPredictor {
                 PredictionError::InvalidInput("Input must be a JSON object".to_string())
             })?;
 
-            let prepared = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
-                PredictionError::InvalidInput(format!("Input validation failed: {}", e))
-            })?;
+            let prepared = self
+                .input_processor
+                .prepare(py, raw_input_dict)
+                .map_err(|e| {
+                    PredictionError::InvalidInput(format!("Input validation failed: {}", e))
+                })?;
             let input_dict = prepared.dict(py);
 
             // Call predict - returns coroutine
@@ -624,18 +676,21 @@ async def _collect_async_gen(agen):
                 let builtins = py.import("builtins").map_err(|e| {
                     PredictionError::Failed(format!("Failed to import builtins: {}", e))
                 })?;
-                let exec_fn = builtins.getattr("exec").map_err(|e| {
-                    PredictionError::Failed(format!("Failed to get exec: {}", e))
-                })?;
+                let exec_fn = builtins
+                    .getattr("exec")
+                    .map_err(|e| PredictionError::Failed(format!("Failed to get exec: {}", e)))?;
                 let globals = PyDict::new(py);
                 exec_fn.call1((collect_code, &globals)).map_err(|e| {
                     PredictionError::Failed(format!("Failed to define collect helper: {}", e))
                 })?;
-                let collect_fn = globals.get_item("_collect_async_gen").map_err(|e| {
-                    PredictionError::Failed(format!("Failed to get collect helper: {}", e))
-                })?.ok_or_else(|| {
-                    PredictionError::Failed("_collect_async_gen not found".to_string())
-                })?;
+                let collect_fn = globals
+                    .get_item("_collect_async_gen")
+                    .map_err(|e| {
+                        PredictionError::Failed(format!("Failed to get collect helper: {}", e))
+                    })?
+                    .ok_or_else(|| {
+                        PredictionError::Failed("_collect_async_gen not found".to_string())
+                    })?;
                 collect_fn.call1((&coro,)).map_err(|e| {
                     PredictionError::Failed(format!("Failed to wrap async generator: {}", e))
                 })?
@@ -646,7 +701,9 @@ async def _collect_async_gen(agen):
             // Submit coroutine to shared event loop via run_coroutine_threadsafe
             let future = asyncio
                 .call_method1("run_coroutine_threadsafe", (&coro, event_loop.bind(py)))
-                .map_err(|e| PredictionError::Failed(format!("Failed to submit coroutine: {}", e)))?;
+                .map_err(|e| {
+                    PredictionError::Failed(format!("Failed to submit coroutine: {}", e))
+                })?;
 
             Ok((future.unbind(), self.is_async_gen, prepared))
         })
@@ -662,9 +719,9 @@ async def _collect_async_gen(agen):
         result: &Bound<'_, PyAny>,
         is_async_gen: bool,
     ) -> Result<PredictionResult, PredictionError> {
-        let json_module = py.import("json").map_err(|e| {
-            PredictionError::Failed(format!("Failed to import json module: {}", e))
-        })?;
+        let json_module = py
+            .import("json")
+            .map_err(|e| PredictionError::Failed(format!("Failed to import json module: {}", e)))?;
         let types_module = py.import("types").map_err(|e| {
             PredictionError::Failed(format!("Failed to import types module: {}", e))
         })?;
@@ -680,9 +737,13 @@ async def _collect_async_gen(agen):
                     })?;
                     let item_str: String = json_module
                         .call_method1("dumps", (&processed,))
-                        .map_err(|e| PredictionError::Failed(format!("Failed to serialize: {}", e)))?
+                        .map_err(|e| {
+                            PredictionError::Failed(format!("Failed to serialize: {}", e))
+                        })?
                         .extract()
-                        .map_err(|e| PredictionError::Failed(format!("Failed to extract: {}", e)))?;
+                        .map_err(|e| {
+                            PredictionError::Failed(format!("Failed to extract: {}", e))
+                        })?;
                     let item_json: serde_json::Value = serde_json::from_str(&item_str)
                         .map_err(|e| PredictionError::Failed(format!("Failed to parse: {}", e)))?;
                     outputs.push(item_json);
@@ -710,9 +771,13 @@ async def _collect_async_gen(agen):
                     })?;
                     let item_str: String = json_module
                         .call_method1("dumps", (&processed,))
-                        .map_err(|e| PredictionError::Failed(format!("Failed to serialize: {}", e)))?
+                        .map_err(|e| {
+                            PredictionError::Failed(format!("Failed to serialize: {}", e))
+                        })?
                         .extract()
-                        .map_err(|e| PredictionError::Failed(format!("Failed to extract: {}", e)))?;
+                        .map_err(|e| {
+                            PredictionError::Failed(format!("Failed to extract: {}", e))
+                        })?;
                     let item_json: serde_json::Value = serde_json::from_str(&item_str)
                         .map_err(|e| PredictionError::Failed(format!("Failed to parse: {}", e)))?;
                     outputs.push(item_json);
@@ -734,7 +799,11 @@ async def _collect_async_gen(agen):
         };
 
         // Logs already streamed via SlotLogWriter, accumulated by parent
-        Ok(PredictionResult { output, predict_time: None, logs: String::new() })
+        Ok(PredictionResult {
+            output,
+            predict_time: None,
+            logs: String::new(),
+        })
     }
 
     /// Worker mode train - captures stdout/stderr and returns them as logs.
@@ -742,7 +811,10 @@ async def _collect_async_gen(agen):
     /// In worker mode, stdout is used for the binary protocol between parent and
     /// child processes. This method captures user print() statements into logs
     /// that are returned through the protocol, preventing protocol corruption.
-    pub fn train_worker(&self, input: serde_json::Value) -> Result<PredictionResult, PredictionError> {
+    pub fn train_worker(
+        &self,
+        input: serde_json::Value,
+    ) -> Result<PredictionResult, PredictionError> {
         Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import json module: {}", e))
@@ -767,15 +839,18 @@ async def _collect_async_gen(agen):
             })?;
 
             // PreparedInput cleans up temp files on drop (RAII)
-            let prepared = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
-                PredictionError::InvalidInput(format!("Input validation failed: {}", e))
-            })?;
+            let prepared = self
+                .input_processor
+                .prepare(py, raw_input_dict)
+                .map_err(|e| {
+                    PredictionError::InvalidInput(format!("Input validation failed: {}", e))
+                })?;
             let input_dict = prepared.dict(py);
 
             // Logs flow through SlotLogWriter - streamed via slot socket, accumulated by parent.
             // redirect_output=false since SlotLogWriter is already installed.
             let result = self.train_raw(py, &input_dict, false);
-            
+
             // Handle errors (prepared drops here, cleaning up temp files)
             let result = match result {
                 Ok(r) => r,
@@ -811,12 +886,24 @@ async def _collect_async_gen(agen):
 
                     let item_str: String = json_module
                         .call_method1("dumps", (&processed,))
-                        .map_err(|e| PredictionError::Failed(format!("Failed to serialize output item: {}", e)))?
+                        .map_err(|e| {
+                            PredictionError::Failed(format!(
+                                "Failed to serialize output item: {}",
+                                e
+                            ))
+                        })?
                         .extract()
-                        .map_err(|e| PredictionError::Failed(format!("Failed to extract output string: {}", e)))?;
+                        .map_err(|e| {
+                            PredictionError::Failed(format!(
+                                "Failed to extract output string: {}",
+                                e
+                            ))
+                        })?;
 
-                    let item_json: serde_json::Value = serde_json::from_str(&item_str)
-                        .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
+                    let item_json: serde_json::Value =
+                        serde_json::from_str(&item_str).map_err(|e| {
+                            PredictionError::Failed(format!("Failed to parse output JSON: {}", e))
+                        })?;
 
                     outputs.push(item_json);
                 }
@@ -829,12 +916,18 @@ async def _collect_async_gen(agen):
 
                 let result_str: String = json_module
                     .call_method1("dumps", (&processed,))
-                    .map_err(|e| PredictionError::Failed(format!("Failed to serialize output: {}", e)))?
+                    .map_err(|e| {
+                        PredictionError::Failed(format!("Failed to serialize output: {}", e))
+                    })?
                     .extract()
-                    .map_err(|e| PredictionError::Failed(format!("Failed to extract output string: {}", e)))?;
+                    .map_err(|e| {
+                        PredictionError::Failed(format!("Failed to extract output string: {}", e))
+                    })?;
 
-                let output_json: serde_json::Value = serde_json::from_str(&result_str)
-                    .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
+                let output_json: serde_json::Value =
+                    serde_json::from_str(&result_str).map_err(|e| {
+                        PredictionError::Failed(format!("Failed to parse output JSON: {}", e))
+                    })?;
 
                 PredictionOutput::Single(output_json)
             };
@@ -843,7 +936,11 @@ async def _collect_async_gen(agen):
             drop(prepared);
 
             // Logs already streamed via SlotLogWriter, accumulated by parent
-            Ok(PredictionResult { output, predict_time: None, logs: String::new() })
+            Ok(PredictionResult {
+                output,
+                predict_time: None,
+                logs: String::new(),
+            })
         })
     }
 
@@ -865,9 +962,9 @@ async def _collect_async_gen(agen):
             let json_module = py.import("json").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import json module: {}", e))
             })?;
-            let asyncio = py.import("asyncio").map_err(|e| {
-                PredictionError::Failed(format!("Failed to import asyncio: {}", e))
-            })?;
+            let asyncio = py
+                .import("asyncio")
+                .map_err(|e| PredictionError::Failed(format!("Failed to import asyncio: {}", e)))?;
 
             let input_str = serde_json::to_string(&input)
                 .map_err(|e| PredictionError::InvalidInput(e.to_string()))?;
@@ -880,9 +977,12 @@ async def _collect_async_gen(agen):
                 PredictionError::InvalidInput("Input must be a JSON object".to_string())
             })?;
 
-            let prepared = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
-                PredictionError::InvalidInput(format!("Input validation failed: {}", e))
-            })?;
+            let prepared = self
+                .input_processor
+                .prepare(py, raw_input_dict)
+                .map_err(|e| {
+                    PredictionError::InvalidInput(format!("Input validation failed: {}", e))
+                })?;
             let input_dict = prepared.dict(py);
 
             // Call train - returns coroutine
@@ -892,12 +992,15 @@ async def _collect_async_gen(agen):
                 instance.call((), Some(&input_dict))
             } else {
                 instance.call_method("train", (), Some(&input_dict))
-            }.map_err(|e| PredictionError::Failed(format!("Failed to call train: {}", e)))?;
+            }
+            .map_err(|e| PredictionError::Failed(format!("Failed to call train: {}", e)))?;
 
             // Submit coroutine to shared event loop via run_coroutine_threadsafe
             let future = asyncio
                 .call_method1("run_coroutine_threadsafe", (&coro, event_loop.bind(py)))
-                .map_err(|e| PredictionError::Failed(format!("Failed to submit coroutine: {}", e)))?;
+                .map_err(|e| {
+                    PredictionError::Failed(format!("Failed to submit coroutine: {}", e))
+                })?;
 
             // Train doesn't typically use async generators, but we return false for consistency
             Ok((future.unbind(), false, prepared))

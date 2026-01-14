@@ -20,12 +20,13 @@ use crate::version::COGLET_VERSION;
 /// Webhook event types for filtering.
 ///
 /// Used both internally and in HTTP request parsing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum WebhookEventType {
     Start,
     Output,
     Logs,
+    #[default]
     Completed,
 }
 
@@ -34,18 +35,12 @@ impl WebhookEventType {
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Completed)
     }
-    
+
     /// Get all event types.
     pub fn all() -> HashSet<WebhookEventType> {
         [Self::Start, Self::Output, Self::Logs, Self::Completed]
             .into_iter()
             .collect()
-    }
-}
-
-impl Default for WebhookEventType {
-    fn default() -> Self {
-        Self::Completed
     }
 }
 
@@ -72,7 +67,7 @@ impl Default for WebhookConfig {
                     .ok()
                     .and_then(|s| s.parse::<f64>().ok())
                     .map(|s| (s * 1000.0) as u64)
-                    .unwrap_or(500)
+                    .unwrap_or(500),
             ),
             events_filter: WebhookEventType::all(),
             max_retries: 12,
@@ -94,26 +89,26 @@ impl WebhookSender {
     /// Create a new webhook sender.
     pub fn new(url: String, config: WebhookConfig) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
-        
+
         // Add bearer auth if WEBHOOK_AUTH_TOKEN is set
-        if let Ok(token) = std::env::var("WEBHOOK_AUTH_TOKEN") {
-            if let Ok(value) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", token)) {
-                headers.insert(reqwest::header::AUTHORIZATION, value);
-            }
+        if let Ok(token) = std::env::var("WEBHOOK_AUTH_TOKEN")
+            && let Ok(value) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", token))
+        {
+            headers.insert(reqwest::header::AUTHORIZATION, value);
         }
-        
+
         // Add user agent
         let user_agent = format!("coglet/{}", COGLET_VERSION);
         if let Ok(value) = reqwest::header::HeaderValue::from_str(&user_agent) {
             headers.insert(reqwest::header::USER_AGENT, value);
         }
-        
+
         let client = reqwest::Client::builder()
             .default_headers(headers)
             .timeout(Duration::from_secs(30))
             .build()
             .expect("Failed to create HTTP client");
-        
+
         Self {
             url,
             config,
@@ -121,47 +116,47 @@ impl WebhookSender {
             last_sent: Mutex::new(Instant::now() - Duration::from_secs(10)), // Allow immediate first send
         }
     }
-    
+
     /// Get the webhook URL.
     pub fn url(&self) -> &str {
         &self.url
     }
-    
+
     /// Check if this event should be sent based on filter and throttling.
     fn should_send(&self, event: WebhookEventType) -> bool {
         // Check event filter
         if !self.config.events_filter.contains(&event) {
             return false;
         }
-        
+
         // Terminal events always sent
         if event.is_terminal() {
             return true;
         }
-        
+
         // Check throttle
         let last = self.last_sent.lock().unwrap();
         last.elapsed() >= self.config.response_interval
     }
-    
+
     /// Update last sent time.
     fn update_last_sent(&self) {
         let mut last = self.last_sent.lock().unwrap();
         *last = Instant::now();
     }
-    
+
     /// Send a non-terminal webhook (no retry, errors ignored).
     pub fn send(&self, event: WebhookEventType, payload: &serde_json::Value) {
         if !self.should_send(event) {
             return;
         }
-        
+
         let url = self.url.clone();
         let client = self.client.clone();
         let payload = payload.clone();
-        
+
         self.update_last_sent();
-        
+
         // Fire and forget - spawn a task but don't wait
         tokio::spawn(async move {
             if let Err(e) = client.post(&url).json(&payload).send().await {
@@ -169,13 +164,13 @@ impl WebhookSender {
             }
         });
     }
-    
+
     /// Send a terminal webhook with retries (async version).
     pub async fn send_terminal(&self, event: WebhookEventType, payload: &serde_json::Value) {
         if !self.config.events_filter.contains(&event) {
             return;
         }
-        
+
         let mut attempt = 0;
         loop {
             match self.client.post(&self.url).json(payload).send().await {
@@ -185,7 +180,7 @@ impl WebhookSender {
                         tracing::debug!(status = %status, "Terminal webhook sent successfully");
                         return;
                     }
-                    
+
                     // Check if we should retry this status
                     if self.config.retry_status_codes.contains(&status) {
                         attempt += 1;
@@ -197,7 +192,7 @@ impl WebhookSender {
                             );
                             return;
                         }
-                        
+
                         // Exponential backoff: base * 2^attempt
                         let backoff = self.config.backoff_base * (1 << attempt.min(10));
                         tracing::warn!(
@@ -209,7 +204,7 @@ impl WebhookSender {
                         tokio::time::sleep(backoff).await;
                         continue;
                     }
-                    
+
                     // Non-retryable error status
                     tracing::error!(
                         status = %status,
@@ -227,7 +222,7 @@ impl WebhookSender {
                         );
                         return;
                     }
-                    
+
                     let backoff = self.config.backoff_base * (1 << attempt.min(10));
                     tracing::warn!(
                         error = %e,
@@ -240,41 +235,46 @@ impl WebhookSender {
             }
         }
     }
-    
+
     /// Send a terminal webhook synchronously with retries.
-    /// 
+    ///
     /// This uses `ureq` (blocking HTTP) instead of `reqwest`, making it safe to call
     /// from `Drop` implementations or non-async contexts. The retry logic mirrors
     /// `send_terminal` but uses `std::thread::sleep` instead of `tokio::time::sleep`.
     pub fn send_terminal_sync(&self, payload: &serde_json::Value) {
-        if !self.config.events_filter.contains(&WebhookEventType::Completed) {
+        if !self
+            .config
+            .events_filter
+            .contains(&WebhookEventType::Completed)
+        {
             return;
         }
-        
+
         // Build ureq agent
         let agent = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(30)))
             .build()
             .new_agent();
-        
+
         let auth_header = std::env::var("WEBHOOK_AUTH_TOKEN")
             .ok()
             .map(|token| format!("Bearer {}", token));
-        
+
         let user_agent = format!("coglet/{}", COGLET_VERSION);
-        
+
         let mut attempt = 0;
         loop {
-            let mut request = agent.post(&self.url)
+            let mut request = agent
+                .post(&self.url)
                 .header("Content-Type", "application/json")
                 .header("User-Agent", &user_agent);
-            
+
             if let Some(ref auth) = auth_header {
                 request = request.header("Authorization", auth);
             }
-            
+
             let result = request.send_json(payload);
-            
+
             match result {
                 Ok(response) => {
                     let status = response.status().as_u16();
@@ -282,7 +282,7 @@ impl WebhookSender {
                         tracing::debug!(status = %status, "Terminal webhook (sync) sent successfully");
                         return;
                     }
-                    
+
                     // Check if we should retry this status
                     if self.config.retry_status_codes.contains(&status) {
                         attempt += 1;
@@ -294,7 +294,7 @@ impl WebhookSender {
                             );
                             return;
                         }
-                        
+
                         let backoff = self.config.backoff_base * (1 << attempt.min(10));
                         tracing::warn!(
                             status = %status,
@@ -305,7 +305,7 @@ impl WebhookSender {
                         std::thread::sleep(backoff);
                         continue;
                     }
-                    
+
                     // Non-retryable error status
                     tracing::error!(
                         status = %status,
@@ -323,7 +323,7 @@ impl WebhookSender {
                         );
                         return;
                     }
-                    
+
                     let backoff = self.config.backoff_base * (1 << attempt.min(10));
                     tracing::warn!(
                         error = %e,
@@ -343,7 +343,7 @@ mod tests {
     use super::*;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
-    
+
     #[test]
     fn webhook_config_defaults() {
         let config = WebhookConfig::default();
@@ -354,7 +354,7 @@ mod tests {
         assert!(config.events_filter.contains(&WebhookEventType::Logs));
         assert!(config.events_filter.contains(&WebhookEventType::Completed));
     }
-    
+
     #[test]
     fn webhook_event_is_terminal() {
         assert!(!WebhookEventType::Start.is_terminal());
@@ -362,7 +362,7 @@ mod tests {
         assert!(!WebhookEventType::Logs.is_terminal());
         assert!(WebhookEventType::Completed.is_terminal());
     }
-    
+
     /// Helper to create a WebhookConfig for tests (no throttling, fast retries).
     fn test_config() -> WebhookConfig {
         WebhookConfig {
@@ -372,176 +372,202 @@ mod tests {
             ..Default::default()
         }
     }
-    
+
     #[tokio::test]
     async fn send_terminal_posts_json_payload() {
         let server = MockServer::start().await;
-        
+
         Mock::given(method("POST"))
             .and(path("/webhook"))
             .respond_with(ResponseTemplate::new(200))
             .expect(1)
             .mount(&server)
             .await;
-        
+
         let url = format!("{}/webhook", server.uri());
         let sender = WebhookSender::new(url, test_config());
-        
+
         let payload = serde_json::json!({
             "id": "pred_123",
             "status": "succeeded",
             "output": "hello"
         });
-        
-        sender.send_terminal(WebhookEventType::Completed, &payload).await;
+
+        sender
+            .send_terminal(WebhookEventType::Completed, &payload)
+            .await;
     }
-    
+
     #[tokio::test]
     async fn send_terminal_retries_on_500() {
         let server = MockServer::start().await;
-        
+
         Mock::given(method("POST"))
             .and(path("/webhook"))
             .respond_with(ResponseTemplate::new(500))
             .up_to_n_times(1)
             .mount(&server)
             .await;
-        
+
         Mock::given(method("POST"))
             .and(path("/webhook"))
             .respond_with(ResponseTemplate::new(200))
             .expect(1)
             .mount(&server)
             .await;
-        
+
         let url = format!("{}/webhook", server.uri());
         let sender = WebhookSender::new(url, test_config());
-        
-        sender.send_terminal(WebhookEventType::Completed, &serde_json::json!({"status": "succeeded"})).await;
+
+        sender
+            .send_terminal(
+                WebhookEventType::Completed,
+                &serde_json::json!({"status": "succeeded"}),
+            )
+            .await;
     }
-    
+
     #[tokio::test]
     async fn send_terminal_does_not_retry_on_400() {
         let server = MockServer::start().await;
-        
+
         Mock::given(method("POST"))
             .and(path("/webhook"))
             .respond_with(ResponseTemplate::new(400))
             .expect(1)
             .mount(&server)
             .await;
-        
+
         let url = format!("{}/webhook", server.uri());
         let sender = WebhookSender::new(url, test_config());
-        
-        sender.send_terminal(WebhookEventType::Completed, &serde_json::json!({"status": "succeeded"})).await;
+
+        sender
+            .send_terminal(
+                WebhookEventType::Completed,
+                &serde_json::json!({"status": "succeeded"}),
+            )
+            .await;
     }
-    
+
     #[tokio::test]
     async fn send_terminal_respects_event_filter() {
         let server = MockServer::start().await;
-        
+
         Mock::given(method("POST"))
             .and(path("/webhook"))
             .respond_with(ResponseTemplate::new(200))
             .expect(0)
             .mount(&server)
             .await;
-        
+
         let url = format!("{}/webhook", server.uri());
         let config = WebhookConfig {
             events_filter: [WebhookEventType::Start].into_iter().collect(),
             ..test_config()
         };
         let sender = WebhookSender::new(url, config);
-        
-        sender.send_terminal(WebhookEventType::Completed, &serde_json::json!({"status": "succeeded"})).await;
+
+        sender
+            .send_terminal(
+                WebhookEventType::Completed,
+                &serde_json::json!({"status": "succeeded"}),
+            )
+            .await;
     }
-    
+
     #[tokio::test]
     async fn send_non_terminal_fires_and_forgets() {
         let server = MockServer::start().await;
-        
+
         Mock::given(method("POST"))
             .and(path("/webhook"))
             .respond_with(ResponseTemplate::new(200))
             .expect(1)
             .mount(&server)
             .await;
-        
+
         let url = format!("{}/webhook", server.uri());
         let sender = WebhookSender::new(url, test_config());
-        
-        sender.send(WebhookEventType::Start, &serde_json::json!({"status": "starting"}));
-        
+
+        sender.send(
+            WebhookEventType::Start,
+            &serde_json::json!({"status": "starting"}),
+        );
+
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    
+
     #[tokio::test]
     async fn send_non_terminal_throttled() {
         let server = MockServer::start().await;
-        
+
         Mock::given(method("POST"))
             .and(path("/webhook"))
             .respond_with(ResponseTemplate::new(200))
             .expect(1)
             .mount(&server)
             .await;
-        
+
         let url = format!("{}/webhook", server.uri());
         let config = WebhookConfig {
             response_interval: Duration::from_secs(10),
             ..test_config()
         };
         let sender = WebhookSender::new(url, config);
-        
-        sender.send(WebhookEventType::Output, &serde_json::json!({"output": "1"}));
-        sender.send(WebhookEventType::Output, &serde_json::json!({"output": "2"}));
-        
+
+        sender.send(
+            WebhookEventType::Output,
+            &serde_json::json!({"output": "1"}),
+        );
+        sender.send(
+            WebhookEventType::Output,
+            &serde_json::json!({"output": "2"}),
+        );
+
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    
+
     #[tokio::test]
     async fn send_terminal_sync_posts_json_payload() {
         let server = MockServer::start().await;
-        
+
         Mock::given(method("POST"))
             .and(path("/webhook"))
             .respond_with(ResponseTemplate::new(200))
             .expect(1)
             .mount(&server)
             .await;
-        
+
         let url = format!("{}/webhook", server.uri());
         let sender = WebhookSender::new(url, test_config());
-        
+
         sender.send_terminal_sync(&serde_json::json!({
             "id": "pred_123",
             "status": "succeeded"
         }));
     }
-    
+
     #[tokio::test]
     async fn send_terminal_sync_retries_on_500() {
         let server = MockServer::start().await;
-        
+
         Mock::given(method("POST"))
             .and(path("/webhook"))
             .respond_with(ResponseTemplate::new(500))
             .up_to_n_times(1)
             .mount(&server)
             .await;
-        
+
         Mock::given(method("POST"))
             .and(path("/webhook"))
             .respond_with(ResponseTemplate::new(200))
             .expect(1)
             .mount(&server)
             .await;
-        
+
         let url = format!("{}/webhook", server.uri());
         let sender = WebhookSender::new(url, test_config());
-        
+
         sender.send_terminal_sync(&serde_json::json!({"status": "succeeded"}));
     }
 }

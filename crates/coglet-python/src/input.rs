@@ -28,7 +28,10 @@ pub struct PreparedInput {
 impl PreparedInput {
     /// Create a new PreparedInput with the given dict and paths to cleanup.
     pub fn new(dict: PyObject, cleanup_paths: Vec<PyObject>) -> Self {
-        Self { dict, cleanup_paths }
+        Self {
+            dict,
+            cleanup_paths,
+        }
     }
 
     /// Get the input dict bound to the given Python context.
@@ -48,10 +51,10 @@ impl Drop for PreparedInput {
             for path in &self.cleanup_paths {
                 let path_bound = path.bind(py);
                 let kwargs = PyDict::new(py);
-                if kwargs.set_item("missing_ok", true).is_ok() {
-                    if let Err(e) = path_bound.call_method("unlink", (), Some(&kwargs)) {
-                        tracing::warn!(error = %e, "Failed to cleanup temp file");
-                    }
+                if kwargs.set_item("missing_ok", true).is_ok()
+                    && let Err(e) = path_bound.call_method("unlink", (), Some(&kwargs))
+                {
+                    tracing::warn!(error = %e, "Failed to cleanup temp file");
                 }
             }
         });
@@ -129,7 +132,10 @@ impl InputProcessor for PydanticInputProcessor {
         //    This mutates payload_dict and returns the downloaded paths for cleanup
         let cleanup_paths = download_url_paths_into_dict(py, payload_dict)?;
 
-        Ok(PreparedInput::new(payload_dict.clone().unbind().into(), cleanup_paths))
+        Ok(PreparedInput::new(
+            payload_dict.clone().unbind().into(),
+            cleanup_paths,
+        ))
     }
 }
 
@@ -172,7 +178,10 @@ impl InputProcessor for CogletInputProcessor {
 /// - Replace URLPath values with local Path in the dict
 ///
 /// Returns the downloaded Path objects for cleanup on drop.
-fn download_url_paths_into_dict(py: Python<'_>, payload: &Bound<'_, PyDict>) -> PyResult<Vec<PyObject>> {
+fn download_url_paths_into_dict(
+    py: Python<'_>,
+    payload: &Bound<'_, PyDict>,
+) -> PyResult<Vec<PyObject>> {
     let cog_types = py.import("cog.types")?;
     let url_path_class = cog_types.getattr("URLPath")?;
 
@@ -182,19 +191,19 @@ fn download_url_paths_into_dict(py: Python<'_>, payload: &Bound<'_, PyDict>) -> 
 
     for (key, value) in payload.iter() {
         let key_str: String = key.extract()?;
-        
+
         if value.is_instance(&url_path_class)? {
             url_path_keys.push((key_str, false));
         }
         // Check for lists of URLPath
-        else if let Ok(list) = value.extract::<Bound<'_, pyo3::types::PyList>>() {
-            if !list.is_empty() {
-                let all_url_paths = list.iter().all(|item| {
-                    item.is_instance(&url_path_class).unwrap_or(false)
-                });
-                if all_url_paths {
-                    url_path_keys.push((key_str, true));
-                }
+        else if let Ok(list) = value.extract::<Bound<'_, pyo3::types::PyList>>()
+            && !list.is_empty()
+        {
+            let all_url_paths = list
+                .iter()
+                .all(|item| item.is_instance(&url_path_class).unwrap_or(false));
+            if all_url_paths {
+                url_path_keys.push((key_str, true));
             }
         }
     }
@@ -211,13 +220,13 @@ fn download_url_paths_into_dict(py: Python<'_>, payload: &Bound<'_, PyDict>) -> 
     let executor = executor_class.call1((8,))?; // max_workers=8
 
     // Structure to track futures: (key, future_or_futures, is_list)
-    let mut futs: std::collections::HashMap<String, (Vec<Bound<'_, PyAny>>, bool)> = 
+    let mut futs: std::collections::HashMap<String, (Vec<Bound<'_, PyAny>>, bool)> =
         std::collections::HashMap::new();
     let mut all_futures: Vec<Bound<'_, PyAny>> = Vec::new();
 
     for (key, is_list) in &url_path_keys {
         let value = payload.get_item(key)?.unwrap();
-        
+
         if *is_list {
             let list = value.extract::<Bound<'_, pyo3::types::PyList>>()?;
             let mut futures_for_key = Vec::new();
@@ -285,7 +294,10 @@ fn download_url_paths_into_dict(py: Python<'_>, payload: &Bound<'_, PyDict>) -> 
     // Shutdown executor
     executor.call_method0("shutdown")?;
 
-    tracing::debug!("URLPath downloads complete, {} paths to cleanup", cleanup_paths.len());
+    tracing::debug!(
+        "URLPath downloads complete, {} paths to cleanup",
+        cleanup_paths.len()
+    );
     Ok(cleanup_paths)
 }
 
@@ -357,8 +369,7 @@ fn try_coglet_runtime(py: Python<'_>, predictor_ref: &str) -> Option<Runtime> {
     // Convert file path to module name
     let module_name = module_path
         .trim_end_matches(".py")
-        .replace('/', ".")
-        .replace('\\', ".");
+        .replace(['/', '\\'], ".");
 
     let inspector = py.import("coglet.inspector").ok()?;
     let create_predictor = inspector.getattr("create_predictor").ok()?;
@@ -379,14 +390,10 @@ pub fn create_input_processor(runtime: &Runtime) -> Box<dyn InputProcessor> {
     match runtime {
         Runtime::Pydantic { input_type } => {
             // Clone PyObject using Python GIL
-            Python::attach(|py| {
-                Box::new(PydanticInputProcessor::new(input_type.clone_ref(py)))
-            })
+            Python::attach(|py| Box::new(PydanticInputProcessor::new(input_type.clone_ref(py))))
         }
         Runtime::Coglet { adt_predictor } => {
-            Python::attach(|py| {
-                Box::new(CogletInputProcessor::new(adt_predictor.clone_ref(py)))
-            })
+            Python::attach(|py| Box::new(CogletInputProcessor::new(adt_predictor.clone_ref(py))))
         }
     }
 }

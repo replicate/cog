@@ -133,7 +133,8 @@ pub enum PredictionError {
 ///
 /// Takes JSON input, returns JSON output or error.
 /// This is a trait object rather than a Box so it can be wrapped in Arc for cloning.
-pub type PredictFn = dyn Fn(serde_json::Value) -> Result<PredictionResult, PredictionError> + Send + Sync;
+pub type PredictFn =
+    dyn Fn(serde_json::Value) -> Result<PredictionResult, PredictionError> + Send + Sync;
 
 /// Future type for async predictions.
 pub type PredictFuture = std::pin::Pin<

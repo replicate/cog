@@ -3,4 +3,4 @@
 mod routes;
 mod server;
 
-pub use server::{serve, ServerConfig};
+pub use server::{ServerConfig, serve};

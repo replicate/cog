@@ -124,7 +124,7 @@ pub enum ControlResponse {
 // ============================================================================
 
 /// Outcome of a slot operation - enforces that poisoned slots produce Failed.
-/// 
+///
 /// This type makes it impossible to accidentally send `Idle` for a poisoned slot.
 /// Use `into_control_response()` to get the appropriate `ControlResponse`.
 #[derive(Debug)]
@@ -143,7 +143,10 @@ impl SlotOutcome {
 
     /// Create a poisoned outcome (slot permanently failed).
     pub fn poisoned(slot: SlotId, error: impl Into<String>) -> Self {
-        Self::Poisoned { slot, error: error.into() }
+        Self::Poisoned {
+            slot,
+            error: error.into(),
+        }
     }
 
     /// Get the slot ID.
@@ -160,7 +163,7 @@ impl SlotOutcome {
     }
 
     /// Convert to the appropriate ControlResponse.
-    /// 
+    ///
     /// This is the ONLY way to create Idle/Failed responses from a completion,
     /// ensuring poisoned slots always produce Failed.
     pub fn into_control_response(self) -> ControlResponse {
@@ -254,7 +257,9 @@ mod tests {
     // Control channel tests
     #[test]
     fn control_cancel_serializes() {
-        let req = ControlRequest::Cancel { slot: test_slot_id() };
+        let req = ControlRequest::Cancel {
+            slot: test_slot_id(),
+        };
         insta::assert_json_snapshot!(req);
     }
 
@@ -266,7 +271,10 @@ mod tests {
 
     #[test]
     fn control_ready_serializes() {
-        let resp = ControlResponse::Ready { slots: vec![test_slot_id()], schema: None };
+        let resp = ControlResponse::Ready {
+            slots: vec![test_slot_id()],
+            schema: None,
+        };
         insta::assert_json_snapshot!(resp);
     }
 
@@ -284,13 +292,17 @@ mod tests {
 
     #[test]
     fn control_idle_serializes() {
-        let resp = ControlResponse::Idle { slot: test_slot_id() };
+        let resp = ControlResponse::Idle {
+            slot: test_slot_id(),
+        };
         insta::assert_json_snapshot!(resp);
     }
 
     #[test]
     fn control_cancelled_serializes() {
-        let resp = ControlResponse::Cancelled { slot: test_slot_id() };
+        let resp = ControlResponse::Cancelled {
+            slot: test_slot_id(),
+        };
         insta::assert_json_snapshot!(resp);
     }
 

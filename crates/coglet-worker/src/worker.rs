@@ -17,8 +17,14 @@ use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
 use crate::codec::JsonCodec;
-use crate::protocol::{ControlRequest, ControlResponse, LogSource, SlotId, SlotOutcome, SlotRequest, SlotResponse};
+use crate::protocol::{
+    ControlRequest, ControlResponse, LogSource, SlotId, SlotOutcome, SlotRequest, SlotResponse,
+};
 use crate::transport::{connect_transport, get_transport_info_from_env};
+
+/// Type alias for slot response writers (reduces type complexity).
+type SlotWriter =
+    Arc<tokio::sync::Mutex<FramedWrite<tokio::net::unix::OwnedWriteHalf, JsonCodec<SlotResponse>>>>;
 
 // ============================================================================
 // SlotSender - sends messages on slot socket (for log streaming)
@@ -50,17 +56,17 @@ impl SlotSender {
             data: data.to_string(),
         };
 
-        self.tx.send(msg).map_err(|_| {
-            io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed")
-        })
+        self.tx
+            .send(msg)
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
     }
 
     /// Send a streaming output value (for generators).
     pub fn send_output(&self, output: serde_json::Value) -> io::Result<()> {
         let msg = SlotResponse::Output { output };
-        self.tx.send(msg).map_err(|_| {
-            io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed")
-        })
+        self.tx
+            .send(msg)
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
     }
 }
 
@@ -134,11 +140,14 @@ impl PredictResult {
 }
 
 /// Callback type for setup log registration.
-/// 
+///
 /// The worker calls this before setup() with a sender that routes logs to the control channel.
 /// The callback should register the sender globally so SlotLogWriter can use it.
 /// Returns a cleanup function that unregisters the sender.
-pub type SetupLogHook = Box<dyn FnOnce(tokio::sync::mpsc::UnboundedSender<ControlResponse>) -> Box<dyn FnOnce() + Send> + Send>;
+pub type SetupLogHook = Box<
+    dyn FnOnce(tokio::sync::mpsc::UnboundedSender<ControlResponse>) -> Box<dyn FnOnce() + Send>
+        + Send,
+>;
 
 /// Worker configuration.
 pub struct WorkerConfig {
@@ -151,7 +160,7 @@ pub struct WorkerConfig {
 
 impl Default for WorkerConfig {
     fn default() -> Self {
-        Self { 
+        Self {
             num_slots: 1,
             setup_log_hook: None,
         }
@@ -167,12 +176,16 @@ struct SlotCompletion {
 impl SlotCompletion {
     /// Create a completion indicating the slot is ready for more work.
     fn idle(slot: SlotId) -> Self {
-        Self { outcome: SlotOutcome::idle(slot) }
+        Self {
+            outcome: SlotOutcome::idle(slot),
+        }
     }
 
     /// Create a completion indicating the slot is poisoned.
     fn poisoned(slot: SlotId, error: impl Into<String>) -> Self {
-        Self { outcome: SlotOutcome::poisoned(slot, error) }
+        Self {
+            outcome: SlotOutcome::poisoned(slot, error),
+        }
     }
 }
 
@@ -181,7 +194,10 @@ impl SlotCompletion {
 /// Reads control messages from stdin, prediction requests from slot sockets.
 /// For sync predictors (num_slots=1), runs predictions inline.
 /// For async predictors, spawns tasks for concurrent predictions.
-pub async fn run_worker<H: PredictHandler>(handler: Arc<H>, config: WorkerConfig) -> io::Result<()> {
+pub async fn run_worker<H: PredictHandler>(
+    handler: Arc<H>,
+    config: WorkerConfig,
+) -> io::Result<()> {
     let num_slots = config.num_slots;
 
     // Connect to slot sockets (transport info from env, set by parent)
@@ -192,19 +208,21 @@ pub async fn run_worker<H: PredictHandler>(handler: Arc<H>, config: WorkerConfig
 
     // Control channel - wrap in Arc<Mutex> for sharing with log forwarder
     let mut ctrl_reader = FramedRead::new(stdin(), JsonCodec::<ControlRequest>::new());
-    let ctrl_writer = Arc::new(tokio::sync::Mutex::new(
-        FramedWrite::new(stdout(), JsonCodec::<ControlResponse>::new())
-    ));
+    let ctrl_writer = Arc::new(tokio::sync::Mutex::new(FramedWrite::new(
+        stdout(),
+        JsonCodec::<ControlResponse>::new(),
+    )));
 
     // Generate unique SlotIds for each socket
     let slot_ids: Vec<SlotId> = (0..num_slots).map(|_| SlotId::new()).collect();
-    
+
     // Set up log forwarding for setup phase
-    let (setup_log_tx, mut setup_log_rx) = tokio::sync::mpsc::unbounded_channel::<ControlResponse>();
-    
+    let (setup_log_tx, mut setup_log_rx) =
+        tokio::sync::mpsc::unbounded_channel::<ControlResponse>();
+
     // Call the setup log hook if provided (registers the sender globally)
     let setup_cleanup = config.setup_log_hook.map(|hook| hook(setup_log_tx.clone()));
-    
+
     // Spawn task to forward setup logs to control channel
     let ctrl_writer_for_logs = Arc::clone(&ctrl_writer);
     let log_forwarder = tokio::spawn(async move {
@@ -216,12 +234,12 @@ pub async fn run_worker<H: PredictHandler>(handler: Arc<H>, config: WorkerConfig
             }
         }
     });
-    
+
     // Run setup
     tracing::info!("Worker starting setup");
     let setup_result = handler.setup().await;
     tracing::debug!("Setup handler returned");
-    
+
     // Clean up setup log forwarding
     // IMPORTANT: Must unregister the sender BEFORE waiting for forwarder,
     // because the sender holds a channel clone that keeps forwarder alive
@@ -234,7 +252,7 @@ pub async fn run_worker<H: PredictHandler>(handler: Arc<H>, config: WorkerConfig
     tracing::debug!("Waiting for log forwarder to finish");
     let _ = log_forwarder.await; // Now forwarder can exit
     tracing::debug!("Log forwarder finished");
-    
+
     // Handle setup failure
     if let Err(e) = setup_result {
         tracing::error!(error = %e, "Setup failed");
@@ -255,7 +273,11 @@ pub async fn run_worker<H: PredictHandler>(handler: Arc<H>, config: WorkerConfig
     tracing::debug!(num_slots, ?slot_ids, "Sending Ready to parent");
     {
         let mut w = ctrl_writer.lock().await;
-        w.send(ControlResponse::Ready { slots: slot_ids.clone(), schema }).await?;
+        w.send(ControlResponse::Ready {
+            slots: slot_ids.clone(),
+            schema,
+        })
+        .await?;
     }
 
     // Channel for slot completions (used by async prediction tasks)
@@ -268,8 +290,14 @@ pub async fn run_worker<H: PredictHandler>(handler: Arc<H>, config: WorkerConfig
     // Drain sockets from transport and split for concurrent read/write
     // Map each socket to its SlotId
     let sockets = transport.drain_sockets();
-    let mut slot_readers: HashMap<SlotId, FramedRead<tokio::net::unix::OwnedReadHalf, JsonCodec<SlotRequest>>> = HashMap::new();
-    let mut slot_writers: HashMap<SlotId, FramedWrite<tokio::net::unix::OwnedWriteHalf, JsonCodec<SlotResponse>>> = HashMap::new();
+    let mut slot_readers: HashMap<
+        SlotId,
+        FramedRead<tokio::net::unix::OwnedReadHalf, JsonCodec<SlotRequest>>,
+    > = HashMap::new();
+    let mut slot_writers: HashMap<
+        SlotId,
+        FramedWrite<tokio::net::unix::OwnedWriteHalf, JsonCodec<SlotResponse>>,
+    > = HashMap::new();
 
     for (slot_id, socket) in slot_ids.iter().zip(sockets) {
         let (read_half, write_half) = socket.into_split();
@@ -291,10 +319,10 @@ pub async fn run_worker<H: PredictHandler>(handler: Arc<H>, config: WorkerConfig
     drop(request_tx); // Drop our copy so channel closes when all readers done
 
     // Wrap writers in Arc<Mutex> for sharing with prediction tasks
-    let slot_writers: HashMap<SlotId, Arc<tokio::sync::Mutex<FramedWrite<tokio::net::unix::OwnedWriteHalf, JsonCodec<SlotResponse>>>>> = 
-        slot_writers.into_iter()
-            .map(|(id, w)| (id, Arc::new(tokio::sync::Mutex::new(w))))
-            .collect();
+    let slot_writers: HashMap<SlotId, SlotWriter> = slot_writers
+        .into_iter()
+        .map(|(id, w)| (id, Arc::new(tokio::sync::Mutex::new(w))))
+        .collect();
 
     // Main event loop - unified for both sync (1 slot) and async (N slots)
     loop {
@@ -427,10 +455,12 @@ async fn run_prediction<H: PredictHandler>(
     prediction_id: String,
     input: serde_json::Value,
     handler: Arc<H>,
-    writer: Arc<tokio::sync::Mutex<FramedWrite<tokio::net::unix::OwnedWriteHalf, JsonCodec<SlotResponse>>>>,
+    writer: Arc<
+        tokio::sync::Mutex<FramedWrite<tokio::net::unix::OwnedWriteHalf, JsonCodec<SlotResponse>>>,
+    >,
 ) -> SlotCompletion {
     tracing::debug!(%slot_id, %prediction_id, "run_prediction starting");
-    
+
     // Create channel for log streaming
     let (log_tx, mut log_rx) = mpsc::unbounded_channel::<SlotResponse>();
     let slot_sender = Arc::new(SlotSender::new(log_tx));
@@ -450,7 +480,9 @@ async fn run_prediction<H: PredictHandler>(
 
     // Run prediction
     tracing::debug!(%slot_id, %prediction_id, "About to call handler.predict");
-    let result = handler.predict(slot_id, prediction_id.clone(), input, slot_sender).await;
+    let result = handler
+        .predict(slot_id, prediction_id.clone(), input, slot_sender)
+        .await;
     tracing::debug!(%slot_id, %prediction_id, success = result.success, "handler.predict returned");
 
     // Wait for log forwarder to finish (channel closes when SlotSender dropped)
@@ -466,11 +498,16 @@ async fn run_prediction<H: PredictHandler>(
             predict_time: result.predict_time,
         }
     } else if result.error.as_deref() == Some("Cancelled") {
-        SlotResponse::Cancelled { id: prediction_id.clone() }
+        SlotResponse::Cancelled {
+            id: prediction_id.clone(),
+        }
     } else {
         SlotResponse::Failed {
             id: prediction_id.clone(),
-            error: result.error.clone().unwrap_or_else(|| "Unknown error".to_string()),
+            error: result
+                .error
+                .clone()
+                .unwrap_or_else(|| "Unknown error".to_string()),
         }
     };
 

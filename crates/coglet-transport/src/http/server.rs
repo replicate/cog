@@ -32,7 +32,7 @@ impl Default for ServerConfig {
 }
 
 /// Start the HTTP server with provided service.
-/// 
+///
 /// Handles SIGTERM and SIGINT for graceful shutdown.
 /// If `await_explicit_shutdown` is true, SIGTERM is ignored.
 pub async fn serve(config: ServerConfig, service: Arc<PredictionService>) -> anyhow::Result<()> {
@@ -44,7 +44,7 @@ pub async fn serve(config: ServerConfig, service: Arc<PredictionService>) -> any
     info!("Starting coglet server on {}", addr);
 
     let listener = TcpListener::bind(addr).await?;
-    
+
     // Set up graceful shutdown on SIGTERM/SIGINT or /shutdown endpoint
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal(config.await_explicit_shutdown, shutdown_rx))
@@ -55,9 +55,9 @@ pub async fn serve(config: ServerConfig, service: Arc<PredictionService>) -> any
 }
 
 /// Wait for shutdown signal (SIGTERM, SIGINT, or /shutdown endpoint).
-/// 
+///
 /// If `await_explicit_shutdown` is true, SIGTERM is ignored and only
-/// SIGINT or /shutdown triggers shutdown. This allows Kubernetes to drain 
+/// SIGINT or /shutdown triggers shutdown. This allows Kubernetes to drain
 /// connections before the pod is terminated.
 async fn shutdown_signal(await_explicit_shutdown: bool, mut shutdown_rx: watch::Receiver<bool>) {
     let ctrl_c = async {

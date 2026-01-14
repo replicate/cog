@@ -25,7 +25,9 @@ pub use protocol::{
     ControlRequest, ControlResponse, LogSource, SlotId, SlotOutcome, SlotRequest, SlotResponse,
 };
 pub use transport::{
-    connect_transport, create_transport, get_transport_info_from_env, ChildTransportInfo,
-    NamedSocketTransport, SlotTransport, TRANSPORT_INFO_ENV,
+    ChildTransportInfo, NamedSocketTransport, SlotTransport, TRANSPORT_INFO_ENV, connect_transport,
+    create_transport, get_transport_info_from_env,
 };
-pub use worker::{run_worker, PredictHandler, PredictResult, SetupLogHook, SlotSender, WorkerConfig};
+pub use worker::{
+    PredictHandler, PredictResult, SetupLogHook, SlotSender, WorkerConfig, run_worker,
+};

@@ -18,10 +18,13 @@ use pyo3::prelude::*;
 use tokio::sync::Mutex;
 
 use tracing::{error, info, warn};
-use tracing_subscriber::{fmt, EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-use coglet_core::{Health, PredictFuture, PredictionError, PredictionOutput, PredictionResult, PredictionService, SetupResult, VersionInfo};
-use coglet_transport::{serve as http_serve, ServerConfig};
+use coglet_core::{
+    Health, PredictFuture, PredictionError, PredictionOutput, PredictionResult, PredictionService,
+    SetupResult, VersionInfo,
+};
+use coglet_transport::{ServerConfig, serve as http_serve};
 use coglet_worker::{SlotResponse, SpawnConfig, Worker};
 
 /// Initialize tracing with COG_LOG and LOG_FORMAT support.
@@ -46,14 +49,14 @@ fn init_tracing(_to_stderr: bool) {
             Ok("error") => "error",
             _ => "info", // default
         };
-        
+
         // Build filter: coglet and coglet_worker at the configured level,
         // but opt-in targets are off by default
         let filter_str = format!(
             "coglet={level},coglet_worker={level},coglet_worker::schema=off,coglet_worker::protocol=off",
             level = base_level
         );
-        
+
         EnvFilter::new(filter_str)
     };
 
@@ -105,18 +108,22 @@ impl WorkerHandle {
         let worker = Worker::spawn(&self.predictor_ref, self.ready_timeout, &self.spawn_config)
             .await
             .map_err(|e| format!("Failed to spawn worker: {}", e))?;
-        
+
         let schema = worker.schema().cloned();
         *guard = Some(worker);
         Ok(schema)
     }
 
     /// Run a prediction, respawning worker if needed.
-    /// 
+    ///
     /// Uses slot 0 since sync predictors only have one slot.
-    async fn predict(&self, id: String, input: serde_json::Value) -> Result<PredictionResult, PredictionError> {
+    async fn predict(
+        &self,
+        id: String,
+        input: serde_json::Value,
+    ) -> Result<PredictionResult, PredictionError> {
         let mut guard = self.worker.lock().await;
-        
+
         // If no worker, try to spawn one
         if guard.is_none() {
             warn!("Worker not initialized, spawning...");
@@ -130,7 +137,7 @@ impl WorkerHandle {
         let slot = 0; // Sync predictors use single slot
 
         info!(prediction_id = %id, "Starting prediction");
-        
+
         // Send prediction request on slot socket
         if let Err(e) = worker.send_predict(slot, id.clone(), input).await {
             error!(error = %e, "Failed to send prediction");
@@ -157,14 +164,20 @@ impl WorkerHandle {
                     // For now, just keep the last one
                     final_output = Some(output);
                 }
-                Ok(SlotResponse::Done { output, predict_time, .. }) => {
+                Ok(SlotResponse::Done {
+                    output,
+                    predict_time,
+                    ..
+                }) => {
                     // Prediction completed successfully
                     if let Some(o) = output {
                         final_output = Some(o);
                     }
                     info!(prediction_id = %id, predict_time, "Prediction succeeded");
                     return Ok(PredictionResult {
-                        output: PredictionOutput::Single(final_output.unwrap_or(serde_json::Value::Null)),
+                        output: PredictionOutput::Single(
+                            final_output.unwrap_or(serde_json::Value::Null),
+                        ),
                         predict_time: Some(Duration::from_secs_f64(predict_time)),
                         logs,
                     });
@@ -221,11 +234,11 @@ fn read_max_concurrency(py: Python<'_>) -> usize {
         let cog_config = py.import("cog.config")?;
         let config_class = cog_config.getattr("Config")?;
         let config = config_class.call0()?;
-        
+
         // max_concurrency property reads from cog.yaml concurrency.max
         config.getattr("max_concurrency")?.extract::<usize>()
     })();
-    
+
     match result {
         Ok(max) => max,
         Err(e) => {
@@ -241,7 +254,7 @@ fn read_max_concurrency(py: Python<'_>) -> usize {
 /// - Crash isolation (subprocess crash doesn't kill server)
 /// - Memory isolation (clean slate per worker)
 /// - Flexibility (transport abstraction enables sidecar/remote workers)
-/// 
+///
 /// Args:
 ///     predictor_ref: Path to predictor like "predict.py:Predictor"
 ///     host: Host to bind to (default "0.0.0.0")
@@ -250,10 +263,17 @@ fn read_max_concurrency(py: Python<'_>) -> usize {
 ///     is_train: If True, call train() instead of predict() for predictions
 #[pyfunction]
 #[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000, await_explicit_shutdown=false, is_train=false))]
-fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16, await_explicit_shutdown: bool, is_train: bool) -> PyResult<()> {
+fn serve(
+    py: Python<'_>,
+    predictor_ref: Option<String>,
+    host: String,
+    port: u16,
+    await_explicit_shutdown: bool,
+    is_train: bool,
+) -> PyResult<()> {
     // Initialize tracing with COG_LOG and LOG_FORMAT support
     init_tracing(false);
-    
+
     // Log version at startup
     info!("coglet {}", env!("CARGO_PKG_VERSION"));
 
@@ -281,7 +301,7 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16,
         let service = Arc::new(
             PredictionService::new(1)
                 .with_health(Health::Unknown)
-                .with_version(version)
+                .with_version(version),
         );
         return py.detach(|| {
             let rt = tokio::runtime::Runtime::new()
@@ -344,7 +364,10 @@ fn serve_subprocess(
     let predict_counter = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let async_predict_fn = Arc::new(move |input: serde_json::Value| -> PredictFuture {
         let worker = Arc::clone(&worker_clone);
-        let id = format!("pred_{}", predict_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+        let id = format!(
+            "pred_{}",
+            predict_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        );
         Box::pin(async move { worker.predict(id, input).await })
     }) as Arc<coglet_core::AsyncPredictFn>;
 
@@ -366,8 +389,10 @@ fn serve_subprocess(
                 Ok(schema) => {
                     info!("Worker initialized, server ready");
                     service_clone.set_health(Health::Ready).await;
-                    service_clone.set_setup_result(setup_result.succeeded()).await;
-                    
+                    service_clone
+                        .set_setup_result(setup_result.succeeded())
+                        .await;
+
                     // Set OpenAPI schema if available
                     if let Some(s) = schema {
                         service_clone.set_schema(s).await;
@@ -376,7 +401,9 @@ fn serve_subprocess(
                 Err(e) => {
                     error!(error = %e, "Worker initialization failed");
                     service_clone.set_health(Health::SetupFailed).await;
-                    service_clone.set_setup_result(setup_result.failed(e.clone())).await;
+                    service_clone
+                        .set_setup_result(setup_result.failed(e.clone()))
+                        .await;
                 }
             }
 
@@ -392,8 +419,6 @@ fn serve_subprocess(
 fn _is_cancelable() -> bool {
     cancel::is_cancelable()
 }
-
-
 
 /// Run as a worker subprocess.
 ///
@@ -438,15 +463,15 @@ fn _run_worker(py: Python<'_>, predictor_ref: String, num_slots: usize) -> PyRes
     } else {
         worker_bridge::PythonPredictHandler::new(predictor_ref)
     });
-    
+
     // Setup log hook: registers a global sender so SlotLogWriter can route setup logs
     let setup_log_hook: coglet_worker::SetupLogHook = Box::new(|tx| {
         let sender = Arc::new(SetupLogSender::new(tx));
         log_writer::register_setup_sender(sender);
-        Box::new(|| log_writer::unregister_setup_sender())
+        Box::new(log_writer::unregister_setup_sender)
     });
-    
-    let config = coglet_worker::WorkerConfig { 
+
+    let config = coglet_worker::WorkerConfig {
         num_slots,
         setup_log_hook: Some(setup_log_hook),
     };
@@ -470,7 +495,7 @@ fn _run_worker(py: Python<'_>, predictor_ref: String, num_slots: usize) -> PyRes
 fn coglet(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Version from Cargo.toml
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    
+
     m.add_function(wrap_pyfunction!(serve, m)?)?;
     m.add_function(wrap_pyfunction!(_is_cancelable, m)?)?;
     m.add_function(wrap_pyfunction!(_run_worker, m)?)?;

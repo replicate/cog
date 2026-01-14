@@ -7,7 +7,7 @@ use std::io;
 use std::marker::PhantomData;
 
 use bytes::{Bytes, BytesMut};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
 /// Codec that frames messages with length prefix and serializes with JSON.
@@ -55,8 +55,8 @@ impl<T: Serialize> Encoder<T> for JsonCodec<T> {
     type Error = io::Error;
 
     fn encode(&mut self, item: T, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        let json = serde_json::to_vec(&item)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let json =
+            serde_json::to_vec(&item).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         self.inner.encode(Bytes::from(json), dst)
     }
 }
@@ -85,7 +85,10 @@ mod tests {
         let mut buf = BytesMut::new();
 
         let slots = vec![SlotId::new()];
-        let resp = ControlResponse::Ready { slots, schema: None };
+        let resp = ControlResponse::Ready {
+            slots,
+            schema: None,
+        };
         codec.encode(resp, &mut buf).unwrap();
         let decoded = codec.decode(&mut buf).unwrap().unwrap();
 
@@ -107,8 +110,14 @@ mod tests {
 
         match (req, decoded) {
             (
-                SlotRequest::Predict { id: id1, input: input1 },
-                SlotRequest::Predict { id: id2, input: input2 },
+                SlotRequest::Predict {
+                    id: id1,
+                    input: input1,
+                },
+                SlotRequest::Predict {
+                    id: id2,
+                    input: input2,
+                },
             ) => {
                 assert_eq!(id1, id2);
                 assert_eq!(input1, input2);
@@ -130,7 +139,11 @@ mod tests {
         let decoded = codec.decode(&mut buf).unwrap().unwrap();
 
         match decoded {
-            SlotResponse::Done { id, output, predict_time } => {
+            SlotResponse::Done {
+                id,
+                output,
+                predict_time,
+            } => {
                 assert_eq!(id, "test");
                 assert_eq!(output, Some(serde_json::json!("result")));
                 assert!((predict_time - 1.5).abs() < 0.001);
