@@ -14,6 +14,7 @@ repository = "https://github.com/replicate/cog"
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
+futures = "0.3"
 
 # HTTP server
 axum = "0.8"

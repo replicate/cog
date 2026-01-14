@@ -319,6 +319,7 @@ mod tests {
                 Ok(PredictionResult {
                     output: PredictionOutput::Single(json!("test")),
                     predict_time: None,
+                    logs: String::new(),
                 })
             }));
 
@@ -335,6 +336,7 @@ mod tests {
                 Ok(PredictionResult {
                     output: PredictionOutput::Single(json!("test")),
                     predict_time: None,
+                    logs: String::new(),
                 })
             })
         }));
@@ -429,6 +431,7 @@ mod tests {
                 Ok(PredictionResult {
                     output: PredictionOutput::Single(json!(format!("Hello, {}!", name))),
                     predict_time: None,
+                    logs: String::new(),
                 })
             }));
 
@@ -454,6 +457,7 @@ mod tests {
                     Ok(PredictionResult {
                         output: PredictionOutput::Single(json!(x * 2)),
                         predict_time: None,
+                        logs: String::new(),
                     })
                 })
             }));

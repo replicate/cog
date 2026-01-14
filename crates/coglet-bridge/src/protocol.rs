@@ -10,6 +10,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::transport::ChildTransportInfo;
+
 // ============================================================================
 // SlotId - unique identifier for prediction slots
 // ============================================================================
@@ -63,6 +65,26 @@ impl SlotId {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ControlRequest {
+    /// Initial configuration sent immediately after spawn.
+    /// Worker MUST receive this as the first message.
+    Init {
+        /// Predictor reference (e.g., "predict.py:Predictor" or "train.py:Trainer").
+        predictor_ref: String,
+        /// Number of prediction/training slots.
+        /// - Sync: always 1
+        /// - Async: 1+ (from cog.yaml concurrency.max)
+        num_slots: usize,
+        /// Transport info for connecting to slot sockets.
+        transport_info: ChildTransportInfo,
+        /// Whether to run train() instead of predict().
+        /// Orthogonal to is_async - both sync and async trainers are supported.
+        is_train: bool,
+        /// Whether the predictor/trainer is async.
+        /// - false: sync, cancellation via SIGUSR1, single slot
+        /// - true: async, cancellation via task, multiple slots OK
+        is_async: bool,
+    },
+
     /// Cancel prediction on a slot.
     Cancel {
         /// Unique slot ID to cancel.
@@ -255,6 +277,24 @@ mod tests {
     }
 
     // Control channel tests
+    #[test]
+    fn control_init_serializes() {
+        use crate::transport::ChildTransportInfo;
+        use std::path::PathBuf;
+
+        let req = ControlRequest::Init {
+            predictor_ref: "predict.py:Predictor".to_string(),
+            num_slots: 2,
+            transport_info: ChildTransportInfo::NamedSockets {
+                dir: PathBuf::from("/tmp/coglet-123"),
+                num_slots: 2,
+            },
+            is_train: false,
+            is_async: true,
+        };
+        insta::assert_json_snapshot!(req);
+    }
+
     #[test]
     fn control_cancel_serializes() {
         let req = ControlRequest::Cancel {
