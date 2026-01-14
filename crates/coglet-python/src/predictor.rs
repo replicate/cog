@@ -6,7 +6,7 @@ use pyo3::types::PyDict;
 use coglet_core::{PredictionError, PredictionOutput, PredictionResult};
 
 use crate::cancel;
-use crate::input::{self, InputProcessor, Runtime};
+use crate::input::{self, InputProcessor, PreparedInput, Runtime};
 use crate::output;
 
 /// Check if a PyErr is a CancelationException or asyncio.CancelledError.
@@ -487,18 +487,21 @@ impl PythonPredictor {
                 PredictionError::InvalidInput("Input must be a JSON object".to_string())
             })?;
 
-            let input_dict = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
+            // PreparedInput cleans up temp files on drop (RAII)
+            let prepared = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
                 PredictionError::InvalidInput(format!("Input validation failed: {}", e))
             })?;
+            let input_dict = prepared.dict(py);
 
             // Logs flow through SlotLogWriter - streamed via slot socket, accumulated by parent.
             // redirect_output=false since SlotLogWriter is already installed.
             let result = self.predict_raw(py, &input_dict, false);
             
-            // Handle errors
+            // Handle errors (prepared drops here, cleaning up temp files)
             let result = match result {
                 Ok(r) => r,
                 Err(e) => {
+                    drop(prepared); // Explicit cleanup on error path
                     if is_cancelation_exception(py, &e) {
                         return Err(PredictionError::Cancelled);
                     }
@@ -557,6 +560,9 @@ impl PythonPredictor {
                 PredictionOutput::Single(output_json)
             };
 
+            // prepared drops here, cleaning up temp files via RAII
+            drop(prepared);
+
             // Logs already streamed via SlotLogWriter, accumulated by parent
             Ok(PredictionResult { output, predict_time: None, logs: String::new() })
         })
@@ -565,16 +571,17 @@ impl PythonPredictor {
     /// Worker mode async predict - submits to shared event loop.
     ///
     /// Uses run_coroutine_threadsafe to submit the coroutine to the provided event loop.
-    /// Returns the concurrent.futures.Future for cancellation support.
-    /// Caller should block on future.result() to get the result.
+    /// Returns the concurrent.futures.Future, is_async_gen flag, and PreparedInput for cleanup.
+    /// Caller should block on future.result() to get the result, then drop PreparedInput.
     ///
     /// Logs flow through SlotLogWriter - streamed via slot socket, accumulated by parent.
     pub fn predict_async_worker(
         &self,
         input: serde_json::Value,
         event_loop: &Py<PyAny>,
-    ) -> Result<(Py<PyAny>, bool), PredictionError> {
-        // Returns (future, is_async_gen) - caller will block on future.result()
+    ) -> Result<(Py<PyAny>, bool, PreparedInput), PredictionError> {
+        // Returns (future, is_async_gen, prepared_input) - caller will block on future.result()
+        // PreparedInput is returned for RAII cleanup after the future completes
         Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import json module: {}", e))
@@ -594,9 +601,10 @@ impl PythonPredictor {
                 PredictionError::InvalidInput("Input must be a JSON object".to_string())
             })?;
 
-            let input_dict = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
+            let prepared = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
                 PredictionError::InvalidInput(format!("Input validation failed: {}", e))
             })?;
+            let input_dict = prepared.dict(py);
 
             // Call predict - returns coroutine
             let instance = self.instance.bind(py);
@@ -640,7 +648,7 @@ async def _collect_async_gen(agen):
                 .call_method1("run_coroutine_threadsafe", (&coro, event_loop.bind(py)))
                 .map_err(|e| PredictionError::Failed(format!("Failed to submit coroutine: {}", e)))?;
 
-            Ok((future.unbind(), self.is_async_gen))
+            Ok((future.unbind(), self.is_async_gen, prepared))
         })
     }
 
@@ -758,18 +766,21 @@ async def _collect_async_gen(agen):
                 PredictionError::InvalidInput("Input must be a JSON object".to_string())
             })?;
 
-            let input_dict = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
+            // PreparedInput cleans up temp files on drop (RAII)
+            let prepared = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
                 PredictionError::InvalidInput(format!("Input validation failed: {}", e))
             })?;
+            let input_dict = prepared.dict(py);
 
             // Logs flow through SlotLogWriter - streamed via slot socket, accumulated by parent.
             // redirect_output=false since SlotLogWriter is already installed.
             let result = self.train_raw(py, &input_dict, false);
             
-            // Handle errors
+            // Handle errors (prepared drops here, cleaning up temp files)
             let result = match result {
                 Ok(r) => r,
                 Err(e) => {
+                    drop(prepared); // Explicit cleanup on error path
                     if is_cancelation_exception(py, &e) {
                         return Err(PredictionError::Cancelled);
                     }
@@ -828,6 +839,9 @@ async def _collect_async_gen(agen):
                 PredictionOutput::Single(output_json)
             };
 
+            // prepared drops here, cleaning up temp files via RAII
+            drop(prepared);
+
             // Logs already streamed via SlotLogWriter, accumulated by parent
             Ok(PredictionResult { output, predict_time: None, logs: String::new() })
         })
@@ -836,18 +850,17 @@ async def _collect_async_gen(agen):
     /// Worker mode async train - submits to shared event loop.
     ///
     /// Uses run_coroutine_threadsafe to submit the coroutine to the provided event loop.
-    /// Returns the concurrent.futures.Future for cancellation support.
-    /// Caller should block on future.result() to get the result.
+    /// Returns the concurrent.futures.Future, is_async_gen flag, and PreparedInput for cleanup.
+    /// Caller should block on future.result() to get the result, then drop PreparedInput.
     ///
     /// Logs flow through SlotLogWriter - streamed via slot socket, accumulated by parent.
     pub fn train_async_worker(
         &self,
         input: serde_json::Value,
         event_loop: &Py<PyAny>,
-    ) -> Result<(Py<PyAny>, bool), PredictionError> {
-        // Returns (future, is_async_gen) - caller will block on future.result()
-        // Note: For train, we use is_train_async_gen (if we add it) or assume false for now
-        // since async generator training is rare.
+    ) -> Result<(Py<PyAny>, bool, PreparedInput), PredictionError> {
+        // Returns (future, is_async_gen, prepared_input) - caller will block on future.result()
+        // PreparedInput is returned for RAII cleanup after the future completes
         Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import json module: {}", e))
@@ -867,9 +880,10 @@ async def _collect_async_gen(agen):
                 PredictionError::InvalidInput("Input must be a JSON object".to_string())
             })?;
 
-            let input_dict = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
+            let prepared = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
                 PredictionError::InvalidInput(format!("Input validation failed: {}", e))
             })?;
+            let input_dict = prepared.dict(py);
 
             // Call train - returns coroutine
             // For standalone functions, call directly; for classes, call .train() method
@@ -886,7 +900,7 @@ async def _collect_async_gen(agen):
                 .map_err(|e| PredictionError::Failed(format!("Failed to submit coroutine: {}", e)))?;
 
             // Train doesn't typically use async generators, but we return false for consistency
-            Ok((future.unbind(), false))
+            Ok((future.unbind(), false, prepared))
         })
     }
 }

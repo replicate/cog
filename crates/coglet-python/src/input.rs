@@ -13,6 +13,54 @@ use pyo3::types::PyDict;
 /// Type alias for Python object.
 type PyObject = Py<PyAny>;
 
+/// RAII wrapper for prepared input that cleans up temp files on drop.
+///
+/// When URLPath inputs are downloaded, they create temp files. This struct
+/// ensures those files are cleaned up when the prediction completes (success,
+/// failure, or cancellation).
+pub struct PreparedInput {
+    /// The prepared input dict (ready for predict(**kwargs))
+    dict: PyObject,
+    /// Paths to cleanup on drop (downloaded temp files)
+    cleanup_paths: Vec<PyObject>,
+}
+
+impl PreparedInput {
+    /// Create a new PreparedInput with the given dict and paths to cleanup.
+    pub fn new(dict: PyObject, cleanup_paths: Vec<PyObject>) -> Self {
+        Self { dict, cleanup_paths }
+    }
+
+    /// Get the input dict bound to the given Python context.
+    #[allow(deprecated)] // downcast -> cast in PyO3 0.28, but we're on 0.27
+    pub fn dict<'py>(&self, py: Python<'py>) -> Bound<'py, PyDict> {
+        self.dict.bind(py).downcast::<PyDict>().unwrap().clone()
+    }
+}
+
+impl Drop for PreparedInput {
+    fn drop(&mut self) {
+        if self.cleanup_paths.is_empty() {
+            return;
+        }
+
+        Python::attach(|py| {
+            for path in &self.cleanup_paths {
+                let path_bound = path.bind(py);
+                let kwargs = PyDict::new(py);
+                if kwargs.set_item("missing_ok", true).is_ok() {
+                    if let Err(e) = path_bound.call_method("unlink", (), Some(&kwargs)) {
+                        tracing::warn!(error = %e, "Failed to cleanup temp file");
+                    }
+                }
+            }
+        });
+    }
+}
+
+// Safety: PyObject is Send in PyO3 0.23+, we only access through Python::attach
+unsafe impl Send for PreparedInput {}
+
 /// Detected predictor runtime.
 #[derive(Debug)]
 pub enum Runtime {
@@ -39,19 +87,8 @@ pub trait InputProcessor: Send + Sync {
     /// 2. Type coercion
     /// 3. File downloads (for Pydantic URLPath inputs)
     ///
-    /// Returns a Python dict ready to be passed to predict(**kwargs).
-    fn prepare<'py>(
-        &self,
-        py: Python<'py>,
-        input: &Bound<'py, PyDict>,
-    ) -> PyResult<Bound<'py, PyDict>>;
-
-    /// Cleanup after prediction.
-    ///
-    /// For Pydantic: deletes temporary files created by URLPath downloads.
-    /// For Coglet: may be a no-op or runtime-specific cleanup.
-    #[allow(dead_code)]
-    fn cleanup(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<()>;
+    /// Returns a PreparedInput that cleans up temp files on drop.
+    fn prepare(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PreparedInput>;
 }
 
 /// Pydantic input processor for cog runtime.
@@ -67,11 +104,7 @@ impl PydanticInputProcessor {
 }
 
 impl InputProcessor for PydanticInputProcessor {
-    fn prepare<'py>(
-        &self,
-        py: Python<'py>,
-        input: &Bound<'py, PyDict>,
-    ) -> PyResult<Bound<'py, PyDict>> {
+    fn prepare(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PreparedInput> {
         // 1. Validate input through Pydantic model
         //    InputType(**input_dict) creates URLPath objects for cog.Path fields
         let input_type = self.input_type.bind(py);
@@ -93,22 +126,10 @@ impl InputProcessor for PydanticInputProcessor {
         let payload_dict = payload.downcast::<PyDict>()?;
 
         // 3. Download URLPath inputs in parallel and replace in payload
-        //    This mutates payload_dict to replace URLPath -> local Path
-        download_url_paths_into_dict(py, payload_dict)?;
+        //    This mutates payload_dict and returns the downloaded paths for cleanup
+        let cleanup_paths = download_url_paths_into_dict(py, payload_dict)?;
 
-        Ok(payload_dict.clone())
-    }
-
-    fn cleanup(&self, py: Python<'_>, _input: &Bound<'_, PyDict>) -> PyResult<()> {
-        // For Pydantic, cleanup is handled by BaseInput.cleanup()
-        // which deletes temp files created by URLPath.convert()
-        // This is typically called after prediction completes
-        //
-        // Note: We don't call cleanup here because the input dict
-        // no longer has the BaseInput instance. Cleanup should be
-        // called on the original validated model if needed.
-        let _ = py;
-        Ok(())
+        Ok(PreparedInput::new(payload_dict.clone().unbind().into(), cleanup_paths))
     }
 }
 
@@ -125,11 +146,7 @@ impl CogletInputProcessor {
 }
 
 impl InputProcessor for CogletInputProcessor {
-    fn prepare<'py>(
-        &self,
-        py: Python<'py>,
-        input: &Bound<'py, PyDict>,
-    ) -> PyResult<Bound<'py, PyDict>> {
+    fn prepare(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PreparedInput> {
         // Use coglet's inspector.check_input() for validation
         let inspector = py.import("coglet.inspector")?;
         let check_input = inspector.getattr("check_input")?;
@@ -140,15 +157,10 @@ impl InputProcessor for CogletInputProcessor {
 
         // check_input(adt_inputs, input_dict) -> validated kwargs dict
         let result = check_input.call1((&adt_inputs, input))?;
+        let result_dict = result.extract::<Bound<'_, PyDict>>()?;
 
-        Ok(result.extract::<Bound<'_, PyDict>>()?)
-    }
-
-    fn cleanup(&self, py: Python<'_>, _input: &Bound<'_, PyDict>) -> PyResult<()> {
-        // Coglet doesn't have the same cleanup mechanism as Pydantic
-        // api.Path is just pathlib.PosixPath with no temp file tracking
-        let _ = py;
-        Ok(())
+        // Coglet doesn't download URLs, so no cleanup needed
+        Ok(PreparedInput::new(result_dict.unbind().into(), Vec::new()))
     }
 }
 
@@ -158,7 +170,9 @@ impl InputProcessor for CogletInputProcessor {
 /// - Find all URLPath instances in the payload dict
 /// - Download them in parallel using ThreadPoolExecutor
 /// - Replace URLPath values with local Path in the dict
-fn download_url_paths_into_dict(py: Python<'_>, payload: &Bound<'_, PyDict>) -> PyResult<()> {
+///
+/// Returns the downloaded Path objects for cleanup on drop.
+fn download_url_paths_into_dict(py: Python<'_>, payload: &Bound<'_, PyDict>) -> PyResult<Vec<PyObject>> {
     let cog_types = py.import("cog.types")?;
     let url_path_class = cog_types.getattr("URLPath")?;
 
@@ -186,7 +200,7 @@ fn download_url_paths_into_dict(py: Python<'_>, payload: &Bound<'_, PyDict>) -> 
     }
 
     if url_path_keys.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     tracing::debug!("Downloading {} URLPath input(s)", url_path_keys.len());
@@ -248,17 +262,22 @@ fn download_url_paths_into_dict(py: Python<'_>, payload: &Bound<'_, PyDict>) -> 
     }
 
     // All downloads complete - replace URLPath with local Path in payload
+    // Collect the Path objects for cleanup
+    let mut cleanup_paths: Vec<PyObject> = Vec::new();
+
     for (key, (futures, is_list)) in futs {
         if is_list {
             let mut results = Vec::new();
             for fut in futures {
                 let result = fut.call_method0("result")?;
+                cleanup_paths.push(result.clone().unbind());
                 results.push(result);
             }
             let result_list = pyo3::types::PyList::new(py, &results)?;
             payload.set_item(&key, result_list)?;
         } else {
             let result = futures[0].call_method0("result")?;
+            cleanup_paths.push(result.clone().unbind());
             payload.set_item(&key, result)?;
         }
     }
@@ -266,8 +285,8 @@ fn download_url_paths_into_dict(py: Python<'_>, payload: &Bound<'_, PyDict>) -> 
     // Shutdown executor
     executor.call_method0("shutdown")?;
 
-    tracing::debug!("URLPath downloads complete");
-    Ok(())
+    tracing::debug!("URLPath downloads complete, {} paths to cleanup", cleanup_paths.len());
+    Ok(cleanup_paths)
 }
 
 /// Detect the runtime type for a loaded predictor.

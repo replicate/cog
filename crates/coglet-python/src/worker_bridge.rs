@@ -295,8 +295,8 @@ impl PredictHandler for PythonPredictHandler {
                     }
                 };
 
-                // Submit coroutine and get future
-                let (future, is_async_gen) = match pred.train_async_worker(input, &loop_obj) {
+                // Submit coroutine and get future + prepared input for cleanup
+                let (future, is_async_gen, prepared) = match pred.train_async_worker(input, &loop_obj) {
                     Ok(f) => f,
                     Err(e) => {
                         self.finish_prediction(slot);
@@ -315,7 +315,7 @@ impl PredictHandler for PythonPredictHandler {
                 });
 
                 // Block on future.result() - releases GIL internally
-                Python::attach(|py| {
+                let result = Python::attach(|py| {
                     match future.call_method0(py, "result") {
                         Ok(result) => {
                             // Process the result
@@ -333,7 +333,12 @@ impl PredictHandler for PythonPredictHandler {
                             }
                         }
                     }
-                })
+                });
+
+                // Cleanup temp files via RAII
+                drop(prepared);
+
+                result
             } else {
                 // Sync train - set sync prediction ID for log routing
                 crate::log_writer::set_sync_prediction_id(Some(&id));
@@ -359,8 +364,8 @@ impl PredictHandler for PythonPredictHandler {
                     }
                 };
 
-                // Submit coroutine and get future
-                let (future, is_async_gen) = match pred.predict_async_worker(input, &loop_obj) {
+                // Submit coroutine and get future + prepared input for cleanup
+                let (future, is_async_gen, prepared) = match pred.predict_async_worker(input, &loop_obj) {
                     Ok(f) => f,
                     Err(e) => {
                         self.finish_prediction(slot);
@@ -398,6 +403,9 @@ impl PredictHandler for PythonPredictHandler {
                         }
                     }
                 });
+
+                // Cleanup temp files via RAII
+                drop(prepared);
 
                 result
             } else {
