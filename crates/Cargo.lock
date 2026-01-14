@@ -186,6 +186,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "coglet-bridge"
+version = "0.1.1"
+dependencies = [
+ "bytes",
+ "insta",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "coglet-core"
 version = "0.1.1"
 dependencies = [
