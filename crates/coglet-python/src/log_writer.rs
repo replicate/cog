@@ -357,10 +357,10 @@ impl SlotLogWriter {
             }
             // If send fails, fall through to tracing
         }
-        // Outside setup - just emit via tracing locally
-        // Don't ship these, just log to stderr
+        // Outside setup/prediction context - orphan log
+        // This happens with orphan tasks or edge cases
         for line in data.lines() {
-            tracing::info!(target: "coglet", "{}", line);
+            tracing::info!(target: "coglet::orphan", "{}", line);
         }
         Ok(())
     }

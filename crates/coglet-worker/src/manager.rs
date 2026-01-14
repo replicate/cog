@@ -162,9 +162,9 @@ impl Worker {
             
             match msg {
                 Ok(Some(Ok(ControlResponse::Log { source: _, data }))) => {
-                    // Emit setup logs with [coglet] prefix via tracing
+                    // Emit setup logs via tracing
                     for line in data.lines() {
-                        tracing::info!(target: "coglet", "{}", line);
+                        tracing::info!(target: "coglet::setup", "{}", line);
                     }
                     // Accumulate for health-check
                     setup_logs.push_str(&data);

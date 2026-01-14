@@ -146,9 +146,9 @@ impl WorkerHandle {
         loop {
             match worker.recv_slot(slot).await {
                 Ok(SlotResponse::Log { data, .. }) => {
-                    // Emit logs with prediction ID prefix via tracing
+                    // Emit logs via tracing with prediction target
                     for line in data.lines() {
-                        tracing::info!(target: "coglet", prediction_id = %id, "{}", line);
+                        tracing::info!(target: "coglet::prediction", prediction_id = %id, "{}", line);
                     }
                     // Accumulate for response
                     logs.push_str(&data);
