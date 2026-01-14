@@ -81,7 +81,7 @@ impl NamedSocketTransport {
         let dir = std::env::temp_dir().join(format!("coglet-{}", std::process::id()));
         std::fs::create_dir_all(&dir)?;
 
-        tracing::debug!(dir = %dir.display(), num_slots, "Creating named socket transport");
+        tracing::info!(transport_type = "named", dir = %dir.display(), num_slots, "Created slot transport");
 
         // Create socket files so child knows they exist, but don't bind yet.
         // Actual binding happens in accept_connections after child spawns.
@@ -225,7 +225,7 @@ impl AbstractSocketTransport {
 
         let prefix = format!("coglet-{}", std::process::id());
 
-        tracing::debug!(prefix = %prefix, num_slots, "Creating abstract socket transport");
+        tracing::info!(transport_type = "abstract", prefix = %prefix, num_slots, "Created slot transport");
 
         // We'll bind listeners here, accept after child spawns
         let transport = Self {

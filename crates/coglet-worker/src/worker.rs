@@ -186,7 +186,9 @@ pub async fn run_worker<H: PredictHandler>(handler: Arc<H>, config: WorkerConfig
 
     // Connect to slot sockets (transport info from env, set by parent)
     let child_info = get_transport_info_from_env()?;
+    tracing::debug!(?child_info, "Connecting to slot transport");
     let mut transport = connect_transport(child_info).await?;
+    tracing::info!(num_slots, "Connected to slot transport");
 
     // Control channel - wrap in Arc<Mutex> for sharing with log forwarder
     let mut ctrl_reader = FramedRead::new(stdin(), JsonCodec::<ControlRequest>::new());
