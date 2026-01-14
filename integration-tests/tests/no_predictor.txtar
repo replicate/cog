@@ -1,0 +1,10 @@
+# Test error when no predictor is defined
+# Build should fail when cog.yaml has no predict field
+
+# Build should fail with error about missing predictor
+! cog build -t $TEST_IMAGE
+stderr 'predict'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"

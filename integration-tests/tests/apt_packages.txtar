@@ -1,0 +1,26 @@
+# Test that system packages are installed correctly via system_packages in cog.yaml
+
+# Build the image (the run command verifies git is installed)
+cog build -t $TEST_IMAGE
+
+# Verify the predictor works
+cog predict $TEST_IMAGE -i s=world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  gpu: true
+  python_version: "3.9"
+  system_packages:
+    - "git"
+  run:
+    - command: git --version
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s

@@ -8,20 +8,6 @@ import pytest
 from .util import assert_versions_match
 
 
-def test_build_without_predictor(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/no-predictor-project"
-    build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image],
-        cwd=project_dir,
-        capture_output=True,
-    )
-    assert build_process.returncode > 0
-    assert (
-        "Can\\'t run predictions: \\'predict\\' option not found"
-        in build_process.stderr.decode()
-    )
-
-
 def test_build_names_uses_image_option_in_cog_yaml(tmpdir, docker_image, cog_binary):
     with open(tmpdir / "cog.yaml", "w") as f:
         cog_yaml = f"""
@@ -84,17 +70,6 @@ def test_build_with_model(docker_image, cog_binary):
             },
         },
     }
-
-
-def test_build_invalid_schema(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/invalid-int-project"
-    build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image],
-        cwd=project_dir,
-        capture_output=True,
-    )
-    assert build_process.returncode > 0
-    assert "invalid default: number must be at least 2" in build_process.stderr.decode()
 
 
 @pytest.mark.skipif(os.environ.get("CI") != "true", reason="only runs in CI")
@@ -199,31 +174,6 @@ def test_build_with_cog_init_templates(tmpdir, docker_image, cog_binary):
     assert "Image built as cog-" in build_process.stderr.decode()
 
 
-def test_build_with_complex_output(tmpdir, docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/complex_output_project"
-    build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image],
-        cwd=project_dir,
-        capture_output=True,
-    )
-    assert build_process.returncode == 0
-    assert "Image built as cog-" in build_process.stderr.decode()
-
-
-def test_python_37_deprecated(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/python_37"
-    build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image],
-        cwd=project_dir,
-        capture_output=True,
-    )
-    assert build_process.returncode > 0
-    assert (
-        "minimum supported Python version is 3.8. requested 3.7"
-        in build_process.stderr.decode()
-    )
-
-
 def test_build_base_image_sha(docker_image, cog_binary):
     project_dir = Path(__file__).parent / "fixtures/path-project"
     subprocess.run(
@@ -242,63 +192,6 @@ def test_build_base_image_sha(docker_image, cog_binary):
     base_layer_hash = labels["run.cog.cog-base-image-last-layer-sha"]
     layers = image[0]["RootFS"]["Layers"]
     assert base_layer_hash in layers
-
-
-def test_torch_2_0_3_cu118_base_image(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/torch-cuda-baseimage-project"
-    build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image, "--use-cog-base-image"],
-        cwd=project_dir,
-        capture_output=True,
-    )
-    assert build_process.returncode == 0
-
-
-def test_torch_1_13_0_base_image_fallback(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/torch-baseimage-project"
-    build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image, "--openapi-schema", "openapi.json"],
-        cwd=project_dir,
-        capture_output=True,
-    )
-    assert build_process.returncode == 0
-
-
-def test_torch_1_13_0_base_image_fail_explicit(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/torch-baseimage-project"
-    build_process = subprocess.run(
-        [
-            cog_binary,
-            "build",
-            "-t",
-            docker_image,
-            "--openapi-schema",
-            "openapi.json",
-            "--use-cog-base-image=false",
-        ],
-        cwd=project_dir,
-        capture_output=True,
-    )
-    assert build_process.returncode == 0
-
-
-def test_precompile(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/torch-baseimage-project"
-    build_process = subprocess.run(
-        [
-            cog_binary,
-            "build",
-            "-t",
-            docker_image,
-            "--openapi-schema",
-            "openapi.json",
-            "--use-cog-base-image=false",
-            "--precompile",
-        ],
-        cwd=project_dir,
-        capture_output=True,
-    )
-    assert build_process.returncode == 0
 
 
 def test_cog_install_base_image(docker_image, cog_binary):
@@ -377,23 +270,6 @@ def test_pip_freeze(docker_image, cog_binary):
     )
 
 
-def test_cog_installs_apt_packages(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/apt-packages"
-    build_process = subprocess.run(
-        [
-            cog_binary,
-            "build",
-            "-t",
-            docker_image,
-        ],
-        cwd=project_dir,
-        capture_output=True,
-    )
-    # Test that the build completes successfully.
-    # If the apt-packages weren't installed the run command would fail.
-    assert build_process.returncode == 0
-
-
 def test_fast_build(fixture, docker_image, cog_binary):
     project_dir = fixture("fast-build")
     weights_file = os.path.join(project_dir, "weights.h5")
@@ -408,46 +284,6 @@ def test_fast_build(fixture, docker_image, cog_binary):
     )
 
     assert build_process.returncode == 0
-
-
-def test_pydantic2(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/pydantic2"
-
-    build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image],
-        cwd=project_dir,
-        capture_output=True,
-    )
-
-    assert build_process.returncode == 0
-
-
-def test_ffmpeg_base_image(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/ffmpeg-package"
-
-    build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image],
-        cwd=project_dir,
-        capture_output=True,
-    )
-
-    assert build_process.returncode == 0
-
-
-def test_bad_dockerignore(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/bad-dockerignore"
-
-    build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image],
-        cwd=project_dir,
-        capture_output=True,
-    )
-
-    assert build_process.returncode == 1
-    assert (
-        "The .cog tmp path cannot be ignored by docker in .dockerignore"
-        in build_process.stderr.decode()
-    )
 
 
 def test_pydantic1_none(docker_image, cog_binary):
@@ -478,63 +314,6 @@ def test_fast_build_with_local_image(fixture, docker_image, cog_binary):
     assert build_process.returncode == 0
 
 
-def test_local_whl_install(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/local-whl-install"
-
-    build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image],
-        cwd=project_dir,
-        capture_output=True,
-    )
-
-    assert build_process.returncode == 0
-
-
-def test_overrides(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/overrides-project"
-
-    build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image],
-        cwd=project_dir,
-        capture_output=True,
-    )
-
-    assert build_process.returncode == 0
-
-
-def test_install_requires_packaging(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/install-requires-packaging"
-
-    build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image],
-        cwd=project_dir,
-        capture_output=True,
-    )
-    print(build_process.stderr.decode())
-    assert build_process.returncode == 0
-
-
-def test_secrets(tmpdir_factory, docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/secrets-project"
-
-    build_process = subprocess.run(
-        [
-            cog_binary,
-            "build",
-            "-t",
-            docker_image,
-            "--secret",
-            "id=file-secret,src=file-secret.txt",
-            "--secret",
-            "id=env-secret,env=ENV_SECRET",
-        ],
-        cwd=project_dir,
-        capture_output=True,
-        env={**os.environ, "ENV_SECRET": "env_secret_value"},
-    )
-    assert build_process.returncode == 0
-
-
 def test_model_dependencies(docker_image, cog_binary):
     project_dir = Path(__file__).parent / "fixtures/pipeline-project"
     subprocess.run(
@@ -552,49 +331,6 @@ def test_model_dependencies(docker_image, cog_binary):
     labels = image[0]["Config"]["Labels"]
     model_dependencies = labels["run.cog.r8_model_dependencies"]
     assert model_dependencies == '["pipelines-beta/upcase"]'
-
-
-def test_torch_270_cuda_126_base_image(tmpdir_factory, docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/torch-270-cuda-126"
-
-    build_process = subprocess.run(
-        [
-            cog_binary,
-            "build",
-            "-t",
-            docker_image,
-        ],
-        cwd=project_dir,
-        capture_output=True,
-    )
-    assert build_process.returncode == 0
-
-
-def test_python_313(tmpdir_factory, docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/python-313"
-
-    build_process = subprocess.run(
-        [
-            cog_binary,
-            "build",
-            "-t",
-            docker_image,
-        ],
-        cwd=project_dir,
-        capture_output=True,
-    )
-    assert build_process.returncode == 0
-
-
-def test_torch_271_cuda_128_base_image(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/torch-271-cuda-128"
-
-    build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image, "--use-cog-base-image"],
-        cwd=project_dir,
-        capture_output=True,
-    )
-    assert build_process.returncode == 0
 
 
 def test_python_313_base_images(docker_image, cog_binary):

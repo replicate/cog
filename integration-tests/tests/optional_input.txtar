@@ -1,0 +1,26 @@
+# Test optional input parameters with default None
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Test with no input (uses default None)
+cog predict $TEST_IMAGE
+stdout 'hello No One'
+
+# Test with explicit input
+cog predict $TEST_IMAGE -i s=World
+stdout 'hello World'
+
+-- cog.yaml --
+build:
+  python_version: "3.8"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Input
+from typing import Optional
+
+
+class Predictor(BasePredictor):
+    def predict(self, s: Optional[str] = Input(description="Hello String.")) -> str:
+        return "hello " + (s if s is not None else "No One")

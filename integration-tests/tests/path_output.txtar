@@ -1,0 +1,34 @@
+# Test Path output (file output)
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict writes file to output.bmp
+cog predict $TEST_IMAGE
+
+# Verify file was created and has expected size (255x255 RGB BMP = ~195KB)
+exec test -f output.bmp
+exec test -s output.bmp
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+  python_packages:
+    - "pillow==10.4.0"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import os
+import tempfile
+
+from cog import BasePredictor, Path
+from PIL import Image
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> Path:
+        temp_dir = tempfile.mkdtemp()
+        temp_path = os.path.join(temp_dir, "prediction.bmp")
+        img = Image.new("RGB", (255, 255), "red")
+        img.save(temp_path)
+        return Path(temp_path)

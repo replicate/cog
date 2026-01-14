@@ -1,0 +1,25 @@
+# Test Path input type (read file content)
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict reads content from file
+cog predict $TEST_IMAGE -i path=@input.txt
+stdout 'hello from file'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Path
+
+
+class Predictor(BasePredictor):
+    def predict(self, path: Path) -> str:
+        with open(path) as f:
+            return f.read()
+
+-- input.txt --
+hello from file

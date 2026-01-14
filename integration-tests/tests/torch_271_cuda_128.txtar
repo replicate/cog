@@ -1,0 +1,21 @@
+[slow] skip 'slow test - run without COG_TEST_FAST=1'
+
+# Test Torch 2.7.1 + CUDA 12.8 base image build
+cog build -t $TEST_IMAGE
+
+-- cog.yaml --
+build:
+  gpu: true
+  cuda: "12.8"
+  python_version: "3.12"
+  python_packages:
+    - "torch==2.7.1+cu128"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s
