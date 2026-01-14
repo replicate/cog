@@ -311,6 +311,55 @@ class Predictor(BasePredictor):
         return "hello " + s
 ```
 
+#### Test Conditions
+
+Use conditions to control when tests run based on environment:
+
+**`[slow]` - Skip slow tests in fast mode:**
+
+```txtar
+[slow] skip 'requires GPU or long build time'
+
+cog build -t $TEST_IMAGE
+# ... rest of test
+```
+
+Run with `COG_TEST_FAST=1` to skip these tests.
+
+**`[linux]` / `[!linux]` - Platform-specific tests:**
+
+```txtar
+[!linux] skip 'requires Linux'
+
+# Linux-specific test
+cog build -t $TEST_IMAGE
+```
+
+**`[amd64]` / `[!amd64]` - Architecture-specific tests:**
+
+```txtar
+[!amd64] skip 'requires amd64 architecture'
+
+# amd64-specific test
+cog build -t $TEST_IMAGE
+```
+
+**`[linux_amd64]` - Combined platform and architecture:**
+
+```txtar
+[!linux_amd64] skip 'requires Linux on amd64'
+
+# Test that requires both Linux and amd64
+cog build -t $TEST_IMAGE
+```
+
+**Combining conditions:**
+
+Conditions can be negated with `!`. Examples:
+- `[slow]` - True when `COG_TEST_FAST=1` (skip slow tests)
+- `[!linux]` - True when NOT on Linux
+- `[linux_amd64]` - True when on Linux AND amd64
+
 See existing tests in `integration-tests/tests/`, especially `setup_subprocess_*.txtar`, for more examples.
 
 ## Running the docs server

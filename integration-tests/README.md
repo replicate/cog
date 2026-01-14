@@ -177,9 +177,20 @@ Usage: `wait-for CONDITION TARGET [ARGS] [TIMEOUT]`
 
 ## Conditions
 
-Use conditions to skip tests based on environment:
+Use conditions to control when tests run based on environment. Conditions are evaluated by the test runner and can be used with `skip` to conditionally skip tests.
 
-### `[slow]` - Mark slow tests
+### Available Conditions
+
+| Condition | Description | Negated | Example Use Case |
+|-----------|-------------|---------|------------------|
+| `[slow]` | True when `COG_TEST_FAST=1` is set | `[!slow]` | Skip GPU tests, long builds, or slow framework installs |
+| `[linux]` | True on Linux | `[!linux]` | Tests requiring Linux-specific features |
+| `[amd64]` | True on amd64/x86_64 architecture | `[!amd64]` | Tests requiring specific CPU architecture |
+| `[linux_amd64]` | True on Linux AND amd64 | `[!linux_amd64]` | Tests requiring both Linux and amd64 (e.g., monobase images) |
+
+### Usage Examples
+
+**Skip slow tests:**
 
 ```txtar
 [slow] skip 'requires GPU or long build time'
@@ -189,6 +200,51 @@ cog build -t $TEST_IMAGE
 ```
 
 Skip slow tests with: `COG_TEST_FAST=1 make test-integration-go`
+
+**Platform-specific tests:**
+
+```txtar
+[!linux] skip 'requires Linux'
+
+# Linux-specific test
+cog build -t $TEST_IMAGE
+```
+
+**Architecture-specific tests:**
+
+```txtar
+[!amd64] skip 'requires amd64 architecture'
+
+# amd64-specific test
+cog build -t $TEST_IMAGE
+```
+
+**Combined platform and architecture:**
+
+```txtar
+[!linux_amd64] skip 'requires Linux on amd64'
+
+# Test that requires both (e.g., monobase image tests)
+cog build -t $TEST_IMAGE --use-cog-base-image
+```
+
+### Condition Logic
+
+Conditions can be negated with `!`:
+- `[slow]` - True when `COG_TEST_FAST=1` (used to skip slow tests in fast mode)
+- `[!slow]` - True when `COG_TEST_FAST` is NOT set (run only in full test mode)
+- `[!linux]` - True when NOT on Linux (skip Linux-specific tests)
+- `[linux_amd64]` - True when on Linux AND amd64
+
+Multiple conditions can be used on separate lines:
+
+```txtar
+[slow] skip 'requires long build time'
+[!linux] skip 'requires Linux'
+
+# Only runs on Linux when COG_TEST_FAST is not set
+cog build -t $TEST_IMAGE
+```
 
 ## Built-in Commands
 
